@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../config/map_styles.dart';
-import '../navigation/car_renderer.dart';
+import '../navigation/car_sprite_manager.dart';
 import '../navigation/nav_state_machine.dart';
 import '../navigation/route_snapper.dart';
 import '../navigation/smooth_motion.dart';
@@ -81,7 +81,6 @@ class RiderTrackingPage extends StatefulWidget {
 class _RiderTrackingPageState extends State<RiderTrackingPage>
     with TickerProviderStateMixin {
   GoogleMapController? _map;
-  BitmapDescriptor? _carIcon;
 
   late final NavStateMachine _sm;
   late final SmoothMotion _motion;
@@ -132,7 +131,6 @@ class _RiderTrackingPageState extends State<RiderTrackingPage>
     _motion = SmoothMotion(
       onTick: _onMotionTick,
       lerpFactor: 0.12,
-      bearingLerpFactor: 0.15,
       enablePrediction: true,
     );
     _motion.start(this);
@@ -174,7 +172,7 @@ class _RiderTrackingPageState extends State<RiderTrackingPage>
   // ─── BOOT ───
 
   Future<void> _loadIcon() async {
-    _carIcon = await CarRenderer.load(preset: CarPreset.blackSUV);
+    await CarSpriteManager.init();
     if (mounted) setState(() {});
   }
 
@@ -226,14 +224,10 @@ class _RiderTrackingPageState extends State<RiderTrackingPage>
     final snap = RouteSnapper.snap(raw, _routePts, lastIndex: _snapSegIdx);
     _snapSegIdx = snap.segmentIndex;
 
-    if (widget.driverBearingStream == null) {
-      final prev = _driverPos;
-      if (_haversineM(prev, snap.snapped) > 1) {
-        _driverBearing = SmoothMotion.computeBearing(prev, snap.snapped);
-      }
-    }
+    // Always use route-tangent bearing (never raw GPS delta)
+    _driverBearing = snap.bearingDeg;
 
-    _motion.pushTarget(snap.snapped, _driverBearing);
+    _motion.pushTarget(snap.snapped, snap.bearingDeg);
 
     // Update ETA / distance
     final dest = _sm.phase == TripPhase.onTrip
@@ -327,20 +321,18 @@ class _RiderTrackingPageState extends State<RiderTrackingPage>
   Set<Marker> get _allMarkers {
     final m = <Marker>{};
 
-    // Driver car — flat on map, rotates with bearing
-    if (_carIcon != null) {
-      m.add(
-        Marker(
-          markerId: const MarkerId('driver_car'),
-          position: _driverPos,
-          icon: _carIcon!,
-          rotation: _driverBearing,
-          flat: true,
-          anchor: const Offset(0.5, 0.5),
-          zIndex: 100,
-        ),
-      );
-    }
+    // Driver car — sprite already oriented, flat: false for 3D tilt
+    m.add(
+      Marker(
+        markerId: const MarkerId('driver_car'),
+        position: _driverPos,
+        icon: CarSpriteManager.iconForBearing(_driverBearing),
+        rotation: 0,
+        flat: false,
+        anchor: const Offset(0.5, 0.7),
+        zIndex: 100,
+      ),
+    );
 
     // Pickup marker
     if (_sm.phase == TripPhase.toPickup ||

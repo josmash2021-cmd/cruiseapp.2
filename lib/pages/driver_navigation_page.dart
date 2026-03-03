@@ -8,7 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../config/map_styles.dart';
-import '../navigation/car_renderer.dart';
+import '../navigation/car_sprite_manager.dart';
 import '../navigation/nav_state_machine.dart';
 import '../navigation/route_snapper.dart';
 import '../navigation/route_service.dart';
@@ -57,7 +57,6 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     with TickerProviderStateMixin {
   // ─── MAP ───
   GoogleMapController? _map;
-  BitmapDescriptor? _carIcon;
 
   // ─── STATE ───
   late final NavStateMachine _sm;
@@ -113,7 +112,6 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     _motion = SmoothMotion(
       onTick: _onMotionTick,
       lerpFactor: 0.15,
-      bearingLerpFactor: 0.18,
       enablePrediction: true,
     );
     _motion.start(this);
@@ -140,7 +138,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   // ─── BOOT ───
 
   Future<void> _loadIcon() async {
-    _carIcon = await CarRenderer.load(preset: CarPreset.whiteSedan);
+    await CarSpriteManager.init();
     if (mounted) setState(() {});
   }
 
@@ -213,13 +211,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final snap = RouteSnapper.snap(raw, _routePts, lastIndex: _snapIdx);
     _snapIdx = snap.segmentIndex;
 
-    double bearing = rawBearing;
-    if (rawBearing.abs() < 0.1 && _haversineM(_pos, snap.snapped) > 1) {
-      bearing = SmoothMotion.computeBearing(_pos, snap.snapped);
-    }
-
-    _motion.pushTarget(snap.snapped, bearing);
-
+    // Always use route-tangent bearing from snap, never raw GPS heading
+    _motion.pushTarget(snap.snapped, snap.bearingDeg);
     // Nav service update
     if (_navService.isNavigating) {
       _navState = _navService.updatePosition(snap.snapped);
@@ -324,19 +317,17 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   Set<Marker> get _allMarkers {
     final m = <Marker>{};
 
-    if (_carIcon != null) {
-      m.add(
-        Marker(
-          markerId: const MarkerId('driver'),
-          position: _pos,
-          icon: _carIcon!,
-          rotation: 0,
-          flat: false,
-          anchor: const Offset(0.5, 0.7),
-          zIndex: 100,
-        ),
-      );
-    }
+    m.add(
+      Marker(
+        markerId: const MarkerId('driver'),
+        position: _pos,
+        icon: CarSpriteManager.iconForBearing(_bearing),
+        rotation: 0,
+        flat: false,
+        anchor: const Offset(0.5, 0.7),
+        zIndex: 100,
+      ),
+    );
 
     final dest =
         _sm.phase == TripPhase.onTrip || _sm.phase == TripPhase.arrivedDropoff

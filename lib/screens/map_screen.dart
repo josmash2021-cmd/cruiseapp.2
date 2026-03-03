@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -73,7 +73,7 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
-  // Theme-aware colors Ã¢â‚¬â€œ _c is set at the top of build()
+  // Theme-aware colors â€“ _c is set at the top of build()
   late AppColors _c;
   bool? _lastIsDark; // tracks theme so we can re-style the map
   Color get _bgBlack => _c.bg;
@@ -149,7 +149,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   static const double _zoomInCloseLevel = 17.5;
   static const double _zoomOutLevel = 10.5; // ignore: unused_field
 
-  String _pickupAddress = 'Detectando tu ubicaciÃƒÂ³n...';
+  String _pickupAddress = 'Detectando tu ubicaciÃ³n...';
   String _dropoffAddress = '';
   String _tripMiles = '-- mi';
   String _tripDuration = '-- min';
@@ -207,20 +207,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       name: 'VIP',
       vehicle: 'Suburban',
       price: '\$24.50',
-      eta: '12:02 AM Â· 13 min',
+      eta: '12:02 AM · 13 min',
       promoted: true,
     ),
     RideOption(
       name: 'Premium',
       vehicle: 'Camry',
       price: '\$15.88',
-      eta: '12:01 AM Â· 10 min',
+      eta: '12:01 AM · 10 min',
     ),
     RideOption(
       name: 'Comfort',
       vehicle: 'Fusion',
       price: '\$9.76',
-      eta: '12:10 AM Â· 14-23 min',
+      eta: '12:10 AM · 14-23 min',
     ),
   ];
 
@@ -573,7 +573,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       final lastKnown = await Geolocator.getLastKnownPosition();
       if (lastKnown != null && mounted) {
         final latLng = LatLng(lastKnown.latitude, lastKnown.longitude);
-        _setInitialPickup(latLng, 'UbicaciÃƒÂ³n actual');
+        _setInitialPickup(latLng, 'UbicaciÃ³n actual');
         _centerMapOn(latLng, zoom: _defaultMapZoom);
         // Start reverse geocode in background, don't wait
         _refreshPickupAddress(latLng);
@@ -606,7 +606,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  // ignore: unused_element Ã¢â‚¬â€œ retained for future use
+  // ignore: unused_element â€“ retained for future use
   Future<Position?> _resolvePreciseCurrentPosition() async {
     Position? best;
 
@@ -929,14 +929,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   /// Smooth multi-step camera transition that glides between zoom levels.
   /// For large zoom deltas, performs an intermediate step so the animation
-  /// doesn't "jump" Ã¢â‚¬â€ mimicking the fluid feel of premium ride-hailing apps.
+  /// doesn't "jump" â€” mimicking the fluid feel of premium ride-hailing apps.
   Future<void> _smoothCameraTransition(LatLng target, double targetZoom) async {
     if (_mapController == null) return;
     final currentZoom = await _mapController!.getZoomLevel();
     final zoomDelta = (targetZoom - currentZoom).abs();
 
     if (zoomDelta > 4.0) {
-      // Large zoom change Ã¢â€ â€™ 2-step glide via midpoint zoom
+      // Large zoom change â†’ 2-step glide via midpoint zoom
       final midZoom = currentZoom + (targetZoom - currentZoom) * 0.5;
       await _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
@@ -950,7 +950,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         ),
       );
     } else {
-      // Normal zoom change Ã¢â€ â€™ single smooth animation
+      // Normal zoom change â†’ single smooth animation
       await _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(target: target, zoom: targetZoom),
@@ -960,15 +960,15 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   /// Always centers on the pickup location.
-  /// 1st tap Ã¢â€ â€™ center on pickup at default zoom.
-  /// 2nd tap Ã¢â€ â€™ zoom IN close to pickup (street-level).
+  /// 1st tap â†’ center on pickup at default zoom.
+  /// 2nd tap â†’ zoom IN close to pickup (street-level).
   /// Never moves or resets the pickup marker.
   Future<void> _recenterToMyLocation() async {
     if (_mapController == null) return;
     final pickup = _pickupMarker?.position ?? _currentPosition;
     if (pickup == null) return;
 
-    // In confirmPickup the center pin IS the pickup Ã¢â‚¬â€ just re-center
+    // In confirmPickup the center pin IS the pickup â€” just re-center
     if (_stage == RideStage.confirmPickup) {
       _isRecentering = true;
       _cameraIdleDebounce?.cancel();
@@ -978,11 +978,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
 
     if (_isCenteredOnPickup) {
-      // Already centered Ã¢â€ â€™ zoom IN closer to pickup
+      // Already centered â†’ zoom IN closer to pickup
       _isCenteredOnPickup = true; // keep flag so next tap zooms in again
       await _centerMapOn(pickup, zoom: _zoomInCloseLevel);
     } else {
-      // First tap Ã¢â€ â€™ center on pickup at comfortable default zoom
+      // First tap â†’ center on pickup at comfortable default zoom
       _isCenteredOnPickup = true;
       await _centerMapOn(pickup, zoom: _defaultMapZoom);
     }
@@ -1085,7 +1085,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     try {
       final origin = _pickupMarker?.position;
       // Use autocomplete (which runs Nominatim + Photon in parallel)
-      // to get results with coordinates Ã¢â‚¬â€ avoids double Nominatim calls.
+      // to get results with coordinates â€” avoids double Nominatim calls.
       final results = await _places.autocomplete(
         query,
         latitude: origin?.latitude,
@@ -1175,7 +1175,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (origin == null) return input;
 
     // Fast path: compute straight-line distance for items that already have coords
-    // Skip expensive details() + matrix API calls Ã¢â‚¬â€ use haversine estimate instead
+    // Skip expensive details() + matrix API calls â€” use haversine estimate instead
     final enriched = input.map((item) {
       if (item.lat != null && item.lng != null) {
         final meters = Geolocator.distanceBetween(
@@ -1231,7 +1231,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (!_isValidCoordinate(details.lat, details.lng)) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         const SnackBar(
-          content: Text('La direcciÃƒÂ³n no tiene coordenadas vÃƒÂ¡lidas.'),
+          content: Text('La direcciÃ³n no tiene coordenadas vÃ¡lidas.'),
           duration: Duration(milliseconds: 1600),
         ),
       );
@@ -1331,7 +1331,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       await Future.delayed(const Duration(milliseconds: 200));
       if (!mounted) return;
 
-      // If a ride was pre-selected from home screen, skip options Ã¢â€ â€™ go to confirmPickup
+      // If a ride was pre-selected from home screen, skip options â†’ go to confirmPickup
       if (_preSelectedRideIndex != null) {
         _selectedRide = _preSelectedRideIndex!.clamp(0, _rides.length - 1);
         _preSelectedRideIndex = null; // consume it once
@@ -1425,7 +1425,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     return '${miles.toStringAsFixed(2)} mi';
   }
 
-  // ignore: unused_element Ã¢â‚¬â€œ retained for future use
+  // ignore: unused_element â€“ retained for future use
   Future<void> _onRequestRide() async {
     if (mounted) {
       FocusScope.of(context).unfocus();
@@ -1458,7 +1458,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Selecciona un destino vÃƒÂ¡lido para continuar.'),
+          content: Text('Selecciona un destino vÃ¡lido para continuar.'),
           duration: Duration(milliseconds: 1800),
         ),
       );
@@ -1579,7 +1579,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       final hour = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
       final min = t.minute.toString().padLeft(2, '0');
       final amPm = t.period == DayPeriod.am ? 'AM' : 'PM';
-      return '$month ${d.day} Â· $hour:$min $amPm';
+      return '$month ${d.day} · $hour:$min $amPm';
     }
     return 'Pickup later';
   }
@@ -1603,7 +1603,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             Widget stepContent;
 
             if (step == 0) {
-              // Ã¢â€â‚¬Ã¢â€â‚¬ Step 0: Now / Later Ã¢â€â‚¬Ã¢â€â‚¬
+              // â”€â”€ Step 0: Now / Later â”€â”€
               stepContent = Column(
                 key: const ValueKey(0),
                 mainAxisSize: MainAxisSize.min,
@@ -1653,7 +1653,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 ],
               );
             } else if (step == 1) {
-              // Ã¢â€â‚¬Ã¢â€â‚¬ Step 1: Calendar Ã¢â€â‚¬Ã¢â€â‚¬
+              // â”€â”€ Step 1: Calendar â”€â”€
               stepContent = Column(
                 key: const ValueKey(1),
                 mainAxisSize: MainAxisSize.min,
@@ -1710,7 +1710,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 ],
               );
             } else {
-              // Ã¢â€â‚¬Ã¢â€â‚¬ Step 2: Time picker Ã¢â€â‚¬Ã¢â€â‚¬
+              // â”€â”€ Step 2: Time picker â”€â”€
               stepContent = Column(
                 key: const ValueKey(2),
                 mainAxisSize: MainAxisSize.min,
@@ -1935,7 +1935,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       // Min 12.0 (not too zoomed out), Max 15.5 (keeps context)
       final clampedZoom = currentZoom.clamp(12.0, 15.5);
       if ((clampedZoom - currentZoom).abs() > 0.2) {
-        // Need to adjust zoom Ã¢â‚¬â€ recenter with clamped zoom
+        // Need to adjust zoom â€” recenter with clamped zoom
         final midLat =
             (bounds.northeast.latitude + bounds.southwest.latitude) / 2;
         final midLng =
@@ -2168,7 +2168,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     _c = AppColors.of(context);
 
-    // When the theme flips between light Ã¢â€ â€ dark, re-apply the map JSON style
+    // When the theme flips between light â†” dark, re-apply the map JSON style
     if (_lastIsDark != null &&
         _lastIsDark != _c.isDark &&
         _mapController != null) {
@@ -2291,7 +2291,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-          // Ã¢â€â‚¬Ã¢â€â‚¬ Rider Navigation Header (shown during riding stage) Ã¢â€â‚¬Ã¢â€â‚¬
+          // â”€â”€ Rider Navigation Header (shown during riding stage) â”€â”€
           if (_stage == RideStage.riding)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
@@ -2761,7 +2761,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             s.distanceMiles != null) {
           final miles = '${s.distanceMiles!.toStringAsFixed(1)} mi';
           final eta = s.etaText ?? _etaFromMiles(s.distanceMiles);
-          subtitle = '$eta Â· $miles';
+          subtitle = '$eta · $miles';
         }
 
         return ListTile(
@@ -2910,7 +2910,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 Icon(Icons.route, color: _c.iconDefault, size: 15),
                 const SizedBox(width: 6),
                 Text(
-                  '$_tripMiles Â· $_tripDuration',
+                  '$_tripMiles · $_tripDuration',
                   style: TextStyle(color: _c.textSecondary, fontSize: 13),
                 ),
               ],
@@ -3329,7 +3329,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       type: 'ride',
     );
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Write to Firestore so Dispatch Admin sees the trip in real time Ã¢â€â‚¬Ã¢â€â‚¬
+    // â”€â”€ Write to Firestore so Dispatch Admin sees the trip in real time â”€â”€
     try {
       final session = await UserSession.getUser();
       final pickupPos = _pickupMarker?.position ?? _currentPosition;
@@ -3364,10 +3364,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         );
       }
     } catch (e) {
-      debugPrint('Ã¢Å¡Â Ã¯Â¸Â Firestore write failed: $e');
+      debugPrint('âš ï¸ Firestore write failed: $e');
     }
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Create ride request via dispatch system Ã¢â€â‚¬Ã¢â€â‚¬
+    // â”€â”€ Create ride request via dispatch system â”€â”€
     try {
       final riderId = await ApiService.getCurrentUserId();
       final pickupPos = _pickupMarker?.position ?? _currentPosition;
@@ -3404,7 +3404,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
     if (!mounted || _stage != RideStage.matching) return;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Poll dispatch status for driver assignment Ã¢â€â‚¬Ã¢â€â‚¬
+    // â”€â”€ Poll dispatch status for driver assignment â”€â”€
     int noDriverCount = 0;
     _tripPollTimer?.cancel();
     _tripPollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
@@ -3472,7 +3472,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               type: 'ride',
             );
 
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Sync driver assignment to Firestore for Dispatch Admin Ã¢â€â‚¬Ã¢â€â‚¬
+            // â”€â”€ Sync driver assignment to Firestore for Dispatch Admin â”€â”€
             if (_firestoreTripId != null) {
               TripFirestoreService.syncDriverAssigned(
                 _firestoreTripId!,
@@ -3551,7 +3551,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
           if (status == 'completed') {
             timer.cancel();
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Sync completed to Firestore for Dispatch Admin Ã¢â€â‚¬Ã¢â€â‚¬
+            // â”€â”€ Sync completed to Firestore for Dispatch Admin â”€â”€
             if (_firestoreTripId != null) {
               TripFirestoreService.syncTripCompleted(_firestoreTripId!);
             }
@@ -3565,7 +3565,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           } else if (status == 'in_trip') {
             if (!tripStartedNotified) {
               tripStartedNotified = true;
-              // Ã¢â€â‚¬Ã¢â€â‚¬ Sync in_progress to Firestore for Dispatch Admin Ã¢â€â‚¬Ã¢â€â‚¬
+              // â”€â”€ Sync in_progress to Firestore for Dispatch Admin â”€â”€
               if (_firestoreTripId != null && !fsSyncedInTrip) {
                 fsSyncedInTrip = true;
                 TripFirestoreService.syncTripStarted(_firestoreTripId!);
@@ -3649,12 +3649,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 ),
               );
             }
-            // Draw/update route from driver Ã¢â€ â€™ dropoff
+            // Draw/update route from driver â†’ dropoff
             await _updateDriverRoute(status);
           } else if (status == 'arrived') {
             if (!arrivedNotified) {
               arrivedNotified = true;
-              // Ã¢â€â‚¬Ã¢â€â‚¬ Sync driver_arrived to Firestore for Dispatch Admin Ã¢â€â‚¬Ã¢â€â‚¬
+              // â”€â”€ Sync driver_arrived to Firestore for Dispatch Admin â”€â”€
               if (_firestoreTripId != null && !fsSyncedArrived) {
                 fsSyncedArrived = true;
                 TripFirestoreService.syncDriverArrived(_firestoreTripId!);
@@ -3725,11 +3725,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 ),
               );
             }
-            // Draw/update route from driver Ã¢â€ â€™ pickup
+            // Draw/update route from driver â†’ pickup
             await _updateDriverRoute(status);
           } else if (status == 'canceled') {
             timer.cancel();
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Sync cancelled to Firestore for Dispatch Admin Ã¢â€â‚¬Ã¢â€â‚¬
+            // â”€â”€ Sync cancelled to Firestore for Dispatch Admin â”€â”€
             if (_firestoreTripId != null) {
               TripFirestoreService.syncTripCancelled(
                 _firestoreTripId!,
@@ -3751,7 +3751,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           }
           _updateDriverMarkerFromPosition();
         } catch (e) {
-          debugPrint('Ã¢Å¡Â Ã¯Â¸Â Ride tracking: $e');
+          debugPrint('âš ï¸ Ride tracking: $e');
         }
       }
     });
@@ -3785,7 +3785,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final color = isInTrip ? const Color(0xFFD4A843) : Colors.greenAccent;
     final id = isInTrip ? 'driver_to_dropoff' : 'driver_to_pickup';
     setState(() {
-      // Keep existing pickupÃ¢â€ â€™dropoff polyline if en_route, just update driver polyline
+      // Keep existing pickupâ†’dropoff polyline if en_route, just update driver polyline
       _polylines.removeWhere(
         (p) => p.polylineId.value.startsWith('driver_to_'),
       );
@@ -3811,8 +3811,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   /// Draw the real driving route from driver to destination on the rider's map.
-  /// During driver_en_route/driver_assigned: driver Ã¢â€ â€™ pickup + pickup Ã¢â€ â€™ dropoff
-  /// During in_trip: driver Ã¢â€ â€™ dropoff
+  /// During driver_en_route/driver_assigned: driver â†’ pickup + pickup â†’ dropoff
+  /// During in_trip: driver â†’ dropoff
   Future<void> _updateDriverRoute(String status) async {
     if (!mounted || _driverPosition == null) return;
 
@@ -3839,7 +3839,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _lastDriverRoutePhase = routePhase;
 
     if (isEnRoute) {
-      // Draw: driver Ã¢â€ â€™ pickup (green) + pickup Ã¢â€ â€™ dropoff (gold)
+      // Draw: driver â†’ pickup (green) + pickup â†’ dropoff (gold)
       final driverToPickup = await _fetchDrivingRoute(
         _driverPosition!,
         pickupPos,
@@ -3897,7 +3897,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       // Fit bounds to show driver + pickup + dropoff
       _fitRideBounds([_driverPosition!, pickupPos, dropoffPos]);
     } else {
-      // in_trip: draw driver Ã¢â€ â€™ dropoff
+      // in_trip: draw driver â†’ dropoff
       final driverToDropoff = await _fetchDrivingRoute(
         _driverPosition!,
         dropoffPos,
@@ -4086,7 +4086,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _setStage(RideStage.plan);
     if (!mounted) return;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Show rating + tip screen first Ã¢â€â‚¬Ã¢â€â‚¬
+    // â”€â”€ Show rating + tip screen first â”€â”€
     await Navigator.of(context).push(
       sharedAxisVerticalRoute(
         RideRatingScreen(
@@ -4138,7 +4138,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     return (math.atan2(x, y) * 180 / math.pi + 360) % 360;
   }
 
-  /// Smooth heading interpolation (avoids 360â†’0 jumps)
+  /// Smooth heading interpolation (avoids 360→0 jumps)
   double _lerpAngle(double from, double to, double t) {
     double diff = (to - from) % 360;
     if (diff > 180) diff -= 360;
@@ -4184,7 +4184,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
     _updateDriverMarkerFromPosition();
 
-    // â”€â”€ 3D Chase-Cam: follow driver every frame for game-like feel â”€â”€
+    // ── 3D Chase-Cam: follow driver every frame for game-like feel ──
     if (_stage == RideStage.riding && _driverPosition != null) {
       _mapController?.animateCamera(
         CameraUpdate.newCameraPosition(
@@ -4206,7 +4206,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   /// Black Ford Fusion (ultra-detailed 3D, large for game-like feel)
   Future<void> _buildDriverCarIcon() async {
-    // â”€â”€ Uber-style clean white top-down car icon â”€â”€
+    // ── Uber-style clean white top-down car icon ──
     const double cW = 200, cH = 300;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, cW, cH));
@@ -4442,7 +4442,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  // ignore: unused_element Ã¢â‚¬â€œ retained for future use
+  // ignore: unused_element â€“ retained for future use
   void _onConfirmPickupCameraIdle() {
     final target = _cameraTarget;
     if (target == null) return;
@@ -4816,7 +4816,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     );
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Payment method helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // â”€â”€ Payment method helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Returns display info for a payment method id.
   ({String label, Widget logoWidget}) _paymentMethodInfo(String id) {
@@ -4827,7 +4827,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         if (_savedCardLast4 != null && _savedCardBrand != null) {
           return (
             label:
-                '${_capitalizedBrand(_savedCardBrand)} â€¢â€¢â€¢â€¢ $_savedCardLast4',
+                '${_capitalizedBrand(_savedCardBrand)} •••• $_savedCardLast4',
             logoWidget: _cardBrandLogoWidget(_savedCardBrand, 36),
           );
         }
@@ -4984,7 +4984,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   /// Opens the payment-method bottom sheet and lets the user pick one.
   void _showPaymentMethodSelector() {
     final creditLabel = (_savedCardBrand != null && _savedCardLast4 != null)
-        ? '${_capitalizedBrand(_savedCardBrand)} â€¢â€¢â€¢â€¢ $_savedCardLast4'
+        ? '${_capitalizedBrand(_savedCardBrand)} •••• $_savedCardLast4'
         : 'Credit or debit card';
     final methods = [
       ('google_pay', 'Google Pay'),
@@ -5179,7 +5179,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final linked = _linkedPaymentMethods.contains(id);
 
     if (!linked) {
-      // Not connected Ã¢â‚¬â€ for Google Pay and PayPal, open their apps directly
+      // Not connected â€” for Google Pay and PayPal, open their apps directly
       if (id == 'google_pay') {
         await _launchGooglePayFromMap();
         if (!mounted) return;
@@ -5221,8 +5221,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       return;
     }
 
-    // Already linked Ã¢â‚¬â€ for credit_card, only open card entry if user explicitly
-    // wants to change (weÃ¢â‚¬â„¢re just selecting it here, not re-entering).
+    // Already linked â€” for credit_card, only open card entry if user explicitly
+    // wants to change (weâ€™re just selecting it here, not re-entering).
     // Google Pay and PayPal: just selecting is enough.
     // No additional action needed.
   }
@@ -5424,7 +5424,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '${ride.name} â€¢ ${ride.vehicle}',
+                                  '${ride.name} • ${ride.vehicle}',
                                   style: TextStyle(
                                     color: _c.textPrimary,
                                     fontSize: 15,
@@ -5433,7 +5433,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                                 ),
                                 const SizedBox(height: 3),
                                 Text(
-                                  '$_tripMiles â€¢ $_tripDuration',
+                                  '$_tripMiles • $_tripDuration',
                                   style: TextStyle(
                                     color: _c.textTertiary,
                                     fontSize: 13,
@@ -5603,7 +5603,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                                           _selectedPaymentMethod,
                                         )
                                         ? 'Tap to change'
-                                        : 'Not added Ã¢â‚¬â€ tap to set up',
+                                        : 'Not added â€” tap to set up',
                                     style: TextStyle(
                                       color:
                                           _linkedPaymentMethods.contains(
@@ -5633,7 +5633,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             const SizedBox(height: 10),
             // --- Pay button ---
             if (!_linkedPaymentMethods.contains(_selectedPaymentMethod))
-              // Unlinked Ã¢â‚¬â€ connect button
+              // Unlinked â€” connect button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -5722,7 +5722,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             _handle(),
             const SizedBox(height: 16),
 
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Pulsing radar animation Ã¢â€â‚¬Ã¢â€â‚¬
+            // â”€â”€ Pulsing radar animation â”€â”€
             SizedBox(
               height: 100,
               width: 100,
@@ -5730,7 +5730,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 16),
 
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Title with animated dots Ã¢â€â‚¬Ã¢â€â‚¬
+            // â”€â”€ Title with animated dots â”€â”€
             isSearching
                 ? _AnimatedSearchText(
                     text: 'Looking for your driver',
@@ -5752,20 +5752,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   ),
             const SizedBox(height: 6),
 
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Subtitle: vehicle + ETA Ã¢â€â‚¬Ã¢â€â‚¬
+            // â”€â”€ Subtitle: vehicle + ETA â”€â”€
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 400),
               child: Text(
                 isSearching
                     ? 'Finding the best ${ride.name} nearby'
-                    : '${ride.name} Â· arriving in $_driverEta',
+                    : '${ride.name} · arriving in $_driverEta',
                 key: ValueKey(isSearching),
                 style: TextStyle(color: _c.textSecondary, fontSize: 14),
               ),
             ),
             const SizedBox(height: 18),
 
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Progress bar Ã¢â€â‚¬Ã¢â€â‚¬
+            // â”€â”€ Progress bar â”€â”€
             ClipRRect(
               borderRadius: BorderRadius.circular(99),
               child: isSearching
@@ -5787,7 +5787,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 18),
 
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Driver info card Ã¢â€â‚¬Ã¢â€â‚¬
+            // â”€â”€ Driver info card â”€â”€
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 500),
               switchInCurve: Curves.easeOutCubic,
@@ -5798,7 +5798,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
             const Spacer(),
 
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Route summary row Ã¢â€â‚¬Ã¢â€â‚¬
+            // â”€â”€ Route summary row â”€â”€
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
@@ -5863,7 +5863,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 14),
 
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Action buttons Ã¢â€â‚¬Ã¢â€â‚¬
+            // â”€â”€ Action buttons â”€â”€
             Row(
               children: [
                 Expanded(
@@ -5923,69 +5923,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 10),
-
-            // â”€â”€ Simulate Trip button â”€â”€
-            SizedBox(
-              height: 46,
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFD4A843), width: 1.5),
-                  foregroundColor: const Color(0xFFD4A843),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                onPressed: () {
-                  final pickup = _pickupMarker?.position ?? _currentPosition;
-                  final dropoff = _dropoffMarker?.position;
-                  if (pickup == null || dropoff == null) {
-                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                      const SnackBar(
-                        content: Text('Set pickup & dropoff first.'),
-                      ),
-                    );
-                    return;
-                  }
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      fullscreenDialog: true,
-                      builder: (_) => RiderTrackingPage(
-                        pickupLatLng: pickup,
-                        dropoffLatLng: dropoff,
-                        routePoints: _activeRoutePoints.isNotEmpty
-                            ? List.from(_activeRoutePoints)
-                            : null,
-                        driverName:
-                            (_driverName.isNotEmpty &&
-                                _driverName != 'Searching...')
-                            ? _driverName
-                            : 'Carlos M.',
-                        driverRating: _driverRating,
-                        vehiclePlate: _driverPlate.isNotEmpty
-                            ? _driverPlate
-                            : 'ABC-1234',
-                        tripId: _firestoreTripId ?? 'demo-trip',
-                        driverLocationStream:
-                            (_firestoreTripId != null &&
-                                _firestoreTripId != 'demo-trip')
-                            ? TripFirestoreService.watchDriverLocation(
-                                _firestoreTripId!,
-                              )
-                            : null,
-                        onCancelRide: () => Navigator.of(context).pop(),
-                      ),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
-                label: const Text(
-                  'Simulate Trip',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                ),
-              ),
             ),
           ],
         ),
@@ -6154,9 +6091,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     );
   }
 
-  // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  RIDER NAVIGATION HEADER (Uber-style turn card)
-  // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Widget _buildRiderNavHeader() {
     final isInTrip = _tripStatus == 'in_trip';
     final isArrived = _tripStatus == 'arrived';
@@ -6659,9 +6596,9 @@ class _Badge extends StatelessWidget {
   }
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  Uber-style pulsing radar for matching screen
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class _MatchingRadar extends StatefulWidget {
   final Color color;
   final bool isSearching;
@@ -6774,9 +6711,9 @@ class _RadarPainter extends CustomPainter {
   bool shouldRepaint(_RadarPainter old) => old.progress != progress;
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  Animated "Looking for your driver..." with dots
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class _AnimatedSearchText extends StatefulWidget {
   final String text;
   final TextStyle style;

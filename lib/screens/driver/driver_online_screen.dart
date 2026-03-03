@@ -1330,9 +1330,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Wait for frame with updated map padding, then center on both points
     await Future.delayed(const Duration(milliseconds: 150));
     _fitBounds(_pos, _pickupLL);
-    // Extra frame so _routePts is fully propagated before simulation reads it
-    await Future.delayed(const Duration(milliseconds: 80));
-    if (mounted) _startSimulation();
   }
 
   Future<void> _arrivePickup() async {
@@ -1399,9 +1396,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         CameraPosition(target: _pos, zoom: 17.5, bearing: _heading, tilt: 55),
       ),
     );
-    // Extra frame so _routePts is fully propagated before simulation reads it
-    await Future.delayed(const Duration(milliseconds: 80));
-    if (mounted) _startSimulation();
   }
 
   /// User pressed "Start Navigation" from the route summary â€” begin actual nav

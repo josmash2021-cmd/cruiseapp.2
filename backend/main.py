@@ -222,6 +222,7 @@ class RegisterIn(BaseModel):
     phone: Optional[str] = None
     password: str
     photo_url: Optional[str] = None
+    role: str = "rider"  # rider | driver
 
 class CheckExistsIn(BaseModel):
     identifier: str
@@ -283,16 +284,17 @@ class DispatchRequestIn(BaseModel):
 
 @app.post("/auth/register", dependencies=[Depends(_verify_api_key)])
 async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
-    # Check duplicates
+    # Check duplicates — return 409 so the Flutter client can auto-login
     if body.email:
         exists = await db.execute(select(User).where(User.email == body.email))
         if exists.scalar_one_or_none():
-            raise HTTPException(400, "Email already registered")
+            raise HTTPException(409, "Email already registered")
     if body.phone:
         exists = await db.execute(select(User).where(User.phone == body.phone))
         if exists.scalar_one_or_none():
-            raise HTTPException(400, "Phone already registered")
+            raise HTTPException(409, "Phone already registered")
 
+    role = body.role if body.role in ("rider", "driver") else "rider"
     user = User(
         first_name=body.first_name,
         last_name=body.last_name,
@@ -300,21 +302,31 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         phone=body.phone,
         password_hash=pwd.hash(body.password),
         photo_url=body.photo_url,
+        role=role,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
 
-    # Sync new user to Firestore for dispatch_app
+    # Sync new user to Firestore so dispatch_app sees it in real-time
     if _HAS_FIRESTORE:
         try:
-            firestore_sync.sync_client(
-                user_id=user.id, first_name=user.first_name,
-                last_name=user.last_name, phone=user.phone or "",
-                email=user.email, photo_url=user.photo_url,
-                role=user.role, created_at=user.created_at,
-                password_hash=user.password_hash,
-            )
+            if role == "driver":
+                firestore_sync.sync_driver(
+                    user_id=user.id, first_name=user.first_name,
+                    last_name=user.last_name, phone=user.phone or "",
+                    email=user.email, photo_url=user.photo_url,
+                    is_online=False, created_at=user.created_at,
+                    password_hash=user.password_hash,
+                )
+            else:
+                firestore_sync.sync_client(
+                    user_id=user.id, first_name=user.first_name,
+                    last_name=user.last_name, phone=user.phone or "",
+                    email=user.email, photo_url=user.photo_url,
+                    role=user.role, created_at=user.created_at,
+                    password_hash=user.password_hash,
+                )
         except Exception as e:
             logging.error("Firestore sync on register failed: %s", e)
 

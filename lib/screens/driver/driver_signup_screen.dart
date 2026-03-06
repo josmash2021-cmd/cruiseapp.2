@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../config/page_transitions.dart';
+import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import 'driver_home_screen.dart';
 
@@ -109,16 +110,72 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
   Future<void> _submit() async {
     setState(() => _submitting = true);
 
-    // TODO: call driver registration API
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      // Normalize phone to E.164
+      var phone = _phoneCtrl.text.trim();
+      final cleaned = phone.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+      if (!cleaned.startsWith('+')) {
+        phone = '+1$cleaned';
+      } else {
+        phone = cleaned;
+      }
+
+      final result = await ApiService.register(
+        firstName: _firstNameCtrl.text.trim(),
+        lastName: _lastNameCtrl.text.trim(),
+        email: _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
+        phone: phone.isNotEmpty ? phone : null,
+        password: _passwordCtrl.text,
+        role: 'driver',
+      );
+
+      final user = result['user'] as Map<String, dynamic>;
+      final userId = user['id'] as int?;
+
+      await UserSession.saveUser(
+        firstName: _firstNameCtrl.text.trim(),
+        lastName: _lastNameCtrl.text.trim(),
+        email: _emailCtrl.text.trim(),
+        phone: phone,
+        password: _passwordCtrl.text,
+        userId: userId,
+        paymentMethod: 'none',
+      );
+      await UserSession.saveMode('driver');
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.redAccent,
+          content: Text(e.message,
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.redAccent,
+          content: Text('Registration failed: $e',
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
 
     if (!mounted) return;
     setState(() => _submitting = false);
 
-    await UserSession.saveMode('driver');
-    if (!mounted) return;
-
-    // Show success and go to driver home
+    // Go to driver home
     Navigator.of(context).pushAndRemoveUntil(
       slideFromRightRoute(const DriverHomeScreen()),
       (_) => false,

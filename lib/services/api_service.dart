@@ -217,6 +217,7 @@ class ApiService {
     String? phone,
     required String password,
     String? photoUrl,
+    String role = 'rider',
   }) async {
     final res = await http
         .post(
@@ -230,6 +231,7 @@ class ApiService {
             'password': password,
             // ignore: use_null_aware_elements
             if (photoUrl != null) 'photo_url': photoUrl,
+            'role': role,
           }),
         )
         .timeout(const Duration(seconds: 10));

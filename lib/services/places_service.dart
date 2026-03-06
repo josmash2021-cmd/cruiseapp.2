@@ -130,7 +130,6 @@ class PlacesService {
       final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
         'latlng': '$lat,$lng',
         'key': apiKey,
-        'result_type': 'street_address|route|premise',
       });
       final res = await http.get(uri);
       final data = jsonDecode(res.body);
@@ -384,7 +383,13 @@ class PlacesService {
     double? lat,
     double? lon,
   }) async {
-    final params = <String, String>{'q': input, 'limit': '10', 'lang': 'en', 'osm_tag': 'place', 'bbox': '-179.15,-14.55,-64.55,71.39'};
+    final params = <String, String>{
+      'q': input,
+      'limit': '10',
+      'lang': 'en',
+      'osm_tag': 'place',
+      'bbox': '-179.15,-14.55,-64.55,71.39',
+    };
     if (lat != null && lon != null) {
       params['lat'] = '$lat';
       params['lon'] = '$lon';

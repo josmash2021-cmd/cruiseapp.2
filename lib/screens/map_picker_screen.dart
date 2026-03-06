@@ -45,12 +45,20 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
       );
       if (mounted) {
         setState(() {
-          _address = addr ?? 'Unknown location';
+          _address =
+              addr ??
+              '${_center.latitude.toStringAsFixed(5)}, ${_center.longitude.toStringAsFixed(5)}';
           _loading = false;
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _address =
+              '${_center.latitude.toStringAsFixed(5)}, ${_center.longitude.toStringAsFixed(5)}';
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -194,7 +202,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                         children: [
                           Icon(
                             Icons.location_on_rounded,
-                            color: Colors.black,
+                            color: _gold,
                             size: 22,
                           ),
                           const SizedBox(width: 10),

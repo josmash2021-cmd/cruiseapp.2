@@ -120,7 +120,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               child: Icon(
                 Icons.location_on,
                 size: 48,
-                color: Colors.black,
+                color: const Color(0xFFE8C547),
                 shadows: [
                   Shadow(
                     color: Colors.black.withValues(alpha: 0.4),

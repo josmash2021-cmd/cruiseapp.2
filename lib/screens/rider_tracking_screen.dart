@@ -64,6 +64,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   BitmapDescriptor? _carIcon;
   Uint8List? _carIconBytes;
   Uint8List? _blackPinBytes;
+  Uint8List? _rotatedCarBytes; // pre-rotated PNG for Apple Maps
+  int _lastRotQ = -1; // last quantised bearing sent to CarIconLoader
 
   _TrackPhase _phase = _TrackPhase.arriving;
   LatLng _driverPos = const LatLng(0, 0);
@@ -83,8 +85,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   int _simStep = 0;
   int _pickupIdx = 0;
 
+  /// Cumulative distance array — _segDist[i] = total meters from start to point i.
+  List<double> _segDist = [];
+
+  /// Current traveled distance in meters along the route.
+  double _traveledM = 0;
+
   Timer? _interpTimer;
-  LatLng _tgtPos = const LatLng(0, 0);
+
+  /// Target traveled distance (set by sim timer, approached smoothly by interp timer)
+  double _tgtTraveledM = 0;
   double _tgtBrg = 0;
   Timer? _camTimer;
   bool _userMovedMap = false;
@@ -146,6 +156,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     const cx = size / 2;
     const cy = size / 2;
     const r = size * 0.38;
+    // Gold pin with drop shadow
     canvas.drawCircle(
       const Offset(cx, cy + 2),
       r + 2,
@@ -156,7 +167,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     canvas.drawCircle(
       const Offset(cx, cy),
       r,
-      Paint()..color = const Color(0xFF222222),
+      Paint()..color = const Color(0xFFE8C547),
     );
     canvas.drawCircle(
       const Offset(cx, cy),
@@ -171,8 +182,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       Offset(cx - r * 0.2, cy - r * 0.2),
       r * 0.5,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.15)
+        ..color = Colors.white.withValues(alpha: 0.20)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+    // Black dot icon in center
+    canvas.drawCircle(
+      const Offset(cx, cy),
+      r * 0.22,
+      Paint()..color = const Color(0xFF1A1A1A),
     );
     final picture = recorder.endRecording();
     final img = await picture.toImage(size.toInt(), size.toInt());
@@ -239,10 +256,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _pickupIdx = approachRoute.length - 1;
     _routePts = [...approachRoute, ...tripRoute.skip(1)];
 
-    // 5) Driver starts at position 0 of the combined route
+    // Build cumulative distance array
+    _buildSegDist();
+
+    // 5) Driver starts at distance 0
+    _traveledM = 0;
+    _tgtTraveledM = 0;
     _driverPos = _routePts[0];
     _animPos = _driverPos;
-    _tgtPos = _driverPos;
     _simStep = 0;
 
     // 6) Calculate initial distance from driver to pickup (miles)
@@ -260,8 +281,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   void _startSim() {
     _simTimer?.cancel();
-    const tickMs = 100;
-    const mPerTick = 1.6;
+    // ~40 km/h → ~11.1 m/s → ~1.3 m per 120ms tick
+    const tickMs = 120;
+    const mPerTick = 1.3;
+
+    final pickupDistM = _pickupIdx < _segDist.length
+        ? _segDist[_pickupIdx]
+        : 0.0;
+    final totalDistM = _segDist.isNotEmpty ? _segDist.last : 0.0;
 
     _simTimer = Timer.periodic(const Duration(milliseconds: tickMs), (t) {
       if (!mounted) {
@@ -273,83 +300,73 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         return;
       }
 
-      double moved = 0;
-      while (moved < mPerTick && _simStep + 1 < _routePts.length) {
-        final seg =
-            _hav(_routePts[_simStep], _routePts[_simStep + 1]) * 1609.34;
-        if (seg < 0.01) {
-          _simStep++;
-          continue;
-        }
-        moved += seg;
-        _simStep++;
-      }
+      _tgtTraveledM = math.min(_tgtTraveledM + mPerTick, totalDistM);
 
-      if (_phase == _TrackPhase.arriving && _simStep >= _pickupIdx) {
+      // Phase transitions
+      if (_phase == _TrackPhase.arriving && _tgtTraveledM >= pickupDistM) {
         setState(() => _phase = _TrackPhase.arrived);
         Timer(const Duration(seconds: 3), () {
           if (mounted) setState(() => _phase = _TrackPhase.onTrip);
         });
       }
-
-      if (_simStep >= _routePts.length - 1) {
+      if (_tgtTraveledM >= totalDistM) {
         t.cancel();
         setState(() => _phase = _TrackPhase.completed);
-        // Show rating overlay — user dismisses it
         return;
       }
 
-      final idx = _simStep.clamp(0, _routePts.length - 1);
-      final pos = _routePts[idx];
-      double brg = _driverBearing;
-      if (idx + 4 < _routePts.length) {
-        brg = _bearing(pos, _routePts[idx + 4]);
-      } else if (idx + 1 < _routePts.length) {
-        brg = _bearing(pos, _routePts[idx + 1]);
-      }
-
-      double rd = 0;
-      final ti = _phase == _TrackPhase.arriving
-          ? _pickupIdx
-          : _routePts.length - 1;
-      for (int i = idx; i < ti && i + 1 < _routePts.length; i++) {
-        rd += _hav(_routePts[i], _routePts[i + 1]);
-      }
-      final eta = (rd / 0.5).ceil().clamp(1, 99);
-
-      _tgtPos = pos;
-      _tgtBrg = brg;
-
-      // Update state without full rebuild — interpolation timer handles visuals
-      _driverPos = pos;
-      _driverBearing = brg;
-      _etaMinutes = eta;
-      _distanceMiles = rd;
+      // Calculate remaining distance for ETA
+      final targetDistM =
+          _phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived
+          ? pickupDistM
+          : totalDistM;
+      final remainingMi =
+          math.max(0.0, (targetDistM - _tgtTraveledM)) / 1609.34;
+      _etaMinutes = (remainingMi / 0.5).ceil().clamp(1, 99);
+      _distanceMiles = remainingMi;
       _throttleCam();
     });
   }
 
   void _interpolate(Timer t) {
-    if (!mounted) return;
+    if (!mounted || _segDist.isEmpty) return;
 
-    // ── Smooth chase interpolation (no jumps) ──
-    const chase = 0.12;
-    final lat =
-        _animPos.latitude + (_tgtPos.latitude - _animPos.latitude) * chase;
-    final lng =
-        _animPos.longitude + (_tgtPos.longitude - _animPos.longitude) * chase;
-    double db = _tgtBrg - _animBearing;
+    // ── Smoothly advance _traveledM toward _tgtTraveledM along the route ──
+    const chase = 0.18;
+    _traveledM += (_tgtTraveledM - _traveledM) * chase;
+    // Clamp small residuals
+    if ((_tgtTraveledM - _traveledM).abs() < 0.01) _traveledM = _tgtTraveledM;
+
+    // Get exact position & bearing ON the route polyline (no shortcuts)
+    final (pos, brg) = _posAtDist(_traveledM);
+
+    // Smooth bearing interpolation
+    double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
     final nb = (_animBearing + db * chase) % 360;
 
-    // Only call setState when there's meaningful change (perf optimization)
-    final dLat = (lat - _animPos.latitude).abs();
-    final dLng = (lng - _animPos.longitude).abs();
+    // Only rebuild if something changed visually
+    final dLat = (pos.latitude - _animPos.latitude).abs();
+    final dLng = (pos.longitude - _animPos.longitude).abs();
     final dBrg = (nb - _animBearing).abs();
     if (dLat > 0.0000001 || dLng > 0.0000001 || dBrg > 0.01) {
-      _animPos = LatLng(lat, lng);
+      _animPos = pos;
       _animBearing = nb;
+      _driverPos = pos;
+      _driverBearing = nb;
+
+      // On iOS, pre-rotate the car icon when bearing changes (Apple Maps has no rotation)
+      if (Platform.isIOS) {
+        final q = ((nb % 360) / 5).round() * 5;
+        if (q != _lastRotQ) {
+          _lastRotQ = q;
+          CarIconLoader.rotateBytes(nb).then((bytes) {
+            if (mounted) setState(() => _rotatedCarBytes = bytes);
+          });
+        }
+      }
+
       setState(() {});
     }
 
@@ -489,6 +506,66 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         math.cos(la) * math.sin(lb) -
         math.sin(la) * math.cos(lb) * math.cos(dL);
     return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
+  }
+
+  /// Build cumulative distance array (meters) for the route.
+  void _buildSegDist() {
+    _segDist = List.filled(_routePts.length, 0.0);
+    for (int i = 1; i < _routePts.length; i++) {
+      _segDist[i] =
+          _segDist[i - 1] + _hav(_routePts[i - 1], _routePts[i]) * 1609.34;
+    }
+  }
+
+  /// Returns (position, bearing) at a given distance along the route (meters).
+  (LatLng, double) _posAtDist(double distM) {
+    if (_routePts.isEmpty) return (const LatLng(0, 0), 0);
+    if (distM <= 0)
+      return (
+        _routePts.first,
+        _bearing(_routePts[0], _routePts[math.min(1, _routePts.length - 1)]),
+      );
+    final totalM = _segDist.last;
+    if (distM >= totalM) return (_routePts.last, _driverBearing);
+
+    // Binary search for segment
+    int lo = 0, hi = _segDist.length - 1;
+    while (lo < hi - 1) {
+      final mid = (lo + hi) >> 1;
+      if (_segDist[mid] <= distM) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+
+    final segLen = _segDist[hi] - _segDist[lo];
+    final t = segLen > 0.01 ? (distM - _segDist[lo]) / segLen : 0.0;
+    final a = _routePts[lo];
+    final b = _routePts[hi];
+    final lat = a.latitude + (b.latitude - a.latitude) * t;
+    final lng = a.longitude + (b.longitude - a.longitude) * t;
+    final pos = LatLng(lat, lng);
+
+    // Bearing: look ahead ~30m for smooth heading
+    final lookAhead = math.min(distM + 30, totalM);
+    int llo = lo, lhi = hi;
+    if (lookAhead > _segDist[hi]) {
+      llo = hi;
+      lhi = math.min(hi + 1, _segDist.length - 1);
+      while (lhi < _segDist.length - 1 && _segDist[lhi] < lookAhead) lhi++;
+    }
+    final lt = (_segDist[lhi] - _segDist[llo]) > 0.01
+        ? (lookAhead - _segDist[llo]) / (_segDist[lhi] - _segDist[llo])
+        : 0.0;
+    final la = _routePts[llo];
+    final lb = _routePts[lhi];
+    final lookPos = LatLng(
+      la.latitude + (lb.latitude - la.latitude) * lt,
+      la.longitude + (lb.longitude - la.longitude) * lt,
+    );
+    final brg = _bearing(pos, lookPos);
+    return (pos, brg);
   }
 
   @override
@@ -778,13 +855,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   Set<amap.Annotation> _appleAnnotations() {
     final a = <amap.Annotation>{};
-    final bytes = _carIconBytes;
+    // Use pre-rotated icon so the car faces the travel direction
+    final bytes = _rotatedCarBytes ?? _carIconBytes;
     if (bytes != null) {
       a.add(
         amap.Annotation(
           annotationId: amap.AnnotationId('car'),
           position: amap.LatLng(_animPos.latitude, _animPos.longitude),
           icon: amap.BitmapDescriptor.fromBytes(bytes),
+          anchor: const Offset(0.5, 0.5),
           alpha: 1.0,
         ),
       );
@@ -848,8 +927,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       );
     }
     // Remaining route (blue) from driver position
-    final idx = _simStep.clamp(0, _routePts.length - 1);
-    final remaining = _routePts.sublist(idx);
+    int idx = 0;
+    if (_segDist.isNotEmpty) {
+      while (idx < _segDist.length - 1 && _segDist[idx + 1] < _traveledM) idx++;
+    }
+    final remaining = [_animPos, ..._routePts.sublist(idx + 1)];
     if (remaining.length >= 2) {
       s.add(
         Polyline(

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -158,6 +159,57 @@ class CarIconLoader {
     _cache.clear();
     _bytesCache.clear();
     _cardCache.clear();
+    _rotatedCache.clear();
+  }
+
+  // ── Pre-rotated icon for Apple Maps (no native rotation support) ──
+
+  /// Cache of rotated PNGs keyed by quantised angle.
+  static final Map<int, Uint8List> _rotatedCache = {};
+
+  /// The base (0°) icon bytes used for rotation.
+  static Uint8List? _baseForRotation;
+
+  /// Returns car icon PNG bytes rotated by [degrees] (clockwise, 0 = north).
+  /// Quantized to 5° increments and cached for performance.
+  static Future<Uint8List> rotateBytes(double degrees) async {
+    final q = ((degrees % 360) / 5).round() * 5;
+    if (_rotatedCache.containsKey(q)) return _rotatedCache[q]!;
+
+    _baseForRotation ??= await _renderGmapsNavCarBytes();
+    final base = _baseForRotation!;
+
+    if (q == 0) {
+      _rotatedCache[0] = base;
+      return base;
+    }
+
+    final codec = await ui.instantiateImageCodec(base);
+    final frame = await codec.getNextFrame();
+    final src = frame.image;
+
+    final dim = math.max(src.width, src.height).toDouble();
+    final size = (dim * 1.42).ceilToDouble();
+    final iSize = size.toInt();
+
+    final rec = ui.PictureRecorder();
+    final cvs = Canvas(rec, Rect.fromLTWH(0, 0, size, size));
+    cvs.translate(size / 2, size / 2);
+    cvs.rotate(q * math.pi / 180);
+    cvs.drawImage(
+      src,
+      Offset(-src.width / 2, -src.height / 2),
+      Paint()..filterQuality = FilterQuality.high,
+    );
+    final pic = rec.endRecording();
+    final img = await pic.toImage(iSize, iSize);
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    final bytes = data!.buffer.asUint8List();
+
+    _rotatedCache[q] = bytes;
+    src.dispose();
+    img.dispose();
+    return bytes;
   }
 
   // =================================================================

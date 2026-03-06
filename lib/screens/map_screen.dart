@@ -93,7 +93,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   static const _gold = Color(0xFFE8C547);
-  static const _pinColor = Color(0xFF222222);
+  static const _pinColor = Color(0xFFE8C547);
   static const _birminghamDefault = LatLng(33.5186, -86.8104);
 
   /// Picks the right JSON map style based on the system theme (light phone = light map).
@@ -192,6 +192,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   LatLng? _prevDriverPosition; // for smooth interpolation
   double _driverBearing = 0; // bearing toward destination
   BitmapDescriptor? _driverCarIcon; // canvas-painted car icon
+  Uint8List? _rotatedDriverBytes; // pre-rotated PNG for Apple Maps
+  int _lastDriverRotQ = -1; // last quantised bearing
   DateTime? _lastDriverMarkerRebuild;
   AnimationController? _riderDriverAnim; // 60fps smooth driver animation
   LatLng _riderAnimFrom = _birminghamDefault;
@@ -302,9 +304,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
 
-    // White icon on dark pin
+    // Black icon on gold pin
     final iconPaint = Paint()
-      ..color = Colors.white
+      ..color = const Color(0xFF1A1A1A)
       ..isAntiAlias = true;
 
     if (withHouse) {
@@ -413,7 +415,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     );
 
     final iconPaint = Paint()
-      ..color = Colors.white
+      ..color = const Color(0xFF1A1A1A)
       ..isAntiAlias = true;
 
     if (withHouse) {
@@ -2384,10 +2386,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       );
     }
 
-    // Driver (rotation not supported in apple_maps_flutter; icon still shown)
+    // Driver — use pre-rotated icon so the car faces travel direction
     final driver = _driverMarker;
     if (driver != null) {
-      final bytes = _driverCarIconBytes;
+      final bytes = _rotatedDriverBytes ?? _driverCarIconBytes;
       result.add(
         amap.Annotation(
           annotationId: amap.AnnotationId(driver.markerId.value),
@@ -2398,6 +2400,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           icon: bytes != null
               ? amap.BitmapDescriptor.fromBytes(bytes)
               : amap.BitmapDescriptor.defaultAnnotation,
+          anchor: const Offset(0.5, 0.5),
           alpha: 1.0,
         ),
       );
@@ -4460,6 +4463,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       return;
     }
     _lastDriverMarkerRebuild = now;
+
+    // On iOS, pre-rotate the icon (Apple Maps annotations have no rotation)
+    if (Platform.isIOS) {
+      final q = ((_driverBearing % 360) / 5).round() * 5;
+      if (q != _lastDriverRotQ) {
+        _lastDriverRotQ = q;
+        CarIconLoader.rotateBytes(_driverBearing).then((bytes) {
+          if (mounted) setState(() => _rotatedDriverBytes = bytes);
+        });
+      }
+    }
 
     _driverMarker = Marker(
       markerId: const MarkerId('driver'),

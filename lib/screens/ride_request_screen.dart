@@ -150,7 +150,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (mounted) setState(() {});
   }
 
-  static const _gold = Color(0xFF222222);
+  static const _gold = Color(0xFFE8C547);
 
   /// Detect what icon to show on the dropoff pin based on address text.
   static _PinIcon _detectDropoffType(String address) {
@@ -442,7 +442,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     );
 
     // Draw icon directly on pin — modern filled style
-    final iconColor = Colors.white;
+    const iconColor = Color(0xFF1A1A1A);
     final iconPaint = Paint()
       ..color = iconColor
       ..isAntiAlias = true;

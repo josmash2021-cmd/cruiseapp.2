@@ -36,11 +36,11 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAdwPUqsI8UuaEQEXw6aaNz7umWeGdWjjg',
-    appId: '1:56054738352:ios:cruise000000000000',
+    apiKey: 'AIzaSyBW_EyQYZUWbWzD6CAvxo9Btowb7bxALCU',
+    appId: '1:56054738352:ios:91b25eab1e514ad7c1ba75',
     messagingSenderId: '56054738352',
     projectId: 'cruise-af9f1',
     storageBucket: 'cruise-af9f1.firebasestorage.app',
-    iosBundleId: 'com.cruise_app',
+    iosBundleId: 'com.cruiseapp.cruise',
   );
 }

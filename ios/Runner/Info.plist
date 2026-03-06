@@ -47,6 +47,20 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Cruise necesita tu ubicación para mostrarte conductores cercanos y calcular rutas.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Cruise necesita tu ubicación en segundo plano para rastrear tu viaje en tiempo real.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Cruise necesita tu ubicación para rastrear tu viaje.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Cruise necesita la cámara para tomar tu foto de perfil.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Cruise necesita acceso a tus fotos para tu foto de perfil.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Cruise necesita guardar fotos en tu galería.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Cruise necesita el micrófono para videos de perfil.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

@@ -10,7 +10,10 @@ workflows:
     scripts:
       - name: Get Flutter packages
         script: |
-          flutter packages pub get
+          flutter pub get
+      - name: Generate iOS config files
+        script: |
+          flutter build ios --config-only --no-codesign
       - name: Install CocoaPods dependencies
         script: |
           cd ios && pod install
@@ -43,7 +46,10 @@ workflows:
     scripts:
       - name: Get Flutter packages
         script: |
-          flutter packages pub get
+          flutter pub get
+      - name: Generate iOS config files
+        script: |
+          flutter build ios --config-only --no-codesign
       - name: Install CocoaPods dependencies
         script: |
           cd ios && pod install
@@ -77,7 +83,10 @@ workflows:
     scripts:
       - name: Get Flutter packages
         script: |
-          flutter packages pub get
+          flutter pub get
+      - name: Generate iOS config files
+        script: |
+          flutter build ios --config-only --no-codesign
       - name: Install CocoaPods dependencies
         script: |
           cd ios && pod install

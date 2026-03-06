@@ -970,6 +970,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (_currentPosition != null) {
       _centerMapOn(_currentPosition!, zoom: _defaultMapZoom);
     }
+    // Apply map style after a brief delay — passing style: in the constructor
+    // prevents tile loading on iOS (tiles stay grey). setMapStyle after
+    // onMapCreated is the reliable cross-platform approach.
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      // ignore: deprecated_member_use
+      _mapController?.setMapStyle(_mapStyle);
+    });
   }
 
   EdgeInsets _mapPaddingForContext(BuildContext context) {
@@ -2253,7 +2261,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               ),
               cameraTargetBounds: CameraTargetBounds(_usBounds),
               padding: _mapPaddingForContext(context),
-              style: _mapStyle,
               myLocationEnabled: true,
               myLocationButtonEnabled: false,
               zoomControlsEnabled: false,

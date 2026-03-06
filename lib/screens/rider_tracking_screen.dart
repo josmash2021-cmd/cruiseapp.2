@@ -63,7 +63,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   amap.AppleMapController? _appleMap;
   BitmapDescriptor? _carIcon;
   Uint8List? _carIconBytes;
-  Uint8List? _blackPinBytes;
+  Uint8List? _pickupPinBytes;
+  Uint8List? _dropoffPinBytes;
   Uint8List? _rotatedCarBytes; // pre-rotated PNG for Apple Maps
   int _lastRotQ = -1; // last quantised bearing sent to CarIconLoader
 
@@ -140,24 +141,36 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   Future<void> _loadCarIcon() async {
     // Use ride-specific car type: Suburban→SUV, Fusion→black, Camry→white
-    final bytes = await CarIconLoader.loadForRideBytes(widget.rideName) ??
+    final bytes =
+        await CarIconLoader.loadForRideBytes(widget.rideName) ??
         await CarIconLoader.loadUberBytes();
     if (bytes != null) {
       _carIconBytes = bytes;
       final icon = BitmapDescriptor.bytes(bytes, width: 22, height: 44);
       if (mounted) setState(() => _carIcon = icon);
     }
-    await _loadBlackPin();
+    await _loadPins();
   }
 
-  Future<void> _loadBlackPin() async {
+  Future<void> _loadPins() async {
+    _pickupPinBytes = await _renderGoldPin(isPickup: true);
+    _dropoffPinBytes = await _renderGoldPin(isPickup: false);
+    if (mounted) setState(() {});
+  }
+
+  /// Renders a gold pin matching the map_screen style.
+  /// Pickup: circle with white person silhouette.
+  /// Dropoff: rounded square with white person silhouette.
+  Future<Uint8List> _renderGoldPin({required bool isPickup}) async {
     const double size = 80;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
     const cx = size / 2;
     const cy = size / 2;
     const r = size * 0.38;
-    // Gold pin with drop shadow
+    const gold = Color(0xFFE8C547);
+
+    // Drop shadow
     canvas.drawCircle(
       const Offset(cx, cy + 2),
       r + 2,
@@ -165,38 +178,71 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         ..color = Colors.black.withValues(alpha: 0.35)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
-    canvas.drawCircle(
-      const Offset(cx, cy),
-      r,
-      Paint()..color = const Color(0xFFE8C547),
-    );
-    canvas.drawCircle(
-      const Offset(cx, cy),
-      r,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
-        ..color = Colors.white.withValues(alpha: 0.3),
-    );
+
+    if (isPickup) {
+      canvas.drawCircle(const Offset(cx, cy), r, Paint()..color = gold);
+      canvas.drawCircle(
+        const Offset(cx, cy),
+        r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..color = Colors.white.withValues(alpha: 0.25),
+      );
+    } else {
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: const Offset(cx, cy),
+          width: r * 2,
+          height: r * 2,
+        ),
+        Radius.circular(r * 0.28),
+      );
+      canvas.drawRRect(rect, Paint()..color = gold);
+      canvas.drawRRect(
+        rect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..color = Colors.white.withValues(alpha: 0.25),
+      );
+    }
+
     // Inner highlight
     canvas.drawCircle(
       Offset(cx - r * 0.2, cy - r * 0.2),
       r * 0.5,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.20)
+        ..color = Colors.white.withValues(alpha: 0.15)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
-    // White dot icon in center
-    canvas.drawCircle(
-      const Offset(cx, cy),
-      r * 0.22,
-      Paint()..color = Colors.white,
+
+    // White person icon (head + shoulders) matching map_screen
+    final iconPaint = Paint()
+      ..color = Colors.white
+      ..isAntiAlias = true;
+    const s = size * 0.10;
+    canvas.drawCircle(const Offset(cx, cy - s * 0.6), s * 0.5, iconPaint);
+    canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        const Rect.fromLTRB(
+          cx - s * 0.8,
+          cy + s * 0.1,
+          cx + s * 0.8,
+          cy + s * 0.9,
+        ),
+        topLeft: Radius.circular(s * 0.8),
+        topRight: Radius.circular(s * 0.8),
+        bottomLeft: Radius.circular(s * 0.15),
+        bottomRight: Radius.circular(s * 0.15),
+      ),
+      iconPaint,
     );
+
     final picture = recorder.endRecording();
     final img = await picture.toImage(size.toInt(), size.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    _blackPinBytes = byteData!.buffer.asUint8List();
-    if (mounted) setState(() {});
+    return byteData!.buffer.asUint8List();
   }
 
   Future<void> _initRoute() async {
@@ -362,10 +408,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         final q = ((nb % 360) / 10).round() % 36;
         if (q != _lastRotQ) {
           _lastRotQ = q;
-          CarIconLoader.rotateBytesForRide(
-            nb,
-            rideName: widget.rideName,
-          ).then((bytes) {
+          CarIconLoader.rotateBytesForRide(nb, rideName: widget.rideName).then((
+            bytes,
+          ) {
             if (mounted) setState(() => _rotatedCarBytes = bytes);
           });
         }
@@ -817,9 +862,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   Set<Marker> _markers() {
     final m = <Marker>{};
-    final blackPin = _blackPinBytes != null
+    final pickupPin = _pickupPinBytes != null
         // ignore: deprecated_member_use
-        ? BitmapDescriptor.fromBytes(_blackPinBytes!)
+        ? BitmapDescriptor.fromBytes(_pickupPinBytes!)
+        : BitmapDescriptor.defaultMarker;
+    final dropoffPin = _dropoffPinBytes != null
+        // ignore: deprecated_member_use
+        ? BitmapDescriptor.fromBytes(_dropoffPinBytes!)
         : BitmapDescriptor.defaultMarker;
     if (_carIcon != null) {
       m.add(
@@ -838,7 +887,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       Marker(
         markerId: const MarkerId('pickup'),
         position: widget.pickupLatLng,
-        icon: blackPin,
+        icon: pickupPin,
         zIndex: 5,
         infoWindow: const InfoWindow(title: 'Pickup spot'),
       ),
@@ -848,7 +897,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       Marker(
         markerId: const MarkerId('drop'),
         position: widget.dropoffLatLng,
-        icon: blackPin,
+        icon: dropoffPin,
         zIndex: 5,
       ),
     );
@@ -872,9 +921,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         ),
       );
     }
-    final pinBytes = _blackPinBytes;
-    final pinIcon = pinBytes != null
-        ? amap.BitmapDescriptor.fromBytes(pinBytes)
+    final pickupIcon = _pickupPinBytes != null
+        ? amap.BitmapDescriptor.fromBytes(_pickupPinBytes!)
+        : amap.BitmapDescriptor.defaultAnnotation;
+    final dropoffIcon = _dropoffPinBytes != null
+        ? amap.BitmapDescriptor.fromBytes(_dropoffPinBytes!)
         : amap.BitmapDescriptor.defaultAnnotation;
     a.add(
       amap.Annotation(
@@ -883,7 +934,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           widget.pickupLatLng.latitude,
           widget.pickupLatLng.longitude,
         ),
-        icon: pinIcon,
+        icon: pickupIcon,
       ),
     );
     a.add(
@@ -893,7 +944,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           widget.dropoffLatLng.latitude,
           widget.dropoffLatLng.longitude,
         ),
-        icon: pinIcon,
+        icon: dropoffIcon,
       ),
     );
     return a;

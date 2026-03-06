@@ -202,11 +202,15 @@ class CarIconLoader {
     // Get or generate base bytes for this car type
     final Uint8List base;
     if (typeKey == 'suv_black') {
-      base = _bytesCache['suv_black'] ?? await _renderSuvBytes(_CarPalette.black);
+      base =
+          _bytesCache['suv_black'] ?? await _renderSuvBytes(_CarPalette.black);
     } else if (typeKey == 'black') {
-      base = _bytesCache['black'] ?? await _renderDetailedBytes(_CarPalette.black);
+      base =
+          _bytesCache['black'] ?? await _renderDetailedBytes(_CarPalette.black);
     } else {
-      base = _bytesCache['white'] ?? await _renderDetailedBytes(_CarPalette.whitePearl);
+      base =
+          _bytesCache['white'] ??
+          await _renderDetailedBytes(_CarPalette.whitePearl);
     }
 
     if (q == 0) {

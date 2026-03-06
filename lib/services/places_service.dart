@@ -131,7 +131,7 @@ class PlacesService {
         'latlng': '$lat,$lng',
         'key': apiKey,
       });
-      final res = await http.get(uri);
+      final res = await http.get(uri).timeout(const Duration(seconds: 6));
       final data = jsonDecode(res.body);
       if (data['status'] == 'OK') {
         final results = data['results'] as List?;
@@ -139,11 +139,53 @@ class PlacesService {
           return results.first['formatted_address']?.toString();
         }
       }
+      debugPrint('⚠️ Google Geocode status: ${data['status']}');
+    } catch (e) {
+      debugPrint('⚠️ Google Geocode error: $e');
+    }
+
+    // Nominatim fallback
+    try {
+      final nominatim = await _reverseWithNominatim(lat: lat, lng: lng);
+      if (nominatim != null && nominatim.isNotEmpty) return nominatim;
     } catch (_) {}
 
-    // Nominatim fallback (free, always works)
-    final nominatim = await _reverseWithNominatim(lat: lat, lng: lng);
-    if (nominatim != null && nominatim.isNotEmpty) return nominatim;
+    // Photon fallback (uses OSM data, no rate limit)
+    try {
+      final photonUri = Uri.https('photon.komoot.io', '/reverse', {
+        'lat': '$lat',
+        'lon': '$lng',
+      });
+      final pRes = await http
+          .get(photonUri)
+          .timeout(const Duration(seconds: 5));
+      if (pRes.statusCode == 200) {
+        final pData = jsonDecode(pRes.body);
+        final features = pData['features'] as List?;
+        if (features != null && features.isNotEmpty) {
+          final props = features.first['properties'] as Map<String, dynamic>?;
+          if (props != null) {
+            final parts = <String>[];
+            final houseNumber = props['housenumber']?.toString();
+            final street = props['street']?.toString();
+            if (houseNumber != null && street != null) {
+              parts.add('$houseNumber $street');
+            } else if (street != null) {
+              parts.add(street);
+            }
+            final city =
+                props['city']?.toString() ??
+                props['town']?.toString() ??
+                props['village']?.toString();
+            if (city != null) parts.add(city);
+            final state = props['state']?.toString();
+            if (state != null) parts.add(_abbreviateState(state));
+            if (parts.isNotEmpty) return parts.join(', ');
+            if (props['name'] != null) return props['name'].toString();
+          }
+        }
+      }
+    } catch (_) {}
 
     return null;
   }

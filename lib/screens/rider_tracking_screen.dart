@@ -11,6 +11,7 @@ import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
+import '../navigation/car_icon_loader.dart';
 import '../services/directions_service.dart';
 import '../config/api_keys.dart';
 
@@ -128,11 +129,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Future<void> _loadCarIcon() async {
-    final bd = await rootBundle.load('assets/images/car_white_top.png');
-    final bytes = bd.buffer.asUint8List();
-    _carIconBytes = bytes;
-    final icon = BitmapDescriptor.bytes(bytes, width: 14, height: 26);
-    if (mounted) setState(() => _carIcon = icon);
+    // Use CarIconLoader to render the white nav car (no static asset needed)
+    final bytes = await CarIconLoader.loadUberBytes();
+    if (bytes != null) {
+      _carIconBytes = bytes;
+      final icon = BitmapDescriptor.bytes(bytes, width: 22, height: 44);
+      if (mounted) setState(() => _carIcon = icon);
+    }
     await _loadBlackPin();
   }
 
@@ -514,6 +517,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                       onMapCreated: (ctrl) {
                         _appleMap = ctrl;
                       },
+                      onCameraMove: (_) {
+                        if (!_programmaticCam) {
+                          setState(() => _userMovedMap = true);
+                        }
+                      },
+                      onCameraIdle: () => _programmaticCam = false,
                       myLocationEnabled: false,
                       myLocationButtonEnabled: false,
                       pitchGesturesEnabled: true,
@@ -986,15 +995,33 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   height: 40,
                   child: TextButton(
                     onPressed: () {
-                      _simTimer?.cancel();
-                      Navigator.of(context).pop();
+                      showDialog(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          backgroundColor: const Color(0xFF2A2A2A),
+                          title: const Text(
+                            'Contact Support',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                          content: const Text(
+                            'Our support team is available 24/7 to help you.',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text('Close'),
+                            ),
+                          ],
+                        ),
+                      );
                     },
-                    child: Text(
-                      'Cancel ride',
+                    child: const Text(
+                      'Contact Support',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white.withValues(alpha: 0.35),
+                        color: Color(0xFFFF3B30),
                       ),
                     ),
                   ),

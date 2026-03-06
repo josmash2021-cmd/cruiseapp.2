@@ -82,7 +82,14 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                     target: amap.LatLng(_center.latitude, _center.longitude),
                     zoom: 15,
                   ),
-                  onMapCreated: (ctrl) => _appleMapCtrl = ctrl,
+                  onMapCreated: (ctrl) {
+                    _appleMapCtrl = ctrl;
+                    // Trigger reverse-geocode once map is ready (no onCameraIdle on load)
+                    Future.delayed(
+                      const Duration(milliseconds: 700),
+                      _onCameraIdle,
+                    );
+                  },
                   onCameraMove: (pos) {
                     _center = LatLng(pos.target.latitude, pos.target.longitude);
                   },

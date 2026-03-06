@@ -185,11 +185,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         ..color = Colors.white.withValues(alpha: 0.20)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
-    // Black dot icon in center
+    // White dot icon in center
     canvas.drawCircle(
       const Offset(cx, cy),
       r * 0.22,
-      Paint()..color = const Color(0xFF1A1A1A),
+      Paint()..color = Colors.white,
     );
     final picture = recorder.endRecording();
     final img = await picture.toImage(size.toInt(), size.toInt());

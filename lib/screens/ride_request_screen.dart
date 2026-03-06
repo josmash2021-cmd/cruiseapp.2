@@ -442,7 +442,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     );
 
     // Draw icon directly on pin — modern filled style
-    const iconColor = Color(0xFF1A1A1A);
+    const iconColor = Color(0xFFFFFFFF);
     final iconPaint = Paint()
       ..color = iconColor
       ..isAntiAlias = true;

@@ -65,23 +65,18 @@ class UserSession {
     final token = await ApiService.getToken();
     if (token == null) return false;
 
-    // We have a token — trust it. Try to validate with backend but
-    // if the backend is unreachable or returns a server error, keep
-    // the session alive using the local cache.
+    // Token exists — session is active.
+    // Try to refresh profile from backend, but always stay logged in
+    // regardless of backend response. Only explicit sign-out ends session.
     try {
       final profile = await ApiService.getMe();
       if (profile != null) return true;
-      // getMe returned null — check if token was cleared (401)
-      final tokenAfter = await ApiService.getToken();
-      if (tokenAfter == null) return false; // genuinely expired
-      // Token still present → server error, trust local cache
-      final user = await getUser();
-      return user != null && (user['firstName']?.isNotEmpty ?? false);
     } catch (_) {
-      // Network error — fall back to local check
-      final user = await getUser();
-      return user != null && (user['firstName']?.isNotEmpty ?? false);
+      // ignore
     }
+    // Backend unavailable or returned error — trust local cache
+    final user = await getUser();
+    return user != null && (user['firstName']?.isNotEmpty ?? false);
   }
 
   /// Update a single field locally.

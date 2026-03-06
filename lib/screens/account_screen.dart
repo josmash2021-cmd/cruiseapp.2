@@ -62,9 +62,7 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   void _openSettings() async {
-    await Navigator.of(context).push(
-      slideFromRightRoute(_SettingsScreen()),
-    );
+    await Navigator.of(context).push(slideFromRightRoute(_SettingsScreen()));
     _loadUser(); // Refresh avatar & name after editing profile
   }
 
@@ -99,8 +97,11 @@ class _AccountScreenState extends State<AccountScreen> {
                 onTap: () => Navigator.of(context).pop(),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Icon(Icons.arrow_back_rounded,
-                      color: c.textPrimary, size: 24),
+                  child: Icon(
+                    Icons.arrow_back_rounded,
+                    color: c.textPrimary,
+                    size: 24,
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
@@ -134,33 +135,44 @@ class _AccountScreenState extends State<AccountScreen> {
                       ),
                     ),
                     child: ClipOval(
-                      child: photoPath.isNotEmpty && (kIsWeb || File(photoPath).existsSync())
+                      child:
+                          photoPath.isNotEmpty &&
+                              (kIsWeb || File(photoPath).existsSync())
                           ? (kIsWeb
-                              ? Image.network(
-                                  photoPath,
-                                  fit: BoxFit.cover,
-                                  width: 70,
-                                  height: 70,
-                                  gaplessPlayback: true,
-                                )
-                              : Image.file(
-                                  File(photoPath),
-                                  fit: BoxFit.cover,
-                                  width: 70,
-                                  height: 70,
-                                  filterQuality: FilterQuality.high,
-                                  cacheWidth: 280,
-                                  gaplessPlayback: true,
-                              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                                if (wasSynchronouslyLoaded) return child;
-                                return AnimatedOpacity(
-                                  opacity: frame == null ? 0.0 : 1.0,
-                                  duration: const Duration(milliseconds: 300),
-                                  curve: Curves.easeOutCubic,
-                                  child: child,
-                                );
-                              },
-                            ))
+                                ? Image.network(
+                                    photoPath,
+                                    fit: BoxFit.cover,
+                                    width: 70,
+                                    height: 70,
+                                    gaplessPlayback: true,
+                                  )
+                                : Image.file(
+                                    File(photoPath),
+                                    fit: BoxFit.cover,
+                                    width: 70,
+                                    height: 70,
+                                    filterQuality: FilterQuality.high,
+                                    cacheWidth: 280,
+                                    gaplessPlayback: true,
+                                    frameBuilder:
+                                        (
+                                          context,
+                                          child,
+                                          frame,
+                                          wasSynchronouslyLoaded,
+                                        ) {
+                                          if (wasSynchronouslyLoaded)
+                                            return child;
+                                          return AnimatedOpacity(
+                                            opacity: frame == null ? 0.0 : 1.0,
+                                            duration: const Duration(
+                                              milliseconds: 300,
+                                            ),
+                                            curve: Curves.easeOutCubic,
+                                            child: child,
+                                          );
+                                        },
+                                  ))
                           : Icon(
                               Icons.person_rounded,
                               size: 38,
@@ -187,11 +199,19 @@ class _AccountScreenState extends State<AccountScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              _buildFavoriteItem(c, Icons.home_rounded, 'Home',
-                  _savedAddress('Home')),
+              _buildFavoriteItem(
+                c,
+                Icons.home_rounded,
+                'Home',
+                _savedAddress('Home'),
+              ),
               const SizedBox(height: 10),
-              _buildFavoriteItem(c, Icons.work_rounded, 'Work',
-                  _savedAddress('Work')),
+              _buildFavoriteItem(
+                c,
+                Icons.work_rounded,
+                'Work',
+                _savedAddress('Work'),
+              ),
               const SizedBox(height: 10),
               _buildFavoriteItem(c, Icons.star_rounded, 'Place', null),
             ],
@@ -222,25 +242,39 @@ class _AccountScreenState extends State<AccountScreen> {
           onTap: () async {
             switch (item.label) {
               case 'Help':
-                Navigator.of(context).push(slideFromRightRoute(const HelpScreen()));
+                Navigator.of(
+                  context,
+                ).push(slideFromRightRoute(const HelpScreen()));
                 break;
               case 'Wallet':
-                Navigator.of(context).push(slideFromRightRoute(const PaymentAccountsScreen()));
+                Navigator.of(
+                  context,
+                ).push(slideFromRightRoute(const PaymentAccountsScreen()));
                 break;
               case 'Trips':
-                Navigator.of(context).push(slideFromRightRoute(const RideHistoryScreen()));
+                Navigator.of(
+                  context,
+                ).push(slideFromRightRoute(const RideHistoryScreen()));
                 break;
               case 'Scheduled':
-                Navigator.of(context).push(slideFromRightRoute(const ScheduledRidesScreen()));
+                Navigator.of(
+                  context,
+                ).push(slideFromRightRoute(const ScheduledRidesScreen()));
                 break;
               case 'Promos':
-                Navigator.of(context).push(slideFromRightRoute(const PromoCodeScreen()));
+                Navigator.of(
+                  context,
+                ).push(slideFromRightRoute(const PromoCodeScreen()));
                 break;
               case 'Safety':
-                Navigator.of(context).push(slideFromRightRoute(const SafetyScreen()));
+                Navigator.of(
+                  context,
+                ).push(slideFromRightRoute(const SafetyScreen()));
                 break;
               case 'Inbox':
-                Navigator.of(context).push(slideFromRightRoute(const InboxScreen()));
+                Navigator.of(
+                  context,
+                ).push(slideFromRightRoute(const InboxScreen()));
                 break;
               case 'Settings':
                 _openSettings();
@@ -267,20 +301,26 @@ class _AccountScreenState extends State<AccountScreen> {
               border: item.label == 'Drive'
                   ? Border.all(color: _gold.withValues(alpha: 0.30))
                   : (c.isDark
-                      ? null
-                      : Border.all(color: Colors.black.withValues(alpha: 0.06))),
+                        ? null
+                        : Border.all(
+                            color: Colors.black.withValues(alpha: 0.06),
+                          )),
             ),
             child: Row(
               children: [
-                Icon(item.icon,
-                    color: item.label == 'Drive' ? _gold : c.textPrimary,
-                    size: 24),
+                Icon(
+                  item.icon,
+                  color: item.label == 'Drive' ? _gold : c.textPrimary,
+                  size: 24,
+                ),
                 const SizedBox(width: 14),
                 Text(
                   item.label,
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: item.label == 'Drive' ? FontWeight.w700 : FontWeight.w600,
+                    fontWeight: item.label == 'Drive'
+                        ? FontWeight.w700
+                        : FontWeight.w600,
                     color: item.label == 'Drive' ? _gold : c.textPrimary,
                   ),
                 ),
@@ -304,7 +344,9 @@ class _AccountScreenState extends State<AccountScreen> {
 
     if (address == null || address.isEmpty) return;
 
-    await LocalDataService.saveFavorite(FavoritePlace(label: label, address: address));
+    await LocalDataService.saveFavorite(
+      FavoritePlace(label: label, address: address),
+    );
 
     if (!mounted) return;
     // Reload favorites
@@ -312,67 +354,72 @@ class _AccountScreenState extends State<AccountScreen> {
     if (!mounted) return;
     setState(() => _favorites = favs);
 
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('$label address saved'),
-      backgroundColor: c.surface,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label address saved'),
+        backgroundColor: c.surface,
+      ),
+    );
   }
 
-  Widget _buildFavoriteItem(AppColors c, IconData icon, String label, String? savedAddr) {
+  Widget _buildFavoriteItem(
+    AppColors c,
+    IconData icon,
+    String label,
+    String? savedAddr,
+  ) {
     final hasSaved = savedAddr != null && savedAddr.isNotEmpty;
     return GestureDetector(
       onTap: () => _onFavoriteTap(label),
       child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: c.isDark
-            ? null
-            : Border.all(color: Colors.black.withValues(alpha: 0.06)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: c.bg,
-              borderRadius: BorderRadius.circular(10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: c.isDark
+              ? null
+              : Border.all(color: Colors.black.withValues(alpha: 0.06)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: c.bg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: c.textSecondary, size: 20),
             ),
-            child: Icon(icon, color: c.textSecondary, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  hasSaved ? label : 'Add $label',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: c.textPrimary,
-                  ),
-                ),
-                if (hasSaved) ...[                  const SizedBox(height: 2),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    savedAddr,
+                    hasSaved ? label : 'Add $label',
                     style: TextStyle(
-                      fontSize: 12,
-                      color: c.textSecondary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: c.textPrimary,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
+                  if (hasSaved) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      savedAddr,
+                      style: TextStyle(fontSize: 12, color: c.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          Icon(Icons.chevron_right_rounded, color: c.textTertiary, size: 20),
-        ],
+            Icon(Icons.chevron_right_rounded, color: c.textTertiary, size: 20),
+          ],
+        ),
       ),
-    ),
     );
   }
 }
@@ -406,8 +453,11 @@ class _SettingsScreen extends StatelessWidget {
                 onTap: () => Navigator.of(context).pop(),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Icon(Icons.arrow_back_rounded,
-                      color: c.textPrimary, size: 24),
+                  child: Icon(
+                    Icons.arrow_back_rounded,
+                    color: c.textPrimary,
+                    size: 24,
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
@@ -430,9 +480,9 @@ class _SettingsScreen extends StatelessWidget {
                 icon: Icons.person_outline_rounded,
                 label: 'Edit Profile',
                 onTap: () async {
-                  await Navigator.of(context).push(
-                    slideFromRightRoute(const EditProfileScreen()),
-                  );
+                  await Navigator.of(
+                    context,
+                  ).push(slideFromRightRoute(const EditProfileScreen()));
                 },
               ),
               const SizedBox(height: 10),
@@ -452,9 +502,9 @@ class _SettingsScreen extends StatelessWidget {
                 icon: Icons.lock_outline_rounded,
                 label: 'Privacy',
                 onTap: () {
-                  Navigator.of(context).push(
-                    slideFromRightRoute(const PrivacyScreen()),
-                  );
+                  Navigator.of(
+                    context,
+                  ).push(slideFromRightRoute(const PrivacyScreen()));
                 },
               ),
               const SizedBox(height: 10),
@@ -463,23 +513,11 @@ class _SettingsScreen extends StatelessWidget {
                 icon: Icons.info_outline_rounded,
                 label: 'About',
                 onTap: () {
-                  Navigator.of(context).push(
-                    slideFromRightRoute(const AboutScreen()),
-                  );
+                  Navigator.of(
+                    context,
+                  ).push(slideFromRightRoute(const AboutScreen()));
                 },
               ),
-              const SizedBox(height: 10),
-              _settingsItem(
-                c,
-                icon: Icons.dns_outlined,
-                label: 'Server URL',
-                onTap: () {
-                  Navigator.of(context).push(
-                    slideFromRightRoute(const _ServerUrlScreen()),
-                  );
-                },
-              ),
-
               const Spacer(),
 
               // ── Sign Out button ──
@@ -491,7 +529,10 @@ class _SettingsScreen extends StatelessWidget {
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFFE8C547),
-                      side: const BorderSide(color: Color(0xFFE8C547), width: 1.5),
+                      side: const BorderSide(
+                        color: Color(0xFFE8C547),
+                        width: 1.5,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(28),
                       ),
@@ -631,14 +672,21 @@ class _FavoriteAddressSheetState extends State<_FavoriteAddressSheet> {
   void _onSearchChanged(String query) {
     _debounce?.cancel();
     if (query.trim().length < 2) {
-      setState(() { _suggestions = []; _loading = false; });
+      setState(() {
+        _suggestions = [];
+        _loading = false;
+      });
       return;
     }
     setState(() => _loading = true);
     _debounce = Timer(const Duration(milliseconds: 400), () async {
       try {
         final results = await _places.autocomplete(query);
-        if (mounted) setState(() { _suggestions = results; _loading = false; });
+        if (mounted)
+          setState(() {
+            _suggestions = results;
+            _loading = false;
+          });
       } catch (_) {
         if (mounted) setState(() => _loading = false);
       }
@@ -660,7 +708,8 @@ class _FavoriteAddressSheetState extends State<_FavoriteAddressSheet> {
         children: [
           const SizedBox(height: 10),
           Container(
-            width: 40, height: 4,
+            width: 40,
+            height: 4,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(2),
@@ -674,7 +723,11 @@ class _FavoriteAddressSheetState extends State<_FavoriteAddressSheet> {
               children: [
                 GestureDetector(
                   onTap: () => Navigator.of(context).pop(),
-                  child: Icon(Icons.arrow_back_rounded, color: c.textPrimary, size: 24),
+                  child: Icon(
+                    Icons.arrow_back_rounded,
+                    color: c.textPrimary,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -707,18 +760,32 @@ class _FavoriteAddressSheetState extends State<_FavoriteAddressSheet> {
                 decoration: InputDecoration(
                   hintText: 'Search address...',
                   hintStyle: TextStyle(color: c.textTertiary, fontSize: 15),
-                  prefixIcon: Icon(Icons.search_rounded, color: c.textTertiary, size: 22),
+                  prefixIcon: Icon(
+                    Icons.search_rounded,
+                    color: c.textTertiary,
+                    size: 22,
+                  ),
                   suffixIcon: _controller.text.isNotEmpty
                       ? GestureDetector(
                           onTap: () {
                             _controller.clear();
-                            setState(() { _suggestions = []; _loading = false; });
+                            setState(() {
+                              _suggestions = [];
+                              _loading = false;
+                            });
                           },
-                          child: Icon(Icons.close_rounded, color: c.textTertiary, size: 20),
+                          child: Icon(
+                            Icons.close_rounded,
+                            color: c.textTertiary,
+                            size: 20,
+                          ),
                         )
                       : null,
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
                 ),
                 onChanged: _onSearchChanged,
               ),
@@ -729,7 +796,8 @@ class _FavoriteAddressSheetState extends State<_FavoriteAddressSheet> {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
               child: SizedBox(
-                width: 24, height: 24,
+                width: 24,
+                height: 24,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
                   color: Color(0xFFE8C547),
@@ -743,7 +811,11 @@ class _FavoriteAddressSheetState extends State<_FavoriteAddressSheet> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.place_outlined, color: c.textTertiary, size: 48),
+                        Icon(
+                          Icons.place_outlined,
+                          color: c.textTertiary,
+                          size: 48,
+                        ),
                         const SizedBox(height: 12),
                         Text(
                           _controller.text.isEmpty
@@ -757,27 +829,42 @@ class _FavoriteAddressSheetState extends State<_FavoriteAddressSheet> {
                 : ListView.separated(
                     padding: EdgeInsets.fromLTRB(12, 4, 12, bottomInset + 20),
                     itemCount: _suggestions.length,
-                    separatorBuilder: (_, i) => Divider(color: c.divider, height: 1, indent: 52),
+                    separatorBuilder: (_, i) =>
+                        Divider(color: c.divider, height: 1, indent: 52),
                     itemBuilder: (context, index) {
                       final s = _suggestions[index];
                       return ListTile(
                         leading: Container(
-                          width: 40, height: 40,
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
                             color: c.surface,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: c.border),
                           ),
-                          child: Icon(Icons.location_on_rounded, color: c.textSecondary, size: 20),
+                          child: Icon(
+                            Icons.location_on_rounded,
+                            color: c.textSecondary,
+                            size: 20,
+                          ),
                         ),
                         title: Text(
                           s.description,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: c.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
+                          style: TextStyle(
+                            color: c.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         onTap: () => Navigator.of(context).pop(s.description),
                       );
                     },
@@ -822,13 +909,19 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
     await ApiService.setServerUrl(url);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Server URL saved'), duration: Duration(seconds: 2)),
+      const SnackBar(
+        content: Text('Server URL saved'),
+        duration: Duration(seconds: 2),
+      ),
     );
     Navigator.of(context).pop();
   }
 
   Future<void> _probe() async {
-    setState(() { _probing = true; _probeResult = null; });
+    setState(() {
+      _probing = true;
+      _probeResult = null;
+    });
     final url = _ctrl.text.trim();
     final reached = await ApiService.probeAndSetBestUrl(candidates: [url]);
     if (!mounted) return;
@@ -842,7 +935,10 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
   }
 
   Future<void> _autoDetect() async {
-    setState(() { _probing = true; _probeResult = null; });
+    setState(() {
+      _probing = true;
+      _probeResult = null;
+    });
     final reached = await ApiService.probeAndSetBestUrl();
     if (!mounted) return;
     setState(() {
@@ -871,7 +967,11 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
                 onTap: () => Navigator.of(context).pop(),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Icon(Icons.arrow_back_rounded, color: c.textPrimary, size: 24),
+                  child: Icon(
+                    Icons.arrow_back_rounded,
+                    color: c.textPrimary,
+                    size: 24,
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
@@ -887,7 +987,11 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
               const SizedBox(height: 8),
               Text(
                 'Paste the Cloudflare tunnel URL each time you restart it.\nThe URL is saved locally – no rebuild needed.',
-                style: TextStyle(fontSize: 14, color: c.textSecondary, height: 1.5),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: c.textSecondary,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 28),
               TextField(
@@ -904,7 +1008,10 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 16,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -912,7 +1019,10 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
               // Probe result message
               if (_probeResult != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: _probeResult!.startsWith('✓')
                         ? Colors.green.withValues(alpha: 0.15)
@@ -923,7 +1033,9 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
                     _probeResult!,
                     style: TextStyle(
                       fontSize: 13,
-                      color: _probeResult!.startsWith('✓') ? Colors.green : Colors.red,
+                      color: _probeResult!.startsWith('✓')
+                          ? Colors.green
+                          : Colors.red,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -944,11 +1056,16 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
                 child: OutlinedButton.icon(
                   onPressed: _probing ? null : _probe,
                   icon: const Icon(Icons.wifi_tethering_rounded, size: 20),
-                  label: const Text('Test Connection', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  label: const Text(
+                    'Test Connection',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFFE8C547),
                     side: const BorderSide(color: Color(0xFFE8C547)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
                   ),
                 ),
               ),
@@ -961,11 +1078,16 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
                 child: OutlinedButton.icon(
                   onPressed: _probing ? null : _autoDetect,
                   icon: const Icon(Icons.search_rounded, size: 20),
-                  label: const Text('Auto-Detect Best URL', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  label: const Text(
+                    'Auto-Detect Best URL',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: c.textSecondary,
                     side: BorderSide(color: c.textTertiary),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
                   ),
                 ),
               ),
@@ -982,11 +1104,16 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFE8C547),
                       foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
                     ),
                     child: const Text(
                       'Save',
-                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),

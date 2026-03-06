@@ -314,10 +314,7 @@ class ApiService {
           .get(Uri.parse('$_baseUrl/auth/me'), headers: _jsonHeaders(token))
           .timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) return jsonDecode(res.body);
-      // Only clear token on 401 (unauthorized / expired)
-      if (res.statusCode == 401) {
-        await clearToken();
-      }
+      // Never auto-clear token — session persists until explicit sign-out
       return null;
     } catch (e) {
       // Network errors / timeouts — keep the token, user is still logged in

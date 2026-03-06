@@ -304,9 +304,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
 
-    // Black icon on gold pin
+    // White icon on gold pin
     final iconPaint = Paint()
-      ..color = const Color(0xFF1A1A1A)
+      ..color = Colors.white
       ..isAntiAlias = true;
 
     if (withHouse) {
@@ -415,7 +415,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     );
 
     final iconPaint = Paint()
-      ..color = const Color(0xFF1A1A1A)
+      ..color = Colors.white
       ..isAntiAlias = true;
 
     if (withHouse) {

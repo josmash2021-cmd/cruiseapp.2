@@ -11,7 +11,7 @@ workflows:
         - app_store_credentials
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.cruise_app
+        bundle_identifier: com.cruiseapp.cruise
     scripts:
       - name: Set up code signing settings on Xcode project
         script: |

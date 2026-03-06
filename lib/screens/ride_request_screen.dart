@@ -802,8 +802,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final s = _ctrl.state;
     if (s.route == null) return;
 
-    final fallback =
-        _goldPinIcon ?? BitmapDescriptor.defaultMarker;
+    final fallback = _goldPinIcon ?? BitmapDescriptor.defaultMarker;
     final markers = <Marker>{};
 
     // Pickup: one single marker, swaps between pin-only and pin+label

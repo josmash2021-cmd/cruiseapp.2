@@ -387,10 +387,10 @@ class ApiService {
             if (scheduledAt != null)
               'scheduled_at': scheduledAt.toUtc().toIso8601String(),
             'is_airport': isAirport,
-            if (airportCode != null) 'airport_code': airportCode,
-            if (terminal != null) 'terminal': terminal,
-            if (pickupZone != null) 'pickup_zone': pickupZone,
-            if (notes != null) 'notes': notes,
+            'airport_code': ?airportCode,
+            'terminal': ?terminal,
+            'pickup_zone': ?pickupZone,
+            'notes': ?notes,
           }),
         )
         .timeout(const Duration(seconds: 10));
@@ -914,8 +914,9 @@ class ApiService {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final body = jsonDecode(res.body);
         if (body is List) return body.length;
-        if (body is Map && body.containsKey('count'))
+        if (body is Map && body.containsKey('count')) {
           return body['count'] as int;
+        }
         return 0;
       }
     } catch (_) {}

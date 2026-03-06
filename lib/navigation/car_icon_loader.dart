@@ -35,12 +35,20 @@ class _CarPalette {
   static const whitePearl = _CarPalette(
     body: Color(0xFFE8EBF0),
     barrelGrad: [
-      Color(0xFFAEB4BC), Color(0xFFC8CDD4), Color(0xFFE2E6EC),
-      Color(0xFFF0F3F8), Color(0xFFE2E6EC), Color(0xFFC8CDD4), Color(0xFFAEB4BC),
+      Color(0xFFAEB4BC),
+      Color(0xFFC8CDD4),
+      Color(0xFFE2E6EC),
+      Color(0xFFF0F3F8),
+      Color(0xFFE2E6EC),
+      Color(0xFFC8CDD4),
+      Color(0xFFAEB4BC),
     ],
     roofGrad: [
-      Color(0xFFCCD0D8), Color(0xFFDEE2E8), Color(0xFFF0F3F8),
-      Color(0xFFDEE2E8), Color(0xFFCCD0D8),
+      Color(0xFFCCD0D8),
+      Color(0xFFDEE2E8),
+      Color(0xFFF0F3F8),
+      Color(0xFFDEE2E8),
+      Color(0xFFCCD0D8),
     ],
     outline: Color(0x30707070),
     mirrorBody: Color(0xFFDADEE4),
@@ -55,12 +63,20 @@ class _CarPalette {
   static const black = _CarPalette(
     body: Color(0xFF1A1C20),
     barrelGrad: [
-      Color(0xFF0E0F12), Color(0xFF1A1C20), Color(0xFF252830),
-      Color(0xFF2E3038), Color(0xFF252830), Color(0xFF1A1C20), Color(0xFF0E0F12),
+      Color(0xFF0E0F12),
+      Color(0xFF1A1C20),
+      Color(0xFF252830),
+      Color(0xFF2E3038),
+      Color(0xFF252830),
+      Color(0xFF1A1C20),
+      Color(0xFF0E0F12),
     ],
     roofGrad: [
-      Color(0xFF141618), Color(0xFF1E2024), Color(0xFF282A30),
-      Color(0xFF1E2024), Color(0xFF141618),
+      Color(0xFF141618),
+      Color(0xFF1E2024),
+      Color(0xFF282A30),
+      Color(0xFF1E2024),
+      Color(0xFF141618),
     ],
     outline: Color(0x40404040),
     mirrorBody: Color(0xFF2A2C32),
@@ -103,7 +119,9 @@ class CarIconLoader {
       _cache[cacheKey] = await _renderSuv(_CarPalette.black);
       return _cache[cacheKey]!;
     }
-    final palette = key.contains('fusion') ? _CarPalette.black : _CarPalette.whitePearl;
+    final palette = key.contains('fusion')
+        ? _CarPalette.black
+        : _CarPalette.whitePearl;
     final cacheKey = key.contains('fusion') ? 'black' : 'white';
     if (_cache.containsKey(cacheKey)) return _cache[cacheKey]!;
     _cache[cacheKey] = await _render(palette);
@@ -279,9 +297,10 @@ class CarIconLoader {
     // ── 1. Soft drop-shadow ──────────────────────────────────────────
     cvs.drawOval(
       Rect.fromCenter(
-          center: Offset(cx, cy + h * 0.04),
-          width: w * 0.82,
-          height: h * 0.88),
+        center: Offset(cx, cy + h * 0.04),
+        width: w * 0.82,
+        height: h * 0.88,
+      ),
       Paint()
         ..color = const Color(0x55000000)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9),
@@ -327,8 +346,12 @@ class CarIconLoader {
       ..lineTo(cx + w * 0.252, wsMid)
       ..lineTo(cx - w * 0.252, wsMid)
       ..close();
-    cvs.drawPath(wsPath,
-        Paint()..color = const Color(0xD42B3D52)..isAntiAlias = true);
+    cvs.drawPath(
+      wsPath,
+      Paint()
+        ..color = const Color(0xD42B3D52)
+        ..isAntiAlias = true,
+    );
 
     // Glass inner highlight strip
     cvs.drawRect(
@@ -361,24 +384,34 @@ class CarIconLoader {
       ..lineTo(cx + w * 0.195, rgBot)
       ..lineTo(cx - w * 0.195, rgBot)
       ..close();
-    cvs.drawPath(rgPath,
-        Paint()..color = const Color(0xBB2B3D52)..isAntiAlias = true);
+    cvs.drawPath(
+      rgPath,
+      Paint()
+        ..color = const Color(0xBB2B3D52)
+        ..isAntiAlias = true,
+    );
 
     // ── 6. Side mirrors ──────────────────────────────────────────────
     final mirY = wsMid - h * 0.028;
     // Left
     cvs.drawRRect(
       RRect.fromRectAndRadius(
-          Rect.fromLTWH(cx - w * 0.430, mirY, w * 0.070, h * 0.050),
-          Radius.circular(w * 0.014)),
-      Paint()..color = const Color(0xFFCDD1D8)..isAntiAlias = true,
+        Rect.fromLTWH(cx - w * 0.430, mirY, w * 0.070, h * 0.050),
+        Radius.circular(w * 0.014),
+      ),
+      Paint()
+        ..color = const Color(0xFFCDD1D8)
+        ..isAntiAlias = true,
     );
     // Right
     cvs.drawRRect(
       RRect.fromRectAndRadius(
-          Rect.fromLTWH(cx + w * 0.360, mirY, w * 0.070, h * 0.050),
-          Radius.circular(w * 0.014)),
-      Paint()..color = const Color(0xFFCDD1D8)..isAntiAlias = true,
+        Rect.fromLTWH(cx + w * 0.360, mirY, w * 0.070, h * 0.050),
+        Radius.circular(w * 0.014),
+      ),
+      Paint()
+        ..color = const Color(0xFFCDD1D8)
+        ..isAntiAlias = true,
     );
 
     // ── 7. Headlights (front) ───────────────────────────────────────
@@ -386,9 +419,10 @@ class CarIconLoader {
     for (final sx in [-0.200, 0.200]) {
       cvs.drawOval(
         Rect.fromCenter(
-            center: Offset(cx + w * sx, hlY),
-            width: w * 0.175,
-            height: h * 0.046),
+          center: Offset(cx + w * sx, hlY),
+          width: w * 0.175,
+          height: h * 0.046,
+        ),
         Paint()
           ..color = const Color(0xFFFFF9E0)
           ..isAntiAlias = true,
@@ -400,9 +434,10 @@ class CarIconLoader {
     for (final sx in [-0.195, 0.195]) {
       cvs.drawOval(
         Rect.fromCenter(
-            center: Offset(cx + w * sx, tlY),
-            width: w * 0.165,
-            height: h * 0.040),
+          center: Offset(cx + w * sx, tlY),
+          width: w * 0.165,
+          height: h * 0.040,
+        ),
         Paint()
           ..color = const Color(0xFFFF3030)
           ..isAntiAlias = true,
@@ -431,17 +466,41 @@ class CarIconLoader {
   static Path _gmapsBodyPath(double cx, double cy, double w, double h) {
     final path = Path();
     final front = cy - h * 0.450;
-    final rear  = cy + h * 0.450;
+    final rear = cy + h * 0.450;
     path.moveTo(cx, front);
-    path.cubicTo(cx + w * 0.165, front,      cx + w * 0.400, front + h * 0.120,
-                 cx + w * 0.415, cy - h * 0.050);
-    path.cubicTo(cx + w * 0.420, cy + h * 0.110, cx + w * 0.380, rear - h * 0.100,
-                 cx + w * 0.130, rear);
+    path.cubicTo(
+      cx + w * 0.165,
+      front,
+      cx + w * 0.400,
+      front + h * 0.120,
+      cx + w * 0.415,
+      cy - h * 0.050,
+    );
+    path.cubicTo(
+      cx + w * 0.420,
+      cy + h * 0.110,
+      cx + w * 0.380,
+      rear - h * 0.100,
+      cx + w * 0.130,
+      rear,
+    );
     path.lineTo(cx - w * 0.130, rear);
-    path.cubicTo(cx - w * 0.380, rear - h * 0.100, cx - w * 0.420, cy + h * 0.110,
-                 cx - w * 0.415, cy - h * 0.050);
-    path.cubicTo(cx - w * 0.400, front + h * 0.120, cx - w * 0.165, front,
-                 cx, front);
+    path.cubicTo(
+      cx - w * 0.380,
+      rear - h * 0.100,
+      cx - w * 0.420,
+      cy + h * 0.110,
+      cx - w * 0.415,
+      cy - h * 0.050,
+    );
+    path.cubicTo(
+      cx - w * 0.400,
+      front + h * 0.120,
+      cx - w * 0.165,
+      front,
+      cx,
+      front,
+    );
     path.close();
     return path;
   }
@@ -558,7 +617,13 @@ class CarIconLoader {
 
   // ── SUV Ground shadow ──────────────────────────────────────────────
 
-  static void _suvGroundShadow(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _suvGroundShadow(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     c.drawOval(
       Rect.fromCenter(
         center: Offset(cx + bw * 0.04, cy + bh * 0.18),
@@ -593,7 +658,13 @@ class CarIconLoader {
 
   // ── SUV Under-car darkness ─────────────────────────────────────────
 
-  static void _suvUnderCarShadow(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _suvUnderCarShadow(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     c.drawOval(
       Rect.fromCenter(
         center: Offset(cx, cy + bh * 0.04),
@@ -614,51 +685,75 @@ class CarIconLoader {
     // Front nose — semi-oval rounded SUV front
     p.moveTo(cx - bw * 0.74, cy - bh * 0.94);
     p.cubicTo(
-      cx - bw * 0.35, cy - bh * 1.02,
-      cx + bw * 0.35, cy - bh * 1.02,
-      cx + bw * 0.74, cy - bh * 0.94,
+      cx - bw * 0.35,
+      cy - bh * 1.02,
+      cx + bw * 0.35,
+      cy - bh * 1.02,
+      cx + bw * 0.74,
+      cy - bh * 0.94,
     );
     // Right front fender — semi-oval corner
     p.cubicTo(
-      cx + bw * 0.94, cy - bh * 0.88,
-      cx + bw * 1.05, cy - bh * 0.58,
-      cx + bw * 1.04, cy - bh * 0.14,
+      cx + bw * 0.94,
+      cy - bh * 0.88,
+      cx + bw * 1.05,
+      cy - bh * 0.58,
+      cx + bw * 1.04,
+      cy - bh * 0.14,
     );
     // Right side — gently curved
     p.cubicTo(
-      cx + bw * 1.03, cy + bh * 0.10,
-      cx + bw * 1.03, cy + bh * 0.30,
-      cx + bw * 1.04, cy + bh * 0.48,
+      cx + bw * 1.03,
+      cy + bh * 0.10,
+      cx + bw * 1.03,
+      cy + bh * 0.30,
+      cx + bw * 1.04,
+      cy + bh * 0.48,
     );
     // Right rear — semi-oval corner
     p.cubicTo(
-      cx + bw * 1.05, cy + bh * 0.68,
-      cx + bw * 0.94, cy + bh * 0.90,
-      cx + bw * 0.72, cy + bh * 0.97,
+      cx + bw * 1.05,
+      cy + bh * 0.68,
+      cx + bw * 0.94,
+      cy + bh * 0.90,
+      cx + bw * 0.72,
+      cy + bh * 0.97,
     );
     // Rear — wide, slightly curved
     p.cubicTo(
-      cx + bw * 0.38, cy + bh * 1.01,
-      cx - bw * 0.38, cy + bh * 1.01,
-      cx - bw * 0.72, cy + bh * 0.97,
+      cx + bw * 0.38,
+      cy + bh * 1.01,
+      cx - bw * 0.38,
+      cy + bh * 1.01,
+      cx - bw * 0.72,
+      cy + bh * 0.97,
     );
     // Left rear — semi-oval corner
     p.cubicTo(
-      cx - bw * 0.94, cy + bh * 0.90,
-      cx - bw * 1.05, cy + bh * 0.68,
-      cx - bw * 1.04, cy + bh * 0.48,
+      cx - bw * 0.94,
+      cy + bh * 0.90,
+      cx - bw * 1.05,
+      cy + bh * 0.68,
+      cx - bw * 1.04,
+      cy + bh * 0.48,
     );
     // Left side — gently curved
     p.cubicTo(
-      cx - bw * 1.03, cy + bh * 0.30,
-      cx - bw * 1.03, cy + bh * 0.10,
-      cx - bw * 1.04, cy - bh * 0.14,
+      cx - bw * 1.03,
+      cy + bh * 0.30,
+      cx - bw * 1.03,
+      cy + bh * 0.10,
+      cx - bw * 1.04,
+      cy - bh * 0.14,
     );
     // Left front fender — semi-oval corner
     p.cubicTo(
-      cx - bw * 1.05, cy - bh * 0.58,
-      cx - bw * 0.94, cy - bh * 0.88,
-      cx - bw * 0.74, cy - bh * 0.94,
+      cx - bw * 1.05,
+      cy - bh * 0.58,
+      cx - bw * 0.94,
+      cy - bh * 0.88,
+      cx - bw * 0.74,
+      cy - bh * 0.94,
     );
 
     p.close();
@@ -667,15 +762,25 @@ class CarIconLoader {
 
   // ── SUV Fender curves ──────────────────────────────────────────────
 
-  static void _suvFenderCurves(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _suvFenderCurves(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     for (final s in [-1.0, 1.0]) {
       // Front fender arch — boxier
       final ff = Path()
         ..moveTo(cx + s * bw * 0.84, cy - bh * 0.92)
         ..cubicTo(
-          cx + s * bw * 1.02, cy - bh * 0.82,
-          cx + s * bw * 1.08, cy - bh * 0.52,
-          cx + s * bw * 1.04, cy - bh * 0.20,
+          cx + s * bw * 1.02,
+          cy - bh * 0.82,
+          cx + s * bw * 1.08,
+          cy - bh * 0.52,
+          cx + s * bw * 1.04,
+          cy - bh * 0.20,
         );
       c.drawPath(
         ff,
@@ -700,9 +805,12 @@ class CarIconLoader {
       final rf = Path()
         ..moveTo(cx + s * bw * 1.02, cy + bh * 0.40)
         ..cubicTo(
-          cx + s * bw * 1.05, cy + bh * 0.62,
-          cx + s * bw * 0.88, cy + bh * 0.90,
-          cx + s * bw * 0.50, cy + bh * 0.98,
+          cx + s * bw * 1.05,
+          cy + bh * 0.62,
+          cx + s * bw * 0.88,
+          cy + bh * 0.90,
+          cx + s * bw * 0.50,
+          cy + bh * 0.98,
         );
       c.drawPath(
         rf,
@@ -727,7 +835,13 @@ class CarIconLoader {
 
   // ── SUV Door panels (3 rows: front, rear, cargo) ───────────────────
 
-  static void _suvDoorPanels(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _suvDoorPanels(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     for (final s in [-1.0, 1.0]) {
       final x = cx + s * bw;
 
@@ -827,7 +941,14 @@ class CarIconLoader {
 
   // ── SUV Door handles ───────────────────────────────────────────────
 
-  static void _suvDoorHandles(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _suvDoorHandles(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     for (final s in [-1.0, 1.0]) {
       final hx = cx + s * bw * 0.96;
 
@@ -857,7 +978,13 @@ class CarIconLoader {
 
   // ── SUV Windshield (taller, more upright) ──────────────────────────
 
-  static void _suvWindshield(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _suvWindshield(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     final ws = Path();
     final wsTop = cy - bh * 0.50;
     final wsBot = cy - bh * 0.18;
@@ -865,9 +992,23 @@ class CarIconLoader {
     final wsBotW = bw * 0.82;
 
     ws.moveTo(cx - wsTopW, wsTop);
-    ws.cubicTo(cx - wsTopW * 0.4, wsTop - bh * 0.03, cx + wsTopW * 0.4, wsTop - bh * 0.03, cx + wsTopW, wsTop);
+    ws.cubicTo(
+      cx - wsTopW * 0.4,
+      wsTop - bh * 0.03,
+      cx + wsTopW * 0.4,
+      wsTop - bh * 0.03,
+      cx + wsTopW,
+      wsTop,
+    );
     ws.lineTo(cx + wsBotW, wsBot);
-    ws.cubicTo(cx + wsBotW * 0.3, wsBot + bh * 0.02, cx - wsBotW * 0.3, wsBot + bh * 0.02, cx - wsBotW, wsBot);
+    ws.cubicTo(
+      cx + wsBotW * 0.3,
+      wsBot + bh * 0.02,
+      cx - wsBotW * 0.3,
+      wsBot + bh * 0.02,
+      cx - wsBotW,
+      wsBot,
+    );
     ws.close();
 
     c.drawPath(ws, Paint()..color = const Color(0xFF0A0C10));
@@ -875,12 +1016,21 @@ class CarIconLoader {
     c.save();
     c.clipPath(ws);
     c.drawRect(
-      Rect.fromLTWH(cx - wsBotW, wsTop - bh * 0.05, wsBotW * 2, wsBot - wsTop + bh * 0.1),
+      Rect.fromLTWH(
+        cx - wsBotW,
+        wsTop - bh * 0.05,
+        wsBotW * 2,
+        wsBot - wsTop + bh * 0.1,
+      ),
       Paint()
         ..shader = ui.Gradient.linear(
           Offset(cx, wsTop),
           Offset(cx, wsBot),
-          [const Color(0xFF141618), const Color(0xFF080A0C), const Color(0xFF101214)],
+          [
+            const Color(0xFF141618),
+            const Color(0xFF080A0C),
+            const Color(0xFF101214),
+          ],
           [0.0, 0.5, 1.0],
         ),
     );
@@ -898,7 +1048,12 @@ class CarIconLoader {
         ..shader = ui.Gradient.linear(
           Offset(cx - wsTopW, wsTop),
           Offset(cx + wsBotW * 0.15, wsBot),
-          [const Color(0x00FFFFFF), const Color(0x30FFFFFF), const Color(0x12FFFFFF), const Color(0x00FFFFFF)],
+          [
+            const Color(0x00FFFFFF),
+            const Color(0x30FFFFFF),
+            const Color(0x12FFFFFF),
+            const Color(0x00FFFFFF),
+          ],
           [0.0, 0.28, 0.62, 1.0],
         ),
     );
@@ -928,7 +1083,13 @@ class CarIconLoader {
 
   // ── SUV Rear glass (wider, more upright) ───────────────────────────
 
-  static void _suvRearGlass(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _suvRearGlass(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     final rg = Path();
     final rgTop = cy + bh * 0.54;
     final rgBot = cy + bh * 0.72;
@@ -936,9 +1097,23 @@ class CarIconLoader {
     final rgBotW = bw * 0.48;
 
     rg.moveTo(cx - rgTopW, rgTop);
-    rg.cubicTo(cx - rgTopW * 0.3, rgTop - bh * 0.02, cx + rgTopW * 0.3, rgTop - bh * 0.02, cx + rgTopW, rgTop);
+    rg.cubicTo(
+      cx - rgTopW * 0.3,
+      rgTop - bh * 0.02,
+      cx + rgTopW * 0.3,
+      rgTop - bh * 0.02,
+      cx + rgTopW,
+      rgTop,
+    );
     rg.lineTo(cx + rgBotW, rgBot);
-    rg.cubicTo(cx + rgBotW * 0.3, rgBot + bh * 0.03, cx - rgBotW * 0.3, rgBot + bh * 0.03, cx - rgBotW, rgBot);
+    rg.cubicTo(
+      cx + rgBotW * 0.3,
+      rgBot + bh * 0.03,
+      cx - rgBotW * 0.3,
+      rgBot + bh * 0.03,
+      cx - rgBotW,
+      rgBot,
+    );
     rg.close();
 
     c.drawPath(rg, Paint()..color = const Color(0xFF0A0C10));
@@ -968,7 +1143,13 @@ class CarIconLoader {
 
   // ── SUV Side windows (3 windows: front, rear, cargo quarter) ───────
 
-  static void _suvSideWindows(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _suvSideWindows(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     for (final s in [-1.0, 1.0]) {
       // Front side window — taller
       final fw = Path()
@@ -1013,7 +1194,14 @@ class CarIconLoader {
 
   // ── SUV Closed roof (wider, longer) ────────────────────────────────
 
-  static void _suvClosedRoof(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _suvClosedRoof(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     final roof = RRect.fromRectAndCorners(
       Rect.fromCenter(
         center: Offset(cx, cy + bh * 0.10),
@@ -1072,7 +1260,14 @@ class CarIconLoader {
 
   // ── SUV Roof rails (chrome, characteristic SUV detail) ─────────────
 
-  static void _suvRoofRails(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _suvRoofRails(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     for (final s in [-1.0, 1.0]) {
       final rx = cx + s * bw * 0.72;
 
@@ -1125,7 +1320,13 @@ class CarIconLoader {
 
   // ── SUV Headlights (wider, more aggressive) ────────────────────────
 
-  static void _suvHeadlights(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _suvHeadlights(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     final hlY = cy - bh * 0.92;
 
     for (final s in [-1.0, 1.0]) {
@@ -1133,11 +1334,19 @@ class CarIconLoader {
 
       // Housing — oval following SUV front contour
       c.drawOval(
-        Rect.fromCenter(center: Offset(hlx, hlY), width: bw * 0.58, height: bh * 0.085),
+        Rect.fromCenter(
+          center: Offset(hlx, hlY),
+          width: bw * 0.58,
+          height: bh * 0.085,
+        ),
         Paint()..color = const Color(0xFFCDD2DA),
       );
       c.drawOval(
-        Rect.fromCenter(center: Offset(hlx, hlY), width: bw * 0.58, height: bh * 0.085),
+        Rect.fromCenter(
+          center: Offset(hlx, hlY),
+          width: bw * 0.58,
+          height: bh * 0.085,
+        ),
         Paint()
           ..color = const Color(0x18000000)
           ..style = PaintingStyle.stroke
@@ -1147,13 +1356,21 @@ class CarIconLoader {
 
       // LED element — oval
       c.drawOval(
-        Rect.fromCenter(center: Offset(hlx, hlY), width: bw * 0.44, height: bh * 0.052),
+        Rect.fromCenter(
+          center: Offset(hlx, hlY),
+          width: bw * 0.44,
+          height: bh * 0.052,
+        ),
         Paint()..color = const Color(0xFFF5F0D8),
       );
 
       // Bright core — small oval
       c.drawOval(
-        Rect.fromCenter(center: Offset(hlx, hlY), width: bw * 0.26, height: bh * 0.026),
+        Rect.fromCenter(
+          center: Offset(hlx, hlY),
+          width: bw * 0.26,
+          height: bh * 0.026,
+        ),
         Paint()..color = const Color(0xFFFFFFF0),
       );
 
@@ -1170,7 +1387,13 @@ class CarIconLoader {
 
   // ── SUV Taillights (wider, squarer) ────────────────────────────────
 
-  static void _suvTaillights(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _suvTaillights(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     final tlY = cy + bh * 0.90;
 
     for (final s in [-1.0, 1.0]) {
@@ -1178,19 +1401,31 @@ class CarIconLoader {
 
       // Housing — oval following SUV rear contour
       c.drawOval(
-        Rect.fromCenter(center: Offset(tlx, tlY), width: bw * 0.54, height: bh * 0.078),
+        Rect.fromCenter(
+          center: Offset(tlx, tlY),
+          width: bw * 0.54,
+          height: bh * 0.078,
+        ),
         Paint()..color = const Color(0xFF6A1010),
       );
 
       // LED strip — oval
       c.drawOval(
-        Rect.fromCenter(center: Offset(tlx, tlY), width: bw * 0.42, height: bh * 0.048),
+        Rect.fromCenter(
+          center: Offset(tlx, tlY),
+          width: bw * 0.42,
+          height: bh * 0.048,
+        ),
         Paint()..color = const Color(0xFFE82222),
       );
 
       // Core glow — small oval
       c.drawOval(
-        Rect.fromCenter(center: Offset(tlx, tlY), width: bw * 0.24, height: bh * 0.024),
+        Rect.fromCenter(
+          center: Offset(tlx, tlY),
+          width: bw * 0.24,
+          height: bh * 0.024,
+        ),
         Paint()..color = const Color(0xFFFF4848),
       );
 
@@ -1218,7 +1453,14 @@ class CarIconLoader {
 
   // ── SUV Front bumper (wider, more aggressive) ──────────────────────
 
-  static void _suvFrontBumper(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _suvFrontBumper(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     // Air intake — wider
     c.drawRRect(
       RRect.fromRectAndRadius(
@@ -1256,7 +1498,13 @@ class CarIconLoader {
 
   // ── SUV Rear bumper ────────────────────────────────────────────────
 
-  static void _suvRearBumper(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _suvRearBumper(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     c.drawLine(
       Offset(cx - bw * 0.42, cy + bh * 0.93),
       Offset(cx + bw * 0.42, cy + bh * 0.93),
@@ -1280,7 +1528,14 @@ class CarIconLoader {
 
   // ── SUV Mirrors (larger) ───────────────────────────────────────────
 
-  static void _suvMirrors(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _suvMirrors(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     for (final s in [-1.0, 1.0]) {
       final mx = cx + s * bw * 1.18;
       final my = cy - bh * 0.24;
@@ -1296,21 +1551,37 @@ class CarIconLoader {
       );
 
       c.drawOval(
-        Rect.fromCenter(center: Offset(mx, my), width: bw * 0.22, height: bw * 0.15),
+        Rect.fromCenter(
+          center: Offset(mx, my),
+          width: bw * 0.22,
+          height: bw * 0.15,
+        ),
         Paint()..color = p.mirrorBody,
       );
       c.drawOval(
-        Rect.fromCenter(center: Offset(mx + s * bw * 0.02, my), width: bw * 0.14, height: bw * 0.09),
+        Rect.fromCenter(
+          center: Offset(mx + s * bw * 0.02, my),
+          width: bw * 0.14,
+          height: bw * 0.09,
+        ),
         Paint()..color = const Color(0xFF1A1E28),
       );
       c.drawOval(
-        Rect.fromCenter(center: Offset(mx, my + bw * 0.04), width: bw * 0.24, height: bw * 0.12),
+        Rect.fromCenter(
+          center: Offset(mx, my + bw * 0.04),
+          width: bw * 0.24,
+          height: bw * 0.12,
+        ),
         Paint()
           ..color = const Color(0x14000000)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
       );
       c.drawOval(
-        Rect.fromCenter(center: Offset(mx, my), width: bw * 0.22, height: bw * 0.15),
+        Rect.fromCenter(
+          center: Offset(mx, my),
+          width: bw * 0.22,
+          height: bw * 0.15,
+        ),
         Paint()
           ..color = const Color(0x20888888)
           ..style = PaintingStyle.stroke
@@ -1322,7 +1593,14 @@ class CarIconLoader {
 
   // ── SUV Hood crease ────────────────────────────────────────────────
 
-  static void _suvHoodCrease(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _suvHoodCrease(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     c.drawLine(
       Offset(cx, cy - bh * 0.95),
       Offset(cx, cy - bh * 0.46),
@@ -1346,7 +1624,13 @@ class CarIconLoader {
 
   // ── Ground shadow (multi-layer for realism) ───────────────────────
 
-  static void _groundShadow(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _groundShadow(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     // Outermost diffuse shadow
     c.drawOval(
       Rect.fromCenter(
@@ -1384,7 +1668,13 @@ class CarIconLoader {
 
   // ── Under-car darkness ────────────────────────────────────────────
 
-  static void _underCarShadow(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _underCarShadow(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     c.drawOval(
       Rect.fromCenter(
         center: Offset(cx, cy + bh * 0.04),
@@ -1405,51 +1695,75 @@ class CarIconLoader {
     // Front nose — slightly rounded front corners
     p.moveTo(cx - bw * 0.72, cy - bh * 0.92);
     p.cubicTo(
-      cx - bw * 0.40, cy - bh * 1.00,
-      cx + bw * 0.40, cy - bh * 1.00,
-      cx + bw * 0.72, cy - bh * 0.92,
+      cx - bw * 0.40,
+      cy - bh * 1.00,
+      cx + bw * 0.40,
+      cy - bh * 1.00,
+      cx + bw * 0.72,
+      cy - bh * 0.92,
     );
     // Right front fender — slight oval at corner
     p.cubicTo(
-      cx + bw * 0.92, cy - bh * 0.88,
-      cx + bw * 1.04, cy - bh * 0.54,
-      cx + bw * 1.02, cy - bh * 0.12,
+      cx + bw * 0.92,
+      cy - bh * 0.88,
+      cx + bw * 1.04,
+      cy - bh * 0.54,
+      cx + bw * 1.02,
+      cy - bh * 0.12,
     );
     // Right waist
     p.cubicTo(
-      cx + bw * 0.98, cy + bh * 0.08,
-      cx + bw * 0.97, cy + bh * 0.22,
-      cx + bw * 1.02, cy + bh * 0.42,
+      cx + bw * 0.98,
+      cy + bh * 0.08,
+      cx + bw * 0.97,
+      cy + bh * 0.22,
+      cx + bw * 1.02,
+      cy + bh * 0.42,
     );
     // Right rear — more squared
     p.cubicTo(
-      cx + bw * 1.04, cy + bh * 0.64,
-      cx + bw * 0.96, cy + bh * 0.88,
-      cx + bw * 0.68, cy + bh * 0.95,
+      cx + bw * 1.04,
+      cy + bh * 0.64,
+      cx + bw * 0.96,
+      cy + bh * 0.88,
+      cx + bw * 0.68,
+      cy + bh * 0.95,
     );
     // Rear — flat/wide
     p.cubicTo(
-      cx + bw * 0.38, cy + bh * 0.99,
-      cx - bw * 0.38, cy + bh * 0.99,
-      cx - bw * 0.68, cy + bh * 0.95,
+      cx + bw * 0.38,
+      cy + bh * 0.99,
+      cx - bw * 0.38,
+      cy + bh * 0.99,
+      cx - bw * 0.68,
+      cy + bh * 0.95,
     );
     // Left rear — more squared
     p.cubicTo(
-      cx - bw * 0.96, cy + bh * 0.88,
-      cx - bw * 1.04, cy + bh * 0.64,
-      cx - bw * 1.02, cy + bh * 0.42,
+      cx - bw * 0.96,
+      cy + bh * 0.88,
+      cx - bw * 1.04,
+      cy + bh * 0.64,
+      cx - bw * 1.02,
+      cy + bh * 0.42,
     );
     // Left waist
     p.cubicTo(
-      cx - bw * 0.97, cy + bh * 0.22,
-      cx - bw * 0.98, cy + bh * 0.08,
-      cx - bw * 1.02, cy - bh * 0.12,
+      cx - bw * 0.97,
+      cy + bh * 0.22,
+      cx - bw * 0.98,
+      cy + bh * 0.08,
+      cx - bw * 1.02,
+      cy - bh * 0.12,
     );
     // Left front fender — slight oval at corner
     p.cubicTo(
-      cx - bw * 1.04, cy - bh * 0.54,
-      cx - bw * 0.92, cy - bh * 0.88,
-      cx - bw * 0.72, cy - bh * 0.92,
+      cx - bw * 1.04,
+      cy - bh * 0.54,
+      cx - bw * 0.92,
+      cy - bh * 0.88,
+      cx - bw * 0.72,
+      cy - bh * 0.92,
     );
 
     p.close();
@@ -1458,12 +1772,24 @@ class CarIconLoader {
 
   // ── White pearl paint ─────────────────────────────────────────────
 
-  static void _paintBody(Canvas c, Path body, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _paintBody(
+    Canvas c,
+    Path body,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     c.drawPath(body, Paint()..color = p.body);
 
     c.save();
     c.clipPath(body);
-    final r = Rect.fromCenter(center: Offset(cx, cy), width: bw * 2.3, height: bh * 2.3);
+    final r = Rect.fromCenter(
+      center: Offset(cx, cy),
+      width: bw * 2.3,
+      height: bh * 2.3,
+    );
 
     // Left-right barrel shading
     c.drawRect(
@@ -1533,7 +1859,14 @@ class CarIconLoader {
 
   // ── Ambient occlusion ─────────────────────────────────────────────
 
-  static void _bodyAO(Canvas c, Path body, double cx, double cy, double bw, double bh) {
+  static void _bodyAO(
+    Canvas c,
+    Path body,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     c.save();
     c.clipPath(body);
     // Inner shadow around perimeter
@@ -1553,15 +1886,25 @@ class CarIconLoader {
 
   // ── Fender curves (highlight arches) ──────────────────────────────
 
-  static void _fenderCurves(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _fenderCurves(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     for (final s in [-1.0, 1.0]) {
       // Front fender arch (matches squared front)
       final ff = Path()
         ..moveTo(cx + s * bw * 0.78, cy - bh * 0.90)
         ..cubicTo(
-          cx + s * bw * 0.98, cy - bh * 0.80,
-          cx + s * bw * 1.06, cy - bh * 0.50,
-          cx + s * bw * 1.02, cy - bh * 0.18,
+          cx + s * bw * 0.98,
+          cy - bh * 0.80,
+          cx + s * bw * 1.06,
+          cy - bh * 0.50,
+          cx + s * bw * 1.02,
+          cy - bh * 0.18,
         );
       c.drawPath(
         ff,
@@ -1587,9 +1930,12 @@ class CarIconLoader {
       final rf = Path()
         ..moveTo(cx + s * bw * 1.00, cy + bh * 0.35)
         ..cubicTo(
-          cx + s * bw * 1.03, cy + bh * 0.58,
-          cx + s * bw * 0.80, cy + bh * 0.88,
-          cx + s * bw * 0.42, cy + bh * 0.97,
+          cx + s * bw * 1.03,
+          cy + bh * 0.58,
+          cx + s * bw * 0.80,
+          cy + bh * 0.88,
+          cx + s * bw * 0.42,
+          cy + bh * 0.97,
         );
       c.drawPath(
         rf,
@@ -1614,7 +1960,13 @@ class CarIconLoader {
 
   // ── Door panels (detailed with shadow insets) ─────────────────────
 
-  static void _doorPanels(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _doorPanels(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     for (final s in [-1.0, 1.0]) {
       final x = cx + s * bw;
 
@@ -1694,7 +2046,14 @@ class CarIconLoader {
 
   // ── Door handles (chrome) ─────────────────────────────────────────
 
-  static void _doorHandles(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _doorHandles(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     for (final s in [-1.0, 1.0]) {
       final hx = cx + s * bw * 0.94;
 
@@ -1740,7 +2099,14 @@ class CarIconLoader {
 
   // ── Belt line (chrome strip along side) ───────────────────────────
 
-  static void _beltLine(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _beltLine(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     for (final s in [-1.0, 1.0]) {
       c.drawLine(
         Offset(cx + s * bw * 0.85, cy - bh * 0.38),
@@ -1756,7 +2122,13 @@ class CarIconLoader {
 
   // ── Windshield (dark glass, properly sized) ───────────────────────
 
-  static void _windshield(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _windshield(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     final ws = Path();
     final wsTop = cy - bh * 0.42;
     final wsBot = cy - bh * 0.10;
@@ -1764,9 +2136,23 @@ class CarIconLoader {
     final wsBotW = bw * 0.78;
 
     ws.moveTo(cx - wsTopW, wsTop);
-    ws.cubicTo(cx - wsTopW * 0.4, wsTop - bh * 0.04, cx + wsTopW * 0.4, wsTop - bh * 0.04, cx + wsTopW, wsTop);
+    ws.cubicTo(
+      cx - wsTopW * 0.4,
+      wsTop - bh * 0.04,
+      cx + wsTopW * 0.4,
+      wsTop - bh * 0.04,
+      cx + wsTopW,
+      wsTop,
+    );
     ws.lineTo(cx + wsBotW, wsBot);
-    ws.cubicTo(cx + wsBotW * 0.3, wsBot + bh * 0.02, cx - wsBotW * 0.3, wsBot + bh * 0.02, cx - wsBotW, wsBot);
+    ws.cubicTo(
+      cx + wsBotW * 0.3,
+      wsBot + bh * 0.02,
+      cx - wsBotW * 0.3,
+      wsBot + bh * 0.02,
+      cx - wsBotW,
+      wsBot,
+    );
     ws.close();
 
     // Very dark black glass
@@ -1777,12 +2163,21 @@ class CarIconLoader {
 
     // Glass depth
     c.drawRect(
-      Rect.fromLTWH(cx - wsBotW, wsTop - bh * 0.05, wsBotW * 2, wsBot - wsTop + bh * 0.1),
+      Rect.fromLTWH(
+        cx - wsBotW,
+        wsTop - bh * 0.05,
+        wsBotW * 2,
+        wsBot - wsTop + bh * 0.1,
+      ),
       Paint()
         ..shader = ui.Gradient.linear(
           Offset(cx, wsTop),
           Offset(cx, wsBot),
-          [const Color(0xFF141618), const Color(0xFF080A0C), const Color(0xFF101214)],
+          [
+            const Color(0xFF141618),
+            const Color(0xFF080A0C),
+            const Color(0xFF101214),
+          ],
           [0.0, 0.5, 1.0],
         ),
     );
@@ -1800,7 +2195,12 @@ class CarIconLoader {
         ..shader = ui.Gradient.linear(
           Offset(cx - wsTopW, wsTop),
           Offset(cx + wsBotW * 0.15, wsBot),
-          [const Color(0x00FFFFFF), const Color(0x30FFFFFF), const Color(0x12FFFFFF), const Color(0x00FFFFFF)],
+          [
+            const Color(0x00FFFFFF),
+            const Color(0x30FFFFFF),
+            const Color(0x12FFFFFF),
+            const Color(0x00FFFFFF),
+          ],
           [0.0, 0.28, 0.62, 1.0],
         ),
     );
@@ -1838,9 +2238,23 @@ class CarIconLoader {
     final rgBotW = bw * 0.42;
 
     rg.moveTo(cx - rgTopW, rgTop);
-    rg.cubicTo(cx - rgTopW * 0.3, rgTop - bh * 0.02, cx + rgTopW * 0.3, rgTop - bh * 0.02, cx + rgTopW, rgTop);
+    rg.cubicTo(
+      cx - rgTopW * 0.3,
+      rgTop - bh * 0.02,
+      cx + rgTopW * 0.3,
+      rgTop - bh * 0.02,
+      cx + rgTopW,
+      rgTop,
+    );
     rg.lineTo(cx + rgBotW, rgBot);
-    rg.cubicTo(cx + rgBotW * 0.3, rgBot + bh * 0.03, cx - rgBotW * 0.3, rgBot + bh * 0.03, cx - rgBotW, rgBot);
+    rg.cubicTo(
+      cx + rgBotW * 0.3,
+      rgBot + bh * 0.03,
+      cx - rgBotW * 0.3,
+      rgBot + bh * 0.03,
+      cx - rgBotW,
+      rgBot,
+    );
     rg.close();
 
     c.drawPath(rg, Paint()..color = const Color(0xFF0A0C10));
@@ -1881,7 +2295,13 @@ class CarIconLoader {
 
   // ── Side windows ──────────────────────────────────────────────────
 
-  static void _sideWindows(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _sideWindows(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     for (final s in [-1.0, 1.0]) {
       // Front side window — bigger
       final fw = Path()
@@ -1928,7 +2348,14 @@ class CarIconLoader {
 
   // ── Closed roof (solid, no sunroof hole) ──────────────────────────
 
-  static void _closedRoof(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _closedRoof(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     // Full roof — covers the entire cabin area (bigger)
     final roof = RRect.fromRectAndCorners(
       Rect.fromCenter(
@@ -1992,7 +2419,13 @@ class CarIconLoader {
 
   // ── Headlights (properly integrated into body curve) ──────────────
 
-  static void _headlights(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _headlights(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     final hlY = cy - bh * 0.90;
 
     for (final s in [-1.0, 1.0]) {
@@ -2000,12 +2433,20 @@ class CarIconLoader {
 
       // Housing — oval following front body curve
       c.drawOval(
-        Rect.fromCenter(center: Offset(hlx, hlY), width: bw * 0.54, height: bh * 0.080),
+        Rect.fromCenter(
+          center: Offset(hlx, hlY),
+          width: bw * 0.54,
+          height: bh * 0.080,
+        ),
         Paint()..color = const Color(0xFFCDD2DA),
       );
       // Housing inner shadow
       c.drawOval(
-        Rect.fromCenter(center: Offset(hlx, hlY), width: bw * 0.54, height: bh * 0.080),
+        Rect.fromCenter(
+          center: Offset(hlx, hlY),
+          width: bw * 0.54,
+          height: bh * 0.080,
+        ),
         Paint()
           ..color = const Color(0x18000000)
           ..style = PaintingStyle.stroke
@@ -2015,13 +2456,21 @@ class CarIconLoader {
 
       // LED element — warm white oval
       c.drawOval(
-        Rect.fromCenter(center: Offset(hlx, hlY), width: bw * 0.40, height: bh * 0.048),
+        Rect.fromCenter(
+          center: Offset(hlx, hlY),
+          width: bw * 0.40,
+          height: bh * 0.048,
+        ),
         Paint()..color = const Color(0xFFF5F0D8),
       );
 
       // Bright core — small oval
       c.drawOval(
-        Rect.fromCenter(center: Offset(hlx, hlY), width: bw * 0.22, height: bh * 0.024),
+        Rect.fromCenter(
+          center: Offset(hlx, hlY),
+          width: bw * 0.22,
+          height: bh * 0.024,
+        ),
         Paint()..color = const Color(0xFFFFFFF0),
       );
 
@@ -2038,7 +2487,13 @@ class CarIconLoader {
 
   // ── Taillights (red LED, adapted to rear curve) ───────────────────
 
-  static void _taillights(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _taillights(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     final tlY = cy + bh * 0.88;
 
     for (final s in [-1.0, 1.0]) {
@@ -2046,19 +2501,31 @@ class CarIconLoader {
 
       // Housing — oval following rear body curve
       c.drawOval(
-        Rect.fromCenter(center: Offset(tlx, tlY), width: bw * 0.50, height: bh * 0.072),
+        Rect.fromCenter(
+          center: Offset(tlx, tlY),
+          width: bw * 0.50,
+          height: bh * 0.072,
+        ),
         Paint()..color = const Color(0xFF6A1010),
       );
 
       // LED strip — oval
       c.drawOval(
-        Rect.fromCenter(center: Offset(tlx, tlY), width: bw * 0.38, height: bh * 0.042),
+        Rect.fromCenter(
+          center: Offset(tlx, tlY),
+          width: bw * 0.38,
+          height: bh * 0.042,
+        ),
         Paint()..color = const Color(0xFFE82222),
       );
 
       // Core glow — small oval
       c.drawOval(
-        Rect.fromCenter(center: Offset(tlx, tlY), width: bw * 0.20, height: bh * 0.022),
+        Rect.fromCenter(
+          center: Offset(tlx, tlY),
+          width: bw * 0.20,
+          height: bh * 0.022,
+        ),
         Paint()..color = const Color(0xFFFF4848),
       );
 
@@ -2086,7 +2553,14 @@ class CarIconLoader {
 
   // ── Front bumper ──────────────────────────────────────────────────
 
-  static void _frontBumper(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _frontBumper(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     // Air intake — wider for squared front
     c.drawRRect(
       RRect.fromRectAndRadius(
@@ -2125,7 +2599,13 @@ class CarIconLoader {
 
   // ── Rear bumper ───────────────────────────────────────────────────
 
-  static void _rearBumper(Canvas c, double cx, double cy, double bw, double bh) {
+  static void _rearBumper(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+  ) {
     // Chrome strip
     c.drawLine(
       Offset(cx - bw * 0.38, tlY(cy, bh) + bh * 0.035),
@@ -2153,7 +2633,14 @@ class CarIconLoader {
 
   // ── Side mirrors ──────────────────────────────────────────────────
 
-  static void _mirrors(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _mirrors(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     for (final s in [-1.0, 1.0]) {
       final mx = cx + s * bw * 1.16;
       final my = cy - bh * 0.22;
@@ -2171,24 +2658,40 @@ class CarIconLoader {
 
       // Mirror body
       c.drawOval(
-        Rect.fromCenter(center: Offset(mx, my), width: bw * 0.20, height: bw * 0.14),
+        Rect.fromCenter(
+          center: Offset(mx, my),
+          width: bw * 0.20,
+          height: bw * 0.14,
+        ),
         Paint()..color = p.mirrorBody,
       );
       // Mirror glass
       c.drawOval(
-        Rect.fromCenter(center: Offset(mx + s * bw * 0.02, my), width: bw * 0.12, height: bw * 0.08),
+        Rect.fromCenter(
+          center: Offset(mx + s * bw * 0.02, my),
+          width: bw * 0.12,
+          height: bw * 0.08,
+        ),
         Paint()..color = const Color(0xFF1A1E28),
       );
       // Mirror shadow
       c.drawOval(
-        Rect.fromCenter(center: Offset(mx, my + bw * 0.04), width: bw * 0.22, height: bw * 0.10),
+        Rect.fromCenter(
+          center: Offset(mx, my + bw * 0.04),
+          width: bw * 0.22,
+          height: bw * 0.10,
+        ),
         Paint()
           ..color = const Color(0x14000000)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
       );
       // Mirror edge
       c.drawOval(
-        Rect.fromCenter(center: Offset(mx, my), width: bw * 0.20, height: bw * 0.14),
+        Rect.fromCenter(
+          center: Offset(mx, my),
+          width: bw * 0.20,
+          height: bw * 0.14,
+        ),
         Paint()
           ..color = const Color(0x20888888)
           ..style = PaintingStyle.stroke
@@ -2200,7 +2703,14 @@ class CarIconLoader {
 
   // ── Hood crease ───────────────────────────────────────────────────
 
-  static void _hoodCrease(Canvas c, double cx, double cy, double bw, double bh, _CarPalette p) {
+  static void _hoodCrease(
+    Canvas c,
+    double cx,
+    double cy,
+    double bw,
+    double bh,
+    _CarPalette p,
+  ) {
     c.drawLine(
       Offset(cx, cy - bh * 0.94),
       Offset(cx, cy - bh * 0.44),

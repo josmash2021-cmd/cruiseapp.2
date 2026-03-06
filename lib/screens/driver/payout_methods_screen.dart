@@ -12,7 +12,7 @@ class PayoutMethodsScreen extends StatefulWidget {
 }
 
 class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
-  static const _gold = Color(0xFFE8C547);
+  static const _gold = Color(0xFFD4A843);
   static const _goldLight = Color(0xFFF5D990); // ignore: unused_field
   static const _card = Color(0xFF1C1C1E);
 

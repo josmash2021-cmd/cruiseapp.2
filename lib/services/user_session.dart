@@ -12,6 +12,7 @@ import 'api_service.dart';
 class UserSession {
   static const _key = 'user_session_v1';
   static const _modeKey = 'cruise_app_mode'; // 'rider' or 'driver'
+  static const _photoKey = 'cruise_profile_photo_path'; // survives logout
 
   /// Global notifier for profile photo path changes.
   /// Screens can listen to this to update in real time.
@@ -108,12 +109,15 @@ class UserSession {
   }
 
   /// Log out — clear saved session, mode, and JWT token.
+  /// Profile photo path is preserved so it survives sign-out/sign-in.
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
     await prefs.remove(_modeKey);
     await prefs.remove('pending_password');
     await ApiService.clearToken();
+    ApiService.clearUserCache();
+    photoNotifier.value = '';
   }
 
   /// Temporarily save a password during registration flow.
@@ -143,8 +147,10 @@ class UserSession {
       await permanent.delete();
     }
     await File(tempPath).copy(permanent.path);
-    // Update session
+    // Update session + persistent photo key
     await updateField('photoPath', permanent.path);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_photoKey, permanent.path);
     // Notify all listeners immediately
     photoNotifier.value = permanent.path;
     return permanent.path;
@@ -154,6 +160,23 @@ class UserSession {
   static Future<void> initPhotoNotifier() async {
     final user = await getUser();
     final path = user?['photoPath'] ?? '';
-    if (path.isNotEmpty) photoNotifier.value = path;
+    if (path.isNotEmpty) {
+      photoNotifier.value = path;
+      return;
+    }
+    // Fallback: check persistent photo key (survives logout)
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_photoKey) ?? '';
+    if (saved.isNotEmpty && !kIsWeb && await File(saved).exists()) {
+      photoNotifier.value = saved;
+      // Also restore into session
+      await updateField('photoPath', saved);
+    }
+  }
+
+  /// Get the persisted photo path (survives logout).
+  static Future<String> getPersistedPhotoPath() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_photoKey) ?? '';
   }
 }

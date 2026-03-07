@@ -125,7 +125,11 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
       // Cache user data locally — preserve existing photo if available
       final user = result['user'] as Map<String, dynamic>;
       final existingUser = await UserSession.getUser();
-      final existingPhoto = existingUser?['photoPath'] ?? '';
+      String existingPhoto = existingUser?['photoPath'] ?? '';
+      // Fallback: check persistent photo (survives logout)
+      if (existingPhoto.isEmpty) {
+        existingPhoto = await UserSession.getPersistedPhotoPath();
+      }
       await UserSession.saveUser(
         firstName: user['first_name'] ?? '',
         lastName: user['last_name'] ?? '',

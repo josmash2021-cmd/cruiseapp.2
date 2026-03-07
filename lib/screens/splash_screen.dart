@@ -5,6 +5,7 @@ import 'welcome_screen.dart';
 import 'home_screen.dart';
 import 'driver/driver_home_screen.dart';
 import '../config/page_transitions.dart';
+import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 
@@ -195,6 +196,22 @@ class _SplashScreenState extends State<SplashScreen>
             // Biometric error — fall through to normal login
           }
         }
+      }
+      if (!mounted) return;
+      // ── Check if dispatch blocked/deleted account ──
+      try {
+        final status = await ApiService.getAccountStatus();
+        if (status == 'blocked' || status == 'deleted') {
+          await UserSession.logout();
+          if (!mounted) return;
+          destination = const WelcomeScreen();
+          Navigator.of(
+            context,
+          ).pushReplacement(smoothFadeRoute(destination, durationMs: 400));
+          return;
+        }
+      } catch (_) {
+        // Backend unreachable — allow login from cache
       }
       if (!mounted) return;
       final mode = await UserSession.getMode();

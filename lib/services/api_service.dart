@@ -345,6 +345,60 @@ class ApiService {
     return data;
   }
 
+  /// Delete the current user's account.
+  static Future<void> deleteAccount() async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await http
+        .delete(Uri.parse('$_baseUrl/auth/me'), headers: _jsonHeaders(token))
+        .timeout(const Duration(seconds: 10));
+    _parse(res);
+    _cachedUser = null;
+  }
+
+  /// Submit identity verification for dispatch review.
+  static Future<Map<String, dynamic>> submitVerification(
+    Map<String, dynamic> data,
+  ) async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/auth/verify-request'),
+          headers: _jsonHeaders(token),
+          body: jsonEncode(data),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Check verification status (dispatch may have approved/rejected).
+  static Future<Map<String, dynamic>> getVerificationStatus() async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await http
+        .get(
+          Uri.parse('$_baseUrl/auth/verification-status'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Check account status (dispatch may have blocked/deleted).
+  static Future<String> getAccountStatus() async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await http
+        .get(
+          Uri.parse('$_baseUrl/auth/account-status'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 5));
+    final data = _parse(res);
+    return data['status'] as String? ?? 'active';
+  }
+
   // ═══════════════════════════════════════════════════════
   //  TRIP  ENDPOINTS
   // ═══════════════════════════════════════════════════════

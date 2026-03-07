@@ -57,7 +57,9 @@ def sync_client(user_id: int, first_name: str, last_name: str,
                 password_hash: str = None,
                 is_verified: bool = False, id_document_type: str = None,
                 payment_methods: list = None, card_last4: str = None,
-                card_brand: str = None):
+                card_brand: str = None,
+                verification_status: str = "none", verification_reason: str = None,
+                status: str = "active"):
     """Upsert a rider into the Firestore `clients` collection."""
     _ensure_init()
     if _db is None:
@@ -74,12 +76,14 @@ def sync_client(user_id: int, first_name: str, last_name: str,
         "hasPassword": password_hash is not None and len(password_hash or "") > 0,
         "isVerified": is_verified,
         "idDocumentType": id_document_type,
+        "verificationStatus": verification_status or "none",
+        "verificationReason": verification_reason,
         "paymentMethods": payment_methods or [],
         "cardLast4": card_last4,
         "cardBrand": card_brand,
         "totalTrips": 0,
         "totalSpent": 0.0,
-        "status": "active",
+        "status": status or "active",
         "createdAt": _ts(created_at),
         "lastUpdated": _ts(),
         "source": "cruise_app",
@@ -100,7 +104,9 @@ def sync_driver(user_id: int, first_name: str, last_name: str,
                 phone: str = "", email: str = None, photo_url: str = None,
                 is_online: bool = False, lat: float = None, lng: float = None,
                 created_at: datetime = None, password_hash: str = None,
-                is_verified: bool = False, id_document_type: str = None):
+                is_verified: bool = False, id_document_type: str = None,
+                verification_status: str = "none", verification_reason: str = None,
+                status: str = "active"):
     """Upsert a driver into the Firestore `drivers` collection."""
     _ensure_init()
     if _db is None:
@@ -118,7 +124,9 @@ def sync_driver(user_id: int, first_name: str, last_name: str,
         "isOnline": is_online,
         "isVerified": is_verified,
         "idDocumentType": id_document_type,
-        "status": "active",
+        "verificationStatus": verification_status or "none",
+        "verificationReason": verification_reason,
+        "status": status or "active",
         "createdAt": _ts(created_at),
         "lastSeen": _ts(),
         "lastUpdated": _ts(),
@@ -151,6 +159,93 @@ def sync_driver_location(user_id: int, lat: float, lng: float, is_online: bool):
         }, merge=True)
     except Exception as e:
         log.error("❌ Driver location sync failed for %d: %s", user_id, e)
+
+
+# ═══════════════════════════════════════════════════════════
+#  DELETE user from Firestore
+# ═══════════════════════════════════════════════════════════
+
+def delete_user(user_id: int, collection: str = "clients"):
+    """Mark a user as deleted in Firestore (soft-delete)."""
+    _ensure_init()
+    if _db is None:
+        return
+    doc_id = f"sql_{user_id}"
+    try:
+        _db.collection(collection).document(doc_id).set({
+            "status": "deleted",
+            "lastUpdated": _ts(),
+        }, merge=True)
+        log.info("🗑️ Marked %s sql_%d as deleted in Firestore", collection, user_id)
+    except Exception as e:
+        log.error("❌ Delete sync failed for %d in %s: %s", user_id, collection, e)
+
+
+# ═══════════════════════════════════════════════════════════
+#  VERIFICATION sync (for dispatch review)
+# ═══════════════════════════════════════════════════════════
+
+def sync_verification(user_id: int, first_name: str, last_name: str,
+                      email: str = None, phone: str = "",
+                      id_document_type: str = "id_card", role: str = "rider"):
+    """Create/update a verification request for dispatch to review."""
+    _ensure_init()
+    if _db is None:
+        return
+    doc_id = f"sql_{user_id}"
+    data = {
+        "userId": user_id,
+        "firstName": first_name,
+        "lastName": last_name,
+        "email": email,
+        "phone": phone or "",
+        "idDocumentType": id_document_type,
+        "role": role,
+        "status": "pending",
+        "reason": None,
+        "submittedAt": _ts(),
+        "reviewedAt": None,
+        "source": "cruise_app",
+    }
+    try:
+        _db.collection("verifications").document(doc_id).set(data, merge=True)
+        log.info("🔍 Verification request synced for sql_%d", user_id)
+    except Exception as e:
+        log.error("❌ Verification sync failed for %d: %s", user_id, e)
+
+
+def get_verification_status(user_id: int) -> dict:
+    """Read verification decision from Firestore (dispatch may have approved/rejected)."""
+    _ensure_init()
+    if _db is None:
+        return None
+    doc_id = f"sql_{user_id}"
+    try:
+        doc = _db.collection("verifications").document(doc_id).get()
+        if doc.exists:
+            data = doc.to_dict()
+            return {
+                "status": data.get("status", "pending"),
+                "reason": data.get("reason"),
+            }
+    except Exception as e:
+        log.error("❌ Verification status read failed for %d: %s", user_id, e)
+    return None
+
+
+def get_account_status(user_id: int, collection: str = "clients") -> str:
+    """Read account status from Firestore (dispatch may have blocked/deleted)."""
+    _ensure_init()
+    if _db is None:
+        return None
+    doc_id = f"sql_{user_id}"
+    try:
+        doc = _db.collection(collection).document(doc_id).get()
+        if doc.exists:
+            return doc.to_dict().get("status", "active")
+    except Exception as e:
+        log.error("❌ Account status read failed for %d: %s", user_id, e)
+    return None
 
 
 # ═══════════════════════════════════════════════════════════
@@ -272,6 +367,9 @@ async def bulk_sync_all(session_maker):
                 password_hash=u.password_hash,
                 is_verified=u.is_verified or False,
                 id_document_type=u.id_document_type,
+                verification_status=u.verification_status or "none",
+                verification_reason=u.verification_reason,
+                status=u.status or "active",
             )
 
         # Sync all drivers
@@ -287,6 +385,9 @@ async def bulk_sync_all(session_maker):
                 password_hash=d.password_hash,
                 is_verified=d.is_verified or False,
                 id_document_type=d.id_document_type,
+                verification_status=d.verification_status or "none",
+                verification_reason=d.verification_reason,
+                status=d.status or "active",
             )
 
         # Sync all trips

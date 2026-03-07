@@ -49,7 +49,10 @@ class User(Base):
     lng = Column(Float, nullable=True)
     is_verified = Column(Boolean, default=False)
     id_document_type = Column(String(30), nullable=True)  # license, passport, id_card
+    verification_status = Column(String(20), default="none")  # none, pending, approved, rejected
+    verification_reason = Column(Text, nullable=True)  # rejection reason
     verified_at = Column(DateTime, nullable=True)
+    status = Column(String(20), default="active")  # active, blocked, deleted
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class Trip(Base):
@@ -217,7 +220,10 @@ def _user_dict(u: User) -> dict:
         "role": u.role,
         "is_verified": u.is_verified or False,
         "id_document_type": u.id_document_type,
+        "verification_status": u.verification_status or "none",
+        "verification_reason": u.verification_reason,
         "verified_at": u.verified_at.isoformat() if u.verified_at else None,
+        "status": u.status or "active",
     }
 
 # ── Schemas ─────────────────────────────────────────────
@@ -365,6 +371,8 @@ async def login(body: LoginIn, db: AsyncSession = Depends(get_db)):
     user = result.scalar_one_or_none()
     if not user or not pwd.verify(body.password, user.password_hash):
         raise HTTPException(401, "Invalid credentials")
+    if (user.status or "active") in ("deleted", "blocked"):
+        raise HTTPException(403, f"Account {user.status}")
 
     login_token = _create_login_token(user.id)
     return {
@@ -405,7 +413,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     if not db_user:
         raise HTTPException(404, "User not found")
     for key in ("first_name", "last_name", "email", "phone", "photo_url", "role",
-                 "is_verified", "id_document_type"):
+                 "is_verified", "id_document_type", "verification_status", "verification_reason"):
         if key in updates:
             setattr(db_user, key, updates[key])
     if updates.get("is_verified") and not db_user.verified_at:
@@ -426,6 +434,9 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
                     password_hash=db_user.password_hash,
                     is_verified=db_user.is_verified or False,
                     id_document_type=db_user.id_document_type,
+                    verification_status=db_user.verification_status or "none",
+                    verification_reason=db_user.verification_reason,
+                    status=db_user.status or "active",
                 )
             else:
                 firestore_sync.sync_client(
@@ -436,11 +447,112 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
                     password_hash=db_user.password_hash,
                     is_verified=db_user.is_verified or False,
                     id_document_type=db_user.id_document_type,
+                    verification_status=db_user.verification_status or "none",
+                    verification_reason=db_user.verification_reason,
+                    status=db_user.status or "active",
                 )
         except Exception as e:
             logging.error("Firestore profile sync failed: %s", e)
 
     return _user_dict(db_user)
+
+@app.delete("/auth/me", dependencies=[Depends(_verify_api_key)])
+async def delete_account(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Delete (soft-delete) the current user's account."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    db_user.status = "deleted"
+    await db.commit()
+    # Sync deletion to Firestore
+    if _HAS_FIRESTORE:
+        try:
+            if db_user.role == "driver":
+                firestore_sync.delete_user(db_user.id, "drivers")
+            else:
+                firestore_sync.delete_user(db_user.id, "clients")
+        except Exception as e:
+            logging.error("Firestore delete sync failed: %s", e)
+    return {"detail": "Account deleted"}
+
+@app.post("/auth/verify-request", dependencies=[Depends(_verify_api_key)])
+async def submit_verification(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Submit identity verification for dispatch review."""
+    body = await request.json()
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    db_user.id_document_type = body.get("id_document_type", "id_card")
+    db_user.verification_status = "pending"
+    db_user.verification_reason = None
+    db_user.is_verified = False
+    await db.commit()
+    await db.refresh(db_user)
+    # Sync to Firestore so dispatch can review
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_verification(
+                user_id=db_user.id,
+                first_name=db_user.first_name,
+                last_name=db_user.last_name,
+                email=db_user.email,
+                phone=db_user.phone or "",
+                id_document_type=db_user.id_document_type,
+                role=db_user.role,
+            )
+        except Exception as e:
+            logging.error("Firestore verification sync failed: %s", e)
+    return _user_dict(db_user)
+
+@app.get("/auth/verification-status", dependencies=[Depends(_verify_api_key)])
+async def verification_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Check current verification status. Also syncs from Firestore if dispatch updated it."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    # Check Firestore for dispatch updates
+    if _HAS_FIRESTORE and db_user.verification_status == "pending":
+        try:
+            fs_status = firestore_sync.get_verification_status(db_user.id)
+            if fs_status and fs_status.get("status") in ("approved", "rejected"):
+                db_user.verification_status = fs_status["status"]
+                db_user.verification_reason = fs_status.get("reason")
+                if fs_status["status"] == "approved":
+                    db_user.is_verified = True
+                    if not db_user.verified_at:
+                        db_user.verified_at = datetime.now(timezone.utc)
+                await db.commit()
+                await db.refresh(db_user)
+        except Exception as e:
+            logging.error("Firestore verification check failed: %s", e)
+    return {
+        "verification_status": db_user.verification_status or "none",
+        "verification_reason": db_user.verification_reason,
+        "is_verified": db_user.is_verified or False,
+    }
+
+@app.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])
+async def account_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Check if account is active, blocked, or deleted (dispatch can change this via Firestore)."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    # Sync status from Firestore (dispatch may have blocked/deleted)
+    if _HAS_FIRESTORE:
+        try:
+            collection = "drivers" if db_user.role == "driver" else "clients"
+            fs_status = firestore_sync.get_account_status(db_user.id, collection)
+            if fs_status and fs_status != (db_user.status or "active"):
+                db_user.status = fs_status
+                await db.commit()
+                await db.refresh(db_user)
+        except Exception as e:
+            logging.error("Firestore account status check failed: %s", e)
+    return {"status": db_user.status or "active"}
 
 # ═══════════════════════════════════════════════════════
 #  TRIP  ENDPOINTS

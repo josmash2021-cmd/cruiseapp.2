@@ -20,10 +20,13 @@ workflows:
       - name: Disable code signing in project
         script: |
           cd ios
-          # Disable code signing for all targets
+          # Disable code signing for all targets in project.pbxproj
           sed -i '' 's/CODE_SIGN_IDENTITY = .*;/CODE_SIGN_IDENTITY = "";/g' Runner.xcodeproj/project.pbxproj
           sed -i '' 's/DEVELOPMENT_TEAM = [^;]*;/DEVELOPMENT_TEAM = "";/g' Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = .*;/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";/g' Runner.xcodeproj/project.pbxproj
+          # Inject CODE_SIGNING_ALLOWED = NO and CODE_SIGNING_REQUIRED = NO
+          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER/CODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER/g' Runner.xcodeproj/project.pbxproj
       - name: Flutter build iOS (no codesign)
         script: |
           flutter build ios --release --no-codesign --no-tree-shake-icons \
@@ -31,11 +34,12 @@ workflows:
             2>&1 | tee /tmp/flutter_build.log
           # fallback: try debug if release fails
           if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "Release failed, trying debug..."
             flutter build ios --debug --no-codesign --no-tree-shake-icons
           fi
       - name: Empaquetar .app en .ipa
         script: |
-          APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -1)
+          APP_PATH=$(find build/ios -name "*.app" -type d | head -1)
           mkdir -p build/ios/ipa/Payload
           cp -r "$APP_PATH" build/ios/ipa/Payload/
           cd build/ios/ipa

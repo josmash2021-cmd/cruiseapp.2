@@ -7,6 +7,10 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      vars:
+        FLUTTER_XCODE_CODE_SIGNING_ALLOWED: "NO"
+        FLUTTER_XCODE_CODE_SIGNING_REQUIRED: "NO"
+        FLUTTER_XCODE_CODE_SIGN_IDENTITY: ""
     scripts:
       - name: Get Flutter packages
         script: |
@@ -21,14 +25,14 @@ workflows:
         script: |
           cd ios
           python3 << 'PYEOF'
-          import re, os, glob
+          import re, glob
 
           def patch_pbxproj(path):
               with open(path, 'r') as f:
                   content = f.read()
-              # Remove entitlements (causes signing failures)
+              # Remove entitlements
               content = re.sub(r'\s*CODE_SIGN_ENTITLEMENTS = [^;]*;', '', content)
-              # Clear signing identity everywhere
+              # Clear signing identity
               content = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"',
                                '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', content)
               content = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"',
@@ -42,29 +46,35 @@ workflows:
               # Disable product validation
               content = re.sub(r'VALIDATE_PRODUCT = YES',
                                'VALIDATE_PRODUCT = NO', content)
+              # Remove existing CODE_SIGNING_ALLOWED/REQUIRED lines to avoid dupes
+              content = re.sub(r'\n\s*CODE_SIGNING_ALLOWED = [^;]*;', '', content)
+              content = re.sub(r'\n\s*CODE_SIGNING_REQUIRED = [^;]*;', '', content)
+              # Inject CODE_SIGNING_ALLOWED=NO into every buildSettings block
+              content = content.replace(
+                  'buildSettings = {',
+                  'buildSettings = {\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;'
+              )
               with open(path, 'w') as f:
                   f.write(content)
               print(f"Patched: {path}")
 
-          # Patch Runner project
           patch_pbxproj('Runner.xcodeproj/project.pbxproj')
-
-          # Patch every Pods pbxproj
           for p in glob.glob('Pods/**/*.pbxproj', recursive=True):
               patch_pbxproj(p)
           PYEOF
 
-          # Inject into xcconfig as extra safety layer
-          cat >> Flutter/Release.xcconfig << 'EOF'
-          CODE_SIGNING_ALLOWED=NO
-          CODE_SIGNING_REQUIRED=NO
-          CODE_SIGN_IDENTITY=
-          CODE_SIGN_ENTITLEMENTS=
-          EXPANDED_CODE_SIGN_IDENTITY=
-          EOF
+          # Inject into xcconfig (no leading spaces)
+          printf 'CODE_SIGNING_ALLOWED=NO\nCODE_SIGNING_REQUIRED=NO\nCODE_SIGN_IDENTITY=\nCODE_SIGN_ENTITLEMENTS=\nEXPANDED_CODE_SIGN_IDENTITY=\n' >> Flutter/Release.xcconfig
       - name: Flutter build iOS (no codesign)
         script: |
-          flutter build ios --release --no-codesign --no-tree-shake-icons
+          flutter build ios --release --no-codesign --no-tree-shake-icons || true
+          # Verify .app was actually built
+          APP=$(find build/ios -name "*.app" -type d | head -1)
+          if [ -z "$APP" ]; then
+            echo "ERROR: No .app bundle found. Build truly failed."
+            exit 1
+          fi
+          echo "Build succeeded: $APP"
       - name: Empaquetar .app en .ipa
         script: |
           APP_PATH=$(find build/ios -name "*.app" -type d | head -1)

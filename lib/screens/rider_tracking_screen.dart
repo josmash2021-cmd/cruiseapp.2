@@ -2039,6 +2039,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           child: Image.asset(
             _vehicleAsset,
             fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            isAntiAlias: true,
+            cacheWidth: 320,
             errorBuilder: (_, _, _) => Icon(
               Icons.directions_car_rounded,
               size: 36,

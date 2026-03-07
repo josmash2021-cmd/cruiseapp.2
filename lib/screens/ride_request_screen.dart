@@ -1872,8 +1872,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               width: 64,
               height: 48,
               fit: BoxFit.contain,
-              filterQuality: FilterQuality.medium,
-              cacheWidth: 128,
+              filterQuality: FilterQuality.high,
+              isAntiAlias: true,
+              cacheWidth: 256,
               errorBuilder: (_, e, s) => Icon(
                 Icons.directions_car_rounded,
                 size: 32,
@@ -2252,7 +2253,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                   fit: BoxFit.contain,
                                   filterQuality: FilterQuality.high,
                                   isAntiAlias: true,
-                                  cacheWidth: 160,
+                                  cacheWidth: 256,
                                   errorBuilder: (_, _, _) => Icon(
                                     Icons.directions_car_rounded,
                                     color: c.gold,

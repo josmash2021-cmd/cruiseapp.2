@@ -19,6 +19,9 @@ workflows:
         ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
         ENV_STRIPE_PK: "pk_test_REPLACE_WITH_YOUR_KEY"
         ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
+        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
+        ENV_TWILIO_TOKEN: "a7a068f83aa355acbd31deaafc317cf9"
+        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
     scripts:
       - name: Generate env.dart
         script: |
@@ -33,6 +36,9 @@ workflows:
             static const String emailjsPrivateKey = '${ENV_EMAILJS_PRIVATE_KEY}';
             static const String stripePublishableKey = '${ENV_STRIPE_PK}';
             static const String stripeMerchantId = '${ENV_STRIPE_MERCHANT}';
+            static const String twilioAccountSid = '${ENV_TWILIO_SID}';
+            static const String twilioAuthToken = '${ENV_TWILIO_TOKEN}';
+            static const String twilioServiceSid = '${ENV_TWILIO_SERVICE}';
           }
           ENVEOF
           echo "env.dart generated:"

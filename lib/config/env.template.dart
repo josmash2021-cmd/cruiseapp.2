@@ -21,4 +21,9 @@ class Env {
   // ── Stripe ──
   static const String stripePublishableKey = 'YOUR_STRIPE_PUBLISHABLE_KEY';
   static const String stripeMerchantId = 'merchant.com.cruise.app';
+
+  // ── Twilio Verify ──
+  static const String twilioAccountSid = 'YOUR_TWILIO_ACCOUNT_SID';
+  static const String twilioAuthToken = 'YOUR_TWILIO_AUTH_TOKEN';
+  static const String twilioServiceSid = 'YOUR_TWILIO_SERVICE_SID';
 }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/env.dart';
 
 /// Service to send and verify OTP codes via Twilio Verify API.
 ///
@@ -14,9 +15,9 @@ class SmsService {
   // ╔═══════════════════════════════════════════════════════════╗
   // ║  TWILIO CREDENTIALS                                      ║
   // ╚═══════════════════════════════════════════════════════════╝
-  static const String _accountSid  = 'AC0bd6acdd300ffe9df86f02d60b6473c9';
-  static const String _authToken   = 'a7a068f83aa355acbd31deaafc317cf9';
-  static const String _serviceSid  = 'VA023301cd93dfccb77cd2ca95e59f688b';
+  static const String _accountSid = Env.twilioAccountSid;
+  static const String _authToken = Env.twilioAuthToken;
+  static const String _serviceSid = Env.twilioServiceSid;
 
   static String get _authHeader =>
       'Basic ${base64Encode(utf8.encode('$_accountSid:$_authToken'))}';
@@ -47,19 +48,19 @@ class SmsService {
           'Authorization': _authHeader,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: {
-          'To': toPhone,
-          'Channel': 'sms',
-        },
+        body: {'To': toPhone, 'Channel': 'sms'},
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         debugPrint('✅ Verification SMS sent to $toPhone');
         return (ok: true, trialBlocked: false);
       } else {
-        debugPrint('❌ Twilio Verify error ${response.statusCode}: ${response.body}');
+        debugPrint(
+          '❌ Twilio Verify error ${response.statusCode}: ${response.body}',
+        );
         // Error 21608 = trial account cannot send to unverified number
-        final isTrialBlock = response.body.contains('21608') ||
+        final isTrialBlock =
+            response.body.contains('21608') ||
             response.body.contains('unverified');
         return (ok: false, trialBlocked: isTrialBlock);
       }
@@ -91,10 +92,7 @@ class SmsService {
           'Authorization': _authHeader,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: {
-          'To': toPhone,
-          'Code': code,
-        },
+        body: {'To': toPhone, 'Code': code},
       );
 
       if (response.statusCode == 200) {
@@ -103,7 +101,9 @@ class SmsService {
         debugPrint('🔑 Verification status: $status');
         return status == 'approved';
       } else {
-        debugPrint('❌ Verify check error ${response.statusCode}: ${response.body}');
+        debugPrint(
+          '❌ Verify check error ${response.statusCode}: ${response.body}',
+        );
         return false;
       }
     } catch (e) {

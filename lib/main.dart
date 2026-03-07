@@ -30,8 +30,17 @@ void main() async {
       await SecurityService.init();
       // ── Load persisted server URL (must run before any ApiService call) ──
       await ApiService.init();
-      // Auto-detect best reachable server (local, LAN, tunnel)
-      await ApiService.probeAndSetBestUrl();
+      // Auto-detect best reachable server — non-blocking with 8s overall timeout
+      // so the app doesn't freeze for 42s if all URLs are unreachable.
+      await ApiService.probeAndSetBestUrl(
+        timeout: const Duration(seconds: 3),
+      ).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {
+          debugPrint('[ApiService] probe timed out — using saved/default URL');
+          return null;
+        },
+      );
       // Initialize profile photo notifier for real-time sync
       await UserSession.initPhotoNotifier();
 

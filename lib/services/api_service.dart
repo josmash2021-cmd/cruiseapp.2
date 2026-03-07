@@ -248,7 +248,9 @@ class ApiService {
       'X-Timestamp': timestamp,
       'X-Nonce': nonce,
       'X-Signature': signature,
-      'X-Device-FP': SecurityService.deviceFingerprint.substring(0, 16),
+      'X-Device-FP': SecurityService.deviceFingerprint.length >= 16
+          ? SecurityService.deviceFingerprint.substring(0, 16)
+          : SecurityService.deviceFingerprint,
       'X-Client-Version': '1.0.0',
       if (token != null) 'Authorization': 'Bearer $token',
     };
@@ -321,7 +323,7 @@ class ApiService {
     final token = data['access_token'] as String;
     await _saveToken(token);
 
-    debugPrint('✅ Registered user ${data['user']['id']}');
+    debugPrint('✅ Registered user ${data['user']?['id']}');
     return data;
   }
 
@@ -383,7 +385,7 @@ class ApiService {
     }
     // Clear stale user cache so getCurrentUserId fetches fresh data
     _cachedUser = data['user'] as Map<String, dynamic>?;
-    debugPrint('✅ Login complete — user ${data['user']['id']}');
+    debugPrint('✅ Login complete — user ${data['user']?['id']}');
     return data;
   }
 

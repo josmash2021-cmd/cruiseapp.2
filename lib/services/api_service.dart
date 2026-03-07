@@ -527,7 +527,12 @@ class ApiService {
       if (res.statusCode != 200 || res.bodyBytes.isEmpty) return '';
       final dir = await getApplicationDocumentsDirectory();
       final ext = photoUrl.endsWith('.png') ? 'png' : 'jpg';
-      final file = File('${dir.path}/profile_photo.$ext');
+      // Use the server filename (user_ID.ext) to isolate photos per user
+      final serverFilename = photoUrl.split('/').last;
+      final filename = serverFilename.isNotEmpty
+          ? serverFilename
+          : 'profile_photo.$ext';
+      final file = File('${dir.path}/$filename');
       await file.writeAsBytes(res.bodyBytes);
       return file.path;
     } catch (e) {

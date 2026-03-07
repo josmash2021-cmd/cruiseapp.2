@@ -154,6 +154,7 @@ class UserSession {
     await prefs.remove(_key);
     await prefs.remove(_modeKey);
     await prefs.remove('pending_password');
+    await prefs.remove(_photoKey); // Clear photo reference for this account
     await ApiService.clearToken();
     ApiService.clearUserCache();
     // Clear all user-specific data so accounts are fully independent
@@ -182,7 +183,10 @@ class UserSession {
     }
     final dir = await getApplicationDocumentsDirectory();
     final ext = tempPath.contains('.') ? tempPath.split('.').last : 'jpg';
-    final permanent = File('${dir.path}/profile_photo.$ext');
+    // Use user ID in filename to isolate photos per account
+    final user = await getUser();
+    final userId = user?['id'] ?? 'unknown';
+    final permanent = File('${dir.path}/user_$userId.$ext');
     // Delete old photo if exists
     if (await permanent.exists()) {
       await permanent.delete();

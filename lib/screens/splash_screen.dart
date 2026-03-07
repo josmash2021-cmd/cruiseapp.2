@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:local_auth/local_auth.dart';
 import 'welcome_screen.dart';
 import 'home_screen.dart';
@@ -292,7 +293,7 @@ class _SplashScreenState extends State<SplashScreen>
                           scale: scale,
                           child: Text(
                             _letters[i],
-                            style: TextStyle(
+                            style: GoogleFonts.cinzel(
                               fontSize: 56,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 3,

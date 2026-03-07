@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:video_player/video_player.dart';
 import '../config/page_transitions.dart';
 import 'login_screen.dart';
@@ -133,11 +134,11 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   FadeTransition(
                     opacity: _logoFade,
                     child: RichText(
-                      text: const TextSpan(
+                      text: TextSpan(
                         children: [
                           TextSpan(
                             text: 'Cruise',
-                            style: TextStyle(
+                            style: GoogleFonts.cinzel(
                               fontSize: 34,
                               fontWeight: FontWeight.w900,
                               color: _gold,

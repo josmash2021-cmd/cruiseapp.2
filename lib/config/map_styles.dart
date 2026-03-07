@@ -4,38 +4,34 @@ class MapStyles {
   MapStyles._();
 
   // ═════════════════════════════════════════════════════
-  //  DARK — Dark theme with golden roads (Cruise brand)
+  //  DARK — Google Maps dark with all POIs, labels & icons
   // ═════════════════════════════════════════════════════
   static const dark = '''
 [
-  {"elementType":"geometry","stylers":[{"color":"#1a1a2e"}]},
-  {"elementType":"labels.text.fill","stylers":[{"color":"#8a8a9e"}]},
-  {"elementType":"labels.text.stroke","stylers":[{"color":"#1a1a2e"}]},
-  {"featureType":"administrative.locality","elementType":"labels.text.fill","stylers":[{"color":"#d4a843"}]},
-  {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#1e1e32"}]},
-  {"featureType":"landscape.man_made","elementType":"geometry.fill","stylers":[{"color":"#222238"}]},
-  {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#9e9e7a"}]},
-  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#1a2e1e"}]},
-  {"featureType":"poi.park","elementType":"labels.text.fill","stylers":[{"color":"#5a8a5e"}]},
-  {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#3d3520"}]},
-  {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#1a1a2e"}]},
-  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#c8b87a"}]},
-  {"featureType":"road.local","elementType":"geometry.fill","stylers":[{"color":"#352e1c"}]},
-  {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#4a3f24"}]},
-  {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#6b5a28"}]},
-  {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#2a2410"}]},
-  {"featureType":"road.highway","elementType":"labels.text.fill","stylers":[{"color":"#e8c547"}]},
-  {"featureType":"road.highway.controlled_access","elementType":"geometry.fill","stylers":[{"color":"#7a6830"}]},
-  {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#222238"}]},
-  {"featureType":"transit.station","elementType":"labels.text.fill","stylers":[{"color":"#c8a84a"}]},
-  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#0e1a2e"}]},
-  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#3a4a6a"}]},
-  {"featureType":"water","elementType":"labels.text.stroke","stylers":[{"color":"#0e1a2e"}]}
+  {"elementType":"geometry","stylers":[{"color":"#242f3e"}]},
+  {"elementType":"labels.text.fill","stylers":[{"color":"#746855"}]},
+  {"elementType":"labels.text.stroke","stylers":[{"color":"#242f3e"}]},
+  {"featureType":"administrative.locality","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
+  {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#263238"}]},
+  {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
+  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#263c3f"}]},
+  {"featureType":"poi.park","elementType":"labels.text.fill","stylers":[{"color":"#6b9a76"}]},
+  {"featureType":"road","elementType":"geometry","stylers":[{"color":"#38414e"}]},
+  {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#212a37"}]},
+  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#9ca5b3"}]},
+  {"featureType":"road.highway","elementType":"geometry","stylers":[{"color":"#746855"}]},
+  {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#1f2835"}]},
+  {"featureType":"road.highway","elementType":"labels.text.fill","stylers":[{"color":"#f3d19c"}]},
+  {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#2f3948"}]},
+  {"featureType":"transit.station","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
+  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#17263c"}]},
+  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#515c6d"}]},
+  {"featureType":"water","elementType":"labels.text.stroke","stylers":[{"color":"#17263c"}]}
 ]
 ''';
 
   // ═════════════════════════════════════════════════════
-  //  LIGHT — Clean white with golden highway accents
+  //  LIGHT — Apple Maps-inspired clean white
   // ═════════════════════════════════════════════════════
   static const light = '''
 [
@@ -54,10 +50,9 @@ class MapStyles {
   {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#D6D6DB"},{"weight":0.5}]},
   {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#8E8E93"}]},
   {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#FFFFFF"}]},
-  {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#FFF0C8"}]},
-  {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#E8D8A0"},{"weight":0.5}]},
-  {"featureType":"road.highway","elementType":"labels.text.fill","stylers":[{"color":"#8a7540"}]},
-  {"featureType":"road.highway.controlled_access","elementType":"geometry.fill","stylers":[{"color":"#FFE8A0"}]},
+  {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#FFF9E8"}]},
+  {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#E8DFC0"},{"weight":0.5}]},
+  {"featureType":"road.highway.controlled_access","elementType":"geometry.fill","stylers":[{"color":"#FFF3D1"}]},
   {"featureType":"road.local","elementType":"geometry.fill","stylers":[{"color":"#FFFFFF"}]},
   {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#E5E5EA"}]},
   {"featureType":"transit.station","elementType":"labels","stylers":[{"visibility":"off"}]},
@@ -67,7 +62,7 @@ class MapStyles {
 ''';
 
   // ═════════════════════════════════════════════════════
-  //  NAVIGATION — Ultra-dark with golden route highlights
+  //  NAVIGATION — Ultra-dark Google Maps navigation style
   // ═════════════════════════════════════════════════════
   static const navigation = '''
 [
@@ -80,14 +75,13 @@ class MapStyles {
   {"featureType":"poi","elementType":"labels","stylers":[{"visibility":"off"}]},
   {"featureType":"poi","elementType":"geometry","stylers":[{"color":"#1e1e38"}]},
   {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#1a2e1a"}]},
-  {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#3d3520"}]},
+  {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#2a2a4a"}]},
   {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#141428"}]},
-  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#c8b87a"}]},
-  {"featureType":"road.local","elementType":"geometry.fill","stylers":[{"color":"#302a18"}]},
-  {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#3a3220"}]},
-  {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#5a4e24"}]},
+  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#7a7a9a"}]},
+  {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#3a3a5a"}]},
   {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#1a1a30"}]},
-  {"featureType":"road.highway","elementType":"labels.text.fill","stylers":[{"color":"#d4a843"}]},
+  {"featureType":"road.highway","elementType":"labels.text.fill","stylers":[{"color":"#8a8aaa"}]},
+  {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#2e2e4e"}]},
   {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#1e1e38"}]},
   {"featureType":"transit.station","elementType":"labels","stylers":[{"visibility":"off"}]},
   {"featureType":"water","elementType":"geometry","stylers":[{"color":"#0e1a2e"}]},

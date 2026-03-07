@@ -508,4 +508,109 @@ class LocalDataService {
     await prefs.setString(_promoMonthKey, currentMonth);
     return true;
   }
+
+  // ── Active Ride State ──
+  static const _activeRideKey = 'active_ride_v1';
+
+  static Future<void> setActiveRide(ActiveRideInfo ride) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_activeRideKey, jsonEncode(ride.toJson()));
+  }
+
+  static Future<ActiveRideInfo?> getActiveRide() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_activeRideKey);
+    if (raw == null) return null;
+    try {
+      return ActiveRideInfo.fromJson(jsonDecode(raw));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> clearActiveRide() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_activeRideKey);
+  }
+}
+
+/// Persisted info about a ride in progress so the rider can resume it.
+class ActiveRideInfo {
+  final double pickupLat;
+  final double pickupLng;
+  final double dropoffLat;
+  final double dropoffLng;
+  final String pickupLabel;
+  final String dropoffLabel;
+  final String driverName;
+  final double driverRating;
+  final String vehicleMake;
+  final String vehicleModel;
+  final String vehicleColor;
+  final String vehiclePlate;
+  final String vehicleYear;
+  final String rideName;
+  final double price;
+  final List<List<double>> routePoints;
+
+  const ActiveRideInfo({
+    required this.pickupLat,
+    required this.pickupLng,
+    required this.dropoffLat,
+    required this.dropoffLng,
+    required this.pickupLabel,
+    required this.dropoffLabel,
+    required this.driverName,
+    required this.driverRating,
+    required this.vehicleMake,
+    required this.vehicleModel,
+    required this.vehicleColor,
+    required this.vehiclePlate,
+    required this.vehicleYear,
+    required this.rideName,
+    required this.price,
+    required this.routePoints,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'pickupLat': pickupLat,
+    'pickupLng': pickupLng,
+    'dropoffLat': dropoffLat,
+    'dropoffLng': dropoffLng,
+    'pickupLabel': pickupLabel,
+    'dropoffLabel': dropoffLabel,
+    'driverName': driverName,
+    'driverRating': driverRating,
+    'vehicleMake': vehicleMake,
+    'vehicleModel': vehicleModel,
+    'vehicleColor': vehicleColor,
+    'vehiclePlate': vehiclePlate,
+    'vehicleYear': vehicleYear,
+    'rideName': rideName,
+    'price': price,
+    'routePoints': routePoints,
+  };
+
+  static ActiveRideInfo fromJson(Map<String, dynamic> j) => ActiveRideInfo(
+    pickupLat: (j['pickupLat'] as num).toDouble(),
+    pickupLng: (j['pickupLng'] as num).toDouble(),
+    dropoffLat: (j['dropoffLat'] as num).toDouble(),
+    dropoffLng: (j['dropoffLng'] as num).toDouble(),
+    pickupLabel: j['pickupLabel'] ?? '',
+    dropoffLabel: j['dropoffLabel'] ?? '',
+    driverName: j['driverName'] ?? '',
+    driverRating: (j['driverRating'] as num?)?.toDouble() ?? 4.9,
+    vehicleMake: j['vehicleMake'] ?? '',
+    vehicleModel: j['vehicleModel'] ?? '',
+    vehicleColor: j['vehicleColor'] ?? '',
+    vehiclePlate: j['vehiclePlate'] ?? '',
+    vehicleYear: j['vehicleYear'] ?? '',
+    rideName: j['rideName'] ?? '',
+    price: (j['price'] as num?)?.toDouble() ?? 0,
+    routePoints:
+        (j['routePoints'] as List?)
+            ?.map((p) => (p as List).map((v) => (v as num).toDouble()).toList())
+            .toList() ??
+        [],
+  );
 }

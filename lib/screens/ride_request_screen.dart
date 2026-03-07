@@ -42,6 +42,7 @@ class RideRequestScreen extends StatefulWidget {
   final bool isAirportTrip;
   final DateTime? scheduledAt;
   final AirportSelection? airportSelection;
+  final String? initialDropoffAddress;
   const RideRequestScreen({
     super.key,
     this.fastRide = false,
@@ -49,6 +50,7 @@ class RideRequestScreen extends StatefulWidget {
     this.isAirportTrip = false,
     this.scheduledAt,
     this.airportSelection,
+    this.initialDropoffAddress,
   });
 
   @override
@@ -143,11 +145,16 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (widget.scheduledAt != null) {
       _ctrl.setSchedule(widget.scheduledAt);
     }
-    _initLocation();
-    // Auto-geocode airport and set as pickup when airport selection provided
-    if (widget.airportSelection != null) {
-      _autoSetAirportPickup(widget.airportSelection!);
-    }
+    _initLocation().then((_) {
+      // Auto-geocode airport and set as pickup when airport selection provided
+      if (widget.airportSelection != null) {
+        _autoSetAirportPickup(widget.airportSelection!);
+      }
+      // Auto-set dropoff from Quick Access address
+      if (widget.initialDropoffAddress != null) {
+        _autoSetDropoff(widget.initialDropoffAddress!);
+      }
+    });
     _loadLinkedPayments();
     _loadPinIcon();
   }
@@ -213,6 +220,30 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         if (!mounted || details == null) return;
         _ctrl.setPickup(details, terminalLabel);
       }
+    } catch (_) {}
+  }
+
+  /// Auto-geocode a dropoff address string (from Quick Access) and set it.
+  Future<void> _autoSetDropoff(String address) async {
+    final places = PlacesService(ApiKeys.webServices);
+    try {
+      final results = await places.autocomplete(address);
+      if (!mounted || results.isEmpty) return;
+      final details = await places.details(results.first.placeId);
+      if (!mounted || details == null) return;
+
+      // Use current location as pickup if available
+      if (_userLocation != null) {
+        _ctrl.setPickup(
+          PlaceDetails(
+            address: _currentAddress,
+            lat: _userLocation!.latitude,
+            lng: _userLocation!.longitude,
+          ),
+          _currentAddress,
+        );
+      }
+      _ctrl.setDropoff(details, address);
     } catch (_) {}
   }
 
@@ -970,6 +1001,30 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       return;
     }
 
+    // Persist active ride so home screen can show "Resume" banner
+    final routePts =
+        s.route?.points?.map((p) => [p.latitude, p.longitude]).toList() ?? [];
+    LocalDataService.setActiveRide(
+      ActiveRideInfo(
+        pickupLat: s.pickup!.lat,
+        pickupLng: s.pickup!.lng,
+        dropoffLat: s.dropoff!.lat,
+        dropoffLng: s.dropoff!.lng,
+        pickupLabel: s.pickupLabel,
+        dropoffLabel: s.dropoffLabel,
+        driverName: s.driver?.name ?? 'Driver',
+        driverRating: s.driver?.rating ?? 4.9,
+        vehicleMake: s.driver?.vehicleMake ?? 'Toyota',
+        vehicleModel: s.driver?.vehicleModel ?? 'Camry',
+        vehicleColor: s.driver?.vehicleColor ?? 'White',
+        vehiclePlate: s.driver?.vehiclePlate ?? 'ABC-1234',
+        vehicleYear: s.driver?.vehicleYear ?? '2022',
+        rideName: s.selectedOption?.name ?? 'Fusion',
+        price: s.selectedOption?.priceEstimate ?? 0,
+        routePoints: routePts,
+      ),
+    );
+
     Navigator.of(context).push(
       slideUpFadeRoute(
         RiderTrackingScreen(
@@ -988,6 +1043,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           pickupLabel: s.pickupLabel,
           dropoffLabel: s.dropoffLabel,
           onTripComplete: () {
+            LocalDataService.clearActiveRide();
             // Pop RiderTrackingScreen, then pop RideRequestScreen
             // to return to HomeScreen (Where to? + car options)
             Navigator.of(context).pop(); // pop tracking

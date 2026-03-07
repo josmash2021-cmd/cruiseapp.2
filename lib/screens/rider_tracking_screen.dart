@@ -14,7 +14,10 @@ import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
 import '../navigation/car_icon_loader.dart';
 import '../services/directions_service.dart';
+import '../services/local_data_service.dart';
+import '../services/notification_service.dart';
 import '../config/api_keys.dart';
+import 'chat_screen.dart';
 import 'home_screen.dart';
 
 class RiderTrackingScreen extends StatefulWidget {
@@ -73,6 +76,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   int _lastRotQ = -1; // last quantised bearing sent to CarIconLoader
 
   _TrackPhase _phase = _TrackPhase.arriving;
+  bool _greetingSent = false;
+  bool _arrivedNotifSent = false;
   LatLng _driverPos = const LatLng(0, 0);
   LatLng _animPos = const LatLng(0, 0);
   double _driverBearing = 0;
@@ -141,6 +146,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       const Duration(milliseconds: 16),
       _interpolate,
     );
+    // Send greeting notification after 3 seconds
+    Future.delayed(const Duration(seconds: 3), _sendDriverGreeting);
+    // Notify rider that a driver was assigned
+    _sendRideNotification(
+      'Driver Assigned',
+      '${widget.driverName.split(' ').first} is on the way in a ${widget.vehicleColor} ${widget.vehicleModel}',
+    );
   }
 
   @override
@@ -150,6 +162,21 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _camTimer?.cancel();
     _etaPulse.dispose();
     super.dispose();
+  }
+
+  void _sendDriverGreeting() {
+    if (!mounted || _greetingSent) return;
+    _greetingSent = true;
+    final firstName = widget.driverName.split(' ').first;
+    _sendRideNotification(
+      'Message from $firstName',
+      'Hello! I\'m $firstName, your private driver. I\'ll be arriving shortly.',
+    );
+  }
+
+  void _sendRideNotification(String title, String body) {
+    NotificationService.show(id: title.hashCode, title: title, body: body);
+    LocalDataService.addNotification(title: title, message: body, type: 'ride');
   }
 
   Future<void> _loadCarIcon() async {
@@ -482,12 +509,20 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       // Phase transitions
       if (_phase == _TrackPhase.arriving && _tgtTraveledM >= pickupDistM) {
         setState(() => _phase = _TrackPhase.arrived);
+        if (!_arrivedNotifSent) {
+          _arrivedNotifSent = true;
+          _sendRideNotification(
+            'Your driver has arrived',
+            '${widget.driverName.split(' ').first} is waiting at the pickup spot in a ${widget.vehicleColor} ${widget.vehicleModel}.',
+          );
+        }
         Timer(const Duration(seconds: 3), () {
           if (mounted) setState(() => _phase = _TrackPhase.onTrip);
         });
       }
       if (_tgtTraveledM >= totalDistM) {
         t.cancel();
+        LocalDataService.clearActiveRide();
         setState(() => _phase = _TrackPhase.completed);
         return;
       }
@@ -1241,7 +1276,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 width: double.infinity,
                 height: 48,
                 child: TextButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      slideFromRightRoute(
+                        ChatScreen(
+                          recipientName: widget.driverName.split(' ').first,
+                          avatarInitial: widget.driverName[0].toUpperCase(),
+                        ),
+                      ),
+                    );
+                  },
                   style: TextButton.styleFrom(
                     backgroundColor: Colors.white.withValues(alpha: 0.08),
                     shape: RoundedRectangleBorder(
@@ -1276,24 +1320,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   height: 40,
                   child: TextButton(
                     onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          backgroundColor: const Color(0xFF2A2A2A),
-                          title: const Text(
-                            'Contact Support',
-                            style: TextStyle(color: Colors.white),
+                      Navigator.of(context).push(
+                        slideFromRightRoute(
+                          const ChatScreen(
+                            recipientName: 'Cruise Support',
+                            isSupport: true,
                           ),
-                          content: const Text(
-                            'Our support team is available 24/7 to help you.',
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: const Text('Close'),
-                            ),
-                          ],
                         ),
                       );
                     },

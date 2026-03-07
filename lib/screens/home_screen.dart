@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'airport_terminal_sheet.dart';
 import 'map_screen.dart';
 import 'ride_request_screen.dart';
+import 'rider_tracking_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'trip_receipt_screen.dart';
 import 'account_screen.dart';
@@ -52,6 +53,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _hasActivePromo = false;
   int _dockIndex = 0; // 0=Ride, 1=Schedule, 2=Account
   bool _fleetExpanded = true;
+
+  // Active ride state
+  ActiveRideInfo? _activeRide;
 
   // User profile data
   String _firstName = '';
@@ -289,7 +293,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Text(
                 'As a welcome to Cruise, enjoy 10% off your first ride! '
                 'This exclusive offer can only be used once and will be '
-                'applied automatically to your next trip.',
+                'applied automatically to your next ride.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: c.textSecondary,
@@ -384,7 +388,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 10),
             Text(
-              'Complete ${_promoTripsLeft} more trip${_promoTripsLeft == 1 ? '' : 's'} to unlock your next 10% discount!',
+              'Complete ${_promoTripsLeft} more ride${_promoTripsLeft == 1 ? '' : 's'} to unlock your next 10% discount!',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: c.textSecondary,
@@ -407,7 +411,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 8),
             Text(
-              '$completed / 3 trips completed',
+              '$completed / 3 rides completed',
               style: TextStyle(
                 color: c.textTertiary,
                 fontSize: 12,
@@ -529,6 +533,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final notifications = await LocalDataService.getNotifications();
     final user = await UserSession.getUser();
     final hasPromo = await LocalDataService.hasActivePromo();
+    final activeRide = await LocalDataService.getActiveRide();
     if (!mounted) return;
     setState(() {
       _favorites = favorites;
@@ -536,6 +541,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _topDestinations = topDestinations;
       _notifications = notifications;
       _hasActivePromo = hasPromo;
+      _activeRide = activeRide;
       _loadingSavedData = false;
       if (user != null) {
         _firstName = user['firstName'] ?? '';
@@ -733,6 +739,83 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               SliverToBoxAdapter(child: SizedBox(height: 90 + bottomPad)),
             ],
           ),
+
+          // ── Resume active ride banner ──
+          if (_activeRide != null)
+            Positioned(
+              bottom: bottomPad + 88,
+              left: 24,
+              right: 24,
+              child: GestureDetector(
+                onTap: _resumeActiveRide,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1A1D24), Color(0xFF141720)],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _gold.withValues(alpha: 0.3)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _gold.withValues(alpha: 0.15),
+                        blurRadius: 20,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: _gold.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.directions_car_rounded,
+                          color: _gold,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Ride in progress',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Tap to resume your current ride',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        color: _gold,
+                        size: 16,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
           // ── Dock-style bottom navigation ──
           Positioned(
@@ -970,9 +1053,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _buildHeroCTA() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
-      onTap: () => Navigator.of(
-        context,
-      ).push(scaleExpandRoute(const RideRequestScreen())),
+      onTap: () async {
+        if (_activeRide != null) {
+          _resumeActiveRide();
+          return;
+        }
+        await Navigator.of(
+          context,
+        ).push(scaleExpandRoute(const RideRequestScreen()));
+        if (mounted) _loadSavedData();
+      },
       child: ListenableBuilder(
         listenable: _shimmerController,
         builder: (context, child) {
@@ -1238,7 +1328,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     );
                   },
                 ),
-          label: _promoUsed ? '${3 - _promoTripsLeft}/3 trips' : '10% off',
+          label: _promoUsed ? '${3 - _promoTripsLeft}/3 rides' : '10% off',
           disabled: _promoUsed,
           onTap: _promoUsed ? _showPromoLockedDialog : _showPromoWelcomeDialog,
         ),
@@ -1630,6 +1720,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 _homeFavorite?.address ?? 'Add',
                 _gold,
                 _openOrSaveHomeShortcut,
+                onEdit: _editHomeAddress,
               ),
             ),
             const SizedBox(width: 12),
@@ -1640,6 +1731,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 _workFavorite?.address ?? 'Add',
                 _goldLight,
                 _openOrSaveWorkShortcut,
+                onEdit: _editWorkAddress,
               ),
             ),
           ],
@@ -1760,8 +1852,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     String title,
     String subtitle,
     Color accent,
-    VoidCallback onTap,
-  ) {
+    VoidCallback onTap, {
+    VoidCallback? onEdit,
+  }) {
     final hasAddress = subtitle != 'Add' && subtitle.trim().isNotEmpty;
     return GestureDetector(
       onTap: () {
@@ -1769,7 +1862,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           onTap();
           return;
         }
-        _showPlaceOptions(title, subtitle, onTap);
+        _showPlaceOptions(title, subtitle, onEdit ?? onTap);
       },
       child: Container(
         padding: const EdgeInsets.all(14),
@@ -1911,8 +2004,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _requestRideToAddress(String address) {
+    if (_activeRide != null) {
+      _resumeActiveRide();
+      return;
+    }
     LocalDataService.incrementDestinationUsage(address);
-    Navigator.of(context).push(slideUpFadeRoute(const RideRequestScreen()));
+    Navigator.of(context)
+        .push(
+          slideUpFadeRoute(RideRequestScreen(initialDropoffAddress: address)),
+        )
+        .then((_) {
+          if (mounted) _loadSavedData();
+        });
   }
 
   // ─── Recent trips timeline ───
@@ -2343,10 +2446,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _executeDockAction(int index) async {
     switch (index) {
       case 0:
+        if (_activeRide != null) {
+          _resumeActiveRide();
+          if (mounted) setState(() => _dockIndex = 0);
+          return;
+        }
         await Navigator.of(
           context,
         ).push(slideUpFadeRoute(const RideRequestScreen()));
-        if (mounted) setState(() => _dockIndex = 0);
+        if (mounted) {
+          _loadSavedData();
+          setState(() => _dockIndex = 0);
+        }
         break;
       case 1:
         await _openScheduleSheet();
@@ -2451,8 +2562,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _openMapWithDropoff(String query) {
+    if (_activeRide != null) {
+      _resumeActiveRide();
+      return;
+    }
     LocalDataService.incrementDestinationUsage(query);
-    Navigator.of(context).push(slideFromRightRoute(const RideRequestScreen()));
+    Navigator.of(context).push(
+      slideFromRightRoute(RideRequestScreen(initialDropoffAddress: query)),
+    );
+  }
+
+  void _resumeActiveRide() {
+    final ride = _activeRide;
+    if (ride == null) return;
+    Navigator.of(context).push(
+      slideUpFadeRoute(
+        RiderTrackingScreen(
+          pickupLatLng: LatLng(ride.pickupLat, ride.pickupLng),
+          dropoffLatLng: LatLng(ride.dropoffLat, ride.dropoffLng),
+          routePoints: ride.routePoints.map((p) => LatLng(p[0], p[1])).toList(),
+          driverName: ride.driverName,
+          driverRating: ride.driverRating,
+          vehicleMake: ride.vehicleMake,
+          vehicleModel: ride.vehicleModel,
+          vehicleColor: ride.vehicleColor,
+          vehiclePlate: ride.vehiclePlate,
+          vehicleYear: ride.vehicleYear,
+          rideName: ride.rideName,
+          price: ride.price,
+          pickupLabel: ride.pickupLabel,
+          dropoffLabel: ride.dropoffLabel,
+          onTripComplete: () {
+            LocalDataService.clearActiveRide();
+            Navigator.of(context).pop();
+            _loadSavedData();
+          },
+        ),
+      ),
+    );
   }
 
   FavoritePlace? get _homeFavorite {
@@ -2475,7 +2622,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Future<void> _openOrSaveHomeShortcut() async {
     if (_homeFavorite != null) {
-      // Address saved — go to ride request
+      // Address saved — go to ride request with dropoff
       _openMapWithDropoff(_homeFavorite!.address);
       return;
     }
@@ -2491,9 +2638,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     await _loadSavedData();
   }
 
+  Future<void> _editHomeAddress() async {
+    final address = await _showAddressAutocomplete(
+      title: 'Edit Home address',
+      hint: 'Search your home address',
+    );
+    if (address == null || address.isEmpty) return;
+    await LocalDataService.saveFavorite(
+      FavoritePlace(label: 'Home', address: address),
+    );
+    await _loadSavedData();
+  }
+
   Future<void> _openOrSaveWorkShortcut() async {
     if (_workFavorite != null) {
-      // Address saved — go to ride request
+      // Address saved — go to ride request with dropoff
       _openMapWithDropoff(_workFavorite!.address);
       return;
     }
@@ -2502,6 +2661,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       hint: 'Search your work address',
     );
 
+    if (address == null || address.isEmpty) return;
+    await LocalDataService.saveFavorite(
+      FavoritePlace(label: 'Work', address: address),
+    );
+    await _loadSavedData();
+  }
+
+  Future<void> _editWorkAddress() async {
+    final address = await _showAddressAutocomplete(
+      title: 'Edit Work address',
+      hint: 'Search your work address',
+    );
     if (address == null || address.isEmpty) return;
     await LocalDataService.saveFavorite(
       FavoritePlace(label: 'Work', address: address),

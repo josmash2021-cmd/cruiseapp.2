@@ -20,23 +20,28 @@ workflows:
       - name: Disable code signing in project
         script: |
           cd ios
-          # Disable code signing for all targets in project.pbxproj
           sed -i '' 's/CODE_SIGN_IDENTITY = .*;/CODE_SIGN_IDENTITY = "";/g' Runner.xcodeproj/project.pbxproj
           sed -i '' 's/DEVELOPMENT_TEAM = [^;]*;/DEVELOPMENT_TEAM = "";/g' Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' Runner.xcodeproj/project.pbxproj
           sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = .*;/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";/g' Runner.xcodeproj/project.pbxproj
-          # Inject CODE_SIGNING_ALLOWED = NO and CODE_SIGNING_REQUIRED = NO
-          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER/CODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER/g' Runner.xcodeproj/project.pbxproj
+          echo "CODE_SIGNING_ALLOWED=NO" >> Flutter/Release.xcconfig
+          echo "CODE_SIGNING_REQUIRED=NO" >> Flutter/Release.xcconfig
+          echo "CODE_SIGN_IDENTITY=" >> Flutter/Release.xcconfig
       - name: Flutter build iOS (no codesign)
         script: |
-          flutter build ios --release --no-codesign --no-tree-shake-icons \
-            --suppress-analytics \
-            2>&1 | tee /tmp/flutter_build.log
-          # fallback: try debug if release fails
-          if [ ${PIPESTATUS[0]} -ne 0 ]; then
-            echo "Release failed, trying debug..."
-            flutter build ios --debug --no-codesign --no-tree-shake-icons
-          fi
+          flutter build ios --release --no-codesign --no-tree-shake-icons 2>&1 || true
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            -allowProvisioningUpdates 2>&1 | tail -20
       - name: Empaquetar .app en .ipa
         script: |
           APP_PATH=$(find build/ios -name "*.app" -type d | head -1)

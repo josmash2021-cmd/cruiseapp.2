@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: cruise
-      POSTGRES_PASSWORD: cruise_secret
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: cruise_db
     ports:
       - "5432:5432"
@@ -19,11 +19,10 @@ services:
       - "8000:8000"
     depends_on:
       - db
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://cruise:cruise_secret@db:5432/cruise_db
-      API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
-      HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-      JWT_SECRET: "cruise-jwt-super-secret-key-change-in-production"
+      DATABASE_URL: postgresql+asyncpg://cruise:${DB_PASSWORD}@db:5432/cruise_db
 
 volumes:
   pgdata:

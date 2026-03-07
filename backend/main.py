@@ -18,6 +18,9 @@ import os, time, hmac, hashlib, math, secrets, logging, collections, re, json
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import Optional, List
+from dotenv import load_dotenv
+
+load_dotenv()  # Load .env file (gitignored)
 
 import base64
 from fastapi import FastAPI, Depends, HTTPException, Header, Request, Query, Body
@@ -35,9 +38,9 @@ from sqlalchemy.orm import DeclarativeBase, relationship
 
 # ── Config ──────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cruise.db")
-API_KEY = os.getenv("API_KEY", "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u")
-HMAC_SECRET = os.getenv("HMAC_SECRET", "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h")
-JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_urlsafe(64))  # Auto-generated 512-bit secret
+API_KEY = os.environ["API_KEY"]       # Required — set in .env
+HMAC_SECRET = os.environ["HMAC_SECRET"] # Required — set in .env
+JWT_SECRET = os.environ["JWT_SECRET"]   # Required — set in .env
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window

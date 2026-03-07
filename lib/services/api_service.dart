@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'security_service.dart';
+import '../config/env.dart';
 
 /// Communicates with the Cruise Ride backend (FastAPI + PostgreSQL).
 ///
@@ -129,12 +130,10 @@ class ApiService {
   static String get _baseUrl => _activeUrl;
 
   /// API Key — must match the server's API_KEY in .env
-  static const String _apiKey =
-      'HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u';
+  static const String _apiKey = Env.apiKey;
 
   /// HMAC Signing Secret — signs every request to prevent spoofing.
-  static const String _hmacSecret =
-      'qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h';
+  static const String _hmacSecret = Env.hmacSecret;
 
   // ── Token persistence (encrypted via Keystore/Keychain) ──
 
@@ -1055,7 +1054,7 @@ class ApiService {
           Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
             'origin': '$originLat,$originLng',
             'destination': '$destLat,$destLng',
-            'key': 'AIzaSyALnqq4-_jJLUCLxSJaWZGZHgw27RVE78Y',
+            'key': Env.googleMapsKey,
             'mode': 'driving',
           });
       final res = await http.get(uri).timeout(const Duration(seconds: 10));

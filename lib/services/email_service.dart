@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/env.dart';
 
 /// Service to send verification codes via EmailJS.
 ///
@@ -27,10 +28,10 @@ class EmailService {
   // ╔═══════════════════════════════════════════════════════════╗
   // ║  PASTE YOUR EMAILJS CREDENTIALS HERE                     ║
   // ╚═══════════════════════════════════════════════════════════╝
-  static const String _serviceId  = 'service_kgjbuew';
-  static const String _templateId = 'template_oucb3n9';
-  static const String _publicKey  = '5R65y1qr1-lXDwGRb';
-  static const String _privateKey = 'xeR8WDCTgskv9g9ITzote'; // Account → General → Private Key
+  static const String _serviceId = Env.emailjsServiceId;
+  static const String _templateId = Env.emailjsTemplateId;
+  static const String _publicKey = Env.emailjsPublicKey;
+  static const String _privateKey = Env.emailjsPrivateKey;
 
   static const String _apiUrl = 'https://api.emailjs.com/api/v1.0/email/send';
 

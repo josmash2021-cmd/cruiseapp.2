@@ -2098,3 +2098,90 @@ async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_d
         "driver": _user_dict(best),
         "distance_km": round(best_dist, 2),
     }
+
+
+# ═══════════════════════════════════════════════════════════
+#  ADMIN — Verification Review
+# ═══════════════════════════════════════════════════════════
+
+@app.get("/admin/verifications", dependencies=[Depends(_verify_api_key)])
+async def admin_list_verifications(
+    status: Optional[str] = None,
+    limit: int = 100, offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
+    """List verification requests. Optionally filter by status (pending/approved/rejected)."""
+    query = select(User).where(User.verification_status != "none")
+    if status:
+        query = query.where(User.verification_status == status)
+    query = query.order_by(User.id.desc()).offset(offset).limit(limit)
+    result = await db.execute(query)
+    users = result.scalars().all()
+    return [{
+        "user_id": u.id,
+        "first_name": u.first_name,
+        "last_name": u.last_name,
+        "email": u.email,
+        "phone": u.phone,
+        "role": u.role,
+        "verification_status": u.verification_status,
+        "verification_reason": u.verification_reason,
+        "id_document_type": u.id_document_type,
+        "is_verified": u.is_verified,
+        "verified_at": u.verified_at.isoformat() if u.verified_at else None,
+    } for u in users]
+
+
+@app.patch("/admin/verifications/{user_id}", dependencies=[Depends(_verify_api_key)])
+async def admin_review_verification(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Approve or reject a user's verification. Body: {action: 'approve'|'reject', reason: '...'}"""
+    body = await request.json()
+    action = body.get("action")
+    reason = body.get("reason", "")
+    if action not in ("approve", "reject"):
+        raise HTTPException(400, "action must be 'approve' or 'reject'")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    if action == "approve":
+        user.verification_status = "approved"
+        user.is_verified = True
+        user.verified_at = datetime.utcnow()
+        user.verification_reason = None
+    else:
+        user.verification_status = "rejected"
+        user.is_verified = False
+        user.verification_reason = reason
+
+    await db.commit()
+
+    # Sync to Firestore
+    if _HAS_FIRESTORE:
+        try:
+            doc_id = f"sql_{user_id}"
+            collection = "drivers" if user.role == "driver" else "clients"
+            # Update verifications collection
+            firestore_sync._db.collection("verifications").document(doc_id).set({
+                "status": user.verification_status,
+                "reason": user.verification_reason,
+                "reviewedAt": firestore_sync._ts(),
+            }, merge=True)
+            # Update user collection
+            firestore_sync._db.collection(collection).document(doc_id).set({
+                "isVerified": user.is_verified,
+                "verificationStatus": user.verification_status,
+                "verificationReason": user.verification_reason,
+                "lastUpdated": firestore_sync._ts(),
+            }, merge=True)
+        except Exception as e:
+            logging.warning("Firestore verification sync failed: %s", e)
+
+    _security_audit_log("ADMIN_VERIFICATION", {"user_id": user_id, "action": action, "reason": reason})
+    return {
+        "user_id": user_id,
+        "verification_status": user.verification_status,
+        "is_verified": user.is_verified,
+    }

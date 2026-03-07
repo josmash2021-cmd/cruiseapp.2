@@ -1,4 +1,4 @@
-workflows:
+﻿workflows:
   ios-sideload:
     name: iOS IPA para Sideloadly (sin Developer Account)
     max_build_duration: 60
@@ -77,21 +77,46 @@ workflows:
           printf 'CODE_SIGNING_ALLOWED=NO\nCODE_SIGNING_REQUIRED=NO\nCODE_SIGN_IDENTITY=\nCODE_SIGN_ENTITLEMENTS=\nEXPANDED_CODE_SIGN_IDENTITY=\n' >> Flutter/Release.xcconfig
       - name: Flutter build iOS (no codesign)
         script: |
-          flutter build ios --release --no-codesign --no-tree-shake-icons || true
+          flutter build ios --release --no-codesign --no-tree-shake-icons
           # Verify .app was actually built
-          APP=$(find build/ios -name "*.app" -type d | head -1)
+          APP=$(find build/ios/iphoneos -name "*.app" -type d | head -1)
           if [ -z "$APP" ]; then
-            echo "ERROR: No .app bundle found. Build truly failed."
+            echo "ERROR: No .app bundle found in build/ios/iphoneos"
+            echo "Searching entire build directory..."
+            find build/ios -name "*.app" -type d 2>/dev/null
             exit 1
           fi
-          echo "Build succeeded: $APP"
+          # Verify .app is not empty
+          APP_SIZE=$(du -sm "$APP" | cut -f1)
+          echo "Build succeeded: $APP ($APP_SIZE MB)"
+          if [ "$APP_SIZE" -lt 5 ]; then
+            echo "ERROR: .app bundle too small ($APP_SIZE MB) - build likely failed"
+            ls -la "$APP/"
+            exit 1
+          fi
       - name: Empaquetar .app en .ipa
         script: |
-          APP_PATH=$(find build/ios -name "*.app" -type d | head -1)
+          APP_PATH=$(find build/ios/iphoneos -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app found to package"
+            exit 1
+          fi
+          echo "Packaging: $APP_PATH"
+
           mkdir -p build/ios/ipa/Payload
           cp -r "$APP_PATH" build/ios/ipa/Payload/
+
           cd build/ios/ipa
           zip -r cruise-app.ipa Payload
+
+          # Verify IPA size
+          IPA_SIZE=$(du -sm cruise-app.ipa | cut -f1)
+          echo "IPA created: cruise-app.ipa ($IPA_SIZE MB)"
+          if [ "$IPA_SIZE" -lt 1 ]; then
+            echo "ERROR: IPA too small ($IPA_SIZE MB) - packaging failed"
+            ls -la Payload/
+            exit 1
+          fi
     artifacts:
       - build/ios/ipa/cruise-app.ipa
       - /tmp/xcodebuild_logs/*.log

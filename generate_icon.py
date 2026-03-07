@@ -1,120 +1,118 @@
 """
-Generate Cruise app launcher icon: METALLIC GOLD bg + BLACK 'Cruise' text — HD crisp.
+Generate Cruise app launcher icon: BLACK bg + GOLD car in gold circle.
 Produces BOTH legacy ic_launcher.png AND adaptive icon layers (foreground/background)
 so the icon fills the full circle on modern Android.
 """
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 import os, textwrap, math, re
 
 # ── Dimensions ──
 SIZE     = 1024        # Legacy master
 RENDER   = SIZE * 4    # 4x supersampling
-# Adaptive icons: foreground is 108dp; safe-zone is inner 72dp (66.67%).
-# At xxxhdpi that's 432px foreground, 288px safe zone.
 ADAPT_FG  = 432
-ADAPT_R   = ADAPT_FG * 4  # render size for supersampling
+ADAPT_R   = ADAPT_FG * 4
 
-# ── Colors — Dorado Amarillento (Golden-Yellow) Palette ──
-GOLD_DARK    = (180, 140, 20)     # #B48C14 — warm dark gold
-GOLD_MID     = (218, 175, 40)     # #DAAF28 — golden yellow
-GOLD_LIGHT   = (240, 200, 70)     # #F0C846 — bright golden yellow
-GOLD_BRIGHT  = (255, 220, 100)    # #FFDC64 — brightest golden yellow
-TEXT_CLR     = (0, 0, 0)          # pure black
-STROKE_W     = 4                  # thin stroke for legible, clean letters
-
-TEXT = 'Cruise'
-
-# Use medium-weight fonts (Bold, not Black) for cleaner legibility
-FONTS = [
-    'C:/Windows/Fonts/arialbd.ttf',    # Arial Bold — clean & legible
-    'C:/Windows/Fonts/calibrib.ttf',   # Calibri Bold
-    'C:/Windows/Fonts/ariblk.ttf',     # Arial Black — fallback
-    'C:/Windows/Fonts/segoeui.ttf',    # Segoe UI
-]
+# ── Colors ──
+BLACK    = (0, 0, 0)
+GOLD     = (201, 168, 52)   # Warm gold matching the user's image
 
 
-def _pick_font(draw, canvas_size, fill_pct=0.52):
-    """Find the largest font that fits TEXT within fill_pct of canvas_size."""
-    target_w = int(canvas_size * fill_pct)
-    for try_size in range(1400, 60, -4):
-        for font_path in FONTS:
-            if os.path.exists(font_path):
-                f = ImageFont.truetype(font_path, try_size)
-                bb = draw.textbbox((0, 0), TEXT, font=f, stroke_width=STROKE_W)
-                if (bb[2] - bb[0]) <= target_w:
-                    return f
-    return ImageFont.load_default()
+def _draw_car_icon(draw, cx, cy, scale):
+    """Draw a simplified front-view car silhouette in gold."""
+    s = scale
+    gold = GOLD
+
+    # ── Car body (main rectangle with rounded feel) ──
+    body_w, body_h = int(0.52 * s), int(0.28 * s)
+    bx1, by1 = cx - body_w // 2, cy - int(0.02 * s)
+    bx2, by2 = bx1 + body_w, by1 + body_h
+    draw.rounded_rectangle([bx1, by1, bx2, by2], radius=int(0.04 * s), fill=gold)
+
+    # ── Roof / cabin ──
+    roof_w, roof_h = int(0.36 * s), int(0.16 * s)
+    rx1 = cx - roof_w // 2
+    ry1 = by1 - roof_h + int(0.02 * s)
+    rx2 = rx1 + roof_w
+    ry2 = by1 + int(0.02 * s)
+    draw.rounded_rectangle([rx1, ry1, rx2, ry2], radius=int(0.05 * s), fill=gold)
+
+    # ── Windshield (dark cutout) ──
+    ws_w, ws_h = int(0.28 * s), int(0.09 * s)
+    wx1 = cx - ws_w // 2
+    wy1 = ry1 + int(0.035 * s)
+    wx2 = wx1 + ws_w
+    wy2 = wy1 + ws_h
+    draw.rounded_rectangle([wx1, wy1, wx2, wy2], radius=int(0.02 * s), fill=BLACK)
+
+    # ── Headlights (dark circles) ──
+    hl_r = int(0.035 * s)
+    hl_y = by1 + body_h // 3
+    # Left headlight
+    draw.ellipse([bx1 + int(0.04 * s) - hl_r, hl_y - hl_r,
+                  bx1 + int(0.04 * s) + hl_r, hl_y + hl_r], fill=BLACK)
+    # Right headlight
+    draw.ellipse([bx2 - int(0.04 * s) - hl_r, hl_y - hl_r,
+                  bx2 - int(0.04 * s) + hl_r, hl_y + hl_r], fill=BLACK)
+
+    # ── Bumper / lower body extension ──
+    bump_w = int(0.44 * s)
+    bump_h = int(0.06 * s)
+    bux1 = cx - bump_w // 2
+    buy1 = by2
+    bux2 = bux1 + bump_w
+    buy2 = buy1 + bump_h
+    draw.rounded_rectangle([bux1, buy1, bux2, buy2], radius=int(0.02 * s), fill=gold)
+
+    # ── Wheels (small rectangles at bottom corners) ──
+    wh_w, wh_h = int(0.06 * s), int(0.05 * s)
+    # Left wheel
+    draw.rectangle([bx1 + int(0.02 * s), buy2,
+                    bx1 + int(0.02 * s) + wh_w, buy2 + wh_h], fill=gold)
+    # Right wheel
+    draw.rectangle([bx2 - int(0.02 * s) - wh_w, buy2,
+                    bx2 - int(0.02 * s), buy2 + wh_h], fill=gold)
 
 
-def _draw_metallic_bg(img):
-    """Draw a metallic gold gradient background with subtle radial sheen."""
-    w, h = img.size
+def _draw_icon(img, sz):
+    """Draw the full icon: black bg, gold circle border, gold car."""
     draw = ImageDraw.Draw(img)
 
-    # Vertical gradient: dark gold top → bright gold center → dark gold bottom
-    for y in range(h):
-        t = y / max(h - 1, 1)
-        # Sinusoidal curve: brightest at center (t=0.5)
-        brightness = 0.5 + 0.5 * math.sin(t * math.pi)
-        r = int(GOLD_DARK[0] + (GOLD_BRIGHT[0] - GOLD_DARK[0]) * brightness)
-        g = int(GOLD_DARK[1] + (GOLD_BRIGHT[1] - GOLD_DARK[1]) * brightness)
-        b = int(GOLD_DARK[2] + (GOLD_BRIGHT[2] - GOLD_DARK[2]) * brightness)
-        draw.line([(0, y), (w, y)], fill=(r, g, b))
+    cx, cy = sz // 2, sz // 2
 
-    # Overlay a radial highlight at upper-center for metallic sheen
-    highlight = Image.new('RGBA', (w, h), (0, 0, 0, 0))
-    hd = ImageDraw.Draw(highlight)
-    cx, cy = w // 2, int(h * 0.38)
-    radius = int(w * 0.45)
-    for rad in range(radius, 0, -1):
-        alpha = int(60 * (1 - rad / radius) ** 1.5)
-        alpha = min(alpha, 60)
-        hd.ellipse([cx - rad, cy - rad, cx + rad, cy + rad],
-                   fill=(255, 245, 220, alpha))
-    img.paste(Image.alpha_composite(img.convert('RGBA'), highlight).convert('RGB'),
-              (0, 0))
+    # Gold circle border (ring)
+    outer_r = int(sz * 0.42)
+    ring_w = int(sz * 0.02)
+    draw.ellipse([cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r],
+                 outline=GOLD, width=ring_w)
 
-
-def _draw_text(draw, canvas_size, font):
-    """Draw centered black text with subtle shadow for depth."""
-    bb = draw.textbbox((0, 0), TEXT, font=font, stroke_width=STROKE_W)
-    tw, th = bb[2] - bb[0], bb[3] - bb[1]
-    x = (canvas_size - tw) / 2 - bb[0]
-    y = (canvas_size - th) / 2 - bb[1]
-    # Subtle dark shadow for depth / emboss effect
-    draw.text((x + 2, y + 4), TEXT, font=font,
-              fill=(80, 65, 25), stroke_width=STROKE_W, stroke_fill=(80, 65, 25))
-    # Main black text
-    draw.text((x, y), TEXT, font=font,
-              fill=TEXT_CLR, stroke_width=STROKE_W, stroke_fill=TEXT_CLR)
+    # Car icon centered
+    _draw_car_icon(draw, cx, cy, int(sz * 0.55))
 
 
 # ═══════════════════════════════════════
-#  1. LEGACY ICON (ic_launcher.png) — Metallic Gold BG
+#  1. LEGACY ICON (ic_launcher.png)
 # ═══════════════════════════════════════
-img_hi = Image.new('RGB', (RENDER, RENDER), GOLD_MID)
-_draw_metallic_bg(img_hi)
-d_hi   = ImageDraw.Draw(img_hi)
-font_legacy = _pick_font(d_hi, RENDER, fill_pct=0.72)
-_draw_text(d_hi, RENDER, font_legacy)
+img_hi = Image.new('RGB', (RENDER, RENDER), BLACK)
+_draw_icon(img_hi, RENDER)
 img_legacy = img_hi.resize((SIZE, SIZE), Image.LANCZOS)
 
 # ═══════════════════════════════════════
-#  2. ADAPTIVE FOREGROUND (text on transparent, centered in 108dp canvas)
-#     Text fills ~78 % of the safe zone (inner 66.67 %)
+#  2. ADAPTIVE FOREGROUND (gold circle + car on transparent)
 # ═══════════════════════════════════════
 fg_hi = Image.new('RGBA', (ADAPT_R, ADAPT_R), (0, 0, 0, 0))
-d_fg  = ImageDraw.Draw(fg_hi)
-font_fg = _pick_font(d_fg, ADAPT_R, fill_pct=0.52)
-_draw_text(d_fg, ADAPT_R, font_fg)
+draw_fg = ImageDraw.Draw(fg_hi)
+fgcx, fgcy = ADAPT_R // 2, ADAPT_R // 2
+outer_r = int(ADAPT_R * 0.35)
+ring_w = int(ADAPT_R * 0.015)
+draw_fg.ellipse([fgcx - outer_r, fgcy - outer_r, fgcx + outer_r, fgcy + outer_r],
+                outline=GOLD, width=ring_w)
+_draw_car_icon(draw_fg, fgcx, fgcy, int(ADAPT_R * 0.45))
 fg_master = fg_hi.resize((ADAPT_FG, ADAPT_FG), Image.LANCZOS)
 
 # ═══════════════════════════════════════
-#  3. ADAPTIVE BACKGROUND (metallic gold image layer)
+#  3. ADAPTIVE BACKGROUND (solid black)
 # ═══════════════════════════════════════
-bg_layer = Image.new('RGB', (ADAPT_R, ADAPT_R), GOLD_MID)
-_draw_metallic_bg(bg_layer)
-bg_master = bg_layer.resize((ADAPT_FG, ADAPT_FG), Image.LANCZOS)
+bg_master = Image.new('RGB', (ADAPT_FG, ADAPT_FG), BLACK)
 
 # ═══════════════════════════════════════
 #  OUTPUT PATHS
@@ -180,7 +178,7 @@ print(f'  xml     mipmap-anydpi-v26/ic_launcher.xml')
 values_dir = os.path.join(res_base, 'values')
 os.makedirs(values_dir, exist_ok=True)
 colors_path = os.path.join(values_dir, 'colors.xml')
-gold_hex = '#DAAF28'
+gold_hex = '#000000'
 bg_entry = f'<color name="ic_launcher_background">{gold_hex}</color>'
 if os.path.exists(colors_path):
     with open(colors_path, 'r') as f:
@@ -215,4 +213,28 @@ favicon = img_legacy.resize((32, 32), Image.LANCZOS)
 favicon.save(os.path.join(out_dir, 'web', 'favicon.png'), 'PNG')
 print('  web     favicon.png  32x32')
 
-print('\nDone — METALLIC GOLD bg, BLACK text, adaptive + legacy, HD.')
+# ── iOS App Icons ──
+ios_dir = os.path.join(out_dir, 'ios', 'Runner', 'Assets.xcassets', 'AppIcon.appiconset')
+os.makedirs(ios_dir, exist_ok=True)
+IOS_SIZES = {
+    'Icon-App-20x20@1x.png': 20,
+    'Icon-App-20x20@2x.png': 40,
+    'Icon-App-20x20@3x.png': 60,
+    'Icon-App-29x29@1x.png': 29,
+    'Icon-App-29x29@2x.png': 58,
+    'Icon-App-29x29@3x.png': 87,
+    'Icon-App-40x40@1x.png': 40,
+    'Icon-App-40x40@2x.png': 80,
+    'Icon-App-40x40@3x.png': 120,
+    'Icon-App-60x60@2x.png': 120,
+    'Icon-App-60x60@3x.png': 180,
+    'Icon-App-76x76@1x.png': 76,
+    'Icon-App-76x76@2x.png': 152,
+    'Icon-App-83.5x83.5@2x.png': 167,
+    'Icon-App-1024x1024@1x.png': 1024,
+}
+for name, sz in IOS_SIZES.items():
+    img_legacy.resize((sz, sz), Image.LANCZOS).save(os.path.join(ios_dir, name), 'PNG')
+    print(f'  ios     {name}  {sz}x{sz}')
+
+print('\nDone — BLACK bg, GOLD car icon, adaptive + legacy, HD.')

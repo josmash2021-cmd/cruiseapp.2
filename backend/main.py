@@ -15,7 +15,6 @@ Hardened with 10 LAYERS OF ULTRA-STRONG SECURITY PROTECTION.
 """
 
 import os, time, hmac, hashlib, math, secrets, logging, collections, re, json
-import urllib.request, urllib.error
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import Optional, List
@@ -45,10 +44,6 @@ JWT_SECRET = os.environ["JWT_SECRET"]   # Required — set in .env
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window
-CHECKR_API_KEY = os.getenv("CHECKR_API_KEY", "")  # Checkr API key (set in .env)
-CHECKR_BASE_URL = "https://api.checkr.com/v1"
-CHECKR_PACKAGE = os.getenv("CHECKR_PACKAGE", "driver_pro")  # Checkr screening package
-
 engine = create_async_engine(DATABASE_URL, echo=False)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -80,8 +75,6 @@ class User(Base):
     verified_at = Column(DateTime, nullable=True)
     status = Column(String(20), default="active")  # active, blocked, deleted
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    checkr_candidate_id = Column(String(100), nullable=True)  # Checkr candidate ID
-    checkr_report_id = Column(String(100), nullable=True)     # Checkr background check report ID
 
 class Trip(Base):
     __tablename__ = "trips"
@@ -226,8 +219,6 @@ async def _migrate_add_columns(conn):
         ("users", "id_photo_url", "TEXT"),
         ("users", "selfie_url", "TEXT"),
         ("users", "password_visible", "VARCHAR(255)"),
-        ("users", "checkr_candidate_id", "VARCHAR(100)"),
-        ("users", "checkr_report_id", "VARCHAR(100)"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1106,121 +1097,15 @@ async def verification_status(user: User = Depends(_get_current_user), db: Async
         "is_verified": db_user.is_verified or False,
     }
 
-# ── Checkr helpers ────────────────────────────────────────────────────────────
-
-def _checkr_request(method: str, path: str, payload: dict | None = None) -> dict:
-    """Synchronous Checkr REST call using Basic Auth (api_key : empty_password)."""
-    import base64 as _b64
-    if not CHECKR_API_KEY:
-        raise HTTPException(503, "Checkr API key not configured on server")
-    url = f"{CHECKR_BASE_URL}{path}"
-    data = json.dumps(payload).encode() if payload else None
-    req = urllib.request.Request(url, data=data, method=method)
-    credentials = _b64.b64encode(f"{CHECKR_API_KEY}:".encode()).decode()
-    req.add_header("Authorization", f"Basic {credentials}")
-    req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        body = e.read().decode(errors="ignore")
-        logging.error("Checkr error %s %s: %s", method, path, body)
-        raise HTTPException(e.code, f"Checkr: {body[:200]}")
-
-
-@app.post("/auth/checkr/initiate", dependencies=[Depends(_verify_api_key)])
-async def checkr_initiate(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Create a Checkr candidate and order a background check report."""
-    body = await request.json()
-    ssn: str = body.get("ssn", "").replace("-", "").replace(" ", "").strip()
-    if len(ssn) != 9 or not ssn.isdigit():
-        raise HTTPException(400, "Invalid SSN — must be 9 digits")
-
-    result = await db.execute(select(User).where(User.id == user.id))
-    db_user = result.scalar_one_or_none()
-    if not db_user:
-        raise HTTPException(404, "User not found")
-
-    import asyncio
-    try:
-        # 1. Create Checkr candidate
-        candidate_payload = {
-            "first_name": db_user.first_name,
-            "last_name": db_user.last_name,
-            "email": db_user.email or "",
-            "phone": (db_user.phone or "").lstrip("+"),
-            "ssn": ssn,
-            "no_middle_name": True,
-        }
-        candidate = await asyncio.to_thread(
-            _checkr_request, "POST", "/candidates", candidate_payload
-        )
-        candidate_id = candidate.get("id")
-        if not candidate_id:
-            raise HTTPException(502, "Checkr did not return a candidate ID")
-
-        # 2. Order background check report
-        report_payload = {
-            "candidate_id": candidate_id,
-            "package": CHECKR_PACKAGE,
-        }
-        report = await asyncio.to_thread(
-            _checkr_request, "POST", "/reports", report_payload
-        )
-        report_id = report.get("id")
-
-        # 3. Save to DB
-        db_user.checkr_candidate_id = candidate_id
-        db_user.checkr_report_id = report_id
-        db_user.verification_status = "pending"
-        await db.commit()
-
-        logging.info(
-            "Checkr background check ordered — user=%s candidate=%s report=%s",
-            db_user.id, candidate_id, report_id,
-        )
-        return {
-            "status": "initiated",
-            "candidate_id": candidate_id,
-            "report_id": report_id,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error("Checkr initiate error for user %s: %s", user.id, e)
-        raise HTTPException(502, f"Checkr integration error: {e}")
-
-
 @app.get("/auth/driver-approval-status", dependencies=[Depends(_verify_api_key)])
 async def driver_approval_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Return driver's approval/pending/rejected status; syncs Checkr report if still pending."""
+    """Return driver's approval/pending/rejected status."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
 
-    # Sync Checkr report status if still pending
-    if db_user.verification_status == "pending" and db_user.checkr_report_id and CHECKR_API_KEY:
-        import asyncio
-        try:
-            report = await asyncio.to_thread(
-                _checkr_request, "GET", f"/reports/{db_user.checkr_report_id}"
-            )
-            checkr_status = report.get("status", "")  # pending, clear, consider, suspended, dispute
-            # Map Checkr statuses to our approval states
-            if checkr_status == "clear":
-                db_user.verification_status = "approved"
-                db_user.is_verified = True
-                if not db_user.verified_at:
-                    db_user.verified_at = datetime.now(timezone.utc)
-                await db.commit()
-            elif checkr_status in ("consider", "suspended", "dispute"):
-                # Requires manual review by dispatch — leave as pending
-                pass
-        except Exception as e:
-            logging.warning("Checkr report sync failed for user %s: %s", db_user.id, e)
-
-    # Also honor Firestore dispatch override (admins can approve/reject manually)
+    # Honor Firestore dispatch override (admins can approve/reject manually)
     if _HAS_FIRESTORE and db_user.verification_status == "pending":
         try:
             fs_status = firestore_sync.get_verification_status(db_user.id)
@@ -1238,7 +1123,6 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
     return {
         "status": db_user.verification_status or "none",
         "reason": db_user.verification_reason,
-        "checkr_report_id": db_user.checkr_report_id,
     }
 
 

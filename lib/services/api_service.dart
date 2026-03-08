@@ -494,21 +494,6 @@ class ApiService {
     return _parse(res);
   }
 
-  /// Initiate a Checkr background check with the driver's SSN.
-  static Future<Map<String, dynamic>> initiateCheckrBackgroundCheck({
-    required String ssn,
-  }) async {
-    final h = await _authHeaders();
-    final res = await http
-        .post(
-          Uri.parse('$_baseUrl/auth/checkr/initiate'),
-          headers: h,
-          body: jsonEncode({'ssn': ssn}),
-        )
-        .timeout(const Duration(seconds: 15));
-    return _parse(res);
-  }
-
   /// Check account status (dispatch may have blocked/deleted).
   static Future<String> getAccountStatus() async {
     final token = await getToken();

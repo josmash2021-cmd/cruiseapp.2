@@ -61,11 +61,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   bool _biometricDone = false;
   String? _selfiePath;
 
-  // SSN / Checkr
+  // SSN
   final _ssnCtrl = TextEditingController();
   bool _obscureSsn = true;
-  bool _checkrInitiated = false;
-  bool _initiatingCheckr = false;
 
   // ── Step 3: Review ─────────────────────────────────────────────────────────
   bool _agreedTerms = false;
@@ -106,7 +104,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             _licenseBackPath != null &&
             _insurancePath != null &&
             _biometricDone &&
-            _checkrInitiated;
+            _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9;
       case 3:
         return _agreedTerms;
       default:
@@ -318,54 +316,6 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
       _selfiePath = selfiePath;
       _biometricDone = true;
     });
-  }
-
-  // ── Checkr / SSN ───────────────────────────────────────────────────────────
-
-  Future<void> _initiateCheckr() async {
-    final ssn = _ssnCtrl.text.replaceAll('-', '').replaceAll(' ', '').trim();
-    if (ssn.length != 9) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.redAccent,
-          content: const Text(
-            'Enter a valid 9-digit Social Security Number',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
-      return;
-    }
-
-    setState(() => _initiatingCheckr = true);
-    try {
-      await ApiService.initiateCheckrBackgroundCheck(ssn: ssn);
-      if (!mounted) return;
-      setState(() => _checkrInitiated = true);
-    } catch (_) {
-      // Non-blocking: backend will queue the check regardless
-      if (mounted) setState(() => _checkrInitiated = true);
-    }
-    if (mounted) {
-      setState(() => _initiatingCheckr = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: _gold,
-          content: const Text(
-            'Background check initiated via Checkr',
-            style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700),
-          ),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
-    }
   }
 
   // ── Submit ─────────────────────────────────────────────────────────────────
@@ -788,17 +738,16 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   }
 
   Widget _buildSsnSection() {
+    final ssnFilled = _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _checkrInitiated
+        color: ssnFilled
             ? _gold.withValues(alpha: 0.08)
             : Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: _checkrInitiated
-              ? _gold.withValues(alpha: 0.4)
-              : Colors.white12,
+          color: ssnFilled ? _gold.withValues(alpha: 0.4) : Colors.white12,
         ),
       ),
       child: Column(
@@ -810,14 +759,14 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: _checkrInitiated
+                  color: ssnFilled
                       ? _gold.withValues(alpha: 0.2)
                       : Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   Icons.security_rounded,
-                  color: _checkrInitiated ? _gold : Colors.white38,
+                  color: ssnFilled ? _gold : Colors.white38,
                   size: 20,
                 ),
               ),
@@ -841,24 +790,22 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                       ],
                     ),
                     Text(
-                      _checkrInitiated
-                          ? 'Checkr background check initiated \u2713'
-                          : _initiatingCheckr
-                              ? 'Connecting to Checkr...'
-                              : 'Auto-connects to Checkr when complete',
+                      ssnFilled
+                          ? 'SSN entered \u2713'
+                          : 'Enter your Social Security Number',
                       style: TextStyle(
-                        color: _checkrInitiated ? _gold : Colors.white38,
+                        color: ssnFilled ? _gold : Colors.white38,
                         fontSize: 11,
                       ),
                     ),
                   ],
                 ),
               ),
-              if (_checkrInitiated)
+              if (ssnFilled)
                 const Icon(Icons.check_circle_rounded, color: _gold, size: 22),
             ],
           ),
-          if (!_checkrInitiated) ...[
+          if (!ssnFilled) ...[
             const SizedBox(height: 14),
             TextField(
               controller: _ssnCtrl,
@@ -875,16 +822,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               ),
               cursorColor: _gold,
               // Auto-trigger Checkr as soon as 9 digits are complete
-              onChanged: (val) {
-                setState(() {});
-                final digits =
-                    val.replaceAll('-', '').replaceAll(' ', '').length;
-                if (digits == 9 &&
-                    !_checkrInitiated &&
-                    !_initiatingCheckr) {
-                  _initiateCheckr();
-                }
-              },
+              onChanged: (val) => setState(() {}),
               decoration: InputDecoration(
                 hintText: 'XXX-XX-XXXX',
                 hintStyle: const TextStyle(
@@ -901,29 +839,16 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: _gold, width: 1.5),
                 ),
-                suffixIcon: _initiatingCheckr
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: _gold,
-                          ),
-                        ),
-                      )
-                    : IconButton(
-                        icon: Icon(
-                          _obscureSsn
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                          color: Colors.white38,
-                          size: 20,
-                        ),
-                        onPressed: () =>
-                            setState(() => _obscureSsn = !_obscureSsn),
-                      ),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureSsn
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    color: Colors.white38,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _obscureSsn = !_obscureSsn),
+                ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 14,
@@ -931,57 +856,6 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               ),
             ),
             const SizedBox(height: 10),
-            // Checkr badge + manual retry button
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.verified_user_rounded,
-                        color: Color(0xFF00C6A0),
-                        size: 13,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        'Powered by Checkr',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.55),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                if (!_initiatingCheckr)
-                  TextButton(
-                    onPressed: _initiateCheckr,
-                    style: TextButton.styleFrom(
-                      foregroundColor: _gold,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                    ),
-                    child: const Text(
-                      'Run manually',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
             Text(
               'Your SSN is encrypted and only used for identity verification.',
               style: TextStyle(
@@ -1081,7 +955,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
       ('License Front', _licenseFrontPath != null),
       ('License Back', _licenseBackPath != null),
       ('Insurance', _insurancePath != null),
-      ('SSN / Checkr', _checkrInitiated),
+      ('SSN', _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9),
       ('Face Check', _biometricDone),
     ];
     final done = items.where((i) => i.$2).length;
@@ -1168,8 +1042,10 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             _insurancePath != null ? 'Uploaded \u2713' : 'Missing',
           ),
           _reviewItem(
-            'SSN / Checkr',
-            _checkrInitiated ? 'Submitted \u2713' : 'Missing',
+            'SSN',
+            _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9
+                ? 'Provided \u2713'
+                : 'Missing',
           ),
           _reviewItem(
             'Face Check',

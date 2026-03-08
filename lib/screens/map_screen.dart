@@ -17,6 +17,7 @@ import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
+import '../services/notification_service.dart';
 import '../services/places_service.dart';
 import 'airport_terminal_sheet.dart';
 import 'credit_card_screen.dart';
@@ -2035,6 +2036,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         _scheduledDate = tempDate;
                         _scheduledTime = tempTime;
                       });
+                      // Guide user to enter addresses
+                      Future.delayed(const Duration(milliseconds: 300), () {
+                        if (!mounted) return;
+                        if (_dropoffCtrl.text.trim().isEmpty) {
+                          _dropoffFocus.requestFocus();
+                        }
+                      });
                     },
                   ),
                 ],
@@ -3669,6 +3677,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           );
           _currentTripId = tripData['id'] as int?;
           debugPrint('\u2705 Scheduled trip created: $_currentTripId');
+          // Schedule 1-hour-before local notification
+          if (_currentTripId != null) {
+            try {
+              await NotificationService.scheduleRideReminder(
+                tripId: _currentTripId!,
+                rideTime: scheduledAt,
+                pickup: _pickupAddress,
+                dropoff: _dropoffAddress,
+              );
+            } catch (_) {}
+          }
           // Mirror to Firestore for dispatch admin
           try {
             final session = await UserSession.getUser();
@@ -4978,6 +4997,41 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               ),
             ),
             const SizedBox(height: 18),
+            // Schedule banner
+            if (!_pickupNow) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: _gold.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _gold.withValues(alpha: 0.30)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.calendar_today_rounded,
+                      color: _gold,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Scheduled for $_rideTimeBadgeText',
+                        style: const TextStyle(
+                          color: _gold,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             // --- Pickup address card ---
             Container(
               padding: const EdgeInsets.all(14),
@@ -5687,6 +5741,39 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               ),
             ),
             const SizedBox(height: 16),
+            // Schedule banner for payment panel
+            if (!_pickupNow) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: _gold.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _gold.withValues(alpha: 0.30)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.calendar_today_rounded,
+                      color: _gold,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      _rideTimeBadgeText,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
             // --- Scrollable content area ---
             Expanded(
               child: SingleChildScrollView(
@@ -5984,10 +6071,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.lock_rounded, size: 16),
+                      Icon(
+                        _pickupNow
+                            ? Icons.lock_rounded
+                            : Icons.calendar_month_rounded,
+                        size: 16,
+                      ),
                       const SizedBox(width: 8),
                       Text(
-                        'Pay ${ride.price}',
+                        _pickupNow
+                            ? 'Pay ${ride.price}'
+                            : 'Book Scheduled Ride · ${ride.price}',
                         style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,

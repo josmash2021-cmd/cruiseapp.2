@@ -200,7 +200,7 @@ class NotificationService {
 
   // ── Ride reminder helpers ──
 
-  /// Schedule a 30-minute reminder for a scheduled ride.
+  /// Schedule a 1-hour reminder for a scheduled ride.
   /// Uses trip ID as notification ID for easy cancellation.
   static Future<void> scheduleRideReminder({
     required int tripId,
@@ -208,11 +208,13 @@ class NotificationService {
     required String pickup,
     required String dropoff,
   }) async {
-    final reminderTime = rideTime.subtract(const Duration(minutes: 30));
+    final reminderTime = rideTime.subtract(const Duration(hours: 1));
+    // Only schedule if reminder is still in the future
+    if (reminderTime.isBefore(DateTime.now())) return;
 
     await scheduleAt(
       id: tripId,
-      title: '🚗 Ride in 30 minutes',
+      title: '🚗 Your ride is in 1 hour',
       body: 'From $pickup to $dropoff',
       scheduledTime: reminderTime,
       payload: 'ride_reminder:$tripId',

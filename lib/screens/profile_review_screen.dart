@@ -46,8 +46,12 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
   void _saveProfile() async {
     // Grab the password set during registration
     final pendingPass = await UserSession.getPendingPassword();
-    debugPrint('🔐 pendingPass: "${pendingPass ?? "NULL"}" (len=${pendingPass?.length ?? 0})');
-    debugPrint('📋 Register: ${widget.firstName} ${widget.lastName} | email=${widget.email} | phone=${widget.phone}');
+    debugPrint(
+      '🔐 pendingPass: "${pendingPass ?? "NULL"}" (len=${pendingPass?.length ?? 0})',
+    );
+    debugPrint(
+      '📋 Register: ${widget.firstName} ${widget.lastName} | email=${widget.email} | phone=${widget.phone}',
+    );
 
     if (pendingPass == null || pendingPass.isEmpty) {
       if (!mounted) return;
@@ -59,7 +63,9 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
       return;
@@ -83,14 +89,18 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
       if (e.statusCode == 409) {
         debugPrint('⚠️ Account exists — attempting auto-login…');
         try {
-          final identifier = widget.email.isNotEmpty ? widget.email : widget.phone;
+          final identifier = widget.email.isNotEmpty
+              ? widget.email
+              : widget.phone;
           final loginResult = await ApiService.login(
             identifier: identifier,
             password: pendingPass,
           );
           // Complete login (get JWT)
           final loginToken = loginResult['login_token'] as String;
-          final completeResult = await ApiService.completeLogin(loginToken: loginToken);
+          final completeResult = await ApiService.completeLogin(
+            loginToken: loginToken,
+          );
           final user = completeResult['user'] as Map<String, dynamic>;
           userId = user['id'] as int?;
           debugPrint('✅ Auto-login successful userId=$userId');
@@ -105,7 +115,9 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               duration: const Duration(seconds: 5),
             ),
           );
@@ -122,7 +134,9 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             duration: const Duration(seconds: 5),
           ),
         );
@@ -139,7 +153,9 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           duration: const Duration(seconds: 5),
         ),
       );
@@ -149,7 +165,9 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
     // Copy photo to permanent storage (temp picker path gets deleted)
     String? permanentPhotoPath = widget.photoPath;
     if (widget.photoPath != null && widget.photoPath!.isNotEmpty) {
-      permanentPhotoPath = await UserSession.saveProfilePhoto(widget.photoPath!);
+      permanentPhotoPath = await UserSession.saveProfilePhoto(
+        widget.photoPath!,
+      );
     }
 
     // Upload photo to server so it persists across devices
@@ -210,8 +228,11 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
                     color: c.surface,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.arrow_back_ios_new_rounded,
-                      color: c.textPrimary, size: 18),
+                  child: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: c.textPrimary,
+                    size: 18,
+                  ),
                 ),
               ),
 
@@ -221,218 +242,248 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-              const SizedBox(height: 28),
+                      const SizedBox(height: 28),
 
-              // ── Title ──
-              Text(
-                'Everything look good\nso far?',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  color: c.textPrimary,
-                  height: 1.2,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "Make sure your info is correct - it's not too late\nto add a photo.",
-                style: TextStyle(
-                  fontSize: 14,
-                  color: c.textSecondary,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 32),
+                      // ── Title ──
+                      Text(
+                        'Everything look good\nso far?',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                          color: c.textPrimary,
+                          height: 1.2,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Make sure your info is correct - it's not too late\nto add a photo.",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: c.textSecondary,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 32),
 
-              // ── Avatar + Name ──
-              Center(
-                child: Column(
-                  children: [
-                    Stack(
-                      children: [
-                        Container(
-                          width: 90,
-                          height: 90,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: c.surface,
-                          ),
-                          child: widget.photoPath != null
-                              ? ClipOval(
-                                  child: kIsWeb
-                                      ? Image.network(
-                                          widget.photoPath!,
-                                          fit: BoxFit.cover,
-                                          width: 90,
-                                          height: 90,
-                                        )
-                                      : Image.file(
-                                          File(widget.photoPath!),
-                                          fit: BoxFit.cover,
-                                          width: 90,
-                                          height: 90,
-                                          gaplessPlayback: true,
-                                    frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                                      if (wasSynchronouslyLoaded) return child;
-                                      return AnimatedOpacity(
-                                        opacity: frame == null ? 0.0 : 1.0,
-                                        duration: const Duration(milliseconds: 300),
-                                        curve: Curves.easeOutCubic,
-                                        child: child,
-                                      );
-                                    },
+                      // ── Avatar + Name ──
+                      Center(
+                        child: Column(
+                          children: [
+                            Stack(
+                              children: [
+                                Container(
+                                  width: 90,
+                                  height: 90,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: c.surface,
                                   ),
-                                )
-                              : Icon(Icons.person_rounded,
-                                  size: 45, color: c.textTertiary),
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            width: 30,
-                            height: 30,
-                            decoration: BoxDecoration(
-                              color: c.panel,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: c.border, width: 1.5),
+                                  child: widget.photoPath != null
+                                      ? ClipOval(
+                                          child: kIsWeb
+                                              ? Image.network(
+                                                  widget.photoPath!,
+                                                  fit: BoxFit.cover,
+                                                  width: 90,
+                                                  height: 90,
+                                                )
+                                              : Image.file(
+                                                  File(widget.photoPath!),
+                                                  fit: BoxFit.cover,
+                                                  width: 90,
+                                                  height: 90,
+                                                  gaplessPlayback: true,
+                                                  frameBuilder:
+                                                      (
+                                                        context,
+                                                        child,
+                                                        frame,
+                                                        wasSynchronouslyLoaded,
+                                                      ) {
+                                                        if (wasSynchronouslyLoaded)
+                                                          return child;
+                                                        return AnimatedOpacity(
+                                                          opacity: frame == null
+                                                              ? 0.0
+                                                              : 1.0,
+                                                          duration:
+                                                              const Duration(
+                                                                milliseconds:
+                                                                    300,
+                                                              ),
+                                                          curve: Curves
+                                                              .easeOutCubic,
+                                                          child: child,
+                                                        );
+                                                      },
+                                                ),
+                                        )
+                                      : Icon(
+                                          Icons.person_rounded,
+                                          size: 45,
+                                          color: c.textTertiary,
+                                        ),
+                                ),
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: Container(
+                                    width: 30,
+                                    height: 30,
+                                    decoration: BoxDecoration(
+                                      color: c.panel,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: c.border,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      Icons.edit_rounded,
+                                      size: 14,
+                                      color: c.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            child: Icon(Icons.edit_rounded,
-                                size: 14, color: c.textSecondary),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      '${widget.firstName} ${widget.lastName}',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: c.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // ── Gender selector ──
-              GestureDetector(
-                onTap: () {
-                  setState(() => _dropdownOpen = !_dropdownOpen);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: _dropdownOpen
-                          ? _gold.withValues(alpha: 0.5)
-                          : c.border,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _selectedGender ?? 'Select your gender*',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: _selectedGender != null
-                                ? c.textPrimary
-                                : c.textTertiary,
-                          ),
+                            const SizedBox(height: 14),
+                            Text(
+                              '${widget.firstName} ${widget.lastName}',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: c.textPrimary,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      AnimatedRotation(
-                        turns: _dropdownOpen ? 0.5 : 0,
-                        duration: const Duration(milliseconds: 200),
-                        child: Icon(Icons.keyboard_arrow_down_rounded,
-                            color: _gold, size: 24),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+                      const SizedBox(height: 32),
 
-              // ── Dropdown items ──
-              AnimatedCrossFade(
-                duration: const Duration(milliseconds: 250),
-                crossFadeState: _dropdownOpen
-                    ? CrossFadeState.showFirst
-                    : CrossFadeState.showSecond,
-                firstChild: Container(
-                  margin: const EdgeInsets.only(top: 4),
-                  decoration: BoxDecoration(
-                    color: c.panel,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: c.border),
-                    boxShadow: [
-                      BoxShadow(
-                        color: c.shadow,
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: _genderOptions.map((g) {
-                      final selected = _selectedGender == g;
-                      return GestureDetector(
+                      // ── Gender selector ──
+                      GestureDetector(
                         onTap: () {
-                          setState(() {
-                            _selectedGender = g;
-                            _dropdownOpen = false;
-                          });
+                          setState(() => _dropdownOpen = !_dropdownOpen);
                         },
-                        child: Container(
-                          width: double.infinity,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 16),
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
                           decoration: BoxDecoration(
-                            color: selected
-                                ? _gold.withValues(alpha: 0.06)
-                                : Colors.transparent,
-                            border: Border(
-                              bottom: g != _genderOptions.last
-                                  ? BorderSide(color: c.divider)
-                                  : BorderSide.none,
+                            color: c.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: _dropdownOpen
+                                  ? _gold.withValues(alpha: 0.5)
+                                  : c.border,
                             ),
                           ),
-                          child: Text(
-                            g,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight:
-                                  selected ? FontWeight.w600 : FontWeight.w400,
-                              color: selected ? _gold : c.textPrimary,
-                            ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _selectedGender ?? 'Select your gender*',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: _selectedGender != null
+                                        ? c.textPrimary
+                                        : c.textTertiary,
+                                  ),
+                                ),
+                              ),
+                              AnimatedRotation(
+                                turns: _dropdownOpen ? 0.5 : 0,
+                                duration: const Duration(milliseconds: 200),
+                                child: Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  color: _gold,
+                                  size: 24,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                secondChild: const SizedBox.shrink(),
-              ),
+                      ),
 
-              const SizedBox(height: 16),
+                      // ── Dropdown items ──
+                      AnimatedCrossFade(
+                        duration: const Duration(milliseconds: 250),
+                        crossFadeState: _dropdownOpen
+                            ? CrossFadeState.showFirst
+                            : CrossFadeState.showSecond,
+                        firstChild: Container(
+                          margin: const EdgeInsets.only(top: 4),
+                          decoration: BoxDecoration(
+                            color: c.panel,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: c.border),
+                            boxShadow: [
+                              BoxShadow(
+                                color: c.shadow,
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: _genderOptions.map((g) {
+                              final selected = _selectedGender == g;
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedGender = g;
+                                    _dropdownOpen = false;
+                                  });
+                                },
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 16,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? _gold.withValues(alpha: 0.06)
+                                        : Colors.transparent,
+                                    border: Border(
+                                      bottom: g != _genderOptions.last
+                                          ? BorderSide(color: c.divider)
+                                          : BorderSide.none,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    g,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: selected
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
+                                      color: selected ? _gold : c.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        secondChild: const SizedBox.shrink(),
+                      ),
 
-              // ── Privacy note ──
-              Text(
-                'We use this information in accordance with our Privacy Policy, including to personalize your experience with Cruise.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: c.textTertiary,
-                  height: 1.5,
-                ),
-              ),
+                      const SizedBox(height: 16),
+
+                      // ── Privacy note ──
+                      Text(
+                        'We use this information in accordance with our Privacy Policy, including to personalize your experience with Cruise.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: c.textTertiary,
+                          height: 1.5,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -446,8 +497,9 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
                   height: 56,
                   child: Container(
                     decoration: BoxDecoration(
-                      gradient:
-                          const LinearGradient(colors: [_gold, _goldLight]),
+                      gradient: const LinearGradient(
+                        colors: [_gold, _goldLight],
+                      ),
                       borderRadius: BorderRadius.circular(28),
                     ),
                     child: ElevatedButton(

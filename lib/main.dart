@@ -77,16 +77,19 @@ void main() async {
           FirebaseMessaging.onMessage.listen((RemoteMessage message) {
             final title = message.notification?.title ?? 'Cruise';
             final body = message.notification?.body ?? '';
+            // Extract notification type from data payload for filtering
+            final type = message.data['type'] as String? ?? 'general';
             NotificationService.show(
               id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
               title: title,
               body: body,
+              type: type,
             );
             // Also save to local inbox
             LocalDataService.addNotification(
               title: title,
               message: body,
-              type: 'push',
+              type: type,
             );
           });
         } catch (e) {

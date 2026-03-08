@@ -46,7 +46,9 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
     if (!status.isGranted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera permission is required to scan your license')),
+          const SnackBar(
+            content: Text('Camera permission is required to scan your license'),
+          ),
         );
         Navigator.of(context).pop(null);
       }

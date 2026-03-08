@@ -1,6 +1,7 @@
 import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -84,26 +85,42 @@ class NotificationService {
   // ── Show immediate notification ──
 
   /// Show a notification immediately.
+  /// [type] can be 'ride', 'promo', 'safety', 'payment', or 'general'.
+  /// If the user has disabled that notification type, it won't show.
   static Future<void> show({
     required int id,
     required String title,
     required String body,
     String? payload,
+    String type = 'general',
   }) async {
     if (!_initialized) await init();
 
     final prefs = await SharedPreferences.getInstance();
+
+    // Check if this notification type is enabled
+    if (type == 'ride' && !(prefs.getBool('notif_ride') ?? true)) return;
+    if (type == 'promo' && !(prefs.getBool('notif_promo') ?? true)) return;
+    if (type == 'safety' && !(prefs.getBool('notif_safety') ?? true)) return;
+    if (type == 'payment' && !(prefs.getBool('notif_payment') ?? true)) return;
+
     final soundsEnabled = prefs.getBool('notif_sounds') ?? true;
     final vibrateEnabled = prefs.getBool('notif_vibrate') ?? true;
 
     final androidDetails = AndroidNotificationDetails(
-      'cruise_general',
+      'cruise_premium',
       'Cruise Notifications',
       channelDescription: 'General notifications from Cruise',
       importance: Importance.high,
       priority: Priority.high,
       playSound: soundsEnabled,
+      sound: soundsEnabled
+          ? const RawResourceAndroidNotificationSound('cruise_notification')
+          : null,
       enableVibration: vibrateEnabled,
+      vibrationPattern: vibrateEnabled
+          ? Int64List.fromList([0, 120, 80, 120])
+          : null,
       icon: '@mipmap/ic_launcher',
       color: const Color(0xFFE8C547),
     );
@@ -126,6 +143,11 @@ class NotificationService {
       notificationDetails: details,
       payload: payload,
     );
+
+    // Extra haptic feedback when vibration is enabled
+    if (vibrateEnabled) {
+      HapticFeedback.mediumImpact();
+    }
   }
 
   // ── Schedule notification ──
@@ -155,7 +177,13 @@ class NotificationService {
       importance: Importance.high,
       priority: Priority.high,
       playSound: soundsEnabled,
+      sound: soundsEnabled
+          ? const RawResourceAndroidNotificationSound('cruise_notification')
+          : null,
       enableVibration: vibrateEnabled,
+      vibrationPattern: vibrateEnabled
+          ? Int64List.fromList([0, 120, 80, 120])
+          : null,
       icon: '@mipmap/ic_launcher',
       color: const Color(0xFFE8C547),
     );

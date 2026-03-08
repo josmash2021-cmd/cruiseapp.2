@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import '../services/user_session.dart';
 import 'splash_screen.dart';
 
@@ -39,6 +40,10 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
   Future<void> _toggle(String key, bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, value);
+    // Sync privacy preferences with backend
+    try {
+      await ApiService.updateMe({key: value});
+    } catch (_) {}
   }
 
   void _showSnack(String msg) {
@@ -177,6 +182,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
     // Clear all local data
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
+    await NotificationService.cancelAll();
     await UserSession.logout();
 
     if (!mounted) return;

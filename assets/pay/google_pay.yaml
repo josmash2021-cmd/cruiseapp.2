@@ -1,0 +1,29 @@
+provider: google_pay
+data:
+  environment: TEST
+  apiVersion: 2
+  apiVersionMinor: 0
+  allowedPaymentMethods:
+    - type: CARD
+      parameters:
+        allowedAuthMethods:
+          - PAN_ONLY
+          - CRYPTOGRAM_3DS
+        allowedCardNetworks:
+          - AMEX
+          - DISCOVER
+          - JCB
+          - MASTERCARD
+          - VISA
+        billingAddressRequired: false
+      tokenizationSpecification:
+        type: PAYMENT_GATEWAY
+        parameters:
+          gateway: stripe
+          stripe:version: "2018-10-31"
+          stripe:publishableKey: "pk_test_REPLACE_WITH_YOUR_KEY"
+  merchantInfo:
+    merchantName: "Cruise"
+  transactionInfo:
+    countryCode: US
+    currencyCode: USD

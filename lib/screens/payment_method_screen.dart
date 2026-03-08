@@ -1,9 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:pay/pay.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/local_data_service.dart';
+import '../services/payment_service.dart';
 import 'credit_card_screen.dart';
+import 'paypal_checkout_screen.dart';
 import 'profile_photo_screen.dart';
 
 class PaymentMethodScreen extends StatefulWidget {
@@ -28,33 +31,59 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
   static const _gold = Color(0xFFE8C547);
 
   String? _selectedMethod;
+  bool _gpayAvailable = false;
+  bool _apayAvailable = false;
 
-  final List<_PaymentOption> _options = const [
-    _PaymentOption(
+  List<_PaymentOption> get _options => [
+    const _PaymentOption(
       id: 'paypal',
       label: 'PayPal',
       icon: Icons.account_balance_wallet_rounded,
       iconColor: Colors.white70,
     ),
-    _PaymentOption(
+    const _PaymentOption(
       id: 'cruise_cash',
       label: 'Cruise Cash',
       icon: Icons.monetization_on_rounded,
       iconColor: Color(0xFFE8C547),
     ),
-    _PaymentOption(
-      id: 'google_pay',
-      label: 'Google Pay',
-      icon: Icons.g_mobiledata_rounded,
-      iconColor: Colors.white,
-    ),
-    _PaymentOption(
+    if (Platform.isAndroid)
+      const _PaymentOption(
+        id: 'google_pay',
+        label: 'Google Pay',
+        icon: Icons.g_mobiledata_rounded,
+        iconColor: Colors.white,
+      ),
+    if (Platform.isIOS)
+      const _PaymentOption(
+        id: 'apple_pay',
+        label: 'Apple Pay',
+        icon: Icons.apple,
+        iconColor: Colors.white,
+      ),
+    const _PaymentOption(
       id: 'credit_card',
       label: 'Credit or debit card',
       icon: Icons.credit_card_rounded,
       iconColor: Color(0xFF6B7280),
     ),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _checkWalletAvailability();
+  }
+
+  Future<void> _checkWalletAvailability() async {
+    final gp = await PaymentService.isGooglePayAvailable();
+    final ap = await PaymentService.isApplePayAvailable();
+    if (!mounted) return;
+    setState(() {
+      _gpayAvailable = gp;
+      _apayAvailable = ap;
+    });
+  }
 
   void _selectMethod(String id) async {
     setState(() => _selectedMethod = id);
@@ -96,11 +125,54 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
     }
 
     if (id == 'google_pay') {
-      // TODO: Complete Google Pay setup via Stripe
-      _showSetupSnack('Google Pay linked successfully');
-      await Future.delayed(const Duration(milliseconds: 600));
-      if (!mounted) return;
-      _goToNextScreen(id);
+      if (_gpayAvailable) {
+        if (!mounted) return;
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: Colors.transparent,
+          builder: (ctx) => _OnboardingGPaySheet(
+            onSuccess: (result) async {
+              await LocalDataService.linkPaymentMethod('google_pay');
+              if (!mounted) return;
+              _showSetupSnack('Google Pay linked successfully');
+              await Future.delayed(const Duration(milliseconds: 400));
+              if (!mounted) return;
+              _goToNextScreen(id);
+            },
+          ),
+        );
+      } else {
+        _showSetupSnack('Google Pay not set up on this device');
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (!mounted) return;
+        _goToNextScreen(id);
+      }
+      return;
+    }
+
+    if (id == 'apple_pay') {
+      if (_apayAvailable) {
+        if (!mounted) return;
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: Colors.transparent,
+          builder: (ctx) => _OnboardingApplePaySheet(
+            onSuccess: (result) async {
+              await LocalDataService.linkPaymentMethod('apple_pay');
+              if (!mounted) return;
+              _showSetupSnack('Apple Pay linked successfully');
+              await Future.delayed(const Duration(milliseconds: 400));
+              if (!mounted) return;
+              _goToNextScreen(id);
+            },
+          ),
+        );
+      } else {
+        _showSetupSnack('Apple Pay not set up on this device');
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (!mounted) return;
+        _goToNextScreen(id);
+      }
       return;
     }
 
@@ -156,28 +228,26 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
   }
 
   Future<void> _openPayPal() async {
-    // Try to open PayPal app first
-    final paypalAppUri = Uri.parse('paypal://home');
-    final paypalWebUri = Uri.parse('https://www.paypal.com/signin');
-
-    try {
-      final launched = await launchUrl(
-        paypalAppUri,
-        mode: LaunchMode.externalApplication,
-      );
-      if (!launched) {
-        await launchUrl(paypalWebUri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {
-      await launchUrl(paypalWebUri, mode: LaunchMode.externalApplication);
+    if (!mounted) return;
+    final approved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => const PayPalCheckoutScreen(
+          amount: '1.00',
+          currency: 'USD',
+          description: 'Cruise account verification (\$1.00 refundable)',
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (approved == true) {
+      await LocalDataService.linkPaymentMethod('paypal');
+      _showSetupSnack('PayPal linked successfully');
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (!mounted) return;
+      _goToNextScreen('paypal');
+    } else {
+      setState(() => _selectedMethod = null);
     }
-
-    // After returning from PayPal, mark as set up
-    if (!mounted) return;
-    _showSetupSnack('PayPal linked successfully');
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    _goToNextScreen('paypal');
   }
 
   @override
@@ -353,4 +423,201 @@ class _PaymentOption {
     required this.icon,
     required this.iconColor,
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Google Pay onboarding bottom sheet
+// ─────────────────────────────────────────────────────────────────────────────
+class _OnboardingGPaySheet extends StatefulWidget {
+  final void Function(Map<String, dynamic>) onSuccess;
+  const _OnboardingGPaySheet({required this.onSuccess});
+  @override
+  State<_OnboardingGPaySheet> createState() => _OnboardingGPaySheetState();
+}
+
+class _OnboardingGPaySheetState extends State<_OnboardingGPaySheet> {
+  static const _gold = Color(0xFFE8C547);
+  PaymentConfiguration? _config;
+
+  @override
+  void initState() {
+    super.initState();
+    PaymentService.googlePayConfig().then((c) {
+      if (mounted) setState(() => _config = c);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: c.divider,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Confirm Google Pay',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: c.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Tap the button below to confirm Google Pay for Cruise rides.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: c.textSecondary),
+          ),
+          const SizedBox(height: 24),
+          if (_config == null)
+            const Center(child: CircularProgressIndicator(color: _gold))
+          else
+            GooglePayButton(
+              paymentConfiguration: _config!,
+              paymentItems: const [
+                PaymentItem(
+                  label: 'Account verification',
+                  amount: '0.00',
+                  status: PaymentItemStatus.final_price,
+                ),
+              ],
+              type: GooglePayButtonType.pay,
+              theme: GooglePayButtonTheme.dark,
+              height: 54,
+              onPaymentResult: (result) {
+                Navigator.of(context).pop();
+                widget.onSuccess(result);
+              },
+              loadingIndicator: const Center(
+                child: CircularProgressIndicator(color: _gold),
+              ),
+              onError: (error) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Google Pay error: $error')),
+                );
+              },
+            ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Apple Pay onboarding bottom sheet (iOS only)
+// ─────────────────────────────────────────────────────────────────────────────
+class _OnboardingApplePaySheet extends StatefulWidget {
+  final void Function(Map<String, dynamic>) onSuccess;
+  const _OnboardingApplePaySheet({required this.onSuccess});
+  @override
+  State<_OnboardingApplePaySheet> createState() =>
+      _OnboardingApplePaySheetState();
+}
+
+class _OnboardingApplePaySheetState extends State<_OnboardingApplePaySheet> {
+  static const _gold = Color(0xFFE8C547);
+  PaymentConfiguration? _config;
+
+  @override
+  void initState() {
+    super.initState();
+    PaymentService.applePayConfig().then((c) {
+      if (mounted) setState(() => _config = c);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: c.divider,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Confirm Apple Pay',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: c.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Tap the button below to confirm Apple Pay for Cruise rides.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: c.textSecondary),
+          ),
+          const SizedBox(height: 24),
+          if (_config == null)
+            const Center(child: CircularProgressIndicator(color: _gold))
+          else
+            ApplePayButton(
+              paymentConfiguration: _config!,
+              paymentItems: const [
+                PaymentItem(
+                  label: 'Account verification',
+                  amount: '0.00',
+                  status: PaymentItemStatus.final_price,
+                ),
+              ],
+              type: ApplePayButtonType.inStore,
+              style: ApplePayButtonStyle.black,
+              height: 54,
+              onPaymentResult: (result) {
+                Navigator.of(context).pop();
+                widget.onSuccess(result);
+              },
+              loadingIndicator: const Center(
+                child: CircularProgressIndicator(color: _gold),
+              ),
+              onError: (error) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Apple Pay error: $error')),
+                );
+              },
+            ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+          ),
+        ],
+      ),
+    );
+  }
 }

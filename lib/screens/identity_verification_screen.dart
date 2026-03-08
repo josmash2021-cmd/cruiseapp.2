@@ -8,6 +8,7 @@ import '../config/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
+import 'face_liveness_screen.dart';
 
 /// Full identity verification flow:
 ///  Step 0 — Intro: "Verify Your Identity"
@@ -29,7 +30,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   static const _goldDark = Color(0xFFB8972E);
 
   int _step =
-      0; // 0=intro, 1=docType, 2=capture, 3=liveness, 4=confirm, 5=pending, 6=rejected
+      0; // 0=intro, 1=docType, 2=capture, 3=processing, 4=confirm, 5=pending, 6=rejected
   String? _selectedDocType; // 'license', 'passport', 'id_card'
   String? _documentPhotoPath;
   String? _selfiePath;
@@ -38,10 +39,6 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   String? _rejectionReason;
   Timer? _pollTimer;
 
-  // Liveness challenge
-  int _livenessStep = 0; // 0=center, 1=turn left, 2=turn right, 3=smile
-  bool _livenessDone = false;
-  Timer? _livenessTimer;
   late AnimationController _pulseCtrl;
   late AnimationController _checkCtrl;
 
@@ -66,13 +63,6 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     },
   ];
 
-  final _livenessInstructions = [
-    'Look straight at the camera',
-    'Turn your head slowly to the left',
-    'Turn your head slowly to the right',
-    'Smile!',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -88,7 +78,6 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
 
   @override
   void dispose() {
-    _livenessTimer?.cancel();
     _pollTimer?.cancel();
     _pulseCtrl.dispose();
     _checkCtrl.dispose();
@@ -138,8 +127,8 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     setState(() {
       _documentPhotoPath = xFile.path;
       _processing = false;
-      _step = 3; // Move to liveness
     });
+    await _launchLiveness();
   }
 
   Future<void> _captureFromGallery() async {
@@ -181,8 +170,23 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     setState(() {
       _documentPhotoPath = xFile.path;
       _processing = false;
-      _step = 3;
     });
+    await _launchLiveness();
+  }
+
+  /// Launch the real biometric face liveness screen, then submit verification.
+  Future<void> _launchLiveness() async {
+    if (!mounted) return;
+    final selfiePath = await Navigator.of(context).push<String?>(
+      MaterialPageRoute(builder: (_) => const FaceLivenessScreen()),
+    );
+    if (selfiePath == null || !mounted) return;
+    setState(() {
+      _selfiePath = selfiePath;
+      _step = 3; // Processing / submitting
+      _processing = true;
+    });
+    await _completeVerification();
   }
 
   void _showQualityError(String msg) {
@@ -227,48 +231,6 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
         ],
       ),
     );
-  }
-
-  void _startLivenessCheck() {
-    setState(() => _livenessStep = 0);
-    _advanceLiveness();
-  }
-
-  void _advanceLiveness() {
-    if (_livenessStep >= _livenessInstructions.length) {
-      setState(() => _livenessDone = true);
-      // Capture selfie for verification
-      _captureSelfie();
-      return;
-    }
-    _livenessTimer?.cancel();
-    _livenessTimer = Timer(const Duration(seconds: 3), () {
-      if (!mounted) return;
-      setState(() => _livenessStep++);
-      _advanceLiveness();
-    });
-  }
-
-  Future<void> _captureSelfie() async {
-    final picker = ImagePicker();
-    final xFile = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 1280,
-      imageQuality: 90,
-      preferredCameraDevice: CameraDevice.front,
-    );
-    if (xFile == null || !mounted) return;
-
-    setState(() {
-      _processing = true;
-      _selfiePath = xFile.path;
-    });
-
-    // Verification processing delay for UX feedback
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted) return;
-
-    await _completeVerification();
   }
 
   Future<void> _completeVerification() async {
@@ -862,174 +824,44 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     );
   }
 
-  // ═══════════════════════════════════════════
-  //  Step 3 — Geometric Liveness Check
-  // ═══════════════════════════════════════════
+  // Step 3 — Processing (submitting to backend after liveness done)
   Widget _buildLiveness(AppColors c) {
-    if (!_livenessDone && _livenessStep == 0 && _livenessTimer == null) {
-      // Auto-start liveness check
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _startLivenessCheck();
-      });
-    }
-
-    return Padding(
+    return Center(
       key: const ValueKey(3),
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: () {
-              _livenessTimer?.cancel();
-              _livenessTimer = null;
-              setState(() {
-                _step = 2;
-                _livenessStep = 0;
-                _livenessDone = false;
-              });
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Icon(
-                Icons.arrow_back_rounded,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _gold.withValues(alpha: 0.12),
+              ),
+              child: const CircularProgressIndicator(
+                color: _gold,
+                strokeWidth: 3,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Submitting Verification',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
                 color: c.textPrimary,
-                size: 24,
               ),
             ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Face Verification',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: c.textPrimary,
-              letterSpacing: -0.5,
+            const SizedBox(height: 8),
+            Text(
+              'Encrypting and securely uploading your documents...',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15, color: c.textSecondary),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Follow the instructions below, then take a selfie to confirm your identity.',
-            style: TextStyle(fontSize: 15, color: c.textSecondary, height: 1.4),
-          ),
-          const Spacer(flex: 2),
-          // Face outline with animated ring
-          Center(
-            child: AnimatedBuilder(
-              animation: _pulseCtrl,
-              builder: (_, _) {
-                final progress = _livenessStep / _livenessInstructions.length;
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // Outer progress ring
-                    SizedBox(
-                      width: 200,
-                      height: 200,
-                      child: CircularProgressIndicator(
-                        value: progress,
-                        strokeWidth: 4,
-                        color: _gold,
-                        backgroundColor: Colors.white.withValues(alpha: 0.08),
-                      ),
-                    ),
-                    // Inner face placeholder
-                    Container(
-                      width: 170,
-                      height: 170,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: c.surface,
-                        border: Border.all(
-                          color: _livenessDone
-                              ? _gold
-                              : Colors.white.withValues(alpha: 0.15),
-                          width: 2,
-                        ),
-                      ),
-                      child: Icon(
-                        _livenessDone
-                            ? Icons.check_rounded
-                            : Icons.face_rounded,
-                        size: 64,
-                        color: _livenessDone
-                            ? _gold
-                            : Colors.white.withValues(alpha: 0.3),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 32),
-          // Current instruction
-          Center(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: Text(
-                _livenessDone
-                    ? 'Great! Now take a selfie.'
-                    : (_livenessStep < _livenessInstructions.length
-                          ? _livenessInstructions[_livenessStep]
-                          : 'Processing...'),
-                key: ValueKey(_livenessStep),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: c.textPrimary,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (!_livenessDone && _livenessStep < _livenessInstructions.length)
-            Center(
-              child: Text(
-                'Step ${_livenessStep + 1} of ${_livenessInstructions.length}',
-                style: TextStyle(fontSize: 14, color: c.textTertiary),
-              ),
-            ),
-          const Spacer(flex: 3),
-          if (_processing)
-            const Center(
-              child: Column(
-                children: [
-                  CircularProgressIndicator(color: _gold),
-                  SizedBox(height: 12),
-                  Text(
-                    'Verifying your identity...',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                ],
-              ),
-            )
-          else if (_livenessDone)
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton.icon(
-                onPressed: _captureSelfie,
-                icon: const Icon(Icons.camera_alt_rounded),
-                label: const Text(
-                  'Take Selfie',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _gold,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 0,
-                ),
-              ),
-            ),
-          const SizedBox(height: 24),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1355,8 +1187,6 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
                   _selectedDocType = null;
                   _documentPhotoPath = null;
                   _selfiePath = null;
-                  _livenessDone = false;
-                  _livenessStep = 0;
                   _rejectionReason = null;
                 });
               },

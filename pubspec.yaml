@@ -52,7 +52,7 @@ dependencies:
   firebase_core: ^3.13.1
   cloud_firestore: ^5.6.8
   firebase_messaging: ^15.2.4
-  intl: ^0.19.0
+  intl: ^0.20.2
   crypto: ^3.0.6
   uuid: ^4.5.3
   flutter_local_notifications: ^21.0.0
@@ -60,6 +60,10 @@ dependencies:
   local_auth: ^2.3.0
   google_fonts: ^6.2.1
   flutter_secure_storage: ^10.0.0
+  camera: ^0.10.5+9
+  google_mlkit_face_detection: ^0.11.0
+  pay: ^2.0.0
+  webview_flutter: ^4.7.0
 
 dev_dependencies:
   flutter_test:
@@ -91,6 +95,7 @@ flutter:
     - assets/images/car_sprites/
     - assets/markers/
     - assets/google_fonts/
+    - assets/pay/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

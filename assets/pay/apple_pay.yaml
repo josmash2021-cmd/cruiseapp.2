@@ -1,0 +1,15 @@
+provider: apple_pay
+data:
+  merchantIdentifier: merchant.com.cruise.app
+  displayName: Cruise
+  merchantCapabilities:
+    - 3DS
+  supportedNetworks:
+    - amex
+    - discover
+    - masterCard
+    - visa
+  countryCode: US
+  currencyCode: USD
+  requiredShippingContactFields: []
+  requiredBillingContactFields: []

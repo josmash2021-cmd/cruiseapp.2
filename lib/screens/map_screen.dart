@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
@@ -8,7 +8,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
@@ -118,12 +117,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   GoogleMapController? _mapController;
 
-  /// Apple Maps controller — non-null only on iOS.
-  amap.AppleMapController? _appleMapController;
-
-  /// True when either the Google or Apple map controller is ready.
-  bool get _hasMapController =>
-      Platform.isIOS ? _appleMapController != null : _mapController != null;
+  /// True when the Google Maps controller is ready.
+  bool get _hasMapController => _mapController != null;
   LatLng? _currentPosition;
   LatLng? _cameraTarget;
 
@@ -192,8 +187,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   LatLng? _prevDriverPosition; // for smooth interpolation
   double _driverBearing = 0; // bearing toward destination
   BitmapDescriptor? _driverCarIcon; // canvas-painted car icon
-  Uint8List? _rotatedDriverBytes; // pre-rotated PNG for Apple Maps
-  int _lastDriverRotQ = -1; // last quantised bearing
   DateTime? _lastDriverMarkerRebuild;
   AnimationController? _riderDriverAnim; // 60fps smooth driver animation
   LatLng _riderAnimFrom = _birminghamDefault;
@@ -1101,20 +1094,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  /// Called when the Apple Maps widget is ready (iOS only).
-  void _onAppleMapCreated(amap.AppleMapController controller) {
-    _appleMapController = controller;
-    if (_currentPosition != null) {
-      _centerMapOn(_currentPosition!, zoom: _defaultMapZoom);
-    }
-  }
-
-  /// Camera-move callback for Apple Maps on iOS.
-  void _onAppleCameraMove(amap.CameraPosition position) {
-    _cameraTarget = LatLng(position.target.latitude, position.target.longitude);
-    if (!_isRecentering) _isCenteredOnPickup = false;
-  }
-
   // ── Platform-aware camera helpers ─────────────────────────────────────
 
   /// Pan the camera to [target] with optional zoom/bearing/tilt.
@@ -1126,63 +1105,27 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     double tilt = 0,
   }) async {
     final z = zoom ?? await _currentZoom();
-    if (Platform.isIOS) {
-      await _appleMapController?.animateCamera(
-        amap.CameraUpdate.newCameraPosition(
-          amap.CameraPosition(
-            target: amap.LatLng(target.latitude, target.longitude),
-            zoom: z,
-            heading: bearing,
-            pitch: tilt, // 3D tilt for navigation chase-cam on iOS
-          ),
-        ),
-      );
-    } else {
-      await _mapController?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: target, zoom: z, bearing: bearing, tilt: tilt),
-        ),
-      );
-    }
+    await _mapController?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: target, zoom: z, bearing: bearing, tilt: tilt),
+      ),
+    );
   }
 
-  /// Fit the camera to [bounds] with [padding] (pixels) on all sides.
+    /// Fit the camera to [bounds] with [padding] (pixels) on all sides.
   Future<void> _fitBounds(LatLngBounds bounds, double padding) async {
-    if (Platform.isIOS) {
-      await _appleMapController?.animateCamera(
-        amap.CameraUpdate.newLatLngBounds(
-          amap.LatLngBounds(
-            southwest: amap.LatLng(
-              bounds.southwest.latitude,
-              bounds.southwest.longitude,
-            ),
-            northeast: amap.LatLng(
-              bounds.northeast.latitude,
-              bounds.northeast.longitude,
-            ),
-          ),
-          padding,
-        ),
-      );
-    } else {
-      await _mapController?.animateCamera(
-        CameraUpdate.newLatLngBounds(bounds, padding),
-      );
-    }
+    await _mapController?.animateCamera(
+      CameraUpdate.newLatLngBounds(bounds, padding),
+    );
   }
-
   /// Returns the current map zoom level on whichever platform is active.
   Future<double> _currentZoom() async {
     try {
-      if (Platform.isIOS) {
-        return await _appleMapController?.getZoomLevel() ?? _defaultMapZoom;
-      }
       return await _mapController?.getZoomLevel() ?? _defaultMapZoom;
     } catch (_) {
       return _defaultMapZoom;
     }
   }
-
   // ──────────────────────────────────────────────────────────────────
 
   EdgeInsets _mapPaddingForContext(BuildContext context) {
@@ -1736,6 +1679,58 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     await Future.delayed(const Duration(milliseconds: 250));
     if (!mounted) return;
     _setStage(RideStage.options);
+  }
+
+  void _showTripCancelledDialog() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1C1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: const Icon(
+          Icons.cancel_outlined,
+          color: Color(0xFFFF453A),
+          size: 48,
+        ),
+        title: const Text(
+          'Trip Cancelled',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: const Text(
+          'Your trip has been cancelled by the operator. Please request a new ride.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.white70, fontSize: 15, height: 1.4),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE8C547),
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text(
+                'OK',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _setStage(RideStage stage) {
@@ -2331,94 +2326,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   // Route line color: always gold for brand consistency
   Color get _routeColor => const Color(0xFF4285F4);
 
-  // ── Apple Maps computed overlays (iOS only) ─────────────────────────────
-
-  /// Converts current markers to Apple Maps [Annotation] objects.
-  Set<amap.Annotation> get _appleAnnotations {
-    final result = <amap.Annotation>{};
-
-    // Pickup
-    final pickup = _pickupMarker;
-    if (pickup != null && _tripStatus != 'in_trip') {
-      final bytes = _goldPinIconBytes;
-      result.add(
-        amap.Annotation(
-          annotationId: amap.AnnotationId(pickup.markerId.value),
-          position: amap.LatLng(
-            pickup.position.latitude,
-            pickup.position.longitude,
-          ),
-          icon: bytes != null
-              ? amap.BitmapDescriptor.fromBytes(bytes)
-              : amap.BitmapDescriptor.defaultAnnotation,
-          draggable: pickup.draggable,
-          onDragEnd: pickup.onDragEnd != null
-              ? (amap.LatLng p) =>
-                    pickup.onDragEnd!(LatLng(p.latitude, p.longitude))
-              : null,
-        ),
-      );
-    }
-
-    // Dropoff
-    final dropoff = _dropoffMarker;
-    if (dropoff != null) {
-      final bytes = _dropoffPinIconBytes ?? _goldPinIconBytes;
-      result.add(
-        amap.Annotation(
-          annotationId: amap.AnnotationId(dropoff.markerId.value),
-          position: amap.LatLng(
-            dropoff.position.latitude,
-            dropoff.position.longitude,
-          ),
-          icon: bytes != null
-              ? amap.BitmapDescriptor.fromBytes(bytes)
-              : amap.BitmapDescriptor.defaultAnnotation,
-        ),
-      );
-    }
-
-    // Driver — use pre-rotated icon so the car faces travel direction
-    final driver = _driverMarker;
-    if (driver != null) {
-      final bytes = _rotatedDriverBytes ?? _driverCarIconBytes;
-      result.add(
-        amap.Annotation(
-          annotationId: amap.AnnotationId(driver.markerId.value),
-          position: amap.LatLng(
-            driver.position.latitude,
-            driver.position.longitude,
-          ),
-          icon: bytes != null
-              ? amap.BitmapDescriptor.fromBytes(bytes)
-              : amap.BitmapDescriptor.defaultAnnotation,
-          anchor: const Offset(0.5, 0.5),
-          alpha: 1.0,
-        ),
-      );
-    }
-
-    return result;
-  }
-
-  /// Converts current Google polylines to Apple Maps [Polyline] objects.
-  Set<amap.Polyline> get _applePolylines {
-    return _polylines
-        .map(
-          (p) => amap.Polyline(
-            polylineId: amap.PolylineId(p.polylineId.value),
-            points: p.points
-                .map((ll) => amap.LatLng(ll.latitude, ll.longitude))
-                .toList(),
-            color: p.color,
-            width: p.width,
-          ),
-        )
-        .toSet();
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-
   Set<Polyline> _buildRoutePolylines(List<LatLng> points) {
     final baseColor = _routeColor;
     // Animated glow: oscillate alpha between 0.5 and 1.0 using sin wave
@@ -2493,7 +2400,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     // When the theme flips between light â†” dark, re-apply the map JSON style
     if (_lastIsDark != null &&
         _lastIsDark != _c.isDark &&
-        !Platform.isIOS &&
         _mapController != null) {
       final style = _mapStyle;
       // ignore: deprecated_member_use
@@ -2507,62 +2413,37 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       body: Stack(
         children: [
           RepaintBoundary(
-            child: Platform.isIOS
-                ? amap.AppleMap(
-                    initialCameraPosition: amap.CameraPosition(
-                      target: amap.LatLng(
-                        _currentPosition!.latitude,
-                        _currentPosition!.longitude,
-                      ),
-                      zoom: 14,
-                    ),
-                    mapType: amap.MapType.standard,
-                    onMapCreated: _onAppleMapCreated,
-                    onCameraMove: _onAppleCameraMove,
-                    onCameraIdle: _onCameraIdle,
-                    onTap: (p) => _onMapTap(LatLng(p.latitude, p.longitude)),
-                    myLocationEnabled: true,
-                    myLocationButtonEnabled: false,
-                    zoomGesturesEnabled: true,
-                    rotateGesturesEnabled: true,
-                    scrollGesturesEnabled: true,
-                    pitchGesturesEnabled: true,
-                    compassEnabled: true,
-                    padding: _mapPaddingForContext(context),
-                    annotations: _appleAnnotations,
-                    polylines: _applePolylines,
-                  )
-                : GoogleMap(
-                    style: _mapStyle,
-                    onMapCreated: _onMapCreated,
-                    onCameraMove: _onCameraMove,
-                    onCameraIdle: _onCameraIdle,
-                    onTap: _onMapTap,
-                    initialCameraPosition: CameraPosition(
-                      target: _currentPosition!,
-                      zoom: 14,
-                    ),
-                    cameraTargetBounds: CameraTargetBounds(_usBounds),
-                    padding: _mapPaddingForContext(context),
-                    myLocationEnabled: true,
-                    myLocationButtonEnabled: false,
-                    zoomControlsEnabled: false,
-                    zoomGesturesEnabled: true,
-                    rotateGesturesEnabled: true,
-                    scrollGesturesEnabled: true,
-                    tiltGesturesEnabled: false,
-                    compassEnabled: true,
-                    mapToolbarEnabled: false,
-                    buildingsEnabled: false,
-                    liteModeEnabled: false,
-                    markers: {
-                      if (_pickupMarker != null && _tripStatus != 'in_trip')
-                        _pickupMarker!,
-                      ?_dropoffMarker,
-                      ?_driverMarker,
-                    },
-                    polylines: _polylines,
-                  ),
+            child: GoogleMap(
+              style: _mapStyle,
+              onMapCreated: _onMapCreated,
+              onCameraMove: _onCameraMove,
+              onCameraIdle: _onCameraIdle,
+              onTap: _onMapTap,
+              initialCameraPosition: CameraPosition(
+                target: _currentPosition!,
+                zoom: 14,
+              ),
+              cameraTargetBounds: CameraTargetBounds(_usBounds),
+              padding: _mapPaddingForContext(context),
+              myLocationEnabled: true,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              zoomGesturesEnabled: true,
+              rotateGesturesEnabled: true,
+              scrollGesturesEnabled: true,
+              tiltGesturesEnabled: false,
+              compassEnabled: true,
+              mapToolbarEnabled: false,
+              buildingsEnabled: false,
+              liteModeEnabled: false,
+              markers: {
+                if (_pickupMarker != null && _tripStatus != 'in_trip')
+                  _pickupMarker!,
+                ?_dropoffMarker,
+                ?_driverMarker,
+              },
+              polylines: _polylines,
+            ),
           ),
           if (_stage == RideStage.pin && !_hasPreparedRoute)
             Center(
@@ -3832,6 +3713,21 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             _updateDriverMarkerFromPosition();
             _startRideProgressTracking();
             return;
+          } else if (status == 'canceled' || status == 'cancelled') {
+            timer.cancel();
+            if (!mounted) return;
+            _rideLifecycleTimer?.cancel();
+            setState(() {
+              _rideProgress = 0;
+              _polylines = {};
+              _activeRoutePoints = [];
+              _driverRoutePoints = [];
+              _driverMarker = null;
+              _dropoffMarker = null;
+            });
+            _setStage(RideStage.plan);
+            _showTripCancelledDialog();
+            return;
           } else if (status == 'no_drivers') {
             noDriverCount++;
             if (noDriverCount >= 10) {
@@ -4067,13 +3963,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             }
             // Draw/update route from driver â†’ pickup
             await _updateDriverRoute(status);
-          } else if (status == 'canceled') {
+          } else if (status == 'canceled' || status == 'cancelled') {
             timer.cancel();
-            // â”€â”€ Sync cancelled to Firestore for Dispatch Admin â”€â”€
+            _rideLifecycleTimer?.cancel();
+            // Sync cancelled to Firestore for Dispatch Admin
             if (_firestoreTripId != null) {
               TripFirestoreService.syncTripCancelled(
                 _firestoreTripId!,
-                reason: 'Cancelled by driver',
+                reason: 'Cancelled by dispatch',
               );
             }
             if (mounted) {
@@ -4086,6 +3983,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 _dropoffMarker = null;
               });
               _setStage(RideStage.plan);
+              _showTripCancelledDialog();
             }
             return;
           }
@@ -4469,21 +4367,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       return;
     }
     _lastDriverMarkerRebuild = now;
-
-    // On iOS, pre-rotate the icon (Apple Maps annotations have no rotation)
-    if (Platform.isIOS) {
-      final q = ((_driverBearing % 360) / 10).round() % 36;
-      if (q != _lastDriverRotQ) {
-        _lastDriverRotQ = q;
-        final rideName = _rides.isNotEmpty ? _rides[_selectedRide].vehicle : '';
-        CarIconLoader.rotateBytesForRide(
-          _driverBearing,
-          rideName: rideName,
-        ).then((bytes) {
-          if (mounted) setState(() => _rotatedDriverBytes = bytes);
-        });
-      }
-    }
 
     _driverMarker = Marker(
       markerId: const MarkerId('driver'),

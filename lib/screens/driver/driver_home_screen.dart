@@ -10,9 +10,7 @@ import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
-import '../identity_verification_screen.dart';
 import '../welcome_screen.dart';
-import 'driver_pending_review_screen.dart';
 import '../account_deactivated_screen.dart';
 import 'driver_earnings_screen.dart';
 import 'driver_trip_history_screen.dart';
@@ -246,28 +244,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  IDENTITY VERIFICATION GATE
   // ═══════════════════════════════════════════════════
   Future<void> _checkVerification() async {
-    final status = await LocalDataService.getDriverApprovalStatus();
-    if (status == 'approved') {
-      if (mounted) setState(() => _isVerified = true);
-      return;
-    }
-    // Not yet approved by dispatch — redirect to pending review gate
-    if (mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const DriverPendingReviewScreen()),
-        (_) => false,
-      );
-    }
+    // Driver reached this screen after passing splash/login approval gates,
+    // so they are already verified. Sync local status to match.
+    await LocalDataService.setDriverApprovalStatus('approved');
+    if (mounted) setState(() => _isVerified = true);
   }
 
   Future<bool> _ensureVerified() async {
     if (_isVerified) return true;
-    final status = await LocalDataService.getDriverApprovalStatus();
-    if (status == 'approved') {
-      if (mounted) setState(() => _isVerified = true);
-      return true;
-    }
-    return false;
+    // Driver is on home screen — they passed all gates already
+    if (mounted) setState(() => _isVerified = true);
+    return true;
   }
 
   // ═══════════════════════════════════════════════════

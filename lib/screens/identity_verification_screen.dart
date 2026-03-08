@@ -307,6 +307,12 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
       }
     }
 
+    // Include SSN if provided
+    final ssnDigits = _ssn.replaceAll(RegExp(r'[^\d]'), '');
+    if (ssnDigits.length == 9) {
+      body['ssn'] = _ssn;
+    }
+
     // Submit verification request to backend for dispatch review
     try {
       await ApiService.submitVerification(body);

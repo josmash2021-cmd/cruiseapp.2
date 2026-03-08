@@ -1177,6 +1177,7 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
     return {
         "status": db_user.verification_status or "none",
         "reason": db_user.verification_reason,
+        "photo_url": db_user.photo_url,
     }
 
 

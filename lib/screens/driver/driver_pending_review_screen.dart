@@ -128,6 +128,20 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
 
   Future<void> _enterApp() async {
     if (!mounted) return;
+    // Check if driver already has a profile photo
+    try {
+      final result = await ApiService.getDriverApprovalStatus();
+      final photoUrl = result['photo_url'] as String?;
+      if (photoUrl != null && photoUrl.isNotEmpty) {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          slideFromRightRoute(const DriverHomeScreen()),
+          (_) => false,
+        );
+        return;
+      }
+    } catch (_) {}
+    if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       slideFromRightRoute(const DriverProfilePhotoScreen()),
       (_) => false,

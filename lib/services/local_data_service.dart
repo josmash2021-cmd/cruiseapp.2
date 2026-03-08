@@ -560,6 +560,18 @@ class LocalDataService {
     await prefs.setString(_docTypeKey, documentType);
   }
 
+  static const _driverApprovalKey = 'driver_approval_status_v1';
+
+  static Future<void> setDriverApprovalStatus(String status) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_driverApprovalKey, status);
+  }
+
+  static Future<String> getDriverApprovalStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_driverApprovalKey) ?? 'none';
+  }
+
   static Future<String?> getIdDocumentType() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_docTypeKey);
@@ -592,6 +604,7 @@ class LocalDataService {
     await prefs.remove(_verifiedKey);
     await prefs.remove(_docTypeKey);
     await prefs.remove(_biometricKey);
+    await prefs.remove(_driverApprovalKey);
     await prefs.remove('first_ride_promo_used');
     await prefs.remove('promo_trips_left');
     await prefs.remove('notif_ride');

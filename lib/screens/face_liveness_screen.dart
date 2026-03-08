@@ -9,10 +9,11 @@ import '../config/app_theme.dart';
 /// Real-time biometric face liveness screen.
 ///
 /// Uses the front camera + Google ML Kit face detection (on-device, free)
-/// to verify a real human is present through 3 challenges:
+/// to verify a real human is present through 4 challenges:
 ///   1. CENTER  — Look straight at the camera
 ///   2. TURN    — Turn your head to the side
 ///   3. BLINK   — Blink both eyes
+///   4. SMILE   — Smile for the photo
 ///
 /// Returns the path to the captured selfie, or null if cancelled.
 class FaceLivenessScreen extends StatefulWidget {
@@ -22,7 +23,7 @@ class FaceLivenessScreen extends StatefulWidget {
   State<FaceLivenessScreen> createState() => _FaceLivenessScreenState();
 }
 
-enum _Challenge { center, turn, blink }
+enum _Challenge { center, turn, blink, smile }
 
 class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     with TickerProviderStateMixin {
@@ -49,7 +50,12 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   late AnimationController _successCtrl;
   late AnimationController _pulseCtrl;
 
-  final _challenges = [_Challenge.center, _Challenge.turn, _Challenge.blink];
+  final _challenges = [
+    _Challenge.center,
+    _Challenge.turn,
+    _Challenge.blink,
+    _Challenge.smile,
+  ];
 
   static const _instructions = {
     _Challenge.center: _ChallengeInfo(
@@ -66,6 +72,11 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       icon: Icons.visibility_off_rounded,
       title: 'Blink both eyes',
       hint: 'Close and reopen your eyes',
+    ),
+    _Challenge.smile: _ChallengeInfo(
+      icon: Icons.sentiment_very_satisfied_rounded,
+      title: 'Smile for the photo',
+      hint: 'Give us your best smile!',
     ),
   };
 
@@ -178,6 +189,11 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
         final left = face.leftEyeOpenProbability ?? 1.0;
         final right = face.rightEyeOpenProbability ?? 1.0;
         return left < 0.3 && right < 0.3;
+
+      case _Challenge.smile:
+        // Smiling
+        final smile = face.smilingProbability ?? 0.0;
+        return smile > 0.7;
     }
   }
 
@@ -305,8 +321,13 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     return Stack(
       fit: StackFit.expand,
       children: [
-        // ── Camera preview ──
-        CameraPreview(_cam!),
+        // ── Camera preview (aspect-ratio correct, no stretching) ──
+        Center(
+          child: AspectRatio(
+            aspectRatio: 1 / _cam!.value.aspectRatio,
+            child: CameraPreview(_cam!),
+          ),
+        ),
 
         // ── Oval overlay with cutout ──
         AnimatedBuilder(

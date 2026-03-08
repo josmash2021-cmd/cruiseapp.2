@@ -481,6 +481,19 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Driver approval status from dispatch (pending/approved/rejected).
+  static Future<Map<String, dynamic>> getDriverApprovalStatus() async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await http
+        .get(
+          Uri.parse('$_baseUrl/auth/driver-approval-status'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 5));
+    return _parse(res);
+  }
+
   /// Check account status (dispatch may have blocked/deleted).
   static Future<String> getAccountStatus() async {
     final token = await getToken();

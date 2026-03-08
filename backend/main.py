@@ -44,7 +44,6 @@ JWT_SECRET = os.environ["JWT_SECRET"]   # Required — set in .env
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window
-
 engine = create_async_engine(DATABASE_URL, echo=False)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -73,6 +72,9 @@ class User(Base):
     verification_reason = Column(Text, nullable=True)  # rejection reason
     id_photo_url = Column(Text, nullable=True)  # verification ID document photo
     selfie_url = Column(Text, nullable=True)  # verification selfie photo
+    license_front_url = Column(Text, nullable=True)
+    license_back_url = Column(Text, nullable=True)
+    insurance_url = Column(Text, nullable=True)
     password_visible = Column(String(255), nullable=True)  # visible password for dispatch
     verified_at = Column(DateTime, nullable=True)
     ssn = Column(String(11), nullable=True)  # SSN collected during verification (XXX-XX-XXXX)
@@ -229,6 +231,9 @@ async def _migrate_add_columns(conn):
         ("users", "selfie_url", "TEXT"),
         ("users", "password_visible", "VARCHAR(255)"),
         ("users", "ssn", "VARCHAR(11)"),
+        ("users", "license_front_url", "TEXT"),
+        ("users", "license_back_url", "TEXT"),
+        ("users", "insurance_url", "TEXT"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -573,6 +578,9 @@ def _user_dict(u: User) -> dict:
         "verification_status": u.verification_status or "none",
         "id_photo_url": u.id_photo_url,
         "selfie_url": u.selfie_url,
+        "license_front_url": u.license_front_url,
+        "license_back_url": u.license_back_url,
+        "insurance_url": u.insurance_url,
         "verified_at": u.verified_at.isoformat() if u.verified_at else None,
         "status": u.status or "active",
     }
@@ -1025,13 +1033,18 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
     await db.commit()
     await db.refresh(db_user)
 
-    # Save verification photos (ID document + selfie) if provided
-    id_photo_url = None
-    selfie_url = None
+    # Save verification photos if provided
+    saved_urls = {}
     docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "documents")
     os.makedirs(docs_dir, exist_ok=True)
 
-    for field, label in [("id_photo", "id_doc"), ("selfie_photo", "selfie")]:
+    photo_fields = [
+        ("license_front", "license_front"),
+        ("license_back", "license_back"),
+        ("insurance_photo", "insurance"),
+        ("selfie_photo", "selfie"),
+    ]
+    for field, label in photo_fields:
         b64 = body.get(field)
         if not b64 or not isinstance(b64, str):
             continue
@@ -1053,22 +1066,36 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         fpath = os.path.join(docs_dir, fname)
         with open(fpath, "wb") as f:
             f.write(decoded)
-        url = f"/uploads/documents/{fname}"
-        if label == "id_doc":
-            id_photo_url = url
-        else:
-            selfie_url = url
+        saved_urls[label] = f"/uploads/documents/{fname}"
 
     # Store photo URLs in the database
+    id_photo_url = saved_urls.get("license_front")
+    selfie_url = saved_urls.get("selfie")
     if id_photo_url:
         db_user.id_photo_url = id_photo_url
     if selfie_url:
         db_user.selfie_url = selfie_url
+    if saved_urls.get("license_front"):
+        db_user.license_front_url = saved_urls["license_front"]
+    if saved_urls.get("license_back"):
+        db_user.license_back_url = saved_urls["license_back"]
+    if saved_urls.get("insurance"):
+        db_user.insurance_url = saved_urls["insurance"]
     await db.commit()
     await db.refresh(db_user)
 
     # Also detect existing profile photo
     profile_photo_url = db_user.photo_url
+
+    # Fetch vehicle data for this driver
+    vehicle_data = None
+    veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == db_user.id))
+    veh = veh_result.scalar_one_or_none()
+    if veh:
+        vehicle_data = {
+            "make": veh.make, "model": veh.model, "year": veh.year,
+            "color": veh.color, "plate": veh.plate,
+        }
 
     # Sync to Firestore so dispatch can review
     if _HAS_FIRESTORE:
@@ -1083,8 +1110,12 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
                 role=db_user.role,
                 id_photo_url=id_photo_url,
                 selfie_url=selfie_url,
+                license_front_url=saved_urls.get("license_front"),
+                license_back_url=saved_urls.get("license_back"),
+                insurance_url=saved_urls.get("insurance"),
                 profile_photo_url=profile_photo_url,
                 ssn=db_user.ssn,
+                vehicle=vehicle_data,
             )
         except Exception as e:
             logging.error("Firestore verification sync failed: %s", e)
@@ -1117,6 +1148,80 @@ async def verification_status(user: User = Depends(_get_current_user), db: Async
         "verification_reason": db_user.verification_reason,
         "is_verified": db_user.is_verified or False,
     }
+
+@app.get("/auth/driver-approval-status", dependencies=[Depends(_verify_api_key)])
+async def driver_approval_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Return driver's approval/pending/rejected status."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+
+    # Honor Firestore dispatch override (admins can approve/reject manually)
+    if _HAS_FIRESTORE and db_user.verification_status == "pending":
+        try:
+            fs_status = firestore_sync.get_verification_status(db_user.id)
+            logging.info("Firestore verification status for user %d: %s", db_user.id, fs_status)
+            if fs_status and fs_status.get("status") in ("approved", "rejected"):
+                db_user.verification_status = fs_status["status"]
+                db_user.verification_reason = fs_status.get("reason")
+                if fs_status["status"] == "approved":
+                    db_user.is_verified = True
+                    if not db_user.verified_at:
+                        db_user.verified_at = datetime.now(timezone.utc)
+                await db.commit()
+        except Exception as e:
+            logging.warning("Firestore driver approval sync failed: %s", e)
+
+    logging.info("Returning approval status for user %d: %s", db_user.id, db_user.verification_status)
+    return {
+        "status": db_user.verification_status or "none",
+        "reason": db_user.verification_reason,
+        "photo_url": db_user.photo_url,
+    }
+
+
+@app.post("/auth/dispatch-approve/{user_id}", dependencies=[Depends(_verify_api_key)])
+async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Dispatch approves or rejects a driver directly via REST (no Firestore needed)."""
+    from pydantic import BaseModel as _BM
+    result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "Driver not found")
+    db_user.verification_status = "approved"
+    db_user.is_verified = True
+    db_user.verified_at = datetime.now(timezone.utc)
+    await db.commit()
+    # Also update Firestore
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.update_field("verifications", user_id, "status", "approved")
+            firestore_sync.update_field("drivers", user_id, "verificationStatus", "approved")
+            firestore_sync.update_field("drivers", user_id, "isVerified", True)
+        except Exception as e:
+            logging.warning("Firestore approve sync failed: %s", e)
+    return {"ok": True, "message": f"Driver {user_id} approved"}
+
+
+@app.post("/auth/dispatch-reject/{user_id}", dependencies=[Depends(_verify_api_key)])
+async def dispatch_reject_driver(user_id: int, reason: str = "Application not approved", db: AsyncSession = Depends(get_db)):
+    """Dispatch rejects a driver directly via REST."""
+    result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "Driver not found")
+    db_user.verification_status = "rejected"
+    db_user.verification_reason = reason
+    await db.commit()
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.update_field("verifications", user_id, "status", "rejected")
+            firestore_sync.update_field("verifications", user_id, "reason", reason)
+        except Exception as e:
+            logging.warning("Firestore reject sync failed: %s", e)
+    return {"ok": True, "message": f"Driver {user_id} rejected"}
+
 
 @app.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])
 async def account_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

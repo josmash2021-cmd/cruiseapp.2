@@ -23,6 +23,7 @@ import 'airport_terminal_sheet.dart';
 import 'credit_card_screen.dart';
 import 'payment_accounts_screen.dart';
 import 'ride_rating_screen.dart';
+import 'schedule_booking_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'trip_receipt_screen.dart';
 import '../navigation/car_icon_loader.dart';
@@ -2031,18 +2032,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     onPressed: () {
                       Navigator.of(ctx).pop();
                       if (!mounted) return;
-                      setState(() {
-                        _pickupNow = false;
-                        _scheduledDate = tempDate;
-                        _scheduledTime = tempTime;
-                      });
-                      // Guide user to enter addresses
-                      Future.delayed(const Duration(milliseconds: 300), () {
-                        if (!mounted) return;
-                        if (_dropoffCtrl.text.trim().isEmpty) {
-                          _dropoffFocus.requestFocus();
-                        }
-                      });
+                      final dt = DateTime(
+                        tempDate.year,
+                        tempDate.month,
+                        tempDate.day,
+                        tempTime.hour,
+                        tempTime.minute,
+                      );
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ScheduleBookingScreen(scheduledAt: dt),
+                        ),
+                      );
                     },
                   ),
                 ],

@@ -196,7 +196,10 @@ def sync_verification(user_id: int, first_name: str, last_name: str,
                       email: str = None, phone: str = "",
                       id_document_type: str = "id_card", role: str = "rider",
                       id_photo_url: str = None, selfie_url: str = None,
-                      profile_photo_url: str = None, ssn: str = None):
+                      license_front_url: str = None, license_back_url: str = None,
+                      insurance_url: str = None,
+                      profile_photo_url: str = None, ssn: str = None,
+                      vehicle: dict = None):
     """Create/update a verification request for dispatch to review."""
     _ensure_init()
     if _db is None:
@@ -232,8 +235,16 @@ def sync_verification(user_id: int, first_name: str, last_name: str,
         data["idPhotoUrl"] = id_photo_url
     if selfie_url:
         data["selfieUrl"] = selfie_url
+    if license_front_url:
+        data["licenseFrontUrl"] = license_front_url
+    if license_back_url:
+        data["licenseBackUrl"] = license_back_url
+    if insurance_url:
+        data["insuranceUrl"] = insurance_url
     if profile_photo_url:
         data["profilePhotoUrl"] = profile_photo_url
+    if vehicle:
+        data["vehicle"] = vehicle
     try:
         _db.collection("verifications").document(doc_id).set(data, merge=True)
         log.info("🔍 Verification request synced for sql_%d", user_id)
@@ -251,9 +262,11 @@ def get_verification_status(user_id: int) -> dict:
         doc = _db.collection("verifications").document(doc_id).get()
         if doc.exists:
             data = doc.to_dict()
+            # Dispatch may write to 'status' or 'verificationStatus'
+            status = data.get("status") or data.get("verificationStatus") or "pending"
             return {
-                "status": data.get("status", "pending"),
-                "reason": data.get("reason"),
+                "status": status,
+                "reason": data.get("reason") or data.get("verificationReason"),
             }
     except Exception as e:
         log.error("❌ Verification status read failed for %d: %s", user_id, e)

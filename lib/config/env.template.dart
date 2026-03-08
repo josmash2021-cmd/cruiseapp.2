@@ -26,4 +26,9 @@ class Env {
   static const String twilioAccountSid = 'YOUR_TWILIO_ACCOUNT_SID';
   static const String twilioAuthToken = 'YOUR_TWILIO_AUTH_TOKEN';
   static const String twilioServiceSid = 'YOUR_TWILIO_SERVICE_SID';
+
+  // ── PayPal ──
+  static const bool paypalSandbox = true;
+  static const String paypalClientId = 'YOUR_PAYPAL_CLIENT_ID';
+  static const String paypalSecret = 'YOUR_PAYPAL_SECRET';
 }

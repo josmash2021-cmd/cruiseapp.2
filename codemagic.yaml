@@ -22,6 +22,9 @@ workflows:
         ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
         ENV_TWILIO_TOKEN: "a7a068f83aa355acbd31deaafc317cf9"
         ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+        ENV_PAYPAL_SANDBOX: "true"
+        ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
+        ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
     scripts:
       - name: Generate env.dart
         script: |
@@ -39,6 +42,9 @@ workflows:
             static const String twilioAccountSid = '${ENV_TWILIO_SID}';
             static const String twilioAuthToken = '${ENV_TWILIO_TOKEN}';
             static const String twilioServiceSid = '${ENV_TWILIO_SERVICE}';
+            static const bool paypalSandbox = ${ENV_PAYPAL_SANDBOX};
+            static const String paypalClientId = '${ENV_PAYPAL_CLIENT_ID}';
+            static const String paypalSecret = '${ENV_PAYPAL_SECRET}';
           }
           ENVEOF
           echo "env.dart generated:"
@@ -212,7 +218,44 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      vars:
+        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
+        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
+        ENV_GOOGLE_MAPS_KEY: "AIzaSyALnqq4-_jJLUCLxSJaWZGZHgw27RVE78Y"
+        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
+        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
+        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
+        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
+        ENV_STRIPE_PK: "pk_test_REPLACE_WITH_YOUR_KEY"
+        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
+        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
+        ENV_TWILIO_TOKEN: "a7a068f83aa355acbd31deaafc317cf9"
+        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+        ENV_PAYPAL_SANDBOX: "true"
+        ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
+        ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
     scripts:
+      - name: Generate env.dart
+        script: |
+          cat > lib/config/env.dart << ENVEOF
+          class Env {
+            static const String apiKey = '${ENV_API_KEY}';
+            static const String hmacSecret = '${ENV_HMAC_SECRET}';
+            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
+            static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
+            static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
+            static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
+            static const String emailjsPrivateKey = '${ENV_EMAILJS_PRIVATE_KEY}';
+            static const String stripePublishableKey = '${ENV_STRIPE_PK}';
+            static const String stripeMerchantId = '${ENV_STRIPE_MERCHANT}';
+            static const String twilioAccountSid = '${ENV_TWILIO_SID}';
+            static const String twilioAuthToken = '${ENV_TWILIO_TOKEN}';
+            static const String twilioServiceSid = '${ENV_TWILIO_SERVICE}';
+            static const bool paypalSandbox = ${ENV_PAYPAL_SANDBOX};
+            static const String paypalClientId = '${ENV_PAYPAL_CLIENT_ID}';
+            static const String paypalSecret = '${ENV_PAYPAL_SECRET}';
+          }
+          ENVEOF
       - name: Get Flutter packages
         script: |
           flutter pub get
@@ -249,7 +292,44 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      vars:
+        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
+        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
+        ENV_GOOGLE_MAPS_KEY: "AIzaSyALnqq4-_jJLUCLxSJaWZGZHgw27RVE78Y"
+        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
+        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
+        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
+        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
+        ENV_STRIPE_PK: "pk_test_REPLACE_WITH_YOUR_KEY"
+        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
+        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
+        ENV_TWILIO_TOKEN: "a7a068f83aa355acbd31deaafc317cf9"
+        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+        ENV_PAYPAL_SANDBOX: "true"
+        ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
+        ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
     scripts:
+      - name: Generate env.dart
+        script: |
+          cat > lib/config/env.dart << ENVEOF
+          class Env {
+            static const String apiKey = '${ENV_API_KEY}';
+            static const String hmacSecret = '${ENV_HMAC_SECRET}';
+            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
+            static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
+            static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
+            static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
+            static const String emailjsPrivateKey = '${ENV_EMAILJS_PRIVATE_KEY}';
+            static const String stripePublishableKey = '${ENV_STRIPE_PK}';
+            static const String stripeMerchantId = '${ENV_STRIPE_MERCHANT}';
+            static const String twilioAccountSid = '${ENV_TWILIO_SID}';
+            static const String twilioAuthToken = '${ENV_TWILIO_TOKEN}';
+            static const String twilioServiceSid = '${ENV_TWILIO_SERVICE}';
+            static const bool paypalSandbox = ${ENV_PAYPAL_SANDBOX};
+            static const String paypalClientId = '${ENV_PAYPAL_CLIENT_ID}';
+            static const String paypalSecret = '${ENV_PAYPAL_SECRET}';
+          }
+          ENVEOF
       - name: Get Flutter packages
         script: |
           flutter pub get

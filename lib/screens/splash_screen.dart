@@ -6,6 +6,8 @@ import 'welcome_screen.dart';
 import 'account_deactivated_screen.dart';
 import 'home_screen.dart';
 import 'driver/driver_home_screen.dart';
+import 'driver/driver_pending_review_screen.dart';
+import 'driver/driver_profile_photo_screen.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
@@ -223,9 +225,44 @@ class _SplashScreenState extends State<SplashScreen>
       }
       if (!mounted) return;
       final mode = await UserSession.getMode();
-      destination = mode == 'driver'
-          ? const DriverHomeScreen()
-          : const HomeScreen();
+      if (mode == 'driver') {
+        // Check driver approval status + profile photo
+        try {
+          final approvalResult = await ApiService.getDriverApprovalStatus();
+          final vStatus =
+              approvalResult['approval_status'] as String? ??
+              approvalResult['status'] as String? ??
+              'none';
+          if (vStatus == 'pending') {
+            if (!mounted) return;
+            Navigator.of(context).pushReplacement(
+              smoothFadeRoute(
+                const DriverPendingReviewScreen(),
+                durationMs: 400,
+              ),
+            );
+            return;
+          }
+          if (vStatus == 'approved') {
+            final photoUrl = approvalResult['photo_url'] as String?;
+            if (photoUrl == null || photoUrl.isEmpty) {
+              if (!mounted) return;
+              Navigator.of(context).pushReplacement(
+                smoothFadeRoute(
+                  const DriverProfilePhotoScreen(),
+                  durationMs: 400,
+                ),
+              );
+              return;
+            }
+          }
+        } catch (_) {
+          // Backend unreachable — let them through
+        }
+        destination = const DriverHomeScreen();
+      } else {
+        destination = const HomeScreen();
+      }
     } else {
       destination = const WelcomeScreen();
     }

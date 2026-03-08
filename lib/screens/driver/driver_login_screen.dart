@@ -5,6 +5,7 @@ import '../../services/user_session.dart';
 import '../forgot_password_screen.dart';
 import 'driver_signup_screen.dart';
 import 'driver_home_screen.dart';
+import 'driver_pending_review_screen.dart';
 
 /// Driver login screen — email + password for existing drivers.
 class DriverLoginScreen extends StatefulWidget {
@@ -106,6 +107,18 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
         role: 'driver',
       );
       await UserSession.saveMode('driver');
+
+      // Check if driver is still pending approval
+      final vStatus = user['verification_status'] as String? ?? 'none';
+      if (vStatus == 'pending') {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        Navigator.of(context).pushAndRemoveUntil(
+          slideFromRightRoute(const DriverPendingReviewScreen()),
+          (_) => false,
+        );
+        return;
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       String msg;

@@ -8,6 +8,7 @@ import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../welcome_screen.dart';
 import 'driver_home_screen.dart';
+import 'driver_profile_photo_screen.dart';
 import 'driver_signup_screen.dart';
 
 /// Shown after a driver submits their application.
@@ -58,7 +59,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
       curve: Curves.elasticOut,
     );
 
-    _startPolling();
+    _checkImmediateAndPoll();
   }
 
   @override
@@ -68,6 +69,25 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     _dotCtrl.dispose();
     _approvedCtrl.dispose();
     super.dispose();
+  }
+
+  /// Check approval status right away; if already approved, skip this screen.
+  Future<void> _checkImmediateAndPoll() async {
+    try {
+      final result = await ApiService.getDriverApprovalStatus();
+      final status =
+          result['approval_status'] as String? ??
+          result['status'] as String? ??
+          'pending';
+      if (!mounted) return;
+      if (status == 'approved') {
+        await LocalDataService.setDriverApprovalStatus('approved');
+        if (!mounted) return;
+        _enterApp();
+        return;
+      }
+    } catch (_) {}
+    _startPolling();
   }
 
   void _startPolling() {
@@ -109,7 +129,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   Future<void> _enterApp() async {
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      slideFromRightRoute(const DriverHomeScreen()),
+      slideFromRightRoute(const DriverProfilePhotoScreen()),
       (_) => false,
     );
   }

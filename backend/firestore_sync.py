@@ -262,9 +262,11 @@ def get_verification_status(user_id: int) -> dict:
         doc = _db.collection("verifications").document(doc_id).get()
         if doc.exists:
             data = doc.to_dict()
+            # Dispatch may write to 'status' or 'verificationStatus'
+            status = data.get("status") or data.get("verificationStatus") or "pending"
             return {
-                "status": data.get("status", "pending"),
-                "reason": data.get("reason"),
+                "status": status,
+                "reason": data.get("reason") or data.get("verificationReason"),
             }
     except Exception as e:
         log.error("❌ Verification status read failed for %d: %s", user_id, e)

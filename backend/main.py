@@ -1161,6 +1161,7 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
     if _HAS_FIRESTORE and db_user.verification_status == "pending":
         try:
             fs_status = firestore_sync.get_verification_status(db_user.id)
+            logging.info("Firestore verification status for user %d: %s", db_user.id, fs_status)
             if fs_status and fs_status.get("status") in ("approved", "rejected"):
                 db_user.verification_status = fs_status["status"]
                 db_user.verification_reason = fs_status.get("reason")
@@ -1172,10 +1173,53 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
         except Exception as e:
             logging.warning("Firestore driver approval sync failed: %s", e)
 
+    logging.info("Returning approval status for user %d: %s", db_user.id, db_user.verification_status)
     return {
         "status": db_user.verification_status or "none",
         "reason": db_user.verification_reason,
     }
+
+
+@app.post("/auth/dispatch-approve/{user_id}", dependencies=[Depends(_verify_api_key)])
+async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Dispatch approves or rejects a driver directly via REST (no Firestore needed)."""
+    from pydantic import BaseModel as _BM
+    result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "Driver not found")
+    db_user.verification_status = "approved"
+    db_user.is_verified = True
+    db_user.verified_at = datetime.now(timezone.utc)
+    await db.commit()
+    # Also update Firestore
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.update_field("verifications", user_id, "status", "approved")
+            firestore_sync.update_field("drivers", user_id, "verificationStatus", "approved")
+            firestore_sync.update_field("drivers", user_id, "isVerified", True)
+        except Exception as e:
+            logging.warning("Firestore approve sync failed: %s", e)
+    return {"ok": True, "message": f"Driver {user_id} approved"}
+
+
+@app.post("/auth/dispatch-reject/{user_id}", dependencies=[Depends(_verify_api_key)])
+async def dispatch_reject_driver(user_id: int, reason: str = "Application not approved", db: AsyncSession = Depends(get_db)):
+    """Dispatch rejects a driver directly via REST."""
+    result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "Driver not found")
+    db_user.verification_status = "rejected"
+    db_user.verification_reason = reason
+    await db.commit()
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.update_field("verifications", user_id, "status", "rejected")
+            firestore_sync.update_field("verifications", user_id, "reason", reason)
+        except Exception as e:
+            logging.warning("Firestore reject sync failed: %s", e)
+    return {"ok": True, "message": f"Driver {user_id} rejected"}
 
 
 @app.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])

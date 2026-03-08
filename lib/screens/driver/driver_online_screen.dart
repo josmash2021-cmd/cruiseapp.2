@@ -2396,7 +2396,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
             )
           : GoogleMap(
-              style: isDark ? MapStyles.dark : MapStyles.light,
+              style: MapStyles.dark,
               initialCameraPosition: CameraPosition(
                 target: _pos,
                 zoom: 15.5,

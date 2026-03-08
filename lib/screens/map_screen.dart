@@ -100,10 +100,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   static const _birminghamDefault = LatLng(33.5186, -86.8104);
 
   /// Picks the right JSON map style based on the system theme (light phone = light map).
-  String get _mapStyle {
-    final sysBright = ui.PlatformDispatcher.instance.platformBrightness;
-    return sysBright == Brightness.dark ? MapStyles.dark : MapStyles.light;
-  }
+  String get _mapStyle => MapStyles.dark;
 
   static final _usBounds = LatLngBounds(
     southwest: LatLng(24.396308, -124.848974),

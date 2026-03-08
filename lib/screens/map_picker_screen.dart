@@ -151,7 +151,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,
-                  style: c.isDark ? MapStyles.dark : MapStyles.light,
+                  style: MapStyles.dark,
                 ),
 
           // Center pin

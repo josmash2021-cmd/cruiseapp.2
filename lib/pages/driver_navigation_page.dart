@@ -441,7 +441,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                     padding: EdgeInsets.only(top: top + 140, bottom: 200 + bot),
                   )
                 : GoogleMap(
-                    style: MapStyles.light,
+                    style: MapStyles.dark,
                     initialCameraPosition: CameraPosition(
                       target: _pos,
                       zoom: 16.5,

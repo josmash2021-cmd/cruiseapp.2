@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
+import '../config/map_styles.dart';
 import '../services/api_service.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
@@ -882,6 +883,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                 child: Stack(
                   children: [
                     GoogleMap(
+                      style: MapStyles.dark,
                       initialCameraPosition: CameraPosition(
                         target: _birminghamDefault,
                         zoom: 12,

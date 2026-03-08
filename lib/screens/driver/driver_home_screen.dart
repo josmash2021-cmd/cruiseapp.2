@@ -382,10 +382,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               compassEnabled: false,
             )
           : GoogleMap(
-              style:
-                  MediaQuery.of(context).platformBrightness == Brightness.dark
-                  ? MapStyles.dark
-                  : MapStyles.light,
+              style: MapStyles.dark,
               initialCameraPosition: CameraPosition(
                 target: _currentLatLng!,
                 zoom: 16,

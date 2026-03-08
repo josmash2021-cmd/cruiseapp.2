@@ -1222,7 +1222,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       polylines: _applePolylines,
                     )
                   : GoogleMap(
-                      style: isDark ? MapStyles.dark : MapStyles.light,
+                      style: MapStyles.dark,
                       initialCameraPosition: CameraPosition(
                         target: _center,
                         zoom: 15.5,

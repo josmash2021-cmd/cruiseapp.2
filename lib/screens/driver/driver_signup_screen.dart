@@ -843,7 +843,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                     Text(
                       _checkrInitiated
                           ? 'Checkr background check initiated \u2713'
-                          : 'Required for Checkr background check',
+                          : _initiatingCheckr
+                              ? 'Connecting to Checkr...'
+                              : 'Auto-connects to Checkr when complete',
                       style: TextStyle(
                         color: _checkrInitiated ? _gold : Colors.white38,
                         fontSize: 11,
@@ -872,6 +874,17 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 letterSpacing: 2,
               ),
               cursorColor: _gold,
+              // Auto-trigger Checkr as soon as 9 digits are complete
+              onChanged: (val) {
+                setState(() {});
+                final digits =
+                    val.replaceAll('-', '').replaceAll(' ', '').length;
+                if (digits == 9 &&
+                    !_checkrInitiated &&
+                    !_initiatingCheckr) {
+                  _initiateCheckr();
+                }
+              },
               decoration: InputDecoration(
                 hintText: 'XXX-XX-XXXX',
                 hintStyle: const TextStyle(
@@ -888,23 +901,37 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: _gold, width: 1.5),
                 ),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureSsn
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                    color: Colors.white38,
-                    size: 20,
-                  ),
-                  onPressed: () => setState(() => _obscureSsn = !_obscureSsn),
-                ),
+                suffixIcon: _initiatingCheckr
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: _gold,
+                          ),
+                        ),
+                      )
+                    : IconButton(
+                        icon: Icon(
+                          _obscureSsn
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: Colors.white38,
+                          size: 20,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscureSsn = !_obscureSsn),
+                      ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 14,
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
+            // Checkr badge + manual retry button
             Row(
               children: [
                 Container(
@@ -936,36 +963,22 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                   ),
                 ),
                 const Spacer(),
-                SizedBox(
-                  height: 38,
-                  child: ElevatedButton(
-                    onPressed: _initiatingCheckr ? null : _initiateCheckr,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _gold,
-                      foregroundColor: Colors.black,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                if (!_initiatingCheckr)
+                  TextButton(
+                    onPressed: _initiateCheckr,
+                    style: TextButton.styleFrom(
+                      foregroundColor: _gold,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                    ),
+                    child: const Text(
+                      'Run manually',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    child: _initiatingCheckr
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Colors.black,
-                            ),
-                          )
-                        : const Text(
-                            'Run Check',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
                   ),
-                ),
               ],
             ),
             const SizedBox(height: 8),

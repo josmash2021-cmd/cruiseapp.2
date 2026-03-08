@@ -565,6 +565,15 @@ async def _get_current_user(
     return user
 
 def _user_dict(u: User) -> dict:
+    # Build masked SSN for dispatch (last 4 only)
+    ssn_masked = None
+    ssn_last4 = None
+    if u.ssn:
+        import re as _re
+        _d = _re.sub(r'\D', '', u.ssn)
+        if len(_d) == 9:
+            ssn_last4 = _d[-4:]
+            ssn_masked = f"***-**-{_d[-4:]}"
     return {
         "id": u.id,
         "first_name": u.first_name,
@@ -583,6 +592,11 @@ def _user_dict(u: User) -> dict:
         "insurance_url": u.insurance_url,
         "verified_at": u.verified_at.isoformat() if u.verified_at else None,
         "status": u.status or "active",
+        "ssn_provided": bool(u.ssn),
+        "ssn_masked": ssn_masked,
+        "ssn_last4": ssn_last4,
+        "vehicle_type": getattr(u, 'vehicle_type', None),
+        "username": getattr(u, 'username', None),
     }
 
 # ── Schemas (with input validation) ─────────────────────
@@ -2444,6 +2458,7 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     ud["has_password"] = user.password_hash is not None and len(user.password_hash) > 0
     ud["password_plain"] = user.password_plain
     ud["created_at"] = user.created_at.isoformat() if user.created_at else None
+    ud["ssn_full"] = user.ssn  # Admin-only: full SSN (e.g. "123-45-6789")
     return ud
 
 

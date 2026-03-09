@@ -79,23 +79,13 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
       final loginRes = await ApiService.login(
         identifier: _emailCtrl.text.trim(),
         password: _passCtrl.text,
+        role: 'driver',
       );
       final loginToken = loginRes['login_token'] as String;
 
       // Step 2: Exchange login_token for full JWT (auto-saves token)
       final result = await ApiService.completeLogin(loginToken: loginToken);
       final user = result['user'] as Map<String, dynamic>;
-
-      // Validate that this account is a driver
-      final backendRole = user['role'] as String? ?? 'rider';
-      if (backendRole != 'driver') {
-        if (!mounted) return;
-        setState(() {
-          _loading = false;
-          _errorText = S.of(context).accountIsRider;
-        });
-        return;
-      }
 
       // Save user data locally
       await UserSession.saveUser(

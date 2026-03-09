@@ -923,6 +923,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   String _subtitle = 'Sistema automatizado';
   bool _loading = true;
   bool _sending = false;
+  bool _chatClosed = false;
   Timer? _pollTimer;
 
   @override
@@ -947,6 +948,8 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       );
       _chatId = chat['id'] as int?;
       _agentName = chat['agent_name'] as String?;
+      final status = chat['status'] as String? ?? 'open';
+      if (status == 'closed') _chatClosed = true;
       if (_chatId != null) {
         await _loadMessages();
         _pollTimer = Timer.periodic(
@@ -983,13 +986,40 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
             _agentName = m.senderName;
           }
         }
+        // Check if last bot message indicates chat closure
+        final lastBot = newMessages.where((m) => m.role == 'bot').lastOrNull;
+        if (lastBot != null && lastBot.text.contains('cerraré este chat')) {
+          _chatClosed = true;
+          _pollTimer?.cancel();
+        }
         setState(() {
           _messages.clear();
           _messages.addAll(newMessages);
           _sending = false;
-          _subtitle = _agentName != null ? 'En línea' : 'Sistema automatizado';
+          if (_chatClosed) {
+            _subtitle = 'Chat cerrado';
+          } else {
+            _subtitle = _agentName != null
+                ? 'En línea'
+                : 'Sistema automatizado';
+          }
         });
         _scrollToBottom();
+      }
+      // Also check chat status from the chats list
+      if (!_chatClosed) {
+        try {
+          final chats = await ApiService.getSupportChats();
+          final thisChat = chats.firstWhere(
+            (c) => c['id'] == _chatId,
+            orElse: () => {},
+          );
+          if (thisChat.isNotEmpty && thisChat['status'] == 'closed') {
+            _chatClosed = true;
+            _pollTimer?.cancel();
+            if (mounted) setState(() => _subtitle = 'Chat cerrado');
+          }
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint('[SupportChat] poll error: $e');
@@ -1349,6 +1379,56 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   }
 
   Widget _buildInputBar() {
+    if (_chatClosed) {
+      return Container(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 12,
+          bottom: MediaQuery.of(context).padding.bottom + 12,
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A),
+          border: Border(top: BorderSide(color: Colors.grey[800]!, width: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Este chat ha sido cerrado.',
+              style: TextStyle(color: Colors.grey[500], fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _chatId = null;
+                    _messages.clear();
+                    _chatClosed = false;
+                    _loading = true;
+                  });
+                  _initChat();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _gold,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                ),
+                child: const Text(
+                  'Iniciar nuevo chat',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       padding: EdgeInsets.only(
         left: 12,

@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
+import '../../config/page_transitions.dart';
+import '../../main.dart' show themeNotifier;
+import '../privacy_screen.dart';
+import 'driver_manage_account_screen.dart';
+import 'driver_settings_pages.dart';
 
 /// Driver settings: Uber Driver–style layout with Account & General sections.
 class DriverSettingsScreen extends StatefulWidget {
@@ -39,8 +44,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
 
   Future<void> _setNightMode(bool v) async {
     setState(() => _nightMode = v);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('driver_night_mode', v);
+    themeNotifier.setNightMode(v);
   }
 
   Future<void> _setAccessibility(bool v) async {
@@ -107,19 +111,28 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                   Icons.person_outline_rounded,
                   S.of(context).manageAccount,
                   S.of(context).editAccountDetails,
-                  () => _snack(S.of(context).manageAccount),
+                  () => Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverManageAccountScreen()),
+                  ),
                 ),
                 _navItem(
                   Icons.lock_outline_rounded,
                   S.of(context).privacy,
                   S.of(context).dataPrivacySettings,
-                  () => _snack(S.of(context).privacy),
+                  () => Navigator.push(
+                    context,
+                    slideFromRightRoute(const PrivacyScreen()),
+                  ),
                 ),
                 _navItem(
                   Icons.edit_location_alt_outlined,
                   S.of(context).editAddress,
                   S.of(context).homeWorkAddresses,
-                  () => _snack(S.of(context).editAddress),
+                  () => Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverEditAddressScreen()),
+                  ),
                 ),
 
                 const SizedBox(height: 28),
@@ -144,25 +157,37 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                   Icons.record_voice_over_rounded,
                   S.of(context).siriShortcuts,
                   S.of(context).voiceCommands,
-                  () => _snack(S.of(context).siriShortcuts),
+                  () => Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverSiriShortcutsScreen()),
+                  ),
                 ),
                 _navItem(
                   Icons.chat_bubble_outline_rounded,
                   S.of(context).communicationLabel,
                   S.of(context).messagePreferences,
-                  () => _snack(S.of(context).communicationLabel),
+                  () => Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverCommunicationScreen()),
+                  ),
                 ),
                 _navItem(
                   Icons.navigation_rounded,
                   S.of(context).navigationLabel,
                   S.of(context).mapsRoutingPrefs,
-                  () => _snack(S.of(context).navigationLabel),
+                  () => Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverNavigationScreen()),
+                  ),
                 ),
                 _navItem(
                   Icons.volume_up_rounded,
                   S.of(context).soundsAndVoice,
                   S.of(context).audioVoiceSettings,
-                  () => _snack(S.of(context).soundsAndVoice),
+                  () => Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverSoundsVoiceScreen()),
+                  ),
                 ),
               ],
             ),

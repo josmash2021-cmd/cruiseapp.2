@@ -5,11 +5,13 @@ import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../splash_screen.dart';
+import '../help_screen.dart';
 import 'driver_vehicle_screen.dart';
 import 'driver_documents_screen.dart';
 import 'driver_settings_screen.dart';
 import 'driver_profile_screen.dart';
 import 'driver_info_pages.dart';
+import 'driver_earnings_screen.dart';
 import 'cruise_level_screen.dart';
 import 'payout_methods_screen.dart';
 import 'driver_scheduled_trips_screen.dart';
@@ -539,6 +541,17 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         children: [
           _quickAction(
             context,
+            Icons.attach_money_rounded,
+            S.of(context).earningsTitle,
+            () {
+              Navigator.of(
+                context,
+              ).push(slideFromRightRoute(const DriverEarningsScreen()));
+            },
+          ),
+          const SizedBox(width: 10),
+          _quickAction(
+            context,
             Icons.help_outline_rounded,
             S.of(context).helpLabel,
             () {
@@ -711,83 +724,92 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (ctx) => Container(
         padding: const EdgeInsets.all(24),
         decoration: const BoxDecoration(
           color: _card,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Icon(Icons.help_outline_rounded, color: _gold, size: 40),
-            const SizedBox(height: 16),
-            Text(
-              S.of(context).helpAndSupport,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 20),
-            _helpRow(
-              Icons.phone_rounded,
-              S.of(context).callSupport,
-              '+1 (800) CRUISE',
-              () => launchUrl(Uri.parse('tel:+18002748473')),
-            ),
-            _helpRow(
-              Icons.email_rounded,
-              S.of(context).emailUs,
-              'driver@cruise.app',
-              () => launchUrl(Uri.parse('mailto:driver@cruise.app')),
-            ),
-            _helpRow(
-              Icons.chat_rounded,
-              S.of(context).liveChat,
-              S.of(context).available247,
-              () => launchUrl(Uri.parse('https://cruise.app/support')),
-            ),
-            _helpRow(
-              Icons.library_books_rounded,
-              S.of(context).faqLabel,
-              S.of(context).commonQuestions,
-              () => launchUrl(Uri.parse('https://cruise.app/faq')),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(ctx),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _gold,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: Text(
-                  S.of(context).close,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white12,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-          ],
+              const SizedBox(height: 24),
+              const Icon(Icons.help_outline_rounded, color: _gold, size: 40),
+              const SizedBox(height: 16),
+              Text(
+                S.of(context).helpAndSupport,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                S.of(context).howCanWeHelp,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 24),
+              _helpRow(
+                Icons.email_rounded,
+                S.of(context).emailUs,
+                'support@cruiseride.com',
+                () {
+                  Navigator.pop(ctx);
+                  launchUrl(Uri.parse('mailto:support@cruiseride.com'));
+                },
+              ),
+              _helpRow(
+                Icons.chat_rounded,
+                S.of(context).liveChat,
+                S.of(context).available247,
+                () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    slideFromRightRoute(const CruiseSupportChatScreen()),
+                  );
+                },
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Text(
+                    S.of(context).close,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );

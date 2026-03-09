@@ -128,6 +128,7 @@ class ApiService {
   // ── Internal helper ────────────────────────────────────────────────────────
 
   static String get _baseUrl => _activeUrl;
+  static String get publicBaseUrl => _activeUrl;
 
   /// API Key — must match the server's API_KEY in .env
   static const String _apiKey = Env.apiKey;
@@ -352,12 +353,18 @@ class ApiService {
   static Future<Map<String, dynamic>> login({
     required String identifier,
     required String password,
+    String? role,
   }) async {
+    final body = <String, dynamic>{
+      'identifier': identifier,
+      'password': password,
+    };
+    if (role != null) body['role'] = role;
     final res = await http
         .post(
           Uri.parse('$_baseUrl/auth/login'),
           headers: _jsonHeaders(),
-          body: jsonEncode({'identifier': identifier, 'password': password}),
+          body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 10));
     return _parse(res);
@@ -486,6 +493,20 @@ class ApiService {
         )
         .timeout(const Duration(seconds: 10));
     return _parse(res);
+  }
+
+  /// List all support chats for the current user.
+  static Future<List<Map<String, dynamic>>> getSupportChats() async {
+    final token = await getToken();
+    if (token == null) return [];
+    final res = await http
+        .get(Uri.parse('$_baseUrl/support/chats'), headers: _jsonHeaders(token))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final data = jsonDecode(res.body);
+      if (data is List) return List<Map<String, dynamic>>.from(data);
+    }
+    return [];
   }
 
   /// Get support chat messages.

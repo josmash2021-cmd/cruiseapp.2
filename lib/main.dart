@@ -8,6 +8,7 @@ import 'package:flutter_stripe/flutter_stripe.dart';
 import 'firebase_options.dart';
 import 'config/api_keys.dart';
 import 'config/app_theme.dart';
+import 'config/theme_notifier.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
@@ -16,6 +17,9 @@ import 'services/user_session.dart';
 import 'services/local_data_service.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'l10n/app_localizations.dart';
+
+/// Global theme notifier so any screen can toggle night mode.
+final themeNotifier = ThemeNotifier();
 
 void main() async {
   // Catch all unhandled async Dart errors
@@ -173,20 +177,30 @@ class _UberCloneAppState extends State<UberCloneApp>
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.system,
-      theme: lightTheme,
-      darkTheme: darkTheme,
-      scrollBehavior: const SmoothScrollBehavior(),
-      localizationsDelegates: const [
-        S.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: const [Locale('en'), Locale('es')],
-      home: const SplashScreen(),
+    return AnimatedBuilder(
+      animation: themeNotifier,
+      builder: (context, _) {
+        return AnimatedTheme(
+          data: themeNotifier.isNightMode ? darkTheme : lightTheme,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOut,
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            themeMode: themeNotifier.mode,
+            theme: lightTheme,
+            darkTheme: darkTheme,
+            scrollBehavior: const SmoothScrollBehavior(),
+            localizationsDelegates: const [
+              S.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: const [Locale('en'), Locale('es')],
+            home: const SplashScreen(),
+          ),
+        );
+      },
     );
   }
 }

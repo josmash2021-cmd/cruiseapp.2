@@ -86,6 +86,8 @@ class User(Base):
     ssn = Column(String(11), nullable=True)  # SSN collected during verification (XXX-XX-XXXX)
     status = Column(String(20), default="active")  # active, blocked, deleted, pending_deletion
     deletion_requested_at = Column(DateTime, nullable=True)  # when user requested account deletion
+    email_changes_count = Column(Integer, default=0)  # max 3 changes allowed
+    phone_changes_count = Column(Integer, default=0)  # max 3 changes allowed
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class Trip(Base):
@@ -194,6 +196,7 @@ class SupportChat(Base):
     agent_name = Column(String(100), nullable=True)
     bot_phase = Column(String(30), default="welcome")  # welcome, awaiting_details, transferring, agent_active, escalated
     needs_escalation = Column(Boolean, default=False)
+    last_user_message_at = Column(DateTime, nullable=True)  # for inactivity tracking
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -271,6 +274,9 @@ async def _migrate_add_columns(conn):
         ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),
         ("support_chats", "needs_escalation", "BOOLEAN DEFAULT 0"),
         ("users", "deletion_requested_at", "DATETIME"),
+        ("users", "email_changes_count", "INTEGER DEFAULT 0"),
+        ("users", "phone_changes_count", "INTEGER DEFAULT 0"),
+        ("support_chats", "last_user_message_at", "DATETIME"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -686,6 +692,8 @@ def _user_dict(u: User) -> dict:
         "ssn_last4": ssn_last4,
         "vehicle_type": getattr(u, 'vehicle_type', None),
         "username": getattr(u, 'username', None),
+        "email_changes_count": u.email_changes_count or 0,
+        "phone_changes_count": u.phone_changes_count or 0,
     }
 
 # ── Schemas (with input validation) ─────────────────────
@@ -740,6 +748,7 @@ class CheckExistsIn(BaseModel):
 class LoginIn(BaseModel):
     identifier: str
     password: str
+    role: Optional[str] = None  # rider | driver — filter by role if provided
 
 class CompleteLoginIn(BaseModel):
     login_token: str
@@ -908,9 +917,10 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
             cleaned = "+1" + cleaned  # Default to US
         identifier = cleaned
 
-    result = await db.execute(
-        select(User).where((User.email == body.identifier) | (User.phone == identifier))
-    )
+    query = select(User).where((User.email == body.identifier) | (User.phone == identifier))
+    if body.role in ("rider", "driver"):
+        query = query.where(User.role == body.role)
+    result = await db.execute(query)
     users = result.scalars().all()
     # Find the user whose password matches (supports same email/phone for different roles)
     user = None
@@ -918,6 +928,20 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
         if pwd.verify(body.password, u.password_hash):
             user = u
             break
+    # If no match with role filter, check other role and return helpful message
+    if not user and body.role:
+        other_role = "driver" if body.role == "rider" else "rider"
+        other_q = select(User).where(
+            ((User.email == body.identifier) | (User.phone == identifier)),
+            User.role == other_role
+        )
+        other_r = await db.execute(other_q)
+        other_users = other_r.scalars().all()
+        for u in other_users:
+            if pwd.verify(body.password, u.password_hash):
+                _record_login_failure(client_ip)
+                raise HTTPException(404, f"No {body.role} account found with these credentials")
+                break
     if not user:
         _record_login_failure(client_ip)
         raise HTTPException(401, "Invalid credentials")
@@ -1031,6 +1055,18 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
         raise HTTPException(404, "User not found")
     # Only allow safe fields — NEVER role, is_verified, verification_status
     _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type")
+    # Enforce email/phone change limits (max 3 each)
+    if "email" in updates and updates["email"] != db_user.email:
+        if (db_user.email_changes_count or 0) >= 3:
+            raise HTTPException(400, "Maximum email changes reached (3)")
+        db_user.email_changes_count = (db_user.email_changes_count or 0) + 1
+    if "phone" in updates and updates["phone"] != db_user.phone:
+        if (db_user.phone_changes_count or 0) >= 3:
+            raise HTTPException(400, "Maximum phone changes reached (3)")
+        db_user.phone_changes_count = (db_user.phone_changes_count or 0) + 1
+    # Block name changes — first_name and last_name cannot be changed
+    updates.pop("first_name", None)
+    updates.pop("last_name", None)
     for key in _SAFE_SELF_UPDATE_FIELDS:
         if key in updates:
             setattr(db_user, key, updates[key])
@@ -2615,6 +2651,84 @@ def _support_msg_dict(m, sender_name=""):
         "created_at": m.created_at.isoformat() if m.created_at else None,
     }
 
+# Track active inactivity tasks per chat so we cancel old ones when user sends a new message
+_inactivity_tasks: dict[int, "asyncio.Task"] = {}
+
+async def _check_chat_inactivity(chat_id: int):
+    """Background task: after 5 min inactivity, ask if still online, then close."""
+    try:
+        # Wait 5 minutes
+        await asyncio.sleep(300)
+        async with AsyncSessionLocal() as db:
+            chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+            chat = chat_r.scalar_one_or_none()
+            if not chat or chat.status != "open":
+                return
+            # Check if user sent a message in the last 5 min
+            if chat.last_user_message_at:
+                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
+                if elapsed < 290:
+                    return  # User was active recently
+            agent = chat.agent_name or "Agente"
+            # Send "still online?" message
+            still_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot",
+                                        message="¿Aún sigues en línea conmigo?")
+            db.add(still_msg)
+            chat.updated_at = datetime.now(timezone.utc)
+            await db.commit()
+            await db.refresh(still_msg)
+            if _HAS_FIRESTORE:
+                try:
+                    firestore_sync.sync_support_message(chat_id, still_msg.id, 0, agent, "bot", still_msg.message)
+                except Exception:
+                    pass
+        # Wait 2 more minutes for response
+        await asyncio.sleep(120)
+        async with AsyncSessionLocal() as db:
+            chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+            chat = chat_r.scalar_one_or_none()
+            if not chat or chat.status != "open":
+                return
+            # Check if user responded during the 2 min wait
+            if chat.last_user_message_at:
+                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
+                if elapsed < 115:
+                    return  # User responded
+            agent = chat.agent_name or "Agente"
+            # Send closing warning
+            close_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot",
+                                        message="Por motivos de que ya no estás activo/a conmigo en el chat, cerraré este chat. ¡Gracias por contactarnos!")
+            db.add(close_msg)
+            chat.updated_at = datetime.now(timezone.utc)
+            await db.commit()
+            await db.refresh(close_msg)
+            if _HAS_FIRESTORE:
+                try:
+                    firestore_sync.sync_support_message(chat_id, close_msg.id, 0, agent, "bot", close_msg.message)
+                except Exception:
+                    pass
+        # Wait 10 seconds then close
+        await asyncio.sleep(10)
+        async with AsyncSessionLocal() as db:
+            chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+            chat = chat_r.scalar_one_or_none()
+            if not chat or chat.status != "open":
+                return
+            chat.status = "closed"
+            chat.updated_at = datetime.now(timezone.utc)
+            await db.commit()
+            if _HAS_FIRESTORE:
+                try:
+                    firestore_sync.sync_support_chat(chat.id, chat.user_id, "", "", None, None, chat.subject, "closed")
+                except Exception:
+                    pass
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logging.error("Chat inactivity check failed for chat %d: %s", chat_id, e)
+    finally:
+        _inactivity_tasks.pop(chat_id, None)
+
 @app.post("/support/chats", dependencies=[Depends(_verify_api_key)])
 async def create_or_get_support_chat(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Create a new support chat or return existing open one for this user."""
@@ -2814,8 +2928,35 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
     msg = SupportMessage(chat_id=chat_id, sender_id=user.id, sender_role=user.role or "rider", message=msg_text)
     db.add(msg)
     chat.updated_at = datetime.now(timezone.utc)
+    chat.last_user_message_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(msg)
+
+    # Cancel any existing inactivity task for this chat and start new one
+    old_task = _inactivity_tasks.pop(chat_id, None)
+    if old_task and not old_task.done():
+        old_task.cancel()
+
+    # Check if user is responding to a "still online?" prompt
+    last_bot_r = await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat_id,
+            SupportMessage.sender_role == "bot",
+        ).order_by(SupportMessage.created_at.desc()).limit(1)
+    )
+    last_bot_msg = last_bot_r.scalar_one_or_none()
+    if last_bot_msg and "sigues en línea" in (last_bot_msg.message or "").lower():
+        agent = chat.agent_name or "Agente"
+        confirm_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot",
+                                      message="Gracias por dejarme saber, solo quería confirmar. ¿En qué más puedo ayudarte?")
+        db.add(confirm_msg)
+        await db.commit()
+        await db.refresh(confirm_msg)
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.sync_support_message(chat_id, confirm_msg.id, 0, agent, "bot", confirm_msg.message)
+            except Exception:
+                pass
 
     # Sync user message to Firestore
     user_full = f"{user.first_name} {user.last_name}".strip()
@@ -2854,6 +2995,9 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
             await db.commit()
         except Exception as e:
             logging.error("AI bot reply failed: %s", e)
+
+    # Start inactivity timer
+    _inactivity_tasks[chat_id] = asyncio.create_task(_check_chat_inactivity(chat_id))
 
     return _support_msg_dict(msg, user_full)
 

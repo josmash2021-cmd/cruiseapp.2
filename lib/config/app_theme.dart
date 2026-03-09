@@ -115,12 +115,12 @@ final ThemeData darkTheme = ThemeData.dark().copyWith(
   pageTransitionsTheme: _pageTransitions,
 );
 
-final ThemeData lightTheme = ThemeData.dark().copyWith(
-  scaffoldBackgroundColor: const Color(0xFF0F1014),
-  brightness: Brightness.dark,
-  colorScheme: const ColorScheme.dark(
+final ThemeData lightTheme = ThemeData.light().copyWith(
+  scaffoldBackgroundColor: const Color(0xFFF5F5F5),
+  brightness: Brightness.light,
+  colorScheme: const ColorScheme.light(
     primary: Color(0xFFE8C547),
-    surface: Color(0xFF161820),
+    surface: Color(0xFFFFFFFF),
   ),
   pageTransitionsTheme: _pageTransitions,
 );

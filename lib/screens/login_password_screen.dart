@@ -344,6 +344,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       final loginResult = await ApiService.login(
         identifier: identity,
         password: password,
+        role: 'rider',
       );
 
       if (!mounted) return;

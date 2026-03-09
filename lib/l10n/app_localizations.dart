@@ -2207,6 +2207,98 @@ class S {
       : 'Are you sure you want to delete your account?';
   String get sure => _es ? 'Seguro' : 'Sure';
   String get cancelDeletion => _es ? 'Cancelar eliminación' : 'Cancel Deletion';
+
+  // ── Manage Account ──
+  String get photoUpdated => _es ? 'Foto actualizada' : 'Photo updated';
+  String get maxChangesReached =>
+      _es ? 'Máximo de cambios alcanzado (3)' : 'Maximum changes reached (3)';
+  String get emailUpdated => _es ? 'Correo actualizado' : 'Email updated';
+  String get phoneUpdated => _es ? 'Teléfono actualizado' : 'Phone updated';
+  String get nameCannotBeChanged =>
+      _es ? 'El nombre no se puede cambiar' : 'Name cannot be changed';
+  String get changesUsed => _es ? 'cambios usados' : 'changes used';
+  String get errorOccurred => _es ? 'Ocurrió un error' : 'An error occurred';
+  String get deleteAccountTitle => _es ? 'Eliminar Cuenta' : 'Delete Account';
+  String get deleteAccountMsg => _es
+      ? 'Tu cuenta será procesada y eliminada junto con toda tu información en un lapso de 1 semana. ¿Estás seguro?'
+      : 'Your account will be processed and deleted along with all your information within 1 week. Are you sure?';
+  String get sureButton => _es ? 'Seguro' : 'Sure';
+
+  // ── Edit Address ──
+  String get homeAddress => _es ? 'Dirección de casa' : 'Home Address';
+  String get workAddress => _es ? 'Dirección de trabajo' : 'Work Address';
+  String get enterHomeAddress =>
+      _es ? 'Ingresa tu dirección de casa' : 'Enter your home address';
+  String get enterWorkAddress =>
+      _es ? 'Ingresa tu dirección de trabajo' : 'Enter your work address';
+  String get addressSaved => _es ? 'Dirección guardada' : 'Address saved';
+
+  // ── Siri Shortcuts ──
+  String get siriGoOnlineDesc => _es
+      ? '"Hey Siri, ponme en línea en Cruise"'
+      : '"Hey Siri, go online on Cruise"';
+  String get siriGoOfflineDesc => _es
+      ? '"Hey Siri, desconéctame de Cruise"'
+      : '"Hey Siri, go offline on Cruise"';
+  String get checkEarnings => _es ? 'Ver Ganancias' : 'Check Earnings';
+  String get siriCheckEarningsDesc => _es
+      ? '"Hey Siri, ¿cuánto gané hoy?"'
+      : '"Hey Siri, how much did I earn today?"';
+  String get navigateHome => _es ? 'Navegar a Casa' : 'Navigate Home';
+  String get siriNavigateHomeDesc =>
+      _es ? '"Hey Siri, llévame a casa"' : '"Hey Siri, take me home"';
+  String get siriShortcutsInfo => _es
+      ? 'Configura comandos de voz personalizados para acciones rápidas mientras conduces.'
+      : 'Set up custom voice commands for quick actions while driving.';
+
+  // ── Communication ──
+  String get pushNotificationsDesc => _es
+      ? 'Recibir alertas de viaje en tiempo real'
+      : 'Receive real-time trip alerts';
+  String get emailNotifications =>
+      _es ? 'Notificaciones por Correo' : 'Email Notifications';
+  String get emailNotificationsDesc => _es
+      ? 'Resúmenes y actualizaciones por correo'
+      : 'Summaries and updates via email';
+  String get smsNotifications =>
+      _es ? 'Notificaciones SMS' : 'SMS Notifications';
+  String get smsNotificationsDesc =>
+      _es ? 'Alertas de texto importantes' : 'Important text alerts';
+  String get promotionsDesc2 =>
+      _es ? 'Ofertas y bonos especiales' : 'Special offers and bonuses';
+
+  // ── Navigation ──
+  String get defaultMapApp =>
+      _es ? 'Aplicación de mapa predeterminada' : 'Default Map App';
+  String get routePreferences =>
+      _es ? 'Preferencias de ruta' : 'Route Preferences';
+  String get avoidTolls => _es ? 'Evitar peajes' : 'Avoid Tolls';
+  String get avoidHighways => _es ? 'Evitar autopistas' : 'Avoid Highways';
+
+  // ── Sounds & Voice ──
+  String get volumeLevel => _es ? 'Nivel de volumen' : 'Volume Level';
+  String get tripRequestSounds =>
+      _es ? 'Sonidos de solicitud de viaje' : 'Trip Request Sounds';
+  String get tripRequestSoundsDesc => _es
+      ? 'Alerta cuando llega un viaje nuevo'
+      : 'Alert when a new trip arrives';
+  String get navigationVoice => _es ? 'Voz de navegación' : 'Navigation Voice';
+  String get navigationVoiceDesc => _es
+      ? 'Indicaciones por voz paso a paso'
+      : 'Step-by-step voice directions';
+  String get messageSounds => _es ? 'Sonidos de mensajes' : 'Message Sounds';
+  String get messageSoundsDesc => _es
+      ? 'Alertas de chat y mensajes de pasajeros'
+      : 'Chat and passenger message alerts';
+
+  // ── Earnings ──
+  String get totalEarnings => _es ? 'Ganancias Totales' : 'Total Earnings';
+  String get onlineHours => _es ? 'Horas en línea' : 'Online Hours';
+  String get tipsLabel => _es ? 'Propinas' : 'Tips';
+  String get earningsChart => _es ? 'Gráfico de Ganancias' : 'Earnings Chart';
+  String get recentTransactions =>
+      _es ? 'Transacciones Recientes' : 'Recent Transactions';
+  String get noEarningsYet => _es ? 'Aún no hay ganancias' : 'No earnings yet';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

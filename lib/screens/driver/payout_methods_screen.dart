@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 
 /// Payout Methods screen — Plaid-powered bank account linking for instant cashout
@@ -62,9 +63,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                     ),
                   ),
                   const SizedBox(width: 14),
-                  const Text(
-                    'Payout methods',
-                    style: TextStyle(
+                  Text(
+                    S.of(context).payoutMethodsTitle,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 24,
                       fontWeight: FontWeight.w900,
@@ -111,9 +112,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Instant cashout',
-                            style: TextStyle(
+                          Text(
+                            S.of(context).instantCashout,
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -121,7 +122,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Link your bank or debit card via Plaid for instant payouts. Cash out anytime.',
+                            S.of(context).plaidLinkDescription,
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.45),
                               fontSize: 12,
@@ -140,9 +141,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 children: [
-                  const Text(
-                    'Linked accounts',
-                    style: TextStyle(
+                  Text(
+                    S.of(context).linkedAccounts,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
@@ -185,7 +186,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Secured by Plaid — bank-level encryption. Cruise never sees your login credentials.',
+                        S.of(context).plaidSecurityNote,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.35),
                           fontSize: 11,
@@ -236,7 +237,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                             )
                           : const Icon(Icons.account_balance_rounded, size: 20),
                       label: Text(
-                        _linkingBank ? 'Connecting...' : 'Connect bank account',
+                        _linkingBank
+                            ? S.of(context).connectingLabel
+                            : S.of(context).connectBankAccount,
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -258,9 +261,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                     child: OutlinedButton.icon(
                       onPressed: _linkingBank ? null : _connectDebitCard,
                       icon: const Icon(Icons.credit_card_rounded, size: 20),
-                      label: const Text(
-                        'Add debit card',
-                        style: TextStyle(
+                      label: Text(
+                        S.of(context).addDebitCard,
+                        style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -302,9 +305,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
-            'No payout methods',
-            style: TextStyle(
+          Text(
+            S.of(context).noPayoutMethods,
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 17,
               fontWeight: FontWeight.w700,
@@ -312,7 +315,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Connect your bank account with Plaid\nfor instant cashouts',
+            S.of(context).connectBankForCashouts,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.4),
               fontSize: 13,
@@ -337,7 +340,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  'Powered by Plaid',
+                  S.of(context).poweredByPlaid,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.35),
                     fontSize: 11,
@@ -417,9 +420,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                           color: _gold.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text(
-                          'Default',
-                          style: TextStyle(
+                        child: Text(
+                          S.of(context).defaultBadge,
+                          style: const TextStyle(
                             color: _gold,
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
@@ -430,7 +433,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  type == 'debit_card' ? 'Instant cashout' : 'Bank transfer',
+                  type == 'debit_card'
+                      ? S.of(context).instantCashout
+                      : S.of(context).bankTransferType,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.35),
                     fontSize: 12,
@@ -527,9 +532,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                         size: 24,
                       ),
                       const SizedBox(width: 12),
-                      const Text(
-                        'Link bank account',
-                        style: TextStyle(
+                      Text(
+                        S.of(context).linkBankAccount,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
@@ -539,7 +544,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Enter your bank details to enable cashouts.',
+                    S.of(context).enterBankDetails,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.4),
                       fontSize: 13,
@@ -549,7 +554,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                   Row(
                     children: [
                       _typeChip(
-                        'Checking',
+                        S.of(context).checkingAccount,
                         'checking',
                         selectedType,
                         Icons.account_balance_rounded,
@@ -559,7 +564,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                       ),
                       const SizedBox(width: 10),
                       _typeChip(
-                        'Savings',
+                        S.of(context).savingsAccount,
                         'savings',
                         selectedType,
                         Icons.savings_rounded,
@@ -571,23 +576,23 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                   ),
                   const SizedBox(height: 20),
                   _inputField(
-                    'Bank name',
-                    'e.g. Chase, Bank of America',
+                    S.of(context).bankNameLabel,
+                    S.of(context).bankNameHint,
                     institutionCtrl,
                     Icons.business_rounded,
                   ),
                   const SizedBox(height: 12),
                   _inputField(
-                    'Routing number',
-                    '9-digit routing number',
+                    S.of(context).routingNumberLabel,
+                    S.of(context).routingNumberHint,
                     routingCtrl,
                     Icons.numbers_rounded,
                     keyboard: TextInputType.number,
                   ),
                   const SizedBox(height: 12),
                   _inputField(
-                    'Account number',
-                    'Your account number',
+                    S.of(context).accountNumberLabel,
+                    S.of(context).accountNumberHint,
                     accountCtrl,
                     Icons.lock_outline_rounded,
                     keyboard: TextInputType.number,
@@ -602,7 +607,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'Your information is encrypted and secure',
+                        S.of(context).infoEncryptedSecure,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.3),
                           fontSize: 11,
@@ -637,9 +642,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      child: const Text(
-                        'Link account',
-                        style: TextStyle(
+                      child: Text(
+                        S.of(context).linkAccountButton,
+                        style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
@@ -697,9 +702,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                       size: 24,
                     ),
                     const SizedBox(width: 12),
-                    const Text(
-                      'Add debit card',
-                      style: TextStyle(
+                    Text(
+                      S.of(context).addDebitCardTitle,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
@@ -709,7 +714,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Add your debit card for instant cashouts.',
+                  S.of(context).addDebitForCashouts,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.4),
                     fontSize: 13,
@@ -717,7 +722,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                 ),
                 const SizedBox(height: 20),
                 _inputField(
-                  'Card number',
+                  S.of(context).cardNumberLabel,
                   '1234 5678 9012 3456',
                   cardCtrl,
                   Icons.credit_card_rounded,
@@ -725,14 +730,14 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                 ),
                 const SizedBox(height: 12),
                 _inputField(
-                  'Cardholder name',
-                  'Name on card',
+                  S.of(context).cardholderNameLabel,
+                  S.of(context).nameLabel,
                   nameCtrl,
                   Icons.person_outline_rounded,
                 ),
                 const SizedBox(height: 12),
                 _inputField(
-                  'Expiry',
+                  S.of(context).expiryLabel,
                   'MM/YY',
                   expiryCtrl,
                   Icons.calendar_today_rounded,
@@ -748,7 +753,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      'Instant cashout available with debit cards',
+                      S.of(context).instantCashoutDebit,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.3),
                         fontSize: 11,
@@ -780,9 +785,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: const Text(
-                      'Add card',
-                      style: TextStyle(
+                    child: Text(
+                      S.of(context).addCardButton,
+                      style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),
@@ -811,8 +816,8 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
           SnackBar(
             content: Text(
               type == 'debit_card'
-                  ? 'Debit card added — instant cashout enabled'
-                  : 'Bank account linked',
+                  ? S.of(context).debitCardAdded
+                  : S.of(context).bankAccountLinked,
             ),
             backgroundColor: _gold,
             behavior: SnackBarBehavior.floating,
@@ -826,7 +831,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Failed to add method'),
+            content: Text(S.of(context).failedToAddMethod),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -867,9 +872,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
               size: 42,
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Remove payout method?',
-              style: TextStyle(
+            Text(
+              S.of(context).removePayoutMethod,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
@@ -877,7 +882,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Are you sure you want to remove "$name"?',
+              S.of(context).confirmRemoveMethod(name),
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.5),
                 fontSize: 14,
@@ -900,9 +905,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(
+                      child: Text(
+                        S.of(context).cancel,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w600,
                         ),
@@ -926,9 +931,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      child: const Text(
-                        'Remove',
-                        style: TextStyle(fontWeight: FontWeight.w700),
+                      child: Text(
+                        S.of(context).removeLabel,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
                   ),
@@ -951,7 +956,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Payout method removed'),
+            content: Text(S.of(context).payoutMethodRemoved),
             backgroundColor: _gold,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -964,7 +969,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Failed to remove method'),
+            content: Text(S.of(context).failedToRemoveMethod),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(

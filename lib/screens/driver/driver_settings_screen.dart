@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Driver settings: Uber Driver–style layout with Account & General sections.
 class DriverSettingsScreen extends StatefulWidget {
@@ -19,6 +21,33 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
   // Toggles
   bool _nightMode = true;
   bool _accessibility = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _nightMode = prefs.getBool('driver_night_mode') ?? true;
+      _accessibility = prefs.getBool('driver_accessibility') ?? false;
+    });
+  }
+
+  Future<void> _setNightMode(bool v) async {
+    setState(() => _nightMode = v);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('driver_night_mode', v);
+  }
+
+  Future<void> _setAccessibility(bool v) async {
+    setState(() => _accessibility = v);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('driver_accessibility', v);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,9 +84,9 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                   ),
                 ),
                 const SizedBox(width: 14),
-                const Text(
-                  'Settings',
-                  style: TextStyle(
+                Text(
+                  S.of(context).settingsTitle,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
@@ -73,68 +102,67 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.only(top: 20, bottom: 40),
               children: [
-                // ═══ ACCOUNT SECTION ═══
-                _sectionHeader('Account'),
+                _sectionHeader(S.of(context).accountLabel),
                 _navItem(
                   Icons.person_outline_rounded,
-                  'Manage account',
-                  'Edit your account details',
-                  () => _snack('Manage account'),
+                  S.of(context).manageAccount,
+                  S.of(context).editAccountDetails,
+                  () => _snack(S.of(context).manageAccount),
                 ),
                 _navItem(
                   Icons.lock_outline_rounded,
-                  'Privacy',
-                  'Data & privacy settings',
-                  () => _snack('Privacy'),
+                  S.of(context).privacy,
+                  S.of(context).dataPrivacySettings,
+                  () => _snack(S.of(context).privacy),
                 ),
                 _navItem(
                   Icons.edit_location_alt_outlined,
-                  'Edit Address',
-                  'Home & work addresses',
-                  () => _snack('Edit Address'),
+                  S.of(context).editAddress,
+                  S.of(context).homeWorkAddresses,
+                  () => _snack(S.of(context).editAddress),
                 ),
 
                 const SizedBox(height: 28),
 
                 // ═══ GENERAL SECTION ═══
-                _sectionHeader('General'),
+                _sectionHeader(S.of(context).generalLabel),
                 _toggleItem(
                   Icons.accessibility_new_rounded,
-                  'Accessibility',
-                  'Accessibility features',
+                  S.of(context).accessibilityLabel,
+                  S.of(context).accessibilityFeatures,
                   _accessibility,
-                  (v) => setState(() => _accessibility = v),
+                  _setAccessibility,
                 ),
                 _toggleItem(
                   Icons.dark_mode_rounded,
-                  'Night Mode',
-                  'App appearance',
+                  S.of(context).nightMode,
+                  S.of(context).appAppearance,
                   _nightMode,
-                  (v) => setState(() => _nightMode = v),
+                  _setNightMode,
                 ),
                 _navItem(
                   Icons.record_voice_over_rounded,
-                  'Siri Shortcuts',
-                  'Voice commands',
-                  () => _snack('Siri Shortcuts'),
+                  S.of(context).siriShortcuts,
+                  S.of(context).voiceCommands,
+                  () => _snack(S.of(context).siriShortcuts),
                 ),
                 _navItem(
                   Icons.chat_bubble_outline_rounded,
-                  'Communication',
-                  'Message preferences',
-                  () => _snack('Communication'),
+                  S.of(context).communicationLabel,
+                  S.of(context).messagePreferences,
+                  () => _snack(S.of(context).communicationLabel),
                 ),
                 _navItem(
                   Icons.navigation_rounded,
-                  'Navigation',
-                  'Maps & routing preferences',
-                  () => _snack('Navigation'),
+                  S.of(context).navigationLabel,
+                  S.of(context).mapsRoutingPrefs,
+                  () => _snack(S.of(context).navigationLabel),
                 ),
                 _navItem(
                   Icons.volume_up_rounded,
-                  'Sounds & Voice',
-                  'Audio & voice settings',
-                  () => _snack('Sounds & Voice'),
+                  S.of(context).soundsAndVoice,
+                  S.of(context).audioVoiceSettings,
+                  () => _snack(S.of(context).soundsAndVoice),
                 ),
               ],
             ),

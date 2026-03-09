@@ -10,6 +10,7 @@ import '../services/email_service.dart';
 import '../services/local_data_service.dart';
 import '../services/sms_service.dart';
 import '../services/user_session.dart';
+import '../l10n/app_localizations.dart';
 import 'login_verify_screen.dart';
 import 'forgot_password_screen.dart';
 import 'map_screen.dart';
@@ -442,7 +443,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
 
               // ── Title ──
               Text(
-                'Welcome back',
+                S.of(context).welcomeBack,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -452,7 +453,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Sign in with your email or phone number.',
+                S.of(context).signInSubtitle,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
@@ -474,7 +475,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                   style: TextStyle(color: c.textPrimary, fontSize: 16),
                   decoration: InputDecoration(
                     border: InputBorder.none,
-                    hintText: 'Email or phone number',
+                    hintText: S.of(context).emailOrPhone,
                     hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
                     prefixIcon: Icon(
                       Icons.person_outline_rounded,
@@ -507,7 +508,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                   style: TextStyle(color: c.textPrimary, fontSize: 16),
                   decoration: InputDecoration(
                     border: InputBorder.none,
-                    hintText: 'Password',
+                    hintText: S.of(context).password,
                     hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
                     prefixIcon: Icon(
                       Icons.lock_outline_rounded,
@@ -574,9 +575,9 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                       context,
                     ).push(slideFromRightRoute(const ForgotPasswordScreen()));
                   },
-                  child: const Text(
-                    'Forgot password?',
-                    style: TextStyle(
+                  child: Text(
+                    S.of(context).forgotPassword,
+                    style: const TextStyle(
                       color: _gold,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -620,9 +621,9 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                               strokeWidth: 2.5,
                             ),
                           )
-                        : const Text(
-                            'Sign In',
-                            style: TextStyle(
+                        : Text(
+                            S.of(context).signIn,
+                            style: const TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
                             ),

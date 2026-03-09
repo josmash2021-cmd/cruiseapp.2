@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/user_session.dart';
 import 'name_screen.dart';
@@ -49,7 +50,17 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
     final pass = _passCtrl.text;
     final confirm = _confirmCtrl.text;
     final hasNumber = pass.contains(RegExp(r'[0-9]'));
-    final ok = pass.length >= 8 && hasNumber && confirm.isNotEmpty && pass == confirm;
+    final hasUpper = pass.contains(RegExp(r'[A-Z]'));
+    final hasSpecial = pass.contains(
+      RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'),
+    );
+    final ok =
+        pass.length >= 8 &&
+        hasNumber &&
+        hasUpper &&
+        hasSpecial &&
+        confirm.isNotEmpty &&
+        pass == confirm;
     if (ok != _canContinue || _errorText != null) {
       setState(() {
         _canContinue = ok;
@@ -70,6 +81,18 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
       setState(() => _errorText = 'Password must contain at least 1 number');
       return;
     }
+    if (!pass.contains(RegExp(r'[A-Z]'))) {
+      setState(
+        () => _errorText = 'Password must contain at least 1 uppercase letter',
+      );
+      return;
+    }
+    if (!pass.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'))) {
+      setState(
+        () => _errorText = 'Password must contain at least 1 special character',
+      );
+      return;
+    }
     if (pass != confirm) {
       setState(() => _errorText = 'Passwords do not match');
       return;
@@ -80,10 +103,12 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
 
     if (!mounted) return;
     Navigator.of(context).push(
-      slideFromRightRoute(NameScreen(
-        registeredWith: widget.email,
-        registeredWithEmail: widget.registeredWithEmail,
-      )),
+      slideFromRightRoute(
+        NameScreen(
+          registeredWith: widget.email,
+          registeredWithEmail: widget.registeredWithEmail,
+        ),
+      ),
     );
   }
 
@@ -111,15 +136,18 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
                     color: c.surface,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.arrow_back_ios_new_rounded,
-                      color: c.textPrimary, size: 18),
+                  child: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: c.textPrimary,
+                    size: 18,
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
 
               // ── Title ──
               Text(
-                'Create a password',
+                S.of(context).createPassword,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -130,7 +158,7 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Your password must be at least 8 characters.',
+                S.of(context).passwordRequirements,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
@@ -141,8 +169,7 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
                 controller: _passCtrl,
                 hint: 'Password',
                 obscure: _obscurePass,
-                onToggle: () =>
-                    setState(() => _obscurePass = !_obscurePass),
+                onToggle: () => setState(() => _obscurePass = !_obscurePass),
               ),
               const SizedBox(height: 16),
 
@@ -164,8 +191,11 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
                         padding: const EdgeInsets.only(top: 12, left: 4),
                         child: Row(
                           children: [
-                            Icon(Icons.error_outline_rounded,
-                                color: Colors.white.withValues(alpha: 0.6), size: 16),
+                            Icon(
+                              Icons.error_outline_rounded,
+                              color: Colors.white.withValues(alpha: 0.6),
+                              size: 16,
+                            ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
@@ -189,15 +219,38 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _strengthRow(c, 'At least 8 characters',
-                        _passCtrl.text.length >= 8),
+                    _strengthRow(
+                      c,
+                      S.of(context).atLeast8Chars,
+                      _passCtrl.text.length >= 8,
+                    ),
                     const SizedBox(height: 6),
-                    _strengthRow(c, 'Contains a number',
-                        _passCtrl.text.contains(RegExp(r'[0-9]'))),
+                    _strengthRow(
+                      c,
+                      S.of(context).containsNumber,
+                      _passCtrl.text.contains(RegExp(r'[0-9]')),
+                    ),
                     const SizedBox(height: 6),
-                    _strengthRow(c, 'Passwords match',
-                        _passCtrl.text.isNotEmpty &&
-                            _passCtrl.text == _confirmCtrl.text),
+                    _strengthRow(
+                      c,
+                      S.of(context).anUppercase,
+                      _passCtrl.text.contains(RegExp(r'[A-Z]')),
+                    ),
+                    const SizedBox(height: 6),
+                    _strengthRow(
+                      c,
+                      S.of(context).aSpecialChar,
+                      _passCtrl.text.contains(
+                        RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    _strengthRow(
+                      c,
+                      S.of(context).passwordsMatch,
+                      _passCtrl.text.isNotEmpty &&
+                          _passCtrl.text == _confirmCtrl.text,
+                    ),
                   ],
                 ),
               ),
@@ -271,10 +324,15 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
           border: InputBorder.none,
           hintText: hint,
           hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
-          prefixIcon: Icon(Icons.lock_outline_rounded,
-              color: c.textTertiary, size: 20),
-          prefixIconConstraints:
-              const BoxConstraints(minWidth: 36, minHeight: 0),
+          prefixIcon: Icon(
+            Icons.lock_outline_rounded,
+            color: c.textTertiary,
+            size: 20,
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 36,
+            minHeight: 0,
+          ),
           suffixIcon: GestureDetector(
             onTap: onToggle,
             child: Icon(
@@ -285,8 +343,10 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
               size: 20,
             ),
           ),
-          suffixIconConstraints:
-              const BoxConstraints(minWidth: 36, minHeight: 0),
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 36,
+            minHeight: 0,
+          ),
         ),
       ),
     );

@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../config/map_styles.dart';
 import '../../config/page_transitions.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/ride_offer.dart';
 import '../../navigation/offers_controller.dart';
 import '../../navigation/route_service.dart';
@@ -203,9 +204,9 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                           size: 16,
                         ),
                         const SizedBox(width: 6),
-                        const Text(
-                          'Go Offline',
-                          style: TextStyle(
+                        Text(
+                          S.of(context).goOfflineBtn,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -253,9 +254,9 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Text(
-                          'ONLINE',
-                          style: TextStyle(
+                        Text(
+                          S.of(context).onlineStatus,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
@@ -298,8 +299,8 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                       CircularProgressIndicator(color: _gold),
                       SizedBox(height: 16),
                       Text(
-                        'Accepting ride...',
-                        style: TextStyle(
+                        S.of(context).acceptingRide,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -325,7 +326,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
           CircularProgressIndicator(color: _gold),
           SizedBox(height: 12),
           Text(
-            'Finding rides near you...',
+            S.of(context).findingRidesNearYou,
             style: TextStyle(color: Colors.white70, fontSize: 14),
           ),
         ],
@@ -350,19 +351,19 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Looking for rides...',
-            style: TextStyle(
+          Text(
+            S.of(context).lookingForRides,
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 18,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'New offers will appear here automatically',
+          Text(
+            S.of(context).newOffersWillAppear,
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white54, fontSize: 13),
+            style: const TextStyle(color: Colors.white54, fontSize: 13),
           ),
         ],
       ),
@@ -402,9 +403,9 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                const Text(
-                  'Available Rides',
-                  style: TextStyle(
+                Text(
+                  S.of(context).availableRides,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
@@ -613,9 +614,9 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    child: const Text(
-                      'SKIP',
-                      style: TextStyle(
+                    child: Text(
+                      S.of(context).skipOffer,
+                      style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.8,
@@ -638,9 +639,9 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    child: const Text(
-                      'ACCEPT',
-                      style: TextStyle(
+                    child: Text(
+                      S.of(context).acceptOffer,
+                      style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1,

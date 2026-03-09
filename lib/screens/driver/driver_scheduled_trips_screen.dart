@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/app_theme.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 
 /// Premium Scheduled Trips screen for drivers.
@@ -84,6 +85,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    final s = S.of(context);
     return Scaffold(
       backgroundColor: c.bg,
       body: CustomScrollView(
@@ -148,8 +150,8 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
                     ),
                   ),
                   const SizedBox(width: 10),
-                  const Text(
-                    'Upcoming Rides',
+                  Text(
+                    s.upcomingTrips,
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
@@ -207,8 +209,8 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
                           ),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Text(
-                          'Retry',
+                        child: Text(
+                          s.retry,
                           style: TextStyle(
                             color: _gold,
                             fontWeight: FontWeight.w600,
@@ -238,6 +240,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
   }
 
   Widget _buildCard(int i, AppColors c) {
+    final s = S.of(context);
     final trip = _trips[i];
     final isAirport = trip['is_airport'] == true;
     final dateFmt = DateFormat('EEE, MMM d');
@@ -265,7 +268,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
     if (scheduledAt != null) {
       final diff = scheduledAt.difference(DateTime.now());
       if (diff.isNegative) {
-        countdown = 'Now';
+        countdown = s.nowLabel;
       } else if (diff.inDays > 0) {
         countdown = 'In ${diff.inDays}d ${diff.inHours % 24}h';
       } else if (diff.inHours > 0) {
@@ -426,7 +429,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        pickup.isNotEmpty ? pickup : 'Pickup',
+                        pickup.isNotEmpty ? pickup : s.pickupLabel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -437,7 +440,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
                       ),
                       const SizedBox(height: 18),
                       Text(
-                        dropoff.isNotEmpty ? dropoff : 'Dropoff',
+                        dropoff.isNotEmpty ? dropoff : s.dropOffLabel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -519,8 +522,8 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         backgroundColor: const Color(0xFFFF5252),
-                        content: const Text(
-                          'Pickup coordinates not available',
+                        content: Text(
+                          s.pickupCoordinatesNotAvailable,
                           style: TextStyle(color: Colors.white),
                         ),
                         behavior: SnackBarBehavior.floating,
@@ -607,6 +610,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
   }
 
   Widget _emptyState(AppColors c) {
+    final s = S.of(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -626,7 +630,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
           ),
           const SizedBox(height: 20),
           Text(
-            'No Upcoming Rides',
+            s.noUpcomingRides,
             style: TextStyle(
               color: c.textPrimary,
               fontSize: 20,
@@ -635,7 +639,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            'Scheduled rides assigned to you\nwill appear here',
+            s.scheduledRidesAssigned,
             textAlign: TextAlign.center,
             style: TextStyle(color: c.textSecondary, fontSize: 14, height: 1.5),
           ),

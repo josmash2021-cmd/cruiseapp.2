@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
+import '../l10n/app_localizations.dart';
 
 /// Full-page chat screen used for both driver messaging and support chat.
 class ChatScreen extends StatefulWidget {
@@ -50,14 +51,14 @@ class _ChatScreenState extends State<ChatScreen> {
         (_) => _fetchMessages(),
       );
     } else if (widget.isSupport) {
-      _messages.add(
-        _ChatMessage(
-          text: 'Hi! How can we help you today?',
-          isMe: false,
-          time: DateTime.now(),
-        ),
-      );
-      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final s = S.of(context);
+        _messages.add(
+          _ChatMessage(text: s.chatWelcome, isMe: false, time: DateTime.now()),
+        );
+        setState(() {});
+      });
     }
   }
 
@@ -134,6 +135,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     final topPad = MediaQuery.of(context).padding.top;
     final bottomPad = MediaQuery.of(context).viewInsets.bottom;
     final safePad = MediaQuery.of(context).padding.bottom;
@@ -215,7 +217,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       children: [
                         Text(
                           widget.isSupport
-                              ? 'Cruise Support'
+                              ? s.cruiseSupport
                               : widget.recipientName,
                           style: const TextStyle(
                             fontSize: 16,
@@ -236,7 +238,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              widget.isSupport ? 'Online' : 'Active now',
+                              widget.isSupport ? s.online : s.activeNow,
                               style: TextStyle(
                                 fontSize: 11,
                                 color: Colors.white.withValues(alpha: 0.45),
@@ -312,8 +314,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         decoration: InputDecoration(
                           hintText: widget.isSupport
-                              ? 'Describe your issue...'
-                              : 'Type a message...',
+                              ? s.describeIssue
+                              : s.typeMessage,
                           hintStyle: TextStyle(
                             color: Colors.white.withValues(alpha: 0.3),
                             fontSize: 15,

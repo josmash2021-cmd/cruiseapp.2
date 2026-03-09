@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
@@ -57,13 +58,22 @@ class _AboutScreenState extends State<AboutScreen> {
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
                 child: Container(
-                  width: 40, height: 40,
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     color: c.surface,
                     borderRadius: BorderRadius.circular(12),
-                    border: c.isDark ? null : Border.all(color: Colors.black.withValues(alpha: 0.06)),
+                    border: c.isDark
+                        ? null
+                        : Border.all(
+                            color: Colors.black.withValues(alpha: 0.06),
+                          ),
                   ),
-                  child: Icon(Icons.arrow_back_ios_new_rounded, color: c.textPrimary, size: 18),
+                  child: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: c.textPrimary,
+                    size: 18,
+                  ),
                 ),
               ),
               const SizedBox(height: 36),
@@ -73,56 +83,84 @@ class _AboutScreenState extends State<AboutScreen> {
                 child: Column(
                   children: [
                     Container(
-                      width: 80, height: 80,
+                      width: 80,
+                      height: 80,
                       decoration: BoxDecoration(
                         color: _gold.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(22),
                       ),
                       child: Center(
-                        child: Text('C',
-                            style: TextStyle(
-                                fontSize: 40,
-                                fontWeight: FontWeight.w800,
-                                color: _gold)),
+                        child: Text(
+                          'C',
+                          style: TextStyle(
+                            fontSize: 40,
+                            fontWeight: FontWeight.w800,
+                            color: _gold,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
-                    Text('Cruise',
-                        style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            color: c.textPrimary,
-                            letterSpacing: -0.5)),
+                    Text(
+                      'Cruise',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: c.textPrimary,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
                     const SizedBox(height: 6),
                     Text(
-                        _version.isNotEmpty
-                            ? 'Version $_version (Build $_buildNumber)'
-                            : 'Loading...',
-                        style: TextStyle(fontSize: 14, color: c.textSecondary)),
+                      _version.isNotEmpty
+                          ? S.of(context).versionText(_version, _buildNumber)
+                          : S.of(context).loading,
+                      style: TextStyle(fontSize: 14, color: c.textSecondary),
+                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 36),
 
               // ── Info items ──
-              _infoItem(c, Icons.description_outlined, 'Terms of Service',
-                  onTap: () => _openUrl('https://cruiseride.com/terms')),
+              _infoItem(
+                c,
+                Icons.description_outlined,
+                S.of(context).termsOfService,
+                onTap: () => _openUrl('https://cruiseride.com/terms'),
+              ),
               const SizedBox(height: 10),
-              _infoItem(c, Icons.privacy_tip_outlined, 'Privacy Policy',
-                  onTap: () => _openUrl('https://cruiseride.com/privacy')),
+              _infoItem(
+                c,
+                Icons.privacy_tip_outlined,
+                S.of(context).privacyPolicy,
+                onTap: () => _openUrl('https://cruiseride.com/privacy'),
+              ),
               const SizedBox(height: 10),
-              _infoItem(c, Icons.code_rounded, 'Open Source Licenses',
-                  onTap: () => showLicensePage(
-                        context: context,
-                        applicationName: 'Cruise',
-                        applicationVersion: _version,
-                      )),
+              _infoItem(
+                c,
+                Icons.code_rounded,
+                S.of(context).openSourceLicenses,
+                onTap: () => showLicensePage(
+                  context: context,
+                  applicationName: 'Cruise',
+                  applicationVersion: _version,
+                ),
+              ),
               const SizedBox(height: 10),
-              _infoItem(c, Icons.star_rounded, 'Rate the App',
-                  onTap: () => _rateApp()),
+              _infoItem(
+                c,
+                Icons.star_rounded,
+                S.of(context).rateApp,
+                onTap: () => _rateApp(),
+              ),
               const SizedBox(height: 10),
-              _infoItem(c, Icons.share_rounded, 'Share Cruise',
-                  onTap: () => _shareCruise()),
+              _infoItem(
+                c,
+                Icons.share_rounded,
+                S.of(context).shareCruise,
+                onTap: () => _shareCruise(),
+              ),
 
               const SizedBox(height: 36),
 
@@ -130,11 +168,15 @@ class _AboutScreenState extends State<AboutScreen> {
               Center(
                 child: Column(
                   children: [
-                    Text('Made with ❤ in Miami',
-                        style: TextStyle(fontSize: 14, color: c.textSecondary)),
+                    Text(
+                      S.of(context).madeWithHeart,
+                      style: TextStyle(fontSize: 14, color: c.textSecondary),
+                    ),
                     const SizedBox(height: 6),
-                    Text('© 2026 Cruise Technologies, Inc.',
-                        style: TextStyle(fontSize: 13, color: c.textTertiary)),
+                    Text(
+                      S.of(context).copyright,
+                      style: TextStyle(fontSize: 13, color: c.textTertiary),
+                    ),
                   ],
                 ),
               ),
@@ -146,8 +188,12 @@ class _AboutScreenState extends State<AboutScreen> {
     );
   }
 
-  Widget _infoItem(AppColors c, IconData icon, String label,
-      {required VoidCallback onTap}) {
+  Widget _infoItem(
+    AppColors c,
+    IconData icon,
+    String label, {
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -164,11 +210,14 @@ class _AboutScreenState extends State<AboutScreen> {
             Icon(icon, color: c.textPrimary, size: 22),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(label,
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: c.textPrimary)),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: c.textPrimary,
+                ),
+              ),
             ),
             Icon(Icons.chevron_right_rounded, color: c.textTertiary, size: 20),
           ],
@@ -179,34 +228,41 @@ class _AboutScreenState extends State<AboutScreen> {
 
   Future<void> _openUrl(String url) async {
     final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (await canLaunchUrl(uri))
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Future<void> _rateApp() async {
     // Try Google Play Store first, then fallback
-    const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.cruise_app';
+    const playStoreUrl =
+        'https://play.google.com/store/apps/details?id=com.cruise_app';
     final uri = Uri.parse(playStoreUrl);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       if (!mounted) return;
       final sc = AppColors.of(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Thank you for your support! ⭐'),
-        backgroundColor: sc.isDark ? sc.surface : Colors.black87,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Thank you for your support! ⭐'),
+          backgroundColor: sc.isDark ? sc.surface : Colors.black87,
+        ),
+      );
     }
   }
 
   Future<void> _shareCruise() async {
     const shareUrl = 'https://cruiseride.com/download';
-    const shareText = 'Check out Cruise - the best ride experience! 🚗\n$shareUrl';
+    const shareText =
+        'Check out Cruise - the best ride experience! 🚗\n$shareUrl';
     await Clipboard.setData(const ClipboardData(text: shareText));
     if (!mounted) return;
     final sc = AppColors.of(context);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: const Text('Share link copied to clipboard! 📋'),
-      backgroundColor: sc.isDark ? sc.surface : Colors.black87,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Share link copied to clipboard! 📋'),
+        backgroundColor: sc.isDark ? sc.surface : Colors.black87,
+      ),
+    );
   }
 }

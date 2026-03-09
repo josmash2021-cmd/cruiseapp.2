@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:pay/pay.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
+import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 import '../services/payment_service.dart';
 import 'credit_card_screen.dart';
@@ -41,11 +42,11 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
       icon: Icons.account_balance_wallet_rounded,
       iconColor: Colors.white70,
     ),
-    const _PaymentOption(
+    _PaymentOption(
       id: 'cruise_cash',
-      label: 'Cruise Cash',
+      label: S.of(context).cruiseCash,
       icon: Icons.monetization_on_rounded,
-      iconColor: Color(0xFFE8C547),
+      iconColor: const Color(0xFFE8C547),
     ),
     if (Platform.isAndroid)
       const _PaymentOption(
@@ -61,11 +62,11 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
         icon: Icons.apple,
         iconColor: Colors.white,
       ),
-    const _PaymentOption(
+    _PaymentOption(
       id: 'credit_card',
-      label: 'Credit or debit card',
+      label: S.of(context).creditOrDebitCard,
       icon: Icons.credit_card_rounded,
-      iconColor: Color(0xFF6B7280),
+      iconColor: const Color(0xFF6B7280),
     ),
   ];
 
@@ -134,7 +135,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
             onSuccess: (result) async {
               await LocalDataService.linkPaymentMethod('google_pay');
               if (!mounted) return;
-              _showSetupSnack('Google Pay linked successfully');
+              _showSetupSnack(S.of(context).googlePayLinked);
               await Future.delayed(const Duration(milliseconds: 400));
               if (!mounted) return;
               _goToNextScreen(id);
@@ -142,7 +143,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
           ),
         );
       } else {
-        _showSetupSnack('Google Pay not set up on this device');
+        _showSetupSnack(S.of(context).googlePayNotSetUp);
         await Future.delayed(const Duration(milliseconds: 600));
         if (!mounted) return;
         _goToNextScreen(id);
@@ -160,7 +161,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
             onSuccess: (result) async {
               await LocalDataService.linkPaymentMethod('apple_pay');
               if (!mounted) return;
-              _showSetupSnack('Apple Pay linked successfully');
+              _showSetupSnack(S.of(context).applePayLinked);
               await Future.delayed(const Duration(milliseconds: 400));
               if (!mounted) return;
               _goToNextScreen(id);
@@ -168,7 +169,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
           ),
         );
       } else {
-        _showSetupSnack('Apple Pay not set up on this device');
+        _showSetupSnack(S.of(context).applePayNotSetUp);
         await Future.delayed(const Duration(milliseconds: 600));
         if (!mounted) return;
         _goToNextScreen(id);
@@ -177,7 +178,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
     }
 
     if (id == 'cruise_cash') {
-      _showSetupSnack('Cruise Cash activated');
+      _showSetupSnack(S.of(context).cruiseCashActivated);
       await Future.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
       _goToNextScreen(id);
@@ -231,17 +232,17 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
     if (!mounted) return;
     final approved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => const PayPalCheckoutScreen(
+        builder: (_) => PayPalCheckoutScreen(
           amount: '1.00',
           currency: 'USD',
-          description: 'Cruise account verification (\$1.00 refundable)',
+          description: S.of(context).cruiseAccountVerificationDesc,
         ),
       ),
     );
     if (!mounted) return;
     if (approved == true) {
       await LocalDataService.linkPaymentMethod('paypal');
-      _showSetupSnack('PayPal linked successfully');
+      _showSetupSnack(S.of(context).paypalLinked);
       await Future.delayed(const Duration(milliseconds: 400));
       if (!mounted) return;
       _goToNextScreen('paypal');
@@ -285,7 +286,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
 
               // ── Title ──
               Text(
-                'How would you like\nto pay?',
+                S.of(context).howWouldYouLikeToPay,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -296,7 +297,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                "You'll only be charged after the ride.",
+                S.of(context).chargedAfterRide,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
@@ -374,7 +375,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Text(
-                  "If there's ever a problem with your payment, we'll retry with other backup payment methods in your account so you can continue using Cruise.",
+                  S.of(context).paymentRetryInfo,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
@@ -391,7 +392,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
                   child: GestureDetector(
                     onTap: _skipPayment,
                     child: Text(
-                      'Set up later',
+                      S.of(context).setUpLater,
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -469,7 +470,7 @@ class _OnboardingGPaySheetState extends State<_OnboardingGPaySheet> {
           ),
           const SizedBox(height: 20),
           Text(
-            'Confirm Google Pay',
+            S.of(context).confirmGooglePay,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
@@ -478,7 +479,7 @@ class _OnboardingGPaySheetState extends State<_OnboardingGPaySheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap the button below to confirm Google Pay for Cruise rides.',
+            S.of(context).googlePayPrompt,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 14, color: c.textSecondary),
           ),
@@ -488,9 +489,9 @@ class _OnboardingGPaySheetState extends State<_OnboardingGPaySheet> {
           else
             GooglePayButton(
               paymentConfiguration: _config!,
-              paymentItems: const [
+              paymentItems: [
                 PaymentItem(
-                  label: 'Account verification',
+                  label: S.of(context).accountVerification,
                   amount: '0.00',
                   status: PaymentItemStatus.final_price,
                 ),
@@ -508,14 +509,19 @@ class _OnboardingGPaySheetState extends State<_OnboardingGPaySheet> {
               onError: (error) {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Google Pay error: $error')),
+                  SnackBar(
+                    content: Text(S.of(context).googlePayError('$error')),
+                  ),
                 );
               },
             ),
           const SizedBox(height: 12),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+            child: Text(
+              S.of(context).cancel,
+              style: TextStyle(color: c.textTertiary),
+            ),
           ),
         ],
       ),
@@ -568,7 +574,7 @@ class _OnboardingApplePaySheetState extends State<_OnboardingApplePaySheet> {
           ),
           const SizedBox(height: 20),
           Text(
-            'Confirm Apple Pay',
+            S.of(context).confirmApplePay,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
@@ -577,7 +583,7 @@ class _OnboardingApplePaySheetState extends State<_OnboardingApplePaySheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap the button below to confirm Apple Pay for Cruise rides.',
+            S.of(context).applePayPrompt,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 14, color: c.textSecondary),
           ),
@@ -587,9 +593,9 @@ class _OnboardingApplePaySheetState extends State<_OnboardingApplePaySheet> {
           else
             ApplePayButton(
               paymentConfiguration: _config!,
-              paymentItems: const [
+              paymentItems: [
                 PaymentItem(
-                  label: 'Account verification',
+                  label: S.of(context).accountVerification,
                   amount: '0.00',
                   status: PaymentItemStatus.final_price,
                 ),
@@ -607,14 +613,19 @@ class _OnboardingApplePaySheetState extends State<_OnboardingApplePaySheet> {
               onError: (error) {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Apple Pay error: $error')),
+                  SnackBar(
+                    content: Text(S.of(context).applePayError('$error')),
+                  ),
                 );
               },
             ),
           const SizedBox(height: 12),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+            child: Text(
+              S.of(context).cancel,
+              style: TextStyle(color: c.textTertiary),
+            ),
           ),
         ],
       ),

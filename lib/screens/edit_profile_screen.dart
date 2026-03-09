@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/user_session.dart';
 
@@ -248,7 +249,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                   const SizedBox(width: 16),
                   Text(
-                    'Edit Profile',
+                    S.of(context).editProfile,
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
@@ -276,8 +277,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                 color: Colors.black,
                               ),
                             )
-                          : const Text(
-                              'Save',
+                          : Text(
+                              S.of(context).save,
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
@@ -379,7 +380,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     // ── Fields ──
                     _field(
                       c,
-                      'First Name',
+                      S.of(context).firstName,
                       _firstNameCtrl,
                       Icons.person_outline_rounded,
                       readOnly: true,
@@ -387,7 +388,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const SizedBox(height: 14),
                     _field(
                       c,
-                      'Last Name',
+                      S.of(context).lastName,
                       _lastNameCtrl,
                       Icons.person_outline_rounded,
                       readOnly: true,
@@ -395,7 +396,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const SizedBox(height: 14),
                     _field(
                       c,
-                      'Email',
+                      S.of(context).email,
                       _emailCtrl,
                       Icons.email_outlined,
                       keyboardType: TextInputType.emailAddress,

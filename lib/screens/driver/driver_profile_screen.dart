@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../config/page_transitions.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 
 /// Driver profile screen – Uber-style with stats cards, lifetime highlights, badges.
@@ -61,17 +62,18 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       // Get trip stats from backend
       final userId = await ApiService.getCurrentUserId();
       if (userId != null) {
-        final trips = await ApiService.getDriverTrips(userId);
-        int completed = 0, canceled = 0, total = trips.length;
-        for (final t in trips) {
-          if (t['status'] == 'completed') completed++;
-          if (t['status'] == 'canceled') canceled++;
-        }
+        final stats = await ApiService.getDriverStats(userId);
+        final completed = (stats['completed_trips'] as num?)?.toInt() ?? 0;
+        final canceled = (stats['canceled_trips'] as num?)?.toInt() ?? 0;
+        final total = (stats['total_trips'] as num?)?.toInt() ?? 0;
+        final accepted = (stats['accepted_offers'] as num?)?.toInt() ?? 0;
+        final rejected = (stats['rejected_offers'] as num?)?.toInt() ?? 0;
+
         _totalTrips = total;
         _completedTrips = completed;
         _canceledTrips = canceled;
-        _acceptedTrips = total; // All trips that were assigned to driver
-        _declinedTrips = 0;
+        _acceptedTrips = accepted;
+        _declinedTrips = rejected;
 
         _satisfactionRate = total > 0
             ? (completed / total * 100).clamp(0, 100)
@@ -79,11 +81,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         _cancellationRate = total > 0
             ? (canceled / total * 100).clamp(0, 100)
             : 0;
-        _acceptanceRate = total > 0 ? 100 : 0;
-        _onTimeRate = total > 0
-            ? ((completed * 0.97) / (completed > 0 ? completed : 1) * 100)
-                  .clamp(0, 100)
-            : 0;
+        _acceptanceRate = (stats['acceptance_rate'] as num?)?.toDouble() ?? 100;
+        _onTimeRate = (stats['on_time_rate'] as num?)?.toDouble() ?? 95;
 
         // Determine tier
         if (_satisfactionRate >= 95 && _acceptanceRate >= 85) {
@@ -174,9 +173,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                         const SizedBox(height: 8),
 
                         // ── Title ──
-                        const Text(
-                          'Profile',
-                          style: TextStyle(
+                        Text(
+                          S.of(context).profileTitle,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 28,
                             fontWeight: FontWeight.w900,
@@ -195,9 +194,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                         // ── Deliveries header ──
                         Row(
                           children: [
-                            const Text(
-                              'Deliveries',
-                              style: TextStyle(
+                            Text(
+                              S.of(context).deliveries,
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 20,
                                 fontWeight: FontWeight.w800,
@@ -230,8 +229,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                             Expanded(
                               child: _statTapCard(
                                 '${_satisfactionRate.toStringAsFixed(0)}%',
-                                'Satisfaction rate',
-                                'Cruise Pro',
+                                S.of(context).satisfactionRate,
+                                S.of(context).cruiseProLabel,
                                 _tierColor,
                                 Icons.thumb_up_outlined,
                                 () => _openStatDetail('satisfaction'),
@@ -241,8 +240,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                             Expanded(
                               child: _statTapCard(
                                 '${_cancellationRate.toStringAsFixed(0)}%',
-                                'Cancellation rate',
-                                'Cruise Pro',
+                                S.of(context).cancellationRate,
+                                S.of(context).cruiseProLabel,
                                 _tierColor,
                                 null,
                                 () => _openStatDetail('cancellation'),
@@ -256,8 +255,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                             Expanded(
                               child: _statTapCard(
                                 '${_acceptanceRate.toStringAsFixed(0)}%',
-                                'Acceptance rate',
-                                'Cruise Pro',
+                                S.of(context).acceptanceRate,
+                                S.of(context).cruiseProLabel,
                                 _tierColor,
                                 null,
                                 () => _openStatDetail('acceptance'),
@@ -267,8 +266,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                             Expanded(
                               child: _statTapCard(
                                 '${_onTimeRate.toStringAsFixed(0)}%',
-                                'On-time rate',
-                                'Cruise Pro',
+                                S.of(context).onTimeRate,
+                                S.of(context).cruiseProLabel,
                                 _tierColor,
                                 null,
                                 () => _openStatDetail('ontime'),
@@ -279,9 +278,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                         const SizedBox(height: 28),
 
                         // ── Lifetime highlights ──
-                        const Text(
-                          'Lifetime highlights',
-                          style: TextStyle(
+                        Text(
+                          S.of(context).lifetimeHighlights,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
@@ -295,7 +294,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                                 Icons.location_on_rounded,
                                 const Color(0xFF4CAF50),
                                 '$_totalTrips',
-                                'Total trips',
+                                S.of(context).totalTrips,
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -304,7 +303,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                                 Icons.directions_run_rounded,
                                 const Color(0xFF2196F3),
                                 _journeyDuration,
-                                'Journey with Cruise',
+                                S.of(context).journeyWithCruise,
                               ),
                             ),
                           ],
@@ -312,9 +311,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                         const SizedBox(height: 28),
 
                         // ── Badges ──
-                        const Text(
-                          'Badges',
-                          style: TextStyle(
+                        Text(
+                          S.of(context).badges,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
@@ -418,9 +417,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                       color: Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Text(
-                      'View public profile',
-                      style: TextStyle(
+                    child: Text(
+                      S.of(context).viewPublicProfile,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -466,16 +465,16 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Your mode',
+                  S.of(context).yourMode,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 12,
                   ),
                 ),
                 const SizedBox(height: 2),
-                const Text(
-                  'Advantage mode',
-                  style: TextStyle(
+                Text(
+                  S.of(context).advantageMode,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -635,28 +634,28 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     if (_totalTrips >= 1) {
       badges.add({
         'icon': Icons.emoji_events_rounded,
-        'label': 'First Trip',
+        'label': S.of(context).badgeFirstTrip,
         'color': _gold,
       });
     }
     if (_totalTrips >= 50) {
       badges.add({
         'icon': Icons.star_rounded,
-        'label': '50 Trips',
+        'label': S.of(context).badge50Trips,
         'color': const Color(0xFFF5D990),
       });
     }
     if (_totalTrips >= 100) {
       badges.add({
         'icon': Icons.workspace_premium_rounded,
-        'label': '100 Club',
+        'label': S.of(context).badge100Club,
         'color': const Color(0xFFB0BEC5),
       });
     }
     if (_totalTrips >= 500) {
       badges.add({
         'icon': Icons.diamond_rounded,
-        'label': '500 Elite',
+        'label': S.of(context).badge500Elite,
         'color': const Color(0xFF90A4AE),
       });
     }
@@ -664,7 +663,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     if (_journeyDuration.contains('yr')) {
       badges.add({
         'icon': Icons.cake_rounded,
-        'label': 'Anniversary',
+        'label': S.of(context).badgeAnniversary,
         'color': const Color(0xFFE91E63),
       });
     }
@@ -678,7 +677,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         ),
         child: Center(
           child: Text(
-            'Complete trips to earn badges!',
+            S.of(context).completeTripsToEarnBadges,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.4),
               fontSize: 14,
@@ -830,7 +829,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                 ),
                 const SizedBox(width: 16),
                 Text(
-                  '$_totalTrips trips',
+                  '$_totalTrips ${S.of(context).tripsLabel}',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 14,
@@ -851,9 +850,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                child: const Text(
-                  'Close',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                child: Text(
+                  S.of(context).closeLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
             ),
@@ -895,6 +894,7 @@ class _StatDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     String title;
     String rateValue;
     String? subtitle;
@@ -903,19 +903,19 @@ class _StatDetailScreen extends StatelessWidget {
 
     switch (type) {
       case 'satisfaction':
-        title = 'Satisfaction rate';
+        title = s.satisfactionRate;
         rateValue = '${satisfactionRate.toStringAsFixed(0)}%';
         rows = [
           _DetailRow(
             icon: Icons.thumb_up_outlined,
-            label: 'Customer',
+            label: s.customerLabel,
             color: Colors.white,
             value: completedTrips,
             barFraction: totalTrips > 0 ? completedTrips / totalTrips : 0,
           ),
           _DetailRow(
             icon: Icons.thumb_down_outlined,
-            label: 'Negative',
+            label: s.negativeLabel,
             color: Colors.grey,
             value: canceledTrips,
             barFraction: totalTrips > 0 ? canceledTrips / totalTrips : 0,
@@ -924,86 +924,100 @@ class _StatDetailScreen extends StatelessWidget {
         expanders = [];
         break;
       case 'cancellation':
-        title = 'Cancellation rate';
+        title = s.cancellationRate;
         rateValue = '${cancellationRate.toStringAsFixed(0)}%';
-        subtitle =
-            '${canceledTrips > 0 ? canceledTrips : 0}/$totalTrips last accepted trips';
+        subtitle = s.lastAcceptedTrips(
+          canceledTrips > 0 ? canceledTrips : 0,
+          totalTrips,
+        );
         rows = [
           _DetailRow(
             icon: Icons.bar_chart_rounded,
-            label: 'Trips accepted',
+            label: s.tripsAccepted,
             color: Colors.white,
             value: totalTrips,
             barFraction: 1.0,
           ),
           _DetailRow(
             icon: Icons.check_circle_outlined,
-            label: 'Completed trips',
+            label: s.completedTrips,
             color: const Color(0xFF4CAF50),
             value: completedTrips,
             barFraction: totalTrips > 0 ? completedTrips / totalTrips : 0,
           ),
           _DetailRow(
             icon: Icons.cancel_outlined,
-            label: 'Canceled trips',
+            label: s.canceledTrips,
             color: const Color(0xFFCC3333),
             value: canceledTrips,
             barFraction: totalTrips > 0 ? canceledTrips / totalTrips : 0,
           ),
         ];
         expanders = [
-          const _InfoExpander(title: 'How cancellation rate is calculated'),
-          const _InfoExpander(title: 'Why cancellation rate matters'),
+          _InfoExpander(
+            title: s.howCancellationCalculated,
+            body: s.howCancellationCalculatedBody,
+          ),
+          _InfoExpander(
+            title: s.whyCancellationMatters,
+            body: s.whyCancellationMattersBody,
+          ),
         ];
         break;
       case 'acceptance':
-        title = 'Acceptance rate';
+        title = s.acceptanceRate;
         rateValue = '${acceptanceRate.toStringAsFixed(0)}%';
-        subtitle = '$acceptedTrips/$totalTrips last exclusive requests';
+        subtitle = s.lastExclusiveRequests(acceptedTrips, totalTrips);
         rows = [
           _DetailRow(
             icon: Icons.bar_chart_rounded,
-            label: 'Exclusive trip requests',
+            label: s.exclusiveTripRequests,
             color: Colors.white,
             value: totalTrips,
             barFraction: 1.0,
           ),
           _DetailRow(
             icon: Icons.check_circle_outlined,
-            label: 'Accepted',
+            label: s.acceptedLabel,
             color: const Color(0xFF4CAF50),
             value: acceptedTrips,
             barFraction: totalTrips > 0 ? acceptedTrips / totalTrips : 0,
           ),
           _DetailRow(
             icon: Icons.cancel_outlined,
-            label: 'Declined',
+            label: s.declinedLabel,
             color: const Color(0xFFCC3333),
             value: declinedTrips,
             barFraction: totalTrips > 0 ? declinedTrips / totalTrips : 0,
           ),
         ];
         expanders = [
-          const _InfoExpander(title: 'How acceptance rate is calculated'),
-          const _InfoExpander(title: 'Why acceptance rate matters'),
+          _InfoExpander(
+            title: s.howAcceptanceCalculated,
+            body: s.howAcceptanceCalculatedBody,
+          ),
+          _InfoExpander(
+            title: s.whyAcceptanceMatters,
+            body: s.whyAcceptanceMattersBody,
+          ),
         ];
         break;
       default: // ontime
-        title = 'On-time rate';
+        title = s.onTimeRate;
         rateValue = '${onTimeRate.toStringAsFixed(0)}%';
         final onTime = (completedTrips * 0.97).round();
         final late = completedTrips - onTime;
         rows = [
           _DetailRow(
             icon: Icons.check_circle_outlined,
-            label: 'On time',
+            label: s.onTimeLabel,
             color: const Color(0xFF4CAF50),
             value: onTime,
             barFraction: completedTrips > 0 ? onTime / completedTrips : 0,
           ),
           _DetailRow(
             icon: Icons.schedule_rounded,
-            label: 'Late',
+            label: s.lateLabel,
             color: const Color(0xFFFF9800),
             value: late,
             barFraction: completedTrips > 0 ? late / completedTrips : 0,
@@ -1106,8 +1120,10 @@ class _StatDetailScreen extends StatelessWidget {
                         children: [
                           Text(
                             type == 'satisfaction'
-                                ? 'Based on your last ratings from customers'
-                                : 'Based on your last ${totalTrips > 0 ? totalTrips : 100} accepted requests',
+                                ? s.basedOnLastRatings
+                                : s.basedOnLastRequests(
+                                    totalTrips > 0 ? totalTrips : 100,
+                                  ),
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.5),
                               fontSize: 13,
@@ -1126,11 +1142,11 @@ class _StatDetailScreen extends StatelessWidget {
 
                     if (type == 'satisfaction') ...[
                       const SizedBox(height: 24),
-                      const Align(
+                      Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Feedback from customers',
-                          style: TextStyle(
+                          s.feedbackFromCustomers,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -1142,10 +1158,10 @@ class _StatDetailScreen extends StatelessWidget {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          _feedbackChip('Professional service'),
-                          _feedbackChip('Clean vehicle'),
-                          _feedbackChip('Great navigation'),
-                          _feedbackChip('Friendly driver'),
+                          _feedbackChip(s.feedbackProfessional),
+                          _feedbackChip(s.feedbackCleanVehicle),
+                          _feedbackChip(s.feedbackGreatNavigation),
+                          _feedbackChip(s.feedbackFriendlyDriver),
                         ],
                       ),
                     ],
@@ -1235,7 +1251,7 @@ class _StatDetailScreen extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
             child: Text(
-              _getExpanderContent(e.title),
+              e.body,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.5),
                 fontSize: 13,
@@ -1246,22 +1262,6 @@ class _StatDetailScreen extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String _getExpanderContent(String title) {
-    if (title.contains('cancellation') && title.contains('calculated')) {
-      return 'Your cancellation rate is calculated based on your last 100 accepted trip requests. Each trip you cancel after accepting counts toward this rate.';
-    }
-    if (title.contains('cancellation') && title.contains('matters')) {
-      return 'A low cancellation rate builds trust with riders and the platform. Excessive cancellations may affect your ability to receive trip requests.';
-    }
-    if (title.contains('acceptance') && title.contains('calculated')) {
-      return 'Your acceptance rate is calculated based on your last 100 exclusive trip requests. Each request you decline or let expire counts against this rate.';
-    }
-    if (title.contains('acceptance') && title.contains('matters')) {
-      return 'A higher acceptance rate unlocks more earning opportunities and higher-value trips. It also helps you maintain or reach higher Cruise Pro tiers.';
-    }
-    return '';
   }
 
   Widget _feedbackChip(String text) {
@@ -1301,5 +1301,6 @@ class _DetailRow {
 
 class _InfoExpander {
   final String title;
-  const _InfoExpander({required this.title});
+  final String body;
+  const _InfoExpander({required this.title, required this.body});
 }

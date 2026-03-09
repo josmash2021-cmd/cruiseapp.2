@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../config/page_transitions.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import 'driver_home_screen.dart';
 
@@ -38,6 +39,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
   }
 
   void _showPickOptions() {
+    final s = S.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
@@ -61,9 +63,9 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
               const SizedBox(height: 20),
               ListTile(
                 leading: const Icon(Icons.camera_alt_rounded, color: _gold),
-                title: const Text(
-                  'Take Photo',
-                  style: TextStyle(color: Colors.white),
+                title: Text(
+                  s.takePhoto,
+                  style: const TextStyle(color: Colors.white),
                 ),
                 onTap: () {
                   Navigator.pop(context);
@@ -72,9 +74,9 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.photo_library_rounded, color: _gold),
-                title: const Text(
-                  'Choose from Gallery',
-                  style: TextStyle(color: Colors.white),
+                title: Text(
+                  s.chooseFromGallery,
+                  style: const TextStyle(color: Colors.white),
                 ),
                 onTap: () {
                   Navigator.pop(context);
@@ -108,7 +110,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
       setState(() => _uploading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Upload failed: $e'),
+          content: Text(S.of(context).uploadFailed(e.toString())),
           backgroundColor: Colors.red,
         ),
       );
@@ -117,6 +119,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     return PopScope(
       canPop: widget.returnOnly,
       child: Scaffold(
@@ -129,8 +132,8 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
                 const Spacer(flex: 2),
 
                 // Title
-                const Text(
-                  'Upload Profile Photo',
+                Text(
+                  s.uploadProfilePhoto,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white,
@@ -141,7 +144,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Riders will see this photo when you accept their trip. Make sure it\'s a clear photo of your face.',
+                  s.profilePhotoInstructions,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.55),
@@ -185,7 +188,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Tap to add',
+                                s.tapToAdd,
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.3),
                                   fontSize: 13,
@@ -202,7 +205,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
                   TextButton(
                     onPressed: _uploading ? null : _showPickOptions,
                     child: Text(
-                      'Change photo',
+                      s.changePhoto,
                       style: TextStyle(
                         color: _gold.withValues(alpha: 0.8),
                         fontSize: 14,
@@ -241,8 +244,8 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
                               color: Colors.black54,
                             ),
                           )
-                        : const Text(
-                            'Continue',
+                        : Text(
+                            s.continueButton,
                             style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w800,

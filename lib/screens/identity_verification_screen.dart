@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
@@ -71,6 +72,9 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     if (frontPath == null || !mounted) return;
 
     setState(() => _licenseFrontPath = frontPath);
+
+    // Brief delay to let the camera fully release before reinitializing
+    await Future.delayed(const Duration(milliseconds: 600));
 
     // Step 2: Scan back of license
     final backPath = await Navigator.of(context).push<String?>(
@@ -261,7 +265,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           ),
           const SizedBox(height: 32),
           Text(
-            'Verify Your Identity',
+            S.of(context).verifyIdentity,
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w800,
@@ -271,7 +275,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           ),
           const SizedBox(height: 16),
           Text(
-            'To ensure the safety of all riders and drivers, we need to verify your identity before your first ride.',
+            S.of(context).verifyIdentitySubtitle,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 16, color: c.textSecondary, height: 1.5),
           ),
@@ -280,10 +284,10 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           _stepPreview(
             c,
             Icons.credit_card_rounded,
-            'Scan front of your license',
+            S.of(context).scanLicenseFront,
           ),
           const SizedBox(height: 12),
-          _stepPreview(c, Icons.flip_rounded, 'Scan back of your license'),
+          _stepPreview(c, Icons.flip_rounded, S.of(context).scanLicenseBack),
           const SizedBox(height: 12),
           _stepPreview(
             c,
@@ -305,8 +309,8 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
                 ),
                 elevation: 0,
               ),
-              child: const Text(
-                'Start Verification',
+              child: Text(
+                S.of(context).startVerification,
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
@@ -378,7 +382,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
             ),
             const SizedBox(height: 24),
             Text(
-              'Submitting Verification',
+              S.of(context).submittingVerification,
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
@@ -387,7 +391,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              'Encrypting and securely uploading your documents...',
+              S.of(context).encryptingUploading,
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 15, color: c.textSecondary),
             ),

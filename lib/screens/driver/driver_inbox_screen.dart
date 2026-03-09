@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/api_service.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Driver Inbox – tabs: All, Messages, Alerts, Updates, Deals
 class DriverInboxScreen extends StatefulWidget {
@@ -125,6 +126,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -153,9 +155,9 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                     ),
                   ),
                   const SizedBox(width: 14),
-                  const Text(
-                    'Inbox',
-                    style: TextStyle(
+                  Text(
+                    s.inbox,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 24,
                       fontWeight: FontWeight.w900,
@@ -184,7 +186,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        'Mark all read',
+                        s.markAllRead,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.5),
                           fontSize: 12,
@@ -225,27 +227,27 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                 padding: EdgeInsets.zero,
                 labelPadding: const EdgeInsets.symmetric(horizontal: 14),
                 tabs: [
-                  _tabChip('All', _items.where((i) => i.unread).length),
+                  _tabChip(s.allFilter, _items.where((i) => i.unread).length),
                   _tabChip(
-                    'Messages',
+                    s.messages,
                     _items
                         .where((i) => i.type == InboxType.message && i.unread)
                         .length,
                   ),
                   _tabChip(
-                    'Alerts',
+                    s.alertsTab,
                     _items
                         .where((i) => i.type == InboxType.alert && i.unread)
                         .length,
                   ),
                   _tabChip(
-                    'Updates',
+                    s.updatesTab,
                     _items
                         .where((i) => i.type == InboxType.update && i.unread)
                         .length,
                   ),
                   _tabChip(
-                    'Deals',
+                    s.dealsTab,
                     _items
                         .where((i) => i.type == InboxType.deal && i.unread)
                         .length,
@@ -278,7 +280,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'No messages',
+                            s.noMessages,
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.3),
                               fontSize: 15,

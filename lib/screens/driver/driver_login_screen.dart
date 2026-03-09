@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../config/page_transitions.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../forgot_password_screen.dart';
@@ -91,8 +92,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
         if (!mounted) return;
         setState(() {
           _loading = false;
-          _errorText =
-              'This account is registered as a rider. Please use Rider login.';
+          _errorText = S.of(context).accountIsRider;
         });
         return;
       }
@@ -135,11 +135,11 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
       if (e.statusCode == 403) {
         final detail = e.message.toLowerCase();
         if (detail.contains('deleted')) {
-          msg = 'This account no longer exists';
+          msg = S.of(context).accountDeleted;
         } else if (detail.contains('blocked')) {
-          msg = 'Your account has been blocked';
+          msg = S.of(context).accountBlocked;
         } else if (detail.contains('deactivated')) {
-          msg = 'Your account has been deactivated';
+          msg = S.of(context).accountDeactivated2;
         } else {
           msg = e.message;
         }
@@ -155,7 +155,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _errorText = 'Connection error. Check your internet.';
+        _errorText = S.of(context).connectionError;
       });
       return;
     }
@@ -201,16 +201,16 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(
+                      children: [
+                        const Icon(
                           Icons.directions_car_filled_rounded,
                           color: _gold,
                           size: 16,
                         ),
-                        SizedBox(width: 4),
+                        const SizedBox(width: 4),
                         Text(
-                          'Driver',
-                          style: TextStyle(
+                          S.of(context).driverBadge,
+                          style: const TextStyle(
                             color: _gold,
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -240,9 +240,9 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                           shaderCallback: (r) => const LinearGradient(
                             colors: [_goldLight, _gold],
                           ).createShader(r),
-                          child: const Text(
-                            'Welcome back,\nDriver',
-                            style: TextStyle(
+                          child: Text(
+                            S.of(context).welcomeBackDriver,
+                            style: const TextStyle(
                               fontSize: 32,
                               fontWeight: FontWeight.w900,
                               color: Colors.white,
@@ -252,7 +252,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Sign in to start earning with Cruise',
+                          S.of(context).signInToEarn,
                           style: TextStyle(
                             fontSize: 15,
                             color: Colors.white.withValues(alpha: 0.5),
@@ -263,7 +263,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                         // ── Email field ──
                         _buildField(
                           controller: _emailCtrl,
-                          label: 'Email or phone',
+                          label: S.of(context).emailOrPhone,
                           icon: Icons.person_outline_rounded,
                           keyboardType: TextInputType.emailAddress,
                         ),
@@ -272,7 +272,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                         // ── Password field ──
                         _buildField(
                           controller: _passCtrl,
-                          label: 'Password',
+                          label: S.of(context).passwordLabel,
                           icon: Icons.lock_outline_rounded,
                           obscure: _obscure,
                           suffix: IconButton(
@@ -310,8 +310,8 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                                 ),
                               );
                             },
-                            child: const Text(
-                              'Forgot password?',
+                            child: Text(
+                              S.of(context).forgotPassword,
                               style: TextStyle(
                                 color: _gold,
                                 fontSize: 13,
@@ -353,8 +353,8 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                                       color: Colors.black,
                                     ),
                                   )
-                                : const Text(
-                                    'Sign in',
+                                : Text(
+                                    S.of(context).signIn,
                                     style: TextStyle(
                                       fontSize: 17,
                                       fontWeight: FontWeight.w700,
@@ -379,7 +379,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                                 horizontal: 16,
                               ),
                               child: Text(
-                                'or',
+                                S.of(context).orDivider,
                                 style: TextStyle(
                                   color: Colors.white38,
                                   fontSize: 13,
@@ -411,9 +411,9 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                               Icons.person_add_alt_1_rounded,
                               size: 20,
                             ),
-                            label: const Text(
-                              'Sign up to drive',
-                              style: TextStyle(
+                            label: Text(
+                              S.of(context).signUpToDrive,
+                              style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -438,14 +438,14 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                             onTap: () => Navigator.of(context).pop(),
                             child: Text.rich(
                               TextSpan(
-                                text: 'Looking to ride? ',
+                                text: S.of(context).lookingToRide,
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.white54,
                                 ),
-                                children: const [
+                                children: [
                                   TextSpan(
-                                    text: 'Switch to rider',
+                                    text: S.of(context).switchToRider,
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w700,

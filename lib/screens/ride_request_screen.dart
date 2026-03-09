@@ -24,6 +24,7 @@ import 'pickup_dropoff_search_screen.dart';
 import 'ride_options_sheet.dart';
 import 'rider_tracking_screen.dart';
 import 'airport_terminal_sheet.dart';
+import '../l10n/app_localizations.dart';
 import 'scheduled_rides_screen.dart';
 
 /// Main Uber-like ride request screen.
@@ -83,7 +84,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   late Animation<double> _sheetSlide;
 
   // ── Current location address ──
-  String _currentAddress = 'Current location';
+  String _currentAddress = '';
   bool _fetchingLocation = true;
 
   // ── Guard: only navigate to tracking once ──
@@ -834,9 +835,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _splashTimer?.cancel();
         _splashTimer = null;
         // Show cancel reason dialog
-        final reason =
-            s.cancelReason ??
-            'No hay drivers disponibles cerca de tu zona en estos momentos';
+        final reason = s.cancelReason ?? S.of(context).noDriversAvailable;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           showDialog(
@@ -846,11 +845,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              title: const Row(
+              title: Row(
                 children: [
                   Icon(Icons.info_outline, color: Colors.orange, size: 28),
                   SizedBox(width: 10),
-                  Text('Viaje cancelado'),
+                  Text(S.of(context).tripCancelled),
                 ],
               ),
               content: Text(reason, style: const TextStyle(fontSize: 15)),
@@ -860,7 +859,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     Navigator.of(context).pop();
                     _ctrl.reset();
                   },
-                  child: const Text('Aceptar'),
+                  child: Text(S.of(context).okBtn),
                 ),
               ],
             ),
@@ -1346,9 +1345,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // ── "Where to?" bar ──
 
   String get _rideBadgeLabel {
-    if (widget.isAirportTrip) return 'Airport';
-    if (widget.scheduledAt != null) return 'Schedule';
-    return 'Now';
+    if (widget.isAirportTrip) return S.of(context).airportLabel;
+    if (widget.scheduledAt != null) return S.of(context).scheduleLabel;
+    return S.of(context).nowLabel;
   }
 
   IconData get _rideBadgeIcon {
@@ -1429,7 +1428,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Where to?',
+                              S.of(context).whereToQuestion,
                               style: TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w600,
@@ -1581,7 +1580,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       child: Row(
                         children: [
                           Text(
-                            widget.fastRide ? 'Fast Ride' : 'Choose a ride',
+                            widget.fastRide
+                                ? S.of(context).fastRideLabel
+                                : S.of(context).chooseARide,
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -1602,17 +1603,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                 ).withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: const Row(
+                              child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
+                                  const Icon(
                                     Icons.flight_rounded,
                                     size: 12,
                                     color: Color(0xFF4285F4),
                                   ),
-                                  SizedBox(width: 4),
+                                  const SizedBox(width: 4),
                                   Text(
-                                    'Airport',
+                                    S.of(context).airportLabel,
                                     style: TextStyle(
                                       color: Color(0xFF4285F4),
                                       fontSize: 11,
@@ -1809,8 +1810,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                 )
                               : Text(
                                   option != null
-                                      ? 'Request Ride · \$${option.priceEstimate.toStringAsFixed(2)}'
-                                      : 'Request Ride',
+                                      ? S
+                                            .of(context)
+                                            .requestRideWithPrice(
+                                              option.priceEstimate
+                                                  .toStringAsFixed(2),
+                                            )
+                                      : S.of(context).requestRide,
                                   style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,
@@ -2172,7 +2178,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     children: [
                       // "Looking for ride" text + progress
                       Text(
-                        'Looking for ride',
+                        S.of(context).lookingForRide,
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -2199,7 +2205,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       TextButton(
                         onPressed: _confirmCancelSearching,
                         child: Text(
-                          'Cancel',
+                          S.of(context).cancel,
                           style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
@@ -2259,9 +2265,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       ),
                     ),
                     const SizedBox(height: 18),
-                    const Text(
-                      'Payment',
-                      style: TextStyle(
+                    Text(
+                      S.of(context).paymentLabel,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
                         fontWeight: FontWeight.w800,
@@ -2382,8 +2388,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                   const SizedBox(height: 1),
                                   Text(
                                     linked
-                                        ? 'Tap to change'
-                                        : 'Not added — tap to set up',
+                                        ? S.of(context).tapToChange
+                                        : S.of(context).notAddedTapToSetUp,
                                     style: TextStyle(
                                       color: linked
                                           ? Colors.white.withValues(alpha: 0.4)
@@ -2429,14 +2435,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             await _loadLinkedPayments();
                             if (mounted) _showPaymentSheet(c, option);
                           },
-                          child: const Row(
+                          child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(Icons.link_rounded, size: 18),
                               SizedBox(width: 8),
                               Text(
-                                'Add payment method',
-                                style: TextStyle(
+                                S.of(context).addPaymentMethod,
+                                style: const TextStyle(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: -0.2,
@@ -2495,7 +2501,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                       const Icon(Icons.lock_rounded, size: 16),
                                       const SizedBox(width: 8),
                                       Text(
-                                        'Pay $price',
+                                        S.of(context).payPrice(price),
                                         style: const TextStyle(
                                           fontSize: 17,
                                           fontWeight: FontWeight.w800,
@@ -2528,8 +2534,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     // 1. Double-check the method is actually linked
     if (!_linkedPaymentMethods.contains(_selectedPaymentMethod)) {
       _showDeclinedDialog(
-        title: 'No payment method',
-        message: 'Please add a payment method before requesting a ride.',
+        title: S.of(context).noPaymentMethod,
+        message: S.of(context).addPaymentMethodMsg,
       );
       return;
     }
@@ -2539,9 +2545,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       final pmId = await LocalDataService.getStripePaymentMethodId();
       if (pmId == null || pmId.isEmpty) {
         _showDeclinedDialog(
-          title: 'Card not valid',
-          message:
-              'Your saved card could not be verified. Please update your card and try again.',
+          title: S.of(context).cardNotValid,
+          message: S.of(context).cardNotValidMsg,
         );
         return;
       }
@@ -2580,9 +2585,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       setState(() => _isProcessingPayment = false);
       Navigator.of(context).pop();
       _showDeclinedDialog(
-        title: 'Payment Declined',
-        message:
-            'Your payment method was declined. Please try a different payment method or update your card details.',
+        title: S.of(context).paymentDeclined,
+        message: S.of(context).paymentDeclinedMsg,
       );
     }
   }
@@ -2592,8 +2596,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     // 1. Check linked payment method
     if (!_linkedPaymentMethods.contains(_selectedPaymentMethod)) {
       _showDeclinedDialog(
-        title: 'No payment method',
-        message: 'Please add a payment method before requesting a ride.',
+        title: S.of(context).noPaymentMethod,
+        message: S.of(context).addPaymentMethodMsg,
       );
       return;
     }
@@ -2603,9 +2607,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       final pmId = await LocalDataService.getStripePaymentMethodId();
       if (pmId == null || pmId.isEmpty) {
         _showDeclinedDialog(
-          title: 'Card not valid',
-          message:
-              'Your saved card could not be verified. Please update your card and try again.',
+          title: S.of(context).cardNotValid,
+          message: S.of(context).cardNotValidMsg,
         );
         return;
       }
@@ -2630,9 +2633,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (!mounted) return;
       setState(() => _isProcessingPayment = false);
       _showDeclinedDialog(
-        title: 'Payment Declined',
-        message:
-            'Your payment method was declined. Please try a different payment method or update your card details.',
+        title: S.of(context).paymentDeclined,
+        message: S.of(context).paymentDeclinedMsg,
       );
     }
   }
@@ -2664,9 +2666,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: const Color(0xFFE8C547),
-          content: const Text(
-            'Ride scheduled successfully!',
-            style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700),
+          content: Text(
+            S.of(context).rideScheduledSuccess,
+            style: const TextStyle(
+              color: Colors.black,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -2686,7 +2691,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         SnackBar(
           backgroundColor: const Color(0xFFFF5252),
           content: Text(
-            'Failed to schedule ride: $e',
+            S.of(context).failedToScheduleRide(e.toString()),
             style: const TextStyle(color: Colors.white),
           ),
         ),
@@ -2755,9 +2760,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     ),
                   ),
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text(
-                    'Try Again',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  child: Text(
+                    S.of(context).tryAgain,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
@@ -2769,13 +2777,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   }
 
   void _showPaymentMethodPicker(AppColors c, RideOption? option) {
+    final loc = S.of(context);
     final methods = [
       ('google_pay', 'Google Pay'),
       (
         'credit_card',
         _savedCardBrand != null && _savedCardLast4 != null
             ? '${_capitalizedBrand(_savedCardBrand)} •••• $_savedCardLast4'
-            : 'Credit or debit card',
+            : loc.creditOrDebitCard,
       ),
       ('paypal', 'PayPal'),
     ];
@@ -2808,16 +2817,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ),
                 ),
                 const SizedBox(height: 18),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Payment method',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                    ),
+                Text(
+                  loc.paymentMethodLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -2875,9 +2881,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                   ),
                                 ),
                                 if (!linked)
-                                  const Text(
-                                    'Not added',
-                                    style: TextStyle(
+                                  Text(
+                                    loc.notAdded,
+                                    style: const TextStyle(
                                       color: Colors.white54,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w500,
@@ -2903,7 +2909,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Text(
-                                'Added',
+                                loc.added,
                                 style: TextStyle(
                                   color: c.gold,
                                   fontSize: 11,
@@ -2921,9 +2927,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                 color: c.gold,
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              child: const Text(
-                                'Add',
-                                style: TextStyle(
+                              child: Text(
+                                loc.addBtn,
+                                style: const TextStyle(
                                   color: Colors.black,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -2952,7 +2958,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       Icon(Icons.settings_rounded, color: c.gold, size: 18),
                       const SizedBox(width: 6),
                       Text(
-                        'Manage payment accounts',
+                        loc.managePaymentAccounts,
                         style: TextStyle(
                           color: c.gold,
                           fontSize: 14,
@@ -3004,6 +3010,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // ── Payment helpers ──
 
   String _paymentLabel(String id) {
+    final loc = S.of(context);
     switch (id) {
       case 'google_pay':
         return 'Google Pay';
@@ -3011,7 +3018,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         if (_savedCardLast4 != null && _savedCardBrand != null) {
           return '${_capitalizedBrand(_savedCardBrand)} •••• $_savedCardLast4';
         }
-        return 'Credit or debit card';
+        return loc.creditOrDebitCard;
       case 'paypal':
         return 'PayPal';
       default:
@@ -3180,23 +3187,27 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1C1C24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Cancel Ride?',
-          style: TextStyle(
+        title: Text(
+          S.of(context).cancelRideQuestion,
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 18,
             fontWeight: FontWeight.w700,
           ),
         ),
-        content: const Text(
-          'Are you sure you want to cancel your ride request?',
-          style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+        content: Text(
+          S.of(context).cancelRideMsg,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 14,
+            height: 1.4,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(
-              'Keep Waiting',
+              S.of(context).keepWaiting,
               style: TextStyle(color: c.gold, fontWeight: FontWeight.w600),
             ),
           ),
@@ -3205,9 +3216,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               Navigator.of(ctx).pop();
               _cancelSearching();
             },
-            child: const Text(
-              'Yes, Cancel',
-              style: TextStyle(
+            child: Text(
+              S.of(context).yesCancelBtn,
+              style: const TextStyle(
                 color: Colors.redAccent,
                 fontWeight: FontWeight.w600,
               ),
@@ -3224,10 +3235,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final s = _ctrl.state;
     final pickupAddr = s.pickupLabel.isNotEmpty
         ? s.pickupLabel
-        : 'Pickup location';
+        : S.of(context).pickupLocation;
     final dropoffAddr = s.dropoffLabel.isNotEmpty
         ? s.dropoffLabel
-        : 'Destination';
+        : S.of(context).destination;
     // Parse ETA from route durationText (e.g. "12 mins") or fallback to option
     int etaMin = option?.etaMinutes ?? 0;
     if (s.route != null && s.route!.durationText.isNotEmpty) {
@@ -3281,9 +3292,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       ),
                     ),
                     const SizedBox(width: 10),
-                    const Text(
-                      'Looking for ride',
-                      style: TextStyle(
+                    Text(
+                      S.of(context).lookingForRide,
+                      style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
@@ -3319,7 +3330,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       ),
                     ),
                     child: Text(
-                      'Cancel',
+                      S.of(context).cancel,
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,

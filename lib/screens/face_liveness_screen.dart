@@ -5,6 +5,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 
 /// Real-time biometric face liveness screen.
 ///
@@ -15,7 +16,7 @@ import '../config/app_theme.dart';
 ///   3. BLINK   — Blink both eyes
 ///   4. SMILE   — Smile for the photo
 ///
-/// Returns the path to the captured selfie, or null if cancelled.
+/// Returns a map with 'photo' and 'video' paths, or null if cancelled.
 class FaceLivenessScreen extends StatefulWidget {
   const FaceLivenessScreen({super.key});
 
@@ -36,6 +37,8 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   bool _detecting = false;
   bool _capturing = false;
   bool _allDone = false;
+  bool _recording = false;
+  String? _videoPath;
 
   // Challenge state
   int _challengeIndex = 0;
@@ -60,23 +63,23 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   static const _instructions = {
     _Challenge.center: _ChallengeInfo(
       icon: Icons.face_rounded,
-      title: 'Look straight at the camera',
-      hint: 'Center your face in the oval',
+      titleKey: 'lookStraight',
+      hintKey: 'centerFaceInOval',
     ),
     _Challenge.turn: _ChallengeInfo(
       icon: Icons.switch_left_rounded,
-      title: 'Slowly turn your head to the side',
-      hint: 'Turn left or right, then back',
+      titleKey: 'slowlyTurnHead',
+      hintKey: 'turnLeftOrRight',
     ),
     _Challenge.blink: _ChallengeInfo(
       icon: Icons.visibility_off_rounded,
-      title: 'Blink both eyes',
-      hint: 'Close and reopen your eyes',
+      titleKey: 'blinkBothEyes',
+      hintKey: 'closeAndReopenEyes',
     ),
     _Challenge.smile: _ChallengeInfo(
       icon: Icons.sentiment_very_satisfied_rounded,
-      title: 'Smile for the photo',
-      hint: 'Give us your best smile!',
+      titleKey: 'smileForPhoto',
+      hintKey: 'giveUsBestSmile',
     ),
   };
 
@@ -234,13 +237,41 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       _allDone = true;
       _holdProgress = 1.0;
     });
-    await _successCtrl.forward();
 
     try {
       await _cam?.stopImageStream();
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // Take the selfie photo first
       final photo = await _cam?.takePicture();
-      if (mounted) Navigator.of(context).pop(photo?.path);
+
+      // Start video recording silently during the success animation
+      String? videoPath;
+      try {
+        await _cam?.startVideoRecording();
+        _recording = true;
+      } catch (e) {
+        debugPrint('[FaceLiveness] video start error: $e');
+      }
+
+      // Play success animation — user sees the checkmark while we record
+      await _successCtrl.forward();
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      // Stop video recording
+      if (_recording) {
+        try {
+          final videoFile = await _cam?.stopVideoRecording();
+          videoPath = videoFile?.path;
+        } catch (e) {
+          debugPrint('[FaceLiveness] video stop error: $e');
+        }
+        _recording = false;
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop({'photo': photo?.path, 'video': videoPath});
+      }
     } catch (e) {
       debugPrint('[FaceLiveness] capture error: $e');
       if (mounted) Navigator.of(context).pop(null);
@@ -301,15 +332,15 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   }
 
   Widget _buildLoading() {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(color: _gold),
-          SizedBox(height: 16),
+          const CircularProgressIndicator(color: _gold),
+          const SizedBox(height: 16),
           Text(
-            'Initializing camera...',
-            style: TextStyle(color: Colors.white70, fontSize: 15),
+            S.of(context).initializingCamera,
+            style: const TextStyle(color: Colors.white70, fontSize: 15),
           ),
         ],
       ),
@@ -361,9 +392,9 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
                     color: Colors.black54,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Text(
-                    'Face Verification',
-                    style: TextStyle(
+                  child: Text(
+                    S.of(context).faceVerification,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -449,8 +480,8 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 300),
           child: Text(
-            info.title,
-            key: ValueKey(info.title),
+            info.title(context),
+            key: ValueKey(info.titleKey),
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Colors.white,
@@ -461,7 +492,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
         ),
         const SizedBox(height: 4),
         Text(
-          info.hint,
+          info.hint(context),
           textAlign: TextAlign.center,
           style: const TextStyle(color: Colors.white60, fontSize: 14),
         ),
@@ -515,18 +546,18 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
           },
         ),
         const SizedBox(height: 12),
-        const Text(
-          'Liveness Verified!',
-          style: TextStyle(
+        Text(
+          S.of(context).livenessVerified,
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 22,
             fontWeight: FontWeight.w800,
           ),
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Capturing your photo...',
-          style: TextStyle(color: Colors.white60, fontSize: 14),
+        Text(
+          S.of(context).capturingPhoto,
+          style: const TextStyle(color: Colors.white60, fontSize: 14),
         ),
       ],
     );
@@ -621,12 +652,44 @@ class _OvalPainter extends CustomPainter {
 // ─── Challenge metadata ──────────────────────────────────────────────────────
 class _ChallengeInfo {
   final IconData icon;
-  final String title;
-  final String hint;
+  final String titleKey;
+  final String hintKey;
 
   const _ChallengeInfo({
     required this.icon,
-    required this.title,
-    required this.hint,
+    required this.titleKey,
+    required this.hintKey,
   });
+
+  String title(BuildContext context) {
+    final s = S.of(context);
+    switch (titleKey) {
+      case 'lookStraight':
+        return s.lookStraight;
+      case 'slowlyTurnHead':
+        return s.slowlyTurnHead;
+      case 'blinkBothEyes':
+        return s.blinkBothEyes;
+      case 'smileForPhoto':
+        return s.smileForPhoto;
+      default:
+        return titleKey;
+    }
+  }
+
+  String hint(BuildContext context) {
+    final s = S.of(context);
+    switch (hintKey) {
+      case 'centerFaceInOval':
+        return s.centerFaceInOval;
+      case 'turnLeftOrRight':
+        return s.turnLeftOrRight;
+      case 'closeAndReopenEyes':
+        return s.closeAndReopenEyes;
+      case 'giveUsBestSmile':
+        return s.giveUsBestSmile;
+      default:
+        return hintKey;
+    }
+  }
 }

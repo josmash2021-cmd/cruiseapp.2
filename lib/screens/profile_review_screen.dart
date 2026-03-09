@@ -1,6 +1,7 @@
 import 'dart:io' if (dart.library.html) 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
@@ -58,9 +59,9 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.white.withValues(alpha: 0.6),
-          content: const Text(
-            'Password not found. Please go back and create a password.',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          content: Text(
+            S.of(context).passwordNotFound,
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -110,9 +111,9 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               backgroundColor: Colors.redAccent,
-              content: const Text(
-                'Account already exists with different credentials. Try logging in.',
-                style: TextStyle(fontWeight: FontWeight.w600),
+              content: Text(
+                S.of(context).accountExistsDiffCreds,
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
@@ -246,7 +247,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
 
                       // ── Title ──
                       Text(
-                        'Everything look good\nso far?',
+                        S.of(context).everythingLookGood,
                         style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.w800,
@@ -257,7 +258,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        "Make sure your info is correct - it's not too late\nto add a photo.",
+                        S.of(context).reviewInfoSubtitle,
                         style: TextStyle(
                           fontSize: 14,
                           color: c.textSecondary,
@@ -386,7 +387,8 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
                             children: [
                               Expanded(
                                 child: Text(
-                                  _selectedGender ?? 'Select your gender*',
+                                  _selectedGender ??
+                                      S.of(context).selectGenderHint,
                                   style: TextStyle(
                                     fontSize: 16,
                                     color: _selectedGender != null
@@ -477,7 +479,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
 
                       // ── Privacy note ──
                       Text(
-                        'We use this information in accordance with our Privacy Policy, including to personalize your experience with Cruise.',
+                        S.of(context).genderPrivacyNote,
                         style: TextStyle(
                           fontSize: 12,
                           color: c.textTertiary,
@@ -512,9 +514,9 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
                         ),
                       ),
                       onPressed: _saveProfile,
-                      child: const Text(
-                        'Save profile',
-                        style: TextStyle(
+                      child: Text(
+                        S.of(context).saveProfile,
+                        style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),

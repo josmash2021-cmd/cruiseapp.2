@@ -9,6 +9,7 @@ import '../../services/user_session.dart';
 import '../welcome_screen.dart';
 import 'driver_home_screen.dart';
 import 'driver_signup_screen.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Shown after a driver submits their application.
 /// Polls the backend every 5 seconds for dispatch approval.
@@ -89,7 +90,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
         final reason =
             result['rejection_reason'] as String? ??
             result['reason'] as String? ??
-            'Your application was not approved at this time.';
+            S.of(context).applicationNotApproved;
         await LocalDataService.setDriverApprovalStatus('rejected');
         if (!mounted) return;
         setState(() {
@@ -124,7 +125,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           final reason =
               result['rejection_reason'] as String? ??
               result['reason'] as String? ??
-              'Your application was not approved at this time.';
+              S.of(context).applicationNotApproved;
           await LocalDataService.setDriverApprovalStatus('rejected');
           if (!mounted) return;
           setState(() {
@@ -226,10 +227,10 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
 
           const SizedBox(height: 36),
 
-          const Text(
-            'Application Under Review',
+          Text(
+            S.of(context).applicationUnderReview,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 26,
               fontWeight: FontWeight.w800,
@@ -240,7 +241,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           const SizedBox(height: 16),
 
           Text(
-            'Our dispatch team is reviewing your application and documents. This typically takes 24–48 hours.',
+            S.of(context).reviewDescription,
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.55),
@@ -255,16 +256,16 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           _statusRow(
             icon: Icons.check_circle_rounded,
             iconColor: _green,
-            title: 'Application submitted',
-            subtitle: 'All documents received',
+            title: S.of(context).applicationSubmitted,
+            subtitle: S.of(context).allDocsReceived,
             done: true,
           ),
           const SizedBox(height: 16),
           _statusRow(
             icon: Icons.shield_rounded,
             iconColor: _gold,
-            title: 'Background check',
-            subtitle: 'Identity documents verified',
+            title: S.of(context).backgroundCheck,
+            subtitle: S.of(context).identityDocsVerified,
             done: false,
             active: true,
           ),
@@ -272,8 +273,8 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           _statusRow(
             icon: Icons.verified_rounded,
             iconColor: Colors.white24,
-            title: 'Final review',
-            subtitle: 'Dispatch approval pending',
+            title: S.of(context).finalReview,
+            subtitle: S.of(context).dispatchApprovalPending,
             done: false,
           ),
 
@@ -283,7 +284,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           _buildDots(),
           const SizedBox(height: 12),
           Text(
-            'Checking for updates...',
+            S.of(context).checkingForUpdates,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.3),
               fontSize: 12,
@@ -296,7 +297,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           TextButton(
             onPressed: _logout,
             child: Text(
-              'Log out',
+              S.of(context).logOut,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.4),
                 fontSize: 14,
@@ -435,9 +436,9 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
 
           const SizedBox(height: 32),
 
-          const Text(
-            'You\'re Approved!',
-            style: TextStyle(
+          Text(
+            S.of(context).youreApproved,
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 28,
               fontWeight: FontWeight.w800,
@@ -447,7 +448,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           const SizedBox(height: 12),
 
           Text(
-            'Welcome to the Cruise driver team. You can now go online and start accepting rides.',
+            S.of(context).welcomeDriverTeam,
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.55),
@@ -461,20 +462,20 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           // All steps checked
           _doneRow(
             Icons.check_circle_rounded,
-            'Application submitted',
-            'All documents received',
+            S.of(context).applicationSubmittedDone,
+            S.of(context).allDocsReceivedDone,
           ),
           const SizedBox(height: 16),
           _doneRow(
             Icons.shield_rounded,
-            'Background check',
-            'Identity verified ✓',
+            S.of(context).backgroundCheckDone,
+            S.of(context).identityVerifiedDone,
           ),
           const SizedBox(height: 16),
           _doneRow(
             Icons.verified_rounded,
-            'Final review',
-            'Approved by dispatch ✓',
+            S.of(context).finalReviewDone,
+            S.of(context).approvedByDispatch,
           ),
 
           const Spacer(),
@@ -494,9 +495,9 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
                   borderRadius: BorderRadius.circular(18),
                 ),
               ),
-              child: const Text(
-                'Next',
-                style: TextStyle(
+              child: Text(
+                S.of(context).next,
+                style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.3,
@@ -573,10 +574,10 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
             ),
           ),
           const SizedBox(height: 32),
-          const Text(
-            'Application Rejected',
+          Text(
+            S.of(context).applicationRejected,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 26,
               fontWeight: FontWeight.w800,
@@ -585,7 +586,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           ),
           const SizedBox(height: 16),
           Text(
-            'Tu aplicación fue rechazada. Por favor revisa los detalles y vuelve a intentarlo.',
+            S.of(context).rejectionDescription,
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.6),
@@ -629,9 +630,12 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: const Text(
-                'Try Again',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              child: Text(
+                S.of(context).tryAgain,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
           ),
@@ -648,9 +652,12 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: const Text(
-                'Back to Welcome',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              child: Text(
+                S.of(context).backToWelcome,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),

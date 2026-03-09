@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../services/notification_service.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
@@ -175,8 +176,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                               children: [
                                 Text(
                                   _systemEnabled
-                                      ? 'Notifications Enabled'
-                                      : 'Notifications Disabled',
+                                      ? S.of(context).notificationsEnabled
+                                      : S.of(context).notificationsDisabled,
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w700,
@@ -188,8 +189,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                                 const SizedBox(height: 3),
                                 Text(
                                   _systemEnabled
-                                      ? 'Synced with your phone settings'
-                                      : 'Enable in phone settings to receive alerts',
+                                      ? S.of(context).syncedWithPhone
+                                      : S.of(context).enableInSettings,
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: c.textSecondary,
@@ -209,7 +210,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     const SizedBox(height: 24),
 
                     Text(
-                      'Push Notifications',
+                      S.of(context).pushNotifications,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -220,8 +221,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
                     _toggleItem(
                       c,
-                      'Ride Updates',
-                      'Get notified about ride status, driver arrival, and trip completion.',
+                      S.of(context).rideUpdates,
+                      S.of(context).rideUpdatesDesc,
                       _rideUpdates,
                       (v) {
                         setState(() => _rideUpdates = v);
@@ -231,8 +232,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     const SizedBox(height: 10),
                     _toggleItem(
                       c,
-                      'Promotions & Offers',
-                      'Receive special deals, discounts, and referral rewards.',
+                      S.of(context).promotionsOffers,
+                      S.of(context).promotionsDesc,
                       _promotions,
                       (v) {
                         setState(() => _promotions = v);
@@ -242,8 +243,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     const SizedBox(height: 10),
                     _toggleItem(
                       c,
-                      'Safety Alerts',
-                      'Important safety notifications during and after rides.',
+                      S.of(context).safetyAlerts,
+                      S.of(context).safetyAlertsDesc,
                       _safety,
                       (v) {
                         setState(() => _safety = v);
@@ -253,8 +254,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     const SizedBox(height: 10),
                     _toggleItem(
                       c,
-                      'Payment',
-                      'Receipts, payment confirmations, and billing updates.',
+                      S.of(context).paymentNotif,
+                      S.of(context).paymentNotifDesc,
                       _payment,
                       (v) {
                         setState(() => _payment = v);
@@ -264,7 +265,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
                     const SizedBox(height: 28),
                     Text(
-                      'Sound & Vibration',
+                      S.of(context).soundAndVibration,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -275,8 +276,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
                     _toggleItem(
                       c,
-                      'Sounds',
-                      'Play notification sounds.',
+                      S.of(context).sounds,
+                      S.of(context).soundsDesc,
                       _sounds,
                       (v) {
                         setState(() => _sounds = v);
@@ -286,8 +287,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     const SizedBox(height: 10),
                     _toggleItem(
                       c,
-                      'Vibration',
-                      'Vibrate on notifications.',
+                      S.of(context).vibration,
+                      S.of(context).vibrationDesc,
                       _vibrate,
                       (v) {
                         setState(() => _vibrate = v);

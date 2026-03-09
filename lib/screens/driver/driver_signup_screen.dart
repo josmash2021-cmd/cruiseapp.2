@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../l10n/app_localizations.dart';
 
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
@@ -36,6 +37,219 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
 
+  // ── Vehicle autocomplete data ─────────────────────────────────────────────
+  static const _carMakes = [
+    'Acura',
+    'Alfa Romeo',
+    'Audi',
+    'BMW',
+    'Buick',
+    'Cadillac',
+    'Chevrolet',
+    'Chrysler',
+    'Dodge',
+    'Fiat',
+    'Ford',
+    'Genesis',
+    'GMC',
+    'Honda',
+    'Hyundai',
+    'Infiniti',
+    'Jaguar',
+    'Jeep',
+    'Kia',
+    'Land Rover',
+    'Lexus',
+    'Lincoln',
+    'Maserati',
+    'Mazda',
+    'Mercedes-Benz',
+    'Mini',
+    'Mitsubishi',
+    'Nissan',
+    'Porsche',
+    'Ram',
+    'Subaru',
+    'Tesla',
+    'Toyota',
+    'Volkswagen',
+    'Volvo',
+  ];
+  static const _carModelsMap = <String, List<String>>{
+    'Acura': ['ILX', 'Integra', 'MDX', 'RDX', 'TLX'],
+    'Alfa Romeo': ['Giulia', 'Stelvio', 'Tonale'],
+    'Audi': ['A3', 'A4', 'A5', 'A6', 'Q3', 'Q5', 'Q7', 'Q8', 'e-tron'],
+    'BMW': [
+      '2 Series',
+      '3 Series',
+      '4 Series',
+      '5 Series',
+      'X1',
+      'X3',
+      'X5',
+      'X7',
+      'iX',
+    ],
+    'Buick': ['Enclave', 'Encore', 'Envision', 'Envista'],
+    'Cadillac': ['CT4', 'CT5', 'Escalade', 'Lyriq', 'XT4', 'XT5', 'XT6'],
+    'Chevrolet': [
+      'Blazer',
+      'Camaro',
+      'Colorado',
+      'Corvette',
+      'Equinox',
+      'Malibu',
+      'Silverado',
+      'Suburban',
+      'Tahoe',
+      'Trax',
+    ],
+    'Chrysler': ['300', 'Pacifica'],
+    'Dodge': ['Challenger', 'Charger', 'Durango', 'Hornet'],
+    'Fiat': ['500', '500X'],
+    'Ford': [
+      'Bronco',
+      'Edge',
+      'Escape',
+      'Explorer',
+      'F-150',
+      'Maverick',
+      'Mustang',
+      'Ranger',
+    ],
+    'Genesis': ['G70', 'G80', 'G90', 'GV70', 'GV80'],
+    'GMC': ['Acadia', 'Canyon', 'Sierra', 'Terrain', 'Yukon'],
+    'Honda': [
+      'Accord',
+      'Civic',
+      'CR-V',
+      'HR-V',
+      'Odyssey',
+      'Passport',
+      'Pilot',
+      'Ridgeline',
+    ],
+    'Hyundai': [
+      'Elantra',
+      'Ioniq',
+      'Kona',
+      'Palisade',
+      'Santa Fe',
+      'Sonata',
+      'Tucson',
+      'Venue',
+    ],
+    'Infiniti': ['Q50', 'Q60', 'QX50', 'QX55', 'QX60', 'QX80'],
+    'Jaguar': ['E-PACE', 'F-PACE', 'F-TYPE', 'XF'],
+    'Jeep': [
+      'Cherokee',
+      'Compass',
+      'Gladiator',
+      'Grand Cherokee',
+      'Renegade',
+      'Wagoneer',
+      'Wrangler',
+    ],
+    'Kia': [
+      'EV6',
+      'Forte',
+      'K5',
+      'Niro',
+      'Seltos',
+      'Sorento',
+      'Soul',
+      'Sportage',
+      'Telluride',
+    ],
+    'Land Rover': [
+      'Defender',
+      'Discovery',
+      'Range Rover',
+      'Range Rover Evoque',
+      'Range Rover Sport',
+    ],
+    'Lexus': ['ES', 'GX', 'IS', 'LX', 'NX', 'RX', 'TX', 'UX'],
+    'Lincoln': ['Aviator', 'Corsair', 'Navigator'],
+    'Maserati': ['Ghibli', 'GranTurismo', 'Grecale', 'Levante', 'Quattroporte'],
+    'Mazda': ['CX-30', 'CX-5', 'CX-50', 'CX-90', 'Mazda3', 'MX-5 Miata'],
+    'Mercedes-Benz': [
+      'A-Class',
+      'C-Class',
+      'CLA',
+      'E-Class',
+      'GLA',
+      'GLB',
+      'GLC',
+      'GLE',
+      'GLS',
+      'S-Class',
+    ],
+    'Mini': ['Clubman', 'Countryman', 'Hardtop'],
+    'Mitsubishi': ['Eclipse Cross', 'Mirage', 'Outlander', 'Outlander Sport'],
+    'Nissan': [
+      'Altima',
+      'Ariya',
+      'Frontier',
+      'Kicks',
+      'Maxima',
+      'Murano',
+      'Pathfinder',
+      'Rogue',
+      'Sentra',
+      'Titan',
+      'Versa',
+      'Z',
+    ],
+    'Porsche': ['718', '911', 'Cayenne', 'Macan', 'Panamera', 'Taycan'],
+    'Ram': ['1500', '2500', '3500', 'ProMaster'],
+    'Subaru': [
+      'Ascent',
+      'BRZ',
+      'Crosstrek',
+      'Forester',
+      'Impreza',
+      'Legacy',
+      'Outback',
+      'Solterra',
+      'WRX',
+    ],
+    'Tesla': ['Model 3', 'Model S', 'Model X', 'Model Y', 'Cybertruck'],
+    'Toyota': [
+      '4Runner',
+      'Camry',
+      'Corolla',
+      'GR86',
+      'Highlander',
+      'Prius',
+      'RAV4',
+      'Sequoia',
+      'Supra',
+      'Tacoma',
+      'Tundra',
+      'Venza',
+    ],
+    'Volkswagen': ['Atlas', 'Golf', 'ID.4', 'Jetta', 'Taos', 'Tiguan'],
+    'Volvo': ['C40', 'S60', 'S90', 'V60', 'XC40', 'XC60', 'XC90'],
+  };
+  static const _carColors = [
+    'Black',
+    'White',
+    'Silver',
+    'Gray',
+    'Red',
+    'Blue',
+    'Navy',
+    'Green',
+    'Brown',
+    'Beige',
+    'Gold',
+    'Orange',
+    'Yellow',
+    'Purple',
+    'Burgundy',
+    'Champagne',
+  ];
+
   final _pageCtrl = PageController();
   int _step = 0;
   static const _totalSteps = 4;
@@ -61,6 +275,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   String? _insurancePath;
   bool _biometricDone = false;
   String? _selfiePath;
+  String? _verificationVideoPath;
 
   // SSN
   final _ssnCtrl = TextEditingController();
@@ -90,15 +305,25 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   bool get _canProceed {
     switch (_step) {
       case 0:
-        return _firstNameCtrl.text.trim().isNotEmpty &&
-            _lastNameCtrl.text.trim().isNotEmpty &&
-            _emailCtrl.text.trim().isNotEmpty &&
-            _phoneCtrl.text.trim().isNotEmpty &&
-            _passwordCtrl.text.length >= 6;
+        return _firstNameCtrl.text.trim().length >= 2 &&
+            _lastNameCtrl.text.trim().length >= 2 &&
+            RegExp(
+              r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$',
+            ).hasMatch(_emailCtrl.text.trim()) &&
+            _phoneCtrl.text.replaceAll(RegExp(r'\D'), '').length >= 10 &&
+            _passwordCtrl.text.length >= 8 &&
+            _passwordCtrl.text.contains(RegExp(r'[0-9]')) &&
+            _passwordCtrl.text.contains(RegExp(r'[A-Z]')) &&
+            _passwordCtrl.text.contains(
+              RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'),
+            );
       case 1:
+        final year = int.tryParse(_yearCtrl.text.trim()) ?? 0;
         return _makeCtrl.text.trim().isNotEmpty &&
             _modelCtrl.text.trim().isNotEmpty &&
-            _yearCtrl.text.trim().length == 4 &&
+            year >= 2000 &&
+            year <= DateTime.now().year + 1 &&
+            _colorCtrl.text.trim().isNotEmpty &&
             _plateCtrl.text.trim().isNotEmpty;
       case 2:
         return _licenseFrontPath != null &&
@@ -183,21 +408,27 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1C1C1C),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 26),
-            SizedBox(width: 10),
-            Text(
-              'Photo Not Clear',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.orange,
+              size: 26,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                S.of(context).photoNotClear,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],
         ),
         content: Text(
-          'Image quality is too low. Please take a clear, well-lit photo.',
+          S.of(context).imageQualityTooLow,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.7),
             fontSize: 14,
@@ -206,9 +437,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              'Try Again',
-              style: TextStyle(color: _gold, fontWeight: FontWeight.w700),
+            child: Text(
+              S.of(context).tryAgain,
+              style: const TextStyle(color: _gold, fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -251,7 +482,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               const SizedBox(height: 20),
               _sheetOption(
                 icon: Icons.camera_alt_rounded,
-                label: 'Use Camera',
+                label: S.of(context).useCamera,
                 onTap: () async {
                   Navigator.pop(ctx);
                   final path = await _pickCamera();
@@ -261,7 +492,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               const SizedBox(height: 10),
               _sheetOption(
                 icon: Icons.photo_library_rounded,
-                label: 'Choose from Gallery',
+                label: S.of(context).chooseFromGallery,
                 onTap: () async {
                   Navigator.pop(ctx);
                   final path = await _pickGallery();
@@ -309,12 +540,13 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   // ── Biometric liveness ─────────────────────────────────────────────────────
 
   Future<void> _runBiometricCheck() async {
-    final selfiePath = await Navigator.of(context).push<String?>(
+    final result = await Navigator.of(context).push<Map<String, String?>?>(
       MaterialPageRoute(builder: (_) => const FaceLivenessScreen()),
     );
-    if (!mounted || selfiePath == null) return;
+    if (!mounted || result == null) return;
     setState(() {
-      _selfiePath = selfiePath;
+      _selfiePath = result['photo'];
+      _verificationVideoPath = result['video'];
       _biometricDone = true;
     });
   }
@@ -408,6 +640,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     await enc('license_back', _licenseBackPath);
     await enc('insurance_photo', _insurancePath);
     await enc('selfie_photo', _selfiePath);
+    await enc('verification_video', _verificationVideoPath);
     try {
       await ApiService.submitVerification(body);
     } catch (_) {}
@@ -449,7 +682,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                   ),
                   const Spacer(),
                   Text(
-                    'Step ${_step + 1} of $_totalSteps',
+                    S.of(context).stepOf(_step + 1, _totalSteps),
                     style: const TextStyle(
                       color: Colors.white54,
                       fontSize: 13,
@@ -516,8 +749,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                           )
                         : Text(
                             _step == _totalSteps - 1
-                                ? 'Submit application'
-                                : 'Continue',
+                                ? S.of(context).submitApplication
+                                : S.of(context).continueButton,
                             style: const TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
@@ -544,14 +777,17 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 20),
-          _pageTitle('Personal information', 'Tell us a bit about yourself'),
+          _pageTitle(
+            S.of(context).personalInformation,
+            S.of(context).personalInfoSubtitle,
+          ),
           const SizedBox(height: 28),
           Row(
             children: [
               Expanded(
                 child: _field(
                   ctrl: _firstNameCtrl,
-                  label: 'First name',
+                  label: S.of(context).firstNameLabel,
                   icon: Icons.person_outline,
                 ),
               ),
@@ -559,7 +795,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               Expanded(
                 child: _field(
                   ctrl: _lastNameCtrl,
-                  label: 'Last name',
+                  label: S.of(context).lastNameLabel,
                   icon: Icons.person_outline,
                 ),
               ),
@@ -568,21 +804,21 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           const SizedBox(height: 16),
           _field(
             ctrl: _emailCtrl,
-            label: 'Email address',
+            label: S.of(context).emailAddressLabel,
             icon: Icons.email_outlined,
             keyboard: TextInputType.emailAddress,
           ),
           const SizedBox(height: 16),
           _field(
             ctrl: _phoneCtrl,
-            label: 'Phone number',
+            label: S.of(context).phoneNumberLabel,
             icon: Icons.phone_outlined,
             keyboard: TextInputType.phone,
           ),
           const SizedBox(height: 16),
           _field(
             ctrl: _passwordCtrl,
-            label: 'Password (min 6 characters)',
+            label: S.of(context).passwordRequirements,
             icon: Icons.lock_outline_rounded,
             obscure: _obscurePass,
             suffix: IconButton(
@@ -607,29 +843,39 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildVehicleInfo() {
+    final models = _carModelsMap[_makeCtrl.text.trim()] ?? [];
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 20),
-          _pageTitle('Vehicle details', 'Add info about your vehicle'),
+          _pageTitle(
+            S.of(context).vehicleDetails,
+            S.of(context).vehicleInfoSubtitle,
+          ),
           const SizedBox(height: 28),
           Row(
             children: [
               Expanded(
-                child: _field(
+                child: _autocompleteField(
                   ctrl: _makeCtrl,
-                  label: 'Make',
+                  label: S.of(context).vehicleMake,
                   icon: Icons.directions_car_outlined,
+                  options: _carMakes,
+                  onSelected: (_) {
+                    _modelCtrl.clear();
+                    setState(() {});
+                  },
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _field(
+                child: _autocompleteField(
                   ctrl: _modelCtrl,
-                  label: 'Model',
+                  label: S.of(context).vehicleModel,
                   icon: Icons.directions_car_outlined,
+                  options: models,
                 ),
               ),
             ],
@@ -640,7 +886,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               Expanded(
                 child: _field(
                   ctrl: _yearCtrl,
-                  label: 'Year',
+                  label: S.of(context).vehicleYear,
                   icon: Icons.calendar_today_outlined,
                   keyboard: TextInputType.number,
                   maxLength: 4,
@@ -648,10 +894,11 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _field(
+                child: _autocompleteField(
                   ctrl: _colorCtrl,
-                  label: 'Color',
+                  label: S.of(context).vehicleColor,
                   icon: Icons.palette_outlined,
+                  options: _carColors,
                 ),
               ),
             ],
@@ -659,14 +906,12 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           const SizedBox(height: 16),
           _field(
             ctrl: _plateCtrl,
-            label: 'License plate number',
+            label: S.of(context).licensePlateLabel,
             icon: Icons.confirmation_number_outlined,
             capitalize: true,
           ),
           const SizedBox(height: 20),
-          _infoBox(
-            'Vehicle must be 2010 or newer, 4-door, and pass a vehicle inspection.',
-          ),
+          _infoBox(S.of(context).vehicleRequirements),
           const SizedBox(height: 40),
         ],
       ),
@@ -685,14 +930,14 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         children: [
           const SizedBox(height: 20),
           _pageTitle(
-            'Documents & Verification',
-            'Complete all items to continue',
+            S.of(context).documentsVerification,
+            S.of(context).completeAllItems,
           ),
           const SizedBox(height: 22),
 
           _docTile(
-            title: "Driver's License — FRONT",
-            subtitle: 'Tap to scan the front of your license',
+            title: S.of(context).driverLicenseFront,
+            subtitle: S.of(context).tapToScanFront,
             icon: Icons.credit_card_rounded,
             filePath: _licenseFrontPath,
             required_: true,
@@ -710,8 +955,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           const SizedBox(height: 10),
 
           _docTile(
-            title: "Driver's License — BACK",
-            subtitle: 'Tap to scan the back of your license',
+            title: S.of(context).driverLicenseBack,
+            subtitle: S.of(context).tapToScanBack,
             icon: Icons.credit_card_outlined,
             filePath: _licenseBackPath,
             required_: true,
@@ -729,8 +974,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           const SizedBox(height: 10),
 
           _docTile(
-            title: 'Car Insurance',
-            subtitle: 'Current insurance card or policy page',
+            title: S.of(context).carInsurance,
+            subtitle: S.of(context).carInsuranceDesc,
             icon: Icons.shield_outlined,
             filePath: _insurancePath,
             required_: true,
@@ -794,22 +1039,22 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                   children: [
                     Row(
                       children: [
-                        const Text(
-                          'Social Security Number',
-                          style: TextStyle(
+                        Text(
+                          S.of(context).ssnLabel,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
                         const SizedBox(width: 6),
-                        _badge('Required'),
+                        _badge(S.of(context).requiredBadge),
                       ],
                     ),
                     Text(
                       ssnFilled
-                          ? 'SSN entered \u2713'
-                          : 'Enter your Social Security Number',
+                          ? S.of(context).ssnEntered
+                          : S.of(context).enterSsn,
                       style: TextStyle(
                         color: ssnFilled ? _gold : Colors.white38,
                         fontSize: 11,
@@ -874,7 +1119,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             ),
             const SizedBox(height: 10),
             Text(
-              'Your SSN is encrypted and only used for identity verification.',
+              S.of(context).ssnEncryptedNote,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.3),
                 fontSize: 11,
@@ -928,23 +1173,23 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 children: [
                   Row(
                     children: [
-                      const Text(
-                        'Biometric Face Check',
-                        style: TextStyle(
+                      Text(
+                        S.of(context).biometricFaceCheck,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(width: 6),
-                      _badge('Required'),
+                      _badge(S.of(context).requiredBadge),
                     ],
                   ),
                   const SizedBox(height: 3),
                   Text(
                     _biometricDone
-                        ? 'Face liveness verified \u2713'
-                        : 'Look, turn, blink \u2014 takes ~15 seconds',
+                        ? S.of(context).faceLivenessVerified
+                        : S.of(context).biometricInstructions,
                     style: TextStyle(
                       color: _biometricDone ? _gold : Colors.white38,
                       fontSize: 11,
@@ -969,11 +1214,14 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
   Widget _buildDocProgress() {
     final items = [
-      ('License Front', _licenseFrontPath != null),
-      ('License Back', _licenseBackPath != null),
-      ('Insurance', _insurancePath != null),
-      ('SSN', _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9),
-      ('Face Check', _biometricDone),
+      (S.of(context).licenseFrontLabel, _licenseFrontPath != null),
+      (S.of(context).licenseBackLabel, _licenseBackPath != null),
+      (S.of(context).insuranceLabel, _insurancePath != null),
+      (
+        S.of(context).ssnShortLabel,
+        _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9,
+      ),
+      (S.of(context).faceCheckLabel, _biometricDone),
     ];
     final done = items.where((i) => i.$2).length;
     return Column(
@@ -982,7 +1230,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Documents complete',
+              S.of(context).documentsComplete,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.5),
                 fontSize: 12,
@@ -1025,48 +1273,56 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         children: [
           const SizedBox(height: 20),
           _pageTitle(
-            'Review & Submit',
-            'Confirm your details before submitting',
+            S.of(context).reviewAndSubmit,
+            S.of(context).confirmBeforeSubmit,
           ),
           const SizedBox(height: 28),
 
           _reviewItem(
-            'Name',
+            S.of(context).nameLabel,
             '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}',
           ),
-          _reviewItem('Email', _emailCtrl.text.trim()),
-          _reviewItem('Phone', _phoneCtrl.text.trim()),
+          _reviewItem(S.of(context).emailLabel, _emailCtrl.text.trim()),
+          _reviewItem(S.of(context).phoneLabel, _phoneCtrl.text.trim()),
           _reviewItem(
-            'Vehicle',
+            S.of(context).vehicleLabel,
             '${_yearCtrl.text.trim()} ${_makeCtrl.text.trim()} ${_modelCtrl.text.trim()}'
                 .trim(),
           ),
-          _reviewItem('Plate', _plateCtrl.text.trim()),
+          _reviewItem(S.of(context).plateLabel, _plateCtrl.text.trim()),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Divider(color: Colors.white.withValues(alpha: 0.08)),
           ),
           _reviewItem(
-            'License Front',
-            _licenseFrontPath != null ? 'Uploaded \u2713' : 'Missing',
+            S.of(context).licenseFrontLabel,
+            _licenseFrontPath != null
+                ? S.of(context).uploadedStatus
+                : S.of(context).missingStatus,
           ),
           _reviewItem(
-            'License Back',
-            _licenseBackPath != null ? 'Uploaded \u2713' : 'Missing',
+            S.of(context).licenseBackLabel,
+            _licenseBackPath != null
+                ? S.of(context).uploadedStatus
+                : S.of(context).missingStatus,
           ),
           _reviewItem(
-            'Insurance',
-            _insurancePath != null ? 'Uploaded \u2713' : 'Missing',
+            S.of(context).insuranceLabel,
+            _insurancePath != null
+                ? S.of(context).uploadedStatus
+                : S.of(context).missingStatus,
           ),
           _reviewItem(
-            'SSN',
+            S.of(context).ssnShortLabel,
             _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9
-                ? 'Provided \u2713'
-                : 'Missing',
+                ? S.of(context).providedStatus
+                : S.of(context).missingStatus,
           ),
           _reviewItem(
-            'Face Check',
-            _biometricDone ? 'Passed \u2713' : 'Not completed',
+            S.of(context).faceCheckLabel,
+            _biometricDone
+                ? S.of(context).providedStatus
+                : S.of(context).notCompletedStatus,
           ),
           const SizedBox(height: 24),
 
@@ -1095,7 +1351,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    "I agree to Cruise's Driver Terms of Service, acknowledge the Privacy Policy, and consent to a background check.",
+                    S.of(context).agreeTermsText,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.6),
                       fontSize: 13,
@@ -1107,9 +1363,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             ),
           ),
           const SizedBox(height: 20),
-          _infoBox(
-            'Your application and background check will be reviewed within 24-48 hours. You will be notified by email once approved.',
-          ),
+          _infoBox(S.of(context).applicationReviewNote),
           const SizedBox(height: 40),
         ],
       ),
@@ -1294,6 +1548,92 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _autocompleteField({
+    required TextEditingController ctrl,
+    required String label,
+    required IconData icon,
+    required List<String> options,
+    ValueChanged<String>? onSelected,
+  }) {
+    return Autocomplete<String>(
+      optionsBuilder: (v) {
+        if (v.text.isEmpty) return options;
+        final q = v.text.toLowerCase();
+        return options.where((o) => o.toLowerCase().contains(q));
+      },
+      onSelected: (val) {
+        ctrl.text = val;
+        setState(() {});
+        onSelected?.call(val);
+      },
+      fieldViewBuilder: (ctx, textCtrl, focusNode, onSubmit) {
+        // Sync initial value from our controller
+        if (textCtrl.text != ctrl.text) textCtrl.text = ctrl.text;
+        textCtrl.addListener(() {
+          if (ctrl.text != textCtrl.text) {
+            ctrl.text = textCtrl.text;
+            setState(() {});
+          }
+        });
+        return TextField(
+          controller: textCtrl,
+          focusNode: focusNode,
+          style: const TextStyle(color: Colors.white, fontSize: 16),
+          cursorColor: _gold,
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+            prefixIcon: Icon(icon, color: _gold, size: 20),
+            counterText: '',
+            filled: true,
+            fillColor: Colors.white.withValues(alpha: 0.06),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: Colors.white12),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: _gold, width: 1.5),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 18,
+            ),
+          ),
+        );
+      },
+      optionsViewBuilder: (ctx, onSel, opts) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            color: const Color(0xFF1E1E2C),
+            borderRadius: BorderRadius.circular(12),
+            elevation: 8,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: opts.length,
+                itemBuilder: (_, i) {
+                  final o = opts.elementAt(i);
+                  return ListTile(
+                    dense: true,
+                    title: Text(
+                      o,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    onTap: () => onSel(o),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

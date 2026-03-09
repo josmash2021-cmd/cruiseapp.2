@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 
 class SafetyScreen extends StatefulWidget {
@@ -71,7 +72,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
               const SizedBox(height: 28),
 
               Text(
-                'Safety',
+                S.of(context).safetyTitle,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -81,7 +82,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Your safety is our priority.',
+                S.of(context).safetySubtitle,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
@@ -92,7 +93,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
 
               // ── Safety features ──
               Text(
-                'Safety Features',
+                S.of(context).safetyFeatures,
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -104,44 +105,40 @@ class _SafetyScreenState extends State<SafetyScreen> {
               _featureCard(
                 c,
                 icon: Icons.share_location_rounded,
-                title: 'Share my trip',
-                subtitle:
-                    'Let friends and family follow your ride in real time.',
+                title: S.of(context).shareMyTrip,
+                subtitle: S.of(context).shareMyTripDesc,
                 onTap: () => _shareTrip(context),
               ),
               const SizedBox(height: 10),
               _featureCard(
                 c,
                 icon: Icons.verified_user_outlined,
-                title: 'Verify your ride',
-                subtitle: 'Confirm your driver\'s identity before getting in.',
+                title: S.of(context).verifyYourRide,
+                subtitle: S.of(context).verifyYourRideDesc,
                 onTap: () => _showVerifyTip(context, c),
               ),
               const SizedBox(height: 10),
               _featureCard(
                 c,
                 icon: Icons.pin_drop_outlined,
-                title: 'Trusted contacts',
-                subtitle:
-                    'Choose contacts who can follow your trips automatically.',
+                title: S.of(context).trustedContacts,
+                subtitle: S.of(context).trustedContactsDesc,
                 onTap: () => _showTrustedContacts(context, c),
               ),
               const SizedBox(height: 10),
               _featureCard(
                 c,
                 icon: Icons.phone_in_talk_rounded,
-                title: 'RideCheck',
-                subtitle:
-                    'We detect if your trip goes off route and check in on you.',
+                title: S.of(context).rideCheck,
+                subtitle: S.of(context).rideCheckDesc,
                 onTap: () => _showComingSoon(context, c),
               ),
               const SizedBox(height: 10),
               _featureCard(
                 c,
                 icon: Icons.record_voice_over_outlined,
-                title: 'Audio recording',
-                subtitle:
-                    'Record audio during your trip for added peace of mind.',
+                title: S.of(context).audioRecording,
+                subtitle: S.of(context).audioRecordingDesc,
                 onTap: () => _showComingSoon(context, c),
               ),
 
@@ -149,7 +146,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
 
               // ── Safety tips ──
               Text(
-                'Safety Tips',
+                S.of(context).safetyTips,
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -157,25 +154,13 @@ class _SafetyScreenState extends State<SafetyScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              _tipItem(
-                c,
-                '1',
-                'Always verify your driver and vehicle before entering.',
-              ),
+              _tipItem(c, '1', S.of(context).safetyTip1),
               const SizedBox(height: 8),
-              _tipItem(c, '2', 'Share your trip with a trusted contact.'),
+              _tipItem(c, '2', S.of(context).safetyTip2),
               const SizedBox(height: 8),
-              _tipItem(
-                c,
-                '3',
-                'Sit in the back seat for added personal space.',
-              ),
+              _tipItem(c, '3', S.of(context).safetyTip3),
               const SizedBox(height: 8),
-              _tipItem(
-                c,
-                '4',
-                'Trust your instincts — cancel if something feels wrong.',
-              ),
+              _tipItem(c, '4', S.of(context).safetyTip4),
 
               const SizedBox(height: 32),
             ],

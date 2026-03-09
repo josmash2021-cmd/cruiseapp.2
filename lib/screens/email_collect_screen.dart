@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import 'notifications_screen.dart';
 
 class EmailCollectScreen extends StatefulWidget {
   final String firstName;
   final String lastName;
-  final String registeredWith;     // email or phone used to register
-  final bool registeredWithEmail;  // true = already has email, ask phone
+  final String registeredWith; // email or phone used to register
+  final bool registeredWithEmail; // true = already has email, ask phone
 
   const EmailCollectScreen({
     super.key,
@@ -73,7 +74,7 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
     if (_askingPhone) {
       // Validate phone number
       if (!_isValidPhone(input)) {
-        _showSnack('Please enter a valid phone number');
+        _showSnack(S.of(context).invalidPhoneError);
         return;
       }
       // email came from registration, phone collected here
@@ -91,7 +92,7 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
     } else {
       // Validate email
       if (!_isValidEmail(input)) {
-        _showSnack('Please enter a valid email address');
+        _showSnack(S.of(context).invalidEmailError);
         return;
       }
       // phone came from registration, email collected here
@@ -112,8 +113,10 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: Colors.redAccent,
-        content: Text(message,
-            style: const TextStyle(fontWeight: FontWeight.w600)),
+        content: Text(
+          message,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
@@ -144,8 +147,11 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
                     color: c.surface,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.arrow_back_ios_new_rounded,
-                      color: c.textPrimary, size: 18),
+                  child: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: c.textPrimary,
+                    size: 18,
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
@@ -153,8 +159,8 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
               // ── Title ──
               Text(
                 _askingPhone
-                    ? 'Great to meet you, ${widget.firstName}.\nMind sharing your phone number?'
-                    : 'Great to meet you, ${widget.firstName}.\nMind sharing your email?',
+                    ? S.of(context).greetSharePhone(widget.firstName)
+                    : S.of(context).greetShareEmail(widget.firstName),
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w800,
@@ -166,8 +172,8 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
               const SizedBox(height: 10),
               Text(
                 _askingPhone
-                    ? 'We need a number to reach you about your rides.'
-                    : 'Ride receipts and account updates need to get sent somewhere.',
+                    ? S.of(context).needPhoneSubtitle
+                    : S.of(context).needEmailSubtitle,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
@@ -179,8 +185,10 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: c.border),
                 ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
                 child: TextField(
                   controller: _inputCtrl,
                   keyboardType: _askingPhone
@@ -189,9 +197,10 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
                   style: TextStyle(color: c.textPrimary, fontSize: 16),
                   decoration: InputDecoration(
                     border: InputBorder.none,
-                    hintText: _askingPhone ? 'Phone number' : 'Email',
-                    hintStyle:
-                        TextStyle(color: c.textTertiary, fontSize: 16),
+                    hintText: _askingPhone
+                        ? S.of(context).phoneNumber
+                        : S.of(context).email,
+                    hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
                   ),
                 ),
               ),
@@ -225,9 +234,9 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
                         ),
                       ),
                       onPressed: _canContinue ? _next : null,
-                      child: const Text(
-                        'Next',
-                        style: TextStyle(
+                      child: Text(
+                        S.of(context).next,
+                        style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),

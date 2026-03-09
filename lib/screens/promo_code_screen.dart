@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/app_localizations.dart';
+
 import '../config/app_theme.dart';
 import '../services/api_service.dart';
 
@@ -87,7 +89,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
 
     // Check if already added
     if (_promos.any((p) => p.code == code)) {
-      _showSnack('Promo code already added');
+      _showSnack(S.of(context).promoAlreadyAdded);
       return;
     }
 
@@ -118,7 +120,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
       _showSnack(e.message);
     } catch (_) {
       setState(() => _loading = false);
-      _showSnack('Could not validate promo code');
+      _showSnack(S.of(context).couldNotValidatePromo);
     }
   }
 
@@ -176,7 +178,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                         ),
                         const SizedBox(width: 16),
                         Text(
-                          'Promotions',
+                          S.of(context).promotions,
                           style: TextStyle(
                             fontSize: 26,
                             fontWeight: FontWeight.w800,
@@ -207,7 +209,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Have a promo code?',
+                            S.of(context).havePromoCode,
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -229,7 +231,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                                     letterSpacing: 1.5,
                                   ),
                                   decoration: InputDecoration(
-                                    hintText: 'Enter code',
+                                    hintText: S.of(context).enterCode,
                                     hintStyle: TextStyle(
                                       color: c.textTertiary,
                                       letterSpacing: 0.5,
@@ -261,9 +263,9 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                                     color: _gold,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: const Text(
-                                    'Apply',
-                                    style: TextStyle(
+                                  child: Text(
+                                    S.of(context).apply,
+                                    style: const TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,
                                       color: Colors.black,
@@ -283,7 +285,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: Text(
-                      'Available Promos',
+                      S.of(context).availablePromos,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -297,7 +299,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                     child: _promos.isEmpty
                         ? Center(
                             child: Text(
-                              'No promos available',
+                              S.of(context).noPromosAvailable,
                               style: TextStyle(
                                 fontSize: 15,
                                 color: c.textSecondary,
@@ -385,10 +387,10 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                 const SizedBox(height: 4),
                 Text(
                   promo.isUsed
-                      ? 'Used'
+                      ? S.of(context).used
                       : isExpired
-                      ? 'Expired'
-                      : 'Expires in $daysLeft day${daysLeft == 1 ? '' : 's'}',
+                      ? S.of(context).expired
+                      : S.of(context).expiresInDays(daysLeft),
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -409,8 +411,10 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
               ),
               child: Text(
                 promo.discountFlat != null
-                    ? '\$${promo.discountFlat!.toStringAsFixed(0)} OFF'
-                    : '${promo.discountPercent}% OFF',
+                    ? S
+                          .of(context)
+                          .dollarOff(promo.discountFlat!.toStringAsFixed(0))
+                    : S.of(context).percentOff(promo.discountPercent),
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,

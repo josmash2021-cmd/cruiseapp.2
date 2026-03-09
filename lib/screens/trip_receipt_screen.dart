@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 
@@ -37,13 +38,10 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
       parent: _entryController,
       curve: const Interval(0.0, 0.7, curve: Curves.easeOut),
     );
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.05),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _entryController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _entryController, curve: Curves.easeOutCubic),
+        );
     _entryController.forward();
   }
 
@@ -67,10 +65,12 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
 
       if (email.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No email address found. Please update your profile.'),
-            behavior: SnackBarBehavior.floating,
-          ));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(S.of(context).noEmailError),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
         }
         setState(() => _emailSending = false);
         return;
@@ -121,13 +121,20 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
       if (response.statusCode == 200) {
         debugPrint('✅ Receipt email sent to $email');
         if (mounted) {
-          setState(() { _emailSending = false; _emailSent = true; });
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Receipt sent to $email'),
-            backgroundColor: _gold,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ));
+          setState(() {
+            _emailSending = false;
+            _emailSent = true;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Receipt sent to $email'),
+              backgroundColor: _gold,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
         }
       } else {
         debugPrint('❌ Receipt email error: ${response.statusCode}');
@@ -142,10 +149,12 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
   void _emailError() {
     if (mounted) {
       setState(() => _emailSending = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Could not send receipt. Try again later.'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.of(context).couldNotSendReceipt),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -158,14 +167,26 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
         backgroundColor: Colors.transparent,
         foregroundColor: c.textPrimary,
         elevation: 0,
-        title: const Text('Trip Receipt', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+        title: Text(
+          S.of(context).tripReceipt,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+        ),
         actions: [
           IconButton(
             onPressed: _emailSending ? null : _sendEmailReceipt,
             icon: _emailSending
-                ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: _gold, strokeWidth: 2))
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      color: _gold,
+                      strokeWidth: 2,
+                    ),
+                  )
                 : Icon(
-                    _emailSent ? Icons.mark_email_read_rounded : Icons.email_outlined,
+                    _emailSent
+                        ? Icons.mark_email_read_rounded
+                        : Icons.email_outlined,
                     color: _emailSent ? _gold : c.textSecondary,
                   ),
             tooltip: _emailSent ? 'Receipt sent' : 'Email receipt',
@@ -194,7 +215,9 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                             end: Alignment.bottomRight,
                             colors: [_gold, _goldLight],
                           ),
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(22),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -202,11 +225,25 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Cruise Ride',
-                                    style: TextStyle(color: Color(0xFF08090C), fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+                                  Text(
+                                    'Cruise Ride',
+                                    style: TextStyle(
+                                      color: Color(0xFF08090C),
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: -0.5,
+                                    ),
+                                  ),
                                   SizedBox(height: 4),
-                                  Text('RECEIPT',
-                                    style: TextStyle(color: Color(0x9908090C), fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
+                                  Text(
+                                    'RECEIPT',
+                                    style: TextStyle(
+                                      color: Color(0x9908090C),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 2,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -216,7 +253,11 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                 color: const Color(0x2208090C),
                                 borderRadius: BorderRadius.circular(14),
                               ),
-                              child: const Icon(Icons.receipt_long_rounded, color: Color(0xFF08090C), size: 22),
+                              child: const Icon(
+                                Icons.receipt_long_rounded,
+                                color: Color(0xFF08090C),
+                                size: 22,
+                              ),
                             ),
                           ],
                         ),
@@ -227,10 +268,16 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                         padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
                         decoration: BoxDecoration(
                           color: c.panel,
-                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(22)),
+                          borderRadius: const BorderRadius.vertical(
+                            bottom: Radius.circular(22),
+                          ),
                           border: Border.all(color: c.border),
                           boxShadow: [
-                            BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 30, offset: const Offset(0, 12)),
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 30,
+                              offset: const Offset(0, 12),
+                            ),
                           ],
                         ),
                         child: Column(
@@ -240,7 +287,10 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                             Row(
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFF0D3B0D),
                                     borderRadius: BorderRadius.circular(20),
@@ -248,25 +298,46 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                   child: const Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.check_circle_rounded, color: Color(0xFF4ADE80), size: 14),
+                                      Icon(
+                                        Icons.check_circle_rounded,
+                                        color: Color(0xFF4ADE80),
+                                        size: 14,
+                                      ),
                                       SizedBox(width: 5),
-                                      Text('Completed',
-                                        style: TextStyle(color: Color(0xFF4ADE80), fontSize: 11, fontWeight: FontWeight.w700)),
+                                      Text(
+                                        'Completed',
+                                        style: TextStyle(
+                                          color: Color(0xFF4ADE80),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
                                 const Spacer(),
                                 Text(
                                   _formatDate(trip.createdAt),
-                                  style: TextStyle(color: c.textTertiary, fontSize: 12, fontWeight: FontWeight.w500),
+                                  style: TextStyle(
+                                    color: c.textTertiary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 18),
 
                             // Ride type
-                            Text(trip.rideName,
-                              style: TextStyle(color: c.textPrimary, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+                            Text(
+                              trip.rideName,
+                              style: TextStyle(
+                                color: c.textPrimary,
+                                fontSize: 30,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
                             const SizedBox(height: 22),
 
                             // ── Price card (dark inset) ──
@@ -275,25 +346,52 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                               decoration: BoxDecoration(
                                 color: c.surface,
                                 borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: c.border.withValues(alpha: 0.5)),
+                                border: Border.all(
+                                  color: c.border.withValues(alpha: 0.5),
+                                ),
                               ),
                               child: Column(
                                 children: [
                                   Row(
                                     children: [
-                                      Text('Total', style: TextStyle(color: c.textSecondary, fontSize: 15)),
+                                      Text(
+                                        S.of(context).total,
+                                        style: TextStyle(
+                                          color: c.textSecondary,
+                                          fontSize: 15,
+                                        ),
+                                      ),
                                       const Spacer(),
-                                      Text(trip.price,
-                                        style: const TextStyle(color: _gold, fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
+                                      Text(
+                                        trip.price,
+                                        style: const TextStyle(
+                                          color: _gold,
+                                          fontSize: 28,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: -0.3,
+                                        ),
+                                      ),
                                     ],
                                   ),
                                   Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
                                     child: Divider(color: c.divider, height: 1),
                                   ),
-                                  _detailRow(c, Icons.straighten_rounded, 'Distance', trip.miles),
+                                  _detailRow(
+                                    c,
+                                    Icons.straighten_rounded,
+                                    S.of(context).distance,
+                                    trip.miles,
+                                  ),
                                   const SizedBox(height: 10),
-                                  _detailRow(c, Icons.schedule_rounded, 'Duration', trip.duration),
+                                  _detailRow(
+                                    c,
+                                    Icons.schedule_rounded,
+                                    S.of(context).duration,
+                                    trip.duration,
+                                  ),
                                 ],
                               ),
                             ),
@@ -311,27 +409,47 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: c.border),
                           boxShadow: [
-                            BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 16, offset: const Offset(0, 6)),
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.15),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
                           ],
                         ),
                         child: Column(
                           children: [
-                            _routePoint(c, isPickup: true, label: 'PICKUP', address: trip.pickup),
+                            _routePoint(
+                              c,
+                              isPickup: true,
+                              label: 'PICKUP',
+                              address: trip.pickup,
+                            ),
                             Padding(
                               padding: const EdgeInsets.only(left: 5),
                               child: Row(
                                 children: [
                                   Column(
-                                    children: List.generate(3, (_) => Container(
-                                      width: 1.5, height: 6,
-                                      margin: const EdgeInsets.symmetric(vertical: 2),
-                                      color: _gold.withValues(alpha: 0.3),
-                                    )),
+                                    children: List.generate(
+                                      3,
+                                      (_) => Container(
+                                        width: 1.5,
+                                        height: 6,
+                                        margin: const EdgeInsets.symmetric(
+                                          vertical: 2,
+                                        ),
+                                        color: _gold.withValues(alpha: 0.3),
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
-                            _routePoint(c, isPickup: false, label: 'DROP-OFF', address: trip.dropoff),
+                            _routePoint(
+                              c,
+                              isPickup: false,
+                              label: 'DROP-OFF',
+                              address: trip.dropoff,
+                            ),
                           ],
                         ),
                       ),
@@ -352,18 +470,31 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               if (_emailSending)
-                                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: _gold, strokeWidth: 2))
+                                SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    color: _gold,
+                                    strokeWidth: 2,
+                                  ),
+                                )
                               else
                                 Icon(
-                                  _emailSent ? Icons.mark_email_read_rounded : Icons.email_outlined,
-                                  color: _emailSent ? _gold : c.textSecondary, size: 18,
+                                  _emailSent
+                                      ? Icons.mark_email_read_rounded
+                                      : Icons.email_outlined,
+                                  color: _emailSent ? _gold : c.textSecondary,
+                                  size: 18,
                                 ),
                               const SizedBox(width: 10),
                               Text(
-                                _emailSent ? 'Receipt sent to your email' : 'Send receipt to email',
+                                _emailSent
+                                    ? S.of(context).sendReceipt
+                                    : S.of(context).sendReceipt,
                                 style: TextStyle(
                                   color: _emailSent ? _gold : c.textSecondary,
-                                  fontSize: 14, fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ],
@@ -375,8 +506,14 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                       Center(
                         child: Padding(
                           padding: const EdgeInsets.only(top: 4, bottom: 8),
-                          child: Text('Thank you for riding with Cruise',
-                            style: TextStyle(color: c.textTertiary, fontSize: 12, fontWeight: FontWeight.w500)),
+                          child: Text(
+                            'Thank you for riding with Cruise',
+                            style: TextStyle(
+                              color: c.textTertiary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -394,10 +531,18 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                         backgroundColor: _gold,
                         foregroundColor: const Color(0xFF08090C),
                         elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Done', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
+                      child: Text(
+                        S.of(context).done,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 17,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -414,18 +559,36 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
       children: [
         Icon(icon, color: c.textTertiary, size: 16),
         const SizedBox(width: 10),
-        Expanded(child: Text(label, style: TextStyle(color: c.textSecondary, fontSize: 14))),
-        Text(value, style: TextStyle(color: c.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(color: c.textSecondary, fontSize: 14),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: c.textPrimary,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     );
   }
 
-  Widget _routePoint(AppColors c, {required bool isPickup, required String label, required String address}) {
+  Widget _routePoint(
+    AppColors c, {
+    required bool isPickup,
+    required String label,
+    required String address,
+  }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 12, height: 12,
+          width: 12,
+          height: 12,
           margin: const EdgeInsets.only(top: 2),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
@@ -438,9 +601,24 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: TextStyle(color: c.textTertiary, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1)),
+              Text(
+                label,
+                style: TextStyle(
+                  color: c.textTertiary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                ),
+              ),
               const SizedBox(height: 3),
-              Text(address, style: TextStyle(color: c.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+              Text(
+                address,
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -449,7 +627,20 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
   }
 
   String _formatDate(DateTime value) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
     final minute = value.minute.toString().padLeft(2, '0');
     final amPm = value.hour >= 12 ? 'PM' : 'AM';

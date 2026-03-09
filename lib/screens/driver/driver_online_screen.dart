@@ -16,6 +16,7 @@ import '../../services/navigation_service.dart';
 import '../../services/trip_firestore_service.dart';
 import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
+import '../../l10n/app_localizations.dart';
 import '../chat_screen.dart';
 import '../../navigation/car_icon_loader.dart';
 
@@ -1232,7 +1233,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           driverId: _driverId!,
         );
       } catch (e) {
-        _snack('Trip no longer available');
+        _snack(S.of(context).tripNoLongerAvailable);
         setState(
           () => _pendingOffers.removeWhere((o) => o['offer_id'] == offerId),
         );
@@ -1242,7 +1243,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       try {
         await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
       } catch (e) {
-        _snack('Trip no longer available');
+        _snack(S.of(context).tripNoLongerAvailable);
         setState(
           () => _pendingOffers.removeWhere((o) => o['trip_id'] == tripId),
         );
@@ -1329,7 +1330,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _reFollowTimer?.cancel();
       _navDist = _hav(_pos, _pickupLL);
       _navEta = (_navDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      _navInstruct = 'Head to pickup';
+      _navInstruct = S.of(context).headToPickup;
       _navProgress = 0;
       _slideVal = 0;
       _slid = false;
@@ -1340,7 +1341,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           icon: BitmapDescriptor.defaultMarkerWithHue(
             BitmapDescriptor.hueGreen,
           ),
-          infoWindow: InfoWindow(title: 'Pickup', snippet: _pickupAddr),
+          infoWindow: InfoWindow(
+            title: S.of(context).pickupLabel,
+            snippet: _pickupAddr,
+          ),
         ),
       };
     });
@@ -1392,7 +1396,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _reFollowTimer?.cancel();
       _navDist = _hav(_pos, _dropoffLL);
       _navEta = (_navDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      _navInstruct = 'Head to drop-off';
+      _navInstruct = S.of(context).headToDropOff;
       _navProgress = 0;
       _slideVal = 0;
       _slid = false;
@@ -1401,7 +1405,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           markerId: const MarkerId('drop'),
           position: _dropoffLL,
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: InfoWindow(title: 'Drop-off', snippet: _dropoffAddr),
+          infoWindow: InfoWindow(
+            title: S.of(context).dropOffLabel,
+            snippet: _dropoffAddr,
+          ),
         ),
       };
     });
@@ -1503,6 +1510,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   void _afterComplete() {
+    // Submit the driver's rating for this rider
+    if (_tripId != null) {
+      ApiService.rateTrip(tripId: _tripId!, stars: _stars).catchError((_) {});
+    }
     _doneCtrl.reverse();
     Future.delayed(const Duration(milliseconds: 350), () {
       if (!mounted) return;
@@ -1616,7 +1627,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             );
             final leg = route['legs'][0];
             final steps = leg['steps'] as List;
-            String instr = 'Head to destination';
+            String instr = S.of(context).headToDestination;
             if (steps.isNotEmpty) {
               instr = (steps[0]['html_instructions']?.toString() ?? '')
                   .replaceAll(RegExp(r'<[^>]*>'), '');
@@ -1684,7 +1695,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           final pts = _decodePoly(route['geometry'] as String);
           final distM = (route['distance'] as num?)?.toInt() ?? 0;
           final durS = (route['duration'] as num?)?.toInt() ?? 0;
-          String instr = 'Head to destination';
+          String instr = S.of(context).headToDestination;
           final legs = route['legs'] as List?;
           if (legs != null && legs.isNotEmpty) {
             final steps = legs[0]['steps'] as List?;
@@ -1882,7 +1893,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           markerId: const MarkerId('prev_driver'),
           position: _pos,
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-          infoWindow: const InfoWindow(title: 'You'),
+          infoWindow: InfoWindow(title: S.of(context).yourLocation),
         ),
         Marker(
           markerId: const MarkerId('prev_pickup'),
@@ -1891,7 +1902,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             BitmapDescriptor.hueGreen,
           ),
           infoWindow: InfoWindow(
-            title: 'Pickup',
+            title: S.of(context).pickupLabel,
             snippet: offer['pickup_address'] as String?,
           ),
         ),
@@ -1900,7 +1911,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           position: dropoffLL,
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
           infoWindow: InfoWindow(
-            title: 'Drop-off',
+            title: S.of(context).dropOffLabel,
             snippet: offer['dropoff_address'] as String?,
           ),
         ),
@@ -2174,7 +2185,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     fabBg,
                     fabBorder,
                     fabIcon,
-                    () => _snack('Safety features'),
+                    () => _snack(S.of(context).safetyFeatures),
                   ),
                 ],
               ),
@@ -2190,7 +2201,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     fabBg,
                     fabBorder,
                     fabIcon,
-                    () => _snack('Messages'),
+                    () => _snack(S.of(context).messagesLabel),
                   ),
                   const SizedBox(height: 10),
                   _fab(
@@ -2199,7 +2210,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     fabBg,
                     fabBorder,
                     fabIcon,
-                    () => _snack('Promotions'),
+                    () => _snack(S.of(context).promotionsLabel),
                   ),
                   const SizedBox(height: 10),
                   _fab(
@@ -2208,7 +2219,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     fabBg,
                     fabBorder,
                     fabIcon,
-                    () => _snack('Analytics'),
+                    () => _snack(S.of(context).analyticsLabel),
                   ),
                 ],
               ),
@@ -2475,7 +2486,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
               ),
               Text(
-                'TODAY',
+                S.of(context).today.toUpperCase(),
                 style: TextStyle(
                   color: pillSub,
                   fontSize: 9,
@@ -2496,7 +2507,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Widget _navHeader() {
     final toPickup = _phase == _Phase.enRouteToPickup;
     final accent = toPickup ? _goldLight : _gold;
-    final title = toPickup ? 'PICKUP' : 'DROP-OFF';
+    final title = toPickup
+        ? S.of(context).pickupLabel.toUpperCase()
+        : S.of(context).dropOffLabel.toUpperCase();
 
     // Get maneuver icon from NavigationService
     final maneuverStr = _navState?.currentManeuver ?? 'straight';
@@ -2556,16 +2569,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                           ),
                         ),
                       if (isOffRoute)
-                        const Text(
-                          'Rerouting...',
-                          style: TextStyle(
+                        Text(
+                          S.of(context).rerouting,
+                          style: const TextStyle(
                             color: Colors.black,
                             fontSize: 18,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                       Text(
-                        isOffRoute ? 'Off route' : _navInstruct,
+                        isOffRoute ? S.of(context).offRoute : _navInstruct,
                         style: TextStyle(
                           color: Colors.black.withValues(alpha: 0.7),
                           fontSize: 13,
@@ -2608,7 +2621,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               child: Row(
                 children: [
                   Text(
-                    'THEN',
+                    S.of(context).thenLabel,
                     style: TextStyle(
                       color: Colors.black.withValues(alpha: 0.4),
                       fontSize: 9,
@@ -2675,7 +2688,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
                 const SizedBox(width: 5),
                 Text(
-                  '${_navDist.toStringAsFixed(1)} mi',
+                  '${(_navDist * 0.621371).toStringAsFixed(1)} mi',
                   style: const TextStyle(
                     color: Colors.black,
                     fontSize: 13,
@@ -2685,7 +2698,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 const Spacer(),
                 // Heading to label
                 Text(
-                  'TO $title',
+                  S.of(context).toLabel(title),
                   style: TextStyle(
                     color: Colors.black.withValues(alpha: 0.4),
                     fontSize: 10,
@@ -2820,7 +2833,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     ),
                     const Spacer(),
                     Text(
-                      'Finding trips',
+                      S.of(context).findingTrips,
                       style: TextStyle(
                         color: textMuted,
                         fontSize: 14,
@@ -2911,7 +2924,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            '${_pendingOffers.length} Ride${_pendingOffers.length > 1 ? 's' : ''} Available',
+                            S.of(context).ridesAvailable(_pendingOffers.length),
                             style: const TextStyle(
                               color: _gold,
                               fontSize: 14,
@@ -2990,7 +3003,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                           ),
                           const Spacer(),
                           Text(
-                            'Finding trips',
+                            S.of(context).findingTrips,
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.5),
                               fontSize: 14,
@@ -3071,7 +3084,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     Icon(Icons.tune_rounded, color: textMuted, size: 22),
                     const Spacer(),
                     Text(
-                      'Finding trips',
+                      S.of(context).findingTrips,
                       style: TextStyle(
                         color: textMuted,
                         fontSize: 14,
@@ -3092,7 +3105,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               Divider(height: 1, color: borderC),
               const SizedBox(height: 16),
               Text(
-                'Recommended for you',
+                S.of(context).recommendedForYou,
                 style: TextStyle(
                   color: textPrimary,
                   fontSize: 17,
@@ -3102,35 +3115,35 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               const SizedBox(height: 16),
               _panelItem(
                 Icons.bar_chart_rounded,
-                'See Earnings Trends',
+                S.of(context).seeEarningsTrends,
                 panelItemIcon,
                 panelItemText,
                 panelItemChevron,
                 () {
                   Navigator.pop(context);
-                  _snack('Earnings trends');
+                  _snack(S.of(context).seeEarningsTrends);
                 },
               ),
               _panelItem(
                 Icons.star_outline_rounded,
-                'See upcoming promotions',
+                S.of(context).seeUpcomingPromotions,
                 panelItemIcon,
                 panelItemText,
                 panelItemChevron,
                 () {
                   Navigator.pop(context);
-                  _snack('Promotions');
+                  _snack(S.of(context).seeUpcomingPromotions);
                 },
               ),
               _panelItem(
                 Icons.access_time_rounded,
-                'See driving time',
+                S.of(context).seeDrivingTime,
                 panelItemIcon,
                 panelItemText,
                 panelItemChevron,
                 () {
                   Navigator.pop(context);
-                  _snack('Driving time: $_timeStr');
+                  _snack(S.of(context).seeDrivingTime);
                 },
               ),
               const SizedBox(height: 20),
@@ -3165,9 +3178,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        'GO OFFLINE',
-                        style: TextStyle(
+                      Text(
+                        S.of(context).goOffline.toUpperCase(),
+                        style: const TextStyle(
                           color: Color(0xFFCC3333),
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
@@ -3319,7 +3332,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               children: [
                 _infoChip(
                   Icons.near_me_rounded,
-                  '${distToPickup.toStringAsFixed(1)} mi',
+                  '${(distToPickup * 0.621371).toStringAsFixed(1)} mi',
                   chipBg,
                   textMuted,
                 ),
@@ -3333,7 +3346,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 const SizedBox(width: 8),
                 _infoChip(
                   Icons.route_rounded,
-                  '${tripDist.toStringAsFixed(1)} mi trip',
+                  '${(tripDist * 0.621371).toStringAsFixed(1)} mi trip',
                   chipBg,
                   textMuted,
                 ),
@@ -3384,7 +3397,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Pickup',
+                              S.of(context).pickupLabel,
                               style: TextStyle(
                                 color: textMuted,
                                 fontSize: 10,
@@ -3425,7 +3438,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Drop-off',
+                              S.of(context).dropOffLabel,
                               style: TextStyle(
                                 color: textMuted,
                                 fontSize: 10,
@@ -3468,7 +3481,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         size: 18,
                       ),
                       label: Text(
-                        'Reject',
+                        S.of(context).reject,
                         style: TextStyle(
                           color: rejectText,
                           fontSize: 15,
@@ -3500,8 +3513,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         color: Colors.black,
                         size: 18,
                       ),
-                      label: const Text(
-                        'Accept',
+                      label: Text(
+                        S.of(context).accept,
                         style: TextStyle(
                           color: Colors.black,
                           fontSize: 15,
@@ -3669,7 +3682,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     children: [
                       _infoChip(
                         Icons.near_me_rounded,
-                        '${distToPickup.toStringAsFixed(1)} mi',
+                        '${(distToPickup * 0.621371).toStringAsFixed(1)} mi',
                         chipBg,
                         cTextMuted,
                       ),
@@ -3683,7 +3696,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       const SizedBox(width: 8),
                       _infoChip(
                         Icons.route_rounded,
-                        '${tripDist.toStringAsFixed(1)} mi trip',
+                        '${(tripDist * 0.621371).toStringAsFixed(1)} mi trip',
                         chipBg,
                         cTextMuted,
                       ),
@@ -3738,7 +3751,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Your Location',
+                                    S.of(context).yourLocation,
                                     style: TextStyle(
                                       color: cTextMuted,
                                       fontSize: 10,
@@ -3746,9 +3759,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                                       letterSpacing: 0.5,
                                     ),
                                   ),
-                                  const Text(
-                                    'Current position',
-                                    style: TextStyle(
+                                  Text(
+                                    S.of(context).currentPosition,
+                                    style: const TextStyle(
                                       color: cTextPrimary,
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
@@ -3789,7 +3802,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Pickup',
+                                    S.of(context).pickupLabel,
                                     style: TextStyle(
                                       color: cTextMuted,
                                       fontSize: 10,
@@ -3830,7 +3843,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Drop-off',
+                                    S.of(context).dropOffLabel,
                                     style: TextStyle(
                                       color: cTextMuted,
                                       fontSize: 10,
@@ -3871,9 +3884,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                               color: Colors.white70,
                               size: 18,
                             ),
-                            label: const Text(
-                              'Back',
-                              style: TextStyle(
+                            label: Text(
+                              S.of(context).back,
+                              style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 15,
                                 fontWeight: FontWeight.w800,
@@ -3908,9 +3921,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                               color: Colors.black,
                               size: 18,
                             ),
-                            label: const Text(
-                              'Accept Ride',
-                              style: TextStyle(
+                            label: Text(
+                              S.of(context).acceptRide,
+                              style: const TextStyle(
                                 color: Colors.black,
                                 fontSize: 15,
                                 fontWeight: FontWeight.w800,
@@ -4029,7 +4042,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'ROUTE OVERVIEW',
+                        S.of(context).routeOverview,
                         style: TextStyle(
                           color: textMuted,
                           fontSize: 10,
@@ -4055,7 +4068,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '${_navDist.toStringAsFixed(1)} mi',
+                      '${(_navDist * 0.621371).toStringAsFixed(1)} mi',
                       style: const TextStyle(
                         color: _gold,
                         fontSize: 16,
@@ -4086,7 +4099,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Dropping off $_riderName',
+                      S.of(context).droppingOff(_riderName),
                       style: TextStyle(
                         color: textPrimary,
                         fontSize: 14,
@@ -4161,9 +4174,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       color: Colors.black,
                       size: 20,
                     ),
-                    label: const Text(
-                      'Start Navigation',
-                      style: TextStyle(
+                    label: Text(
+                      S.of(context).startNavigation,
+                      style: const TextStyle(
                         color: Colors.black,
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
@@ -4215,7 +4228,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Picking up $_riderName',
+                      S.of(context).pickingUp(_riderName),
                       style: TextStyle(
                         color: textPrimary,
                         fontSize: 15,
@@ -4264,7 +4277,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 size: 20,
               ),
               label: Text(
-                _nearPickupNotified ? 'ARRIVED' : 'ARRIVED AT PICKUP',
+                _nearPickupNotified
+                    ? S.of(context).arrived
+                    : S.of(context).arrivedAtPickup,
                 style: const TextStyle(
                   color: Colors.black,
                   fontSize: 16,
@@ -4333,7 +4348,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  'WAITING FOR RIDER',
+                  S.of(context).waitingForRider,
                   style: TextStyle(
                     color: textMuted,
                     fontSize: 11,
@@ -4414,9 +4429,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 color: Colors.black,
                 size: 22,
               ),
-              label: const Text(
-                'START TRIP',
-                style: TextStyle(
+              label: Text(
+                S.of(context).startTrip,
+                style: const TextStyle(
                   color: Colors.black,
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
@@ -4504,7 +4519,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  'TRIP IN PROGRESS',
+                  S.of(context).tripInProgress,
                   style: TextStyle(
                     color: textMuted,
                     fontSize: 11,
@@ -4555,9 +4570,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
                 _navStat(
                   Icons.straighten_rounded,
-                  _navDist >= 1.0
-                      ? '${_navDist.toStringAsFixed(1)} km'
-                      : '${(_navDist * 1000).round()} m',
+                  '${(_navDist * 0.621371).toStringAsFixed(1)} mi',
                   textPrimary,
                 ),
                 Container(
@@ -4565,7 +4578,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   height: 20,
                   color: textMuted.withValues(alpha: 0.25),
                 ),
-                _navStat(Icons.place_rounded, 'DROP-OFF', _gold),
+                _navStat(
+                  Icons.place_rounded,
+                  S.of(context).dropOffLabel.toUpperCase(),
+                  _gold,
+                ),
               ],
             ),
           ),
@@ -4579,7 +4596,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Dropping off $_riderName',
+                      S.of(context).droppingOff(_riderName),
                       style: TextStyle(
                         color: textPrimary,
                         fontSize: 14,
@@ -4630,10 +4647,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
               label: Text(
                 _nearDropoffNotified
-                    ? 'FINISH TRIP'
-                    : _navDist >= 1.0
-                    ? '${_navDist.toStringAsFixed(1)} km to drop-off'
-                    : '${(_navDist * 1000).round()} m to drop-off',
+                    ? S.of(context).finishTrip
+                    : '${(_navDist * 0.621371).toStringAsFixed(1)} mi',
                 style: const TextStyle(
                   color: Colors.black,
                   fontSize: 15,
@@ -4725,7 +4740,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Trip Complete',
+                    S.of(context).tripComplete,
                     style: TextStyle(
                       color: textPrimary,
                       fontSize: 22,
@@ -4753,7 +4768,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                           ),
                         ),
                         Text(
-                          'Fare earned',
+                          S.of(context).fareEarned,
                           style: TextStyle(color: subtleText, fontSize: 12),
                         ),
                       ],
@@ -4771,7 +4786,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     child: Column(
                       children: [
                         Text(
-                          'Rate rider',
+                          S.of(context).rateRider,
                           style: TextStyle(color: subtleText, fontSize: 11),
                         ),
                         const SizedBox(height: 6),
@@ -4809,12 +4824,22 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     children: [
                       _sumStat(
                         '\$${_earnings.toStringAsFixed(2)}',
-                        'Total',
+                        S.of(context).totalLabel,
                         textPrimary,
                         subtleText,
                       ),
-                      _sumStat('$_trips', 'Trips', textPrimary, subtleText),
-                      _sumStat(_timeStr, 'Online', textPrimary, subtleText),
+                      _sumStat(
+                        '$_trips',
+                        S.of(context).tripsLabel,
+                        textPrimary,
+                        subtleText,
+                      ),
+                      _sumStat(
+                        _timeStr,
+                        S.of(context).onlineLabel,
+                        textPrimary,
+                        subtleText,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 18),
@@ -4832,9 +4857,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         elevation: 4,
                         shadowColor: _gold.withValues(alpha: 0.3),
                       ),
-                      child: const Text(
-                        'Continue Driving',
-                        style: TextStyle(
+                      child: Text(
+                        S.of(context).continueDriving,
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
                         ),
@@ -4933,7 +4958,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         Icon(Icons.tune_rounded, color: textMuted, size: 22),
                         const Spacer(),
                         Text(
-                          'Finding trips',
+                          S.of(context).findingTrips,
                           style: TextStyle(
                             color: textMuted,
                             fontSize: 14,
@@ -4958,7 +4983,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               const SizedBox(height: 16),
               Center(
                 child: Text(
-                  'Recommended for you',
+                  S.of(context).recommendedForYou,
                   style: TextStyle(
                     color: textPrimary,
                     fontSize: 17,
@@ -4969,32 +4994,32 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               const SizedBox(height: 16),
               _panelItem(
                 Icons.bar_chart_rounded,
-                'See Earnings Trends',
+                S.of(context).seeEarningsTrends,
                 panelItemIcon,
                 panelItemText,
                 panelItemChevron,
                 () {
-                  _snack('Earnings trends');
+                  _snack(S.of(context).seeEarningsTrends);
                 },
               ),
               _panelItem(
                 Icons.star_outline_rounded,
-                'See upcoming promotions',
+                S.of(context).seeUpcomingPromotions,
                 panelItemIcon,
                 panelItemText,
                 panelItemChevron,
                 () {
-                  _snack('Promotions');
+                  _snack(S.of(context).seeUpcomingPromotions);
                 },
               ),
               _panelItem(
                 Icons.access_time_rounded,
-                'See driving time',
+                S.of(context).seeDrivingTime,
                 panelItemIcon,
                 panelItemText,
                 panelItemChevron,
                 () {
-                  _snack('Driving time: $_timeStr');
+                  _snack(S.of(context).seeDrivingTime);
                 },
               ),
               const SizedBox(height: 20),
@@ -5026,9 +5051,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        'GO OFFLINE',
-                        style: TextStyle(
+                      Text(
+                        S.of(context).goOffline.toUpperCase(),
+                        style: const TextStyle(
                           color: Color(0xFFCC3333),
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
@@ -5293,7 +5318,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Widget _cancelRow(bool isDark) => TextButton(
     onPressed: _cancel,
     child: Text(
-      'Cancel Trip',
+      S.of(context).cancelTrip,
       style: TextStyle(
         color: isDark
             ? Colors.white.withValues(alpha: 0.25)

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../l10n/app_localizations.dart';
 import 'package:video_player/video_player.dart';
 import '../config/page_transitions.dart';
 import 'login_screen.dart';
@@ -157,7 +158,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   FadeTransition(
                     opacity: _textFade,
                     child: Text(
-                      "Let's get\nyou there",
+                      S.of(context).welcomeHeadline,
                       style: TextStyle(
                         fontSize: 44,
                         fontWeight: FontWeight.w800,
@@ -173,7 +174,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   FadeTransition(
                     opacity: _textFade,
                     child: Text(
-                      'Premium rides at your fingertips.',
+                      S.of(context).welcomeSubheadline,
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.white70,
@@ -207,8 +208,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               context,
                             ).push(slideUpFadeRoute(const LoginScreen()));
                           },
-                          child: const Text(
-                            'Get started',
+                          child: Text(
+                            S.of(context).getStarted,
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
@@ -234,14 +235,14 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         },
                         child: RichText(
                           text: TextSpan(
-                            text: 'Already have an account? ',
+                            text: '${S.of(context).alreadyHaveAccount} ',
                             style: TextStyle(
                               fontSize: 15,
                               color: Colors.white60,
                             ),
-                            children: const [
+                            children: [
                               TextSpan(
-                                text: 'Sign in',
+                                text: S.of(context).signIn,
                                 style: TextStyle(
                                   color: _gold,
                                   fontWeight: FontWeight.w700,

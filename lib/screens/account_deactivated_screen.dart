@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../services/user_session.dart';
 import 'welcome_screen.dart';
 
@@ -9,6 +10,7 @@ class AccountDeactivatedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    final s = S.of(context);
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -34,7 +36,7 @@ class AccountDeactivatedScreen extends StatelessWidget {
               ),
               const SizedBox(height: 32),
               Text(
-                'Account Deactivated',
+                s.accountDeactivated,
                 style: TextStyle(
                   color: c.textPrimary,
                   fontSize: 24,
@@ -44,8 +46,7 @@ class AccountDeactivatedScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                'Your account has been deactivated. '
-                'Please contact support for more information.',
+                s.accountDeactivatedMsg,
                 style: TextStyle(
                   color: c.textSecondary,
                   fontSize: 15,
@@ -73,7 +74,7 @@ class AccountDeactivatedScreen extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    'Log Out',
+                    s.logOut,
                     style: TextStyle(
                       color: c.textPrimary,
                       fontWeight: FontWeight.w600,

@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:webview_flutter/webview_flutter.dart';
-import '../config/env.dart';
+import '../l10n/app_localizations.dart';
+import '../services/api_service.dart';
 
 /// PayPal checkout screen.
 ///
@@ -80,53 +80,21 @@ class _PayPalCheckoutScreenState extends State<PayPalCheckoutScreen> {
       _error = null;
     });
     try {
-      final baseUrl = Env.paypalSandbox
-          ? 'https://api-m.sandbox.paypal.com'
-          : 'https://api-m.paypal.com';
-
-      // 1 — get access token
-      final tokenRes = await http.post(
-        Uri.parse('$baseUrl/v1/oauth2/token'),
-        headers: {
-          'Authorization':
-              'Basic ${base64Encode(utf8.encode('${Env.paypalClientId}:${Env.paypalSecret}'))}',
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: 'grant_type=client_credentials',
+      // Use backend proxy to create PayPal order (secrets stay server-side)
+      final response = await ApiService.createPayPalOrder(
+        amount: widget.amount,
+        currency: widget.currency,
       );
-      if (tokenRes.statusCode != 200) {
-        throw Exception('PayPal auth failed (${tokenRes.statusCode})');
-      }
-      final accessToken = jsonDecode(tokenRes.body)['access_token'] as String;
 
-      // 2 — create payment / order
-      final payRes = await http.post(
-        Uri.parse('$baseUrl/v1/payments/payment'),
-        headers: {
-          'Authorization': 'Bearer $accessToken',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'intent': 'sale',
-          'payer': {'payment_method': 'paypal'},
-          'transactions': [
-            {
-              'amount': {'total': widget.amount, 'currency': widget.currency},
-              'description': widget.description,
-            },
-          ],
-          'redirect_urls': {'return_url': _returnUrl, 'cancel_url': _cancelUrl},
-        }),
-      );
-      if (payRes.statusCode != 201) {
-        throw Exception('PayPal order failed (${payRes.statusCode})');
+      if (response == null ||
+          response['approval_url'] == null ||
+          (response['approval_url'] as String).isEmpty) {
+        throw Exception('PayPal order creation failed');
       }
-      final body = jsonDecode(payRes.body) as Map<String, dynamic>;
-      final links = body['links'] as List<dynamic>;
-      final approvalUrl =
-          links.firstWhere((l) => l['rel'] == 'approval_url')['href'] as String;
 
-      // 3 — load approval URL in WebView
+      final approvalUrl = response['approval_url'] as String;
+
+      // Load approval URL in WebView
       await _controller.loadRequest(Uri.parse(approvalUrl));
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -140,9 +108,12 @@ class _PayPalCheckoutScreenState extends State<PayPalCheckoutScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text(
-          'PayPal',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        title: Text(
+          S.of(context).paypal,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         leading: IconButton(
           icon: const Icon(Icons.close),
@@ -165,8 +136,7 @@ class _PayPalCheckoutScreenState extends State<PayPalCheckoutScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Could not connect to PayPal.\n\n'
-                      'Make sure your PayPal credentials are set in env.dart.',
+                      '${S.of(context).couldNotConnectPaypal}\n\n${S.of(context).checkPaypalCredentials}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Colors.white70,
@@ -180,7 +150,7 @@ class _PayPalCheckoutScreenState extends State<PayPalCheckoutScreen> {
                         backgroundColor: _gold,
                         foregroundColor: Colors.black,
                       ),
-                      child: const Text('Retry'),
+                      child: Text(S.of(context).retry),
                     ),
                   ],
                 ),

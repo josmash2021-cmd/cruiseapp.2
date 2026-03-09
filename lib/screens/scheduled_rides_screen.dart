@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../config/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import '../l10n/app_localizations.dart';
 
 /// Premium Scheduled Rides screen for riders.
 /// Shows upcoming and past scheduled/airport rides with cancel ability.
@@ -113,24 +114,30 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1D24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Cancel Ride?',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        title: Text(
+          S.of(ctx).cancelRideQuestion,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-        content: const Text(
-          'Are you sure you want to cancel this scheduled ride?',
-          style: TextStyle(color: Colors.white70),
+        content: Text(
+          S.of(ctx).cancelRideConfirm,
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep', style: TextStyle(color: Colors.white54)),
+            child: Text(
+              S.of(ctx).keep,
+              style: const TextStyle(color: Colors.white54),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Cancel Ride',
-              style: TextStyle(color: Color(0xFFFF5252)),
+            child: Text(
+              S.of(ctx).cancelRideBtn,
+              style: const TextStyle(color: Color(0xFFFF5252)),
             ),
           ),
         ],
@@ -146,9 +153,12 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: _gold,
-          content: const Text(
-            'Ride canceled successfully',
-            style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
+          content: Text(
+            S.of(context).rideCancelled,
+            style: const TextStyle(
+              color: Colors.black,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -163,7 +173,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         SnackBar(
           backgroundColor: const Color(0xFFFF5252),
           content: Text(
-            'Failed to cancel: $e',
+            S.of(context).failedToCancel(e.toString()),
             style: const TextStyle(color: Colors.white),
           ),
         ),
@@ -220,9 +230,9 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                     ),
                   ),
                   const SizedBox(width: 10),
-                  const Text(
-                    'Scheduled Rides',
-                    style: TextStyle(
+                  Text(
+                    S.of(context).scheduledRides,
+                    style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.3,
@@ -315,7 +325,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
           ),
           const SizedBox(height: 20),
           Text(
-            'No Scheduled Rides',
+            S.of(context).noScheduledRides,
             style: TextStyle(
               color: c.textPrimary,
               fontSize: 20,
@@ -324,7 +334,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            'Schedule a ride from the home screen\nand it will appear here',
+            S.of(context).scheduleFromHome,
             textAlign: TextAlign.center,
             style: TextStyle(color: c.textSecondary, fontSize: 14, height: 1.5),
           ),
@@ -337,9 +347,9 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                 gradient: const LinearGradient(colors: [_gold, _goldLight]),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Text(
-                'Schedule a Ride',
-                style: TextStyle(
+              child: Text(
+                S.of(context).scheduleARide,
+                style: const TextStyle(
                   color: Colors.black87,
                   fontWeight: FontWeight.w700,
                   fontSize: 15,

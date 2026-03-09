@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Trip history screen with filterable past rides list.
 class DriverTripHistoryScreen extends StatefulWidget {
@@ -18,7 +19,6 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
   static const _surface = Color(0xFF141414);
 
   int _selectedFilter = 0; // 0=All, 1=Completed, 2=Cancelled
-  final _filters = ['All', 'Completed', 'Cancelled'];
 
   bool _loading = true;
   List<Map<String, dynamic>> _trips = [];
@@ -53,6 +53,8 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
+    final filters = [s.allFilter, s.completedFilter, s.cancelledFilter];
     return Scaffold(
       backgroundColor: Colors.black,
       body: CustomScrollView(
@@ -80,9 +82,9 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
             ),
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
-              title: const Text(
-                'Trip History',
-                style: TextStyle(
+              title: Text(
+                S.of(context).tripHistoryTitle,
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
@@ -105,19 +107,19 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                   children: [
                     _summStat(
                       '${_trips.where((t) => t['status'] == 'completed').length}',
-                      'Completed',
+                      S.of(context).completedFilter,
                       const Color(0xFFE8C547),
                     ),
                     _dividerVert(),
                     _summStat(
                       '${_trips.where((t) => t['status'] == 'cancelled').length}',
-                      'Cancelled',
+                      S.of(context).cancelledFilter,
                       Colors.white.withValues(alpha: 0.5),
                     ),
                     _dividerVert(),
                     _summStat(
                       '\$${_trips.where((t) => t['status'] == 'completed').fold<double>(0, (a, t) => a + ((t['fare'] as num?)?.toDouble() ?? 0)).toStringAsFixed(0)}',
-                      'Total',
+                      S.of(context).total,
                       _gold,
                     ),
                   ],
@@ -160,7 +162,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                                 : null,
                           ),
                           child: Text(
-                            _filters[i],
+                            filters[i],
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: sel ? _gold : Colors.white38,
@@ -206,7 +208,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'No trips found',
+                              S.of(context).noTripsFound,
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.3),
                                 fontSize: 16,
@@ -230,19 +232,20 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
     );
   }
 
-  String _formatDate(String raw) {
+  String _formatDate(String raw, BuildContext context) {
     final dt = DateTime.tryParse(raw);
     if (dt == null) return raw;
     final now = DateTime.now();
     final diff = now.difference(dt);
+    final s = S.of(context);
     if (diff.inDays == 0) {
       final h = dt.hour > 12 ? dt.hour - 12 : dt.hour;
       final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-      return 'Today, $h:${dt.minute.toString().padLeft(2, '0')} $ampm';
+      return '${s.todayDatePrefix}, $h:${dt.minute.toString().padLeft(2, '0')} $ampm';
     } else if (diff.inDays == 1) {
       final h = dt.hour > 12 ? dt.hour - 12 : dt.hour;
       final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-      return 'Yesterday, $h:${dt.minute.toString().padLeft(2, '0')} $ampm';
+      return '${s.yesterdayDatePrefix}, $h:${dt.minute.toString().padLeft(2, '0')} $ampm';
     }
     const months = [
       'Jan',
@@ -331,7 +334,9 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              dropoff.isNotEmpty ? dropoff : 'Trip',
+                              dropoff.isNotEmpty
+                                  ? dropoff
+                                  : S.of(context).tripFallback,
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
@@ -342,7 +347,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              _formatDate(date),
+                              _formatDate(date, context),
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.35),
                                 fontSize: 12,
@@ -373,9 +378,9 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                                 color: Colors.white.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: const Text(
-                                'Cancelled',
-                                style: TextStyle(
+                              child: Text(
+                                S.of(context).cancelledBadge,
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -385,7 +390,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                           if (completed && tip > 0) ...[
                             const SizedBox(height: 3),
                             Text(
-                              '+\$${tip.toStringAsFixed(2)} tip',
+                              '+\$${tip.toStringAsFixed(2)} ${S.of(context).tipSuffix}',
                               style: const TextStyle(
                                 color: Color(0xFFE8C547),
                                 fontSize: 12,
@@ -526,7 +531,9 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
               ),
               const SizedBox(height: 24),
               Text(
-                completed ? 'Trip Details' : 'Cancelled Trip',
+                completed
+                    ? S.of(context).tripDetails
+                    : S.of(context).cancelledTrip,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
@@ -549,7 +556,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                       Icons.circle,
                       8,
                       const Color(0xFFE8C547),
-                      'PICKUP',
+                      S.of(context).pickupUpperLabel,
                       pickup,
                     ),
                     Padding(
@@ -564,7 +571,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                       Icons.location_on_rounded,
                       14,
                       Colors.white.withValues(alpha: 0.5),
-                      'DROPOFF',
+                      S.of(context).dropoffUpperLabel,
                       dropoff,
                     ),
                   ],
@@ -575,14 +582,20 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
               if (completed) ...[
                 Row(
                   children: [
-                    _detailStat('Fare', '\$${fare.toStringAsFixed(2)}'),
                     _detailStat(
-                      'Distance',
+                      S.of(context).fareLabel,
+                      '\$${fare.toStringAsFixed(2)}',
+                    ),
+                    _detailStat(
+                      S.of(context).distanceLabel,
                       '${distance.toStringAsFixed(1)} mi',
                     ),
-                    _detailStat('Duration', '$duration min'),
+                    _detailStat(S.of(context).durationLabel, '$duration min'),
                     if (tip > 0)
-                      _detailStat('Tip', '\$${tip.toStringAsFixed(2)}'),
+                      _detailStat(
+                        S.of(context).tipLabel,
+                        '\$${tip.toStringAsFixed(2)}',
+                      ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -601,9 +614,12 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: const Text(
-                    'Close',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  child: Text(
+                    S.of(context).close,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),

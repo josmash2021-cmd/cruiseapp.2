@@ -14,6 +14,8 @@ import 'services/notification_service.dart';
 import 'services/security_service.dart';
 import 'services/user_session.dart';
 import 'services/local_data_service.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'l10n/app_localizations.dart';
 
 void main() async {
   // Catch all unhandled async Dart errors
@@ -148,6 +150,13 @@ class UberCloneApp extends StatelessWidget {
       theme: lightTheme,
       darkTheme: darkTheme,
       scrollBehavior: const SmoothScrollBehavior(),
+      localizationsDelegates: const [
+        S.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('en'), Locale('es')],
       home: const SplashScreen(),
     );
   }

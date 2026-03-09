@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/api_service.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Vehicle management screen – view and edit car details.
 class DriverVehicleScreen extends StatefulWidget {
@@ -104,7 +105,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Vehicle info updated'),
+          content: Text(S.of(context).vehicleInfoUpdated),
           backgroundColor: _gold,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -117,7 +118,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to save: $e'),
+          content: Text(S.of(context).failedToSave(e.toString())),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
         ),
@@ -127,6 +128,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     return Scaffold(
       backgroundColor: Colors.black,
       body: CustomScrollView(
@@ -183,9 +185,9 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
             ],
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
-              title: const Text(
-                'Vehicle',
-                style: TextStyle(
+              title: Text(
+                s.vehicleTitle,
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
@@ -305,8 +307,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                             children: [
                               Text(
                                 _inspectionValid
-                                    ? 'Vehicle inspection valid'
-                                    : 'Inspection expired',
+                                    ? s.vehicleInspectionValid
+                                    : s.inspectionExpired,
                                 style: TextStyle(
                                   color: _inspectionValid
                                       ? const Color(0xFFE8C547)
@@ -318,8 +320,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                               const SizedBox(height: 2),
                               Text(
                                 _inspectionValid
-                                    ? 'Next inspection due: Mar 15, 2025'
-                                    : 'Please schedule a new inspection',
+                                    ? s.nextInspectionDue
+                                    : s.scheduleNewInspection,
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.4),
                                   fontSize: 12,
@@ -336,37 +338,49 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                   // ── Details ──
                   if (!_isEditing) ...[
                     _detailRow(
-                      'Make',
+                      s.makeLabel,
                       _make,
                       Icons.directions_car_filled_rounded,
                     ),
-                    _detailRow('Model', _model, Icons.local_taxi_rounded),
-                    _detailRow('Year', _year, Icons.calendar_today_rounded),
-                    _detailRow('Color', _color, Icons.palette_rounded),
+                    _detailRow(s.modelLabel, _model, Icons.local_taxi_rounded),
                     _detailRow(
-                      'License Plate',
+                      s.yearLabel,
+                      _year,
+                      Icons.calendar_today_rounded,
+                    ),
+                    _detailRow(s.colorLabel, _color, Icons.palette_rounded),
+                    _detailRow(
+                      s.licensePlate,
                       _plate,
                       Icons.confirmation_number_rounded,
                     ),
-                    _detailRow('VIN', _vin, Icons.qr_code_rounded),
-                    _detailRow('Type', _vehicleType, Icons.category_rounded),
+                    _detailRow(s.vinLabel, _vin, Icons.qr_code_rounded),
+                    _detailRow(
+                      s.typeLabel,
+                      _vehicleType,
+                      Icons.category_rounded,
+                    ),
                   ] else ...[
                     const SizedBox(height: 8),
                     _editField(
-                      'Make',
+                      s.makeLabel,
                       _makeCtrl,
                       Icons.directions_car_filled_rounded,
                     ),
-                    _editField('Model', _modelCtrl, Icons.local_taxi_rounded),
                     _editField(
-                      'Year',
+                      s.modelLabel,
+                      _modelCtrl,
+                      Icons.local_taxi_rounded,
+                    ),
+                    _editField(
+                      s.yearLabel,
                       _yearCtrl,
                       Icons.calendar_today_rounded,
                       keyboard: TextInputType.number,
                     ),
-                    _editField('Color', _colorCtrl, Icons.palette_rounded),
+                    _editField(s.colorLabel, _colorCtrl, Icons.palette_rounded),
                     _editField(
-                      'License Plate',
+                      s.licensePlate,
                       _plateCtrl,
                       Icons.confirmation_number_rounded,
                     ),
@@ -383,9 +397,9 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        child: const Text(
-                          'Save Changes',
-                          style: TextStyle(
+                        child: Text(
+                          s.saveChanges,
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
                           ),
@@ -403,7 +417,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                         setState(() => _isEditing = false);
                       },
                       child: Text(
-                        'Cancel',
+                        s.cancel,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.4),
                           fontWeight: FontWeight.w600,

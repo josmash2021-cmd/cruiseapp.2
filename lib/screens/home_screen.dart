@@ -26,6 +26,7 @@ import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/places_service.dart';
+import '../l10n/app_localizations.dart';
 import '../services/user_session.dart';
 import 'welcome_screen.dart';
 import 'account_deactivated_screen.dart';
@@ -399,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 20),
               Text(
-                'Welcome Gift!',
+                S.of(context).welcomeGift,
                 style: TextStyle(
                   color: c.textPrimary,
                   fontSize: 22,
@@ -432,8 +433,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     elevation: 0,
                   ),
                   onPressed: () => Navigator.of(ctx).pop(true),
-                  child: const Text(
-                    'Apply & Ride',
+                  child: Text(
+                    S.of(context).applyAndRide,
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -442,7 +443,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(false),
                 child: Text(
-                  'Cancel',
+                  S.of(context).cancel,
                   style: TextStyle(color: c.textTertiary, fontSize: 14),
                 ),
               ),
@@ -589,7 +590,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 16),
             Text(
-              'Fast Ride Unavailable',
+              S.of(context).fastRideUnavailableTitle,
               style: TextStyle(
                 color: c.textPrimary,
                 fontSize: 18,
@@ -598,8 +599,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 10),
             Text(
-              'Fast Ride is only available when there are drivers connected nearby. '
-              'Please try again in a few minutes.',
+              S.of(context).fastRideUnavailable,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: c.textSecondary,
@@ -621,8 +621,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   elevation: 0,
                 ),
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text(
-                  'OK',
+                child: Text(
+                  S.of(context).understood,
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
@@ -813,7 +813,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: _buildSectionHeader('Recent Activity', null, null),
+                    child: _buildSectionHeader(
+                      S.of(context).recentActivity,
+                      null,
+                      null,
+                    ),
                   ),
                 ),
                 SliverToBoxAdapter(child: const SizedBox(height: 16)),
@@ -846,7 +850,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildSectionHeader('Live Location', null, null),
+                  child: _buildSectionHeader(
+                    S.of(context).liveLocation,
+                    null,
+                    null,
+                  ),
                 ),
               ),
               SliverToBoxAdapter(child: const SizedBox(height: 16)),
@@ -1191,25 +1199,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 borderRadius: BorderRadius.circular(20),
               ),
               title: Row(
-                children: const [
-                  Icon(Icons.location_off_rounded, color: Color(0xFFE8C547)),
-                  SizedBox(width: 10),
+                children: [
+                  const Icon(
+                    Icons.location_off_rounded,
+                    color: Color(0xFFE8C547),
+                  ),
+                  const SizedBox(width: 10),
                   Text(
-                    'Zona no disponible',
-                    style: TextStyle(color: Colors.white, fontSize: 16),
+                    S.of(ctx).serviceZoneTitle,
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
                   ),
                 ],
               ),
-              content: const Text(
-                'No hay servicios disponibles en tu estado actualmente.',
-                style: TextStyle(color: Colors.white70, fontSize: 14),
+              content: Text(
+                S.of(ctx).noServiceState,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text(
-                    'Entendido',
-                    style: TextStyle(color: Color(0xFFE8C547)),
+                  child: Text(
+                    S.of(ctx).understood,
+                    style: const TextStyle(color: Color(0xFFE8C547)),
                   ),
                 ),
               ],
@@ -1282,7 +1293,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              'Where to?',
+                              S.of(context).whereToQuestion,
                               style: TextStyle(
                                 color: disabled
                                     ? Colors.white.withValues(alpha: 0.25)
@@ -1309,8 +1320,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   Expanded(
                                     child: Text(
                                       zoneBlocked
-                                          ? 'No hay drivers disponibles en este estado'
-                                          : 'Verify identity to request rides',
+                                          ? S.of(context).noDriversInState
+                                          : S.of(context).verifyIdentityToRide,
                                       style: TextStyle(
                                         color: Colors.white.withValues(
                                           alpha: 0.35,
@@ -1445,7 +1456,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               );
             },
           ),
-          label: 'Fast ride',
+          label: S.of(context).fastRide,
           disabled: !_driversOnline,
           onTap: () async {
             if (!_driversOnline) {
@@ -1473,7 +1484,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               );
             },
           ),
-          label: 'Schedule',
+          label: S.of(context).schedule,
           onTap: _openScheduleFlow,
         ),
         // 10% off — shimmer animation, disabled after use, shows trip counter
@@ -2543,7 +2554,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Live location',
+                      S.of(context).liveLocation,
                       style: TextStyle(
                         color: isDark ? Colors.white : const Color(0xFF1C1C1E),
                         fontSize: 12,
@@ -2563,10 +2574,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ─── Dock-style bottom nav with animated gold pill ───
   Widget _buildDockNav(BuildContext context, double bottomPad) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final s = S.of(context);
     final items = [
-      (icon: Icons.explore_rounded, label: 'Ride'),
-      (icon: Icons.calendar_today_rounded, label: 'Schedule'),
-      (icon: Icons.person_rounded, label: 'Account'),
+      (icon: Icons.explore_rounded, label: s.rideLabel),
+      (icon: Icons.calendar_today_rounded, label: s.schedule),
+      (icon: Icons.person_rounded, label: s.accountLabel),
     ];
 
     return Container(
@@ -3155,7 +3167,7 @@ class _LaterOptionsSheet extends StatelessWidget {
               ),
             ),
             Text(
-              'Choose ride type',
+              S.of(context).chooseRideType,
               style: TextStyle(
                 color: c.textPrimary,
                 fontSize: 20,
@@ -3168,8 +3180,8 @@ class _LaterOptionsSheet extends StatelessWidget {
             _optionCard(
               context: context,
               icon: Icons.flight_takeoff_rounded,
-              title: 'Airport',
-              subtitle: 'Book a ride to or from the airport',
+              title: S.of(context).airportLabel,
+              subtitle: S.of(context).airportSubtitle,
               onTap: () => Navigator.pop(context, 'airport'),
             ),
 
@@ -3179,8 +3191,8 @@ class _LaterOptionsSheet extends StatelessWidget {
             _optionCard(
               context: context,
               icon: Icons.schedule_rounded,
-              title: 'Schedule',
-              subtitle: 'Schedule a ride for later',
+              title: S.of(context).schedule,
+              subtitle: S.of(context).scheduleSubtitle,
               onTap: () => Navigator.pop(context, 'schedule'),
             ),
           ],

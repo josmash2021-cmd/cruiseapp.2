@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/email_service.dart';
@@ -90,7 +91,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _continueWithEmail(String email) async {
     if (!_isValidEmail(email)) {
-      _showSnack('Please enter a valid email address', Colors.white.withValues(alpha: 0.6));
+      _showSnack(
+        S.of(context).invalidEmail,
+        Colors.white.withValues(alpha: 0.6),
+      );
       return;
     }
 
@@ -118,19 +122,23 @@ class _LoginScreenState extends State<LoginScreen> {
     if (sent) {
       _showSnack('Code sent to $email', const Color(0xFFE8C547));
     } else if (!EmailService.isConfigured) {
-      _showSnack('EmailJS not configured — check console for code', const Color(0xFFE8C547));
+      _showSnack(
+        'EmailJS not configured — check console for code',
+        const Color(0xFFE8C547),
+      );
     }
 
     Navigator.of(context).push(
-      slideFromRightRoute(
-        VerifyCodeScreen(email: email, expectedCode: code),
-      ),
+      slideFromRightRoute(VerifyCodeScreen(email: email, expectedCode: code)),
     );
   }
 
   void _continueWithPhone(String phone) async {
     if (!_isValidPhone(phone)) {
-      _showSnack('Enter a valid 10-digit US phone number', Colors.white.withValues(alpha: 0.6));
+      _showSnack(
+        S.of(context).invalidPhone,
+        Colors.white.withValues(alpha: 0.6),
+      );
       return;
     }
 
@@ -168,7 +176,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } else if (result.trialBlocked) {
       // Trial account can't send to this number — use local code for dev
       final devCode = _generateCode();
-      debugPrint('📱 DEV MODE — verification code for $normalizedPhone: $devCode');
+      debugPrint(
+        '📱 DEV MODE — verification code for $normalizedPhone: $devCode',
+      );
       _showSnack('Dev mode: check console for code', const Color(0xFFE8C547));
       Navigator.of(context).push(
         slideFromRightRoute(
@@ -182,7 +192,10 @@ class _LoginScreenState extends State<LoginScreen> {
     } else if (!SmsService.isConfigured) {
       _showSnack('Twilio not configured', const Color(0xFFE8C547));
     } else {
-      _showSnack('Failed to send code. Try again.', Colors.white.withValues(alpha: 0.6));
+      _showSnack(
+        'Failed to send code. Try again.',
+        Colors.white.withValues(alpha: 0.6),
+      );
     }
   }
 
@@ -195,12 +208,15 @@ class _LoginScreenState extends State<LoginScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            const Icon(Icons.info_outline_rounded,
-                color: Color(0xFFE8C547), size: 26),
+            const Icon(
+              Icons.info_outline_rounded,
+              color: Color(0xFFE8C547),
+              size: 26,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Account already exists',
+                S.of(context).accountExists,
                 style: TextStyle(
                   color: c.textPrimary,
                   fontSize: 18,
@@ -217,15 +233,21 @@ class _LoginScreenState extends State<LoginScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel',
-                style: TextStyle(color: c.textTertiary, fontWeight: FontWeight.w600)),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: c.textTertiary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFE8C547),
               foregroundColor: const Color(0xFF1A1400),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             ),
             onPressed: () {
@@ -234,8 +256,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 slideFromRightRoute(const LoginPasswordScreen()),
               );
             },
-            child: const Text('Log In',
-                style: TextStyle(fontWeight: FontWeight.w700)),
+            child: const Text(
+              'Log In',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -246,8 +270,10 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: color,
-        content: Text(message,
-            style: const TextStyle(fontWeight: FontWeight.w600)),
+        content: Text(
+          message,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
@@ -278,8 +304,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: c.surface,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.arrow_back_ios_new_rounded,
-                      color: c.textPrimary, size: 18),
+                  child: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: c.textPrimary,
+                    size: 18,
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
@@ -299,10 +328,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 _usePhone
                     ? 'Enter your US phone number to sign up or log in.'
                     : 'Enter your email to sign up or log in.',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: c.textSecondary,
-                ),
+                style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
 
@@ -313,11 +339,18 @@ class _LoginScreenState extends State<LoginScreen> {
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: c.border),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
                 child: Row(
                   children: [
                     if (_usePhone) ...[
-                      Icon(Icons.phone_outlined, color: c.textTertiary, size: 20),
+                      Icon(
+                        Icons.phone_outlined,
+                        color: c.textTertiary,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         '+1',
@@ -352,14 +385,23 @@ class _LoginScreenState extends State<LoginScreen> {
                           hintText: _usePhone
                               ? '(000) 000-0000'
                               : 'Email address',
-                          hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
+                          hintStyle: TextStyle(
+                            color: c.textTertiary,
+                            fontSize: 16,
+                          ),
                           prefixIcon: _usePhone
                               ? null
-                              : Icon(Icons.email_outlined,
-                                  color: c.textTertiary, size: 20),
+                              : Icon(
+                                  Icons.email_outlined,
+                                  color: c.textTertiary,
+                                  size: 20,
+                                ),
                           prefixIconConstraints: _usePhone
                               ? null
-                              : const BoxConstraints(minWidth: 36, minHeight: 0),
+                              : const BoxConstraints(
+                                  minWidth: 36,
+                                  minHeight: 0,
+                                ),
                         ),
                       ),
                     ),
@@ -403,12 +445,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           )
                         : Text(
-                      _usePhone ? 'Continue with Phone' : 'Continue with Email',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                            _usePhone
+                                ? 'Continue with Phone'
+                                : 'Continue with Email',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -420,11 +464,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   Expanded(child: Divider(color: c.divider, thickness: 1)),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text('OR',
-                        style: TextStyle(
-                            color: c.textTertiary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600)),
+                    child: Text(
+                      'OR',
+                      style: TextStyle(
+                        color: c.textTertiary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                   Expanded(child: Divider(color: c.divider, thickness: 1)),
                 ],
@@ -451,7 +498,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   label: Text(
                     _usePhone ? 'Continue with Email' : 'Continue with Phone',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
@@ -465,10 +515,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Text.rich(
                     TextSpan(
                       text: 'By continuing, you agree to our ',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: c.textTertiary,
-                      ),
+                      style: TextStyle(fontSize: 13, color: c.textTertiary),
                       children: [
                         WidgetSpan(
                           child: GestureDetector(

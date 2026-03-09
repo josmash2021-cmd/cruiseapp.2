@@ -20,6 +20,7 @@ import '../services/trip_firestore_service.dart';
 import '../config/api_keys.dart';
 import 'chat_screen.dart';
 import 'home_screen.dart';
+import '../l10n/app_localizations.dart';
 
 class RiderTrackingScreen extends StatefulWidget {
   const RiderTrackingScreen({
@@ -96,14 +97,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _customTip = false;
   bool _saveDriver = false;
   final Set<String> _feedbackChips = {};
-  static const _chipOptions = [
-    'Friendly driver',
-    'Clean car',
-    'Good driving',
-    'Above and beyond',
-    'Great music',
-    'Good conversation',
-  ];
 
   int _pickupIdx = 0;
 
@@ -1212,6 +1205,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Widget _bottomCard(AppColors c, double botPad) {
+    final s = S.of(context);
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
@@ -1254,7 +1248,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                             Padding(
                               padding: const EdgeInsets.only(top: 10),
                               child: Text(
-                                'Driver will arrive on the same side of the street as your pickup spot',
+                                s.driverArriveInstruction,
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.white.withValues(alpha: 0.5),
@@ -1267,14 +1261,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                               iconColor: const Color(0xFFD4A843),
                               label: widget.pickupLabel.isNotEmpty
                                   ? widget.pickupLabel
-                                  : 'Pickup location',
+                                  : s.pickupLocation,
                             ),
                             const SizedBox(height: 6),
                             _tripAddressRow(
                               iconColor: const Color(0xFFD4A843),
                               label: widget.dropoffLabel.isNotEmpty
                                   ? widget.dropoffLabel
-                                  : 'Destination',
+                                  : s.destinationLabel,
                             ),
                           ],
                         )
@@ -1347,7 +1341,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Message ${widget.driverName.split(' ').first}',
+                        s.messageDriver(widget.driverName.split(' ').first),
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -1374,9 +1368,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                         ),
                       );
                     },
-                    child: const Text(
-                      'Contact Support',
-                      style: TextStyle(
+                    child: Text(
+                      s.contactSupport,
+                      style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFFF3B30),
@@ -1394,6 +1388,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Widget _banner(AppColors c) {
+    final s = S.of(context);
     switch (_phase) {
       case _TrackPhase.arriving:
         return Row(
@@ -1401,14 +1396,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           children: [
             Expanded(
               child: RichText(
-                text: const TextSpan(
-                  style: TextStyle(
+                text: TextSpan(
+                  style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
                     height: 1.2,
                   ),
-                  text: 'Meet driver at pickup spot on',
+                  text: s.meetDriverAtPickup,
                 ),
               ),
             ),
@@ -1468,7 +1463,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Your driver has arrived!',
+                  s.yourDriverArrivedExcl,
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
@@ -1482,10 +1477,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       case _TrackPhase.onTrip:
         return Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
-                'On trip to destination',
-                style: TextStyle(
+                s.onTripToDestination,
+                style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
                   color: Colors.white,
@@ -1527,7 +1522,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'You have arrived!',
+                  s.youHaveArrived,
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
@@ -1543,21 +1538,30 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   // ── Rating / Tip / Save overlay (shown when trip completes) ──
   Widget _ratingOverlay(double botPad) {
+    final s = S.of(context);
+    final chipOptions = [
+      s.friendlyDriver,
+      s.cleanCar,
+      s.goodDriving,
+      s.aboveAndBeyond,
+      s.greatMusic,
+      s.goodConversation,
+    ];
     final first = widget.driverName.split(' ').first;
     const gold = Color(0xFFD4A843);
 
     String starLabel() {
       switch (_ratingStars) {
         case 1:
-          return 'Poor';
+          return s.ratingPoor;
         case 2:
-          return 'Below Average';
+          return s.ratingBelowAverage;
         case 3:
-          return 'Average';
+          return s.ratingAverage;
         case 4:
-          return 'Great';
+          return s.ratingGreat;
         case 5:
-          return 'Excellent!';
+          return s.ratingExcellent;
         default:
           return '';
       }
@@ -1602,8 +1606,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               ),
 
               // ── "How was your ride?" title ──
-              const Text(
-                'How was your ride?',
+              Text(
+                s.howWasRide,
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
@@ -1647,7 +1651,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
               const SizedBox(height: 6),
               Text(
-                'What went well?',
+                s.whatWentWell,
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -1661,7 +1665,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 spacing: 8,
                 runSpacing: 8,
                 alignment: WrapAlignment.center,
-                children: _chipOptions.map((label) {
+                children: chipOptions.map((label) {
                   final sel = _feedbackChips.contains(label);
                   return GestureDetector(
                     onTap: () => setState(() {
@@ -1710,7 +1714,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'Leave anonymous feedback',
+                      s.leaveAnonymousFeedback,
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
@@ -1739,7 +1743,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Your tip for $first',
+                          s.tipFor(first),
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -1748,7 +1752,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '100% of tips go to drivers',
+                          s.tipGoesToDriver,
                           style: TextStyle(
                             fontSize: 13,
                             color: Colors.white.withValues(alpha: 0.5),
@@ -1857,7 +1861,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   if (!_customTip) _tipAmount = 0;
                 }),
                 child: Text(
-                  _customTip ? 'Cancel custom tip' : 'Enter custom amount',
+                  _customTip ? s.cancelCustomTip : s.enterCustomAmount,
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -1962,8 +1966,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Favorite this driver',
+                            Text(
+                              s.favoriteThisDriver,
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
@@ -1972,7 +1976,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'We\'ll prioritize your favorite drivers for scheduled rides',
+                              s.favoriteDriverNote,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.white.withValues(alpha: 0.5),
@@ -2014,9 +2018,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                       borderRadius: BorderRadius.circular(27),
                     ),
                   ),
-                  child: const Text(
-                    'Send',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                  child: Text(
+                    s.send,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
@@ -2028,6 +2035,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Widget _driverRow(AppColors c) {
+    final s = S.of(context);
     final first = widget.driverName.split(' ').first;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -2138,12 +2146,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                       color: Colors.white.withValues(alpha: 0.3),
                     ),
                   ),
-                  const Flexible(
+                  Flexible(
                     child: Text(
-                      'Top-rated driver',
+                      s.topRatedDriver,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                         color: Colors.white54,

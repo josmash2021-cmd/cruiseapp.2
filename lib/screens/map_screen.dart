@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
+import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
@@ -100,7 +101,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   static const _birminghamDefault = LatLng(33.5186, -86.8104);
 
   /// Picks the right JSON map style based on the system theme (light phone = light map).
-  String get _mapStyle => MapStyles.dark;
+  String get _mapStyle => _c.isDark ? MapStyles.dark : MapStyles.light;
 
   static final _usBounds = LatLngBounds(
     southwest: LatLng(24.396308, -124.848974),
@@ -161,7 +162,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   static const double _zoomInCloseLevel = 17.5;
   static const double _zoomOutLevel = 10.5; // ignore: unused_field
 
-  String _pickupAddress = 'Detectando tu ubicaciÃ³n...';
+  String _pickupAddress = '';
   String _dropoffAddress = '';
   String _tripMiles = '-- mi';
   String _tripDuration = '-- min';
@@ -461,7 +462,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       position: position,
       draggable: _stage == RideStage.confirmPickup,
       icon: _goldPinIcon ?? BitmapDescriptor.defaultMarkerWithHue(_goldPinHue),
-      infoWindow: InfoWindow(title: 'Pickup', snippet: snippet),
+      infoWindow: InfoWindow(
+        title: S.of(context).pickupLabel,
+        snippet: snippet,
+      ),
       onDragEnd: _stage == RideStage.confirmPickup
           ? _onPickupMarkerDragEnd
           : null,
@@ -476,7 +480,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           _dropoffPinIcon ??
           _goldPinIcon ??
           BitmapDescriptor.defaultMarkerWithHue(_goldPinHue),
-      infoWindow: InfoWindow(title: 'Dropoff', snippet: snippet),
+      infoWindow: InfoWindow(
+        title: S.of(context).dropoffLabel,
+        snippet: snippet,
+      ),
     );
   }
 
@@ -755,7 +762,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       final lastKnown = await Geolocator.getLastKnownPosition();
       if (lastKnown != null && mounted) {
         final latLng = LatLng(lastKnown.latitude, lastKnown.longitude);
-        _setInitialPickup(latLng, 'UbicaciÃ³n actual');
+        _setInitialPickup(latLng, S.of(context).currentLocation);
         _centerMapOn(latLng, zoom: _defaultMapZoom);
         // Start reverse geocode in background, don't wait
         _refreshPickupAddress(latLng);
@@ -1020,8 +1027,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (_stage != RideStage.plan) return;
 
     setState(() {
-      _dropoffCtrl.text = 'Loading address...';
-      _dropoffMarker = _dropoffMapMarker(latLng, snippet: 'Loading...');
+      _dropoffCtrl.text = S.of(context).loadingAddress;
+      _dropoffMarker = _dropoffMapMarker(
+        latLng,
+        snippet: S.of(context).loadingAddress,
+      );
     });
 
     try {
@@ -1435,9 +1445,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
     if (!_isValidCoordinate(details.lat, details.lng)) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(
-          content: Text('La direcciÃ³n no tiene coordenadas vÃ¡lidas.'),
-          duration: Duration(milliseconds: 1600),
+        SnackBar(
+          content: Text(S.of(context).invalidCoordinatesError),
+          duration: const Duration(milliseconds: 1600),
         ),
       );
       return;
@@ -1605,11 +1615,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       });
 
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No se pudo trazar una ruta real. Verifica origen/destino e intenta de nuevo.',
-          ),
-          duration: Duration(milliseconds: 1800),
+        SnackBar(
+          content: Text(S.of(context).routeNotFoundError),
+          duration: const Duration(milliseconds: 1800),
         ),
       );
       return false;
@@ -1662,9 +1670,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (_pickupMarker == null || _dropoffMarker == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Selecciona un destino vÃ¡lido para continuar.'),
-          duration: Duration(milliseconds: 1800),
+        SnackBar(
+          content: Text(S.of(context).selectValidDestination),
+          duration: const Duration(milliseconds: 1800),
         ),
       );
       return;
@@ -1697,19 +1705,23 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           color: Color(0xFFFF453A),
           size: 48,
         ),
-        title: const Text(
-          'Trip Cancelled',
+        title: Text(
+          S.of(context).tripCancelled,
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 20,
             fontWeight: FontWeight.w700,
           ),
         ),
-        content: const Text(
-          'Your trip has been cancelled by the operator. Please request a new ride.',
+        content: Text(
+          S.of(context).tripCancelledByOperator,
           textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.white70, fontSize: 15, height: 1.4),
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 15,
+            height: 1.4,
+          ),
         ),
         actionsAlignment: MainAxisAlignment.center,
         actions: [
@@ -1725,9 +1737,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 ),
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
-              child: const Text(
-                'OK',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              child: Text(
+                S.of(context).okButton,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
               ),
             ),
           ),
@@ -1814,7 +1829,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   String get _rideTimeBadgeText {
-    if (_pickupNow) return 'Pickup now';
+    if (_pickupNow) return S.of(context).pickupNow;
     if (_scheduledDate != null && _scheduledTime != null) {
       const months = [
         'Jan',
@@ -1838,7 +1853,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       final amPm = t.period == DayPeriod.am ? 'AM' : 'PM';
       return '$month ${d.day} · $hour:$min $amPm';
     }
-    return 'Pickup later';
+    return S.of(context).pickupLater;
   }
 
   Future<void> _showRideTimeSheet() async {
@@ -1866,7 +1881,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'When do you need a ride?',
+                    S.of(context).whenNeedRide,
                     style: TextStyle(
                       color: _c.textPrimary,
                       fontSize: 19,
@@ -1877,22 +1892,22 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   Divider(color: _c.divider, height: 1),
                   _rideTimeOption(
                     icon: Icons.watch_later_outlined,
-                    title: 'Now',
-                    subtitle: 'Request a ride, hop in, and go',
+                    title: S.of(context).nowLabel,
+                    subtitle: S.of(context).nowSubtitle,
                     selected: tempPickupNow,
                     onTap: () => setModalState(() => tempPickupNow = true),
                   ),
                   Divider(color: _c.divider, height: 1),
                   _rideTimeOption(
                     icon: Icons.calendar_today_outlined,
-                    title: 'Later',
-                    subtitle: 'Reserve for extra peace of mind',
+                    title: S.of(context).laterLabel,
+                    subtitle: S.of(context).laterSubtitle,
                     selected: !tempPickupNow,
                     onTap: () => setModalState(() => tempPickupNow = false),
                   ),
                   const SizedBox(height: 14),
                   _sheetButton(
-                    label: 'Next',
+                    label: S.of(context).nextButton,
                     onPressed: () {
                       if (tempPickupNow) {
                         Navigator.of(ctx).pop();
@@ -1927,7 +1942,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        'Pick a date',
+                        S.of(context).pickDate,
                         style: TextStyle(
                           color: _c.textPrimary,
                           fontSize: 19,
@@ -1961,7 +1976,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     ),
                   ),
                   _sheetButton(
-                    label: 'Next',
+                    label: S.of(context).nextButton,
                     onPressed: () => setModalState(() => step = 2),
                   ),
                 ],
@@ -1984,7 +1999,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        'Pick a time',
+                        S.of(context).pickTime,
                         style: TextStyle(
                           color: _c.textPrimary,
                           fontSize: 19,
@@ -2025,10 +2040,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   ),
                   const SizedBox(height: 14),
                   _sheetButton(
-                    label: 'Confirm',
+                    label: S.of(context).confirmButton,
                     onPressed: () {
-                      Navigator.of(ctx).pop();
-                      if (!mounted) return;
                       final dt = DateTime(
                         tempDate.year,
                         tempDate.month,
@@ -2036,6 +2049,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         tempTime.hour,
                         tempTime.minute,
                       );
+                      // Must be at least 30 min in the future
+                      if (dt.isBefore(
+                        DateTime.now().add(const Duration(minutes: 30)),
+                      )) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(S.of(context).scheduleTooSoon),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                        return;
+                      }
+                      Navigator.of(ctx).pop();
+                      if (!mounted) return;
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) =>
@@ -2375,7 +2402,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   // Route line color: always gold for brand consistency
-  Color get _routeColor => const Color(0xFF4285F4);
+  Color get _routeColor => const Color(0xFFE8C547);
 
   Set<Polyline> _buildRoutePolylines(List<LatLng> points) {
     final baseColor = _routeColor;
@@ -2825,7 +2852,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             _handle(),
             const SizedBox(height: 12),
             Text(
-              'Plan your destination',
+              S.of(context).planYourDestination,
               style: TextStyle(
                 color: _c.textPrimary,
                 fontWeight: FontWeight.w700,
@@ -2833,7 +2860,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               ),
             ),
             Text(
-              'Move map and choose where to go',
+              S.of(context).moveMapChooseDestination,
               style: TextStyle(color: _c.textTertiary, fontSize: 14),
             ),
             const SizedBox(height: 12),
@@ -2859,7 +2886,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Where to?',
+                        S.of(context).whereToQuestion,
                         style: TextStyle(
                           color: _c.textPrimary,
                           fontSize: 21,
@@ -2901,7 +2928,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 _handle(),
                 const SizedBox(height: 8),
                 Text(
-                  'Plan your ride',
+                  S.of(context).planYourRide,
                   style: TextStyle(
                     color: _c.textPrimary,
                     fontSize: 34,
@@ -2919,7 +2946,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       onTap: _showRideTimeSheet,
                     ),
                     const SizedBox(width: 8),
-                    const _Badge(icon: Icons.person_outline, text: 'For me'),
+                    _Badge(
+                      icon: Icons.person_outline,
+                      text: S.of(context).forMe,
+                    ),
                     const SizedBox(width: 8),
                     _Badge(
                       icon: _airportSelection != null
@@ -2927,7 +2957,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                           : Icons.flight_outlined,
                       text: _airportSelection != null
                           ? _airportSelection!.airport.code
-                          : 'Airport',
+                          : S.of(context).airportLabel,
                       onTap: _showAirportSheet,
                     ),
                   ],
@@ -2956,7 +2986,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             controller: _pickupCtrl,
             focusNode: _pickupFocus,
             icon: Icons.radio_button_checked,
-            hint: 'Pickup',
+            hint: S.of(context).pickupHint,
             textInputAction: TextInputAction.next,
             onChanged: (value) => _onAddressChanged(value, pickup: true),
             onSubmitted: (_) => _dropoffFocus.requestFocus(),
@@ -2967,7 +2997,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             controller: _dropoffCtrl,
             focusNode: _dropoffFocus,
             icon: Icons.crop_square,
-            hint: 'Where to?',
+            hint: S.of(context).whereToQuestion,
             textInputAction: TextInputAction.done,
             onChanged: (value) => _onAddressChanged(value, pickup: false),
             onSubmitted: _onDropoffSubmitted,
@@ -3012,7 +3042,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Text(
-          'Could not load address results.',
+          S.of(context).addressResultsError,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
         ),
       );
@@ -3099,7 +3129,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             _handle(),
             const SizedBox(height: 10),
             Text(
-              'Gathering options',
+              S.of(context).gatheringOptions,
               style: TextStyle(
                 color: _c.textPrimary,
                 fontWeight: FontWeight.w700,
@@ -3186,8 +3216,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 SizedBox(width: 6),
                 Text(
                   _promoActive
-                      ? '$_promoDiscountPercent% discount applied'
-                      : 'Select your ride',
+                      ? S.of(context).discountApplied(_promoDiscountPercent)
+                      : S.of(context).selectYourRide,
                   style: TextStyle(
                     color: _promoActive ? _gold : _c.textSecondary,
                     fontWeight: FontWeight.w600,
@@ -3305,9 +3335,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                                               20,
                                             ),
                                           ),
-                                          child: const Text(
-                                            'Faster',
-                                            style: TextStyle(
+                                          child: Text(
+                                            S.of(context).fasterTag,
+                                            style: const TextStyle(
                                               color: _gold,
                                               fontSize: 10,
                                               fontWeight: FontWeight.w700,
@@ -3359,7 +3389,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     ),
                     onPressed: _beginRideRequestFromOptions,
                     child: Text(
-                      'Choose ${_rides[_selectedRide].name}',
+                      S.of(context).chooseRide(_rides[_selectedRide].name),
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 18,
@@ -3458,7 +3488,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 borderRadius: BorderRadius.circular(20),
               ),
               title: Text(
-                _stage == RideStage.riding ? 'Cancel Ride?' : 'Stop Searching?',
+                _stage == RideStage.riding
+                    ? S.of(context).cancelRide
+                    : S.of(context).stopSearchingQuestion,
                 style: TextStyle(
                   color: _c.textPrimary,
                   fontWeight: FontWeight.w800,
@@ -3466,23 +3498,23 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               ),
               content: Text(
                 _stage == RideStage.riding
-                    ? 'Are you sure you want to cancel this ride? A cancellation fee may apply.'
-                    : 'Are you sure you want to stop looking for a driver?',
+                    ? S.of(context).cancelRideConfirmation
+                    : S.of(context).stopSearchingConfirmation,
                 style: TextStyle(color: _c.textSecondary),
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
                   child: Text(
-                    'Keep Ride',
+                    S.of(context).keepRide,
                     style: TextStyle(color: _gold, fontWeight: FontWeight.w700),
                   ),
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(
+                  child: Text(
+                    S.of(context).cancelButton,
+                    style: const TextStyle(
                       color: Colors.redAccent,
                       fontWeight: FontWeight.w700,
                     ),
@@ -3634,9 +3666,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 backgroundColor: const Color(0xFFFF5252),
-                content: const Text(
-                  'Enter pickup and destination addresses first',
-                  style: TextStyle(
+                content: Text(
+                  S.of(context).enterAddressesFirst,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
                   ),
@@ -3741,7 +3773,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         SnackBar(
           backgroundColor: _gold,
           content: Text(
-            'Ride scheduled for $scheduleLabel!',
+            S.of(context).rideScheduledFor(scheduleLabel),
             style: const TextStyle(
               color: Colors.black,
               fontWeight: FontWeight.w700,
@@ -3755,8 +3787,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         ),
       );
       await LocalDataService.addNotification(
-        title: 'Ride scheduled',
-        message: 'Your $scheduleLabel ride has been confirmed.',
+        title: S.of(context).rideScheduledTitle,
+        message: S.of(context).rideScheduledMessage(scheduleLabel),
         type: 'ride',
       );
       _setStage(RideStage.plan);
@@ -3772,8 +3804,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     // ── IMMEDIATE ride ──
     _setStage(RideStage.matching);
     await LocalDataService.addNotification(
-      title: 'Searching driver',
-      message: 'We are finding the best ${_rides[_selectedRide].name} nearby.',
+      title: S.of(context).searchingDriverTitle,
+      message: S.of(context).searchingDriverMessage(_rides[_selectedRide].name),
       type: 'ride',
     );
 
@@ -3922,8 +3954,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
             _setStage(RideStage.riding);
             await LocalDataService.addNotification(
-              title: 'Driver assigned',
-              message: '\$_driverName is on the way in \$_driverEta.',
+              title: S.of(context).driverAssignedTitle,
+              message: S
+                  .of(context)
+                  .driverAssignedMessage(_driverName, _driverEta),
               type: 'ride',
             );
 
@@ -3980,10 +4014,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               timer.cancel();
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'No drivers available right now. Please try again.',
-                  ),
+                SnackBar(
+                  content: Text(S.of(context).noDriversAvailable),
                   duration: Duration(seconds: 3),
                 ),
               );
@@ -4045,8 +4077,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               TripFirestoreService.syncTripCompleted(_firestoreTripId!);
             }
             await LocalDataService.addNotification(
-              title: 'Trip completed',
-              message: 'You have arrived at your destination.',
+              title: S.of(context).tripCompletedTitle,
+              message: S.of(context).arrivedAtDestination,
               type: 'ride',
             );
             _completeRide();
@@ -4060,8 +4092,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 TripFirestoreService.syncTripStarted(_firestoreTripId!);
               }
               LocalDataService.addNotification(
-                title: 'Trip started',
-                message: 'You are now heading to \$_dropoffAddress.',
+                title: S.of(context).tripStartedTitle,
+                message: S.of(context).headingToDestination(_dropoffAddress),
                 type: 'ride',
               );
             }
@@ -4145,8 +4177,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 TripFirestoreService.syncDriverArrived(_firestoreTripId!);
               }
               LocalDataService.addNotification(
-                title: 'Driver arrived',
-                message: '$_driverName has arrived at the pickup location.',
+                title: S.of(context).driverArrivedTitle,
+                message: S.of(context).driverArrivedMessage(_driverName),
                 type: 'ride',
               );
             }
@@ -4558,9 +4590,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     );
     await LocalDataService.addTrip(completedTrip);
     await LocalDataService.addNotification(
-      title: 'Trip completed',
-      message:
-          'Your ${completedRide.name} ride to $_dropoffAddress has finished.',
+      title: S.of(context).tripCompletedTitle,
+      message: '${S.of(context).arrivedAtDestination} (${completedRide.name})',
       type: 'ride',
     );
 
@@ -4886,7 +4917,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Note for driver',
+                    S.of(context).noteForDriver,
                     style: TextStyle(
                       color: _c.textPrimary,
                       fontSize: 19,
@@ -4900,7 +4931,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     maxLines: 3,
                     style: TextStyle(color: _c.textPrimary, fontSize: 16),
                     decoration: InputDecoration(
-                      hintText: 'e.g. I\'m at the front entrance',
+                      hintText: S.of(context).noteHint,
                       hintStyle: TextStyle(color: _c.textTertiary),
                       filled: true,
                       fillColor: _c.mapSurface,
@@ -4926,9 +4957,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         setState(() => _driverNote = noteCtrl.text.trim());
                         Navigator.of(context).pop();
                       },
-                      child: const Text(
-                        'Save',
-                        style: TextStyle(
+                      child: Text(
+                        S.of(context).saveButton,
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
                         ),
@@ -4978,7 +5009,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 18),
             Text(
-              'Confirm pickup spot',
+              S.of(context).confirmPickupSpot,
               style: TextStyle(
                 color: _c.textPrimary,
                 fontSize: 24,
@@ -4988,7 +5019,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 5),
             Text(
-              'Move the map to adjust your pickup',
+              S.of(context).moveMapAdjustPickup,
               style: TextStyle(
                 color: _c.textTertiary,
                 fontSize: 13.5,
@@ -5018,7 +5049,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Scheduled for $_rideTimeBadgeText',
+                        S.of(context).scheduledFor(_rideTimeBadgeText),
                         style: const TextStyle(
                           color: _gold,
                           fontSize: 14,
@@ -5063,7 +5094,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'PICKUP',
+                          S.of(context).pickupLabel.toUpperCase(),
                           style: TextStyle(
                             color: _gold.withValues(alpha: 0.8),
                             fontSize: 10,
@@ -5113,7 +5144,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     Expanded(
                       child: Text(
                         _driverNote.isEmpty
-                            ? 'Add note for driver'
+                            ? S.of(context).addNoteForDriver
                             : _driverNote,
                         style: TextStyle(
                           color: _driverNote.isEmpty
@@ -5151,9 +5182,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
                 onPressed: _confirmPickupAndRequestRide,
-                child: const Text(
-                  'Select payment',
-                  style: TextStyle(
+                child: Text(
+                  S.of(context).selectPayment,
+                  style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.2,
@@ -5183,7 +5214,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           );
         }
         return (
-          label: 'Credit or debit card',
+          label: S.of(context).creditOrDebitCard,
           logoWidget: _brandLogo(
             null,
             const Color(0xFF6B7280),
@@ -5336,7 +5367,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   void _showPaymentMethodSelector() {
     final creditLabel = (_savedCardBrand != null && _savedCardLast4 != null)
         ? '${_capitalizedBrand(_savedCardBrand)} •••• $_savedCardLast4'
-        : 'Credit or debit card';
+        : S.of(context).creditOrDebitCard;
     final methods = [
       ('google_pay', 'Google Pay'),
       ('credit_card', creditLabel),
@@ -5374,7 +5405,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Payment method',
+                    S.of(context).paymentMethodTitle,
                     style: TextStyle(
                       color: _c.textPrimary,
                       fontSize: 20,
@@ -5429,9 +5460,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                                   ),
                                 ),
                                 if (!linked)
-                                  const Text(
-                                    'Not added',
-                                    style: TextStyle(
+                                  Text(
+                                    S.of(context).notAdded,
+                                    style: const TextStyle(
                                       color: Colors.white54,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w500,
@@ -5457,7 +5488,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Text(
-                                'Added',
+                                S.of(context).addedLabel,
                                 style: TextStyle(
                                   color: _gold,
                                   fontSize: 11,
@@ -5475,9 +5506,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                                 color: _gold,
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              child: const Text(
-                                'Add',
-                                style: TextStyle(
+                              child: Text(
+                                S.of(context).addButton,
+                                style: const TextStyle(
                                   color: Colors.black,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -5505,7 +5536,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       Icon(Icons.settings_rounded, color: _gold, size: 18),
                       const SizedBox(width: 6),
                       Text(
-                        'Manage payment accounts',
+                        S.of(context).managePaymentAccounts,
                         style: TextStyle(
                           color: _gold,
                           fontSize: 14,
@@ -5615,7 +5646,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Google Pay is not available on this device.'),
+            content: Text(S.of(context).googlePayNotAvailable),
             backgroundColor: _c.surface,
             behavior: SnackBarBehavior.floating,
           ),
@@ -5655,7 +5686,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         backgroundColor: _c.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Did you complete setup?',
+          S.of(context).completeSetupQuestion,
           style: TextStyle(
             color: _c.textPrimary,
             fontSize: 18,
@@ -5663,14 +5694,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           ),
         ),
         content: Text(
-          'Confirm that you linked your $name account.',
+          S.of(context).confirmLinkedAccount(name),
           style: TextStyle(color: _c.textSecondary, fontSize: 15),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(
-              'Not yet',
+              S.of(context).notYet,
               style: TextStyle(
                 color: _c.textTertiary,
                 fontWeight: FontWeight.w600,
@@ -5679,9 +5710,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              "Yes, it's linked",
-              style: TextStyle(color: _gold, fontWeight: FontWeight.w700),
+            child: Text(
+              S.of(context).yesLinked,
+              style: const TextStyle(color: _gold, fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -5694,7 +5725,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           SnackBar(
             backgroundColor: _gold,
             content: Text(
-              '$name linked successfully',
+              S.of(context).linkedSuccessfully(name),
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             behavior: SnackBarBehavior.floating,
@@ -5731,7 +5762,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 18),
             Text(
-              'Payment',
+              S.of(context).paymentLabel,
               style: TextStyle(
                 color: _c.textPrimary,
                 fontSize: 24,
@@ -5858,7 +5889,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                '$_promoDiscountPercent% promotional discount applied',
+                                S
+                                    .of(context)
+                                    .promoDiscountApplied(
+                                      _promoDiscountPercent,
+                                    ),
                                 style: TextStyle(
                                   color: _gold,
                                   fontSize: 13,
@@ -5986,8 +6021,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                                     _linkedPaymentMethods.contains(
                                           _selectedPaymentMethod,
                                         )
-                                        ? 'Tap to change'
-                                        : 'Not added â€” tap to set up',
+                                        ? S.of(context).tapToChange
+                                        : S.of(context).notAddedTapSetup,
                                     style: TextStyle(
                                       color:
                                           _linkedPaymentMethods.contains(
@@ -6036,13 +6071,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     ).push(slideFromRightRoute(const PaymentAccountsScreen()));
                     _loadLinkedPayments();
                   },
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.link_rounded, size: 18),
                       SizedBox(width: 8),
                       Text(
-                        'Add payment method',
+                        S.of(context).addPaymentMethod,
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
@@ -6079,8 +6114,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       const SizedBox(width: 8),
                       Text(
                         _pickupNow
-                            ? 'Pay ${ride.price}'
-                            : 'Book Scheduled Ride · ${ride.price}',
+                            ? S.of(context).payAmount(ride.price)
+                            : S.of(context).bookScheduledRidePrice(ride.price),
                         style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
@@ -6124,7 +6159,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             // â”€â”€ Title with animated dots â”€â”€
             isSearching
                 ? _AnimatedSearchText(
-                    text: 'Looking for your driver',
+                    text: S.of(context).lookingForDriver,
                     style: TextStyle(
                       color: _c.textPrimary,
                       fontSize: 22,
@@ -6133,7 +6168,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     ),
                   )
                 : Text(
-                    'Driver found!',
+                    S.of(context).driverFound,
                     style: TextStyle(
                       color: _gold,
                       fontSize: 22,
@@ -6148,8 +6183,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               duration: const Duration(milliseconds: 250),
               child: Text(
                 isSearching
-                    ? 'Finding the best ${ride.name} nearby'
-                    : '${ride.name} · arriving in $_driverEta',
+                    ? S.of(context).findingBestNearby(ride.name)
+                    : S.of(context).arrivingIn(ride.name, _driverEta),
                 key: ValueKey(isSearching),
                 style: TextStyle(color: _c.textSecondary, fontSize: 14),
               ),
@@ -6210,7 +6245,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _pickupAddress.isNotEmpty ? _pickupAddress : 'Pickup',
+                      _pickupAddress.isNotEmpty
+                          ? _pickupAddress
+                          : S.of(context).pickupLabel,
                       style: TextStyle(
                         color: _c.textPrimary,
                         fontSize: 13,
@@ -6237,7 +6274,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _dropoffAddress.isNotEmpty ? _dropoffAddress : 'Drop-off',
+                      _dropoffAddress.isNotEmpty
+                          ? _dropoffAddress
+                          : S.of(context).dropoffLabel,
                       style: TextStyle(
                         color: _c.textPrimary,
                         fontSize: 13,
@@ -6271,9 +6310,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         _tripPollTimer?.cancel();
                         _setStage(RideStage.options);
                       },
-                      child: const Text(
-                        'Cancel Ride',
-                        style: TextStyle(
+                      child: Text(
+                        S.of(context).cancelRide,
+                        style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
@@ -6297,12 +6336,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       ),
                       onPressed: () {
                         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                          const SnackBar(content: Text('Driver contacted.')),
+                          SnackBar(
+                            content: Text(S.of(context).driverContacted),
+                          ),
                         );
                       },
                       icon: const Icon(Icons.phone_rounded, size: 18),
                       label: Text(
-                        isSearching ? 'Contact Support' : 'Call Driver',
+                        isSearching
+                            ? S.of(context).contactSupport
+                            : S.of(context).callDriver,
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -6497,17 +6540,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       final h = arrival.hour % 12 == 0 ? 12 : arrival.hour % 12;
       final m = arrival.minute.toString().padLeft(2, '0');
       final period = arrival.hour < 12 ? 'am' : 'pm';
-      chipLabel = 'Arrival $h:$m$period';
+      chipLabel = S.of(context).arrivalTime('$h:$m$period');
       chipIcon = Icons.access_time_rounded;
       chipColor = Colors.white;
       iconColor = Colors.black87;
     } else if (isArrived) {
-      chipLabel = 'Driver arrived';
+      chipLabel = S.of(context).driverArrived;
       chipIcon = Icons.place_rounded;
       chipColor = const Color(0xFF4FC3F7);
       iconColor = Colors.black87;
     } else {
-      chipLabel = _driverEta.isNotEmpty ? 'ETA $_driverEta' : 'Driver en route';
+      chipLabel = _driverEta.isNotEmpty
+          ? S.of(context).etaLabel(_driverEta)
+          : S.of(context).driverEnRoute;
       chipIcon = Icons.directions_car_rounded;
       chipColor = Colors.white;
       iconColor = Colors.black87;
@@ -6606,7 +6651,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         Text(
                           _pickupAddress.isNotEmpty
                               ? _pickupAddress
-                              : 'Your location',
+                              : S.of(context).yourLocation,
                           style: TextStyle(
                             color: _c.textSecondary,
                             fontSize: 12,
@@ -6618,7 +6663,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         Text(
                           _dropoffAddress.isNotEmpty
                               ? _dropoffAddress
-                              : 'Destination',
+                              : S.of(context).destinationLabel,
                           style: TextStyle(
                             color: _c.textPrimary,
                             fontWeight: FontWeight.w700,
@@ -6638,7 +6683,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     child: Text(
-                      'Add or\nChange',
+                      S.of(context).addOrChange,
                       textAlign: TextAlign.right,
                       style: TextStyle(
                         color: _c.isDark ? _gold : const Color(0xFF1565C0),
@@ -6761,7 +6806,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 child: Row(
                   children: [
                     Text(
-                      "How's your ride going?",
+                      S.of(context).howsYourRide,
                       style: TextStyle(
                         color: _c.textPrimary,
                         fontSize: 14,
@@ -6784,7 +6829,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       child: Row(
                         children: [
                           Text(
-                            'Rate or tip',
+                            S.of(context).rateOrTip,
                             style: TextStyle(
                               color: _c.isDark
                                   ? _gold
@@ -6854,8 +6899,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         children: [
                           Text(
                             isArrived
-                                ? '$_driverName is at pickup'
-                                : 'ETA $_driverEta',
+                                ? S.of(context).driverAtPickup(_driverName)
+                                : S.of(context).etaLabel(_driverEta),
                             style: TextStyle(
                               color: _c.textPrimary,
                               fontSize: 16,
@@ -6864,7 +6909,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                           ),
                           if (!isArrived)
                             Text(
-                              '$_driverName is on the way',
+                              S.of(context).driverOnTheWay(_driverName),
                               style: TextStyle(
                                 color: _c.textSecondary,
                                 fontSize: 12,
@@ -6880,23 +6925,21 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       final confirm = await showDialog<bool>(
                         context: context,
                         builder: (ctx) => AlertDialog(
-                          title: const Text('Cancel ride?'),
-                          content: const Text(
-                            'Are you sure? A cancellation fee may apply.',
-                          ),
+                          title: Text(S.of(context).cancelRide),
+                          content: Text(S.of(context).cancelRideConfirmation),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(ctx, false),
                               child: Text(
-                                'Keep ride',
+                                S.of(context).keepRide,
                                 style: TextStyle(color: _gold),
                               ),
                             ),
                             TextButton(
                               onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text(
-                                'Cancel',
-                                style: TextStyle(color: Colors.redAccent),
+                              child: Text(
+                                S.of(context).cancelButton,
+                                style: const TextStyle(color: Colors.redAccent),
                               ),
                             ),
                           ],
@@ -6912,7 +6955,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       Navigator.of(context).maybePop();
                     },
                     child: Text(
-                      'Cancel',
+                      S.of(context).cancelButton,
                       style: TextStyle(color: _c.textSecondary, fontSize: 14),
                     ),
                   ),

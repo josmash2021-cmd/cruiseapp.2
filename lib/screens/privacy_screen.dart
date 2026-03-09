@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
@@ -249,7 +250,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Data Sharing',
+                      S.of(context).dataSharing,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -260,8 +261,8 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
 
                     _toggleItem(
                       c,
-                      'Location Sharing',
-                      'Share your location with drivers during rides for accurate pickups.',
+                      S.of(context).locationSharing,
+                      S.of(context).locationSharingDesc,
                       _locationSharing,
                       (v) {
                         setState(() => _locationSharing = v);
@@ -271,8 +272,8 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                     const SizedBox(height: 10),
                     _toggleItem(
                       c,
-                      'Usage Analytics',
-                      'Help us improve the app by sharing anonymous usage data.',
+                      S.of(context).usageAnalytics,
+                      S.of(context).usageAnalyticsDesc,
                       _analyticsEnabled,
                       (v) {
                         setState(() => _analyticsEnabled = v);
@@ -282,8 +283,8 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                     const SizedBox(height: 10),
                     _toggleItem(
                       c,
-                      'Personalized Ads',
-                      'Show ads based on your ride preferences and history.',
+                      S.of(context).personalizedAds,
+                      S.of(context).personalizedAdsDesc,
                       _personalizedAds,
                       (v) {
                         setState(() => _personalizedAds = v);
@@ -293,7 +294,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
 
                     const SizedBox(height: 28),
                     Text(
-                      'Your Data',
+                      S.of(context).yourData,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -305,16 +306,16 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                     _actionItem(
                       c,
                       Icons.history_rounded,
-                      'Clear Trip History',
-                      'Remove all saved trips from this device.',
+                      S.of(context).clearTripHistory,
+                      S.of(context).clearTripHistoryDesc,
                       onTap: _clearTripHistory,
                     ),
                     const SizedBox(height: 10),
                     _actionItem(
                       c,
                       Icons.download_rounded,
-                      'Download My Data',
-                      'Request a copy of all your personal data.',
+                      S.of(context).downloadMyData,
+                      S.of(context).downloadMyDataDesc,
                       onTap: _requestDataExport,
                     ),
 

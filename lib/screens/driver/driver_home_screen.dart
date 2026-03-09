@@ -18,6 +18,7 @@ import 'driver_menu_screen.dart';
 import 'driver_online_screen.dart';
 import 'driver_inbox_screen.dart';
 import 'driver_profile_photo_screen.dart';
+import '../../l10n/app_localizations.dart';
 
 /// ═══════════════════════════════════════════════════════════════
 ///  CRUISE DRIVER HOME — Premium dashboard with map, stats, go-online
@@ -505,7 +506,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        _getGreeting(),
+                        _getGreeting(context),
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.5),
                           fontSize: 11,
@@ -547,11 +548,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  String _getGreeting() {
+  String _getGreeting(BuildContext context) {
+    final s = S.of(context);
     final h = DateTime.now().hour;
-    if (h < 12) return 'Good morning';
-    if (h < 17) return 'Good afternoon';
-    return 'Good evening';
+    if (h < 12) return s.goodMorning;
+    if (h < 17) return s.goodAfternoon;
+    return s.goodEvening;
   }
 
   Widget _glassBtn(IconData icon, {required VoidCallback onTap, int? badge}) {
@@ -702,7 +704,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    _isVerified ? 'GO ONLINE' : 'VERIFY FIRST',
+                    _isVerified
+                        ? S.of(context).goOnline
+                        : S.of(context).verifyFirst,
                     style: const TextStyle(
                       color: Colors.black87,
                       fontSize: 14,
@@ -802,7 +806,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        "You're offline",
+                        S.of(context).youreOffline,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.7),
                           fontSize: 15,
@@ -848,7 +852,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Recommended for you',
+                          S.of(context).recommendedForYou,
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.5),
                             fontSize: 13,
@@ -862,19 +866,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             _panelStat(
                               Icons.attach_money_rounded,
                               '\$${_todayEarnings.toStringAsFixed(2)}',
-                              'Today',
+                              S.of(context).today,
                             ),
                             const SizedBox(width: 12),
                             _panelStat(
                               Icons.navigation_rounded,
                               '$_todayTrips',
-                              'Trips',
+                              S.of(context).tripsLabel,
                             ),
                             const SizedBox(width: 12),
                             _panelStat(
                               Icons.schedule_rounded,
                               '${_todayHours.toStringAsFixed(1)}h',
-                              'Online',
+                              S.of(context).onlineLabel,
                             ),
                           ],
                         ),
@@ -910,9 +914,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
-                                      'Go online to start earning',
-                                      style: TextStyle(
+                                    Text(
+                                      S.of(context).goOnlineToEarn,
+                                      style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
@@ -920,7 +924,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      'Tap GO to find trips nearby',
+                                      S.of(context).tapGoForTrips,
                                       style: TextStyle(
                                         color: Colors.white.withValues(
                                           alpha: 0.4,

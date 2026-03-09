@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/api_service.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Full-featured earnings screen — fetches real data from the backend.
 /// Falls back to empty state if API is unreachable.
@@ -19,7 +20,6 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   static const _surface = Color(0xFF141414);
 
   int _selectedPeriod = 1; // 0=Today, 1=This Week, 2=This Month
-  final _periods = ['Today', 'This Week', 'This Month'];
   final _periodKeys = ['today', 'week', 'month'];
 
   late AnimationController _chartCtrl;
@@ -108,6 +108,8 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
+    final periods = [s.today, s.thisWeek, s.thisMonth];
     return Scaffold(
       backgroundColor: Colors.black,
       body: CustomScrollView(
@@ -136,9 +138,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
             ),
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
-              title: const Text(
-                'Earnings',
-                style: TextStyle(
+              title: Text(
+                s.earningsTitle,
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
@@ -172,7 +174,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                     child: Column(
                       children: [
                         Text(
-                          _periods[_selectedPeriod],
+                          periods[_selectedPeriod],
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.5),
                             fontSize: 14,
@@ -203,16 +205,16 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            _miniStat('$_tripsCount', 'Trips'),
+                            _miniStat('$_tripsCount', s.tripsStatLabel),
                             const SizedBox(width: 28),
                             _miniStat(
                               '${_onlineHours.toStringAsFixed(1)}h',
-                              'Online',
+                              s.onlineStatLabel,
                             ),
                             const SizedBox(width: 28),
                             _miniStat(
                               '\$${_tipsTotal.toStringAsFixed(2)}',
-                              'Tips',
+                              s.tipsStatLabel,
                             ),
                           ],
                         ),
@@ -253,7 +255,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                                     : null,
                               ),
                               child: Text(
-                                _periods[i],
+                                periods[i],
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: sel ? _gold : Colors.white38,
@@ -293,9 +295,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                         _showCashOutSheet();
                       },
                       icon: const Icon(Icons.account_balance_rounded, size: 20),
-                      label: const Text(
-                        'Cash Out',
-                        style: TextStyle(
+                      label: Text(
+                        S.of(context).cashOut,
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
@@ -314,9 +316,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   const SizedBox(height: 28),
 
                   // ── Recent transactions ──
-                  const Text(
-                    'Recent Activity',
-                    style: TextStyle(
+                  Text(
+                    S.of(context).recentActivity,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
@@ -527,9 +529,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
               ),
               const SizedBox(height: 24),
               const Icon(Icons.account_balance_rounded, color: _gold, size: 40),
-              const SizedBox(height: 16),
-              const Text(
-                'Cash Out',
+              SizedBox(height: 16),
+              Text(
+                S.of(ctx).cashOut,
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 22,
@@ -538,7 +540,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                'Available balance: \$${_total.toStringAsFixed(2)}',
+                S.of(ctx).availableBalance(_total.toStringAsFixed(2)),
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.5),
                   fontSize: 15,
@@ -546,7 +548,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
               ),
               const SizedBox(height: 6),
               Text(
-                'Funds will be transferred to your bank within 1-3 business days.',
+                S.of(ctx).fundsTransferDesc,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.3),
@@ -566,7 +568,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
-                            'Cash out of \$${_total.toStringAsFixed(2)} initiated!',
+                            S
+                                .of(context)
+                                .cashOutInitiated(_total.toStringAsFixed(2)),
                           ),
                           backgroundColor: _gold,
                           behavior: SnackBarBehavior.floating,
@@ -579,7 +583,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Cash out failed: $e'),
+                          content: Text(
+                            S.of(context).cashOutFailed(e.toString()),
+                          ),
                           backgroundColor: Colors.red,
                           behavior: SnackBarBehavior.floating,
                         ),
@@ -593,9 +599,12 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: const Text(
-                    'Confirm Cash Out',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  child: Text(
+                    S.of(ctx).confirmCashOut,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
@@ -603,7 +612,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: Text(
-                  'Cancel',
+                  S.of(ctx).cancel,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.4),
                     fontWeight: FontWeight.w600,

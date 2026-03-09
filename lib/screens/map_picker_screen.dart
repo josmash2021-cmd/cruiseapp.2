@@ -6,6 +6,7 @@ import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
+import '../l10n/app_localizations.dart';
 import '../services/places_service.dart';
 
 /// Full-screen map picker. User drags the map under a fixed center pin.
@@ -25,7 +26,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
 
   GoogleMapController? _mapCtrl;
   amap.AppleMapController? _appleMapCtrl;
-  String _address = 'Move the map to pick a location';
+  String _address = '';
+  bool _addressIsPlaceholder = true;
   bool _loading = false;
   bool _geocodeFailed = false;
   LatLng _center = const LatLng(40.7128, -74.0060);
@@ -57,7 +59,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     final gen = ++_geocodeGen;
     final snap = LatLng(_center.latitude, _center.longitude);
     // Only show loading if we don't already have an address
-    if (_address == 'Move the map to pick a location' || _geocodeFailed) {
+    if (_addressIsPlaceholder || _geocodeFailed) {
       setState(() {
         _loading = true;
         _geocodeFailed = false;
@@ -79,9 +81,10 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     setState(() {
       if (addr != null && addr.isNotEmpty) {
         _address = addr;
+        _addressIsPlaceholder = false;
         _geocodeFailed = false;
       } else {
-        _address = 'Pinned location';
+        _addressIsPlaceholder = true;
         _geocodeFailed = true;
       }
       _loading = false;
@@ -93,7 +96,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   }
 
   void _confirm() {
-    if (_address.isEmpty || _address == 'Move the map to pick a location') {
+    if (_addressIsPlaceholder || _address.isEmpty) {
       return;
     }
     Navigator.of(context).pop({
@@ -106,6 +109,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    final s = S.of(context);
 
     return Scaffold(
       body: Stack(
@@ -242,7 +246,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                           Expanded(
                             child: _loading
                                 ? Text(
-                                    'Finding address...',
+                                    s.findingAddress,
                                     style: TextStyle(
                                       color: c.textTertiary,
                                       fontSize: 15,
@@ -256,7 +260,9 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                                       children: [
                                         Expanded(
                                           child: Text(
-                                            _address,
+                                            _addressIsPlaceholder
+                                                ? s.pinnedLocation
+                                                : _address,
                                             style: TextStyle(
                                               color: c.textPrimary,
                                               fontSize: 15,
@@ -298,8 +304,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                             elevation: 0,
                           ),
                           onPressed: _loading ? null : _confirm,
-                          child: const Text(
-                            'Confirm Location',
+                          child: Text(
+                            s.confirmLocation,
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,

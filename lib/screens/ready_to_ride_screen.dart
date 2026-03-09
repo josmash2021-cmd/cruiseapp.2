@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/user_session.dart';
 import 'home_screen.dart';
@@ -84,7 +85,7 @@ class ReadyToRideScreen extends StatelessWidget {
                 children: [
                   const SizedBox(height: 8),
                   Text(
-                    "You're set to ride. We're\nhere when you need us.",
+                    S.of(context).readyToRide,
                     style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.w800,
@@ -99,19 +100,19 @@ class ReadyToRideScreen extends StatelessWidget {
                   _safetyRow(
                     c,
                     Icons.verified_user_outlined,
-                    'All drivers must pass regular background checks.',
+                    S.of(context).safetyPoint1,
                   ),
                   const SizedBox(height: 20),
                   _safetyRow(
                     c,
                     Icons.route_rounded,
-                    'We monitor rides for unusual activity, like route deviations, and check in if we notice something wrong.',
+                    S.of(context).safetyPoint2,
                   ),
                   const SizedBox(height: 20),
                   _safetyRow(
                     c,
                     Icons.security_rounded,
-                    'If you feel unsafe, you can discreetly connect with a security professional from your app.',
+                    S.of(context).safetyPoint3,
                   ),
 
                   const Spacer(),
@@ -150,8 +151,8 @@ class ReadyToRideScreen extends StatelessWidget {
                               (_) => false,
                             );
                           },
-                          child: const Text(
-                            'Take your first ride',
+                          child: Text(
+                            S.of(context).takeFirstRide,
                             style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,

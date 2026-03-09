@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 import '../services/api_service.dart';
+import '../l10n/app_localizations.dart';
 
 /// Result returned from the rating screen.
 class RideRating {
@@ -112,7 +113,7 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                 const SizedBox(height: 20),
 
                 Text(
-                  'How was your ride?',
+                  S.of(context).howWasRide,
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.w800,
@@ -122,7 +123,7 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Rate your experience with ${widget.driverName}',
+                  S.of(context).rateExperience(widget.driverName),
                   style: TextStyle(fontSize: 15, color: c.textSecondary),
                 ),
                 const SizedBox(height: 32),
@@ -158,7 +159,7 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                   duration: const Duration(milliseconds: 300),
                   opacity: _stars > 0 ? 1 : 0,
                   child: Text(
-                    _starLabel(),
+                    _starLabel(context),
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -170,7 +171,7 @@ class _RideRatingScreenState extends State<RideRatingScreen>
 
                 // ── Tip section ──
                 Text(
-                  'Add a tip',
+                  S.of(context).addTip,
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -179,7 +180,7 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '100% goes to your driver',
+                  S.of(context).tipGoesToDriver,
                   style: TextStyle(fontSize: 14, color: c.textSecondary),
                 ),
                 const SizedBox(height: 18),
@@ -187,7 +188,7 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _tipChip(c, -1, 'No tip'),
+                    _tipChip(c, -1, S.of(context).noTip),
                     ...List.generate(_tipAmounts.length, (i) {
                       return _tipChip(
                         c,
@@ -216,8 +217,13 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                     onPressed: _submit,
                     child: Text(
                       _selectedTipIndex >= 0
-                          ? 'Submit · \$${_tipAmounts[_selectedTipIndex].toStringAsFixed(0)} tip'
-                          : 'Submit Rating',
+                          ? S
+                                .of(context)
+                                .submitWithTip(
+                                  _tipAmounts[_selectedTipIndex]
+                                      .toStringAsFixed(0),
+                                )
+                          : S.of(context).submitRating,
                       style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
@@ -230,7 +236,7 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(null),
                   child: Text(
-                    'Skip',
+                    S.of(context).skip,
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -278,18 +284,19 @@ class _RideRatingScreenState extends State<RideRatingScreen>
     );
   }
 
-  String _starLabel() {
+  String _starLabel(BuildContext context) {
+    final s = S.of(context);
     switch (_stars) {
       case 1:
-        return 'Poor';
+        return s.ratingPoor;
       case 2:
-        return 'Below Average';
+        return s.ratingBelowAverage;
       case 3:
-        return 'Average';
+        return s.ratingAverage;
       case 4:
-        return 'Great';
+        return s.ratingGreat;
       case 5:
-        return 'Excellent!';
+        return s.ratingExcellent;
       default:
         return '';
     }

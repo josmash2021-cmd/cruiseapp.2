@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../widgets/animated_biometric_icon.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
@@ -264,14 +265,14 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Widget _buildMenuGrid(AppColors c) {
     final items = [
-      _MenuItem(Icons.help_outline_rounded, 'Help'),
-      _MenuItem(Icons.account_balance_wallet_outlined, 'Wallet'),
-      _MenuItem(Icons.history_rounded, 'Trips'),
-      _MenuItem(Icons.schedule_rounded, 'Scheduled'),
-      _MenuItem(Icons.local_offer_rounded, 'Promos'),
-      _MenuItem(Icons.shield_outlined, 'Safety'),
-      _MenuItem(Icons.mail_outline_rounded, 'Inbox'),
-      _MenuItem(Icons.settings_outlined, 'Settings'),
+      _MenuItem(Icons.help_outline_rounded, S.of(context).help),
+      _MenuItem(Icons.account_balance_wallet_outlined, S.of(context).wallet),
+      _MenuItem(Icons.history_rounded, S.of(context).yourTrips),
+      _MenuItem(Icons.schedule_rounded, S.of(context).scheduledRides),
+      _MenuItem(Icons.local_offer_rounded, S.of(context).promoCodes),
+      _MenuItem(Icons.shield_outlined, S.of(context).safety),
+      _MenuItem(Icons.mail_outline_rounded, S.of(context).inbox),
+      _MenuItem(Icons.settings_outlined, S.of(context).settings),
     ];
 
     return Wrap(
@@ -551,7 +552,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
               _settingsItem(
                 c,
                 icon: Icons.person_outline_rounded,
-                label: 'Edit Profile',
+                label: S.of(context).editProfile,
                 onTap: () async {
                   await Navigator.of(
                     context,
@@ -562,7 +563,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
               _settingsItem(
                 c,
                 icon: Icons.notifications_outlined,
-                label: 'Notifications',
+                label: S.of(context).notifications,
                 onTap: () {
                   Navigator.of(context).push(
                     slideFromRightRoute(const NotificationSettingsScreen()),
@@ -573,7 +574,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
               _settingsItem(
                 c,
                 icon: Icons.lock_outline_rounded,
-                label: 'Privacy',
+                label: S.of(context).privacy,
                 onTap: () {
                   Navigator.of(
                     context,
@@ -630,7 +631,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
               _settingsItem(
                 c,
                 icon: Icons.info_outline_rounded,
-                label: 'About',
+                label: S.of(context).about,
                 onTap: () {
                   Navigator.of(
                     context,
@@ -658,8 +659,8 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                     ),
                     onPressed: () => _signOut(context),
                     icon: const Icon(Icons.logout_rounded, size: 22),
-                    label: const Text(
-                      'Sign Out',
+                    label: Text(
+                      S.of(context).logOut,
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,

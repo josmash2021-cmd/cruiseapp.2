@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/sms_service.dart';
 import 'create_password_screen.dart';
@@ -45,9 +46,10 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    _shakeAnim = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _shakeCtrl, curve: Curves.elasticIn),
-    );
+    _shakeAnim = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _shakeCtrl, curve: Curves.elasticIn));
 
     // Auto-focus the code field
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -100,15 +102,17 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
     if (isValid) {
       // Success — navigate to create-password screen
       Navigator.of(context).push(
-        slideFromRightRoute(CreatePasswordScreen(
-          email: widget.email,
-          registeredWithEmail: !widget.useVerifyApi,
-        )),
+        slideFromRightRoute(
+          CreatePasswordScreen(
+            email: widget.email,
+            registeredWithEmail: !widget.useVerifyApi,
+          ),
+        ),
       );
     } else {
       // Wrong code — show error + shake
       setState(() {
-        _errorText = 'Invalid code';
+        _errorText = S.of(context).invalidCode;
         _verifying = false;
       });
       _shakeCtrl.forward(from: 0);
@@ -140,8 +144,11 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
                     color: c.surface,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.arrow_back_ios_new_rounded,
-                      color: c.textPrimary, size: 18),
+                  child: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: c.textPrimary,
+                    size: 18,
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
@@ -149,8 +156,8 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
               // ── Title ──
               Text(
                 widget.useVerifyApi
-                    ? 'Code sent — check your\nphone'
-                    : 'Code sent — check your\nemail',
+                    ? S.of(context).codeSentCheckPhone
+                    : S.of(context).codeSentCheckEmail,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -164,10 +171,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
                 widget.useVerifyApi
                     ? 'Enter the code sent to ${widget.email}.'
                     : 'Enter the code sent to ${widget.email}.',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: c.textSecondary,
-                ),
+                style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
 
@@ -191,13 +195,15 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
                       color: _errorText != null
                           ? Colors.white.withValues(alpha: 0.6)
                           : _canSubmit
-                              ? _gold
-                              : c.border,
+                          ? _gold
+                          : c.border,
                       width: _errorText != null || _canSubmit ? 1.8 : 1,
                     ),
                   ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
                   child: TextField(
                     controller: _codeCtrl,
                     focusNode: _codeFocus,
@@ -212,7 +218,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
                     decoration: InputDecoration(
                       border: InputBorder.none,
                       counterText: '',
-                      hintText: '6-digit code',
+                      hintText: S.of(context).sixDigitCode,
                       hintStyle: TextStyle(
                         color: c.textTertiary,
                         fontSize: 16,
@@ -236,8 +242,11 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
                         padding: const EdgeInsets.only(top: 10, left: 4),
                         child: Row(
                           children: [
-                            Icon(Icons.error_outline_rounded,
-                                color: Colors.white.withValues(alpha: 0.6), size: 16),
+                            Icon(
+                              Icons.error_outline_rounded,
+                              color: Colors.white.withValues(alpha: 0.6),
+                              size: 16,
+                            ),
                             const SizedBox(width: 6),
                             Text(
                               _errorText!,
@@ -293,9 +302,9 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
                                 strokeWidth: 2.5,
                               ),
                             )
-                          : const Text(
-                              'Next',
-                              style: TextStyle(
+                          : Text(
+                              S.of(context).next,
+                              style: const TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -310,5 +319,4 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
       ),
     );
   }
-
 }

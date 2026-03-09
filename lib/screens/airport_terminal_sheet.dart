@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 
 /// Airport data model
 class AirportInfo {
@@ -305,8 +306,8 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     final airport = AirportInfo(
       code: s.code.isNotEmpty ? s.code : '???',
       name: s.description,
-      terminals: ['Main Terminal'],
-      pickupZones: ['Arrivals - Rideshare Pickup'],
+      terminals: [S.of(context).mainTerminal],
+      pickupZones: [S.of(context).arrivalsRidesharePickup],
       flatRateSurcharge: null,
     );
     _selectAirport(airport);
@@ -393,10 +394,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                   Expanded(
                     child: Text(
                       _step == 0
-                          ? 'Select Airport'
+                          ? S.of(context).selectAirport
                           : _step == 1
-                          ? 'Select Terminal'
-                          : 'Confirm Details',
+                          ? S.of(context).selectTerminal
+                          : S.of(context).confirmDetails,
                       style: TextStyle(
                         color: _textPrimary,
                         fontSize: 20,
@@ -471,7 +472,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               onChanged: _onSearchChanged,
               style: TextStyle(color: _textPrimary, fontSize: 15),
               decoration: InputDecoration(
-                hintText: 'Search any airport...',
+                hintText: S.of(context).searchAnyAirport,
                 hintStyle: TextStyle(color: _textSecondary),
                 icon: Icon(
                   Icons.search_rounded,
@@ -518,7 +519,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         child: Text(
-                          'More airports',
+                          S.of(context).moreAirports,
                           style: TextStyle(
                             color: _textSecondary,
                             fontSize: 11,
@@ -628,7 +629,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'No airports found',
+                        S.of(context).noAirportsFound,
                         style: TextStyle(color: _textSecondary, fontSize: 14),
                       ),
                     ],
@@ -689,7 +690,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${a.terminals.length} terminals',
+                    S.of(context).terminalsCount(a.terminals.length),
                     style: TextStyle(color: _textSecondary, fontSize: 12),
                   ),
                 ],
@@ -759,7 +760,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
           // Terminal selection
           Text(
-            'Terminal',
+            S.of(context).terminalLabel,
             style: TextStyle(
               color: _textSecondary,
               fontSize: 12,
@@ -807,7 +808,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
           // Pickup zone
           Text(
-            'Pickup Zone',
+            S.of(context).pickupZone,
             style: TextStyle(
               color: _textSecondary,
               fontSize: 12,
@@ -884,7 +885,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                   ),
                 ],
               ),
-              child: const Center(
+              child: Center(
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -895,7 +896,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                     ),
                     SizedBox(width: 8),
                     Text(
-                      'Continue',
+                      S.of(context).continueButton,
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
@@ -935,28 +936,28 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               children: [
                 _summaryRow(
                   Icons.flight_rounded,
-                  'Airport',
+                  S.of(context).airport,
                   '${ap.code} — ${ap.name}',
                 ),
                 const SizedBox(height: 10),
                 if (_selectedTerminal != null)
                   _summaryRow(
                     Icons.door_front_door_outlined,
-                    'Terminal',
+                    S.of(context).terminalLabel,
                     _selectedTerminal!,
                   ),
                 if (_selectedTerminal != null) const SizedBox(height: 10),
                 if (_selectedPickupZone != null)
                   _summaryRow(
                     Icons.pin_drop_rounded,
-                    'Pickup',
+                    S.of(context).pickupLabel,
                     _selectedPickupZone!,
                   ),
                 if (ap.flatRateSurcharge != null) ...[
                   const SizedBox(height: 10),
                   _summaryRow(
                     Icons.attach_money_rounded,
-                    'Airport Surcharge',
+                    S.of(context).airportSurchargeLabel,
                     '+\$${ap.flatRateSurcharge!.toStringAsFixed(2)}',
                   ),
                 ],
@@ -967,7 +968,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
           // Flight number (optional)
           Text(
-            'Flight Number (optional)',
+            S.of(context).flightNumberOptional,
             style: TextStyle(
               color: _textSecondary,
               fontSize: 12,
@@ -988,7 +989,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               style: TextStyle(color: _textPrimary, fontSize: 15),
               textCapitalization: TextCapitalization.characters,
               decoration: InputDecoration(
-                hintText: 'e.g. AA 1234',
+                hintText: S.of(context).flightNumberHint,
                 hintStyle: TextStyle(color: _textSecondary),
                 icon: Icon(
                   Icons.airplane_ticket_outlined,
@@ -1001,7 +1002,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           ),
           const SizedBox(height: 12),
           Text(
-            'Your driver will track your flight and adjust pickup time if delayed.',
+            S.of(context).flightTrackingNote,
             style: TextStyle(color: _textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 24),
@@ -1023,14 +1024,14 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                   ),
                 ],
               ),
-              child: const Center(
+              child: Center(
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.check_rounded, color: Colors.black87, size: 20),
                     SizedBox(width: 8),
                     Text(
-                      'Confirm Airport Details',
+                      S.of(context).confirmAirportDetails,
                       style: TextStyle(
                         color: Colors.black87,
                         fontWeight: FontWeight.w700,

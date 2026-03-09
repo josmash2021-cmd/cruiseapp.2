@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
+import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
@@ -228,7 +229,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
               icon: BitmapDescriptor.defaultMarkerWithHue(
                 BitmapDescriptor.hueYellow,
               ),
-              infoWindow: InfoWindow(title: 'Pickup'),
+              infoWindow: InfoWindow(title: S.of(context).pickupLabel),
             ),
             Marker(
               markerId: const MarkerId('dropoff'),
@@ -236,7 +237,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
               icon: BitmapDescriptor.defaultMarkerWithHue(
                 BitmapDescriptor.hueRed,
               ),
-              infoWindow: InfoWindow(title: 'Destination'),
+              infoWindow: InfoWindow(title: S.of(context).destinationLabel),
             ),
           };
           _updateRidePricing(dur);
@@ -325,15 +326,15 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
 
   Future<void> _book() async {
     if (_pickupLatLng == null || _dropoffLatLng == null) {
-      _showErr('Enter both pickup and destination');
+      _showErr(S.of(context).enterBothAddresses);
       return;
     }
     if (_pickupAddress.isEmpty || _dropoffAddress.isEmpty) {
-      _showErr('Enter both pickup and destination');
+      _showErr(S.of(context).enterBothAddresses);
       return;
     }
     if (!_linkedPaymentMethods.contains(_selectedPaymentMethod)) {
-      _showErr('Please add a payment method first');
+      _showErr(S.of(context).pleaseAddPaymentFirst);
       return;
     }
 
@@ -414,9 +415,12 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
       } catch (_) {}
 
       await LocalDataService.addNotification(
-        title: 'Ride scheduled',
-        message:
-            'Your ride on ${DateFormat('MMM d \'at\' h:mm a').format(widget.scheduledAt)} has been confirmed.',
+        title: S.of(context).rideScheduled,
+        message: S
+            .of(context)
+            .rideScheduledMsg(
+              DateFormat('MMM d \'at\' h:mm a').format(widget.scheduledAt),
+            ),
         type: 'ride',
       );
 
@@ -425,7 +429,11 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
         SnackBar(
           backgroundColor: _gold,
           content: Text(
-            'Scheduled for ${DateFormat('MMM d · h:mm a').format(widget.scheduledAt)}!',
+            S
+                .of(context)
+                .scheduledForDate(
+                  DateFormat('MMM d · h:mm a').format(widget.scheduledAt),
+                ),
             style: const TextStyle(
               color: Colors.black,
               fontWeight: FontWeight.w700,
@@ -445,7 +453,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
         context,
       ).push(MaterialPageRoute(builder: (_) => const ScheduledRidesScreen()));
     } catch (e) {
-      if (mounted) _showErr('Failed to book: $e');
+      if (mounted) _showErr(S.of(context).failedToBook('$e'));
     } finally {
       if (mounted) setState(() => _isBooking = false);
     }
@@ -467,7 +475,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
   void _showPaymentSelector() {
     final creditLabel = (_savedCardBrand != null && _savedCardLast4 != null)
         ? '${_savedCardBrand![0].toUpperCase()}${_savedCardBrand!.substring(1)} •••• $_savedCardLast4'
-        : 'Credit or debit card';
+        : S.of(context).creditOrDebitCard;
     final methods = [
       ('google_pay', 'Google Pay'),
       ('credit_card', creditLabel),
@@ -501,7 +509,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Payment method',
+                  S.of(context).paymentMethodLabel,
                   style: TextStyle(
                     color: c.textPrimary,
                     fontSize: 20,
@@ -566,7 +574,9 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                                 ),
                               ),
                               Text(
-                                linked ? 'Ready' : 'Tap to set up',
+                                linked
+                                    ? S.of(context).readyLabel
+                                    : S.of(context).tapToSetUp,
                                 style: TextStyle(
                                   color: linked
                                       ? const Color(0xFF4CAF50)
@@ -648,7 +658,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
       final b = _savedCardBrand!;
       return '${b[0].toUpperCase()}${b.substring(1)} •••• $_savedCardLast4';
     }
-    return 'Credit card';
+    return S.of(context).creditCardLabel2;
   }
 
   // ── Airport ──────────────────────────────────────────────────────────
@@ -729,9 +739,9 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Schedule a Ride',
-                                style: TextStyle(
+                              Text(
+                                S.of(context).scheduleARide,
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 20,
                                   fontWeight: FontWeight.w800,
@@ -782,7 +792,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                           _addressField(
                             ctrl: _pickupCtrl,
                             focus: _pickupFocus,
-                            hint: 'Pickup location',
+                            hint: S.of(context).pickupLocation,
                             icon: Icons.radio_button_checked,
                             iconColor: _gold,
                             onChanged: _onPickupChanged,
@@ -804,7 +814,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                           _addressField(
                             ctrl: _dropoffCtrl,
                             focus: _dropoffFocus,
-                            hint: 'Where to?',
+                            hint: S.of(context).whereTo,
                             icon: Icons.location_on_rounded,
                             iconColor: const Color(0xFFFF5252),
                             onChanged: _onDropoffChanged,
@@ -860,8 +870,12 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                             const SizedBox(width: 6),
                             Text(
                               _airportSelection != null
-                                  ? '${_airportSelection!.airport.code} — tap to remove'
-                                  : 'Airport ride',
+                                  ? S
+                                        .of(context)
+                                        .airportCodeTapToRemove(
+                                          _airportSelection!.airport.code,
+                                        )
+                                  : S.of(context).airportRide,
                               style: TextStyle(
                                 color: _airportSelection != null
                                     ? const Color(0xFF4285F4)
@@ -919,9 +933,9 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                             color: Colors.black.withValues(alpha: 0.6),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Text(
-                            'Enter addresses to see route',
-                            style: TextStyle(
+                          child: Text(
+                            S.of(context).enterAddressesToSeeRoute,
+                            style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 13,
                             ),
@@ -1046,9 +1060,9 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                                                 borderRadius:
                                                     BorderRadius.circular(4),
                                               ),
-                                              child: const Text(
-                                                'BEST',
-                                                style: TextStyle(
+                                              child: Text(
+                                                S.of(context).bestLabel,
+                                                style: const TextStyle(
                                                   color: _gold,
                                                   fontSize: 10,
                                                   fontWeight: FontWeight.w800,
@@ -1139,8 +1153,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                                       _linkedPaymentMethods.contains(
                                             _selectedPaymentMethod,
                                           )
-                                          ? 'Tap to change'
-                                          : 'Not added — tap to set up',
+                                          ? S.of(context).tapToChange
+                                          : S.of(context).notAddedTapToSetUp,
                                       style: TextStyle(
                                         color:
                                             _linkedPaymentMethods.contains(
@@ -1198,7 +1212,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                                     ),
                                     const SizedBox(width: 10),
                                     Text(
-                                      'Book Scheduled Ride · ${_rides[_selectedRide].price}',
+                                      '${S.of(context).bookScheduledRide} · ${_rides[_selectedRide].price}',
                                       style: const TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w800,

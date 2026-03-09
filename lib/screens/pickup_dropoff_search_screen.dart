@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../l10n/app_localizations.dart';
+
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
@@ -300,7 +302,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                             _searchField(
                               controller: _pickupCtrl,
                               focusNode: _pickupFocus,
-                              hint: 'Pickup location',
+                              hint: S.of(context).pickupLocation,
                               c: c,
                               textInputAction: TextInputAction.next,
                               onTap: () {
@@ -322,7 +324,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                             _searchField(
                               controller: _dropoffCtrl,
                               focusNode: _dropoffFocus,
-                              hint: 'Where to?',
+                              hint: S.of(context).whereTo,
                               c: c,
                               textInputAction: TextInputAction.done,
                               onTap: () {
@@ -478,10 +480,12 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     // ── Choose on map ──
     if (item.title == 'Choose on map') {
       final result = await Navigator.of(context).push<Map<String, dynamic>>(
-        slideFromRightRoute(MapPickerScreen(
-          initialLat: widget.initialPickupLat,
-          initialLng: widget.initialPickupLng,
-        )),
+        slideFromRightRoute(
+          MapPickerScreen(
+            initialLat: widget.initialPickupLat,
+            initialLng: widget.initialPickupLng,
+          ),
+        ),
       );
       if (result == null || !mounted) return;
       final addr = result['address'] as String;
@@ -496,14 +500,19 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       if (_pickupDetails != null) {
         _returnResults();
       } else {
-        setState(() { _editingPickup = true; _editingDropoff = false; });
+        setState(() {
+          _editingPickup = true;
+          _editingDropoff = false;
+        });
         _pickupFocus.requestFocus();
       }
       return;
     }
 
     // ── Home or Work ──
-    final savedAddress = item.title == 'Home' ? homeAddr?.address : workAddr?.address;
+    final savedAddress = item.title == 'Home'
+        ? homeAddr?.address
+        : workAddr?.address;
 
     // If address already saved → geocode and use as dropoff
     if (savedAddress != null && savedAddress.isNotEmpty) {
@@ -517,8 +526,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _PlacesAutocompleteSheet(
-        title: 'Set ${item.title} address',
-        hint: 'Search your ${item.title.toLowerCase()} address',
+        title: S.of(context).setAddressFor(item.title),
+        hint: S.of(context).searchAddressFor(item.title.toLowerCase()),
         initialLat: widget.initialPickupLat,
         initialLng: widget.initialPickupLng,
       ),
@@ -551,7 +560,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         if (_pickupDetails != null) {
           _returnResults();
         } else {
-          setState(() { _editingPickup = true; _editingDropoff = false; });
+          setState(() {
+            _editingPickup = true;
+            _editingDropoff = false;
+          });
           _pickupFocus.requestFocus();
         }
       }
@@ -561,12 +573,20 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   Widget _buildRecentPlaces(AppColors c) {
     // Show some quick access items
     final quickItems = [
-      _QuickPlace(Icons.home_rounded, 'Home', 'Set your home address'),
-      _QuickPlace(Icons.work_rounded, 'Work', 'Set your work address'),
+      _QuickPlace(
+        Icons.home_rounded,
+        S.of(context).homeLabel,
+        S.of(context).setHomeAddress,
+      ),
+      _QuickPlace(
+        Icons.work_rounded,
+        S.of(context).workLabel,
+        S.of(context).setWorkAddress,
+      ),
       _QuickPlace(
         Icons.map_rounded,
-        'Choose on map',
-        'Pick a location on the map',
+        S.of(context).chooseOnMap,
+        S.of(context).pickLocationOnMap,
       ),
     ];
 
@@ -574,12 +594,26 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       future: LocalDataService.getFavorites(),
       builder: (context, snapshot) {
         final favorites = snapshot.data ?? [];
-        final homeAddr = favorites.where((f) => f.label.toLowerCase() == 'home').firstOrNull;
-        final workAddr = favorites.where((f) => f.label.toLowerCase() == 'work').firstOrNull;
+        final homeAddr = favorites
+            .where((f) => f.label.toLowerCase() == 'home')
+            .firstOrNull;
+        final workAddr = favorites
+            .where((f) => f.label.toLowerCase() == 'work')
+            .firstOrNull;
 
         // Update subtitles if addresses are saved
-        if (homeAddr != null) quickItems[0] = _QuickPlace(Icons.home_rounded, 'Home', homeAddr.address);
-        if (workAddr != null) quickItems[1] = _QuickPlace(Icons.work_rounded, 'Work', workAddr.address);
+        if (homeAddr != null)
+          quickItems[0] = _QuickPlace(
+            Icons.home_rounded,
+            'Home',
+            homeAddr.address,
+          );
+        if (workAddr != null)
+          quickItems[1] = _QuickPlace(
+            Icons.work_rounded,
+            'Work',
+            workAddr.address,
+          );
 
         return ListView(
           padding: const EdgeInsets.only(top: 8),
@@ -665,7 +699,10 @@ class _PlacesAutocompleteSheetState extends State<_PlacesAutocompleteSheet> {
   void _onSearchChanged(String query) {
     _debounce?.cancel();
     if (query.trim().length < 2) {
-      setState(() { _suggestions = []; _loading = false; });
+      setState(() {
+        _suggestions = [];
+        _loading = false;
+      });
       return;
     }
     setState(() => _loading = true);
@@ -676,7 +713,11 @@ class _PlacesAutocompleteSheetState extends State<_PlacesAutocompleteSheet> {
           latitude: widget.initialLat,
           longitude: widget.initialLng,
         );
-        if (mounted) setState(() { _suggestions = results; _loading = false; });
+        if (mounted)
+          setState(() {
+            _suggestions = results;
+            _loading = false;
+          });
       } catch (_) {
         if (mounted) setState(() => _loading = false);
       }
@@ -698,7 +739,8 @@ class _PlacesAutocompleteSheetState extends State<_PlacesAutocompleteSheet> {
         children: [
           const SizedBox(height: 10),
           Container(
-            width: 40, height: 4,
+            width: 40,
+            height: 4,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(2),
@@ -712,7 +754,11 @@ class _PlacesAutocompleteSheetState extends State<_PlacesAutocompleteSheet> {
               children: [
                 GestureDetector(
                   onTap: () => Navigator.of(context).pop(),
-                  child: Icon(Icons.arrow_back_rounded, color: c.textPrimary, size: 24),
+                  child: Icon(
+                    Icons.arrow_back_rounded,
+                    color: c.textPrimary,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -745,18 +791,32 @@ class _PlacesAutocompleteSheetState extends State<_PlacesAutocompleteSheet> {
                 decoration: InputDecoration(
                   hintText: widget.hint,
                   hintStyle: TextStyle(color: c.textTertiary, fontSize: 15),
-                  prefixIcon: Icon(Icons.search_rounded, color: c.textTertiary, size: 22),
+                  prefixIcon: Icon(
+                    Icons.search_rounded,
+                    color: c.textTertiary,
+                    size: 22,
+                  ),
                   suffixIcon: _controller.text.isNotEmpty
                       ? GestureDetector(
                           onTap: () {
                             _controller.clear();
-                            setState(() { _suggestions = []; _loading = false; });
+                            setState(() {
+                              _suggestions = [];
+                              _loading = false;
+                            });
                           },
-                          child: Icon(Icons.close_rounded, color: c.textTertiary, size: 20),
+                          child: Icon(
+                            Icons.close_rounded,
+                            color: c.textTertiary,
+                            size: 20,
+                          ),
                         )
                       : null,
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
                 ),
                 onChanged: _onSearchChanged,
               ),
@@ -767,7 +827,8 @@ class _PlacesAutocompleteSheetState extends State<_PlacesAutocompleteSheet> {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
               child: SizedBox(
-                width: 24, height: 24,
+                width: 24,
+                height: 24,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
                   color: Color(0xFFE8C547),
@@ -781,12 +842,16 @@ class _PlacesAutocompleteSheetState extends State<_PlacesAutocompleteSheet> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.place_outlined, color: c.textTertiary, size: 48),
+                        Icon(
+                          Icons.place_outlined,
+                          color: c.textTertiary,
+                          size: 48,
+                        ),
                         const SizedBox(height: 12),
                         Text(
                           _controller.text.isEmpty
-                              ? 'Type to search for an address'
-                              : 'No results found',
+                              ? S.of(context).typeToSearchAddress
+                              : S.of(context).noResultsFound,
                           style: TextStyle(color: c.textTertiary, fontSize: 14),
                         ),
                       ],
@@ -795,27 +860,42 @@ class _PlacesAutocompleteSheetState extends State<_PlacesAutocompleteSheet> {
                 : ListView.separated(
                     padding: EdgeInsets.fromLTRB(12, 4, 12, bottomInset + 20),
                     itemCount: _suggestions.length,
-                    separatorBuilder: (_, i) => Divider(color: c.divider, height: 1, indent: 52),
+                    separatorBuilder: (_, i) =>
+                        Divider(color: c.divider, height: 1, indent: 52),
                     itemBuilder: (context, index) {
                       final s = _suggestions[index];
                       return ListTile(
                         leading: Container(
-                          width: 40, height: 40,
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
                             color: c.surface,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: c.border),
                           ),
-                          child: Icon(Icons.location_on_rounded, color: c.textSecondary, size: 20),
+                          child: Icon(
+                            Icons.location_on_rounded,
+                            color: c.textSecondary,
+                            size: 20,
+                          ),
                         ),
                         title: Text(
                           s.description,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: c.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
+                          style: TextStyle(
+                            color: c.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         onTap: () => Navigator.of(context).pop(s.description),
                       );
                     },

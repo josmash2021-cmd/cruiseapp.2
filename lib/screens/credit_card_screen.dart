@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import '../l10n/app_localizations.dart';
 import '../config/app_theme.dart';
 import '../services/local_data_service.dart';
 
@@ -89,7 +90,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
         SnackBar(
           backgroundColor: Colors.red.shade700,
           content: Text(
-            e.error.localizedMessage ?? 'Card could not be processed.',
+            e.error.localizedMessage ?? S.of(context).cardCouldNotBeProcessed,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           behavior: SnackBarBehavior.floating,
@@ -103,9 +104,9 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.red.shade700,
-          content: const Text(
-            'Something went wrong. Please try again.',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          content: Text(
+            S.of(context).somethingWentWrong,
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -153,7 +154,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
 
               // ── Title ──
               Text(
-                'Add your card',
+                S.of(context).addYourCard,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -164,7 +165,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Enter your credit or debit card details.',
+                S.of(context).enterCardDetails,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
@@ -209,7 +210,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                       _buildField(
                         c,
                         controller: _nameCtrl,
-                        hint: 'Name on card',
+                        hint: S.of(context).nameOnCard,
                         icon: Icons.person_outline_rounded,
                         keyboardType: TextInputType.name,
                         capitalization: TextCapitalization.words,
@@ -220,7 +221,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                       _buildField(
                         c,
                         controller: _zipCtrl,
-                        hint: 'ZIP / Postal code',
+                        hint: S.of(context).zipPostalCode,
                         icon: Icons.location_on_outlined,
                         keyboardType: TextInputType.number,
                         formatters: [LengthLimitingTextInputFormatter(10)],
@@ -238,7 +239,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Secured by Stripe. Your card info never touches our servers.',
+                              S.of(context).securedByStripe,
                               style: TextStyle(
                                 fontSize: 13,
                                 color: c.textTertiary,
@@ -288,9 +289,9 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                                 color: Color(0xFF1A1400),
                               ),
                             )
-                          : const Text(
-                              'Add Card',
-                              style: TextStyle(
+                          : Text(
+                              S.of(context).addCard,
+                              style: const TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w700,
                               ),

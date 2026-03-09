@@ -4,6 +4,7 @@ import 'package:pay/pay.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
+import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 import '../services/payment_service.dart';
 import 'credit_card_screen.dart';
@@ -72,7 +73,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
   Future<void> _linkGooglePay() async {
     if (!_googlePayAvailable) {
       // Device doesn't have Google Pay set up — open Google Wallet to add a card
-      _showSnack('Set up Google Pay in Google Wallet first.');
+      _showSnack(S.of(context).setupGooglePayFirst);
       await _launchGooglePayWallet();
       return;
     }
@@ -87,7 +88,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
           await LocalDataService.linkPaymentMethod('google_pay');
           if (!mounted) return;
           setState(() => _googlePayLinked = true);
-          _showSnack('Google Pay linked successfully');
+          _showSnack(S.of(context).googlePayLinked);
         },
       ),
     );
@@ -114,7 +115,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
 
   Future<void> _linkApplePay() async {
     if (!_applePayAvailable) {
-      _showSnack('Set up Apple Pay in Wallet & Apple Pay in Settings.');
+      _showSnack(S.of(context).setupApplePayInSettings);
       return;
     }
     if (!mounted) return;
@@ -126,7 +127,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
           await LocalDataService.linkPaymentMethod('apple_pay');
           if (!mounted) return;
           setState(() => _applePayLinked = true);
-          _showSnack('Apple Pay linked successfully');
+          _showSnack(S.of(context).applePayLinked);
         },
       ),
     );
@@ -138,10 +139,10 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     if (!mounted) return;
     final approved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => const PayPalCheckoutScreen(
+        builder: (_) => PayPalCheckoutScreen(
           amount: '1.00',
           currency: 'USD',
-          description: 'Cruise account verification (\$1.00 refundable)',
+          description: S.of(context).cruiseAccountVerificationDesc,
         ),
       ),
     );
@@ -149,7 +150,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     if (approved == true) {
       await LocalDataService.linkPaymentMethod('paypal');
       setState(() => _paypalLinked = true);
-      _showSnack('PayPal linked successfully');
+      _showSnack(S.of(context).paypalLinked);
     }
   }
 
@@ -173,7 +174,9 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       _savedCardLast4 = last4;
       _savedCardBrand = brand;
     });
-    _showSnack('${_capitalizedBrand(brand)} •••• $last4 added');
+    _showSnack(
+      S.of(context).cardAddedMsg('${_capitalizedBrand(brand)} •••• $last4'),
+    );
   }
 
   String _capitalizedBrand(String? brand) {
@@ -240,7 +243,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               ),
               const SizedBox(height: 28),
               Text(
-                'Payment accounts',
+                S.of(context).paymentAccounts,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -251,7 +254,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Link your accounts so you can pay faster.',
+                S.of(context).linkAccountsMsg,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
@@ -263,7 +266,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                   logoWidget: _googlePayLogo(),
                   label: _googlePayAvailable
                       ? 'Google Pay'
-                      : 'Google Pay (set up in Wallet)',
+                      : S.of(context).googlePaySetUpInWallet,
                   linked: _googlePayLinked,
                   onTap: _linkGooglePay,
                 ),
@@ -277,7 +280,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                   logoWidget: _applePayLogo(),
                   label: _applePayAvailable
                       ? 'Apple Pay'
-                      : 'Apple Pay (set up in Wallet)',
+                      : S.of(context).applePaySetUpInWallet,
                   linked: _applePayLinked,
                   onTap: _linkApplePay,
                 ),
@@ -300,7 +303,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                 logoWidget: _cardBrandLogo(_savedCardBrand),
                 label: _savedCardLast4 != null
                     ? '${_capitalizedBrand(_savedCardBrand)} •••• $_savedCardLast4'
-                    : 'Credit or debit card',
+                    : S.of(context).creditOrDebitCard,
                 linked: _savedCardLast4 != null,
                 onTap: _linkCreditCard,
               ),
@@ -311,8 +314,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 28),
                 child: Text(
-                  'Your payment information is securely encrypted and stored. '
-                  'Cruise never sees your card details.',
+                  S.of(context).paymentSecurityNote,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
@@ -466,9 +468,9 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                   color: const Color(0xFFE8C547).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Text(
-                  'Added',
-                  style: TextStyle(
+                child: Text(
+                  S.of(context).added,
+                  style: const TextStyle(
                     color: Color(0xFFE8C547),
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -485,9 +487,9 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                   color: _gold,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Text(
-                  'Add',
-                  style: TextStyle(
+                child: Text(
+                  S.of(context).addBtn,
+                  style: const TextStyle(
                     color: Colors.black,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -545,7 +547,7 @@ class _GooglePayLinkSheetState extends State<_GooglePayLinkSheet> {
           ),
           const SizedBox(height: 20),
           Text(
-            'Confirm Google Pay',
+            S.of(context).confirmGooglePay,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
@@ -554,7 +556,7 @@ class _GooglePayLinkSheetState extends State<_GooglePayLinkSheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap the button below to verify your Google Pay account is ready for Cruise rides.',
+            S.of(context).confirmGooglePayVerifyMsg,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 14, color: c.textSecondary),
           ),
@@ -564,9 +566,9 @@ class _GooglePayLinkSheetState extends State<_GooglePayLinkSheet> {
           else
             GooglePayButton(
               paymentConfiguration: _config!,
-              paymentItems: const [
+              paymentItems: [
                 PaymentItem(
-                  label: 'Account verification',
+                  label: S.of(context).accountVerification,
                   amount: '0.00',
                   status: PaymentItemStatus.final_price,
                 ),
@@ -584,14 +586,19 @@ class _GooglePayLinkSheetState extends State<_GooglePayLinkSheet> {
               onError: (error) {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Google Pay error: $error')),
+                  SnackBar(
+                    content: Text(S.of(context).googlePayError('$error')),
+                  ),
                 );
               },
             ),
           const SizedBox(height: 12),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+            child: Text(
+              S.of(context).cancel,
+              style: TextStyle(color: c.textTertiary),
+            ),
           ),
         ],
       ),
@@ -643,7 +650,7 @@ class _ApplePayLinkSheetState extends State<_ApplePayLinkSheet> {
           ),
           const SizedBox(height: 20),
           Text(
-            'Confirm Apple Pay',
+            S.of(context).confirmApplePay,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
@@ -652,7 +659,7 @@ class _ApplePayLinkSheetState extends State<_ApplePayLinkSheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap the button below to verify your Apple Pay account is ready for Cruise rides.',
+            S.of(context).confirmApplePayVerifyMsg,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 14, color: c.textSecondary),
           ),
@@ -662,9 +669,9 @@ class _ApplePayLinkSheetState extends State<_ApplePayLinkSheet> {
           else
             ApplePayButton(
               paymentConfiguration: _config!,
-              paymentItems: const [
+              paymentItems: [
                 PaymentItem(
-                  label: 'Account verification',
+                  label: S.of(context).accountVerification,
                   amount: '0.00',
                   status: PaymentItemStatus.final_price,
                 ),
@@ -682,14 +689,19 @@ class _ApplePayLinkSheetState extends State<_ApplePayLinkSheet> {
               onError: (error) {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Apple Pay error: $error')),
+                  SnackBar(
+                    content: Text(S.of(context).applePayError('$error')),
+                  ),
                 );
               },
             ),
           const SizedBox(height: 12),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+            child: Text(
+              S.of(context).cancel,
+              style: TextStyle(color: c.textTertiary),
+            ),
           ),
         ],
       ),

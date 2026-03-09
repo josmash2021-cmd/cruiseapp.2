@@ -756,6 +756,18 @@ class ApiService {
     return [];
   }
 
+  /// Get driver stats (acceptance rate, on-time rate, etc.) from backend.
+  static Future<Map<String, dynamic>> getDriverStats(int driverId) async {
+    final h = await _authHeaders();
+    final res = await http
+        .get(Uri.parse('$_baseUrl/drivers/$driverId/stats'), headers: h)
+        .timeout(const Duration(seconds: 8));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    return {};
+  }
+
   // ═══════════════════════════════════════════════════════
   //  USER ID HELPERS
   // ═══════════════════════════════════════════════════════
@@ -1376,6 +1388,35 @@ class ApiService {
           body: jsonEncode({'code': code}),
         )
         .timeout(const Duration(seconds: 8));
+    return _parse(res);
+  }
+
+  /// Create a PayPal order via backend proxy.
+  static Future<Map<String, dynamic>> createPayPalOrder({
+    required String amount,
+    required String currency,
+  }) async {
+    final h = await _authHeaders();
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/payments/paypal/create-order'),
+          headers: h,
+          body: jsonEncode({'amount': amount, 'currency': currency}),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Capture a PayPal order after user approval.
+  static Future<Map<String, dynamic>> capturePayPalOrder(String orderId) async {
+    final h = await _authHeaders();
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/payments/paypal/capture-order'),
+          headers: h,
+          body: jsonEncode({'order_id': orderId}),
+        )
+        .timeout(const Duration(seconds: 15));
     return _parse(res);
   }
 }

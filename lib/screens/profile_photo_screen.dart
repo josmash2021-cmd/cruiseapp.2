@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import 'profile_review_screen.dart';
 
@@ -195,7 +196,7 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
 
               // ── Title ──
               Text(
-                'Get ready for your\nclose-up',
+                S.of(context).readyCloseUp,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 28,
@@ -209,7 +210,7 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
 
               // ── Subtitle ──
               Text(
-                'Profile photos help everyone using Cruise feel safe',
+                S.of(context).addPhotoSubtitle,
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
@@ -245,8 +246,8 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                       ),
                     ),
                     onPressed: _choosePhoto,
-                    child: const Text(
-                      'Choose photo',
+                    child: Text(
+                      S.of(context).chooseFromGallery,
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
@@ -264,7 +265,7 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                 child: TextButton(
                   onPressed: _takePhoto,
                   child: Text(
-                    'Take photo',
+                    S.of(context).takePhoto,
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,

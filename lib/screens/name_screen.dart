@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import 'email_collect_screen.dart';
 
@@ -85,15 +86,18 @@ class _NameScreenState extends State<NameScreen> {
                     color: c.surface,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.arrow_back_ios_new_rounded,
-                      color: c.textPrimary, size: 18),
+                  child: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: c.textPrimary,
+                    size: 18,
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
 
               // ── Title ──
               Text(
-                "What's your name?",
+                S.of(context).whatsYourName,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -104,17 +108,17 @@ class _NameScreenState extends State<NameScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Drivers will only see your first name',
+                S.of(context).driversWillSeeFirstName,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
 
               // ── First Name ──
-              _buildField(c, _firstCtrl, 'First Name'),
+              _buildField(c, _firstCtrl, S.of(context).firstName),
               const SizedBox(height: 16),
 
               // ── Last Name ──
-              _buildField(c, _lastCtrl, 'Last Name'),
+              _buildField(c, _lastCtrl, S.of(context).lastName),
               const SizedBox(height: 24),
 
               // ── Already have an account ──
@@ -125,7 +129,7 @@ class _NameScreenState extends State<NameScreen> {
                     Navigator.of(context).pop();
                   },
                   child: Text(
-                    'Already have an account?',
+                    S.of(context).alreadyHaveAccount,
                     style: TextStyle(
                       color: _gold,
                       fontWeight: FontWeight.w600,
@@ -164,8 +168,8 @@ class _NameScreenState extends State<NameScreen> {
                         ),
                       ),
                       onPressed: _canContinue ? _next : null,
-                      child: const Text(
-                        'Next',
+                      child: Text(
+                        S.of(context).next,
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
@@ -182,8 +186,7 @@ class _NameScreenState extends State<NameScreen> {
     );
   }
 
-  Widget _buildField(
-      AppColors c, TextEditingController ctrl, String hint) {
+  Widget _buildField(AppColors c, TextEditingController ctrl, String hint) {
     return Container(
       decoration: BoxDecoration(
         color: c.surface,

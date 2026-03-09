@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../state/rider_trip_controller.dart';
 
 /// Premium ride options bottom sheet with card-based layout.
@@ -67,7 +68,7 @@ class RideOptionsSheet extends StatelessWidget {
               child: Row(
                 children: [
                   Text(
-                    'Choose your ride',
+                    S.of(context).chooseYourRide,
                     style: TextStyle(
                       fontSize: 21,
                       fontWeight: FontWeight.w900,
@@ -79,7 +80,10 @@ class RideOptionsSheet extends StatelessWidget {
                   if (isAirportTrip)
                     Container(
                       margin: const EdgeInsets.only(right: 6),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFF4285F4).withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
@@ -87,7 +91,11 @@ class RideOptionsSheet extends StatelessWidget {
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.flight_rounded, size: 13, color: Color(0xFF4285F4)),
+                          Icon(
+                            Icons.flight_rounded,
+                            size: 13,
+                            color: Color(0xFF4285F4),
+                          ),
                           SizedBox(width: 4),
                           Text(
                             'Airport',
@@ -101,7 +109,10 @@ class RideOptionsSheet extends StatelessWidget {
                       ),
                     ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: _gold.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(20),
@@ -112,7 +123,7 @@ class RideOptionsSheet extends StatelessWidget {
                         Icon(Icons.shield_rounded, size: 13, color: _gold),
                         const SizedBox(width: 4),
                         Text(
-                          'Insured',
+                          S.of(context).insured,
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -139,7 +150,10 @@ class RideOptionsSheet extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 11,
+                ),
                 decoration: BoxDecoration(
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.04)
@@ -160,11 +174,15 @@ class RideOptionsSheet extends StatelessWidget {
                         color: _gold.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(Icons.account_balance_wallet_rounded, size: 16, color: _gold),
+                      child: Icon(
+                        Icons.account_balance_wallet_rounded,
+                        size: 16,
+                        color: _gold,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      'Cash',
+                      S.of(context).cash,
                       style: TextStyle(
                         fontSize: 14,
                         color: c.textPrimary,
@@ -172,7 +190,11 @@ class RideOptionsSheet extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
-                    Icon(Icons.chevron_right_rounded, size: 20, color: c.textTertiary),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: c.textTertiary,
+                    ),
                   ],
                 ),
               ),
@@ -214,8 +236,13 @@ class RideOptionsSheet extends StatelessWidget {
                     onPressed: onConfirm,
                     child: Text(
                       selected != null
-                          ? 'Confirm ${selected!.name} · \$${selected!.priceEstimate.toStringAsFixed(2)}'
-                          : 'Confirm Ride',
+                          ? S
+                                .of(context)
+                                .confirmRideWithDetails(
+                                  selected!.name,
+                                  '\$${selected!.priceEstimate.toStringAsFixed(2)}',
+                                )
+                          : S.of(context).confirmRide,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
@@ -252,10 +279,14 @@ class RideOptionsSheet extends StatelessWidget {
 
     final cardBg = isSelected
         ? (isDark ? Colors.white.withValues(alpha: 0.07) : Colors.white)
-        : (isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF8F8FA));
+        : (isDark
+              ? Colors.white.withValues(alpha: 0.03)
+              : const Color(0xFFF8F8FA));
     final borderColor = isSelected
         ? _gold.withValues(alpha: 0.50)
-        : (isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.06));
+        : (isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.black.withValues(alpha: 0.06));
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -268,7 +299,10 @@ class RideOptionsSheet extends StatelessWidget {
           decoration: BoxDecoration(
             color: cardBg,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: borderColor, width: isSelected ? 1.5 : 1.0),
+            border: Border.all(
+              color: borderColor,
+              width: isSelected ? 1.5 : 1.0,
+            ),
             boxShadow: isSelected
                 ? [
                     BoxShadow(
@@ -279,7 +313,9 @@ class RideOptionsSheet extends StatelessWidget {
                   ]
                 : [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.15 : 0.04,
+                      ),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -300,7 +336,11 @@ class RideOptionsSheet extends StatelessWidget {
                 child: CustomPaint(
                   painter: _CarSilhouettePainter(
                     type: opt.id,
-                    color: isSelected ? _gold : (isDark ? Colors.white.withValues(alpha: 0.5) : Colors.black.withValues(alpha: 0.45)),
+                    color: isSelected
+                        ? _gold
+                        : (isDark
+                              ? Colors.white.withValues(alpha: 0.5)
+                              : Colors.black.withValues(alpha: 0.45)),
                   ),
                 ),
               ),
@@ -325,7 +365,10 @@ class RideOptionsSheet extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: tierColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(5),
@@ -404,7 +447,11 @@ class RideOptionsSheet extends StatelessWidget {
                         color: _gold,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.check_rounded, size: 14, color: Colors.white),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        size: 14,
+                        color: Colors.white,
+                      ),
                     ),
                   ],
                 ],
@@ -479,7 +526,13 @@ class _CarSilhouettePainter extends CustomPainter {
     }
   }
 
-  void _paintSedan(Canvas canvas, double cx, double cy, Size size, {bool wider = false}) {
+  void _paintSedan(
+    Canvas canvas,
+    double cx,
+    double cy,
+    Size size, {
+    bool wider = false,
+  }) {
     final w = size.width * (wider ? 0.36 : 0.32);
     final h = size.height * 0.44;
     final fill = Paint()..color = color;
@@ -491,14 +544,70 @@ class _CarSilhouettePainter extends CustomPainter {
     // Body
     final body = Path()
       ..moveTo(cx - w * 0.70, cy - h * 0.90)
-      ..cubicTo(cx - w * 0.30, cy - h * 1.0, cx + w * 0.30, cy - h * 1.0, cx + w * 0.70, cy - h * 0.90)
-      ..cubicTo(cx + w * 0.95, cy - h * 0.80, cx + w * 1.05, cy - h * 0.45, cx + w * 1.02, cy - h * 0.10)
-      ..cubicTo(cx + w * 1.0, cy + h * 0.15, cx + w * 1.0, cy + h * 0.35, cx + w * 1.02, cy + h * 0.50)
-      ..cubicTo(cx + w * 1.05, cy + h * 0.70, cx + w * 0.95, cy + h * 0.90, cx + w * 0.65, cy + h * 0.96)
-      ..cubicTo(cx + w * 0.35, cy + h * 1.0, cx - w * 0.35, cy + h * 1.0, cx - w * 0.65, cy + h * 0.96)
-      ..cubicTo(cx - w * 0.95, cy + h * 0.90, cx - w * 1.05, cy + h * 0.70, cx - w * 1.02, cy + h * 0.50)
-      ..cubicTo(cx - w * 1.0, cy + h * 0.35, cx - w * 1.0, cy + h * 0.15, cx - w * 1.02, cy - h * 0.10)
-      ..cubicTo(cx - w * 1.05, cy - h * 0.45, cx - w * 0.95, cy - h * 0.80, cx - w * 0.70, cy - h * 0.90)
+      ..cubicTo(
+        cx - w * 0.30,
+        cy - h * 1.0,
+        cx + w * 0.30,
+        cy - h * 1.0,
+        cx + w * 0.70,
+        cy - h * 0.90,
+      )
+      ..cubicTo(
+        cx + w * 0.95,
+        cy - h * 0.80,
+        cx + w * 1.05,
+        cy - h * 0.45,
+        cx + w * 1.02,
+        cy - h * 0.10,
+      )
+      ..cubicTo(
+        cx + w * 1.0,
+        cy + h * 0.15,
+        cx + w * 1.0,
+        cy + h * 0.35,
+        cx + w * 1.02,
+        cy + h * 0.50,
+      )
+      ..cubicTo(
+        cx + w * 1.05,
+        cy + h * 0.70,
+        cx + w * 0.95,
+        cy + h * 0.90,
+        cx + w * 0.65,
+        cy + h * 0.96,
+      )
+      ..cubicTo(
+        cx + w * 0.35,
+        cy + h * 1.0,
+        cx - w * 0.35,
+        cy + h * 1.0,
+        cx - w * 0.65,
+        cy + h * 0.96,
+      )
+      ..cubicTo(
+        cx - w * 0.95,
+        cy + h * 0.90,
+        cx - w * 1.05,
+        cy + h * 0.70,
+        cx - w * 1.02,
+        cy + h * 0.50,
+      )
+      ..cubicTo(
+        cx - w * 1.0,
+        cy + h * 0.35,
+        cx - w * 1.0,
+        cy + h * 0.15,
+        cx - w * 1.02,
+        cy - h * 0.10,
+      )
+      ..cubicTo(
+        cx - w * 1.05,
+        cy - h * 0.45,
+        cx - w * 0.95,
+        cy - h * 0.80,
+        cx - w * 0.70,
+        cy - h * 0.90,
+      )
       ..close();
     canvas.drawPath(body, fill);
     canvas.drawPath(body, stroke);
@@ -524,7 +633,11 @@ class _CarSilhouettePainter extends CustomPainter {
     // Roof
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, cy + h * 0.02), width: w * 1.40, height: h * 0.36),
+        Rect.fromCenter(
+          center: Offset(cx, cy + h * 0.02),
+          width: w * 1.40,
+          height: h * 0.36,
+        ),
         Radius.circular(w * 0.25),
       ),
       Paint()..color = color.withValues(alpha: 0.20),
@@ -534,7 +647,11 @@ class _CarSilhouettePainter extends CustomPainter {
     for (final s in [-1.0, 1.0]) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(cx + s * w * 0.52, cy - h * 0.88), width: w * 0.40, height: h * 0.06),
+          Rect.fromCenter(
+            center: Offset(cx + s * w * 0.52, cy - h * 0.88),
+            width: w * 0.40,
+            height: h * 0.06,
+          ),
           Radius.circular(2),
         ),
         Paint()..color = color.withValues(alpha: 0.6),
@@ -545,7 +662,11 @@ class _CarSilhouettePainter extends CustomPainter {
     for (final s in [-1.0, 1.0]) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(cx + s * w * 0.52, cy + h * 0.88), width: w * 0.38, height: h * 0.06),
+          Rect.fromCenter(
+            center: Offset(cx + s * w * 0.52, cy + h * 0.88),
+            width: w * 0.38,
+            height: h * 0.06,
+          ),
           Radius.circular(2),
         ),
         Paint()..color = color.withValues(alpha: 0.5),
@@ -565,14 +686,70 @@ class _CarSilhouettePainter extends CustomPainter {
     // Body — boxy SUV with semi-oval corners
     final body = Path()
       ..moveTo(cx - w * 0.72, cy - h * 0.92)
-      ..cubicTo(cx - w * 0.30, cy - h * 1.0, cx + w * 0.30, cy - h * 1.0, cx + w * 0.72, cy - h * 0.92)
-      ..cubicTo(cx + w * 0.92, cy - h * 0.86, cx + w * 1.04, cy - h * 0.52, cx + w * 1.04, cy - h * 0.12)
-      ..cubicTo(cx + w * 1.03, cy + h * 0.15, cx + w * 1.03, cy + h * 0.35, cx + w * 1.04, cy + h * 0.50)
-      ..cubicTo(cx + w * 1.04, cy + h * 0.72, cx + w * 0.92, cy + h * 0.90, cx + w * 0.68, cy + h * 0.97)
-      ..cubicTo(cx + w * 0.35, cy + h * 1.0, cx - w * 0.35, cy + h * 1.0, cx - w * 0.68, cy + h * 0.97)
-      ..cubicTo(cx - w * 0.92, cy + h * 0.90, cx - w * 1.04, cy + h * 0.72, cx - w * 1.04, cy + h * 0.50)
-      ..cubicTo(cx - w * 1.03, cy + h * 0.35, cx - w * 1.03, cy + h * 0.15, cx - w * 1.04, cy - h * 0.12)
-      ..cubicTo(cx - w * 1.04, cy - h * 0.52, cx - w * 0.92, cy - h * 0.86, cx - w * 0.72, cy - h * 0.92)
+      ..cubicTo(
+        cx - w * 0.30,
+        cy - h * 1.0,
+        cx + w * 0.30,
+        cy - h * 1.0,
+        cx + w * 0.72,
+        cy - h * 0.92,
+      )
+      ..cubicTo(
+        cx + w * 0.92,
+        cy - h * 0.86,
+        cx + w * 1.04,
+        cy - h * 0.52,
+        cx + w * 1.04,
+        cy - h * 0.12,
+      )
+      ..cubicTo(
+        cx + w * 1.03,
+        cy + h * 0.15,
+        cx + w * 1.03,
+        cy + h * 0.35,
+        cx + w * 1.04,
+        cy + h * 0.50,
+      )
+      ..cubicTo(
+        cx + w * 1.04,
+        cy + h * 0.72,
+        cx + w * 0.92,
+        cy + h * 0.90,
+        cx + w * 0.68,
+        cy + h * 0.97,
+      )
+      ..cubicTo(
+        cx + w * 0.35,
+        cy + h * 1.0,
+        cx - w * 0.35,
+        cy + h * 1.0,
+        cx - w * 0.68,
+        cy + h * 0.97,
+      )
+      ..cubicTo(
+        cx - w * 0.92,
+        cy + h * 0.90,
+        cx - w * 1.04,
+        cy + h * 0.72,
+        cx - w * 1.04,
+        cy + h * 0.50,
+      )
+      ..cubicTo(
+        cx - w * 1.03,
+        cy + h * 0.35,
+        cx - w * 1.03,
+        cy + h * 0.15,
+        cx - w * 1.04,
+        cy - h * 0.12,
+      )
+      ..cubicTo(
+        cx - w * 1.04,
+        cy - h * 0.52,
+        cx - w * 0.92,
+        cy - h * 0.86,
+        cx - w * 0.72,
+        cy - h * 0.92,
+      )
       ..close();
     canvas.drawPath(body, fill);
     canvas.drawPath(body, stroke);
@@ -598,7 +775,11 @@ class _CarSilhouettePainter extends CustomPainter {
     // Roof — wider
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, cy + h * 0.04), width: w * 1.50, height: h * 0.50),
+        Rect.fromCenter(
+          center: Offset(cx, cy + h * 0.04),
+          width: w * 1.50,
+          height: h * 0.50,
+        ),
         Radius.circular(w * 0.20),
       ),
       Paint()..color = color.withValues(alpha: 0.18),
@@ -620,7 +801,11 @@ class _CarSilhouettePainter extends CustomPainter {
     for (final s in [-1.0, 1.0]) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(cx + s * w * 0.54, cy - h * 0.90), width: w * 0.44, height: h * 0.065),
+          Rect.fromCenter(
+            center: Offset(cx + s * w * 0.54, cy - h * 0.90),
+            width: w * 0.44,
+            height: h * 0.065,
+          ),
           Radius.circular(2),
         ),
         Paint()..color = color.withValues(alpha: 0.6),
@@ -631,7 +816,11 @@ class _CarSilhouettePainter extends CustomPainter {
     for (final s in [-1.0, 1.0]) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(cx + s * w * 0.55, cy + h * 0.90), width: w * 0.42, height: h * 0.065),
+          Rect.fromCenter(
+            center: Offset(cx + s * w * 0.55, cy + h * 0.90),
+            width: w * 0.42,
+            height: h * 0.065,
+          ),
           Radius.circular(2),
         ),
         Paint()..color = color.withValues(alpha: 0.5),

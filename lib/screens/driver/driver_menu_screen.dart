@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
@@ -11,6 +12,7 @@ import 'driver_profile_screen.dart';
 import 'cruise_level_screen.dart';
 import 'payout_methods_screen.dart';
 import 'driver_scheduled_trips_screen.dart';
+import '../../l10n/app_localizations.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  CRUISE DRIVER — FULL-SCREEN MENU (Uber Driver style)
@@ -75,7 +77,15 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
           final role = me['role']?.toString();
           if (role == 'driver') _tierName = 'Gold';
           final r = me['acceptance_rate'] ?? me['rating'];
-          if (r != null) _rating = '$r%';
+          if (r != null) {
+            final rNum = double.tryParse(r.toString()) ?? 0;
+            // Star rating should be < 6, acceptance rate is typically > 10
+            if (rNum <= 5.0) {
+              _rating = rNum.toStringAsFixed(1);
+            } else {
+              _rating = '${rNum.toStringAsFixed(0)}%';
+            }
+          }
         });
       }
     } catch (_) {}
@@ -116,9 +126,9 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   ),
                 ),
                 const Spacer(),
-                const Text(
-                  'Menu',
-                  style: TextStyle(
+                Text(
+                  S.of(context).menuTitle,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
@@ -151,19 +161,19 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   const SizedBox(height: 28),
 
                   // ── More ways to earn ──
-                  _sectionHeader('More ways to earn'),
+                  _sectionHeader(S.of(context).moreWaysToEarn),
                   _item(
                     context,
                     Icons.trending_up_rounded,
-                    'Opportunities',
-                    'Find more earnings',
-                    () => _snack(context, 'Opportunities'),
+                    S.of(context).opportunities,
+                    S.of(context).findMoreEarnings,
+                    () => _snack(context, S.of(context).opportunities),
                   ),
                   _item(
                     context,
                     Icons.workspace_premium_rounded,
-                    'Cruise Level',
-                    'Green → Gold → Platinum → Diamond',
+                    S.of(context).cruiseLevelLabel,
+                    S.of(context).cruiseLevelTiers,
                     () {
                       Navigator.of(
                         context,
@@ -173,27 +183,27 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   _item(
                     context,
                     Icons.work_outline_rounded,
-                    'Work Hub',
-                    'Delivery & services',
-                    () => _snack(context, 'Work Hub'),
+                    S.of(context).workHub,
+                    S.of(context).deliveryAndServices,
+                    () => _snack(context, S.of(context).workHub),
                   ),
                   _item(
                     context,
                     Icons.person_add_rounded,
-                    'Refer Friends',
-                    'Earn bonuses',
-                    () => _snack(context, 'Refer a friend'),
+                    S.of(context).referFriends,
+                    S.of(context).earnBonuses,
+                    () => _snack(context, S.of(context).referFriends),
                   ),
 
                   const SizedBox(height: 24),
 
                   // ── Manage ──
-                  _sectionHeader('Manage'),
+                  _sectionHeader(S.of(context).manageSectionLabel),
                   _item(
                     context,
                     Icons.event_note_rounded,
-                    'Scheduled Trips',
-                    'Upcoming assigned rides',
+                    S.of(context).scheduledTripsMenu,
+                    S.of(context).upcomingRides,
                     () {
                       Navigator.of(context).push(
                         slideFromRightRoute(const DriverScheduledTripsScreen()),
@@ -203,8 +213,8 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   _item(
                     context,
                     Icons.directions_car_rounded,
-                    'Vehicles',
-                    'Your car details',
+                    S.of(context).vehiclesLabel,
+                    S.of(context).yourCarDetails,
                     () {
                       Navigator.of(
                         context,
@@ -214,8 +224,8 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   _item(
                     context,
                     Icons.description_rounded,
-                    'Documents',
-                    'License & insurance',
+                    S.of(context).documentsLabel,
+                    S.of(context).licenseAndInsurance,
                     () {
                       Navigator.of(context).push(
                         slideFromRightRoute(const DriverDocumentsScreen()),
@@ -225,27 +235,27 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   _item(
                     context,
                     Icons.security_rounded,
-                    'Insurance',
-                    'Coverage info',
-                    () => _snack(context, 'Insurance'),
+                    S.of(context).insuranceLabel,
+                    S.of(context).coverageInfo,
+                    () => _snack(context, S.of(context).insuranceLabel),
                   ),
 
                   const SizedBox(height: 24),
 
                   // ── Money ──
-                  _sectionHeader('Money'),
+                  _sectionHeader(S.of(context).moneySectionLabel),
                   _item(
                     context,
                     Icons.receipt_long_rounded,
-                    'Tax Info',
-                    'Tax documents & forms',
-                    () => _snack(context, 'Tax Info'),
+                    S.of(context).taxInfo,
+                    S.of(context).taxDocsAndForms,
+                    () => _snack(context, S.of(context).taxInfo),
                   ),
                   _item(
                     context,
                     Icons.account_balance_rounded,
-                    'Payout methods',
-                    'Bank & payment setup',
+                    S.of(context).payoutMethodsLabel,
+                    S.of(context).bankAndPaymentSetup,
                     () {
                       Navigator.of(
                         context,
@@ -255,35 +265,35 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   _item(
                     context,
                     Icons.credit_card_rounded,
-                    'Plus Card',
-                    'Cruise debit card',
-                    () => _snack(context, 'Plus Card'),
+                    S.of(context).plusCard,
+                    S.of(context).cruiseDebitCard,
+                    () => _snack(context, S.of(context).plusCard),
                   ),
 
                   const SizedBox(height: 24),
 
                   // ── Resources ──
-                  _sectionHeader('Resources'),
+                  _sectionHeader(S.of(context).resourcesSectionLabel),
                   _item(
                     context,
                     Icons.school_rounded,
-                    'Learning Center',
-                    'Tips & guides',
-                    () => _snack(context, 'Learning Center'),
+                    S.of(context).learningCenter,
+                    S.of(context).tipsAndGuides,
+                    () => _snack(context, S.of(context).learningCenter),
                   ),
                   _item(
                     context,
                     Icons.bug_report_rounded,
-                    'Bug Reporter',
-                    'Report issues',
-                    () => _snack(context, 'Bug Reporter'),
+                    S.of(context).bugReporter,
+                    S.of(context).reportIssues,
+                    () => _snack(context, S.of(context).bugReporter),
                   ),
                   _item(
                     context,
                     Icons.info_outline_rounded,
-                    'About',
+                    S.of(context).aboutLabel,
                     'Cruise Driver v1.0.0',
-                    () => _snack(context, 'About'),
+                    () => _snack(context, S.of(context).aboutLabel),
                   ),
 
                   const SizedBox(height: 24),
@@ -294,8 +304,8 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   _item(
                     context,
                     Icons.logout_rounded,
-                    'Sign out',
-                    'Log out of your account',
+                    S.of(context).signOut,
+                    S.of(context).logOutAccount,
                     () {
                       _showSignOut(context);
                     },
@@ -455,19 +465,34 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          _quickAction(context, Icons.help_outline_rounded, 'Help', () {
-            _showHelp(context);
-          }),
+          _quickAction(
+            context,
+            Icons.help_outline_rounded,
+            S.of(context).helpLabel,
+            () {
+              _showHelp(context);
+            },
+          ),
           const SizedBox(width: 10),
-          _quickAction(context, Icons.shield_outlined, 'Safety', () {
-            _snack(context, 'Safety features');
-          }),
+          _quickAction(
+            context,
+            Icons.shield_outlined,
+            S.of(context).safetyLabel,
+            () {
+              _snack(context, S.of(context).safetyLabel);
+            },
+          ),
           const SizedBox(width: 10),
-          _quickAction(context, Icons.settings_rounded, 'Settings', () {
-            Navigator.of(
-              context,
-            ).push(slideFromRightRoute(const DriverSettingsScreen()));
-          }),
+          _quickAction(
+            context,
+            Icons.settings_rounded,
+            S.of(context).settingsTitle,
+            () {
+              Navigator.of(
+                context,
+              ).push(slideFromRightRoute(const DriverSettingsScreen()));
+            },
+          ),
         ],
       ),
     );
@@ -632,19 +657,39 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
             const SizedBox(height: 24),
             const Icon(Icons.help_outline_rounded, color: _gold, size: 40),
             const SizedBox(height: 16),
-            const Text(
-              'Help & Support',
-              style: TextStyle(
+            Text(
+              S.of(context).helpAndSupport,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
               ),
             ),
             const SizedBox(height: 20),
-            _helpRow(Icons.phone_rounded, 'Call Support', '+1 (800) CRUISE'),
-            _helpRow(Icons.email_rounded, 'Email Us', 'driver@cruise.app'),
-            _helpRow(Icons.chat_rounded, 'Live Chat', 'Available 24/7'),
-            _helpRow(Icons.library_books_rounded, 'FAQ', 'Common questions'),
+            _helpRow(
+              Icons.phone_rounded,
+              S.of(context).callSupport,
+              '+1 (800) CRUISE',
+              () => launchUrl(Uri.parse('tel:+18002748473')),
+            ),
+            _helpRow(
+              Icons.email_rounded,
+              S.of(context).emailUs,
+              'driver@cruise.app',
+              () => launchUrl(Uri.parse('mailto:driver@cruise.app')),
+            ),
+            _helpRow(
+              Icons.chat_rounded,
+              S.of(context).liveChat,
+              S.of(context).available247,
+              () => launchUrl(Uri.parse('https://cruise.app/support')),
+            ),
+            _helpRow(
+              Icons.library_books_rounded,
+              S.of(context).faqLabel,
+              S.of(context).commonQuestions,
+              () => launchUrl(Uri.parse('https://cruise.app/faq')),
+            ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -658,9 +703,12 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                child: const Text(
-                  'Close',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                child: Text(
+                  S.of(context).close,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ),
@@ -671,47 +719,50 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     );
   }
 
-  Widget _helpRow(IconData icon, String t, String s) {
+  Widget _helpRow(IconData icon, String t, String s, [VoidCallback? onTap]) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: _gold, size: 20),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    t,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: _gold, size: 20),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      t,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  Text(
-                    s,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
-                      fontSize: 12,
+                    Text(
+                      s,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: Colors.white.withValues(alpha: 0.15),
-              size: 20,
-            ),
-          ],
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.15),
+                size: 20,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -726,25 +777,41 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: _card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Sign Out',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        title: Text(
+          S.of(context).signOutTitle,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         content: Text(
-          'Are you sure you want to sign out?',
+          S.of(context).signOutConfirmation,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text(
-              'Cancel',
+              S.of(context).cancel,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
             ),
           ),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
+              // Set driver offline in backend before logging out
+              try {
+                final user = await UserSession.getUser();
+                final id = int.tryParse(user?['userId'] ?? '');
+                if (id != null) {
+                  await ApiService.updateDriverLocation(
+                    driverId: id,
+                    lat: 0,
+                    lng: 0,
+                    isOnline: false,
+                  );
+                }
+              } catch (_) {}
               await UserSession.logout();
               if (!context.mounted) return;
               Navigator.of(context).pushAndRemoveUntil(
@@ -759,9 +826,9 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text(
-              'Sign Out',
-              style: TextStyle(fontWeight: FontWeight.w700),
+            child: Text(
+              S.of(context).signOutButton,
+              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
         ],

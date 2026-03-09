@@ -2,9 +2,13 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../l10n/app_localizations.dart';
 
-/// Full-screen camera scanner with document-frame overlay.
+/// Full-screen camera scanner with document-frame overlay and OCR.
+/// Detects text on the license to confirm a real document is present,
+/// then auto-captures or allows manual capture.
 /// Returns the captured image path, or null if the user cancels.
 class LicenseScannerScreen extends StatefulWidget {
   final String side; // "Front" or "Back"
@@ -22,6 +26,12 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
   bool _initialized = false;
   String? _capturedPath;
   bool _capturing = false;
+
+  // OCR
+  final _textRecognizer = TextRecognizer();
+  bool _scanning = false;
+  bool _documentDetected = false;
+  String _detectedHint = '';
 
   late AnimationController _cornerAnim;
 
@@ -46,9 +56,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
     if (!status.isGranted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Camera permission is required to scan your license'),
-          ),
+          SnackBar(content: Text(S.of(context).cameraPermissionRequired)),
         );
         Navigator.of(context).pop(null);
       }
@@ -65,16 +73,31 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
     );
     _ctrl = CameraController(rear, ResolutionPreset.high, enableAudio: false);
     try {
-      await _ctrl!.initialize();
+      await _ctrl!.initialize().timeout(const Duration(seconds: 5));
       if (mounted) setState(() => _initialized = true);
-    } catch (_) {
-      if (mounted) Navigator.of(context).pop(null);
+    } catch (e) {
+      debugPrint('⚠️ Camera init failed: $e');
+      // Retry once after a short delay
+      await Future.delayed(const Duration(milliseconds: 500));
+      try {
+        _ctrl?.dispose();
+        _ctrl = CameraController(
+          rear,
+          ResolutionPreset.high,
+          enableAudio: false,
+        );
+        await _ctrl!.initialize().timeout(const Duration(seconds: 5));
+        if (mounted) setState(() => _initialized = true);
+      } catch (_) {
+        if (mounted) Navigator.of(context).pop(null);
+      }
     }
   }
 
   @override
   void dispose() {
     _cornerAnim.dispose();
+    _textRecognizer.close();
     _ctrl?.dispose();
     super.dispose();
   }
@@ -85,8 +108,53 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
     HapticFeedback.mediumImpact();
     try {
       final xFile = await _ctrl!.takePicture();
-      if (mounted) setState(() => _capturedPath = xFile.path);
-    } catch (_) {}
+      // Run OCR on captured image to verify it's a document
+      final inputImage = InputImage.fromFilePath(xFile.path);
+      final result = await _textRecognizer.processImage(inputImage);
+      final text = result.text.toLowerCase();
+      final isLicense =
+          text.contains('license') ||
+          text.contains('driver') ||
+          text.contains('dob') ||
+          text.contains('exp') ||
+          text.contains('class') ||
+          text.contains('state') ||
+          text.contains('name') ||
+          text.contains('address') ||
+          text.contains('dl') ||
+          text.contains('iss') ||
+          result.blocks.length >= 3; // at least 3 text blocks = real document
+
+      if (isLicense) {
+        if (mounted) {
+          setState(() {
+            _capturedPath = xFile.path;
+            _documentDetected = true;
+            _detectedHint = '';
+          });
+        }
+      } else {
+        // Not a valid document — let user retry
+        if (mounted) {
+          setState(() {
+            _capturedPath = xFile.path;
+            _documentDetected = false;
+            _detectedHint = S.of(context).noDocumentDetected;
+          });
+        }
+      }
+    } catch (_) {
+      // If OCR fails, still allow the photo
+      try {
+        final xFile = await _ctrl!.takePicture();
+        if (mounted) {
+          setState(() {
+            _capturedPath = xFile.path;
+            _documentDetected = true;
+          });
+        }
+      } catch (_) {}
+    }
     if (mounted) setState(() => _capturing = false);
   }
 
@@ -134,7 +202,9 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
                 ),
                 const Spacer(),
                 Text(
-                  widget.side == 'Front' ? 'License — Front' : 'License — Back',
+                  widget.side == 'Front'
+                      ? S.of(context).driverLicenseFront
+                      : S.of(context).driverLicenseBack,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -158,6 +228,39 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
               padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
               child: Column(
                 children: [
+                  // Warning when OCR did not detect a document
+                  if (!_documentDetected && _detectedHint.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade900.withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _detectedHint,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   SizedBox(
                     width: double.infinity,
                     height: 54,
@@ -171,9 +274,9 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
                         ),
                         elevation: 0,
                       ),
-                      child: const Text(
-                        'Use this photo',
-                        style: TextStyle(
+                      child: Text(
+                        S.of(context).usePhoto,
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
@@ -193,9 +296,9 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      child: const Text(
-                        'Retake',
-                        style: TextStyle(
+                      child: Text(
+                        S.of(context).retake,
+                        style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                         ),
@@ -261,8 +364,8 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
                 const Spacer(),
                 Text(
                   widget.side == 'Front'
-                      ? 'Scan Front of License'
-                      : 'Scan Back of License',
+                      ? S.of(context).scanFrontLicense
+                      : S.of(context).scanBackLicense,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 15,
@@ -283,7 +386,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
           left: 24,
           right: 24,
           child: Text(
-            'Align your license within the frame and tap the button to scan',
+            S.of(context).alignLicenseInstruction,
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.85),

@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
@@ -146,8 +147,7 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
       final backendRole = user['role'] as String? ?? 'rider';
       if (backendRole == 'driver') {
         setState(() {
-          _errorText =
-              'This account is registered as a driver. Please use Driver login.';
+          _errorText = S.of(context).driverAccountError;
           _verifying = false;
         });
         return;
@@ -185,7 +185,7 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
       });
     } catch (_) {
       setState(() {
-        _errorText = 'Connection error';
+        _errorText = S.of(context).connectionError;
         _verifying = false;
       });
     }
@@ -227,8 +227,8 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
               // ── Title ──
               Text(
                 widget.useVerifyApi
-                    ? 'Code sent — check your\nphone'
-                    : 'Code sent — check your\nemail',
+                    ? S.of(context).codeSentCheckPhone
+                    : S.of(context).codeSentCheckEmail,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -239,7 +239,7 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
               ),
               const SizedBox(height: 10),
               Text(
-                'Enter the code sent to ${widget.contact}.',
+                S.of(context).enterCodeSentTo(widget.contact),
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
@@ -373,9 +373,9 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
                                 strokeWidth: 2.5,
                               ),
                             )
-                          : const Text(
-                              'Verify & Sign In',
-                              style: TextStyle(
+                          : Text(
+                              S.of(context).verifyAndSignIn,
+                              style: const TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w700,
                               ),

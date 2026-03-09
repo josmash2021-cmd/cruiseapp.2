@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
+import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 import '../services/api_service.dart';
 import 'trip_receipt_screen.dart';
@@ -108,7 +109,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                   ),
                   const SizedBox(width: 16),
                   Text(
-                    'Your Trips',
+                    S.of(context).yourTrips,
                     style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.w800,
@@ -165,7 +166,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'No trips yet',
+            S.of(context).noTripsYet,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
@@ -174,7 +175,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Your ride history will appear here',
+            S.of(context).noTripsSubtitle,
             style: TextStyle(fontSize: 15, color: c.textSecondary),
           ),
         ],

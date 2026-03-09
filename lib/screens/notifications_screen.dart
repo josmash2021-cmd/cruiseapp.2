@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
+import '../l10n/app_localizations.dart';
 import 'payment_method_screen.dart';
 
 class NotificationsScreen extends StatelessWidget {
@@ -49,8 +50,11 @@ class NotificationsScreen extends StatelessWidget {
                       color: c.surface,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Icon(Icons.close_rounded,
-                        color: c.textPrimary, size: 20),
+                    child: Icon(
+                      Icons.close_rounded,
+                      color: c.textPrimary,
+                      size: 20,
+                    ),
                   ),
                 ),
               ),
@@ -102,7 +106,7 @@ class NotificationsScreen extends StatelessWidget {
 
               // ── Title ──
               Text(
-                'Help us keep you\ninformed',
+                S.of(context).helpUsKeepInformed,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 28,
@@ -116,7 +120,7 @@ class NotificationsScreen extends StatelessWidget {
 
               // ── Subtitle ──
               Text(
-                'Allow notifications to get real-time ride\nupdates and helpful information about your\naccount',
+                S.of(context).allowNotifsDescription,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 15,
@@ -135,8 +139,9 @@ class NotificationsScreen extends StatelessWidget {
                   height: 56,
                   child: Container(
                     decoration: BoxDecoration(
-                      gradient:
-                          const LinearGradient(colors: [_gold, _goldLight]),
+                      gradient: const LinearGradient(
+                        colors: [_gold, _goldLight],
+                      ),
                       borderRadius: BorderRadius.circular(28),
                     ),
                     child: ElevatedButton(
@@ -149,9 +154,9 @@ class NotificationsScreen extends StatelessWidget {
                         ),
                       ),
                       onPressed: () => _requestAndGoNext(context),
-                      child: const Text(
-                        'Allow',
-                        style: TextStyle(
+                      child: Text(
+                        S.of(context).allowBtn,
+                        style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),

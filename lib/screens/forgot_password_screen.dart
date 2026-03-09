@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 
@@ -41,8 +42,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   bool get _canSubmitStep1 => _identCtrl.text.trim().isNotEmpty;
   bool get _canSubmitStep2 =>
       _codeCtrl.text.trim().isNotEmpty &&
-      _passCtrl.text.isNotEmpty &&
-      _confirmCtrl.text.isNotEmpty;
+      _passCtrl.text.length >= 8 &&
+      _passCtrl.text.contains(RegExp(r'[0-9]')) &&
+      _passCtrl.text.contains(RegExp(r'[A-Z]')) &&
+      _passCtrl.text.contains(
+        RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'),
+      ) &&
+      _passCtrl.text == _confirmCtrl.text;
 
   Future<void> _requestCode() async {
     final identifier = _identCtrl.text.trim();
@@ -73,11 +79,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     final confirm = _confirmCtrl.text;
     if (code.isEmpty || pass.isEmpty) return;
     if (pass != confirm) {
-      setState(() => _errorText = 'Passwords do not match');
+      setState(() => _errorText = S.of(context).passwordsMismatch);
       return;
     }
-    if (pass.length < 6) {
-      setState(() => _errorText = 'Password must be at least 6 characters');
+    if (pass.length < 8 ||
+        !pass.contains(RegExp(r'[0-9]')) ||
+        !pass.contains(RegExp(r'[A-Z]')) ||
+        !pass.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'))) {
+      setState(() => _errorText = S.of(context).passwordRequirements);
       return;
     }
     setState(() {
@@ -89,9 +98,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       if (!mounted) return;
       HapticFeedback.mediumImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password reset successfully. Please sign in.'),
-          backgroundColor: Color(0xFF2E7D32),
+        SnackBar(
+          content: Text(S.of(context).resetSuccess),
+          backgroundColor: const Color(0xFF2E7D32),
         ),
       );
       Navigator.pop(context);
@@ -138,7 +147,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
               // ── Title ──
               Text(
-                _step2 ? 'Reset password' : 'Forgot password?',
+                _step2
+                    ? S.of(context).resetPassword
+                    : S.of(context).forgotPasswordTitle,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 28,
@@ -151,8 +162,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 duration: const Duration(milliseconds: 300),
                 child: Text(
                   _step2
-                      ? 'Enter the 6-digit code we sent and your new password.'
-                      : 'Enter your email or phone and we\'ll send you a reset code.',
+                      ? S.of(context).resetCodeSubtitle
+                      : S.of(context).forgotSubtitle,
                   key: ValueKey(_step2),
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.5),
@@ -167,7 +178,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               if (!_step2) ...[
                 _inputField(
                   controller: _identCtrl,
-                  hint: 'Email or phone',
+                  hint: S.of(context).emailOrPhone,
                   icon: Icons.alternate_email_rounded,
                   keyboardType: TextInputType.emailAddress,
                   c: c,
@@ -178,7 +189,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               if (_step2) ...[
                 _inputField(
                   controller: _codeCtrl,
-                  hint: '6-digit code',
+                  hint: S.of(context).sixDigitCode,
                   icon: Icons.pin_rounded,
                   keyboardType: TextInputType.number,
                   c: c,
@@ -190,7 +201,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 const SizedBox(height: 14),
                 _inputField(
                   controller: _passCtrl,
-                  hint: 'New password',
+                  hint: S.of(context).newPassword,
                   icon: Icons.lock_outline_rounded,
                   obscure: _obscure,
                   onToggleObscure: () => setState(() => _obscure = !_obscure),
@@ -199,7 +210,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 const SizedBox(height: 14),
                 _inputField(
                   controller: _confirmCtrl,
-                  hint: 'Confirm password',
+                  hint: S.of(context).confirmPassword,
                   icon: Icons.lock_outline_rounded,
                   obscure: _obscureConfirm,
                   onToggleObscure: () =>
@@ -279,7 +290,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             ),
                           )
                         : Text(
-                            _step2 ? 'Reset password' : 'Send code',
+                            _step2
+                                ? S.of(context).resetPasswordBtn
+                                : S.of(context).sendCode,
                             style: const TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
@@ -295,8 +308,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   child: GestureDetector(
                     onTap: _loading ? null : _requestCode,
                     child: Text(
-                      'Resend code',
-                      style: TextStyle(
+                      S.of(context).resendCode,
+                      style: const TextStyle(
                         color: _gold,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,

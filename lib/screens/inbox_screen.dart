@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 
 class InboxScreen extends StatefulWidget {
@@ -13,7 +14,6 @@ class InboxScreen extends StatefulWidget {
 
 class _InboxScreenState extends State<InboxScreen>
     with SingleTickerProviderStateMixin {
-
   late TabController _tabCtrl;
 
   @override
@@ -31,6 +31,7 @@ class _InboxScreenState extends State<InboxScreen>
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    final s = S.of(context);
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -52,8 +53,11 @@ class _InboxScreenState extends State<InboxScreen>
                     color: c.surface,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.arrow_back_ios_new_rounded,
-                      color: c.textPrimary, size: 18),
+                  child: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: c.textPrimary,
+                    size: 18,
+                  ),
                 ),
               ),
             ),
@@ -62,7 +66,7 @@ class _InboxScreenState extends State<InboxScreen>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
-                'Inbox',
+                s.inbox,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -101,12 +105,16 @@ class _InboxScreenState extends State<InboxScreen>
                   labelColor: c.textPrimary,
                   unselectedLabelColor: c.textSecondary,
                   labelStyle: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w700),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
                   unselectedLabelStyle: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w500),
-                  tabs: const [
-                    Tab(text: 'Notifications'),
-                    Tab(text: 'Messages'),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  tabs: [
+                    Tab(text: s.notifications),
+                    Tab(text: s.messages),
                   ],
                 ),
               ),
@@ -161,9 +169,15 @@ class _NotificationsTabState extends State<_NotificationsTab> {
         type: 'promo',
       );
       final seeded = await LocalDataService.getNotifications();
-      setState(() { _notifications = seeded; _loading = false; });
+      setState(() {
+        _notifications = seeded;
+        _loading = false;
+      });
     } else {
-      setState(() { _notifications = items; _loading = false; });
+      setState(() {
+        _notifications = items;
+        _loading = false;
+      });
     }
   }
 
@@ -184,12 +198,18 @@ class _NotificationsTabState extends State<_NotificationsTab> {
 
   IconData _iconForType(String type) {
     switch (type) {
-      case 'promo': return Icons.local_offer_rounded;
-      case 'safety': return Icons.shield_outlined;
-      case 'payment': return Icons.credit_card_rounded;
-      case 'trip': return Icons.directions_car_rounded;
-      case 'update': return Icons.update_rounded;
-      default: return Icons.notifications_rounded;
+      case 'promo':
+        return Icons.local_offer_rounded;
+      case 'safety':
+        return Icons.shield_outlined;
+      case 'payment':
+        return Icons.credit_card_rounded;
+      case 'trip':
+        return Icons.directions_car_rounded;
+      case 'update':
+        return Icons.update_rounded;
+      default:
+        return Icons.notifications_rounded;
     }
   }
 
@@ -204,6 +224,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     final c = widget.c;
 
     if (_loading) {
@@ -215,11 +236,25 @@ class _NotificationsTabState extends State<_NotificationsTab> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.notifications_off_outlined, color: c.textTertiary, size: 56),
+            Icon(
+              Icons.notifications_off_outlined,
+              color: c.textTertiary,
+              size: 56,
+            ),
             const SizedBox(height: 16),
-            Text('No notifications', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.textPrimary)),
+            Text(
+              s.noNotifications,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: c.textPrimary,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('You\'re all caught up!', style: TextStyle(fontSize: 14, color: c.textSecondary)),
+            Text(
+              s.allCaughtUp,
+              style: TextStyle(fontSize: 14, color: c.textSecondary),
+            ),
           ],
         ),
       );
@@ -236,7 +271,14 @@ class _NotificationsTabState extends State<_NotificationsTab> {
               alignment: Alignment.centerRight,
               child: GestureDetector(
                 onTap: _markAllRead,
-                child: Text('Mark all read', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _gold)),
+                child: Text(
+                  s.markAllRead,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: _gold,
+                  ),
+                ),
               ),
             ),
           ),
@@ -259,7 +301,10 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                     color: Colors.white.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(Icons.delete_outline_rounded, color: Colors.white.withValues(alpha: 0.5)),
+                  child: Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
                 ),
                 onDismissed: (_) => _dismiss(i),
                 child: Padding(
@@ -269,32 +314,77 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                     decoration: BoxDecoration(
                       color: c.surface,
                       borderRadius: BorderRadius.circular(14),
-                      border: item.read ? null : Border.all(color: _gold.withValues(alpha: 0.3)),
+                      border: item.read
+                          ? null
+                          : Border.all(color: _gold.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
-                          width: 40, height: 40,
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
-                            color: !item.read ? _gold.withValues(alpha: 0.12) : c.bg,
+                            color: !item.read
+                                ? _gold.withValues(alpha: 0.12)
+                                : c.bg,
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: Icon(_iconForType(item.type), color: !item.read ? _gold : c.textSecondary, size: 22),
+                          child: Icon(
+                            _iconForType(item.type),
+                            color: !item.read ? _gold : c.textSecondary,
+                            size: 22,
+                          ),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(children: [
-                                Expanded(child: Text(item.title, style: TextStyle(fontSize: 15, fontWeight: item.read ? FontWeight.w600 : FontWeight.w700, color: c.textPrimary))),
-                                if (!item.read) Container(width: 8, height: 8, decoration: const BoxDecoration(color: _gold, shape: BoxShape.circle)),
-                              ]),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      item.title,
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: item.read
+                                            ? FontWeight.w600
+                                            : FontWeight.w700,
+                                        color: c.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  if (!item.read)
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: const BoxDecoration(
+                                        color: _gold,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                ],
+                              ),
                               const SizedBox(height: 4),
-                              Text(item.message, style: TextStyle(fontSize: 13, color: c.textSecondary, height: 1.3), maxLines: 2, overflow: TextOverflow.ellipsis),
+                              Text(
+                                item.message,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: c.textSecondary,
+                                  height: 1.3,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                               const SizedBox(height: 6),
-                              Text(_timeAgo(item.createdAt), style: TextStyle(fontSize: 12, color: c.textTertiary)),
+                              Text(
+                                _timeAgo(item.createdAt),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: c.textTertiary,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -318,17 +408,21 @@ class _MessagesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 40),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.chat_bubble_outline_rounded,
-                color: c.textTertiary, size: 56),
+            Icon(
+              Icons.chat_bubble_outline_rounded,
+              color: c.textTertiary,
+              size: 56,
+            ),
             const SizedBox(height: 16),
             Text(
-              'No messages yet',
+              s.noMessagesYet,
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
@@ -337,7 +431,7 @@ class _MessagesTab extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Messages from your drivers and Cruise support will appear here.',
+              s.messagesWillAppear,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,

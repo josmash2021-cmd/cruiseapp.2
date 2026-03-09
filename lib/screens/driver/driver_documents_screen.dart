@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/api_service.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Document management screen – driver's license, insurance, registration.
 class DriverDocumentsScreen extends StatefulWidget {
@@ -115,8 +116,28 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     }
   }
 
+  String _localizedDocTitle(String? docType, S s) {
+    switch (docType) {
+      case 'drivers_license':
+        return s.driversLicenseTitle;
+      case 'insurance':
+        return s.vehicleInsuranceTitle;
+      case 'registration':
+        return s.vehicleRegistrationTitle;
+      case 'background_check':
+        return s.backgroundCheckTitle;
+      case 'profile_photo':
+        return s.profilePhotoTitle;
+      case 'vehicle_photos':
+        return s.vehiclePhotosTitle;
+      default:
+        return docType ?? 'Document';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     final approvedCount = _documents
         .where((d) => d['status'] == 'approved')
         .length;
@@ -154,9 +175,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                   ),
                   flexibleSpace: FlexibleSpaceBar(
                     titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
-                    title: const Text(
-                      'Documents',
-                      style: TextStyle(
+                    title: Text(
+                      s.documentsTitle,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
@@ -229,9 +250,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        const Text(
-                                          'Document Status',
-                                          style: TextStyle(
+                                        Text(
+                                          s.documentStatus,
+                                          style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 17,
                                             fontWeight: FontWeight.w800,
@@ -239,7 +260,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          '$approvedCount of $total documents approved',
+                                          s.docsApproved(approvedCount, total),
                                           style: TextStyle(
                                             color: Colors.white.withValues(
                                               alpha: 0.4,
@@ -303,6 +324,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   }
 
   Widget _documentCard(Map<String, dynamic> doc) {
+    final s = S.of(context);
     final status = (doc['status'] ?? 'not_uploaded') as String;
     final isApproved = status == 'approved';
     final isPending = status == 'pending';
@@ -313,24 +335,24 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     IconData statusIcon;
     if (isApproved) {
       statusColor = const Color(0xFFE8C547);
-      statusText = 'Approved';
+      statusText = s.approved;
       statusIcon = Icons.check_circle_rounded;
     } else if (isPending) {
       statusColor = const Color(0xFFF5D990);
-      statusText = 'Pending';
+      statusText = s.pending;
       statusIcon = Icons.schedule_rounded;
     } else if (isNotUploaded) {
       statusColor = Colors.white.withValues(alpha: 0.3);
-      statusText = 'Upload';
+      statusText = s.uploadBtn;
       statusIcon = Icons.upload_rounded;
     } else {
       statusColor = Colors.red.withValues(alpha: 0.7);
-      statusText = 'Rejected';
+      statusText = s.rejected;
       statusIcon = Icons.cancel_rounded;
     }
 
     final icon = _iconForDoc(doc);
-    final title = (doc['title'] ?? doc['doc_type'] ?? 'Document') as String;
+    final title = _localizedDocTitle(doc['doc_type'] as String?, s);
     final expiry = (doc['expiry_date'] ?? doc['expiry'] ?? '') as String;
     final createdAt = (doc['created_at'] ?? '') as String;
 
@@ -375,7 +397,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                       const SizedBox(height: 4),
                       if (expiry.isNotEmpty)
                         Text(
-                          'Expires: $expiry',
+                          s.expiresDate(expiry),
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.35),
                             fontSize: 12,
@@ -383,7 +405,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                         )
                       else if (createdAt.isNotEmpty)
                         Text(
-                          'Uploaded: ${_formatShortDate(createdAt)}',
+                          '${s.uploadedLabel}: ${_formatShortDate(createdAt)}',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.35),
                             fontSize: 12,
@@ -391,7 +413,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                         )
                       else
                         Text(
-                          isNotUploaded ? 'Not uploaded yet' : '',
+                          isNotUploaded ? s.notUploadedYet : '',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.35),
                             fontSize: 12,
@@ -454,8 +476,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   }
 
   void _showDocDetails(Map<String, dynamic> doc) {
+    final s = S.of(context);
     final icon = _iconForDoc(doc);
-    final title = (doc['title'] ?? doc['doc_type'] ?? 'Document') as String;
+    final title = _localizedDocTitle(doc['doc_type'] as String?, s);
     final docNumber = (doc['doc_number'] ?? '') as String;
     final expiry = (doc['expiry_date'] ?? doc['expiry'] ?? 'N/A') as String;
     final status = (doc['status'] ?? 'not_uploaded') as String;
@@ -501,13 +524,17 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              if (docNumber.isNotEmpty) _detailRow('Document #', docNumber),
-              _detailRow('Expiry', expiry.isNotEmpty ? expiry : 'N/A'),
+              if (docNumber.isNotEmpty)
+                _detailRow(s.documentNumberLabel, docNumber),
               _detailRow(
-                'Uploaded',
+                s.expiryDetailLabel,
+                expiry.isNotEmpty ? expiry : 'N/A',
+              ),
+              _detailRow(
+                s.uploadedLabel,
                 createdAt != 'N/A' ? _formatShortDate(createdAt) : 'N/A',
               ),
-              _detailRow('Status', status.toUpperCase()),
+              _detailRow(s.statusLabel, status.toUpperCase()),
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -520,9 +547,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                           _showUploadSheet(docType: doc['doc_type'] as String?);
                         },
                         icon: const Icon(Icons.refresh_rounded, size: 18),
-                        label: const Text(
-                          'Update',
-                          style: TextStyle(fontWeight: FontWeight.w700),
+                        label: Text(
+                          s.updateBtn,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: _gold,
@@ -547,9 +574,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        child: const Text(
-                          'Close',
-                          style: TextStyle(fontWeight: FontWeight.w800),
+                        child: Text(
+                          s.close,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ),
                     ),
@@ -614,20 +641,25 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              const Text(
-                'Upload Document',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
+              Builder(
+                builder: (ctx2) {
+                  final s2 = S.of(ctx2);
+                  return Text(
+                    s2.uploadDocument,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 24),
               _uploadOption(
                 ctx,
                 Icons.camera_alt_rounded,
-                'Take Photo',
-                'Use your camera',
+                S.of(ctx).takePhoto,
+                S.of(ctx).useYourCamera,
                 () async {
                   Navigator.pop(ctx);
                   final img = await picker.pickImage(
@@ -641,8 +673,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
               _uploadOption(
                 ctx,
                 Icons.photo_library_rounded,
-                'Choose from Gallery',
-                'Select from photos',
+                S.of(ctx).chooseFromGallery,
+                S.of(ctx).selectFromPhotos,
                 () async {
                   Navigator.pop(ctx);
                   final img = await picker.pickImage(
@@ -656,7 +688,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: Text(
-                  'Cancel',
+                  S.of(ctx).cancel,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.4),
                     fontWeight: FontWeight.w600,
@@ -674,7 +706,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     HapticFeedback.mediumImpact();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Uploading document...'),
+        content: Text(S.of(context).uploadingDocument),
         backgroundColor: _gold,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
@@ -691,7 +723,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Document uploaded successfully!'),
+          content: Text(S.of(context).documentUploadedSuccessfully),
           backgroundColor: _gold,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(

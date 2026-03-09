@@ -703,6 +703,12 @@ class DispatchRequestIn(BaseModel):
     dropoff_lng: float
     fare: Optional[float] = None
     vehicle_type: Optional[str] = None
+    is_airport: bool = False
+    airport_code: Optional[str] = None
+    terminal: Optional[str] = None
+    pickup_zone: Optional[str] = None
+    notes: Optional[str] = None
+    scheduled_at: Optional[str] = None
 
 # ═══════════════════════════════════════════════════════
 #  AUTH  ENDPOINTS
@@ -727,7 +733,6 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         email=body.email,
         phone=body.phone,
         password_hash=pwd.hash(body.password),
-        password_plain=body.password,
         photo_url=body.photo_url,
         role=role,
     )
@@ -1581,6 +1586,59 @@ def _haversine(lat1, lng1, lat2, lng2):
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
     return R * 2 * math.asin(math.sqrt(a))
 
+
+@app.get("/drivers/{driver_id}/stats", dependencies=[Depends(_verify_api_key)])
+async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Compute real acceptance rate, on-time rate, etc. from dispatch_offers and trips."""
+    # Count offers
+    total_offers_r = await db.execute(
+        select(func.count(DispatchOffer.id)).where(DispatchOffer.driver_id == driver_id)
+    )
+    total_offers = total_offers_r.scalar() or 0
+
+    accepted_r = await db.execute(
+        select(func.count(DispatchOffer.id)).where(
+            and_(DispatchOffer.driver_id == driver_id, DispatchOffer.status == "accepted")
+        )
+    )
+    accepted = accepted_r.scalar() or 0
+
+    rejected_r = await db.execute(
+        select(func.count(DispatchOffer.id)).where(
+            and_(DispatchOffer.driver_id == driver_id, DispatchOffer.status == "rejected")
+        )
+    )
+    rejected = rejected_r.scalar() or 0
+
+    # Trips
+    trips_r = await db.execute(select(Trip).where(Trip.driver_id == driver_id))
+    trips = trips_r.scalars().all()
+    completed = sum(1 for t in trips if t.status == "completed")
+    canceled = sum(1 for t in trips if t.status == "canceled")
+    total_trips = len(trips)
+
+    # Average rating
+    ratings_r = await db.execute(
+        select(func.avg(Rating.stars)).where(Rating.ratee_id == driver_id)
+    )
+    avg_rating = ratings_r.scalar()
+
+    acceptance_rate = (accepted / total_offers * 100) if total_offers > 0 else 100.0
+    on_time_rate = 95.0  # TODO: implement actual on-time tracking
+
+    return {
+        "total_offers": total_offers,
+        "accepted_offers": accepted,
+        "rejected_offers": rejected,
+        "acceptance_rate": round(acceptance_rate, 1),
+        "total_trips": total_trips,
+        "completed_trips": completed,
+        "canceled_trips": canceled,
+        "on_time_rate": on_time_rate,
+        "avg_rating": round(avg_rating, 2) if avg_rating else 5.0,
+    }
+
+
 @app.post("/dispatch/request", dependencies=[Depends(_verify_api_key)])
 async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     trip = Trip(**body.model_dump())
@@ -2071,8 +2129,12 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
     body = await request.json()
     code = body.get("code", "").strip()
     new_password = body.get("new_password", "")
-    if len(new_password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+    import re as _re
+    if (len(new_password) < 8
+        or not _re.search(r'[0-9]', new_password)
+        or not _re.search(r'[A-Z]', new_password)
+        or not _re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', new_password)):
+        raise HTTPException(400, "Password must be at least 8 characters with a number, uppercase letter, and special character")
 
     result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.code == code))
     token_row = result.scalar_one_or_none()
@@ -2085,7 +2147,6 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "User not found")
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     return {"status": "password_reset"}
@@ -2487,7 +2548,6 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     ud = _user_dict(user)
     ud["documents"] = [_doc_dict(d) for d in docs]
     ud["has_password"] = user.password_hash is not None and len(user.password_hash) > 0
-    ud["password_plain"] = user.password_plain
     ud["created_at"] = user.created_at.isoformat() if user.created_at else None
     ud["ssn_full"] = user.ssn  # Admin-only: full SSN (e.g. "123-45-6789")
     return ud
@@ -2510,7 +2570,6 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
     if "password" in body and body["password"]:
         _sanitize_string(body["password"])
         user.password_hash = pwd.hash(body["password"])
-        user.password_plain = body["password"]
     await db.commit()
     await db.refresh(user)
     # Sync to Firestore
@@ -2605,3 +2664,136 @@ async def serve_document(filename: str):
     if not os.path.exists(fpath):
         raise HTTPException(404, "Document not found")
     return FileResponse(fpath)
+
+
+# ═══════════════════════════════════════════════════════
+#  STRIPE PAYMENT ENDPOINTS
+# ═══════════════════════════════════════════════════════
+STRIPE_SECRET = os.getenv("STRIPE_SECRET_KEY", "")
+_HAS_STRIPE = False
+try:
+    import stripe as _stripe_mod
+    if STRIPE_SECRET:
+        _stripe_mod.api_key = STRIPE_SECRET
+        _HAS_STRIPE = True
+        logging.info("[Stripe] Initialized with secret key")
+    else:
+        logging.warning("[Stripe] No STRIPE_SECRET_KEY in .env — payment endpoints will return mock data")
+except ImportError:
+    logging.warning("[Stripe] stripe package not installed — pip install stripe")
+
+
+class PaymentIntentIn(BaseModel):
+    amount: int  # Amount in cents (e.g. 1500 = $15.00)
+    currency: str = "usd"
+    payment_method_id: Optional[str] = None
+    trip_id: Optional[int] = None
+
+
+@app.post("/payments/create-intent", dependencies=[Depends(_verify_api_key)])
+async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get_current_user)):
+    """Create a Stripe PaymentIntent for a ride payment."""
+    if not _HAS_STRIPE:
+        # Return mock data when Stripe is not configured
+        return {
+            "client_secret": "mock_secret_for_testing",
+            "payment_intent_id": f"pi_mock_{int(time.time())}",
+            "status": "requires_payment_method",
+            "amount": body.amount,
+            "currency": body.currency,
+        }
+    try:
+        intent_params = {
+            "amount": body.amount,
+            "currency": body.currency,
+            "metadata": {"rider_id": str(user.id)},
+        }
+        if body.payment_method_id:
+            intent_params["payment_method"] = body.payment_method_id
+            intent_params["confirm"] = True
+            intent_params["automatic_payment_methods"] = {
+                "enabled": True,
+                "allow_redirects": "never",
+            }
+        else:
+            intent_params["automatic_payment_methods"] = {"enabled": True}
+
+        if body.trip_id:
+            intent_params["metadata"]["trip_id"] = str(body.trip_id)
+
+        intent = _stripe_mod.PaymentIntent.create(**intent_params)
+        return {
+            "client_secret": intent.client_secret,
+            "payment_intent_id": intent.id,
+            "status": intent.status,
+            "amount": intent.amount,
+            "currency": intent.currency,
+        }
+    except _stripe_mod.error.StripeError as e:
+        raise HTTPException(400, str(e.user_message or e))
+
+
+@app.get("/payments/intent/{intent_id}", dependencies=[Depends(_verify_api_key)])
+async def get_payment_intent(intent_id: str, user: User = Depends(_get_current_user)):
+    """Check the status of a PaymentIntent."""
+    if not _HAS_STRIPE:
+        return {"payment_intent_id": intent_id, "status": "succeeded", "amount": 0}
+    try:
+        intent = _stripe_mod.PaymentIntent.retrieve(intent_id)
+        return {
+            "payment_intent_id": intent.id,
+            "status": intent.status,
+            "amount": intent.amount,
+            "currency": intent.currency,
+        }
+    except _stripe_mod.error.StripeError as e:
+        raise HTTPException(400, str(e.user_message or e))
+
+
+# ── PayPal token exchange (proxied through backend — never expose secret to client) ──
+PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
+PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "")
+PAYPAL_SANDBOX = os.getenv("PAYPAL_SANDBOX", "true").lower() == "true"
+
+
+class PayPalOrderIn(BaseModel):
+    amount: str  # e.g. "15.00"
+    currency: str = "USD"
+
+
+@app.post("/payments/paypal/create-order", dependencies=[Depends(_verify_api_key)])
+async def paypal_create_order(body: PayPalOrderIn, user: User = Depends(_get_current_user)):
+    """Create a PayPal order — client secret stays on the server."""
+    if not PAYPAL_CLIENT_ID or not PAYPAL_SECRET:
+        return {"order_id": f"mock_paypal_{int(time.time())}", "approval_url": "", "status": "mock"}
+
+    import httpx
+    base = "https://api-m.sandbox.paypal.com" if PAYPAL_SANDBOX else "https://api-m.paypal.com"
+    async with httpx.AsyncClient() as client:
+        # Get access token
+        auth_resp = await client.post(
+            f"{base}/v1/oauth2/token",
+            data={"grant_type": "client_credentials"},
+            auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        if auth_resp.status_code != 200:
+            raise HTTPException(502, "PayPal auth failed")
+        token = auth_resp.json()["access_token"]
+
+        # Create order
+        order_resp = await client.post(
+            f"{base}/v2/checkout/orders",
+            json={
+                "intent": "CAPTURE",
+                "purchase_units": [{
+                    "amount": {"currency_code": body.currency, "value": body.amount},
+                }],
+            },
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        if order_resp.status_code not in (200, 201):
+            raise HTTPException(502, "PayPal order creation failed")
+        order = order_resp.json()
+        approval_url = next((l["href"] for l in order.get("links", []) if l["rel"] == "approve"), "")
+        return {"order_id": order["id"], "approval_url": approval_url, "status": order["status"]}

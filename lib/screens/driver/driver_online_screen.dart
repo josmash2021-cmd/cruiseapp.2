@@ -158,6 +158,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   BitmapDescriptor? _sedanIcon; // Fusion / Camry
   final String _activeVehicleAsset = 'suburban'; // which asset to use
 
+  // -- Golden animated dot (Apple Maps-style, gold) --
+  List<BitmapDescriptor> _goldenDotFrames = [];
+  int _goldenDotFrame = 0;
+  Timer? _goldenDotTimer;
+
   // -- Turn-by-turn navigation --
   final NavigationService _navService = NavigationService();
   NavRoute? _currentNavRoute;
@@ -251,6 +256,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _pollT?.cancel();
     _clock?.cancel();
     _navTimer?.cancel();
+    _goldenDotTimer?.cancel();
     _simTicker?.stop();
     _simTicker?.dispose();
     _posStream?.cancel();
@@ -363,7 +369,111 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _suvIcon = await CarIconLoader.loadForRide('Suburban');
     _sedanIcon = await CarIconLoader.loadForRide('Camry');
     _arrowIcon = _suvIcon;
+    await _buildGoldenDotFrames();
+    _startGoldenDotAnimation();
     if (mounted) setState(() {});
+  }
+
+  /// Pre-render 12 frames of a pulsing golden dot (Apple Maps blue dot style).
+  Future<void> _buildGoldenDotFrames() async {
+    const int frameCount = 12;
+    const double canvasSize = 160.0;
+    final frames = <BitmapDescriptor>[];
+
+    for (int i = 0; i < frameCount; i++) {
+      final t = i / frameCount; // 0.0 → ~1.0
+      final pulseRadius = 40.0 + 24.0 * t; // outer ring expands 40→64
+      final pulseAlpha = (0.35 * (1.0 - t)).clamp(0.0, 1.0); // fades out
+
+      final recorder = PictureRecorder();
+      final canvas = Canvas(
+        recorder,
+        const Rect.fromLTWH(0, 0, canvasSize, canvasSize),
+      );
+      final center = const Offset(canvasSize / 2, canvasSize / 2);
+
+      // Outer pulse ring (fading gold ring)
+      canvas.drawCircle(
+        center,
+        pulseRadius,
+        Paint()
+          ..color = const Color(0xFFE8C547).withValues(alpha: pulseAlpha * 0.5)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawCircle(
+        center,
+        pulseRadius,
+        Paint()
+          ..color = const Color(0xFFE8C547).withValues(alpha: pulseAlpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3,
+      );
+
+      // Shadow under dot
+      canvas.drawCircle(
+        center.translate(0, 2),
+        22,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.25)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      );
+
+      // Main golden circle
+      canvas.drawCircle(
+        center,
+        20,
+        Paint()
+          ..shader = const RadialGradient(
+            colors: [Color(0xFFF5D990), Color(0xFFD4A843)],
+          ).createShader(Rect.fromCircle(center: center, radius: 20)),
+      );
+
+      // White border ring
+      canvas.drawCircle(
+        center,
+        20,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4,
+      );
+
+      // Center highlight
+      canvas.drawCircle(
+        center.translate(-4, -4),
+        7,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.45)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(
+        canvasSize.toInt(),
+        canvasSize.toInt(),
+      );
+      final byteData = await image.toByteData(format: ImageByteFormat.png);
+      if (byteData != null) {
+        frames.add(
+          BitmapDescriptor.bytes(
+            byteData.buffer.asUint8List(),
+            width: 56,
+            height: 56,
+          ),
+        );
+      }
+    }
+    _goldenDotFrames = frames;
+  }
+
+  void _startGoldenDotAnimation() {
+    _goldenDotTimer?.cancel();
+    _goldenDotTimer = Timer.periodic(const Duration(milliseconds: 130), (_) {
+      if (!mounted || _goldenDotFrames.isEmpty) return;
+      setState(() {
+        _goldenDotFrame = (_goldenDotFrame + 1) % _goldenDotFrames.length;
+      });
+    });
   }
 
   /// Renders a single car marker sprite using Canvas.
@@ -1119,19 +1229,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   Set<Marker> get _allMarkers {
     final Set<Marker> all = {..._markers};
-    // Vehicle sprite (billboard mode: faces camera, never flattened by tilt)
-    final icon = _vehicleIcon ?? _arrowIcon;
-    if (icon != null) {
+    // Golden animated dot (Apple Maps style, gold) — flat on map
+    if (_goldenDotFrames.isNotEmpty) {
       all.add(
         Marker(
           markerId: const MarkerId('driver'),
           position: _pos,
-          icon: icon,
-          rotation:
-              0, // camera bearing = driver heading, map handles orientation
-          anchor: const Offset(0.5, 0.7), // grounded below visual center
-          flat:
-              false, // billboard mode: stands up from map, 3D Uber-style effect
+          icon: _goldenDotFrames[_goldenDotFrame % _goldenDotFrames.length],
+          rotation: 0,
+          anchor: const Offset(0.5, 0.5),
+          flat: true, // lies flat on the map like Apple Maps blue dot
           zIndexInt: 100,
         ),
       );

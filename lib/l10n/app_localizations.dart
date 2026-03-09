@@ -2197,6 +2197,16 @@ class S {
   String get scheduleTooSoon => _es
       ? 'Selecciona un horario con al menos 30 minutos de anticipación.'
       : 'Please select a time at least 30 minutes from now.';
+
+  // ── Account Deletion ──────────────────────────────────────────────────────
+  String get deleteAccountProcessing => _es
+      ? 'Tu cuenta será procesada y eliminada junto con toda tu información en un lapso de 1 semana.'
+      : 'Your account will be processed and deleted along with all your information within 1 week.';
+  String get deleteAccountQuestion => _es
+      ? '¿Estás seguro de que quieres eliminar tu cuenta?'
+      : 'Are you sure you want to delete your account?';
+  String get sure => _es ? 'Seguro' : 'Sure';
+  String get cancelDeletion => _es ? 'Cancelar eliminación' : 'Cancel Deletion';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

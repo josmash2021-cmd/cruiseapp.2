@@ -140,30 +140,51 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
 
   Future<void> _deleteAccount() async {
     final c = AppColors.of(context);
+    final s = S.of(context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Delete Account',
-          style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700),
+          s.deleteAccount,
+          style: const TextStyle(
+            color: Colors.red,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-        content: Text(
-          'This will permanently delete your account and all data. This action cannot be undone.',
-          style: TextStyle(color: c.textSecondary),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              s.deleteAccountProcessing,
+              style: TextStyle(color: c.textSecondary, fontSize: 15),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              s.deleteAccountQuestion,
+              style: TextStyle(
+                color: c.textPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+            child: Text(
+              s.cancelDeletion,
+              style: TextStyle(color: c.textSecondary),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Delete Account',
-              style: TextStyle(
-                color: Color(0xFFE8C547),
+            child: Text(
+              s.sure,
+              style: const TextStyle(
+                color: Colors.red,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -173,7 +194,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
     );
     if (confirm != true) return;
 
-    // Delete account on backend + Firestore
+    // Request account deletion on backend + Firestore
     try {
       await ApiService.deleteAccount();
     } catch (e) {

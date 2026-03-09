@@ -59,7 +59,8 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
           _biometricAvailable = true;
           _biometricType = BiometricIconType.faceId;
         });
-      } else if (Platform.isAndroid && types.contains(BiometricType.fingerprint)) {
+      } else if (Platform.isAndroid &&
+          types.contains(BiometricType.fingerprint)) {
         setState(() {
           _biometricAvailable = true;
           _biometricType = BiometricIconType.fingerprint;

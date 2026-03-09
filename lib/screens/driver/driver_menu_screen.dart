@@ -9,9 +9,11 @@ import 'driver_vehicle_screen.dart';
 import 'driver_documents_screen.dart';
 import 'driver_settings_screen.dart';
 import 'driver_profile_screen.dart';
+import 'driver_info_pages.dart';
 import 'cruise_level_screen.dart';
 import 'payout_methods_screen.dart';
 import 'driver_scheduled_trips_screen.dart';
+import '../about_screen.dart';
 import '../../l10n/app_localizations.dart';
 
 // ═══════════════════════════════════════════════════════════════
@@ -74,8 +76,20 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
               ? '$first ${last.toString()[0].toUpperCase()}.'
               : first.toString();
           _photoUrl = me['photo_url']?.toString();
-          final role = me['role']?.toString();
-          if (role == 'driver') _tierName = 'Gold';
+          // Calculate tier from stats
+          final sat =
+              double.tryParse(me['satisfaction_rate']?.toString() ?? '') ?? 0;
+          final acc =
+              double.tryParse(me['acceptance_rate']?.toString() ?? '') ?? 0;
+          if (sat >= 95 && acc >= 85) {
+            _tierName = 'Diamond';
+          } else if (sat >= 90 && acc >= 50) {
+            _tierName = 'Platinum';
+          } else if (sat >= 85 && acc >= 30) {
+            _tierName = 'Gold';
+          } else {
+            _tierName = 'Green';
+          }
           final r = me['acceptance_rate'] ?? me['rating'];
           if (r != null) {
             final rNum = double.tryParse(r.toString()) ?? 0;
@@ -167,7 +181,11 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     Icons.trending_up_rounded,
                     S.of(context).opportunities,
                     S.of(context).findMoreEarnings,
-                    () => _snack(context, S.of(context).opportunities),
+                    () {
+                      Navigator.of(
+                        context,
+                      ).push(slideFromRightRoute(const OpportunitiesScreen()));
+                    },
                   ),
                   _item(
                     context,
@@ -185,14 +203,22 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     Icons.work_outline_rounded,
                     S.of(context).workHub,
                     S.of(context).deliveryAndServices,
-                    () => _snack(context, S.of(context).workHub),
+                    () {
+                      Navigator.of(
+                        context,
+                      ).push(slideFromRightRoute(const WorkHubScreen()));
+                    },
                   ),
                   _item(
                     context,
                     Icons.person_add_rounded,
                     S.of(context).referFriends,
                     S.of(context).earnBonuses,
-                    () => _snack(context, S.of(context).referFriends),
+                    () {
+                      Navigator.of(
+                        context,
+                      ).push(slideFromRightRoute(const ReferFriendsScreen()));
+                    },
                   ),
 
                   const SizedBox(height: 24),
@@ -237,7 +263,11 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     Icons.security_rounded,
                     S.of(context).insuranceLabel,
                     S.of(context).coverageInfo,
-                    () => _snack(context, S.of(context).insuranceLabel),
+                    () {
+                      Navigator.of(context).push(
+                        slideFromRightRoute(const DriverInsuranceScreen()),
+                      );
+                    },
                   ),
 
                   const SizedBox(height: 24),
@@ -249,7 +279,11 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     Icons.receipt_long_rounded,
                     S.of(context).taxInfo,
                     S.of(context).taxDocsAndForms,
-                    () => _snack(context, S.of(context).taxInfo),
+                    () {
+                      Navigator.of(
+                        context,
+                      ).push(slideFromRightRoute(const TaxInfoScreen()));
+                    },
                   ),
                   _item(
                     context,
@@ -267,7 +301,11 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     Icons.credit_card_rounded,
                     S.of(context).plusCard,
                     S.of(context).cruiseDebitCard,
-                    () => _snack(context, S.of(context).plusCard),
+                    () {
+                      Navigator.of(
+                        context,
+                      ).push(slideFromRightRoute(const PlusCardScreen()));
+                    },
                   ),
 
                   const SizedBox(height: 24),
@@ -279,21 +317,33 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     Icons.school_rounded,
                     S.of(context).learningCenter,
                     S.of(context).tipsAndGuides,
-                    () => _snack(context, S.of(context).learningCenter),
+                    () {
+                      Navigator.of(
+                        context,
+                      ).push(slideFromRightRoute(const LearningCenterScreen()));
+                    },
                   ),
                   _item(
                     context,
                     Icons.bug_report_rounded,
                     S.of(context).bugReporter,
                     S.of(context).reportIssues,
-                    () => _snack(context, S.of(context).bugReporter),
+                    () {
+                      Navigator.of(
+                        context,
+                      ).push(slideFromRightRoute(const BugReporterScreen()));
+                    },
                   ),
                   _item(
                     context,
                     Icons.info_outline_rounded,
                     S.of(context).aboutLabel,
-                    'Cruise Driver v1.0.0',
-                    () => _snack(context, S.of(context).aboutLabel),
+                    'Cruise v1.0.0',
+                    () {
+                      Navigator.of(
+                        context,
+                      ).push(slideFromRightRoute(const AboutScreen()));
+                    },
                   ),
 
                   const SizedBox(height: 24),
@@ -386,13 +436,35 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    _driverName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          _driverName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (_photoUrl != null && _photoUrl!.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF1DA1F2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.check,
+                            color: Colors.white,
+                            size: 12,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 6),
                   Row(
@@ -479,7 +551,9 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
             Icons.shield_outlined,
             S.of(context).safetyLabel,
             () {
-              _snack(context, S.of(context).safetyLabel);
+              Navigator.of(
+                context,
+              ).push(slideFromRightRoute(const DriverSafetyScreen()));
             },
           ),
           const SizedBox(width: 10),

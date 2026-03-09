@@ -84,7 +84,8 @@ class User(Base):
     password_visible = Column(String(255), nullable=True)  # visible password for dispatch
     verified_at = Column(DateTime, nullable=True)
     ssn = Column(String(11), nullable=True)  # SSN collected during verification (XXX-XX-XXXX)
-    status = Column(String(20), default="active")  # active, blocked, deleted
+    status = Column(String(20), default="active")  # active, blocked, deleted, pending_deletion
+    deletion_requested_at = Column(DateTime, nullable=True)  # when user requested account deletion
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class Trip(Base):
@@ -269,6 +270,7 @@ async def _migrate_add_columns(conn):
         ("support_chats", "agent_name", "VARCHAR(100)"),
         ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),
         ("support_chats", "needs_escalation", "BOOLEAN DEFAULT 0"),
+        ("users", "deletion_requested_at", "DATETIME"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -802,11 +804,38 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     # Check duplicates per role — allow same email/phone for different roles (driver vs rider)
     if body.email:
         exists = await db.execute(select(User).where(User.email == body.email, User.role == role))
-        if exists.scalar_one_or_none():
+        existing = exists.scalar_one_or_none()
+        if existing:
+            # Allow re-registration over deleted accounts
+            if existing.status in ("deleted", "pending_deletion"):
+                existing.first_name = body.first_name
+                existing.last_name = body.last_name
+                existing.password_hash = pwd.hash(body.password)
+                existing.photo_url = body.photo_url
+                existing.status = "active"
+                existing.deletion_requested_at = None
+                await db.commit()
+                await db.refresh(existing)
+                token = _create_token(existing.id)
+                refresh = _create_refresh_token(existing.id)
+                return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
             raise HTTPException(409, "Email already registered")
     if body.phone:
         exists = await db.execute(select(User).where(User.phone == body.phone, User.role == role))
-        if exists.scalar_one_or_none():
+        existing = exists.scalar_one_or_none()
+        if existing:
+            if existing.status in ("deleted", "pending_deletion"):
+                existing.first_name = body.first_name
+                existing.last_name = body.last_name
+                existing.password_hash = pwd.hash(body.password)
+                existing.photo_url = body.photo_url
+                existing.status = "active"
+                existing.deletion_requested_at = None
+                await db.commit()
+                await db.refresh(existing)
+                token = _create_token(existing.id)
+                refresh = _create_refresh_token(existing.id)
+                return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
             raise HTTPException(409, "Phone already registered")
     user = User(
         first_name=body.first_name,
@@ -1138,23 +1167,27 @@ async def serve_photo(filename: str):
 
 @app.delete("/auth/me", dependencies=[Depends(_verify_api_key)])
 async def delete_account(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Delete (soft-delete) the current user's account."""
+    """Request account deletion — marks as pending_deletion, scheduled for 1 week."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    db_user.status = "deleted"
+    db_user.status = "pending_deletion"
+    db_user.deletion_requested_at = datetime.now(timezone.utc)
     await db.commit()
-    # Sync deletion to Firestore
+    # Notify dispatch app about the deletion request via Firestore
     if _HAS_FIRESTORE:
         try:
-            if db_user.role == "driver":
-                firestore_sync.delete_user(db_user.id, "drivers")
-            else:
-                firestore_sync.delete_user(db_user.id, "clients")
+            user_name = f"{db_user.first_name} {db_user.last_name}".strip()
+            firestore_sync.sync_dispatch_notification(
+                chat_id=0,
+                user_name=user_name,
+                notif_type="account_deletion",
+                message=f"{db_user.role.capitalize()} '{user_name}' (ID: {db_user.id}) has requested account deletion. Scheduled for removal in 7 days.",
+            )
         except Exception as e:
-            logging.error("Firestore delete sync failed: %s", e)
-    return {"detail": "Account deleted"}
+            logging.error("Dispatch deletion notification failed: %s", e)
+    return {"detail": "Account deletion requested", "deletion_date": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()}
 
 @app.post("/auth/verify-request", dependencies=[Depends(_verify_api_key)])
 async def submit_verification(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -3579,8 +3612,8 @@ async def admin_list_users(
 @app.patch("/admin/users/{user_id}/status", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_update_user_status(user_id: int, status: str = Body(..., embed=True), db: AsyncSession = Depends(get_db)):
     """Update a user's status (active/blocked/deleted). Syncs to Firestore."""
-    if status not in ("active", "blocked", "deleted", "deactivated"):
-        raise HTTPException(400, "Status must be active, blocked, deleted, or deactivated")
+    if status not in ("active", "blocked", "deleted", "deactivated", "pending_deletion"):
+        raise HTTPException(400, "Status must be active, blocked, deleted, deactivated, or pending_deletion")
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:

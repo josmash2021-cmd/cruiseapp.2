@@ -404,14 +404,33 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  _name.toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      _name.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    if (_photoUrl != null && _photoUrl!.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF1DA1F2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check,
+                          color: Colors.white,
+                          size: 14,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 8),
                 GestureDetector(
@@ -481,7 +500,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  S.of(context).advantageMode,
+                  '$_tierLabel Mode',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,

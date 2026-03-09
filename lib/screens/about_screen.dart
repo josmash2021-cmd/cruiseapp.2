@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
@@ -86,17 +86,25 @@ class _AboutScreenState extends State<AboutScreen> {
                       width: 80,
                       height: 80,
                       decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.12),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [_gold, const Color(0xFFF5D990)],
+                        ),
                         borderRadius: BorderRadius.circular(22),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: 0.3),
+                            blurRadius: 20,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
                       ),
                       child: Center(
-                        child: Text(
-                          'C',
-                          style: TextStyle(
-                            fontSize: 40,
-                            fontWeight: FontWeight.w800,
-                            color: _gold,
-                          ),
+                        child: Icon(
+                          Icons.local_taxi_rounded,
+                          size: 40,
+                          color: Colors.black,
                         ),
                       ),
                     ),
@@ -113,7 +121,7 @@ class _AboutScreenState extends State<AboutScreen> {
                     const SizedBox(height: 6),
                     Text(
                       _version.isNotEmpty
-                          ? S.of(context).versionText(_version, _buildNumber)
+                          ? 'Version $_version'
                           : S.of(context).loading,
                       style: TextStyle(fontSize: 14, color: c.textSecondary),
                     ),
@@ -135,17 +143,6 @@ class _AboutScreenState extends State<AboutScreen> {
                 Icons.privacy_tip_outlined,
                 S.of(context).privacyPolicy,
                 onTap: () => _openUrl('https://cruiseride.com/privacy'),
-              ),
-              const SizedBox(height: 10),
-              _infoItem(
-                c,
-                Icons.code_rounded,
-                S.of(context).openSourceLicenses,
-                onTap: () => showLicensePage(
-                  context: context,
-                  applicationName: 'Cruise',
-                  applicationVersion: _version,
-                ),
               ),
               const SizedBox(height: 10),
               _infoItem(
@@ -255,14 +252,6 @@ class _AboutScreenState extends State<AboutScreen> {
     const shareUrl = 'https://cruiseride.com/download';
     const shareText =
         'Check out Cruise - the best ride experience! 🚗\n$shareUrl';
-    await Clipboard.setData(const ClipboardData(text: shareText));
-    if (!mounted) return;
-    final sc = AppColors.of(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Share link copied to clipboard! 📋'),
-        backgroundColor: sc.isDark ? sc.surface : Colors.black87,
-      ),
-    );
+    await Share.share(shareText);
   }
 }

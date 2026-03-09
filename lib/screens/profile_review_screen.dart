@@ -6,6 +6,7 @@ import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
+import '../services/notification_service.dart';
 import '../services/user_session.dart';
 import 'ready_to_ride_screen.dart';
 
@@ -199,6 +200,19 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
 
     // Auto-enable biometric login so it appears on next sign-in
     await LocalDataService.setBiometricLogin(true);
+
+    // Schedule welcome notification 10 minutes after registration
+    final role = await UserSession.getMode();
+    if (role != 'driver') {
+      NotificationService.scheduleAt(
+        id: 9999,
+        title: 'Welcome to Cruise! \u{1F389}',
+        body:
+            'Thanks for joining! Enjoy 10% off your first ride with code WELCOME10 \u{1F697}',
+        scheduledTime: DateTime.now().add(const Duration(minutes: 10)),
+        payload: 'welcome_discount',
+      );
+    }
 
     if (!mounted) return;
     Navigator.of(context).push(

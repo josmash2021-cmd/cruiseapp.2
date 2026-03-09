@@ -2775,241 +2775,459 @@ async def close_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):
 #  TWILIO AI VOICE CALL ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
-# In-memory voice session store: call_sid -> {agent_name, phase, category, msg_count}
+# In-memory voice session store: call_sid -> {agent_name, phase, category, msg_count, lang}
 _voice_sessions: dict = {}
 
-_VOICE_WELCOME = [
-    "Hola, bienvenido al centro de soporte de Cruise. Mi nombre es {agent}. ¿En qué puedo ayudarte hoy?",
-    "Hola, gracias por llamar a Cruise. Soy {agent}, tu agente de soporte. Cuéntame, ¿cómo puedo asistirte?",
-    "Bienvenido a Cruise, mi nombre es {agent}. Estoy aquí para ayudarte. ¿Qué necesitas?",
-]
-
-_VOICE_FALLBACK_FIRST = [
-    "Entiendo. ¿Me podrías dar un poco más de detalle para poder ayudarte mejor?",
-    "Gracias por contarme. ¿Puedes darme más información sobre tu situación?",
-    "De acuerdo. Necesito un poco más de información para resolver tu caso. ¿Puedes ampliar?",
-]
-
-_VOICE_FALLBACK_FOLLOWUP = [
-    "Ya estoy trabajando en tu caso. Nuestro equipo le dará seguimiento. ¿Hay algo más que necesites?",
-    "Perfecto, he registrado todo. ¿Puedo ayudarte con algo más?",
-    "Todo anotado. Voy a dar seguimiento a tu caso. ¿Necesitas algo adicional?",
-]
-
-_VOICE_CLOSING = [
-    "Me alegra poder ayudarte. No dudes en llamarnos si necesitas algo. ¡Que tengas un excelente día!",
-    "¡Con gusto! Estamos aquí para lo que necesites. ¡Que tengas un gran día!",
-    "Ha sido un placer atenderte. Si necesitas algo en el futuro, aquí estaremos. ¡Cuídate mucho!",
-]
-
-_VOICE_ESCALATION = [
-    "Entiendo tu solicitud. Voy a escalar tu caso a un supervisor. Te contactará lo más pronto posible.",
-    "Comprendo. Estoy pasando tu caso a un supervisor que podrá ayudarte mejor.",
-]
-
-# Shortened voice versions of category responses (shorter for spoken flow)
-_VOICE_CATEGORIES = {
-    "trip_charge": {
-        "first": [
-            "Entiendo tu preocupación con el cobro. Déjame revisar los detalles de tu viaje. ¿Me podrías indicar la fecha y hora aproximada?",
-            "Lamento el inconveniente con el cobro. Voy a revisar tu cuenta. ¿Podrías darme la fecha del viaje y el monto que te cobraron?",
-        ],
-        "followup": [
-            "Ya localicé tu viaje. He procesado el ajuste correspondiente. El reembolso se reflejará en 3 a 5 días hábiles. ¿Necesitas algo más?",
-            "Ya revisé la transacción. Voy a iniciar el proceso de corrección. Te llegará una notificación cuando se complete. ¿Algo más?",
-        ],
+# ── Voice configuration per language ──────────────────
+_VOICE_CONFIG = {
+    "es": {
+        "voice": "Polly.Lupe-Neural",
+        "lang": "es-MX",
+        "agent_names": _AGENT_NAMES,
     },
-    "cancellation": {
-        "first": [
-            "Puedo ayudarte con eso. ¿Es un viaje que quieres cancelar ahora, o te cobraron una tarifa de cancelación?",
-            "Claro. ¿El viaje ya está programado o te cobraron por cancelar? Dime los detalles.",
-        ],
-        "followup": [
-            "He procesado tu solicitud. Si hubo un cobro injustificado, he iniciado la devolución. ¿Puedo ayudarte con algo más?",
-            "La cancelación ha sido procesada correctamente. Recuerda que puedes cancelar sin cargo dentro de los primeros 2 minutos. ¿Necesitas algo más?",
-        ],
-    },
-    "refund": {
-        "first": [
-            "Entiendo que necesitas un reembolso. ¿Me podrías indicar la fecha del viaje y por qué solicitas el reembolso?",
-            "Claro que puedo ayudarte con el reembolso. ¿Cuál fue la fecha del viaje y el monto? Así proceso tu solicitud rápido.",
-        ],
-        "followup": [
-            "He procesado tu solicitud de reembolso. El monto se reflejará en tu cuenta en 3 a 5 días hábiles. ¿Hay algo más?",
-            "El reembolso fue aprobado y está en proceso. Lo verás de vuelta en tu método de pago pronto. ¿Necesitas algo más?",
-        ],
-    },
-    "driver": {
-        "first": [
-            "Lamento mucho esa experiencia. Tomamos estos reportes muy en serio. ¿Me das más detalles? La fecha y hora del viaje me ayudarían.",
-            "Eso no debería pasar. Voy a documentar tu reporte. ¿Puedes contarme qué sucedió y cuándo fue?",
-        ],
-        "followup": [
-            "Tu reporte ha sido registrado. Nuestro equipo revisará el caso y tomará las medidas necesarias. ¿Algo más?",
-            "He documentado todo. Este tipo de comportamiento no lo toleramos. El equipo de calidad revisará el caso. ¿Algo más?",
-        ],
-    },
-    "lost_item": {
-        "first": [
-            "No te preocupes, vamos a intentar recuperar tu objeto. ¿Qué objeto perdiste y en qué fecha fue el viaje?",
-            "La mayoría de objetos se recuperan en las primeras 24 horas. ¿Qué olvidaste y cuándo fue el viaje?",
-        ],
-        "followup": [
-            "Ya contacté al conductor. En cuanto responda te notifico. ¿Hay algo más?",
-            "El conductor ya fue notificado. Cuando confirme que tiene tu objeto, te avisamos. ¿Necesitas algo más?",
-        ],
-    },
-    "account": {
-        "first": [
-            "Puedo ayudarte con tu cuenta. ¿Qué problema tienes exactamente? ¿Es con el inicio de sesión o con tu perfil?",
-            "Los problemas de cuenta tienen solución rápida. ¿Qué necesitas cambiar o qué error te aparece?",
-        ],
-        "followup": [
-            "He actualizado tu cuenta. Los cambios ya deberían estar activos. Intenta cerrar sesión y volver a iniciar. ¿Todo bien?",
-            "Tu cuenta ha sido actualizada. Si el problema persiste, intenta reinstalar la app. ¿Algo más?",
-        ],
-    },
-    "app_problem": {
-        "first": [
-            "Entiendo que tienes problemas con la app. ¿Qué error ves o qué parte no funciona?",
-            "Lamento el inconveniente. ¿Se cierra sola, no carga, o hay algún error específico?",
-        ],
-        "followup": [
-            "Te recomiendo cerrar la app completamente, verificar que tengas la última versión, reiniciar tu dispositivo y abrirla de nuevo. ¿De acuerdo?",
-            "He reportado el problema al equipo técnico. Prueba reinstalando la app. Eso suele resolver la mayoría de problemas. ¿Algo más?",
-        ],
-    },
-    "safety": {
-        "first": [
-            "Tu seguridad es nuestra prioridad. Voy a tomar acción inmediata. ¿Puedes contarme qué sucedió?",
-            "Tomo esto muy en serio. ¿Te encuentras bien? Cuéntame con detalle qué pasó.",
-        ],
-        "followup": [
-            "Tu caso ha sido marcado como prioritario. Nuestro equipo de seguridad ya está revisándolo. ¿Algo más inmediato que necesites?",
-            "He escalado tu caso al equipo de seguridad. Lo tratamos con máxima urgencia. ¿Necesitas algo más ahora?",
-        ],
-    },
-    "payment": {
-        "first": [
-            "Puedo ayudarte con el método de pago. ¿Tu tarjeta fue rechazada, necesitas agregar una nueva, u otro problema?",
-            "¿Qué sucede con tu pago? ¿Error al agregar tarjeta, cargo rechazado, o necesitas cambiar el método?",
-        ],
-        "followup": [
-            "Verifica que los datos de tu tarjeta estén correctos y que tengas fondos. Si continúa, intenta otra tarjeta. ¿Algo más?",
-            "He actualizado la configuración de pago en tu cuenta. Intenta de nuevo. Si sigue, puede ser un bloqueo de tu banco. ¿Algo más?",
-        ],
-    },
-    "waiting": {
-        "first": [
-            "Entiendo tu frustración con la espera. ¿Cuánto tiempo esperaste y si el conductor finalmente llegó?",
-            "Lamento la demora. Los tiempos pueden variar por demanda. ¿Cuánto esperaste y cuándo fue?",
-        ],
-        "followup": [
-            "He revisado tu caso. He aplicado un crédito a tu cuenta como compensación. Lo verás en tu próximo viaje. ¿Algo más?",
-            "Voy a aplicar un ajuste en tu cuenta por la mala experiencia. ¿Hay algo más?",
+    "en": {
+        "voice": "Polly.Joanna-Neural",
+        "lang": "en-US",
+        "agent_names": [
+            "Sarah", "Emily", "Jessica", "Rachel", "Amanda",
+            "Ashley", "Samantha", "Olivia", "Sophia", "Isabella",
+            "Victoria", "Natalie", "Lauren", "Grace", "Megan",
         ],
     },
 }
 
+# ── Spanish responses ─────────────────────────────────
+_VOICE_ES = {
+    "welcome": [
+        "Hola, bienvenido al centro de soporte de Cruise. Mi nombre es {agent}, y voy a ser tu agente personal el día de hoy. Cuéntame, ¿en qué puedo ayudarte?",
+        "Hola, gracias por llamar a Cruise. Soy {agent}, tu agente de soporte. Estoy aquí para ayudarte con lo que necesites. ¿Cómo puedo asistirte?",
+        "Bienvenido a Cruise. Mi nombre es {agent} y estoy encantada de atenderte. Dime, ¿qué puedo hacer por ti hoy?",
+    ],
+    "fallback_first": [
+        "Entiendo lo que me dices. Para poder ayudarte de la mejor manera, ¿me podrías dar un poco más de detalle sobre tu situación?",
+        "Gracias por contarme. Necesito un poco más de información para darte una solución precisa. ¿Puedes ampliar los detalles?",
+        "De acuerdo. Quiero asegurarme de resolver esto correctamente. ¿Me puedes dar más información sobre lo que sucedió?",
+    ],
+    "fallback_followup": [
+        "Ya tengo toda la información. Nuestro equipo le dará seguimiento a tu caso de inmediato. ¿Hay algo más en lo que pueda ayudarte?",
+        "Perfecto, he registrado todos los detalles. Tu caso ya está en proceso. ¿Puedo ayudarte con algo más?",
+        "Todo ha quedado anotado. Me aseguraré personalmente de que se dé seguimiento. ¿Necesitas algo adicional?",
+    ],
+    "closing": [
+        "Me alegra mucho haber podido ayudarte. No dudes en llamarnos cuando lo necesites. Que tengas un excelente día, cuídate mucho.",
+        "Ha sido un placer atenderte. Recuerda que estamos aquí siempre que nos necesites. Que tengas un maravilloso día.",
+        "Con mucho gusto. Espero que todo se resuelva perfectamente. Si necesitas algo más en el futuro, aquí estaremos. Que te vaya muy bien.",
+    ],
+    "escalation": [
+        "Entiendo perfectamente tu solicitud. Voy a transferir tu caso a un supervisor especializado que podrá darte una mejor atención. Te contactará lo más pronto posible.",
+        "Comprendo tu situación. Estoy escalando tu caso ahora mismo a un supervisor. Se pondrá en contacto contigo en breve para resolverlo personalmente.",
+    ],
+    "escalated_reply": "Tu caso ya fue escalado a un supervisor y se encuentra en proceso. Se comunicará contigo muy pronto. ¿Hay algo urgente que necesites mientras tanto?",
+    "no_input": "Parece que no alcancé a escucharte. ¿Podrías repetir tu consulta por favor?",
+    "no_input_bye": "No logré escuchar nada. Si necesitas ayuda, no dudes en llamarnos nuevamente. Hasta pronto.",
+    "categories": {
+        "trip_charge": {
+            "first": [
+                "Entiendo tu preocupación con el cobro. Déjame revisar los detalles de tu viaje. ¿Me podrías indicar la fecha y la hora aproximada del viaje?",
+                "Lamento el inconveniente con el cobro. Voy a revisar tu cuenta ahora mismo. ¿Podrías darme la fecha del viaje y el monto que te cobraron?",
+            ],
+            "followup": [
+                "Ya localicé tu viaje y he verificado el recibo. He procesado el ajuste correspondiente. El reembolso se reflejará en tu método de pago en un plazo de tres a cinco días hábiles. ¿Necesitas algo más?",
+                "Ya revisé la transacción. Efectivamente hay una diferencia y voy a iniciar el proceso de corrección. Te llegará una notificación cuando se complete. ¿Hay algo más en lo que pueda ayudarte?",
+            ],
+        },
+        "cancellation": {
+            "first": [
+                "Puedo ayudarte con eso. ¿Es un viaje que quieres cancelar ahora, o te cobraron una tarifa de cancelación que quieres disputar?",
+                "Claro que sí. ¿El viaje está programado todavía, o ya pasó y te cobraron por la cancelación? Cuéntame los detalles.",
+            ],
+            "followup": [
+                "He procesado tu solicitud correctamente. Si hubo un cobro injustificado, ya inicié el proceso de devolución. El reembolso tardará de tres a cinco días hábiles. ¿Puedo ayudarte con algo más?",
+                "La cancelación ha sido procesada sin ningún problema. Recuerda que puedes cancelar sin cargo dentro de los primeros dos minutos después de solicitar el viaje. ¿Necesitas algo más?",
+            ],
+        },
+        "refund": {
+            "first": [
+                "Entiendo que necesitas un reembolso. Para procesarlo rápidamente, ¿me podrías indicar la fecha del viaje y el motivo de tu solicitud?",
+                "Claro que puedo ayudarte con el reembolso. ¿Cuál fue la fecha del viaje y el monto que te cobraron? Así lo proceso lo más rápido posible.",
+            ],
+            "followup": [
+                "He procesado tu solicitud de reembolso exitosamente. El monto se reflejará en tu cuenta en un plazo de tres a cinco días hábiles. Te enviaremos una confirmación. ¿Hay algo más que necesites?",
+                "El reembolso ha sido aprobado y ya está en proceso. Lo verás de vuelta en tu método de pago muy pronto. ¿Puedo ayudarte con algo más?",
+            ],
+        },
+        "driver": {
+            "first": [
+                "Lamento mucho que hayas tenido esa experiencia. Tomamos estos reportes con la mayor seriedad. ¿Me podrías dar más detalles? El nombre del conductor y la fecha del viaje me ayudarían mucho.",
+                "Eso no debería pasar bajo ninguna circunstancia. Voy a documentar tu reporte de inmediato. ¿Puedes contarme exactamente qué sucedió y cuándo fue?",
+            ],
+            "followup": [
+                "Tu reporte ha sido registrado oficialmente. Nuestro equipo de calidad revisará el caso y tomará las medidas disciplinarias necesarias. ¿Hay algo más que necesites?",
+                "He documentado todo detalladamente. Este tipo de comportamiento no lo toleramos en Cruise. El equipo de calidad revisará el caso en las próximas horas. ¿Algo más?",
+            ],
+        },
+        "lost_item": {
+            "first": [
+                "No te preocupes, vamos a hacer todo lo posible por recuperar tu objeto. ¿Qué fue lo que perdiste y en qué fecha fue el viaje?",
+                "Entiendo tu preocupación. La buena noticia es que la mayoría de objetos se recuperan en las primeras veinticuatro horas. ¿Me dices qué olvidaste y cuándo fue el viaje?",
+            ],
+            "followup": [
+                "Ya me comuniqué con el conductor. En cuanto nos confirme que tiene tu objeto, te notificaremos para coordinar la entrega. ¿Hay algo más que necesites?",
+                "El conductor ya fue notificado de tu caso. Tan pronto confirme que tiene tu objeto, nos pondremos en contacto contigo para acordar la devolución. ¿Necesitas algo más?",
+            ],
+        },
+        "account": {
+            "first": [
+                "Con gusto puedo ayudarte con tu cuenta. ¿Qué problema estás teniendo exactamente? ¿Es con el inicio de sesión, con tus datos de perfil, o algo diferente?",
+                "Los problemas de cuenta generalmente tienen una solución rápida. ¿Me dices qué necesitas cambiar o qué error te está apareciendo?",
+            ],
+            "followup": [
+                "He actualizado la información de tu cuenta. Los cambios ya deberían estar activos. Te recomiendo cerrar sesión y volver a iniciar para verificar. ¿Todo bien ahora?",
+                "Tu cuenta ha sido actualizada correctamente. Si el problema persiste, te sugiero reinstalar la aplicación. ¿Puedo ayudarte con algo más?",
+            ],
+        },
+        "app_problem": {
+            "first": [
+                "Entiendo que estás teniendo problemas con la aplicación. ¿Me podrías describir qué error ves o qué parte de la app no está funcionando?",
+                "Lamento el inconveniente con la app. ¿Se cierra por sí sola, no carga correctamente, o hay algún mensaje de error específico que te aparece?",
+            ],
+            "followup": [
+                "Te recomiendo seguir estos pasos: primero, cierra la aplicación completamente. Luego, verifica que tengas la última versión disponible. Reinicia tu dispositivo y abre la app de nuevo. Si el problema continúa, me avisas y lo escalamos al equipo técnico.",
+                "He reportado el problema directamente al equipo técnico. Mientras tanto, te sugiero reinstalar la aplicación desde la tienda. Eso suele resolver la mayoría de los problemas. ¿Necesitas algo más?",
+            ],
+        },
+        "safety": {
+            "first": [
+                "Tu seguridad es nuestra máxima prioridad. Voy a tomar acción de inmediato sobre tu caso. ¿Puedes contarme exactamente qué sucedió?",
+                "Tomo esto con la mayor seriedad. Antes que nada, ¿te encuentras bien en este momento? Cuéntame con todo detalle lo que pasó para poder actuar de inmediato.",
+            ],
+            "followup": [
+                "Tu caso ha sido marcado como prioridad máxima. Nuestro equipo de seguridad ya está revisándolo y te contactarán directamente. ¿Hay algo inmediato que necesites ahora?",
+                "He escalado tu caso directamente al equipo de seguridad. Este tipo de situaciones las tratamos con la mayor urgencia posible. Te mantendremos informado. ¿Necesitas algo más en este momento?",
+            ],
+        },
+        "payment": {
+            "first": [
+                "Con gusto te ayudo con el método de pago. ¿Qué problema estás teniendo? ¿Tu tarjeta fue rechazada, necesitas agregar una nueva, o hay algún otro inconveniente?",
+                "Entiendo. ¿Qué sucede exactamente con tu pago? ¿Es un error al agregar la tarjeta, un cargo rechazado, o necesitas cambiar tu método de pago?",
+            ],
+            "followup": [
+                "Te sugiero verificar que los datos de tu tarjeta estén correctos y que tengas fondos disponibles. Si el problema continúa, intenta agregar una tarjeta diferente. ¿Pudiste resolverlo?",
+                "He actualizado la configuración de pago en tu cuenta. Intenta realizar el pago nuevamente. Si sigue sin funcionar, podría ser un bloqueo temporal de tu banco. ¿Necesitas algo más?",
+            ],
+        },
+        "waiting": {
+            "first": [
+                "Entiendo tu frustración con el tiempo de espera. ¿Me puedes contar cuánto tiempo tuviste que esperar y si el conductor finalmente llegó?",
+                "Lamento mucho la demora que experimentaste. Los tiempos pueden variar dependiendo de la demanda en tu zona. ¿Me cuentas los detalles de cuánto esperaste y cuándo fue?",
+            ],
+            "followup": [
+                "He revisado tu caso detenidamente. Entiendo la molestia y he aplicado un crédito especial a tu cuenta como compensación. Lo verás reflejado en tu próximo viaje. ¿Hay algo más que necesites?",
+                "Voy a aplicar un ajuste en tu cuenta por la mala experiencia que tuviste. Lamentamos sinceramente los inconvenientes. ¿Puedo ayudarte con algo más?",
+            ],
+        },
+    },
+}
 
-def _voice_detect_category(text: str):
-    """Detect category from spoken text using the same keywords as chat AI."""
+# ── English responses ─────────────────────────────────
+_VOICE_EN = {
+    "welcome": [
+        "Hello, welcome to Cruise support. My name is {agent}, and I'll be your personal agent today. How can I help you?",
+        "Hi there, thank you for calling Cruise. I'm {agent}, your support agent. I'm here to help with anything you need. What can I do for you?",
+        "Welcome to Cruise. My name is {agent} and I'm happy to assist you today. Please tell me, how can I help?",
+    ],
+    "fallback_first": [
+        "I understand. To help you in the best way possible, could you give me a bit more detail about your situation?",
+        "Thank you for sharing that. I need a little more information to provide you with an accurate solution. Could you elaborate?",
+        "Got it. I want to make sure I resolve this correctly. Can you tell me more about what happened?",
+    ],
+    "fallback_followup": [
+        "I have all the information I need. Our team will follow up on your case right away. Is there anything else I can help you with?",
+        "Perfect, I've recorded all the details. Your case is now being processed. Can I help you with anything else?",
+        "Everything has been noted. I'll personally make sure it gets followed up on. Do you need anything else?",
+    ],
+    "closing": [
+        "I'm so glad I could help. Don't hesitate to call us whenever you need to. Have an excellent day, take care.",
+        "It was a pleasure assisting you. Remember, we're always here when you need us. Have a wonderful day.",
+        "You're very welcome. I hope everything gets resolved perfectly. If you need anything in the future, we'll be right here. Take care.",
+    ],
+    "escalation": [
+        "I completely understand your request. I'm going to transfer your case to a specialized supervisor who can better assist you. They'll contact you as soon as possible.",
+        "I understand your situation. I'm escalating your case right now to a supervisor. They'll get in touch with you shortly to resolve this personally.",
+    ],
+    "escalated_reply": "Your case has already been escalated to a supervisor and is being processed. They'll reach out to you very soon. Is there anything urgent you need in the meantime?",
+    "no_input": "It seems I couldn't hear you. Could you please repeat your question?",
+    "no_input_bye": "I wasn't able to hear anything. If you need help, please don't hesitate to call us again. Goodbye.",
+    "categories": {
+        "trip_charge": {
+            "first": [
+                "I understand your concern about the charge. Let me review the details of your trip. Could you tell me the approximate date and time?",
+                "I'm sorry about the inconvenience with the charge. I'm going to review your account right now. Could you give me the trip date and the amount you were charged?",
+            ],
+            "followup": [
+                "I've located your trip and verified the receipt. I've processed the corresponding adjustment. The refund will appear in your payment method within three to five business days. Is there anything else you need?",
+                "I've reviewed the transaction. There is indeed a discrepancy, and I'm initiating the correction process. You'll receive a notification when it's complete. Anything else I can help with?",
+            ],
+        },
+        "cancellation": {
+            "first": [
+                "I can definitely help you with that. Are you looking to cancel an upcoming trip, or were you charged a cancellation fee you'd like to dispute?",
+                "Of course. Is the trip still scheduled, or did it already happen and you were charged for the cancellation? Tell me the details.",
+            ],
+            "followup": [
+                "I've processed your request successfully. If there was an unjustified charge, I've already initiated the refund. It will take three to five business days. Can I help with anything else?",
+                "The cancellation has been processed without any issues. Remember, you can cancel free of charge within the first two minutes of requesting a ride. Need anything else?",
+            ],
+        },
+        "refund": {
+            "first": [
+                "I understand you need a refund. To process it quickly, could you tell me the trip date and the reason for your request?",
+                "I can absolutely help you with the refund. What was the trip date and the amount charged? I'll process it as fast as possible.",
+            ],
+            "followup": [
+                "Your refund request has been processed successfully. The amount will appear in your account within three to five business days. We'll send you a confirmation. Anything else?",
+                "The refund has been approved and is already in process. You'll see it back in your payment method very soon. Can I help with anything else?",
+            ],
+        },
+        "driver": {
+            "first": [
+                "I'm very sorry you had that experience. We take these reports extremely seriously. Could you give me more details? The driver's name and trip date would be very helpful.",
+                "That should never happen under any circumstances. I'm going to document your report immediately. Can you tell me exactly what happened and when?",
+            ],
+            "followup": [
+                "Your report has been officially filed. Our quality team will review the case and take the necessary disciplinary measures. Is there anything else you need?",
+                "I've documented everything in detail. This kind of behavior is absolutely not tolerated at Cruise. The quality team will review the case within the next few hours. Anything else?",
+            ],
+        },
+        "lost_item": {
+            "first": [
+                "Don't worry, we'll do everything possible to recover your item. What did you lose and what was the date of the trip?",
+                "I understand your concern. The good news is that most items are recovered within the first twenty-four hours. Can you tell me what you left behind and when the trip was?",
+            ],
+            "followup": [
+                "I've already reached out to the driver. As soon as they confirm they have your item, we'll notify you to arrange the return. Anything else you need?",
+                "The driver has been notified about your case. As soon as they confirm they have your item, we'll contact you to arrange the pickup. Need anything else?",
+            ],
+        },
+        "account": {
+            "first": [
+                "I'd be happy to help with your account. What issue are you experiencing exactly? Is it with logging in, your profile information, or something else?",
+                "Account issues usually have a quick fix. Can you tell me what you need to change or what error you're seeing?",
+            ],
+            "followup": [
+                "I've updated your account information. The changes should be active now. I recommend logging out and back in to verify. Is everything working?",
+                "Your account has been updated successfully. If the issue persists, I'd suggest reinstalling the app. Can I help with anything else?",
+            ],
+        },
+        "app_problem": {
+            "first": [
+                "I understand you're having issues with the app. Could you describe what error you're seeing or which part of the app isn't working?",
+                "I'm sorry about the inconvenience. Does the app close on its own, fail to load, or is there a specific error message showing up?",
+            ],
+            "followup": [
+                "I recommend these steps: first, close the app completely. Then, check that you have the latest version. Restart your device and open the app again. If the problem continues, let me know and I'll escalate it to the tech team.",
+                "I've reported the issue directly to our technical team. In the meantime, I'd suggest reinstalling the app from the store. That usually resolves most issues. Need anything else?",
+            ],
+        },
+        "safety": {
+            "first": [
+                "Your safety is our absolute top priority. I'm going to take immediate action on your case. Can you tell me exactly what happened?",
+                "I take this very seriously. First of all, are you okay right now? Please tell me everything that happened so I can act immediately.",
+            ],
+            "followup": [
+                "Your case has been flagged as maximum priority. Our safety team is already reviewing it and will contact you directly. Is there anything you need right now?",
+                "I've escalated your case directly to our safety team. We treat these situations with the utmost urgency. We'll keep you informed. Do you need anything else at this moment?",
+            ],
+        },
+        "payment": {
+            "first": [
+                "I'd be happy to help with your payment method. What issue are you having? Was your card declined, do you need to add a new one, or is it something else?",
+                "I see. What's happening exactly with your payment? Is it an error adding a card, a declined charge, or do you need to change your payment method?",
+            ],
+            "followup": [
+                "I'd suggest verifying that your card details are correct and that you have available funds. If the problem continues, try adding a different card. Were you able to resolve it?",
+                "I've updated the payment settings on your account. Try making the payment again. If it still doesn't work, it might be a temporary hold from your bank. Need anything else?",
+            ],
+        },
+        "waiting": {
+            "first": [
+                "I understand your frustration with the wait time. Can you tell me how long you had to wait and whether the driver eventually arrived?",
+                "I'm truly sorry about the delay you experienced. Wait times can vary depending on demand in your area. Can you tell me how long you waited and when this happened?",
+            ],
+            "followup": [
+                "I've reviewed your case carefully. I understand the inconvenience and I've applied a special credit to your account as compensation. You'll see it on your next ride. Anything else?",
+                "I'm going to apply an adjustment to your account for the poor experience. We sincerely apologize for the inconvenience. Can I help with anything else?",
+            ],
+        },
+    },
+}
+
+# English keywords for category detection
+_EN_KEYWORDS = {
+    "trip_charge": ["charge", "fare", "price", "expensive", "overcharge", "receipt", "amount", "money", "cost", "bill", "charged"],
+    "cancellation": ["cancel", "cancellation", "cancelled", "canceled"],
+    "refund": ["refund", "money back", "return my money", "reimburse", "reimbursement"],
+    "driver": ["driver", "rude", "unsafe", "dangerous", "report", "complaint", "behavior", "attitude", "driving"],
+    "lost_item": ["lost", "forgot", "left", "item", "phone in car", "left my", "forgotten"],
+    "account": ["account", "login", "password", "email", "phone", "access", "profile", "log in", "sign in"],
+    "app_problem": ["app", "crash", "error", "bug", "not working", "map", "gps", "loading", "slow", "update", "screen", "won't open", "closes"],
+    "safety": ["safety", "accident", "emergency", "danger", "harassment", "threat", "scared", "fear", "assault"],
+    "payment": ["payment", "card", "wallet", "method", "add", "declined", "visa", "mastercard", "debit", "credit"],
+    "waiting": ["wait", "late", "delay", "long time", "didn't arrive", "took forever", "waiting"],
+}
+
+# English closing/escalation keywords
+_EN_THANK_KEYWORDS = ["thanks", "thank you", "thx", "ty", "perfect", "great", "that's all", "nothing else", "no thanks", "resolved", "all good", "bye", "goodbye"]
+_EN_ESCALATION_TRIGGERS = ["manager", "supervisor", "boss", "speak to your manager", "escalate", "someone else", "higher up", "in charge"]
+
+
+def _voice_detect_category_en(text: str):
     t = text.lower()
-    for cat, data in _AI_CATEGORIES.items():
-        if any(k in t for k in data["keywords"]):
+    for cat, keywords in _EN_KEYWORDS.items():
+        if any(k in t for k in keywords):
             return cat
     return None
 
 
+def _get_voice_responses(lang: str):
+    return _VOICE_ES if lang == "es" else _VOICE_EN
+
+
 def _generate_voice_response(call_sid: str, speech_text: str) -> str:
-    """Generate the spoken AI response based on voice session state."""
+    """Generate the spoken AI response based on voice session state and language."""
     session = _voice_sessions.get(call_sid, {})
     phase = session.get("phase", "active")
-    agent = session.get("agent_name", "Agente")
     msg_count = session.get("msg_count", 0)
+    lang = session.get("lang", "es")
+    vr = _get_voice_responses(lang)
 
-    # Check for thank/closing keywords
-    if _match_keywords(speech_text, _THANK_KEYWORDS):
-        resp = _rng.choice(_VOICE_CLOSING)
+    # Check for closing/thank keywords
+    thank_kw = _THANK_KEYWORDS if lang == "es" else _EN_THANK_KEYWORDS
+    if _match_keywords(speech_text, thank_kw):
+        resp = _rng.choice(vr["closing"])
         session["phase"] = "closing"
         _voice_sessions[call_sid] = session
         return resp
 
     # Check for escalation
-    if _match_keywords(speech_text, _ESCALATION_TRIGGERS):
-        resp = _rng.choice(_VOICE_ESCALATION)
+    esc_kw = _ESCALATION_TRIGGERS if lang == "es" else _EN_ESCALATION_TRIGGERS
+    if _match_keywords(speech_text, esc_kw):
+        resp = _rng.choice(vr["escalation"])
         session["phase"] = "escalated"
         _voice_sessions[call_sid] = session
         return resp
 
     if phase == "escalated":
-        return "Tu caso ya fue escalado a un supervisor. Se comunicará contigo pronto. ¿Hay algo urgente que necesites mientras tanto?"
+        return vr["escalated_reply"]
 
     # Detect category
-    cat = _voice_detect_category(speech_text)
-    if cat and cat in _VOICE_CATEGORIES:
+    if lang == "es":
+        cat = _voice_detect_category(speech_text)
+    else:
+        cat = _voice_detect_category_en(speech_text)
+
+    cats = vr["categories"]
+    if cat and cat in cats:
         if msg_count <= 1:
-            resp = _rng.choice(_VOICE_CATEGORIES[cat]["first"])
+            resp = _rng.choice(cats[cat]["first"])
         else:
-            resp = _rng.choice(_VOICE_CATEGORIES[cat]["followup"])
+            resp = _rng.choice(cats[cat]["followup"])
         session["category"] = cat
     elif msg_count <= 1:
-        resp = _rng.choice(_VOICE_FALLBACK_FIRST)
+        resp = _rng.choice(vr["fallback_first"])
     else:
-        resp = _rng.choice(_VOICE_FALLBACK_FOLLOWUP)
+        resp = _rng.choice(vr["fallback_followup"])
 
     session["msg_count"] = msg_count + 1
     _voice_sessions[call_sid] = session
     return resp
 
 
-def _twiml_response(text: str, gather: bool = True) -> str:
-    """Build a TwiML XML response with neural Spanish voice."""
-    # Use Amazon Polly Lupe Neural — natural Latin American Spanish female voice
-    voice = "Polly.Lupe-Neural"
-    lang = "es-MX"
+def _twiml_say(text: str, lang: str) -> str:
+    """Build a <Say> tag with the right neural voice."""
+    cfg = _VOICE_CONFIG[lang]
+    return f'<Say voice="{cfg["voice"]}" language="{cfg["lang"]}">{text}</Say>'
 
-    if gather:
-        # Listen for caller speech after speaking
-        return (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            "<Response>"
-            f'<Gather input="speech" language="{lang}" speechTimeout="auto" '
-            f'speechModel="phone_call" action="/voice/gather" method="POST">'
-            f'<Say voice="{voice}" language="{lang}">{text}</Say>'
-            "</Gather>"
-            # If no input, say goodbye
-            f'<Say voice="{voice}" language="{lang}">No escuché nada. Si necesitas ayuda, llámanos de nuevo. ¡Hasta luego!</Say>'
-            "</Response>"
-        )
-    else:
-        # Final message — no gather, just speak and hang up
-        return (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            "<Response>"
-            f'<Say voice="{voice}" language="{lang}">{text}</Say>'
-            "<Hangup/>"
-            "</Response>"
-        )
+
+def _twiml_gather_speech(text: str, lang: str, action: str = "/voice/gather") -> str:
+    """Build a full TwiML response that speaks then listens for speech."""
+    cfg = _VOICE_CONFIG[lang]
+    vr = _get_voice_responses(lang)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<Response>"
+        f'<Gather input="speech" language="{cfg["lang"]}" speechTimeout="auto" '
+        f'speechModel="phone_call" enhanced="true" action="{action}" method="POST">'
+        f'{_twiml_say(text, lang)}'
+        "</Gather>"
+        f'{_twiml_say(vr["no_input_bye"], lang)}'
+        "</Response>"
+    )
+
+
+def _twiml_hangup(text: str, lang: str) -> str:
+    """Build TwiML that speaks a final message and hangs up."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<Response>"
+        f'{_twiml_say(text, lang)}'
+        "<Hangup/>"
+        "</Response>"
+    )
 
 
 @app.post("/voice/incoming")
 async def voice_incoming(request: Request):
-    """Twilio webhook: handles incoming voice calls. Greets caller with AI agent."""
+    """Twilio webhook: incoming call — language selection menu (1=ES, 2=EN)."""
     form = await request.form()
     call_sid = form.get("CallSid", "unknown")
 
-    # Assign a random agent name for this call
-    agent = _rng.choice(_AGENT_NAMES)
+    # Pre-create session
+    _voice_sessions[call_sid] = {"phase": "lang_select", "msg_count": 0}
+
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<Response>"
+        '<Gather input="dtmf" numDigits="1" action="/voice/language" method="POST" timeout="8">'
+        '<Say voice="Polly.Lupe-Neural" language="es-MX">'
+        "Gracias por llamar a Cruise."
+        " Para español, presiona uno."
+        "</Say>"
+        "<Pause length=\"1\"/>"
+        '<Say voice="Polly.Joanna-Neural" language="en-US">'
+        "Thank you for calling Cruise."
+        " For English, press two."
+        "</Say>"
+        "</Gather>"
+        # Default to Spanish if no input
+        '<Redirect method="POST">/voice/language?Digits=1</Redirect>'
+        "</Response>"
+    )
+    return Response(content=twiml, media_type="application/xml")
+
+
+@app.post("/voice/language")
+async def voice_language(request: Request):
+    """Twilio webhook: processes language choice and greets with AI agent."""
+    form = await request.form()
+    call_sid = form.get("CallSid", "unknown")
+    digits = form.get("Digits", "1")
+
+    lang = "en" if digits == "2" else "es"
+    cfg = _VOICE_CONFIG[lang]
+
+    agent = _rng.choice(cfg["agent_names"])
     _voice_sessions[call_sid] = {
         "agent_name": agent,
         "phase": "active",
         "category": None,
         "msg_count": 0,
+        "lang": lang,
     }
 
-    welcome = _rng.choice(_VOICE_WELCOME).format(agent=agent)
-    twiml = _twiml_response(welcome)
+    vr = _get_voice_responses(lang)
+    welcome = _rng.choice(vr["welcome"]).format(agent=agent)
+    twiml = _twiml_gather_speech(welcome, lang)
     return Response(content=twiml, media_type="application/xml")
 
 
@@ -3026,27 +3244,26 @@ async def voice_gather(request: Request):
     call_sid = form.get("CallSid", "unknown")
     speech_result = form.get("SpeechResult", "")
 
+    session = _voice_sessions.get(call_sid, {})
+    lang = session.get("lang", "es")
+    vr = _get_voice_responses(lang)
+
     if not speech_result:
-        twiml = _twiml_response(
-            "No logré escucharte. ¿Podrías repetir tu consulta por favor?"
-        )
+        twiml = _twiml_gather_speech(vr["no_input"], lang)
         return Response(content=twiml, media_type="application/xml")
 
-    logging.info("[Voice AI] CallSid=%s Speech: %s", call_sid, speech_result)
+    logging.info("[Voice AI] CallSid=%s Lang=%s Speech: %s", call_sid, lang, speech_result)
 
-    # Generate AI response
     reply = _generate_voice_response(call_sid, speech_result)
 
     session = _voice_sessions.get(call_sid, {})
     is_closing = session.get("phase") == "closing"
 
     if is_closing:
-        # Say goodbye and hang up
-        twiml = _twiml_response(reply, gather=False)
-        # Clean up session
+        twiml = _twiml_hangup(reply, lang)
         _voice_sessions.pop(call_sid, None)
     else:
-        twiml = _twiml_response(reply)
+        twiml = _twiml_gather_speech(reply, lang)
 
     return Response(content=twiml, media_type="application/xml")
 

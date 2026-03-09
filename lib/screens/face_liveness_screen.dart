@@ -53,6 +53,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   // Animations
   late AnimationController _successCtrl;
   late AnimationController _pulseCtrl;
+  late AnimationController _scanCtrl;
 
   final _challenges = [
     _Challenge.center,
@@ -91,6 +92,10 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
+    _scanCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat();
     _successCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
@@ -350,6 +355,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   @override
   void dispose() {
     _pulseCtrl.dispose();
+    _scanCtrl.dispose();
     _successCtrl.dispose();
     _cam?.stopImageStream();
     _cam?.dispose();
@@ -383,25 +389,41 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
 
   Widget _buildLive() {
     final info = _allDone ? null : _instructions[_challenges[_challengeIndex]]!;
+    final size = MediaQuery.of(context).size;
+    final camAspect = _cam!.value.aspectRatio; // e.g. 1.33 (4:3)
+    // Scale camera to fill the entire screen (crop, no black bars)
+    final screenAspect = size.width / size.height;
+    final previewAspect = 1 / camAspect;
+    final scale = screenAspect > previewAspect
+        ? size.width / (size.height * previewAspect)
+        : size.height / (size.width / previewAspect);
     return Stack(
       fit: StackFit.expand,
       children: [
-        // ── Camera preview (aspect-ratio correct, no stretching) ──
-        Center(
-          child: AspectRatio(
-            aspectRatio: 1 / _cam!.value.aspectRatio,
-            child: CameraPreview(_cam!),
+        // ── Camera preview (fill screen, crop overflow) ──
+        ClipRect(
+          child: Transform.scale(
+            scale: scale,
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: previewAspect,
+                child: CameraPreview(_cam!),
+              ),
+            ),
           ),
         ),
 
-        // ── Oval overlay with cutout ──
+        // ── Oval overlay with cutout + scanner ──
         AnimatedBuilder(
-          animation: _pulseCtrl,
+          animation: Listenable.merge([_pulseCtrl, _scanCtrl]),
           builder: (_, _) => CustomPaint(
             painter: _OvalPainter(
               progress: _holdProgress,
               allDone: _allDone,
               pulse: _pulseCtrl.value,
+              scanPosition: _scanCtrl.value,
+              challengeIndex: _challengeIndex,
+              totalChallenges: _challenges.length,
             ),
           ),
         ),
@@ -613,23 +635,29 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   }
 }
 
-// ─── Oval overlay painter ───────────────────────────────────────────────────
+// ─── Oval overlay painter with scanner effect ──────────────────────────────
 class _OvalPainter extends CustomPainter {
   final double progress;
   final bool allDone;
   final double pulse;
+  final double scanPosition;
+  final int challengeIndex;
+  final int totalChallenges;
 
   const _OvalPainter({
     required this.progress,
     required this.allDone,
     required this.pulse,
+    required this.scanPosition,
+    required this.challengeIndex,
+    required this.totalChallenges,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    const ovalW = 230.0;
-    const ovalH = 300.0;
-    final center = Offset(size.width / 2, size.height * 0.42);
+    const ovalW = 240.0;
+    const ovalH = 310.0;
+    final center = Offset(size.width / 2, size.height * 0.40);
     final ovalRect = Rect.fromCenter(
       center: center,
       width: ovalW,
@@ -643,14 +671,14 @@ class _OvalPainter extends CustomPainter {
       ..fillType = PathFillType.evenOdd;
     canvas.drawPath(
       path,
-      Paint()..color = Colors.black.withValues(alpha: 0.58),
+      Paint()..color = Colors.black.withValues(alpha: 0.62),
     );
 
-    // Oval border
+    // Oval border — glows based on progress
     final borderColor = allDone
         ? Colors.green
         : Color.lerp(
-            Colors.white.withValues(alpha: 0.35 + pulse * 0.2),
+            Colors.white.withValues(alpha: 0.25 + pulse * 0.15),
             const Color(0xFFE8C547),
             progress,
           )!;
@@ -659,10 +687,130 @@ class _OvalPainter extends CustomPainter {
       Paint()
         ..color = borderColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
+        ..strokeWidth = 2.0,
     );
 
-    // Progress arc on top of border
+    // ── Corner brackets (tech look) ──
+    const bracketLen = 28.0;
+    const bracketOffset = 6.0;
+    final bracketPaint = Paint()
+      ..color = allDone
+          ? Colors.green
+          : Color.lerp(
+              Colors.white.withValues(alpha: 0.6),
+              const Color(0xFFE8C547),
+              progress,
+            )!
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..strokeCap = StrokeCap.round;
+    final bRect = ovalRect.inflate(bracketOffset);
+    // Top-left
+    canvas.drawLine(
+      Offset(bRect.left + 20, bRect.top),
+      Offset(bRect.left + 20 + bracketLen, bRect.top),
+      bracketPaint,
+    );
+    canvas.drawLine(
+      Offset(bRect.left + 20, bRect.top),
+      Offset(bRect.left + 20, bRect.top + bracketLen),
+      bracketPaint,
+    );
+    // Top-right
+    canvas.drawLine(
+      Offset(bRect.right - 20 - bracketLen, bRect.top),
+      Offset(bRect.right - 20, bRect.top),
+      bracketPaint,
+    );
+    canvas.drawLine(
+      Offset(bRect.right - 20, bRect.top),
+      Offset(bRect.right - 20, bRect.top + bracketLen),
+      bracketPaint,
+    );
+    // Bottom-left
+    canvas.drawLine(
+      Offset(bRect.left + 20, bRect.bottom),
+      Offset(bRect.left + 20 + bracketLen, bRect.bottom),
+      bracketPaint,
+    );
+    canvas.drawLine(
+      Offset(bRect.left + 20, bRect.bottom - bracketLen),
+      Offset(bRect.left + 20, bRect.bottom),
+      bracketPaint,
+    );
+    // Bottom-right
+    canvas.drawLine(
+      Offset(bRect.right - 20 - bracketLen, bRect.bottom),
+      Offset(bRect.right - 20, bRect.bottom),
+      bracketPaint,
+    );
+    canvas.drawLine(
+      Offset(bRect.right - 20, bRect.bottom - bracketLen),
+      Offset(bRect.right - 20, bRect.bottom),
+      bracketPaint,
+    );
+
+    // ── Scanning laser line ──
+    if (!allDone) {
+      final scanY = ovalRect.top + ovalRect.height * scanPosition;
+      // Clip scan line to oval
+      final halfChord =
+          ovalW / 2 * _ovalChordFraction((scanPosition - 0.5).abs() * 2);
+      if (halfChord > 5) {
+        final scanPaint = Paint()
+          ..shader =
+              LinearGradient(
+                colors: [
+                  const Color(0x00E8C547),
+                  const Color(0xAAE8C547),
+                  const Color(0xFFE8C547),
+                  const Color(0xAAE8C547),
+                  const Color(0x00E8C547),
+                ],
+              ).createShader(
+                Rect.fromCenter(
+                  center: Offset(center.dx, scanY),
+                  width: halfChord * 2,
+                  height: 2,
+                ),
+              )
+          ..strokeWidth = 2.0
+          ..style = PaintingStyle.stroke;
+        canvas.drawLine(
+          Offset(center.dx - halfChord, scanY),
+          Offset(center.dx + halfChord, scanY),
+          scanPaint,
+        );
+        // Subtle glow behind the scan line
+        final glowPaint = Paint()
+          ..shader =
+              LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  const Color(0x00E8C547),
+                  const Color(0x18E8C547),
+                  const Color(0x00E8C547),
+                ],
+              ).createShader(
+                Rect.fromCenter(
+                  center: Offset(center.dx, scanY),
+                  width: halfChord * 2,
+                  height: 30,
+                ),
+              );
+        canvas.drawRect(
+          Rect.fromCenter(
+            center: Offset(center.dx, scanY),
+            width: halfChord * 2,
+            height: 30,
+          ),
+          glowPaint,
+        );
+      }
+    }
+
+    // ── Progress arc on top of border ──
     if (progress > 0.02 && !allDone) {
       canvas.drawArc(
         ovalRect.inflate(2),
@@ -672,15 +820,67 @@ class _OvalPainter extends CustomPainter {
         Paint()
           ..color = const Color(0xFFE8C547)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 4.5
+          ..strokeWidth = 4.0
           ..strokeCap = StrokeCap.round,
       );
     }
+
+    // ── Step indicators along bottom of oval ──
+    if (!allDone) {
+      for (int i = 0; i < totalChallenges; i++) {
+        final angle =
+            -0.5 + (i / (totalChallenges - 1)) * 1.0; // spread along bottom arc
+        final dx = center.dx + (ovalW / 2 + 16) * _sin(angle);
+        final dy = center.dy + (ovalH / 2 + 16) * _cos(angle);
+        final dotPaint = Paint()
+          ..color = i < challengeIndex
+              ? const Color(0xFFE8C547)
+              : (i == challengeIndex
+                    ? Colors.white
+                    : Colors.white.withValues(alpha: 0.3))
+          ..style = i <= challengeIndex
+              ? PaintingStyle.fill
+              : PaintingStyle.stroke
+          ..strokeWidth = 1.5;
+        canvas.drawCircle(
+          Offset(dx, dy),
+          i == challengeIndex ? 5 : 4,
+          dotPaint,
+        );
+        if (i < challengeIndex) {
+          // Checkmark tick for completed
+          final tickPaint = Paint()
+            ..color = Colors.black
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5
+            ..strokeCap = StrokeCap.round;
+          canvas.drawLine(Offset(dx - 2, dy), Offset(dx, dy + 2), tickPaint);
+          canvas.drawLine(
+            Offset(dx, dy + 2),
+            Offset(dx + 3, dy - 2),
+            tickPaint,
+          );
+        }
+      }
+    }
   }
+
+  double _ovalChordFraction(double normalizedDist) {
+    // For an ellipse, chord width at a vertical offset
+    if (normalizedDist >= 1.0) return 0.0;
+    return (1.0 - normalizedDist * normalizedDist).clamp(0.0, 1.0);
+  }
+
+  double _sin(double v) => v; // approximation for small angles
+  double _cos(double v) => (1.0 - v * v * 0.5).clamp(0.0, 1.0);
 
   @override
   bool shouldRepaint(_OvalPainter old) =>
-      old.progress != progress || old.allDone != allDone || old.pulse != pulse;
+      old.progress != progress ||
+      old.allDone != allDone ||
+      old.pulse != pulse ||
+      old.scanPosition != scanPosition ||
+      old.challengeIndex != challengeIndex;
 }
 
 // ─── Challenge metadata ──────────────────────────────────────────────────────

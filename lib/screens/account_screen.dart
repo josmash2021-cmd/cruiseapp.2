@@ -126,101 +126,117 @@ class _AccountScreenState extends State<AccountScreen> {
 
               // ── Name + Photo row ──
               Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Name + verified badge
+                  // Name — fills available width, auto-sizes for long names
                   Expanded(
-                    child: Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            fullName,
-                            style: TextStyle(
-                              fontSize: 34,
-                              fontWeight: FontWeight.w800,
-                              color: c.textPrimary,
-                              letterSpacing: -0.5,
-                            ),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4, right: 16),
+                      child: Text(
+                        fullName,
+                        style: TextStyle(
+                          fontSize: fullName.length > 18 ? 28 : 34,
+                          fontWeight: FontWeight.w800,
+                          color: c.textPrimary,
+                          letterSpacing: -0.5,
+                          height: 1.15,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  // Profile photo with verified badge
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 70,
+                        height: 70,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: c.surface,
+                          border: Border.all(
+                            color: _gold.withValues(alpha: 0.4),
+                            width: 2,
                           ),
                         ),
-                        if (_isVerified) ...[
-                          const SizedBox(width: 8),
-                          Container(
+                        child: ClipOval(
+                          child:
+                              photoPath.isNotEmpty &&
+                                  (kIsWeb || File(photoPath).existsSync())
+                              ? (kIsWeb
+                                    ? Image.network(
+                                        photoPath,
+                                        fit: BoxFit.cover,
+                                        width: 70,
+                                        height: 70,
+                                        gaplessPlayback: true,
+                                      )
+                                    : Image.file(
+                                        File(photoPath),
+                                        fit: BoxFit.cover,
+                                        width: 70,
+                                        height: 70,
+                                        filterQuality: FilterQuality.high,
+                                        cacheWidth: 280,
+                                        gaplessPlayback: true,
+                                        frameBuilder:
+                                            (
+                                              context,
+                                              child,
+                                              frame,
+                                              wasSynchronouslyLoaded,
+                                            ) {
+                                              if (wasSynchronouslyLoaded) {
+                                                return child;
+                                              }
+                                              return AnimatedOpacity(
+                                                opacity: frame == null
+                                                    ? 0.0
+                                                    : 1.0,
+                                                duration: const Duration(
+                                                  milliseconds: 300,
+                                                ),
+                                                curve: Curves.easeOutCubic,
+                                                child: child,
+                                              );
+                                            },
+                                      ))
+                              : Icon(
+                                  Icons.person_rounded,
+                                  size: 38,
+                                  color: c.textTertiary,
+                                ),
+                        ),
+                      ),
+                      if (_isVerified)
+                        Positioned(
+                          bottom: -2,
+                          right: -2,
+                          child: Container(
                             padding: const EdgeInsets.all(2),
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: const Color(
-                                0xFFE8C547,
-                              ).withValues(alpha: 0.15),
+                              color: c.bg,
                             ),
-                            child: const Icon(
-                              Icons.verified_rounded,
-                              color: Color(0xFFE8C547),
-                              size: 22,
+                            child: Container(
+                              padding: const EdgeInsets.all(1),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: const Color(
+                                  0xFFE8C547,
+                                ).withValues(alpha: 0.15),
+                              ),
+                              child: const Icon(
+                                Icons.verified_rounded,
+                                color: Color(0xFFE8C547),
+                                size: 18,
+                              ),
                             ),
                           ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  // Profile photo
-                  Container(
-                    width: 70,
-                    height: 70,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: c.surface,
-                      border: Border.all(
-                        color: _gold.withValues(alpha: 0.4),
-                        width: 2,
-                      ),
-                    ),
-                    child: ClipOval(
-                      child:
-                          photoPath.isNotEmpty &&
-                              (kIsWeb || File(photoPath).existsSync())
-                          ? (kIsWeb
-                                ? Image.network(
-                                    photoPath,
-                                    fit: BoxFit.cover,
-                                    width: 70,
-                                    height: 70,
-                                    gaplessPlayback: true,
-                                  )
-                                : Image.file(
-                                    File(photoPath),
-                                    fit: BoxFit.cover,
-                                    width: 70,
-                                    height: 70,
-                                    filterQuality: FilterQuality.high,
-                                    cacheWidth: 280,
-                                    gaplessPlayback: true,
-                                    frameBuilder:
-                                        (
-                                          context,
-                                          child,
-                                          frame,
-                                          wasSynchronouslyLoaded,
-                                        ) {
-                                          if (wasSynchronouslyLoaded) {
-                                            return child;
-                                          }
-                                          return AnimatedOpacity(
-                                            opacity: frame == null ? 0.0 : 1.0,
-                                            duration: const Duration(
-                                              milliseconds: 300,
-                                            ),
-                                            curve: Curves.easeOutCubic,
-                                            child: child,
-                                          );
-                                        },
-                                  ))
-                          : Icon(
-                              Icons.person_rounded,
-                              size: 38,
-                              color: c.textTertiary,
-                            ),
-                    ),
+                        ),
+                    ],
                   ),
                 ],
               ),
@@ -336,12 +352,16 @@ class _AccountScreenState extends State<AccountScreen> {
               children: [
                 Icon(item.icon, color: c.textPrimary, size: 24),
                 const SizedBox(width: 14),
-                Text(
-                  item.label,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: c.textPrimary,
+                Expanded(
+                  child: Text(
+                    item.label,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: c.textPrimary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                 ),
               ],

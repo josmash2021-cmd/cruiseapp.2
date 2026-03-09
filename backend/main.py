@@ -76,6 +76,7 @@ class User(Base):
     license_front_url = Column(Text, nullable=True)
     license_back_url = Column(Text, nullable=True)
     insurance_url = Column(Text, nullable=True)
+    video_url = Column(Text, nullable=True)  # biometric liveness video
     password_visible = Column(String(255), nullable=True)  # visible password for dispatch
     verified_at = Column(DateTime, nullable=True)
     ssn = Column(String(11), nullable=True)  # SSN collected during verification (XXX-XX-XXXX)
@@ -235,6 +236,7 @@ async def _migrate_add_columns(conn):
         ("users", "license_front_url", "TEXT"),
         ("users", "license_back_url", "TEXT"),
         ("users", "insurance_url", "TEXT"),
+        ("users", "video_url", "TEXT"),
         ("trips", "cancel_reason", "TEXT"),
         ("trips", "notes", "TEXT"),
         ("trips", "pickup_zone", "TEXT"),
@@ -645,6 +647,7 @@ def _user_dict(u: User) -> dict:
         "license_front_url": u.license_front_url,
         "license_back_url": u.license_back_url,
         "insurance_url": u.insurance_url,
+        "video_url": u.video_url,
         "verified_at": u.verified_at.isoformat() if u.verified_at else None,
         "status": u.status or "active",
         "ssn_provided": bool(u.ssn),
@@ -1144,6 +1147,23 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
             f.write(decoded)
         saved_urls[label] = f"/uploads/documents/{fname}"
 
+    # Handle verification video (MP4)
+    video_b64 = body.get("verification_video")
+    video_url = None
+    if video_b64 and isinstance(video_b64, str):
+        if len(video_b64) <= 20 * 1024 * 1024:  # 20MB limit for video
+            try:
+                video_decoded = base64.b64decode(video_b64, validate=True)
+                if len(video_decoded) <= 15 * 1024 * 1024:
+                    vname = f"verify_{db_user.id}_liveness_{int(time.time())}.mp4"
+                    vpath = os.path.join(docs_dir, vname)
+                    with open(vpath, "wb") as f:
+                        f.write(video_decoded)
+                    video_url = f"/uploads/documents/{vname}"
+                    saved_urls["video"] = video_url
+            except Exception:
+                pass  # skip invalid video
+
     # Store photo URLs in the database
     id_photo_url = saved_urls.get("license_front") or saved_urls.get("id_doc")
     selfie_url = saved_urls.get("selfie")
@@ -1157,6 +1177,8 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         db_user.license_back_url = saved_urls["license_back"]
     if saved_urls.get("insurance"):
         db_user.insurance_url = saved_urls["insurance"]
+    if video_url:
+        db_user.video_url = video_url
     await db.commit()
     await db.refresh(db_user)
 
@@ -1189,6 +1211,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
                 license_front_url=saved_urls.get("license_front"),
                 license_back_url=saved_urls.get("license_back"),
                 insurance_url=saved_urls.get("insurance"),
+                video_url=video_url,
                 profile_photo_url=profile_photo_url,
                 ssn=db_user.ssn,
                 vehicle=vehicle_data,

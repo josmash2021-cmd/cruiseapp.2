@@ -108,7 +108,21 @@ class UserSession {
     // regardless of backend response. Only explicit sign-out ends session.
     try {
       final profile = await ApiService.getMe();
-      if (profile != null) return true;
+      if (profile != null) {
+        // Repopulate local cache (critical after app reinstall on iOS
+        // where Keychain token survives but SharedPreferences is wiped)
+        await saveUser(
+          firstName: profile['first_name']?.toString() ?? '',
+          lastName: profile['last_name']?.toString() ?? '',
+          email: profile['email']?.toString() ?? '',
+          phone: profile['phone']?.toString() ?? '',
+          photoPath: profile['photo_url']?.toString() ?? '',
+          gender: profile['gender']?.toString() ?? '',
+          userId: int.tryParse(profile['id']?.toString() ?? ''),
+          role: profile['role']?.toString() ?? 'rider',
+        );
+        return true;
+      }
     } catch (_) {
       // ignore
     }

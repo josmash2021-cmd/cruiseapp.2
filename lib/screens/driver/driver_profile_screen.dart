@@ -208,7 +208,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               onTap: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
-                                    builder: (_) => const DriverTripHistoryScreen(),
+                                    builder: (_) =>
+                                        const DriverTripHistoryScreen(),
                                   ),
                                 );
                               },

@@ -76,6 +76,8 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
     setState(() => _saving = true);
     try {
       final url = await ApiService.uploadPhoto(file.path);
+      // Persist photo locally so it survives reinstall/update
+      await UserSession.saveProfilePhoto(file.path);
       if (!mounted) return;
       setState(() {
         _photoUrl = url;

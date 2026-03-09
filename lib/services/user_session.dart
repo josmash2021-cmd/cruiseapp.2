@@ -109,18 +109,31 @@ class UserSession {
     try {
       final profile = await ApiService.getMe();
       if (profile != null) {
-        // Repopulate local cache (critical after app reinstall on iOS
-        // where Keychain token survives but SharedPreferences is wiped)
+        // Download photo from server if available (critical after reinstall
+        // where local files are wiped but server still has the photo)
+        String localPhotoPath = '';
+        final serverPhotoUrl = profile['photo_url']?.toString() ?? '';
+        if (serverPhotoUrl.isNotEmpty) {
+          try {
+            localPhotoPath = await ApiService.downloadPhoto(serverPhotoUrl);
+          } catch (_) {}
+        }
+        // Repopulate local cache
         await saveUser(
           firstName: profile['first_name']?.toString() ?? '',
           lastName: profile['last_name']?.toString() ?? '',
           email: profile['email']?.toString() ?? '',
           phone: profile['phone']?.toString() ?? '',
-          photoPath: profile['photo_url']?.toString() ?? '',
+          photoPath: localPhotoPath,
           gender: profile['gender']?.toString() ?? '',
           userId: int.tryParse(profile['id']?.toString() ?? ''),
           role: profile['role']?.toString() ?? 'rider',
         );
+        if (localPhotoPath.isNotEmpty) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_photoKey, localPhotoPath);
+          photoNotifier.value = localPhotoPath;
+        }
         return true;
       }
     } catch (_) {

@@ -504,6 +504,7 @@ class ApiService {
   /// Create or get existing open support chat.
   static Future<Map<String, dynamic>> createSupportChat({
     String subject = '',
+    String locale = 'en',
   }) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
@@ -511,7 +512,7 @@ class ApiService {
         .post(
           Uri.parse('$_baseUrl/support/chats'),
           headers: _jsonHeaders(token),
-          body: jsonEncode({'subject': subject}),
+          body: jsonEncode({'subject': subject, 'locale': locale}),
         )
         .timeout(const Duration(seconds: 10));
     return _parse(res);
@@ -561,6 +562,18 @@ class ApiService {
         )
         .timeout(const Duration(seconds: 10));
     return _parse(res);
+  }
+
+  /// Close a support chat (user-facing).
+  static Future<void> closeSupportChat(int chatId) async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    await http
+        .patch(
+          Uri.parse('$_baseUrl/support/chats/$chatId/close-user'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 10));
   }
 
   /// Get the support voice call phone number.

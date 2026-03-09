@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
-import 'dart:ui';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -37,10 +37,12 @@ import '../../services/map_launcher_service.dart';
 class DriverOnlineScreen extends StatefulWidget {
   final LatLng? initialPos;
   final double initialHeading;
+  final String? photoUrl;
   const DriverOnlineScreen({
     super.key,
     this.initialPos,
     this.initialHeading = 0,
+    this.photoUrl,
   });
   @override
   State<DriverOnlineScreen> createState() => _DriverOnlineScreenState();
@@ -269,6 +271,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _clock?.cancel();
     _navTimer?.cancel();
     _goldenDotTimer?.cancel();
+    _driverPhotoImage?.dispose();
     _simTicker?.stop();
     _simTicker?.dispose();
     _posStream?.cancel();
@@ -390,27 +393,51 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   // â”€â”€ Build Uber-style 3D car marker sprites at runtime â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  ui.Image? _driverPhotoImage; // decoded driver photo for marker
+
   Future<void> _buildVehicleIcons() async {
     _suvIcon = await CarIconLoader.loadForRide('Suburban');
     _sedanIcon = await CarIconLoader.loadForRide('Camry');
     _arrowIcon = _suvIcon;
+    await _loadDriverPhoto();
     await _buildGoldenDotFrames();
     _startGoldenDotAnimation();
     if (mounted) setState(() {});
   }
 
-  /// Pre-render 12 frames of a pulsing golden dot (Apple Maps blue dot style).
+  /// Download and decode the driver's profile photo for the map marker.
+  Future<void> _loadDriverPhoto() async {
+    final url = widget.photoUrl;
+    if (url == null || url.isEmpty) return;
+    try {
+      final resp = await http.get(Uri.parse(url));
+      if (resp.statusCode == 200) {
+        final codec = await ui.instantiateImageCodec(resp.bodyBytes);
+        final frame = await codec.getNextFrame();
+        _driverPhotoImage = frame.image;
+      }
+    } catch (_) {
+      // fallback to golden dot
+    }
+  }
+
+  /// Pre-render 12 frames of the driver marker.
+  /// If a photo is available: circular photo with gold border + pulsing ring.
+  /// Otherwise: pulsing golden dot (Apple Maps blue dot style).
   Future<void> _buildGoldenDotFrames() async {
     const int frameCount = 12;
     const double canvasSize = 160.0;
+    const double photoRadius = 28.0;
+    const double borderWidth = 4.0;
     final frames = <BitmapDescriptor>[];
+    final hasPhoto = _driverPhotoImage != null;
 
     for (int i = 0; i < frameCount; i++) {
-      final t = i / frameCount; // 0.0 → ~1.0
-      final pulseRadius = 40.0 + 24.0 * t; // outer ring expands 40→64
-      final pulseAlpha = (0.35 * (1.0 - t)).clamp(0.0, 1.0); // fades out
+      final t = i / frameCount;
+      final pulseRadius = 48.0 + 24.0 * t;
+      final pulseAlpha = (0.35 * (1.0 - t)).clamp(0.0, 1.0);
 
-      final recorder = PictureRecorder();
+      final recorder = ui.PictureRecorder();
       final canvas = Canvas(
         recorder,
         const Rect.fromLTWH(0, 0, canvasSize, canvasSize),
@@ -434,50 +461,96 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           ..strokeWidth = 3,
       );
 
-      // Shadow under dot
-      canvas.drawCircle(
-        center.translate(0, 2),
-        22,
-        Paint()
-          ..color = Colors.black.withValues(alpha: 0.25)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-      );
+      if (hasPhoto) {
+        // Shadow under photo circle
+        canvas.drawCircle(
+          center.translate(0, 2),
+          photoRadius + borderWidth / 2,
+          Paint()
+            ..color = Colors.black.withValues(alpha: 0.3)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        );
 
-      // Main golden circle
-      canvas.drawCircle(
-        center,
-        20,
-        Paint()
-          ..shader = const RadialGradient(
-            colors: [Color(0xFFF5D990), Color(0xFFD4A843)],
-          ).createShader(Rect.fromCircle(center: center, radius: 20)),
-      );
+        // Gold border
+        canvas.drawCircle(
+          center,
+          photoRadius + borderWidth / 2,
+          Paint()
+            ..shader =
+                const RadialGradient(
+                  colors: [Color(0xFFF5D990), Color(0xFFD4A843)],
+                ).createShader(
+                  Rect.fromCircle(
+                    center: center,
+                    radius: photoRadius + borderWidth,
+                  ),
+                ),
+        );
 
-      // White border ring
-      canvas.drawCircle(
-        center,
-        20,
-        Paint()
-          ..color = Colors.white
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 4,
-      );
+        // Clip and draw photo
+        canvas.save();
+        canvas.clipPath(
+          Path()..addOval(Rect.fromCircle(center: center, radius: photoRadius)),
+        );
+        final src = Rect.fromLTWH(
+          0,
+          0,
+          _driverPhotoImage!.width.toDouble(),
+          _driverPhotoImage!.height.toDouble(),
+        );
+        final dst = Rect.fromCircle(center: center, radius: photoRadius);
+        canvas.drawImageRect(_driverPhotoImage!, src, dst, Paint());
+        canvas.restore();
 
-      // Center highlight
-      canvas.drawCircle(
-        center.translate(-4, -4),
-        7,
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.45)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-      );
+        // White inner border for polish
+        canvas.drawCircle(
+          center,
+          photoRadius,
+          Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+      } else {
+        // Fallback: golden dot
+        canvas.drawCircle(
+          center.translate(0, 2),
+          22,
+          Paint()
+            ..color = Colors.black.withValues(alpha: 0.25)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        );
+        canvas.drawCircle(
+          center,
+          20,
+          Paint()
+            ..shader = const RadialGradient(
+              colors: [Color(0xFFF5D990), Color(0xFFD4A843)],
+            ).createShader(Rect.fromCircle(center: center, radius: 20)),
+        );
+        canvas.drawCircle(
+          center,
+          20,
+          Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 4,
+        );
+        canvas.drawCircle(
+          center.translate(-4, -4),
+          7,
+          Paint()
+            ..color = Colors.white.withValues(alpha: 0.45)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        );
+      }
 
       final picture = recorder.endRecording();
       final image = await picture.toImage(
         canvasSize.toInt(),
         canvasSize.toInt(),
       );
-      final byteData = await image.toByteData(format: ImageByteFormat.png);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData != null) {
         frames.add(
           BitmapDescriptor.bytes(
@@ -523,7 +596,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Proportions matched to reference photos: wide body, circular wheels, large cabin
     const double cW = 200.0;
     const double cH = 300.0;
-    final recorder = PictureRecorder();
+    final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, cW, cH));
 
     final double cx = cW / 2;
@@ -705,7 +778,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // ── 8. ENCODE ────────────────────────────────────────────────────────
     final picture = recorder.endRecording();
     final image = await picture.toImage(cW.toInt(), cH.toInt());
-    final byteData = await image.toByteData(format: ImageByteFormat.png);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     if (byteData == null) return BitmapDescriptor.defaultMarker;
     return BitmapDescriptor.bytes(
       byteData.buffer.asUint8List(),
@@ -2708,7 +2781,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       return ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             decoration: BoxDecoration(
@@ -3189,7 +3262,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       child: ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -3889,7 +3962,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       child: ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
           child: SafeArea(
             top: false,
             child: Padding(
@@ -5263,7 +5336,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   ),
                   const SizedBox(height: 8),
                   _handle(isDark),
-                  const SizedBox(height: 8),
+                  Icon(
+                    Icons.keyboard_arrow_up_rounded,
+                    color: textMuted.withValues(alpha: 0.5),
+                    size: 18,
+                  ),
                   SizedBox(
                     height: 40,
                     child: Row(
@@ -5562,13 +5639,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   Widget _handle(bool isDark) => Center(
     child: Container(
-      width: 32,
-      height: 4,
+      width: 40,
+      height: 5,
       decoration: BoxDecoration(
         color: isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : Colors.black.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(2),
+            ? Colors.white.withValues(alpha: 0.25)
+            : Colors.black.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(3),
       ),
     ),
   );
@@ -5588,7 +5665,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       },
       child: ClipOval(
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
             width: sz,
             height: sz,

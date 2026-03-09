@@ -74,9 +74,9 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       hintKey: 'turnLeftOrRight',
     ),
     _Challenge.blink: _ChallengeInfo(
-      icon: Icons.visibility_off_rounded,
-      titleKey: 'blinkBothEyes',
-      hintKey: 'closeAndReopenEyes',
+      icon: Icons.front_hand_rounded,
+      titleKey: 'holdStill',
+      hintKey: 'keepFaceCentered',
     ),
     _Challenge.smile: _ChallengeInfo(
       icon: Icons.sentiment_very_satisfied_rounded,
@@ -94,7 +94,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     )..repeat(reverse: true);
     _scanCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200),
+      duration: const Duration(milliseconds: 4000),
     )..repeat();
     _successCtrl = AnimationController(
       vsync: this,
@@ -227,10 +227,10 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
         return y > 20;
 
       case _Challenge.blink:
-        // Both eyes closed
-        final left = face.leftEyeOpenProbability ?? 1.0;
-        final right = face.rightEyeOpenProbability ?? 1.0;
-        return left < 0.3 && right < 0.3;
+        // Hold still — face centered and straight for a moment
+        final y = (face.headEulerAngleY ?? 0).abs();
+        final x = (face.headEulerAngleX ?? 0).abs();
+        return y < 10 && x < 10;
 
       case _Challenge.smile:
         // Smiling
@@ -655,9 +655,9 @@ class _OvalPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const ovalW = 240.0;
-    const ovalH = 310.0;
-    final center = Offset(size.width / 2, size.height * 0.40);
+    const ovalW = 280.0;
+    const ovalH = 360.0;
+    final center = Offset(size.width / 2, size.height * 0.38);
     final ovalRect = Rect.fromCenter(
       center: center,
       width: ovalW,
@@ -674,80 +674,31 @@ class _OvalPainter extends CustomPainter {
       Paint()..color = Colors.black.withValues(alpha: 0.62),
     );
 
-    // Oval border — glows based on progress
+    // Oval border — soft glow based on progress
     final borderColor = allDone
         ? Colors.green
         : Color.lerp(
-            Colors.white.withValues(alpha: 0.25 + pulse * 0.15),
+            Colors.white.withValues(alpha: 0.20 + pulse * 0.10),
             const Color(0xFFE8C547),
             progress,
           )!;
+    // Outer glow
+    if (!allDone && progress > 0.05) {
+      canvas.drawOval(
+        ovalRect.inflate(3),
+        Paint()
+          ..color = borderColor.withValues(alpha: 0.15)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 6.0
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+    }
     canvas.drawOval(
       ovalRect,
       Paint()
         ..color = borderColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0,
-    );
-
-    // ── Corner brackets (tech look) ──
-    const bracketLen = 28.0;
-    const bracketOffset = 6.0;
-    final bracketPaint = Paint()
-      ..color = allDone
-          ? Colors.green
-          : Color.lerp(
-              Colors.white.withValues(alpha: 0.6),
-              const Color(0xFFE8C547),
-              progress,
-            )!
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0
-      ..strokeCap = StrokeCap.round;
-    final bRect = ovalRect.inflate(bracketOffset);
-    // Top-left
-    canvas.drawLine(
-      Offset(bRect.left + 20, bRect.top),
-      Offset(bRect.left + 20 + bracketLen, bRect.top),
-      bracketPaint,
-    );
-    canvas.drawLine(
-      Offset(bRect.left + 20, bRect.top),
-      Offset(bRect.left + 20, bRect.top + bracketLen),
-      bracketPaint,
-    );
-    // Top-right
-    canvas.drawLine(
-      Offset(bRect.right - 20 - bracketLen, bRect.top),
-      Offset(bRect.right - 20, bRect.top),
-      bracketPaint,
-    );
-    canvas.drawLine(
-      Offset(bRect.right - 20, bRect.top),
-      Offset(bRect.right - 20, bRect.top + bracketLen),
-      bracketPaint,
-    );
-    // Bottom-left
-    canvas.drawLine(
-      Offset(bRect.left + 20, bRect.bottom),
-      Offset(bRect.left + 20 + bracketLen, bRect.bottom),
-      bracketPaint,
-    );
-    canvas.drawLine(
-      Offset(bRect.left + 20, bRect.bottom - bracketLen),
-      Offset(bRect.left + 20, bRect.bottom),
-      bracketPaint,
-    );
-    // Bottom-right
-    canvas.drawLine(
-      Offset(bRect.right - 20 - bracketLen, bRect.bottom),
-      Offset(bRect.right - 20, bRect.bottom),
-      bracketPaint,
-    );
-    canvas.drawLine(
-      Offset(bRect.right - 20, bRect.bottom - bracketLen),
-      Offset(bRect.right - 20, bRect.bottom),
-      bracketPaint,
+        ..strokeWidth = 2.5,
     );
 
     // ── Scanning laser line ──
@@ -824,45 +775,6 @@ class _OvalPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round,
       );
     }
-
-    // ── Step indicators along bottom of oval ──
-    if (!allDone) {
-      for (int i = 0; i < totalChallenges; i++) {
-        final angle =
-            -0.5 + (i / (totalChallenges - 1)) * 1.0; // spread along bottom arc
-        final dx = center.dx + (ovalW / 2 + 16) * _sin(angle);
-        final dy = center.dy + (ovalH / 2 + 16) * _cos(angle);
-        final dotPaint = Paint()
-          ..color = i < challengeIndex
-              ? const Color(0xFFE8C547)
-              : (i == challengeIndex
-                    ? Colors.white
-                    : Colors.white.withValues(alpha: 0.3))
-          ..style = i <= challengeIndex
-              ? PaintingStyle.fill
-              : PaintingStyle.stroke
-          ..strokeWidth = 1.5;
-        canvas.drawCircle(
-          Offset(dx, dy),
-          i == challengeIndex ? 5 : 4,
-          dotPaint,
-        );
-        if (i < challengeIndex) {
-          // Checkmark tick for completed
-          final tickPaint = Paint()
-            ..color = Colors.black
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5
-            ..strokeCap = StrokeCap.round;
-          canvas.drawLine(Offset(dx - 2, dy), Offset(dx, dy + 2), tickPaint);
-          canvas.drawLine(
-            Offset(dx, dy + 2),
-            Offset(dx + 3, dy - 2),
-            tickPaint,
-          );
-        }
-      }
-    }
   }
 
   double _ovalChordFraction(double normalizedDist) {
@@ -902,8 +814,8 @@ class _ChallengeInfo {
         return s.lookStraight;
       case 'slowlyTurnHead':
         return s.slowlyTurnHead;
-      case 'blinkBothEyes':
-        return s.blinkBothEyes;
+      case 'holdStill':
+        return s.holdStill;
       case 'smileForPhoto':
         return s.smileForPhoto;
       default:
@@ -918,8 +830,8 @@ class _ChallengeInfo {
         return s.centerFaceInOval;
       case 'turnLeftOrRight':
         return s.turnLeftOrRight;
-      case 'closeAndReopenEyes':
-        return s.closeAndReopenEyes;
+      case 'keepFaceCentered':
+        return s.keepFaceCentered;
       case 'giveUsBestSmile':
         return s.giveUsBestSmile;
       default:

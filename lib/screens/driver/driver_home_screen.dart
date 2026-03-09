@@ -335,7 +335,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final result = await Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
         opaque: false,
-        pageBuilder: (ctx, anim1, anim2) => const DriverOnlineScreen(),
+        pageBuilder: (ctx, anim1, anim2) =>
+            DriverOnlineScreen(photoUrl: _photoUrl),
         transitionDuration: const Duration(milliseconds: 600),
         reverseTransitionDuration: const Duration(milliseconds: 450),
         transitionsBuilder: (ctx2, anim, anim2b, child) {

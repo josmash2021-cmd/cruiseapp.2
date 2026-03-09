@@ -943,8 +943,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   Future<void> _initChat() async {
     try {
+      final locale = Localizations.localeOf(context).languageCode;
       final chat = await ApiService.createSupportChat(
         subject: 'Soporte general',
+        locale: locale,
       );
       _chatId = chat['id'] as int?;
       _agentName = chat['agent_name'] as String?;
@@ -1003,13 +1005,13 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           _messages.addAll(newMessages);
           _sending = false;
           if (_chatClosed) {
-            _subtitle = 'Chat cerrado';
+            _subtitle = S.of(context).chatClosed;
           } else if (hasSupervisor) {
-            _subtitle = 'Supervisor conectado';
+            _subtitle = S.of(context).supervisorConnected;
           } else {
             _subtitle = _agentName != null
-                ? 'En línea'
-                : 'Sistema automatizado';
+                ? S.of(context).online
+                : S.of(context).automatedSystem;
           }
         });
         _scrollToBottom();
@@ -1025,7 +1027,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           if (thisChat.isNotEmpty && thisChat['status'] == 'closed') {
             _chatClosed = true;
             _pollTimer?.cancel();
-            if (mounted) setState(() => _subtitle = 'Chat cerrado');
+            if (mounted) setState(() => _subtitle = S.of(context).chatClosed);
           }
         } catch (_) {}
       }
@@ -1040,7 +1042,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     _msgCtrl.clear();
     setState(() {
       _sending = true;
-      _subtitle = 'Procesando solicitud...';
+      _subtitle = S.of(context).processingRequest;
       _messages.add(_ChatMsg(text: text, role: 'rider', time: DateTime.now()));
     });
     _scrollToBottom();
@@ -1055,7 +1057,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     if (mounted) {
       setState(() {
         _sending = false;
-        _subtitle = _agentName != null ? 'En línea' : 'Sistema automatizado';
+        _subtitle = _agentName != null
+            ? S.of(context).online
+            : S.of(context).automatedSystem;
       });
     }
   }
@@ -1074,6 +1078,57 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   String get _displayName => _agentName ?? 'Asistente Cruise';
 
+  Future<void> _endChat() async {
+    if (_chatId == null || _chatClosed) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A2A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          S.of(context).endChat,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: Text(
+          S.of(context).endChatConfirm,
+          style: TextStyle(color: Colors.grey[400]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              S.of(context).cancel,
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              S.of(context).endChat,
+              style: const TextStyle(color: _gold),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await ApiService.closeSupportChat(_chatId!);
+      _pollTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _chatClosed = true;
+          _subtitle = S.of(context).chatEnded;
+        });
+      }
+    } catch (e) {
+      debugPrint('[SupportChat] end chat error: $e');
+    }
+  }
+
   Future<void> _startVoiceCall() async {
     try {
       final phone = await ApiService.getSupportPhoneNumber();
@@ -1081,7 +1136,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Línea de soporte no disponible en este momento'),
+              content: Text('Support line not available'),
               backgroundColor: Colors.red,
             ),
           );
@@ -1177,6 +1232,12 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           ],
         ),
         actions: [
+          if (!_chatClosed)
+            IconButton(
+              icon: const Icon(Icons.close_rounded, color: Colors.redAccent),
+              tooltip: S.of(context).endChat,
+              onPressed: _endChat,
+            ),
           IconButton(
             icon: const Icon(Icons.phone, color: _gold),
             tooltip: 'Llamar a soporte',
@@ -1201,7 +1262,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Escribe tu mensaje para iniciar',
+                          S.of(context).writeToStart,
                           style: TextStyle(
                             color: Colors.grey[500],
                             fontSize: 14,
@@ -1248,7 +1309,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
             _dot(2),
             const SizedBox(width: 8),
             Text(
-              'Procesando solicitud...',
+              S.of(context).processingRequest,
               style: TextStyle(
                 fontSize: 12,
                 color: _gold,
@@ -1403,7 +1464,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Este chat ha sido cerrado.',
+              S.of(context).thisChatClosed,
               style: TextStyle(color: Colors.grey[500], fontSize: 13),
             ),
             const SizedBox(height: 8),
@@ -1427,9 +1488,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                     borderRadius: BorderRadius.circular(22),
                   ),
                 ),
-                child: const Text(
-                  'Iniciar nuevo chat',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                child: Text(
+                  S.of(context).startNewChat,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
             ),
@@ -1460,7 +1521,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _sendMessage(),
               decoration: InputDecoration(
-                hintText: 'Describe tu problema...',
+                hintText: S.of(context).describeYourProblem,
                 hintStyle: TextStyle(color: Colors.grey[600]),
                 filled: true,
                 fillColor: const Color(0xFF2A2A2A),

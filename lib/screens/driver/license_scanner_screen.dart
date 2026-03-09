@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -32,6 +33,12 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
   bool _scanning = false;
   bool _documentDetected = false;
   String _detectedHint = '';
+
+  // Auto-capture
+  bool _showManualButton = false;
+  Timer? _manualButtonTimer;
+  bool _autoCapturing = false;
+  Timer? _autoCaptureTimer;
 
   late AnimationController _cornerAnim;
 
@@ -102,7 +109,11 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
     _ctrl = CameraController(rear, ResolutionPreset.high, enableAudio: false);
     try {
       await _ctrl!.initialize().timeout(const Duration(seconds: 5));
-      if (mounted) setState(() => _initialized = true);
+      if (mounted) {
+        setState(() => _initialized = true);
+        _startAutoScan();
+        _startManualButtonTimer();
+      }
     } catch (e) {
       debugPrint('⚠️ Camera init failed: $e');
       // Retry once after a short delay
@@ -115,11 +126,87 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
           enableAudio: false,
         );
         await _ctrl!.initialize().timeout(const Duration(seconds: 5));
-        if (mounted) setState(() => _initialized = true);
+        if (mounted) {
+          setState(() => _initialized = true);
+          _startAutoScan();
+          _startManualButtonTimer();
+        }
       } catch (_) {
         if (mounted) Navigator.of(context).pop(null);
       }
     }
+  }
+
+  /// Start scanning frames with OCR for auto-capture.
+  void _startAutoScan() {
+    // Check every 1.5 seconds
+    _autoCaptureTimer = Timer.periodic(
+      const Duration(milliseconds: 1500),
+      (_) => _scanForDocument(),
+    );
+  }
+
+  /// Show manual shutter after 60s fallback.
+  void _startManualButtonTimer() {
+    _manualButtonTimer = Timer(const Duration(seconds: 60), () {
+      if (mounted) setState(() => _showManualButton = true);
+    });
+  }
+
+  /// Scan current frame for document text via OCR.
+  Future<void> _scanForDocument() async {
+    if (_ctrl == null ||
+        !_ctrl!.value.isInitialized ||
+        _capturing ||
+        _scanning ||
+        _capturedPath != null ||
+        !mounted) {
+      return;
+    }
+    _scanning = true;
+    try {
+      final xFile = await _ctrl!.takePicture();
+      final inputImage = InputImage.fromFilePath(xFile.path);
+      final result = await _textRecognizer.processImage(inputImage);
+      final text = result.text.toLowerCase();
+      final hasDocText =
+          text.contains('license') ||
+          text.contains('driver') ||
+          text.contains('dob') ||
+          text.contains('exp') ||
+          text.contains('class') ||
+          text.contains('state') ||
+          text.contains('name') ||
+          text.contains('address') ||
+          text.contains('dl') ||
+          text.contains('iss') ||
+          text.contains('passport') ||
+          text.contains('nationality') ||
+          text.contains('birth') ||
+          text.contains('gobierno') ||
+          text.contains('licencia') ||
+          result.blocks.length >= 3;
+      if (hasDocText && mounted && _capturedPath == null) {
+        // Auto-capture!
+        setState(() => _autoCapturing = true);
+        await Future.delayed(const Duration(milliseconds: 400));
+        if (mounted) {
+          _autoCaptureTimer?.cancel();
+          _capturedPath = xFile.path;
+          _documentDetected = true;
+          setState(() => _autoCapturing = false);
+        }
+      }
+      // Clean up temp file if we didn't use it
+      if (_capturedPath != xFile.path) {
+        try {
+          File(xFile.path).deleteSync();
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('⚠️ Auto-scan error: $e');
+    }
+    _scanning = false;
   }
 
   @override
@@ -127,6 +214,8 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
     _cornerAnim.dispose();
     _textRecognizer.close();
     _ctrl?.dispose();
+    _manualButtonTimer?.cancel();
+    _autoCaptureTimer?.cancel();
     super.dispose();
   }
 
@@ -186,7 +275,27 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
     if (mounted) setState(() => _capturing = false);
   }
 
-  void _retake() => setState(() => _capturedPath = null);
+  void _retake() {
+    setState(() => _capturedPath = null);
+    // Restart auto-scan when retaking
+    _autoCaptureTimer?.cancel();
+    _startAutoScan();
+  }
+
+  String _sideTitle(BuildContext context) {
+    switch (widget.side) {
+      case 'Front':
+        return S.of(context).scanFrontLicense;
+      case 'Back':
+        return S.of(context).scanBackLicense;
+      case 'Passport':
+        return S.of(context).scanPassport;
+      case 'ID':
+        return S.of(context).scanId;
+      default:
+        return S.of(context).scanDocument;
+    }
+  }
 
   void _usePhoto() => Navigator.of(context).pop(_capturedPath);
 
@@ -230,9 +339,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
                 ),
                 const Spacer(),
                 Text(
-                  widget.side == 'Front'
-                      ? S.of(context).driverLicenseFront
-                      : S.of(context).driverLicenseBack,
+                  _sideTitle(context),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -391,9 +498,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
                 ),
                 const Spacer(),
                 Text(
-                  widget.side == 'Front'
-                      ? S.of(context).scanFrontLicense
-                      : S.of(context).scanBackLicense,
+                  _sideTitle(context),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 15,
@@ -410,62 +515,82 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
 
         // Instruction text
         Positioned(
-          bottom: 180,
+          bottom: _showManualButton ? 180 : 80,
           left: 24,
           right: 24,
-          child: Text(
-            S.of(context).alignLicenseInstruction,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              height: 1.4,
-              shadows: const [Shadow(color: Colors.black87, blurRadius: 8)],
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_autoCapturing)
+                Text(
+                  S.of(context).autoCapturing,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: _gold,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    shadows: [Shadow(color: Colors.black87, blurRadius: 8)],
+                  ),
+                )
+              else
+                Text(
+                  S.of(context).alignDocumentInstruction,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    height: 1.4,
+                    shadows: const [
+                      Shadow(color: Colors.black87, blurRadius: 8),
+                    ],
+                  ),
+                ),
+            ],
           ),
         ),
 
-        // Shutter button
-        Positioned(
-          bottom: 56,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: GestureDetector(
-              onTap: _initialized ? _capture : null,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                width: _capturing ? 68 : 74,
-                height: _capturing ? 68 : 74,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _gold,
-                  boxShadow: [
-                    BoxShadow(
-                      color: _gold.withValues(alpha: 0.45),
-                      blurRadius: 20,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: _capturing
-                    ? const Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(
-                          color: Colors.black,
-                          strokeWidth: 2.5,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.camera_alt_rounded,
-                        color: Colors.black,
-                        size: 32,
+        // Shutter button — hidden until 60s fallback
+        if (_showManualButton)
+          Positioned(
+            bottom: 56,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: _initialized ? _capture : null,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  width: _capturing ? 68 : 74,
+                  height: _capturing ? 68 : 74,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _gold,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _gold.withValues(alpha: 0.45),
+                        blurRadius: 20,
+                        spreadRadius: 2,
                       ),
+                    ],
+                  ),
+                  child: _capturing
+                      ? const Padding(
+                          padding: EdgeInsets.all(20),
+                          child: CircularProgressIndicator(
+                            color: Colors.black,
+                            strokeWidth: 2.5,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.camera_alt_rounded,
+                          color: Colors.black,
+                          size: 32,
+                        ),
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }

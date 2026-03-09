@@ -32,6 +32,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   int _step = 0; // 0=intro, 1=processing, 2=confirmed, 3=pending, 4=rejected
   String? _licenseFrontPath;
   String? _licenseBackPath;
+  String _docType = 'license'; // license | id | passport
   bool _processing = false;
   bool _verified = false;
   String? _rejectionReason;
@@ -61,39 +62,49 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     super.dispose();
   }
 
-  /// Launch license scanner (front → back) → submit verification.
+  /// Show document type picker, then launch scanner(s).
   Future<void> _startVerification() async {
-    // Step 1: Scan front of license
+    // Show bottom sheet to pick document type
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _DocTypePicker(),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _docType = picked);
+
+    // Scan front
+    final frontLabel = _docType == 'license'
+        ? 'Front'
+        : (_docType == 'passport' ? 'Passport' : 'ID');
     final frontPath = await Navigator.of(context).push<String?>(
-      MaterialPageRoute(
-        builder: (_) => const LicenseScannerScreen(side: 'Front'),
-      ),
+      MaterialPageRoute(builder: (_) => LicenseScannerScreen(side: frontLabel)),
     );
     if (frontPath == null || !mounted) return;
+    _licenseFrontPath = frontPath;
 
-    setState(() => _licenseFrontPath = frontPath);
-
-    // Brief delay to let the camera fully release before reinitializing
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    // Step 2: Scan back of license
-    final backPath = await Navigator.of(context).push<String?>(
-      MaterialPageRoute(
-        builder: (_) => const LicenseScannerScreen(side: 'Back'),
-      ),
-    );
-    if (backPath == null || !mounted) return;
+    // License requires back scan too
+    if (_docType == 'license') {
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      final backPath = await Navigator.of(context).push<String?>(
+        MaterialPageRoute(
+          builder: (_) => const LicenseScannerScreen(side: 'Back'),
+        ),
+      );
+      if (backPath == null || !mounted) return;
+      _licenseBackPath = backPath;
+    }
 
     setState(() {
-      _licenseBackPath = backPath;
-      _step = 1; // Processing / submitting
+      _step = 1;
       _processing = true;
     });
     await _completeVerification();
   }
 
   Future<void> _completeVerification() async {
-    final Map<String, dynamic> body = {'id_document_type': 'license'};
+    final Map<String, dynamic> body = {'id_document_type': _docType};
 
     // Encode license front
     if (_licenseFrontPath != null) {
@@ -138,9 +149,9 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
 
   void _startPolling() {
     _pollTimer?.cancel();
-    int _pollAttempts = 0;
+    int pollAttempts = 0;
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      _pollAttempts++;
+      pollAttempts++;
       try {
         final result = await ApiService.getVerificationStatus();
         final status = result['verification_status'] as String? ?? 'pending';
@@ -168,13 +179,13 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
             _rejectionReason = reason;
             _step = 4; // Rejected
           });
-        } else if (_pollAttempts >= 120) {
+        } else if (pollAttempts >= 120) {
           // Stop after ~10 minutes
           _pollTimer?.cancel();
         }
       } catch (e) {
         debugPrint('⚠️ Verification poll failed: $e');
-        if (_pollAttempts >= 120) _pollTimer?.cancel();
+        if (pollAttempts >= 120) _pollTimer?.cancel();
       }
     });
   }
@@ -222,7 +233,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
       child: Column(
         children: [
           const SizedBox(height: 8),
-          // Back button
+          // Close button
           Align(
             alignment: Alignment.centerLeft,
             child: GestureDetector(
@@ -283,16 +294,20 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           // Steps preview
           _stepPreview(
             c,
-            Icons.credit_card_rounded,
-            S.of(context).scanLicenseFront,
+            Icons.badge_rounded,
+            S.of(context).selectDocumentType,
           ),
           const SizedBox(height: 12),
-          _stepPreview(c, Icons.flip_rounded, S.of(context).scanLicenseBack),
+          _stepPreview(
+            c,
+            Icons.document_scanner_rounded,
+            S.of(context).scanYourDocument,
+          ),
           const SizedBox(height: 12),
           _stepPreview(
             c,
             Icons.check_circle_outline_rounded,
-            'Quick dispatch review',
+            S.of(context).quickDispatchReview,
           ),
           const Spacer(flex: 3),
           // CTA
@@ -321,7 +336,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           ),
           const SizedBox(height: 16),
           Text(
-            'Your documents are encrypted and securely stored',
+            S.of(context).documentsEncrypted,
             style: TextStyle(fontSize: 12, color: c.textTertiary),
           ),
           const SizedBox(height: 24),
@@ -522,7 +537,15 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
                       _detailRow(c, 'Phone', phone),
                       const SizedBox(height: 10),
                     ],
-                    _detailRow(c, 'Document', "Driver's License"),
+                    _detailRow(
+                      c,
+                      'Document',
+                      _docType == 'license'
+                          ? S.of(context).driversLicense
+                          : (_docType == 'passport'
+                                ? S.of(context).passport
+                                : S.of(context).governmentId),
+                    ),
                     const SizedBox(height: 10),
                     _detailRow(c, 'Status', 'Verified ✓'),
                   ],
@@ -757,6 +780,151 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           ),
         ),
       ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════
+//  Document Type Picker Bottom Sheet
+// ═══════════════════════════════════════════
+class _DocTypePicker extends StatelessWidget {
+  static const _gold = Color(0xFFE8C547);
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF1A1A1A) : Colors.white;
+    final textC = isDark ? Colors.white : Colors.black;
+    final sub = isDark ? Colors.white60 : Colors.black54;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              S.of(context).selectDocumentType,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: textC,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              S.of(context).chooseDocToScan,
+              style: TextStyle(fontSize: 14, color: sub),
+            ),
+            const SizedBox(height: 24),
+            _docOption(
+              context,
+              icon: Icons.credit_card_rounded,
+              title: S.of(context).driversLicense,
+              subtitle: S.of(context).frontAndBack,
+              value: 'license',
+              textC: textC,
+              sub: sub,
+            ),
+            _docOption(
+              context,
+              icon: Icons.badge_rounded,
+              title: S.of(context).governmentId,
+              subtitle: S.of(context).frontOnly,
+              value: 'id',
+              textC: textC,
+              sub: sub,
+            ),
+            _docOption(
+              context,
+              icon: Icons.menu_book_rounded,
+              title: S.of(context).passport,
+              subtitle: S.of(context).frontOnly,
+              value: 'passport',
+              textC: textC,
+              sub: sub,
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _docOption(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String value,
+    required Color textC,
+    required Color sub,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => Navigator.pop(context, value),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _gold.withValues(alpha: 0.15)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: _gold.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(icon, color: _gold, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: textC,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(fontSize: 13, color: sub),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: sub, size: 22),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

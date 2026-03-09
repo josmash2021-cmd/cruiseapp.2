@@ -2347,6 +2347,66 @@ class S {
   String get recentTransactions =>
       _es ? 'Transacciones Recientes' : 'Recent Transactions';
   String get noEarningsYet => _es ? 'Aún no hay ganancias' : 'No earnings yet';
+
+  // ── Support Chat ──
+  String get endChat => _es ? 'Finalizar Chat' : 'End Chat';
+  String get chatEnded => _es ? 'Chat finalizado' : 'Chat ended';
+  String get endChatConfirm => _es
+      ? '¿Estás seguro de que deseas finalizar este chat?'
+      : 'Are you sure you want to end this chat?';
+  String get chatClosed => _es ? 'Chat cerrado' : 'Chat closed';
+  String get supervisorConnected =>
+      _es ? 'Supervisor conectado' : 'Supervisor connected';
+  String get automatedSystem =>
+      _es ? 'Sistema automatizado' : 'Automated system';
+  String get processingRequest =>
+      _es ? 'Procesando solicitud...' : 'Processing request...';
+  String get describeYourProblem =>
+      _es ? 'Describe tu problema...' : 'Describe your issue...';
+  String get writeToStart =>
+      _es ? 'Escribe tu mensaje para iniciar' : 'Write your message to start';
+  String get thisChatClosed =>
+      _es ? 'Este chat ha sido cerrado.' : 'This chat has been closed.';
+  String get startNewChat => _es ? 'Iniciar nuevo chat' : 'Start new chat';
+  String get supportLineUnavailable => _es
+      ? 'Línea de soporte no disponible en este momento'
+      : 'Support line not available at this time';
+
+  // ── Document type picker ──
+  String get selectDocumentType =>
+      _es ? 'Selecciona tipo de documento' : 'Select Document Type';
+  String get chooseDocToScan => _es
+      ? 'Elige qué documento quieres escanear'
+      : 'Choose which document to scan';
+  String get driversLicense =>
+      _es ? 'Licencia de conducir' : "Driver's License";
+  String get governmentId => _es ? 'Identificación oficial' : 'Government ID';
+  String get passport => _es ? 'Pasaporte' : 'Passport';
+  String get frontAndBack => _es ? 'Frente y dorso' : 'Front & Back';
+  String get frontOnly => _es ? 'Solo frente' : 'Front Only';
+
+  // ── Verification steps ──
+  String get scanYourDocument =>
+      _es ? 'Escanea tu documento' : 'Scan Your Document';
+  String get quickDispatchReview => _es ? 'Revisión rápida' : 'Quick Review';
+  String get documentsEncrypted => _es
+      ? 'Tus documentos están encriptados y almacenados de forma segura'
+      : 'Your documents are encrypted and securely stored';
+
+  // ── License scanner extras ──
+  String get scanDocument => _es ? 'Escanear documento' : 'Scan Document';
+  String get scanPassport => _es ? 'Escanear pasaporte' : 'Scan Passport';
+  String get scanId => _es ? 'Escanear identificación' : 'Scan ID';
+  String get alignDocumentInstruction => _es
+      ? 'Alinea tu documento dentro del marco'
+      : 'Align your document within the frame';
+  String get autoCapturing =>
+      _es ? 'Capturando automáticamente...' : 'Auto-capturing...';
+
+  // ── Face liveness extras ──
+  String get holdStill => _es ? 'Mantente quieto' : 'Hold Still';
+  String get keepFaceCentered =>
+      _es ? 'Mantén tu rostro centrado' : 'Keep your face centered';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

@@ -2222,6 +2222,8 @@ async def send_chat_message(trip_id: int, request: Request, user: User = Depends
     trip = trip_result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
+    if user.id != trip.rider_id and user.id != trip.driver_id:
+        raise HTTPException(403, "Not a participant in this trip")
 
     receiver_id = trip.driver_id if user.id == trip.rider_id else trip.rider_id
     if not receiver_id:
@@ -2245,6 +2247,11 @@ async def send_chat_message(trip_id: int, request: Request, user: User = Depends
 
 @app.get("/trips/{trip_id}/chat", dependencies=[Depends(_verify_api_key)])
 async def get_chat_messages(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # Verify user is a participant
+    trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = trip_result.scalar_one_or_none()
+    if not trip or (user.id != trip.rider_id and user.id != trip.driver_id):
+        raise HTTPException(status_code=403, detail="Not a participant in this trip")
     result = await db.execute(
         select(ChatMessage).where(ChatMessage.trip_id == trip_id).order_by(ChatMessage.created_at.asc())
     )
@@ -2835,6 +2842,8 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
     # Load chat for agent_name
     chat_result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
     chat = chat_result.scalar_one_or_none()
+    if not chat or chat.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your chat")
 
     result = await db.execute(
         select(SupportMessage).where(SupportMessage.chat_id == chat_id)

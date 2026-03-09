@@ -1362,6 +1362,44 @@ class S {
   String get messagesLabel => _es ? 'Mensajes' : 'Messages';
   String get promotionsLabel => _es ? 'Promociones' : 'Promotions';
   String get analyticsLabel => _es ? 'Analíticas' : 'Analytics';
+  String get lastTripLabel => _es ? 'Último viaje' : 'Last Trip';
+
+  // ── Driver Promos Screen ─────────────────────────────────────────────────
+  String get activePromotions =>
+      _es ? 'PROMOCIONES ACTIVAS' : 'ACTIVE PROMOTIONS';
+  String get upcomingPromotions =>
+      _es ? 'PRÓXIMAS PROMOCIONES' : 'UPCOMING PROMOTIONS';
+  String get surgeZoneTitle =>
+      _es ? 'Zona de alta demanda' : 'Surge Zone Active';
+  String get surgeZoneDesc => _es
+      ? 'Gana más en zonas de alta demanda'
+      : 'Earn more in high-demand areas';
+  String get consecutiveBonus =>
+      _es ? 'Bono por viajes consecutivos' : 'Consecutive Trip Bonus';
+  String get consecutiveBonusDesc =>
+      _es ? 'Completa 3 viajes seguidos' : 'Complete 3 trips in a row';
+  String get nightOwlBonus => _es ? 'Bono nocturno' : 'Night Owl Bonus';
+  String get nightOwlBonusDesc =>
+      _es ? 'Conduce entre 10pm - 4am' : 'Drive between 10pm - 4am';
+  String get weekendWarrior =>
+      _es ? 'Guerrero de fin de semana' : 'Weekend Warrior';
+  String get weekendWarriorDesc =>
+      _es ? 'Completa 20 viajes Sáb-Dom' : 'Complete 20 trips Sat-Sun';
+  String get airportBonus =>
+      _es ? 'Bono de aeropuerto' : 'Airport Pickup Bonus';
+  String get airportBonusDesc =>
+      _es ? 'Recogidas en el aeropuerto' : 'Pickups at the airport';
+
+  // ── Driver Analytics Screen ──────────────────────────────────────────────
+  String get weeklyChart => _es ? 'GRÁFICO SEMANAL' : 'WEEKLY CHART';
+  String get activityStats =>
+      _es ? 'ESTADÍSTICAS DE ACTIVIDAD' : 'ACTIVITY STATS';
+  String get tripsThisWeek => _es ? 'Viajes esta semana' : 'Trips this week';
+  String get onlineHoursToday =>
+      _es ? 'Horas en línea hoy' : 'Online hours today';
+  String get onlineHoursWeek =>
+      _es ? 'Horas en línea esta semana' : 'Online hours this week';
+  String get avgPerTrip => _es ? 'Promedio por viaje' : 'Avg. per trip';
 
   // ── Driver Offers Screen ───────────────────────────────────────────────────
   String get goOfflineBtn => _es ? 'Desconectarse' : 'Go Offline';

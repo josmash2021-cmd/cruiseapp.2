@@ -21,6 +21,11 @@ import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
 import '../chat_screen.dart';
 import '../../navigation/car_icon_loader.dart';
+import 'driver_info_pages.dart';
+import 'driver_earnings_screen.dart';
+import 'driver_promos_screen.dart';
+import 'driver_analytics_screen.dart';
+import 'driver_inbox_screen.dart';
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  CRUISE DRIVER â€” ONLINE SCREEN
@@ -201,6 +206,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _panelOpen = false;
   final _panelSheetCtrl = DraggableScrollableController();
 
+  // -- Earnings pill swipe --
+  double _weeklyEarnings = 0;
+  double _lastTripEarnings = 0;
+  final _earningsPageCtrl = PageController(initialPage: 1);
+  int _earningsPage = 1; // 0=weekly, 1=today, 2=last trip
+
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  LIFECYCLE
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -262,6 +273,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _posStream?.cancel();
     _reFollowTimer?.cancel();
     _panelSheetCtrl.dispose();
+    _earningsPageCtrl.dispose();
     _map?.dispose();
     super.dispose();
   }
@@ -293,6 +305,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _startClock();
     _startPolling();
     _startPosStream();
+    _loadWeeklyEarnings();
+  }
+
+  Future<void> _loadWeeklyEarnings() async {
+    try {
+      final data = await ApiService.getDriverEarnings(period: 'week');
+      if (mounted) {
+        setState(() {
+          _weeklyEarnings = (data['total'] as num?)?.toDouble() ?? 0;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _locate() async {
@@ -1660,6 +1684,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     setState(() {
       _trips++;
       _earnings += _fare;
+      _lastTripEarnings = _fare;
       _phase = _Phase.completed;
       _stars = 5;
     });
@@ -2300,7 +2325,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             top: top + 10,
             left: 16,
             child: _fab(
-              Icons.home_rounded,
+              Icons.arrow_back_ios_new_rounded,
               48,
               fabBg,
               fabBorder,
@@ -2345,7 +2370,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     fabBg,
                     fabBorder,
                     fabIcon,
-                    () => _snack(S.of(context).safetyFeatures),
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const DriverSafetyScreen(),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -2361,7 +2391,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     fabBg,
                     fabBorder,
                     fabIcon,
-                    () => _snack(S.of(context).messagesLabel),
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const DriverInboxScreen(),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   _fab(
@@ -2370,7 +2405,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     fabBg,
                     fabBorder,
                     fabIcon,
-                    () => _snack(S.of(context).promotionsLabel),
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const DriverPromosScreen(),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   _fab(
@@ -2379,7 +2419,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     fabBg,
                     fabBorder,
                     fabIcon,
-                    () => _snack(S.of(context).analyticsLabel),
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const DriverAnalyticsScreen(),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -2621,42 +2666,95 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         : Colors.black.withValues(alpha: 0.06);
     final pillText = isDark ? Colors.white : const Color(0xFF1C1C1E);
     final pillSub = isDark ? Colors.white38 : Colors.black38;
+    final dotActive = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final dotInactive = isDark
+        ? Colors.white.withValues(alpha: 0.2)
+        : Colors.black.withValues(alpha: 0.15);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          decoration: BoxDecoration(
-            color: pillBg,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: pillBorder),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '\$${_earnings.toStringAsFixed(2)}',
-                style: TextStyle(
-                  color: pillText,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+    Widget pillPage(String amount, String label) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: pillBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: pillBorder),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  amount,
+                  style: TextStyle(
+                    color: pillText,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
-              ),
-              Text(
-                S.of(context).today.toUpperCase(),
-                style: TextStyle(
-                  color: pillSub,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.5,
+                const SizedBox(height: 1),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: pillSub,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    for (int i = 0; i < 3; i++) ...[
+                      Container(
+                        width: 4,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i == _earningsPage ? dotActive : dotInactive,
+                        ),
+                      ),
+                      if (i < 2) const SizedBox(width: 3),
+                    ],
+                  ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
+      );
+    }
+
+    return SizedBox(
+      width: 160,
+      height: 52,
+      child: PageView(
+        controller: _earningsPageCtrl,
+        onPageChanged: (i) => setState(() => _earningsPage = i),
+        children: [
+          Center(
+            child: pillPage(
+              '\$${_weeklyEarnings.toStringAsFixed(2)}',
+              S.of(context).thisWeek.toUpperCase(),
+            ),
+          ),
+          Center(
+            child: pillPage(
+              '\$${_earnings.toStringAsFixed(2)}',
+              S.of(context).today.toUpperCase(),
+            ),
+          ),
+          Center(
+            child: pillPage(
+              '\$${_lastTripEarnings.toStringAsFixed(2)}',
+              S.of(context).lastTripLabel.toUpperCase(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3281,7 +3379,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 panelItemChevron,
                 () {
                   Navigator.pop(context);
-                  _snack(S.of(context).seeEarningsTrends);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DriverEarningsScreen(),
+                    ),
+                  );
                 },
               ),
               _panelItem(
@@ -3292,7 +3395,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 panelItemChevron,
                 () {
                   Navigator.pop(context);
-                  _snack(S.of(context).seeUpcomingPromotions);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DriverPromosScreen(),
+                    ),
+                  );
                 },
               ),
               _panelItem(
@@ -3303,7 +3411,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 panelItemChevron,
                 () {
                   Navigator.pop(context);
-                  _snack(S.of(context).seeDrivingTime);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DriverAnalyticsScreen(),
+                    ),
+                  );
                 },
               ),
               const SizedBox(height: 20),
@@ -5167,7 +5280,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 panelItemText,
                 panelItemChevron,
                 () {
-                  _snack(S.of(context).seeEarningsTrends);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DriverEarningsScreen(),
+                    ),
+                  );
                 },
               ),
               _panelItem(
@@ -5177,7 +5295,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 panelItemText,
                 panelItemChevron,
                 () {
-                  _snack(S.of(context).seeUpcomingPromotions);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DriverPromosScreen(),
+                    ),
+                  );
                 },
               ),
               _panelItem(
@@ -5187,7 +5310,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 panelItemText,
                 panelItemChevron,
                 () {
-                  _snack(S.of(context).seeDrivingTime);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DriverAnalyticsScreen(),
+                    ),
+                  );
                 },
               ),
               const SizedBox(height: 20),

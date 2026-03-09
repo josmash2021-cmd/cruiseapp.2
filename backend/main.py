@@ -196,6 +196,7 @@ class SupportChat(Base):
     agent_name = Column(String(100), nullable=True)
     bot_phase = Column(String(30), default="welcome")  # welcome, awaiting_details, transferring, agent_active, escalated
     needs_escalation = Column(Boolean, default=False)
+    supervisor_connected = Column(Boolean, default=False)
     last_user_message_at = Column(DateTime, nullable=True)  # for inactivity tracking
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -277,6 +278,7 @@ async def _migrate_add_columns(conn):
         ("users", "email_changes_count", "INTEGER DEFAULT 0"),
         ("users", "phone_changes_count", "INTEGER DEFAULT 0"),
         ("support_chats", "last_user_message_at", "DATETIME"),
+        ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT 0"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -2577,12 +2579,12 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             chat.needs_escalation = True
             chat.bot_phase = "escalated"
             esc = _rng.choice([
-                f"Entiendo tu solicitud, {user_name}. Voy a escalar tu caso a un supervisor para que te atienda directamente. Un momento de paciencia, por favor.",
-                f"Entendido, {user_name}. Voy a transferir tu caso a mi supervisor. En breve se comunicará contigo.",
-                f"Comprendo, {user_name}. Estoy pasando tu caso a un supervisor que podrá ayudarte mejor. Te contactará muy pronto.",
+                f"Entiendo tu solicitud, {user_name}. Voy a transferir tu caso a un supervisor. En aproximadamente 5 a 10 minutos un supervisor estará conectándose a este chat para atenderte personalmente.",
+                f"Entendido, {user_name}. Voy a escalar tu caso. Un supervisor se conectará a este chat en unos 5 a 10 minutos para ayudarte directamente.",
+                f"Comprendo, {user_name}. He solicitado la atención de un supervisor. En 5 a 10 minutos estará conectándose a este chat para asistirte.",
             ])
             replies.append({"role": "bot", "message": esc, "sender_name": agent})
-            replies.append({"role": "system", "message": "⚠️ Este chat ha sido escalado a un supervisor", "sender_name": "Sistema"})
+            replies.append({"role": "system", "message": "⚠️ Se ha solicitado un supervisor. Conectará en 5-10 minutos.", "sender_name": "Sistema"})
             # Notify dispatch about escalation
             if _HAS_FIRESTORE:
                 try:
@@ -2624,17 +2626,8 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             replies.append({"role": "bot", "message": resp, "sender_name": agent})
 
     elif phase == "escalated":
-        agent = chat.agent_name or "Agente"
-        await asyncio.sleep(300)
-        if _match_keywords(user_msg, _THANK_KEYWORDS):
-            close = _rng.choice(_CLOSING_RESPONSES).format(name=user_name)
-            replies.append({"role": "bot", "message": close, "sender_name": agent})
-        else:
-            esc = _rng.choice([
-                f"Tu caso ya fue escalado a un supervisor, {user_name}. Se comunicará contigo pronto. Mientras tanto, ¿hay algo urgente?",
-                f"{user_name}, tu solicitud ya está en proceso. Un supervisor te atenderá en breve.",
-            ])
-            replies.append({"role": "bot", "message": esc, "sender_name": agent})
+        # AI stops responding — supervisor takes over
+        pass
 
     return replies
 
@@ -2825,6 +2818,7 @@ async def list_all_support_chats(db: AsyncSession = Depends(get_db)):
             "user_role": u.role if u else "rider",
             "unread_count": unread,
             "needs_escalation": bool(c.needs_escalation),
+            "supervisor_connected": bool(c.supervisor_connected),
             "agent_name": c.agent_name,
             "bot_phase": c.bot_phase,
             "last_message": last_msg.message if last_msg else None,
@@ -2867,6 +2861,8 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
                 name = chat.agent_name if chat else "Agente"
             elif m.sender_role == "system":
                 name = "Sistema"
+            elif m.sender_role == "dispatch":
+                name = "Supervisor" if (chat and chat.supervisor_connected) else "Soporte Cruise"
             else:
                 name = "Soporte Cruise"
         else:
@@ -2972,8 +2968,8 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
         except Exception as e:
             logging.error("Firestore support msg sync failed: %s", e)
 
-    # Generate AI bot replies (only if not taken over by real dispatch)
-    if chat.bot_phase != "dispatch_takeover":
+    # Generate AI bot replies (only if not taken over by real dispatch or escalated to supervisor)
+    if chat.bot_phase not in ("dispatch_takeover", "escalated"):
         try:
             replies = await _generate_bot_replies(chat, msg_text, user.first_name or "Cliente", db)
             for r in replies:
@@ -3024,14 +3020,43 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
     await db.commit()
     await db.refresh(msg)
 
+    sender_label = "Supervisor" if chat.supervisor_connected else "Soporte Cruise"
+
     # Sync to Firestore
     if _HAS_FIRESTORE:
         try:
-            firestore_sync.sync_support_message(chat_id, msg.id, 0, "Soporte Cruise", "dispatch", msg_text)
+            firestore_sync.sync_support_message(chat_id, msg.id, 0, sender_label, "dispatch", msg_text)
         except Exception as e:
             logging.error("Firestore dispatch msg sync failed: %s", e)
 
-    return _support_msg_dict(msg, "Soporte Cruise")
+    return _support_msg_dict(msg, sender_label)
+
+@app.post("/support/chats/{chat_id}/connect-supervisor", dependencies=[Depends(_verify_dispatch_key)])
+async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):
+    """Dispatch connects as supervisor to an escalated chat."""
+    result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+    chat.supervisor_connected = True
+    chat.bot_phase = "dispatch_takeover"
+    chat.updated_at = datetime.now(timezone.utc)
+    # Cancel any inactivity task
+    old_task = _inactivity_tasks.pop(chat_id, None)
+    if old_task and not old_task.done():
+        old_task.cancel()
+    # Send system message visible to user
+    sys_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="system",
+                              message="🟢 Un supervisor se ha conectado al chat")
+    db.add(sys_msg)
+    await db.commit()
+    await db.refresh(sys_msg)
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_support_message(chat_id, sys_msg.id, 0, "Sistema", "system", sys_msg.message)
+        except Exception:
+            pass
+    return {"status": "supervisor_connected", "message_id": sys_msg.id}
 
 @app.patch("/support/chats/{chat_id}/close", dependencies=[Depends(_verify_dispatch_key)])
 async def close_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):

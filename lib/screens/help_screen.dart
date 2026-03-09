@@ -992,12 +992,20 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           _chatClosed = true;
           _pollTimer?.cancel();
         }
+        // Check if supervisor connected
+        final hasSupervisor = newMessages.any(
+          (m) =>
+              m.role == 'system' &&
+              m.text.contains('supervisor se ha conectado'),
+        );
         setState(() {
           _messages.clear();
           _messages.addAll(newMessages);
           _sending = false;
           if (_chatClosed) {
             _subtitle = 'Chat cerrado';
+          } else if (hasSupervisor) {
+            _subtitle = 'Supervisor conectado';
           } else {
             _subtitle = _agentName != null
                 ? 'En línea'

@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:permission_handler/permission_handler.dart'
+    show openAppSettings;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
@@ -31,6 +33,7 @@ import '../navigation/car_icon_loader.dart';
 import '../services/api_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
+import 'pickup_dropoff_search_screen.dart';
 
 enum RideStage {
   pin,
@@ -753,7 +756,29 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
     if (permission == LocationPermission.deniedForever) {
       _setDefaultBirminghamPickup();
-      if (mounted) setState(() => _isResolvingLocation = false);
+      if (mounted) {
+        setState(() => _isResolvingLocation = false);
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(S.of(ctx).locationPermissionRequired),
+            content: Text(S.of(ctx).locationPermissionPermanentlyDeniedMsg),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(S.of(ctx).cancel),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  openAppSettings();
+                },
+                child: Text(S.of(ctx).openSettings),
+              ),
+            ],
+          ),
+        );
+      }
       return;
     }
 
@@ -3388,12 +3413,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       padding: const EdgeInsets.symmetric(vertical: 13),
                     ),
                     onPressed: _beginRideRequestFromOptions,
-                    child: Text(
-                      S.of(context).chooseRide(_rides[_selectedRide].name),
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18,
-                        shadows: _thinWhiteOutline,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        S.of(context).chooseRide(_rides[_selectedRide].name),
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18,
+                          shadows: _thinWhiteOutline,
+                        ),
                       ),
                     ),
                   ),
@@ -6076,12 +6105,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     children: [
                       Icon(Icons.link_rounded, size: 18),
                       SizedBox(width: 8),
-                      Text(
-                        S.of(context).addPaymentMethod,
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.2,
+                      Flexible(
+                        child: Text(
+                          S.of(context).addPaymentMethod,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2,
+                          ),
                         ),
                       ),
                     ],
@@ -6112,14 +6145,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         size: 16,
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        _pickupNow
-                            ? S.of(context).payAmount(ride.price)
-                            : S.of(context).bookScheduledRidePrice(ride.price),
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.2,
+                      Flexible(
+                        child: Text(
+                          _pickupNow
+                              ? S.of(context).payAmount(ride.price)
+                              : S
+                                    .of(context)
+                                    .bookScheduledRidePrice(ride.price),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2,
+                          ),
                         ),
                       ),
                     ],
@@ -6342,13 +6381,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         );
                       },
                       icon: const Icon(Icons.phone_rounded, size: 18),
-                      label: Text(
-                        isSearching
-                            ? S.of(context).contactSupport
-                            : S.of(context).callDriver,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
+                      label: Flexible(
+                        child: Text(
+                          isSearching
+                              ? S.of(context).contactSupport
+                              : S.of(context).callDriver,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ),
@@ -6676,7 +6719,23 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     ),
                   ),
                   TextButton(
-                    onPressed: null,
+                    onPressed: () async {
+                      final result = await Navigator.of(context)
+                          .push<Map<String, dynamic>>(
+                            MaterialPageRoute(
+                              builder: (_) => PickupDropoffSearchScreen(
+                                initialPickupText: _pickupAddress,
+                              ),
+                            ),
+                          );
+                      if (result != null &&
+                          result['dropoffLabel'] != null &&
+                          mounted) {
+                        setState(() {
+                          _dropoffAddress = result['dropoffLabel'] as String;
+                        });
+                      }
+                    },
                     style: TextButton.styleFrom(
                       padding: EdgeInsets.zero,
                       minimumSize: const Size(60, 44),

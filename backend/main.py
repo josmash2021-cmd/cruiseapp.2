@@ -41,6 +41,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cruise.db")
 API_KEY = os.environ["API_KEY"]       # Required — set in .env
 HMAC_SECRET = os.environ["HMAC_SECRET"] # Required — set in .env
 JWT_SECRET = os.environ["JWT_SECRET"]   # Required — set in .env
+DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")  # Separate key for admin/dispatch endpoints
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window
@@ -319,8 +320,12 @@ _MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB max (photos are ~1-2MB base64)
 @app.middleware("http")
 async def request_size_limit_middleware(request: Request, call_next):
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > _MAX_BODY_SIZE:
-        return JSONResponse({"detail": "Request body too large"}, status_code=413)
+    if content_length:
+        try:
+            if int(content_length) > _MAX_BODY_SIZE:
+                return JSONResponse({"detail": "Request body too large"}, status_code=413)
+        except ValueError:
+            return JSONResponse({"detail": "Invalid content-length"}, status_code=400)
     return await call_next(request)
 
 # ── LAYER 5: Brute Force Protection (login) ───────────
@@ -460,6 +465,29 @@ async def get_db():
     async with SessionLocal() as session:
         yield session
 
+async def _require_admin(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify the caller is an admin user. Use as dependency on admin endpoints."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Not authenticated")
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") == "refresh":
+            raise HTTPException(401, "Cannot use refresh token")
+        user_id = int(payload["sub"])
+    except (JWTError, ValueError):
+        raise HTTPException(401, "Invalid token")
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(401, "User not found")
+    if user.role != "admin":
+        raise HTTPException(403, "Admin access required")
+    return user
+
 def _verify_api_key(
     request: Request,
     x_api_key: str = Header(...),
@@ -472,7 +500,11 @@ def _verify_api_key(
     """Validates API key, HMAC signature, nonce replay, and device fingerprint."""
     client_ip = request.client.host if request.client else "unknown"
 
-    if x_api_key != API_KEY:
+    # Accept either the mobile API key or the dispatch admin key
+    valid_keys = {API_KEY}
+    if DISPATCH_API_KEY:
+        valid_keys.add(DISPATCH_API_KEY)
+    if x_api_key not in valid_keys:
         _record_violation(client_ip)
         _security_audit_log("invalid_api_key", client_ip)
         raise HTTPException(401, "Invalid API key")
@@ -510,14 +542,32 @@ def _verify_api_key(
 
     sig_ok = (hmac.compare_digest(expected_new, x_signature) or
               hmac.compare_digest(expected_legacy, x_signature))
-    if sig_ok:
-        print(f"[SIG OK] path={request.url.path} fp='{x_device_fp}'", flush=True)
-    else:
-        # Soft-fail: log warning but allow (API key already verified above)
-        print(f"[SIG WARN] fp='{x_device_fp}' path={request.url.path} — signature mismatch, allowed via API key", flush=True)
-        _security_audit_log("sig_mismatch_soft", client_ip, f"fp={x_device_fp[:8]}")
+    if not sig_ok:
+        _record_violation(client_ip)
+        _security_audit_log("sig_mismatch", client_ip, f"fp={x_device_fp[:8]}")
+        raise HTTPException(401, "Invalid signature")
 
     _security_audit_log("auth_ok", client_ip, f"v={x_client_version}")
+
+def _verify_dispatch_key(
+    request: Request,
+    x_api_key: str = Header(...),
+    x_timestamp: str = Header(...),
+    x_nonce: str = Header(...),
+    x_signature: str = Header(...),
+    x_device_fp: str = Header(""),
+    x_client_version: str = Header(""),
+):
+    """Like _verify_api_key but ALSO requires DISPATCH_API_KEY (if set).
+    Admin/dispatch endpoints use this to prevent mobile app users from accessing them."""
+    # First, run normal API key verification (handles timestamp, nonce, HMAC)
+    _verify_api_key(request, x_api_key, x_timestamp, x_nonce, x_signature, x_device_fp, x_client_version)
+    # If a separate dispatch key is configured, require it for admin endpoints
+    if DISPATCH_API_KEY and x_api_key != DISPATCH_API_KEY:
+        client_ip = request.client.host if request.client else "unknown"
+        _record_violation(client_ip)
+        _security_audit_log("admin_unauthorized", client_ip, "non-dispatch key used on admin endpoint")
+        raise HTTPException(403, "Admin access required")
 
 def _create_token(user_id: int, device_fp: str = "") -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
@@ -855,7 +905,7 @@ async def refresh_token(request: Request, authorization: str = Header(None), db:
             raise HTTPException(401, "Not a refresh token")
         user_id = int(payload["sub"])
     except (JWTError, ValueError):
-        _security_audit_log("REFRESH_FAILED", {"reason": "invalid_token", "ip": request.client.host if request.client else "unknown"})
+        _security_audit_log("REFRESH_FAILED", request.client.host if request.client else "unknown", "invalid_token")
         raise HTTPException(401, "Invalid or expired refresh token")
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -867,7 +917,7 @@ async def refresh_token(request: Request, authorization: str = Header(None), db:
     device_fp = request.headers.get("x-device-fp", "")
     new_access = _create_token(user.id, device_fp)
     new_refresh = _create_refresh_token(user.id)
-    _security_audit_log("TOKEN_REFRESHED", {"user_id": user.id})
+    _security_audit_log("TOKEN_REFRESHED", request.client.host if request.client else "unknown", f"user_id={user.id}")
     return {"access_token": new_access, "refresh_token": new_refresh, "token_type": "bearer"}
 
 @app.get("/auth/me", dependencies=[Depends(_verify_api_key)])
@@ -882,8 +932,9 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    for key in ("first_name", "last_name", "email", "phone", "photo_url", "role",
-                 "is_verified", "id_document_type", "verification_status", "verification_reason"):
+    # Only allow safe fields — NEVER role, is_verified, verification_status
+    _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type")
+    for key in _SAFE_SELF_UPDATE_FIELDS:
         if key in updates:
             setattr(db_user, key, updates[key])
     if updates.get("is_verified") and not db_user.verified_at:
@@ -1206,7 +1257,7 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
     }
 
 
-@app.post("/auth/dispatch-approve/{user_id}", dependencies=[Depends(_verify_api_key)])
+@app.post("/auth/dispatch-approve/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
 async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_db)):
     """Dispatch approves or rejects a driver directly via REST (no Firestore needed)."""
     from pydantic import BaseModel as _BM
@@ -1229,7 +1280,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     return {"ok": True, "message": f"Driver {user_id} approved"}
 
 
-@app.post("/auth/dispatch-reject/{user_id}", dependencies=[Depends(_verify_api_key)])
+@app.post("/auth/dispatch-reject/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
 async def dispatch_reject_driver(user_id: int, reason: str = "Application not approved", db: AsyncSession = Depends(get_db)):
     """Dispatch rejects a driver directly via REST."""
     result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
@@ -1292,6 +1343,8 @@ def _trip_dict(t: Trip) -> dict:
 @app.post("/trips", dependencies=[Depends(_verify_api_key)])
 async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     data = body.model_dump()
+    # SECURITY: Force rider_id to be the authenticated user (prevent spoofing)
+    data["rider_id"] = user.id
     # Parse scheduled_at string → datetime
     if data.get("scheduled_at") and isinstance(data["scheduled_at"], str):
         try:
@@ -1332,6 +1385,9 @@ async def get_trip(trip_id: int, user: User = Depends(_get_current_user), db: As
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
+    # Ownership check: only rider, driver, or admin can view
+    if user.id not in (trip.rider_id, trip.driver_id) and user.role != "admin":
+        raise HTTPException(403, "Not authorized to view this trip")
     return _trip_dict(trip)
 
 @app.get("/trips/available", dependencies=[Depends(_verify_api_key)])
@@ -1402,6 +1458,8 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
 @app.get("/trips/scheduled/rider/{rider_id}", dependencies=[Depends(_verify_api_key)])
 async def get_rider_scheduled_trips(rider_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Get all scheduled (future) trips for a rider."""
+    if user.id != rider_id and user.role != "admin":
+        raise HTTPException(403, "Not authorized")
     result = await db.execute(
         select(Trip).where(
             and_(Trip.rider_id == rider_id, Trip.status.in_(["scheduled", "requested"]), Trip.scheduled_at.isnot(None))
@@ -1412,6 +1470,8 @@ async def get_rider_scheduled_trips(rider_id: int, user: User = Depends(_get_cur
 @app.get("/trips/scheduled/driver/{driver_id}", dependencies=[Depends(_verify_api_key)])
 async def get_driver_scheduled_trips(driver_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Get all scheduled trips assigned to a driver."""
+    if user.id != driver_id and user.role != "admin":
+        raise HTTPException(403, "Not authorized")
     result = await db.execute(
         select(Trip).where(
             and_(Trip.driver_id == driver_id, Trip.status.in_(["scheduled", "driver_en_route"]), Trip.scheduled_at.isnot(None))
@@ -1452,6 +1512,9 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
 
 @app.patch("/drivers/{driver_id}/location", dependencies=[Depends(_verify_api_key)])
 async def update_driver_location(driver_id: int, body: DriverLocationIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # Ownership check: only the driver themselves can update their location
+    if user.id != driver_id:
+        raise HTTPException(403, "Not authorized to update this driver's location")
     result = await db.execute(select(User).where(User.id == driver_id))
     driver = result.scalar_one_or_none()
     if not driver:
@@ -1487,11 +1550,17 @@ async def get_nearby_drivers(
 
 @app.get("/riders/{rider_id}/trips", dependencies=[Depends(_verify_api_key)])
 async def get_rider_trips(rider_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # Ownership check: riders can only see their own trips
+    if user.id != rider_id and user.role != "admin":
+        raise HTTPException(403, "Not authorized to view these trips")
     result = await db.execute(select(Trip).where(Trip.rider_id == rider_id).order_by(Trip.created_at.desc()))
     return [_trip_dict(t) for t in result.scalars().all()]
 
 @app.get("/drivers/{driver_id}/trips", dependencies=[Depends(_verify_api_key)])
 async def get_driver_trips(driver_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # Ownership check: drivers can only see their own trips
+    if user.id != driver_id and user.role != "admin":
+        raise HTTPException(403, "Not authorized to view these trips")
     result = await db.execute(select(Trip).where(Trip.driver_id == driver_id).order_by(Trip.created_at.desc()))
     return [_trip_dict(t) for t in result.scalars().all()]
 
@@ -1528,6 +1597,22 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
 
 @app.post("/drivers/cashout", dependencies=[Depends(_verify_api_key)])
 async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    if body.amount <= 0:
+        raise HTTPException(400, "Cashout amount must be positive")
+    # Calculate available balance: completed trip earnings minus previous cashouts
+    earnings_r = await db.execute(
+        select(func.coalesce(func.sum(Trip.fare), 0.0)).where(
+            and_(Trip.driver_id == user.id, Trip.status == "completed")
+        )
+    )
+    total_earnings = float(earnings_r.scalar() or 0)
+    cashouts_r = await db.execute(
+        select(func.coalesce(func.sum(Cashout.amount), 0.0)).where(Cashout.user_id == user.id)
+    )
+    total_cashouts = float(cashouts_r.scalar() or 0)
+    available_balance = total_earnings - total_cashouts
+    if body.amount > available_balance:
+        raise HTTPException(400, f"Insufficient balance. Available: ${available_balance:.2f}")
     cashout = Cashout(user_id=user.id, amount=body.amount)
     db.add(cashout)
     await db.commit()
@@ -2038,6 +2123,9 @@ async def validate_promo_code(body: dict = Body(...), user: User = Depends(_get_
 
 @app.post("/promo/create", dependencies=[Depends(_verify_api_key)])
 async def create_promo_code(body: dict = Body(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # Only admins can create promo codes
+    if user.role != "admin":
+        raise HTTPException(403, "Admin access required")
     code = (body.get("code") or "").strip().upper()
     discount = body.get("discount_percent", 15)
     max_uses = body.get("max_uses", 100)
@@ -2109,8 +2197,8 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
         # Don't reveal if account exists — always return success
         return {"status": "reset_sent", "method": "email"}
 
-    # Generate reset token (6 digits)
-    reset_code = f"{secrets.randbelow(900000) + 100000}"
+    # Generate reset token (secure 32-char random token)
+    reset_code = secrets.token_urlsafe(24)
 
     # Remove any existing tokens for this user
     await db.execute(
@@ -2122,7 +2210,8 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
 
     method = "email" if user.email == identifier else "phone"
     logging.info(f"Password reset code for user {user.id}: {reset_code}")
-    return {"status": "reset_sent", "method": method, "reset_code": reset_code}
+    # SECURITY: Never return reset code in response — send via email/SMS in production
+    return {"status": "reset_sent", "method": method}
 
 @app.post("/auth/reset-password", dependencies=[Depends(_verify_api_key)])
 async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
@@ -2167,7 +2256,7 @@ async def tunnel_url():
 #  ADMIN / DISPATCH ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
-@app.get("/admin/users", dependencies=[Depends(_verify_api_key)])
+@app.get("/admin/users", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_list_users(
     role: Optional[str] = None, status: Optional[str] = None,
     limit: int = 200, offset: int = 0,
@@ -2184,7 +2273,7 @@ async def admin_list_users(
     users = result.scalars().all()
     return [_user_dict(u) for u in users]
 
-@app.patch("/admin/users/{user_id}/status", dependencies=[Depends(_verify_api_key)])
+@app.patch("/admin/users/{user_id}/status", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_update_user_status(user_id: int, status: str = Body(..., embed=True), db: AsyncSession = Depends(get_db)):
     """Update a user's status (active/blocked/deleted). Syncs to Firestore."""
     if status not in ("active", "blocked", "deleted", "deactivated"):
@@ -2202,10 +2291,10 @@ async def admin_update_user_status(user_id: int, status: str = Body(..., embed=T
             firestore_sync.update_field(collection, user.id, "status", status)
         except Exception as e:
             logging.warning("Firestore status sync failed: %s", e)
-    _security_audit_log("ADMIN_STATUS_CHANGE", {"user_id": user_id, "new_status": status})
+    _security_audit_log("ADMIN_STATUS_CHANGE", "admin", f"user_id={user_id} new_status={status}")
     return {"status": status, "user": _user_dict(user)}
 
-@app.get("/admin/trips", dependencies=[Depends(_verify_api_key)])
+@app.get("/admin/trips", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_list_trips(
     status: Optional[str] = None,
     limit: int = 100, offset: int = 0,
@@ -2237,7 +2326,7 @@ async def admin_list_trips(
         out.append(td)
     return out
 
-@app.post("/admin/trips", dependencies=[Depends(_verify_api_key)])
+@app.post("/admin/trips", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_create_trip(request: Request, db: AsyncSession = Depends(get_db)):
     """Create a trip from the dispatch panel (no JWT user required)."""
     body = await request.json()
@@ -2275,10 +2364,10 @@ async def admin_create_trip(request: Request, db: AsyncSession = Depends(get_db)
             )
         except Exception as e:
             logging.warning("Firestore trip sync failed: %s", e)
-    _security_audit_log("ADMIN_TRIP_CREATED", {"trip_id": trip.id})
+    _security_audit_log("ADMIN_TRIP_CREATED", "admin", f"trip_id={trip.id}")
     return _trip_dict(trip)
 
-@app.patch("/admin/trips/{trip_id}", dependencies=[Depends(_verify_api_key)])
+@app.patch("/admin/trips/{trip_id}", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Update trip fields from the dispatch panel."""
     body = await request.json()
@@ -2299,10 +2388,10 @@ async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = D
             )
         except Exception as e:
             logging.warning("Firestore trip sync failed: %s", e)
-    _security_audit_log("ADMIN_TRIP_UPDATED", {"trip_id": trip_id, "changes": list(body.keys())})
+    _security_audit_log("ADMIN_TRIP_UPDATED", "admin", f"trip_id={trip_id} changes={list(body.keys())}")
     return _trip_dict(trip)
 
-@app.delete("/admin/trips/{trip_id}", dependencies=[Depends(_verify_api_key)])
+@app.delete("/admin/trips/{trip_id}", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_delete_trip(trip_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a trip from the dispatch panel."""
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
@@ -2311,10 +2400,10 @@ async def admin_delete_trip(trip_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Trip not found")
     await db.delete(trip)
     await db.commit()
-    _security_audit_log("ADMIN_TRIP_DELETED", {"trip_id": trip_id})
+    _security_audit_log("ADMIN_TRIP_DELETED", "admin", f"trip_id={trip_id}")
     return {"deleted": True}
 
-@app.get("/admin/stats", dependencies=[Depends(_verify_api_key)])
+@app.get("/admin/stats", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_dashboard_stats(db: AsyncSession = Depends(get_db)):
     """Dashboard statistics for the dispatch panel."""
     now = datetime.now(timezone.utc)
@@ -2365,7 +2454,7 @@ async def admin_dashboard_stats(db: AsyncSession = Depends(get_db)):
         "completion_rate": round(len(today_completed) / max(len(today_trips), 1) * 100, 1),
     }
 
-@app.post("/admin/dispatch", dependencies=[Depends(_verify_api_key)])
+@app.post("/admin/dispatch", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_db)):
     """Dispatch a trip to the nearest available driver. Uses haversine distance."""
     body = await request.json()
@@ -2431,7 +2520,7 @@ async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_d
         except Exception as e:
             logging.warning("Firestore dispatch sync failed: %s", e)
 
-    _security_audit_log("ADMIN_DISPATCH", {"trip_id": trip_id, "driver_id": best.id, "distance_km": round(best_dist, 2)})
+    _security_audit_log("ADMIN_DISPATCH", "admin", f"trip_id={trip_id} driver_id={best.id} distance_km={round(best_dist, 2)}")
     return {
         "trip": _trip_dict(trip),
         "driver": _user_dict(best),
@@ -2443,7 +2532,7 @@ async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_d
 #  ADMIN — Verification Review
 # ═══════════════════════════════════════════════════════════
 
-@app.get("/admin/verifications", dependencies=[Depends(_verify_api_key)])
+@app.get("/admin/verifications", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_list_verifications(
     status: Optional[str] = None,
     limit: int = 100, offset: int = 0,
@@ -2474,7 +2563,7 @@ async def admin_list_verifications(
     } for u in users]
 
 
-@app.patch("/admin/verifications/{user_id}", dependencies=[Depends(_verify_api_key)])
+@app.patch("/admin/verifications/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_review_verification(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Approve or reject a user's verification. Body: {action: 'approve'|'reject', reason: '...'}"""
     body = await request.json()
@@ -2521,7 +2610,7 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
         except Exception as e:
             logging.warning("Firestore verification sync failed: %s", e)
 
-    _security_audit_log("ADMIN_VERIFICATION", {"user_id": user_id, "action": action, "reason": reason})
+    _security_audit_log("ADMIN_VERIFICATION", "admin", f"user_id={user_id} action={action} reason={reason}")
     return {
         "user_id": user_id,
         "verification_status": user.verification_status,
@@ -2533,7 +2622,7 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
 #  ADMIN — User Detail, Edit, Delete, Documents, Photos
 # ═══════════════════════════════════════════════════════════
 
-@app.get("/admin/users/{user_id}", dependencies=[Depends(_verify_api_key)])
+@app.get("/admin/users/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     """Get full user detail including documents and photo URL."""
     result = await db.execute(select(User).where(User.id == user_id))
@@ -2549,11 +2638,11 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     ud["documents"] = [_doc_dict(d) for d in docs]
     ud["has_password"] = user.password_hash is not None and len(user.password_hash) > 0
     ud["created_at"] = user.created_at.isoformat() if user.created_at else None
-    ud["ssn_full"] = user.ssn  # Admin-only: full SSN (e.g. "123-45-6789")
+    # SECURITY: Never expose full SSN — masked version is already in _user_dict
     return ud
 
 
-@app.patch("/admin/users/{user_id}", dependencies=[Depends(_verify_api_key)])
+@app.patch("/admin/users/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_update_user(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Update user fields from dispatch admin. Syncs changes to Firestore."""
     body = await request.json()
@@ -2602,11 +2691,11 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
                 )
         except Exception as e:
             logging.warning("Firestore user edit sync failed: %s", e)
-    _security_audit_log("ADMIN_USER_EDIT", {"user_id": user_id, "fields": list(body.keys())})
+    _security_audit_log("ADMIN_USER_EDIT", "admin", f"user_id={user_id} fields={list(body.keys())}")
     return _user_dict(user)
 
 
-@app.delete("/admin/users/{user_id}", dependencies=[Depends(_verify_api_key)])
+@app.delete("/admin/users/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
     """Permanently delete a user and their documents. Syncs to Firestore."""
     result = await db.execute(select(User).where(User.id == user_id))
@@ -2637,11 +2726,11 @@ async def admin_delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
             firestore_sync.delete_user(user_id, collection)
         except Exception as e:
             logging.warning("Firestore delete sync failed: %s", e)
-    _security_audit_log("ADMIN_USER_DELETED", {"user_id": user_id})
+    _security_audit_log("ADMIN_USER_DELETED", "admin", f"user_id={user_id}")
     return {"deleted": True}
 
 
-@app.get("/admin/users/{user_id}/documents", dependencies=[Depends(_verify_api_key)])
+@app.get("/admin/users/{user_id}/documents", dependencies=[Depends(_verify_dispatch_key)])
 async def admin_get_user_documents(user_id: int, db: AsyncSession = Depends(get_db)):
     """Get all documents for a specific user."""
     result = await db.execute(
@@ -2655,11 +2744,13 @@ async def admin_get_user_documents(user_id: int, db: AsyncSession = Depends(get_
 UPLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(os.path.join(UPLOADS_DIR, "documents"), exist_ok=True)
 
-@app.get("/uploads/documents/{filename}")
-async def serve_document(filename: str):
-    """Serve an uploaded document file."""
+@app.get("/uploads/documents/{filename}", dependencies=[Depends(_verify_api_key)])
+async def serve_document(filename: str, user: User = Depends(_get_current_user)):
+    """Serve an uploaded document file. Requires authentication."""
     # Prevent path traversal
     safe_name = os.path.basename(filename)
+    if safe_name != filename or ".." in filename:
+        raise HTTPException(400, "Invalid filename")
     fpath = os.path.join(UPLOADS_DIR, "documents", safe_name)
     if not os.path.exists(fpath):
         raise HTTPException(404, "Document not found")
@@ -2691,8 +2782,18 @@ class PaymentIntentIn(BaseModel):
 
 
 @app.post("/payments/create-intent", dependencies=[Depends(_verify_api_key)])
-async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get_current_user)):
+async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Create a Stripe PaymentIntent for a ride payment."""
+    # SECURITY: Validate payment amount against trip fare if trip_id provided
+    if body.trip_id:
+        trip_r = await db.execute(select(Trip).where(Trip.id == body.trip_id))
+        trip = trip_r.scalar_one_or_none()
+        if trip and trip.fare:
+            expected_cents = int(trip.fare * 100)
+            if body.amount < expected_cents:
+                raise HTTPException(400, f"Payment amount cannot be less than the trip fare (${trip.fare:.2f})")
+    if body.amount <= 0 or body.amount > 100000:  # Max $1000
+        raise HTTPException(400, "Invalid payment amount")
     if not _HAS_STRIPE:
         # Return mock data when Stripe is not configured
         return {

@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart'
+    show openAppSettings;
 
 import '../navigation/car_icon_loader.dart';
 import '../config/api_keys.dart';
@@ -749,8 +751,33 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
       }
-      if (perm == LocationPermission.denied ||
-          perm == LocationPermission.deniedForever) {
+      if (perm == LocationPermission.deniedForever) {
+        if (mounted) {
+          setState(() => _fetchingLocation = false);
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(S.of(ctx).locationPermissionRequired),
+              content: Text(S.of(ctx).locationPermissionPermanentlyDeniedMsg),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(S.of(ctx).cancel),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    openAppSettings();
+                  },
+                  child: Text(S.of(ctx).openSettings),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
+      if (perm == LocationPermission.denied) {
         setState(() => _fetchingLocation = false);
         return;
       }
@@ -1808,18 +1835,22 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                     color: Colors.black54,
                                   ),
                                 )
-                              : Text(
-                                  option != null
-                                      ? S
-                                            .of(context)
-                                            .requestRideWithPrice(
-                                              option.priceEstimate
-                                                  .toStringAsFixed(2),
-                                            )
-                                      : S.of(context).requestRide,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
+                              : FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    option != null
+                                        ? S
+                                              .of(context)
+                                              .requestRideWithPrice(
+                                                option.priceEstimate
+                                                    .toStringAsFixed(2),
+                                              )
+                                        : S.of(context).requestRide,
+                                    maxLines: 1,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ),
                         ),
@@ -2440,12 +2471,16 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             children: [
                               Icon(Icons.link_rounded, size: 18),
                               SizedBox(width: 8),
-                              Text(
-                                S.of(context).addPaymentMethod,
-                                style: const TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.2,
+                              Flexible(
+                                child: Text(
+                                  S.of(context).addPaymentMethod,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.2,
+                                  ),
                                 ),
                               ),
                             ],
@@ -2500,12 +2535,16 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                     children: [
                                       const Icon(Icons.lock_rounded, size: 16),
                                       const SizedBox(width: 8),
-                                      Text(
-                                        S.of(context).payPrice(price),
-                                        style: const TextStyle(
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: -0.2,
+                                      Flexible(
+                                        child: Text(
+                                          S.of(context).payPrice(price),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 17,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: -0.2,
+                                          ),
                                         ),
                                       ),
                                     ],

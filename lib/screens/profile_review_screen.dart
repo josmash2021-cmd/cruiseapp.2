@@ -175,7 +175,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
     if (permanentPhotoPath != null && permanentPhotoPath.isNotEmpty) {
       try {
         final photoUrl = await ApiService.uploadPhoto(permanentPhotoPath);
-        if (photoUrl != null && photoUrl.isNotEmpty) {
+        if (photoUrl.isNotEmpty) {
           await ApiService.updateMe({'photo_url': photoUrl});
         }
       } catch (e) {

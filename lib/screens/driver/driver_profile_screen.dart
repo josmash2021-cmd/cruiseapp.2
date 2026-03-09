@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import 'driver_trip_history_screen.dart';
 
 /// Driver profile screen – Uber-style with stats cards, lifetime highlights, badges.
 class DriverProfileScreen extends StatefulWidget {
@@ -204,7 +205,13 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                             ),
                             const Spacer(),
                             GestureDetector(
-                              onTap: () {},
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const DriverTripHistoryScreen(),
+                                  ),
+                                );
+                              },
                               child: Container(
                                 width: 32,
                                 height: 32,

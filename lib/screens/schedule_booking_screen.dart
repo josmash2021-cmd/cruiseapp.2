@@ -1211,12 +1211,16 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                                       size: 18,
                                     ),
                                     const SizedBox(width: 10),
-                                    Text(
-                                      '${S.of(context).bookScheduledRide} · ${_rides[_selectedRide].price}',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: -0.2,
+                                    Flexible(
+                                      child: Text(
+                                        '${S.of(context).bookScheduledRide} · ${_rides[_selectedRide].price}',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: -0.2,
+                                        ),
                                       ),
                                     ),
                                   ],

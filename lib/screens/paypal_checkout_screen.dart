@@ -86,8 +86,7 @@ class _PayPalCheckoutScreenState extends State<PayPalCheckoutScreen> {
         currency: widget.currency,
       );
 
-      if (response == null ||
-          response['approval_url'] == null ||
+      if (response['approval_url'] == null ||
           (response['approval_url'] as String).isEmpty) {
         throw Exception('PayPal order creation failed');
       }

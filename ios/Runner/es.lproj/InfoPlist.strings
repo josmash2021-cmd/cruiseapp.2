@@ -1,0 +1,8 @@
+"NSLocationWhenInUseUsageDescription" = "Cruise necesita tu ubicación para mostrarte conductores cercanos y calcular rutas.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Cruise necesita tu ubicación en segundo plano para rastrear tu viaje en tiempo real.";
+"NSLocationAlwaysUsageDescription" = "Cruise necesita tu ubicación para rastrear tu viaje.";
+"NSCameraUsageDescription" = "Cruise necesita la cámara para tu foto de perfil y verificación de identidad.";
+"NSFaceIDUsageDescription" = "Cruise usa Face ID para iniciar sesión de forma segura.";
+"NSPhotoLibraryUsageDescription" = "Cruise necesita acceso a tus fotos para tu foto de perfil.";
+"NSPhotoLibraryAddUsageDescription" = "Cruise necesita guardar fotos en tu galería.";
+"NSMicrophoneUsageDescription" = "Cruise necesita el micrófono para videos de perfil.";

@@ -9,6 +9,8 @@ import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart'
+    show openAppSettings;
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/api_service.dart';
@@ -289,13 +291,61 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   Future<void> _locate() async {
     try {
-      if (!await Geolocator.isLocationServiceEnabled()) return;
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(S.of(ctx).locationPermissionRequired),
+              content: Text(S.of(ctx).locationServicesDisabledMsg),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(S.of(ctx).cancel),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    openAppSettings();
+                  },
+                  child: Text(S.of(ctx).openSettings),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
       var p = await Geolocator.checkPermission();
       if (p == LocationPermission.denied) {
         p = await Geolocator.requestPermission();
         if (p == LocationPermission.denied) return;
       }
-      if (p == LocationPermission.deniedForever) return;
+      if (p == LocationPermission.deniedForever) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(S.of(ctx).locationPermissionRequired),
+              content: Text(S.of(ctx).locationRequiredForDriver),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(S.of(ctx).cancel),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    openAppSettings();
+                  },
+                  child: Text(S.of(ctx).openSettings),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
@@ -1512,7 +1562,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void _afterComplete() {
     // Submit the driver's rating for this rider
     if (_tripId != null) {
-      ApiService.rateTrip(tripId: _tripId!, stars: _stars).catchError((_) {});
+      ApiService.rateTrip(
+        tripId: _tripId!,
+        stars: _stars,
+      ).catchError((_) => <String, dynamic>{});
     }
     _doneCtrl.reverse();
     Future.delayed(const Duration(milliseconds: 350), () {
@@ -4174,12 +4227,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       color: Colors.black,
                       size: 20,
                     ),
-                    label: Text(
-                      S.of(context).startNavigation,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
+                    label: Flexible(
+                      child: Text(
+                        S.of(context).startNavigation,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
                     style: ElevatedButton.styleFrom(
@@ -4276,14 +4333,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 color: Colors.black,
                 size: 20,
               ),
-              label: Text(
-                _nearPickupNotified
-                    ? S.of(context).arrived
-                    : S.of(context).arrivedAtPickup,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
+              label: Flexible(
+                child: Text(
+                  _nearPickupNotified
+                      ? S.of(context).arrived
+                      : S.of(context).arrivedAtPickup,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
               style: ElevatedButton.styleFrom(

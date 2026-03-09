@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 
@@ -98,6 +99,39 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   }
 
   Future<void> _initCamera() async {
+    final status = await Permission.camera.request();
+    if (status.isPermanentlyDenied) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(S.of(ctx).cameraPermissionPermanentlyDenied),
+            content: Text(S.of(ctx).cameraPermissionPermanentlyDeniedMsg),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.of(context).pop(null);
+                },
+                child: Text(S.of(ctx).cancel),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  openAppSettings();
+                },
+                child: Text(S.of(ctx).openSettings),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+    if (!status.isGranted) {
+      if (mounted) Navigator.of(context).pop(null);
+      return;
+    }
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) {

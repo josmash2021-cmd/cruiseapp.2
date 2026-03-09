@@ -598,6 +598,25 @@ class S {
       ? 'Se requiere permiso de cámara para escanear tu licencia'
       : 'Camera permission is required to scan your license';
 
+  // ── Permission Dialogs ────────────────────────────────────────────────────
+  String get locationPermissionRequired =>
+      _es ? 'Permiso de Ubicación Requerido' : 'Location Permission Required';
+  String get locationPermissionPermanentlyDeniedMsg => _es
+      ? 'El permiso de ubicación fue denegado permanentemente. Por favor habilítalo en la configuración de tu teléfono.'
+      : 'Location permission is permanently denied. Please enable it in your phone settings.';
+  String get locationServicesDisabledMsg => _es
+      ? 'Los servicios de ubicación están desactivados. Por favor actívalos para continuar.'
+      : 'Location services are disabled. Please enable them to continue.';
+  String get openSettings => _es ? 'Abrir Configuración' : 'Open Settings';
+  String get cameraPermissionPermanentlyDenied =>
+      _es ? 'Permiso de Cámara Requerido' : 'Camera Permission Required';
+  String get cameraPermissionPermanentlyDeniedMsg => _es
+      ? 'El permiso de cámara fue denegado permanentemente. Por favor habilítalo en la configuración de tu teléfono.'
+      : 'Camera permission is permanently denied. Please enable it in your phone settings.';
+  String get locationRequiredForDriver => _es
+      ? 'La ubicación es necesaria para recibir viajes y aparecer en línea.'
+      : 'Location is required to receive trips and appear online.';
+
   // ── Driver Screens ────────────────────────────────────────────────────────
   String get personalInformation =>
       _es ? 'Información Personal' : 'Personal information';

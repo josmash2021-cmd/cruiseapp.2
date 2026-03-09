@@ -8,6 +8,8 @@ import 'package:geocoding/geocoding.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart'
+    show openAppSettings;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -250,8 +252,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       }
       if (perm == LocationPermission.deniedForever) {
         if (mounted) {
-          setState(
-            () => _locationError = 'Location permission permanently denied',
+          setState(() => _locationError = S.of(context).locationDeniedForever);
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(S.of(ctx).locationPermissionRequired),
+              content: Text(S.of(ctx).locationPermissionPermanentlyDeniedMsg),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(S.of(ctx).cancel),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    openAppSettings();
+                  },
+                  child: Text(S.of(ctx).openSettings),
+                ),
+              ],
+            ),
           );
         }
         return;

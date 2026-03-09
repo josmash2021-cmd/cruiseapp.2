@@ -97,6 +97,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _customTip = false;
   bool _saveDriver = false;
   final Set<String> _feedbackChips = {};
+  String _anonymousFeedback = '';
 
   int _pickupIdx = 0;
 
@@ -296,6 +297,41 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _statusPollTimer?.cancel();
     _etaPulse.dispose();
     super.dispose();
+  }
+
+  void _showFeedbackDialog() {
+    final controller = TextEditingController(text: _anonymousFeedback);
+    final s = S.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.leaveAnonymousFeedback),
+        content: TextField(
+          controller: controller,
+          maxLines: 4,
+          maxLength: 500,
+          decoration: InputDecoration(
+            hintText: s.typeMessage,
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(s.cancel),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _anonymousFeedback = controller.text.trim();
+              });
+              Navigator.of(ctx).pop();
+            },
+            child: Text(s.save),
+          ),
+        ],
+      ),
+    );
   }
 
   void _sendDriverGreeting() {
@@ -1709,7 +1745,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
               // ── Leave anonymous feedback ──
               GestureDetector(
-                onTap: () {},
+                onTap: _showFeedbackDialog,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [

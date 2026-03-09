@@ -32,21 +32,21 @@
 		<true/>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Cruise necesita tu ubicación para mostrarte conductores cercanos y calcular rutas.</string>
+	<string>Cruise needs your location to show nearby drivers and calculate routes.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Cruise necesita tu ubicación en segundo plano para rastrear tu viaje en tiempo real.</string>
+	<string>Cruise needs your location in the background to track your ride in real time.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Cruise necesita tu ubicación para rastrear tu viaje.</string>
+	<string>Cruise needs your location to track your ride.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Cruise necesita la cámara para tomar tu foto de perfil.</string>
+	<string>Cruise needs the camera for your profile photo and identity verification.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Cruise usa Face ID para iniciar sesión de forma segura.</string>
+	<string>Cruise uses Face ID for secure sign-in.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Cruise necesita acceso a tus fotos para tu foto de perfil.</string>
+	<string>Cruise needs access to your photos for your profile picture.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Cruise necesita guardar fotos en tu galería.</string>
+	<string>Cruise needs to save photos to your gallery.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Cruise necesita el micrófono para videos de perfil.</string>
+	<string>Cruise needs the microphone for profile videos.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

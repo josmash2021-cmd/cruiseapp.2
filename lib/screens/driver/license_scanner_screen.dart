@@ -53,6 +53,34 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
 
   Future<void> _initCamera() async {
     final status = await Permission.camera.request();
+    if (status.isPermanentlyDenied) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(S.of(ctx).cameraPermissionPermanentlyDenied),
+            content: Text(S.of(ctx).cameraPermissionPermanentlyDeniedMsg),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.of(context).pop(null);
+                },
+                child: Text(S.of(ctx).cancel),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  openAppSettings();
+                },
+                child: Text(S.of(ctx).openSettings),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
     if (!status.isGranted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

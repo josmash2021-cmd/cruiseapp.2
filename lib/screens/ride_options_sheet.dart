@@ -234,19 +234,23 @@ class RideOptionsSheet extends StatelessWidget {
                       ),
                     ),
                     onPressed: onConfirm,
-                    child: Text(
-                      selected != null
-                          ? S
-                                .of(context)
-                                .confirmRideWithDetails(
-                                  selected!.name,
-                                  '\$${selected!.priceEstimate.toStringAsFixed(2)}',
-                                )
-                          : S.of(context).confirmRide,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.2,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        selected != null
+                            ? S
+                                  .of(context)
+                                  .confirmRideWithDetails(
+                                    selected!.name,
+                                    '\$${selected!.priceEstimate.toStringAsFixed(2)}',
+                                  )
+                            : S.of(context).confirmRide,
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.2,
+                        ),
                       ),
                     ),
                   ),

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart'
+    show openAppSettings;
 
 import '../../config/map_styles.dart';
 import '../../config/page_transitions.dart';
@@ -69,6 +71,51 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
 
   Future<void> _initLocation() async {
     try {
+      bool svc = await Geolocator.isLocationServiceEnabled();
+      if (!svc) {
+        _ctrl.driverLatLng = _driverPos;
+        _ctrl.start(driverId: widget.driverId);
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+        if (perm == LocationPermission.denied) {
+          _ctrl.driverLatLng = _driverPos;
+          _ctrl.start(driverId: widget.driverId);
+          if (mounted) setState(() => _loading = false);
+          return;
+        }
+      }
+      if (perm == LocationPermission.deniedForever) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(S.of(ctx).locationPermissionRequired),
+              content: Text(S.of(ctx).locationRequiredForDriver),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(S.of(ctx).cancel),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    openAppSettings();
+                  },
+                  child: Text(S.of(ctx).openSettings),
+                ),
+              ],
+            ),
+          );
+        }
+        _ctrl.driverLatLng = _driverPos;
+        _ctrl.start(driverId: widget.driverId);
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
@@ -292,12 +339,12 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
             Positioned.fill(
               child: Container(
                 color: Colors.black54,
-                child: const Center(
+                child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      CircularProgressIndicator(color: _gold),
-                      SizedBox(height: 16),
+                      const CircularProgressIndicator(color: _gold),
+                      const SizedBox(height: 16),
                       Text(
                         S.of(context).acceptingRide,
                         style: const TextStyle(
@@ -320,14 +367,14 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     return Container(
       height: 200,
       alignment: Alignment.center,
-      child: const Column(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircularProgressIndicator(color: _gold),
-          SizedBox(height: 12),
+          const CircularProgressIndicator(color: _gold),
+          const SizedBox(height: 12),
           Text(
             S.of(context).findingRidesNearYou,
-            style: TextStyle(color: Colors.white70, fontSize: 14),
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
           ),
         ],
       ),

@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart'
+    show openAppSettings;
 import '../../config/map_styles.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
@@ -171,13 +173,61 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Future<void> _initLocation() async {
     try {
       bool svc = await Geolocator.isLocationServiceEnabled();
-      if (!svc) return;
+      if (!svc) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(S.of(ctx).locationPermissionRequired),
+              content: Text(S.of(ctx).locationServicesDisabledMsg),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(S.of(ctx).cancel),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    openAppSettings();
+                  },
+                  child: Text(S.of(ctx).openSettings),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
       LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
         if (perm == LocationPermission.denied) return;
       }
-      if (perm == LocationPermission.deniedForever) return;
+      if (perm == LocationPermission.deniedForever) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(S.of(ctx).locationPermissionRequired),
+              content: Text(S.of(ctx).locationRequiredForDriver),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(S.of(ctx).cancel),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    openAppSettings();
+                  },
+                  child: Text(S.of(ctx).openSettings),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
 
       final last = await Geolocator.getLastKnownPosition();
       if (last != null && mounted) {

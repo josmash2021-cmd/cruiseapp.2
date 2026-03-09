@@ -499,7 +499,8 @@ class ApiService {
         )
         .timeout(const Duration(seconds: 10));
     final data = _parse(res);
-    return data is List ? data : [];
+    final list = data['data'];
+    return list is List ? List<dynamic>.from(list) : [];
   }
 
   /// Send a support chat message.

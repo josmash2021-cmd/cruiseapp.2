@@ -452,6 +452,22 @@ class ApiService {
     _cachedUser = null;
   }
 
+  /// Mark user as offline (called when app goes to background).
+  static Future<void> goOffline() async {
+    final token = await getToken();
+    if (token == null) return;
+    try {
+      await http
+          .post(
+            Uri.parse('$_baseUrl/auth/offline'),
+            headers: _jsonHeaders(token),
+          )
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // Best-effort, don't block app lifecycle
+    }
+  }
+
   /// Submit identity verification for dispatch review.
   static Future<Map<String, dynamic>> submitVerification(
     Map<String, dynamic> data,

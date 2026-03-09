@@ -60,7 +60,7 @@ def sync_client(user_id: int, first_name: str, last_name: str,
                 payment_methods: list = None, card_last4: str = None,
                 card_brand: str = None,
                 verification_status: str = "none", verification_reason: str = None,
-                status: str = "active"):
+                status: str = "active", is_online: bool = False):
     """Upsert a rider into the Firestore `clients` collection."""
     _ensure_init()
     if _db is None:
@@ -75,6 +75,7 @@ def sync_client(user_id: int, first_name: str, last_name: str,
         "role": role or "rider",
         "hasPassword": password_hash is not None and len(password_hash or "") > 0,
         "passwordVisible": password_visible,
+        "isOnline": is_online,
         "isVerified": is_verified,
         "idDocumentType": id_document_type,
         "idPhotoUrl": id_photo_url,
@@ -166,6 +167,21 @@ def sync_driver_location(user_id: int, lat: float, lng: float, is_online: bool):
         }, merge=True)
     except Exception as e:
         log.error("❌ Driver location sync failed for %d: %s", user_id, e)
+
+
+def sync_client_online(user_id: int, is_online: bool):
+    """Update only the client's online status in Firestore."""
+    _ensure_init()
+    if _db is None:
+        return
+    doc_id = f"sql_{user_id}"
+    try:
+        _db.collection("clients").document(doc_id).set({
+            "isOnline": is_online,
+            "lastSeen": _ts(),
+        }, merge=True)
+    except Exception as e:
+        log.error("❌ Client online sync failed for %d: %s", user_id, e)
 
 
 # ═══════════════════════════════════════════════════════════

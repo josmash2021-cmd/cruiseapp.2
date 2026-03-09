@@ -139,8 +139,37 @@ class SmoothScrollBehavior extends ScrollBehavior {
   }
 }
 
-class UberCloneApp extends StatelessWidget {
+class UberCloneApp extends StatefulWidget {
   const UberCloneApp({super.key});
+
+  @override
+  State<UberCloneApp> createState() => _UberCloneAppState();
+}
+
+class _UberCloneAppState extends State<UberCloneApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      ApiService.goOffline();
+    } else if (state == AppLifecycleState.resumed) {
+      // getMe marks user as online on the backend
+      ApiService.getMe();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -815,6 +815,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                     password_hash=user.password_hash,
                     password_visible=user.password_visible,
                     is_verified=False,
+                    is_online=False,
                 )
         except Exception as e:
             logging.error("Firestore sync on register failed: %s", e)
@@ -924,8 +925,38 @@ async def refresh_token(request: Request, authorization: str = Header(None), db:
     return {"access_token": new_access, "refresh_token": new_refresh, "token_type": "bearer"}
 
 @app.get("/auth/me", dependencies=[Depends(_verify_api_key)])
-async def get_me(user: User = Depends(_get_current_user)):
+async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # Mark rider as online when they call /auth/me (heartbeat)
+    if user.role != "driver":
+        result = await db.execute(select(User).where(User.id == user.id))
+        db_user = result.scalar_one_or_none()
+        if db_user and not db_user.is_online:
+            db_user.is_online = True
+            await db.commit()
+            if _HAS_FIRESTORE:
+                try:
+                    firestore_sync.sync_client_online(db_user.id, True)
+                except Exception:
+                    pass
     return _user_dict(user)
+
+@app.post("/auth/offline", dependencies=[Depends(_verify_api_key)])
+async def go_offline(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Mark user as offline (called when app goes to background)."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if db_user and db_user.is_online:
+        db_user.is_online = False
+        await db.commit()
+        if _HAS_FIRESTORE:
+            try:
+                if db_user.role == "driver":
+                    firestore_sync.sync_driver_location(db_user.id, db_user.lat or 0, db_user.lng or 0, False)
+                else:
+                    firestore_sync.sync_client_online(db_user.id, False)
+            except Exception:
+                pass
+    return {"status": "ok"}
 
 @app.patch("/auth/me", dependencies=[Depends(_verify_api_key)])
 async def update_me(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -980,6 +1011,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
                     verification_status=db_user.verification_status or "none",
                     verification_reason=db_user.verification_reason,
                     status=db_user.status or "active",
+                    is_online=db_user.is_online or False,
                 )
         except Exception as e:
             logging.error("Firestore profile sync failed: %s", e)
@@ -1040,6 +1072,7 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
                     is_verified=db_user.is_verified or False,
                     id_photo_url=db_user.id_photo_url,
                     selfie_url=db_user.selfie_url,
+                    is_online=db_user.is_online or False,
                 ) if collection == "clients" else firestore_sync.sync_driver(
                     user_id=db_user.id, first_name=db_user.first_name,
                     last_name=db_user.last_name, phone=db_user.phone or "",
@@ -2711,6 +2744,7 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
                     id_photo_url=user.id_photo_url,
                     selfie_url=user.selfie_url,
                     status=user.status or "active",
+                    is_online=user.is_online or False,
                 )
         except Exception as e:
             logging.warning("Firestore user edit sync failed: %s", e)

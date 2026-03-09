@@ -185,6 +185,69 @@ def sync_client_online(user_id: int, is_online: bool):
 
 
 # ═══════════════════════════════════════════════════════════
+#  SUPPORT CHAT sync
+# ═══════════════════════════════════════════════════════════
+
+def sync_support_chat(chat_id: int, user_id: int, first_name: str, last_name: str,
+                       photo_url: str = None, role: str = "rider",
+                       subject: str = "", status: str = "open"):
+    """Upsert a support chat into the Firestore `support_chats` collection."""
+    _ensure_init()
+    if _db is None:
+        return
+    doc_id = f"chat_{chat_id}"
+    data = {
+        "chatId": chat_id,
+        "userId": user_id,
+        "userName": f"{first_name} {last_name}".strip(),
+        "userPhoto": photo_url,
+        "userRole": role or "rider",
+        "subject": subject,
+        "status": status,
+        "lastUpdated": _ts(),
+    }
+    try:
+        ref = _db.collection("support_chats").document(doc_id)
+        existing = ref.get()
+        if not existing.exists:
+            data["createdAt"] = _ts()
+        ref.set(data, merge=True)
+        log.info("🔄 Synced support chat %d → Firestore", chat_id)
+    except Exception as e:
+        log.error("❌ Support chat sync failed for %d: %s", chat_id, e)
+
+
+def sync_support_message(chat_id: int, msg_id: int, sender_id: int,
+                          sender_name: str, sender_role: str, message: str):
+    """Add a support message to Firestore."""
+    _ensure_init()
+    if _db is None:
+        return
+    doc_id = f"chat_{chat_id}"
+    msg_doc_id = f"msg_{msg_id}"
+    try:
+        _db.collection("support_chats").document(doc_id).collection("messages").document(msg_doc_id).set({
+            "msgId": msg_id,
+            "senderId": sender_id,
+            "senderName": sender_name,
+            "senderRole": sender_role,
+            "message": message,
+            "isRead": False,
+            "createdAt": _ts(),
+        })
+        # Update parent chat's last message
+        _db.collection("support_chats").document(doc_id).set({
+            "lastMessage": message,
+            "lastMessageAt": _ts(),
+            "lastSenderRole": sender_role,
+            "lastUpdated": _ts(),
+        }, merge=True)
+        log.info("🔄 Synced support msg %d in chat %d → Firestore", msg_id, chat_id)
+    except Exception as e:
+        log.error("❌ Support message sync failed: %s", e)
+
+
+# ═══════════════════════════════════════════════════════════
 #  DELETE user from Firestore
 # ═══════════════════════════════════════════════════════════
 

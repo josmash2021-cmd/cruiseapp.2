@@ -180,6 +180,25 @@ class ChatMessage(Base):
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+class SupportChat(Base):
+    __tablename__ = "support_chats"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(String(20), default="open")  # open, closed
+    subject = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+class SupportMessage(Base):
+    __tablename__ = "support_messages"
+    id = Column(Integer, primary_key=True, index=True)
+    chat_id = Column(Integer, ForeignKey("support_chats.id"), nullable=False)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sender_role = Column(String(20), nullable=False)  # rider, driver, dispatch
+    message = Column(Text, nullable=False)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
 class Notification(Base):
     __tablename__ = "notifications"
     id = Column(Integer, primary_key=True, index=True)
@@ -2155,6 +2174,227 @@ async def get_chat_messages(trip_id: int, user: User = Depends(_get_current_user
          "created_at": m.created_at.isoformat() if m.created_at else None}
         for m in messages
     ]
+
+# ═══════════════════════════════════════════════════════
+#  SUPPORT CHAT ENDPOINTS
+# ═══════════════════════════════════════════════════════
+
+def _support_msg_dict(m, sender_name=""):
+    return {
+        "id": m.id, "chat_id": m.chat_id, "sender_id": m.sender_id,
+        "sender_role": m.sender_role, "sender_name": sender_name,
+        "message": m.message, "is_read": m.is_read,
+        "created_at": m.created_at.isoformat() if m.created_at else None,
+    }
+
+@app.post("/support/chats", dependencies=[Depends(_verify_api_key)])
+async def create_or_get_support_chat(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Create a new support chat or return existing open one for this user."""
+    body = await request.json()
+    subject = (body.get("subject") or "").strip()
+
+    # Check for existing open chat
+    result = await db.execute(
+        select(SupportChat).where(SupportChat.user_id == user.id, SupportChat.status == "open")
+    )
+    chat = result.scalar_one_or_none()
+    if chat:
+        return {"id": chat.id, "user_id": chat.user_id, "status": chat.status,
+                "subject": chat.subject, "created_at": chat.created_at.isoformat() if chat.created_at else None}
+
+    chat = SupportChat(user_id=user.id, subject=subject or "Soporte general")
+    db.add(chat)
+    await db.commit()
+    await db.refresh(chat)
+
+    # Sync to Firestore
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_support_chat(chat.id, user.id, user.first_name, user.last_name,
+                                              user.photo_url, user.role, chat.subject, chat.status)
+        except Exception as e:
+            logging.error("Firestore support chat sync failed: %s", e)
+
+    return {"id": chat.id, "user_id": chat.user_id, "status": chat.status,
+            "subject": chat.subject, "created_at": chat.created_at.isoformat() if chat.created_at else None}
+
+@app.get("/support/chats", dependencies=[Depends(_verify_api_key)])
+async def list_support_chats(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """List support chats. Riders see their own, dispatch (via API key) sees all."""
+    result = await db.execute(
+        select(SupportChat).where(SupportChat.user_id == user.id).order_by(SupportChat.updated_at.desc())
+    )
+    chats = result.scalars().all()
+    return [{"id": c.id, "user_id": c.user_id, "status": c.status, "subject": c.subject,
+             "created_at": c.created_at.isoformat() if c.created_at else None,
+             "updated_at": c.updated_at.isoformat() if c.updated_at else None} for c in chats]
+
+@app.get("/support/chats/all", dependencies=[Depends(_verify_dispatch_key)])
+async def list_all_support_chats(db: AsyncSession = Depends(get_db)):
+    """List ALL support chats (dispatch only)."""
+    result = await db.execute(
+        select(SupportChat).order_by(SupportChat.updated_at.desc())
+    )
+    chats = result.scalars().all()
+    out = []
+    for c in chats:
+        user_result = await db.execute(select(User).where(User.id == c.user_id))
+        u = user_result.scalar_one_or_none()
+        # Count unread
+        unread_result = await db.execute(
+            select(SupportMessage).where(
+                SupportMessage.chat_id == c.id,
+                SupportMessage.sender_role != "dispatch",
+                SupportMessage.is_read == False,
+            )
+        )
+        unread = len(unread_result.scalars().all())
+        # Get last message
+        last_msg_result = await db.execute(
+            select(SupportMessage).where(SupportMessage.chat_id == c.id)
+            .order_by(SupportMessage.created_at.desc()).limit(1)
+        )
+        last_msg = last_msg_result.scalar_one_or_none()
+        out.append({
+            "id": c.id, "user_id": c.user_id, "status": c.status, "subject": c.subject,
+            "user_name": f"{u.first_name} {u.last_name}".strip() if u else "Unknown",
+            "user_photo": u.photo_url if u else None,
+            "user_role": u.role if u else "rider",
+            "unread_count": unread,
+            "last_message": last_msg.message if last_msg else None,
+            "last_message_at": last_msg.created_at.isoformat() if last_msg and last_msg.created_at else None,
+            "last_sender_role": last_msg.sender_role if last_msg else None,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+        })
+    return out
+
+@app.get("/support/chats/{chat_id}/messages", dependencies=[Depends(_verify_api_key)])
+async def get_support_messages(chat_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get messages for a support chat."""
+    result = await db.execute(
+        select(SupportMessage).where(SupportMessage.chat_id == chat_id)
+        .order_by(SupportMessage.created_at.asc())
+    )
+    messages = result.scalars().all()
+    # Mark messages as read if current user is receiver
+    for m in messages:
+        if m.sender_id != user.id and not m.is_read:
+            m.is_read = True
+    await db.commit()
+    # Build sender names
+    sender_ids = {m.sender_id for m in messages}
+    sender_names = {}
+    for sid in sender_ids:
+        r = await db.execute(select(User).where(User.id == sid))
+        u = r.scalar_one_or_none()
+        sender_names[sid] = f"{u.first_name} {u.last_name}".strip() if u else "Unknown"
+    return [_support_msg_dict(m, sender_names.get(m.sender_id, "")) for m in messages]
+
+@app.get("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_verify_dispatch_key)])
+async def get_support_messages_dispatch(chat_id: int, db: AsyncSession = Depends(get_db)):
+    """Get messages for a support chat (dispatch version — marks dispatch-received as read)."""
+    result = await db.execute(
+        select(SupportMessage).where(SupportMessage.chat_id == chat_id)
+        .order_by(SupportMessage.created_at.asc())
+    )
+    messages = result.scalars().all()
+    for m in messages:
+        if m.sender_role != "dispatch" and not m.is_read:
+            m.is_read = True
+    await db.commit()
+    sender_ids = {m.sender_id for m in messages}
+    sender_names = {}
+    for sid in sender_ids:
+        r = await db.execute(select(User).where(User.id == sid))
+        u = r.scalar_one_or_none()
+        sender_names[sid] = f"{u.first_name} {u.last_name}".strip() if u else "Unknown"
+    return [_support_msg_dict(m, sender_names.get(m.sender_id, "")) for m in messages]
+
+@app.post("/support/chats/{chat_id}/messages", dependencies=[Depends(_verify_api_key)])
+async def send_support_message(chat_id: int, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Send a message in a support chat (rider/driver side)."""
+    body = await request.json()
+    msg_text = (body.get("message") or "").strip()
+    if not msg_text:
+        raise HTTPException(400, "Message cannot be empty")
+
+    chat_result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = chat_result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+    if chat.user_id != user.id:
+        raise HTTPException(403, "Not your chat")
+
+    msg = SupportMessage(chat_id=chat_id, sender_id=user.id, sender_role=user.role or "rider", message=msg_text)
+    db.add(msg)
+    chat.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(msg)
+
+    # Sync to Firestore
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_support_message(chat_id, msg.id, user.id,
+                                                 f"{user.first_name} {user.last_name}".strip(),
+                                                 user.role or "rider", msg_text)
+        except Exception as e:
+            logging.error("Firestore support msg sync failed: %s", e)
+
+    return _support_msg_dict(msg, f"{user.first_name} {user.last_name}".strip())
+
+@app.post("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_verify_dispatch_key)])
+async def send_support_message_dispatch(chat_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Send a message in a support chat (dispatch side)."""
+    body = await request.json()
+    msg_text = (body.get("message") or "").strip()
+    if not msg_text:
+        raise HTTPException(400, "Message cannot be empty")
+
+    chat_result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = chat_result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+
+    # Use a "dispatch" sender — sender_id=0 for system
+    msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="dispatch", message=msg_text)
+    db.add(msg)
+    chat.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(msg)
+
+    # Sync to Firestore
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_support_message(chat_id, msg.id, 0, "Soporte Cruise", "dispatch", msg_text)
+        except Exception as e:
+            logging.error("Firestore dispatch msg sync failed: %s", e)
+
+    return _support_msg_dict(msg, "Soporte Cruise")
+
+@app.patch("/support/chats/{chat_id}/close", dependencies=[Depends(_verify_dispatch_key)])
+async def close_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):
+    """Close a support chat (dispatch only)."""
+    result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+    chat.status = "closed"
+    chat.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    if _HAS_FIRESTORE:
+        try:
+            user_result = await db.execute(select(User).where(User.id == chat.user_id))
+            u = user_result.scalar_one_or_none()
+            firestore_sync.sync_support_chat(chat.id, chat.user_id,
+                                              u.first_name if u else "", u.last_name if u else "",
+                                              u.photo_url if u else None, u.role if u else "rider",
+                                              chat.subject, "closed")
+        except Exception as e:
+            logging.error("Firestore close chat sync failed: %s", e)
+
+    return {"status": "closed"}
 
 # ═══════════════════════════════════════════════════════
 #  PROMO CODE  ENDPOINTS

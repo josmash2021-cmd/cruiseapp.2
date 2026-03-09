@@ -544,11 +544,12 @@ class S {
       _es ? '¿Olvidaste tu contraseña?' : 'Forgot password?';
   String get resetPassword => _es ? 'Restablecer contraseña' : 'Reset password';
   String get forgotSubtitle => _es
-      ? 'Introduce tu correo o teléfono para recibir un código de restablecimiento.'
-      : "Enter your email or phone and we'll send you a reset code.";
+      ? 'Introduce tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.'
+      : "Enter your email and we'll send you a link to reset your password.";
   String get resetCodeSubtitle => _es
       ? 'Introduce el código de 6 dígitos que te enviamos y tu nueva contraseña.'
       : 'Enter the 6-digit code we sent and your new password.';
+  String get sendResetLink => _es ? 'Enviar enlace' : 'Send reset link';
   String get sendCode => _es ? 'Enviar Código' : 'Send code';
   String get resendCode => _es ? 'Reenviar código' : 'Resend code';
   String get newPassword => _es ? 'Nueva contraseña' : 'New password';
@@ -557,6 +558,15 @@ class S {
   String get resetSuccess => _es
       ? 'Contraseña restablecida exitosamente. Por favor inicia sesión.'
       : 'Password reset successfully. Please sign in.';
+  String get resetLinkSent => _es
+      ? 'Te enviamos un enlace para restablecer tu contraseña. Revisa tu correo electrónico.'
+      : 'We sent you a password reset link. Check your email.';
+  String get noAccountFound => _es
+      ? 'No se encontró ninguna cuenta registrada con este correo.'
+      : 'No registered account found with this email.';
+  String get backToSignIn =>
+      _es ? 'Volver a iniciar sesión' : 'Back to sign in';
+  String get resumeOnline => _es ? 'REANUDAR' : 'RESUME';
 
   // ── Verify Code ───────────────────────────────────────────────────────────
   String get codeSentCheckPhone => _es

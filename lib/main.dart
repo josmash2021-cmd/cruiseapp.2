@@ -32,85 +32,11 @@ void main() async {
         FlutterError.presentError(details);
         debugPrint('[FlutterError] ${details.exception}\n${details.stack}');
       };
-      // ── Initialize Security Service (10-layer defense) ──
+
+      // Only minimal sync work before runApp — everything else moves to
+      // SplashScreen so the first frame paints instantly (no white flash).
       await SecurityService.init();
-      // ── Load persisted server URL (must run before any ApiService call) ──
       await ApiService.init();
-      // Auto-detect best reachable server — non-blocking with 8s overall timeout
-      // so the app doesn't freeze for 42s if all URLs are unreachable.
-      await ApiService.probeAndSetBestUrl(
-        timeout: const Duration(seconds: 3),
-      ).timeout(
-        const Duration(seconds: 8),
-        onTimeout: () {
-          debugPrint('[ApiService] probe timed out — using saved/default URL');
-          return null;
-        },
-      );
-      // Initialize profile photo notifier for real-time sync
-      await UserSession.initPhotoNotifier();
-
-      // ── Stripe — skip if key is still a placeholder ──
-      if (!kIsWeb && !ApiKeys.stripePublishableKey.contains('REPLACE')) {
-        try {
-          Stripe.publishableKey = ApiKeys.stripePublishableKey;
-          Stripe.merchantIdentifier = ApiKeys.stripeMerchantId;
-          await Stripe.instance.applySettings();
-        } catch (e) {
-          debugPrint('[Stripe] init failed: $e');
-        }
-      } else {
-        debugPrint('[Stripe] skipped — placeholder key detected');
-      }
-
-      try {
-        await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform,
-        );
-
-        // ── Firebase Cloud Messaging ──
-        try {
-          final messaging = FirebaseMessaging.instance;
-          await messaging.requestPermission(
-            alert: true,
-            badge: true,
-            sound: true,
-          );
-          final fcmToken = await messaging.getToken();
-          debugPrint('[FCM] token: $fcmToken');
-
-          // Handle foreground messages
-          FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-            final title = message.notification?.title ?? 'Cruise';
-            final body = message.notification?.body ?? '';
-            // Extract notification type from data payload for filtering
-            final type = message.data['type'] as String? ?? 'general';
-            NotificationService.show(
-              id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-              title: title,
-              body: body,
-              type: type,
-            );
-            // Also save to local inbox
-            LocalDataService.addNotification(
-              title: title,
-              message: body,
-              type: type,
-            );
-          });
-        } catch (e) {
-          debugPrint('[FCM] init error: $e');
-        }
-      } catch (e) {
-        debugPrint('[Firebase] init error: $e');
-      }
-
-      // ── Local Notifications ──
-      try {
-        await NotificationService.init();
-      } catch (e) {
-        debugPrint('[NotificationService] init error: $e');
-      }
 
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       SystemChrome.setSystemUIOverlayStyle(
@@ -122,6 +48,78 @@ void main() async {
       debugPrint('[ZoneError] $error\n$stack');
     },
   );
+}
+
+/// Heavy async init that runs while the splash animation plays.
+/// Called from SplashScreen.initState().
+Future<void> heavyInit() async {
+  // Auto-detect best reachable server
+  await ApiService.probeAndSetBestUrl(
+    timeout: const Duration(seconds: 3),
+  ).timeout(
+    const Duration(seconds: 8),
+    onTimeout: () {
+      debugPrint('[ApiService] probe timed out — using saved/default URL');
+      return null;
+    },
+  );
+
+  // Initialize profile photo notifier
+  await UserSession.initPhotoNotifier();
+
+  // ── Stripe ──
+  if (!kIsWeb && !ApiKeys.stripePublishableKey.contains('REPLACE')) {
+    try {
+      Stripe.publishableKey = ApiKeys.stripePublishableKey;
+      Stripe.merchantIdentifier = ApiKeys.stripeMerchantId;
+      await Stripe.instance.applySettings();
+    } catch (e) {
+      debugPrint('[Stripe] init failed: $e');
+    }
+  } else {
+    debugPrint('[Stripe] skipped — placeholder key detected');
+  }
+
+  // ── Firebase ──
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    try {
+      final messaging = FirebaseMessaging.instance;
+      await messaging.requestPermission(alert: true, badge: true, sound: true);
+      final fcmToken = await messaging.getToken();
+      debugPrint('[FCM] token: $fcmToken');
+
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        final title = message.notification?.title ?? 'Cruise';
+        final body = message.notification?.body ?? '';
+        final type = message.data['type'] as String? ?? 'general';
+        NotificationService.show(
+          id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          title: title,
+          body: body,
+          type: type,
+        );
+        LocalDataService.addNotification(
+          title: title,
+          message: body,
+          type: type,
+        );
+      });
+    } catch (e) {
+      debugPrint('[FCM] init error: $e');
+    }
+  } catch (e) {
+    debugPrint('[Firebase] init error: $e');
+  }
+
+  // ── Local Notifications ──
+  try {
+    await NotificationService.init();
+  } catch (e) {
+    debugPrint('[NotificationService] init error: $e');
+  }
 }
 
 /// Smooth 60 fps scroll everywhere — iOS-style bouncing on all platforms.
@@ -197,6 +195,13 @@ class _UberCloneAppState extends State<UberCloneApp>
               GlobalCupertinoLocalizations.delegate,
             ],
             supportedLocales: const [Locale('en'), Locale('es')],
+            localeResolutionCallback: (deviceLocale, supported) {
+              // Match any Spanish variant (es_MX, es_US, etc.) to 'es'
+              if (deviceLocale?.languageCode == 'es') {
+                return const Locale('es');
+              }
+              return const Locale('en');
+            },
             home: const SplashScreen(),
           ),
         );

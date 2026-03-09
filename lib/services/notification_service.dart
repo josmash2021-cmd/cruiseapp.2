@@ -104,7 +104,13 @@ class NotificationService {
     if (type == 'safety' && !(prefs.getBool('notif_safety') ?? true)) return;
     if (type == 'payment' && !(prefs.getBool('notif_payment') ?? true)) return;
 
-    final soundsEnabled = prefs.getBool('notif_sounds') ?? true;
+    // Driver sound preferences (from Sounds & Voice settings)
+    if (type == 'ride' && !(prefs.getBool('sound_trips') ?? true)) return;
+    if (type == 'chat' && !(prefs.getBool('sound_messages') ?? true)) return;
+
+    final driverVolume = prefs.getDouble('sound_volume') ?? 0.8;
+    final soundsEnabled =
+        (prefs.getBool('notif_sounds') ?? true) && driverVolume > 0;
     final vibrateEnabled = prefs.getBool('notif_vibrate') ?? true;
 
     final androidDetails = AndroidNotificationDetails(

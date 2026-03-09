@@ -11,6 +11,7 @@ import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
+import '../main.dart' show heavyInit;
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -140,6 +141,11 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _runSequence() async {
     if (_disposed) return;
 
+    // Start heavy init in parallel with the splash animation
+    final initFuture = heavyInit().catchError((e) {
+      debugPrint('[SplashScreen] heavyInit error: $e');
+    });
+
     // Small delay on launch
     await Future.delayed(const Duration(milliseconds: 300));
     if (_disposed) return;
@@ -154,6 +160,10 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Hold for a beat
     await Future.delayed(const Duration(milliseconds: 500));
+    if (_disposed) return;
+
+    // Ensure heavy init finished before navigating
+    await initFuture;
     if (_disposed) return;
 
     // Phase 3 — scale up + fade out

@@ -118,6 +118,11 @@ class UserSession {
             localPhotoPath = await ApiService.downloadPhoto(serverPhotoUrl);
           } catch (_) {}
         }
+        // If download failed, keep the existing cached photo path
+        if (localPhotoPath.isEmpty) {
+          final existingUser = await getUser();
+          localPhotoPath = existingUser?['photoPath'] ?? '';
+        }
         // Repopulate local cache
         await saveUser(
           firstName: profile['first_name']?.toString() ?? '',

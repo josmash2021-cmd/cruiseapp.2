@@ -75,6 +75,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ── Verification ──
   bool _isVerified = false;
 
+  // ── Online state (driver pressed back but is still connected) ──
+  bool _isStillOnline = false;
+
   @override
   void initState() {
     super.initState();
@@ -329,7 +332,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
 
     HapticFeedback.heavyImpact();
-    Navigator.of(context).push(
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
         opaque: false,
         pageBuilder: (ctx, anim1, anim2) => const DriverOnlineScreen(),
@@ -343,6 +346,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         },
       ),
     );
+    if (!mounted) return;
+    final stillOnline = result?['stillOnline'] == true;
+    setState(() => _isStillOnline = stillOnline);
   }
 
   // ═══════════════════════════════════════════════════
@@ -746,8 +752,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       color: Colors.black.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.power_settings_new_rounded,
+                    child: Icon(
+                      _isStillOnline
+                          ? Icons.play_arrow_rounded
+                          : Icons.power_settings_new_rounded,
                       color: Colors.black87,
                       size: 16,
                     ),
@@ -755,7 +763,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   const SizedBox(width: 10),
                   Text(
                     _isVerified
-                        ? S.of(context).goOnline
+                        ? (_isStillOnline
+                              ? S.of(context).resumeOnline
+                              : S.of(context).goOnline)
                         : S.of(context).verifyFirst,
                     style: const TextStyle(
                       color: Colors.black87,

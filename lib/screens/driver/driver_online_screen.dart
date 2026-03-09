@@ -26,6 +26,7 @@ import 'driver_earnings_screen.dart';
 import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_inbox_screen.dart';
+import '../../services/map_launcher_service.dart';
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  CRUISE DRIVER â€” ONLINE SCREEN
@@ -1627,6 +1628,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         CameraPosition(target: _pos, zoom: 17.5, bearing: _heading, tilt: 55),
       ),
     );
+    // Also launch external map app if user prefers one
+    MapLauncherService.prefersInApp().then((inApp) {
+      if (!inApp) {
+        MapLauncherService.navigate(
+          destLat: _dropoffLL.latitude,
+          destLng: _dropoffLL.longitude,
+        );
+      }
+    });
   }
 
   void _decline() {
@@ -1727,6 +1737,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       'earnings': _earnings,
       'trips': _trips,
       'hours': _online.inMinutes / 60.0,
+      'stillOnline': false,
+    });
+  }
+
+  /// Go back to home without going offline — driver stays connected.
+  void _goBack() {
+    HapticFeedback.lightImpact();
+    Navigator.of(context).pop<Map<String, dynamic>>({
+      'earnings': _earnings,
+      'trips': _trips,
+      'hours': _online.inMinutes / 60.0,
+      'stillOnline': true,
     });
   }
 
@@ -2313,227 +2335,238 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         ? Colors.black.withValues(alpha: 0.5)
         : Colors.black.withValues(alpha: 0.08);
 
-    return Scaffold(
-      backgroundColor: bg,
-      body: Stack(
-        children: [
-          // â”€â”€ Map â”€â”€
-          _mapW(isDark),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goBack();
+      },
+      child: Scaffold(
+        backgroundColor: bg,
+        body: Stack(
+          children: [
+            // â”€â”€ Map â”€â”€
+            _mapW(isDark),
 
-          // â”€â”€ Top-left: Home button â”€â”€
-          Positioned(
-            top: top + 10,
-            left: 16,
-            child: _fab(
-              Icons.arrow_back_ios_new_rounded,
-              48,
-              fabBg,
-              fabBorder,
-              fabIcon,
-              _goOffline,
-            ),
-          ),
-
-          // â”€â”€ Top-center: Earnings pill + TODAY â”€â”€
-          Positioned(
-            top: top + 10,
-            left: 0,
-            right: 0,
-            child: Center(child: _earningsPill(isDark)),
-          ),
-
-          // â”€â”€ Nav header (during navigation phases) â”€â”€
-          if (_phase == _Phase.enRouteToPickup ||
-              _phase == _Phase.inTrip ||
-              _phase == _Phase.routeSummary)
-            Positioned(top: top + 64, left: 16, right: 16, child: _navHeader()),
-
-          // â”€â”€ Side floating buttons (only when searching with no offers) â”€â”€
-          if (_phase == _Phase.searching && _pendingOffers.isEmpty) ...[
-            Positioned(
-              bottom: 54 + bot + 60,
-              left: 16,
-              child: Column(
-                children: [
-                  _fab(
-                    Icons.tune_rounded,
-                    44,
-                    fabBg,
-                    fabBorder,
-                    fabIcon,
-                    () => _showOnlinePanel(),
-                  ),
-                  const SizedBox(height: 10),
-                  _fab(
-                    Icons.shield_outlined,
-                    44,
-                    fabBg,
-                    fabBorder,
-                    fabIcon,
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const DriverSafetyScreen(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              bottom: 54 + bot + 60,
-              right: 16,
-              child: Column(
-                children: [
-                  _fab(
-                    Icons.message_outlined,
-                    44,
-                    fabBg,
-                    fabBorder,
-                    fabIcon,
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const DriverInboxScreen(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _fab(
-                    Icons.campaign_rounded,
-                    44,
-                    fabBg,
-                    fabBorder,
-                    fabIcon,
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const DriverPromosScreen(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _fab(
-                    Icons.bar_chart_rounded,
-                    44,
-                    fabBg,
-                    fabBorder,
-                    fabIcon,
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const DriverAnalyticsScreen(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          // â”€â”€ Re-center button during navigation (inTrip / routeSummary) â”€â”€
-          // -- Re-center FAB: appears when user pans away during navigation --
-          if (!_cameraFollowing &&
-              (_phase == _Phase.enRouteToPickup ||
-                  _phase == _Phase.inTrip ||
-                  _phase == _Phase.routeSummary))
-            Positioned(
-              bottom: _mapBottomPadding + 12,
-              right: 16,
-              child: _fab(
-                Icons.navigation_rounded,
-                48,
-                fabBg,
-                fabBorder,
-                const Color(0xFF4285F4),
-                () {
-                  HapticFeedback.mediumImpact();
-                  _recenterCamera();
-                },
-              ),
-            ),
-
-          // â”€â”€ Completed overlay â”€â”€
-          if (_phase == _Phase.completed)
-            Positioned.fill(
-              child: _completedOverlay(
-                isDark,
-                overlayBg,
-                card,
-                textPrimary,
-                borderC,
-                shadowC,
-              ),
-            ),
-
-          // â”€â”€ Stacked Ride Offer Cards (Spark-style) â”€â”€
-          if (_phase == _Phase.searching &&
-              _pendingOffers.isNotEmpty &&
-              _previewingOffer == null)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: _rideOfferCards(
-                isDark,
-                card,
-                textPrimary,
-                textMuted,
-                borderC,
-                shadowC,
-              ),
-            ),
-
-          // â”€â”€ Route Preview Panel (when an offer is tapped) â”€â”€
-          if (_previewingOffer != null)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: _routePreviewPanel(isDark),
-            ),
-
-          // â”€â”€ X button to close preview (top-right) â”€â”€
-          if (_previewingOffer != null)
+            // â”€â”€ Top-left: Home button â”€â”€
             Positioned(
               top: top + 10,
-              right: 16,
+              left: 16,
               child: _fab(
-                Icons.close_rounded,
+                Icons.arrow_back_ios_new_rounded,
                 48,
                 fabBg,
                 fabBorder,
                 fabIcon,
-                _closePreview,
+                _goBack,
               ),
             ),
 
-          // â”€â”€ Bottom: Phase-specific panel â”€â”€
-          if (_phase == _Phase.searching && _pendingOffers.isEmpty)
-            _draggablePanel(
-              isDark,
-              surface,
-              textMuted,
-              borderC,
-              textPrimary,
-              shadowC,
-            )
-          else if (_phase != _Phase.searching || _pendingOffers.isEmpty)
+            // â”€â”€ Top-center: Earnings pill + TODAY â”€â”€
             Positioned(
-              bottom: 0,
+              top: top + 10,
               left: 0,
               right: 0,
-              child: _bottomArea(
+              child: Center(child: _earningsPill(isDark)),
+            ),
+
+            // â”€â”€ Nav header (during navigation phases) â”€â”€
+            if (_phase == _Phase.enRouteToPickup ||
+                _phase == _Phase.inTrip ||
+                _phase == _Phase.routeSummary)
+              Positioned(
+                top: top + 64,
+                left: 16,
+                right: 16,
+                child: _navHeader(),
+              ),
+
+            // â”€â”€ Side floating buttons (only when searching with no offers) â”€â”€
+            if (_phase == _Phase.searching && _pendingOffers.isEmpty) ...[
+              Positioned(
+                bottom: 54 + bot + 60,
+                left: 16,
+                child: Column(
+                  children: [
+                    _fab(
+                      Icons.tune_rounded,
+                      44,
+                      fabBg,
+                      fabBorder,
+                      fabIcon,
+                      () => _showOnlinePanel(),
+                    ),
+                    const SizedBox(height: 10),
+                    _fab(
+                      Icons.shield_outlined,
+                      44,
+                      fabBg,
+                      fabBorder,
+                      fabIcon,
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DriverSafetyScreen(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                bottom: 54 + bot + 60,
+                right: 16,
+                child: Column(
+                  children: [
+                    _fab(
+                      Icons.message_outlined,
+                      44,
+                      fabBg,
+                      fabBorder,
+                      fabIcon,
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DriverInboxScreen(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _fab(
+                      Icons.campaign_rounded,
+                      44,
+                      fabBg,
+                      fabBorder,
+                      fabIcon,
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DriverPromosScreen(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _fab(
+                      Icons.bar_chart_rounded,
+                      44,
+                      fabBg,
+                      fabBorder,
+                      fabIcon,
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DriverAnalyticsScreen(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // â”€â”€ Re-center button during navigation (inTrip / routeSummary) â”€â”€
+            // -- Re-center FAB: appears when user pans away during navigation --
+            if (!_cameraFollowing &&
+                (_phase == _Phase.enRouteToPickup ||
+                    _phase == _Phase.inTrip ||
+                    _phase == _Phase.routeSummary))
+              Positioned(
+                bottom: _mapBottomPadding + 12,
+                right: 16,
+                child: _fab(
+                  Icons.navigation_rounded,
+                  48,
+                  fabBg,
+                  fabBorder,
+                  const Color(0xFF4285F4),
+                  () {
+                    HapticFeedback.mediumImpact();
+                    _recenterCamera();
+                  },
+                ),
+              ),
+
+            // â”€â”€ Completed overlay â”€â”€
+            if (_phase == _Phase.completed)
+              Positioned.fill(
+                child: _completedOverlay(
+                  isDark,
+                  overlayBg,
+                  card,
+                  textPrimary,
+                  borderC,
+                  shadowC,
+                ),
+              ),
+
+            // â”€â”€ Stacked Ride Offer Cards (Spark-style) â”€â”€
+            if (_phase == _Phase.searching &&
+                _pendingOffers.isNotEmpty &&
+                _previewingOffer == null)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _rideOfferCards(
+                  isDark,
+                  card,
+                  textPrimary,
+                  textMuted,
+                  borderC,
+                  shadowC,
+                ),
+              ),
+
+            // â”€â”€ Route Preview Panel (when an offer is tapped) â”€â”€
+            if (_previewingOffer != null)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _routePreviewPanel(isDark),
+              ),
+
+            // â”€â”€ X button to close preview (top-right) â”€â”€
+            if (_previewingOffer != null)
+              Positioned(
+                top: top + 10,
+                right: 16,
+                child: _fab(
+                  Icons.close_rounded,
+                  48,
+                  fabBg,
+                  fabBorder,
+                  fabIcon,
+                  _closePreview,
+                ),
+              ),
+
+            // â”€â”€ Bottom: Phase-specific panel â”€â”€
+            if (_phase == _Phase.searching && _pendingOffers.isEmpty)
+              _draggablePanel(
                 isDark,
-                bg,
                 surface,
-                textPrimary,
                 textMuted,
                 borderC,
+                textPrimary,
                 shadowC,
+              )
+            else if (_phase != _Phase.searching || _pendingOffers.isEmpty)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _bottomArea(
+                  isDark,
+                  bg,
+                  surface,
+                  textPrimary,
+                  textMuted,
+                  borderC,
+                  shadowC,
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

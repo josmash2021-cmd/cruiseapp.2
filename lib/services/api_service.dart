@@ -30,7 +30,7 @@ class ApiService {
   /// Default Cloudflare Tunnel URL.  Free tunnels change every restart;
   /// update via the in-app Settings → "Server URL" dialog instead of rebuilding.
   static const String _defaultTunnelUrl =
-      'https://combines-dramatically-five-cooperative.trycloudflare.com';
+      'https://first-rolls-dec-saw.trycloudflare.com';
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 
@@ -50,6 +50,16 @@ class ApiService {
       _activeUrl = saved;
     }
     debugPrint('[ApiService] active URL: $_activeUrl');
+    // Always probe in background so a stale tunnel URL gets refreshed
+    probeAndSetBestUrl()
+        .then((url) {
+          if (url != null) {
+            debugPrint('[ApiService] probe found reachable URL: $url');
+          } else {
+            debugPrint('[ApiService] probe: no reachable URL found');
+          }
+        })
+        .catchError((_) {});
   }
 
   /// Persist a new server URL and update all subsequent requests immediately.
@@ -278,7 +288,19 @@ class ApiService {
       throw const ApiException(0, 'Response integrity check failed');
     }
 
-    final body = jsonDecode(res.body);
+    // Guard against non-JSON responses (e.g. Cloudflare HTML error pages)
+    dynamic body;
+    try {
+      body = jsonDecode(res.body);
+    } on FormatException {
+      debugPrint(
+        '[ApiService] Non-JSON response (${res.statusCode}): ${res.body.length > 200 ? res.body.substring(0, 200) : res.body}',
+      );
+      throw ApiException(
+        res.statusCode,
+        'Server unreachable (error ${res.statusCode})',
+      );
+    }
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return body is Map<String, dynamic> ? body : {'data': body};
     }

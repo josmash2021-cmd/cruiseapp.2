@@ -14,7 +14,9 @@ Hardened with 10 LAYERS OF ULTRA-STRONG SECURITY PROTECTION.
  L10  Security Audit Logging — Tamper-evident hash-chain log
 """
 
-import os, time, hmac, hashlib, math, secrets, logging, collections, re, json
+import os, time, hmac, hashlib, math, secrets, logging, collections, re, json, smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 import asyncio
@@ -46,11 +48,17 @@ DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")  # Separate key for admin/d
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "")  # e.g. "Cruise App <noreply@cruiseapp.com>"
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window
 engine = create_async_engine(DATABASE_URL, echo=False)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+_TUNNEL_URL_FILE = os.path.join(os.path.dirname(__file__), "tunnel_url.txt")
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # ── Models ──────────────────────────────────────────────
@@ -496,6 +504,28 @@ def _security_audit_log(event: str, ip: str, details: str = ""):
     # Also log to standard logger for persistence
     logging.info("[AUDIT] %s | %s | %s | %s", event, ip, details, _audit_last_hash[:12])
 
+# ── Email Helper ──────────────────────────────────────
+def _send_email(to_email: str, subject: str, html_body: str):
+    """Send an email via SMTP. Returns True on success."""
+    if not SMTP_USER or not SMTP_PASS:
+        logging.warning("[EMAIL] SMTP not configured — skipping email to %s", to_email)
+        return False
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = SMTP_FROM or SMTP_USER
+        msg["To"] = to_email
+        msg.attach(MIMEText(html_body, "html"))
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.sendmail(msg["From"], to_email, msg.as_string())
+        logging.info("[EMAIL] Sent to %s: %s", to_email, subject)
+        return True
+    except Exception as e:
+        logging.error("[EMAIL] Failed to send to %s: %s", to_email, e)
+        return False
+
 # ── Health check (public, no auth) ────────────────────
 @app.get("/health")
 async def health():
@@ -546,6 +576,7 @@ def _verify_api_key(
     if DISPATCH_API_KEY:
         valid_keys.add(DISPATCH_API_KEY)
     if x_api_key not in valid_keys:
+        logging.warning("[AUTH-DBG] invalid_api_key from %s key=%s", client_ip, x_api_key[:12])
         _record_violation(client_ip)
         _security_audit_log("invalid_api_key", client_ip)
         raise HTTPException(401, "Invalid API key")
@@ -555,6 +586,7 @@ def _verify_api_key(
         ts = int(x_timestamp)
         now = int(time.time())
         if abs(now - ts) > 300:
+            logging.warning("[AUTH-DBG] expired_timestamp from %s drift=%ds", client_ip, abs(now-ts))
             _record_violation(client_ip)
             _security_audit_log("expired_timestamp", client_ip, f"drift={abs(now-ts)}s")
             raise HTTPException(401, "Timestamp expired")
@@ -563,6 +595,7 @@ def _verify_api_key(
 
     # L9: Check nonce replay
     if _check_nonce_replay(x_nonce):
+        logging.warning("[AUTH-DBG] nonce_replay from %s nonce=%s", client_ip, x_nonce[:8])
         _record_violation(client_ip)
         _security_audit_log("nonce_replay", client_ip, f"nonce={x_nonce[:8]}...")
         raise HTTPException(401, "Replay detected")
@@ -584,6 +617,9 @@ def _verify_api_key(
     sig_ok = (hmac.compare_digest(expected_new, x_signature) or
               hmac.compare_digest(expected_legacy, x_signature))
     if not sig_ok:
+        logging.warning("[HMAC-DBG] key=%s ts=%s nonce=%s fp=%s sig=%s exp_new=%s exp_leg=%s",
+                        x_api_key[:8], x_timestamp, x_nonce[:8], x_device_fp[:16],
+                        x_signature[:16], expected_new[:16], expected_legacy[:16])
         _record_violation(client_ip)
         _security_audit_log("sig_mismatch", client_ip, f"fp={x_device_fp[:8]}")
         raise HTTPException(401, "Invalid signature")
@@ -3708,24 +3744,165 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
     )
     user = result.scalar_one_or_none()
     if not user:
-        # Don't reveal if account exists — always return success
-        return {"status": "reset_sent", "method": "email"}
+        raise HTTPException(404, "No registered account found")
 
-    # Generate reset token (secure 32-char random token)
-    reset_code = secrets.token_urlsafe(24)
+    if not user.email:
+        raise HTTPException(400, "No email associated with this account")
+
+    # Generate reset token
+    reset_code = secrets.token_urlsafe(32)
 
     # Remove any existing tokens for this user
     await db.execute(
         PasswordResetToken.__table__.delete().where(PasswordResetToken.user_id == user.id)
     )
-    # Store in DB
-    db.add(PasswordResetToken(code=reset_code, user_id=user.id, expires_at=time.time() + 600))
+    # Store in DB (valid for 30 minutes)
+    db.add(PasswordResetToken(code=reset_code, user_id=user.id, expires_at=time.time() + 1800))
     await db.commit()
 
-    method = "email" if user.email == identifier else "phone"
-    logging.info(f"Password reset code for user {user.id}: {reset_code}")
-    # SECURITY: Never return reset code in response — send via email/SMS in production
-    return {"status": "reset_sent", "method": method}
+    # Build reset link using tunnel URL or localhost
+    base_url = ""
+    if os.path.isfile(_TUNNEL_URL_FILE):
+        base_url = open(_TUNNEL_URL_FILE, "r").read().strip()
+    if not base_url:
+        base_url = "http://localhost:8000"
+    reset_link = f"{base_url}/auth/reset-page?token={reset_code}"
+
+    # Send email
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0a0a0a;color:#fff;border-radius:16px;">
+      <div style="text-align:center;margin-bottom:24px;">
+        <div style="font-size:32px;font-weight:900;color:#E8C547;letter-spacing:2px;">CRUISE</div>
+      </div>
+      <h2 style="color:#fff;font-size:20px;font-weight:700;margin:0 0 12px;">Reset your password</h2>
+      <p style="color:#aaa;font-size:15px;line-height:1.6;margin:0 0 24px;">
+        We received a request to reset the password for your Cruise account. Click the button below to create a new password.
+      </p>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="{reset_link}"
+           style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#E8C547,#D4A800);color:#1a1400;font-size:16px;font-weight:800;text-decoration:none;border-radius:28px;">
+          Reset Password
+        </a>
+      </div>
+      <p style="color:#666;font-size:13px;line-height:1.5;margin:24px 0 0;">
+        This link expires in 30 minutes. If you didn't request this, ignore this email.
+      </p>
+    </div>
+    """
+    _send_email(user.email, "Cruise — Reset Your Password", html)
+
+    return {"status": "reset_sent", "method": "email"}
+
+
+@app.get("/auth/reset-page")
+async def reset_page(token: str = Query(...)):
+    """Serve a simple HTML page where the user can enter a new password."""
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reset Password — Cruise</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}}
+.card{{max-width:420px;width:100%;padding:40px 32px;background:#111;border-radius:20px;border:1px solid rgba(255,255,255,.06)}}
+.logo{{text-align:center;font-size:28px;font-weight:900;color:#E8C547;letter-spacing:2px;margin-bottom:28px}}
+h2{{font-size:22px;font-weight:800;margin-bottom:8px}}
+.sub{{color:#888;font-size:14px;line-height:1.5;margin-bottom:24px}}
+label{{display:block;color:#aaa;font-size:13px;font-weight:600;margin-bottom:6px}}
+input{{width:100%;padding:14px 16px;background:#1c1c1e;border:1px solid rgba(255,255,255,.08);border-radius:12px;color:#fff;font-size:16px;outline:none;margin-bottom:16px}}
+input:focus{{border-color:#E8C547}}
+.btn{{width:100%;padding:16px;background:linear-gradient(135deg,#E8C547,#D4A800);color:#1a1400;font-size:17px;font-weight:800;border:none;border-radius:28px;cursor:pointer;margin-top:8px}}
+.btn:disabled{{opacity:.5;cursor:not-allowed}}
+.msg{{text-align:center;padding:12px;border-radius:10px;font-size:14px;font-weight:600;margin-top:16px;display:none}}
+.msg.ok{{background:rgba(46,125,50,.2);color:#66bb6a;display:block}}
+.msg.err{{background:rgba(204,51,51,.15);color:#ef5350;display:block}}
+.req{{color:#666;font-size:12px;line-height:1.6;margin-bottom:16px}}
+.req span{{color:#E8C547}}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">CRUISE</div>
+  <h2>Create new password</h2>
+  <p class="sub">Enter your new password below.</p>
+  <form id="f" onsubmit="return doReset(event)">
+    <label>New password</label>
+    <input type="password" id="pw" placeholder="Min 8 chars, 1 uppercase, 1 number, 1 special" required>
+    <label>Confirm password</label>
+    <input type="password" id="pw2" placeholder="Confirm new password" required>
+    <div class="req">Requirements: <span>8+ characters</span>, <span>1 uppercase</span>, <span>1 number</span>, <span>1 special character</span></div>
+    <button type="submit" class="btn" id="btn">Reset Password</button>
+  </form>
+  <div id="msg" class="msg"></div>
+</div>
+<script>
+async function doReset(e){{
+  e.preventDefault();
+  var pw=document.getElementById('pw').value;
+  var pw2=document.getElementById('pw2').value;
+  var msg=document.getElementById('msg');
+  var btn=document.getElementById('btn');
+  msg.className='msg';msg.style.display='none';
+  if(pw!==pw2){{msg.textContent='Passwords do not match';msg.className='msg err';return false}}
+  if(pw.length<8||!/[A-Z]/.test(pw)||!/[0-9]/.test(pw)||!/[!@#$%^&*(),.?\\":{{}}|<>_\\-+=\\[\\]\\\\/~`]/.test(pw)){{
+    msg.textContent='Password does not meet requirements';msg.className='msg err';return false
+  }}
+  btn.disabled=true;btn.textContent='Resetting...';
+  try{{
+    var r=await fetch('/auth/reset-password-web',{{
+      method:'POST',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{token:'{token}',new_password:pw}})
+    }});
+    var d=await r.json();
+    if(r.ok){{
+      msg.textContent='Password reset successfully! You can now sign in with your new password.';
+      msg.className='msg ok';
+      document.getElementById('f').style.display='none';
+    }}else{{
+      msg.textContent=d.detail||'Reset failed';msg.className='msg err';
+      btn.disabled=false;btn.textContent='Reset Password';
+    }}
+  }}catch(ex){{
+    msg.textContent='Network error — please try again';msg.className='msg err';
+    btn.disabled=false;btn.textContent='Reset Password';
+  }}
+  return false
+}}
+</script>
+</body></html>"""
+    return Response(content=html, media_type="text/html")
+
+
+@app.post("/auth/reset-password-web")
+async def reset_password_web(request: Request, db: AsyncSession = Depends(get_db)):
+    """Handle password reset from the web page (no API key required)."""
+    body = await request.json()
+    token = body.get("token", "").strip()
+    new_password = body.get("new_password", "")
+    import re as _re
+    if (len(new_password) < 8
+        or not _re.search(r'[0-9]', new_password)
+        or not _re.search(r'[A-Z]', new_password)
+        or not _re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', new_password)):
+        raise HTTPException(400, "Password must be at least 8 characters with a number, uppercase letter, and special character")
+
+    result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.code == token))
+    token_row = result.scalar_one_or_none()
+    if not token_row or time.time() > token_row.expires_at:
+        raise HTTPException(400, "Invalid or expired reset link")
+
+    result = await db.execute(select(User).where(User.id == token_row.user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    user.password_hash = pwd.hash(new_password)
+    await db.delete(token_row)
+    await db.commit()
+    return {"status": "password_reset"}
+
 
 @app.post("/auth/reset-password", dependencies=[Depends(_verify_api_key)])
 async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
@@ -3755,7 +3932,6 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
     return {"status": "password_reset"}
 
 # ── Tunnel URL discovery ───────────────────────────────
-_TUNNEL_URL_FILE = os.path.join(os.path.dirname(__file__), "tunnel_url.txt")
 
 @app.get("/tunnel-url")
 async def tunnel_url():

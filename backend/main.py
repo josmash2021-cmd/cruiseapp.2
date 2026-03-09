@@ -2781,12 +2781,12 @@ _voice_sessions: dict = {}
 # ── Voice configuration per language ──────────────────
 _VOICE_CONFIG = {
     "es": {
-        "voice": "Polly.Lupe-Neural",
-        "lang": "es-MX",
+        "voice": "Google.es-US-Studio-B",
+        "lang": "es-US",
         "agent_names": _AGENT_NAMES,
     },
     "en": {
-        "voice": "Polly.Joanna-Neural",
+        "voice": "Google.en-US-Studio-O",
         "lang": "en-US",
         "agent_names": [
             "Sarah", "Emily", "Jessica", "Rachel", "Amanda",
@@ -3144,9 +3144,17 @@ def _generate_voice_response(call_sid: str, speech_text: str) -> str:
 
 
 def _twiml_say(text: str, lang: str) -> str:
-    """Build a <Say> tag with the right neural voice."""
+    """Build a <Say> tag with the right neural voice and natural SSML prosody."""
     cfg = _VOICE_CONFIG[lang]
-    return f'<Say voice="{cfg["voice"]}" language="{cfg["lang"]}">{text}</Say>'
+    # Add natural pauses after periods and commas for human-like rhythm
+    ssml_text = text.replace(". ", '.<break time="400ms"/> ')
+    ssml_text = ssml_text.replace("? ", '?<break time="350ms"/> ')
+    ssml_text = ssml_text.replace(", ", ',<break time="200ms"/> ')
+    return (
+        f'<Say voice="{cfg["voice"]}" language="{cfg["lang"]}">' 
+        f'<prosody rate="95%" pitch="-2%">{ssml_text}</prosody>'
+        f'</Say>'
+    )
 
 
 def _twiml_gather_speech(text: str, lang: str, action: str = "/voice/gather") -> str:
@@ -3189,14 +3197,20 @@ async def voice_incoming(request: Request):
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
         '<Gather input="dtmf" numDigits="1" action="/voice/language" method="POST" timeout="8">'
-        '<Say voice="Polly.Lupe-Neural" language="es-MX">'
+        '<Say voice="Google.es-US-Studio-B" language="es-US">'
+        '<prosody rate="95%" pitch="-2%">'
         "Gracias por llamar a Cruise."
-        " Para español, presiona uno."
+        '<break time="400ms"/>'
+        " Para español,<break time=\"200ms\"/> presiona uno."
+        "</prosody>"
         "</Say>"
         "<Pause length=\"1\"/>"
-        '<Say voice="Polly.Joanna-Neural" language="en-US">'
+        '<Say voice="Google.en-US-Studio-O" language="en-US">'
+        '<prosody rate="95%" pitch="-2%">'
         "Thank you for calling Cruise."
-        " For English, press two."
+        '<break time="400ms"/>'
+        " For English,<break time=\"200ms\"/> press two."
+        "</prosody>"
         "</Say>"
         "</Gather>"
         # Default to Spanish if no input

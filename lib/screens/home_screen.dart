@@ -2506,38 +2506,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                 ),
               )
-            else if (Platform.isIOS)
-              amap.AppleMap(
-                initialCameraPosition: amap.CameraPosition(
-                  target: amap.LatLng(
-                    _currentLatLng!.latitude,
-                    _currentLatLng!.longitude,
-                  ),
-                  zoom: 15,
-                ),
-                onMapCreated: (controller) {
-                  _appleMinimapController = controller;
-                },
-                annotations: {
-                  amap.Annotation(
-                    annotationId: amap.AnnotationId('current'),
-                    position: amap.LatLng(
-                      _currentLatLng!.latitude,
-                      _currentLatLng!.longitude,
-                    ),
-                    icon: _locationDotBytes != null
-                        ? amap.BitmapDescriptor.fromBytes(_locationDotBytes!)
-                        : amap.BitmapDescriptor.defaultAnnotation,
-                  ),
-                },
-                myLocationEnabled: false,
-                myLocationButtonEnabled: false,
-                scrollGesturesEnabled: false,
-                zoomGesturesEnabled: false,
-                rotateGesturesEnabled: false,
-                compassEnabled: false,
-                trafficEnabled: false,
-              )
             else
               GoogleMap(
                 style: MapStyles.dark,

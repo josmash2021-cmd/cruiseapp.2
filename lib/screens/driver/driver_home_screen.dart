@@ -441,46 +441,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return RepaintBoundary(
-      child: Platform.isIOS
-          ? amap.AppleMap(
-              initialCameraPosition: amap.CameraPosition(
-                target: amap.LatLng(
-                  _currentLatLng!.latitude,
-                  _currentLatLng!.longitude,
-                ),
-                zoom: 16,
-              ),
-              mapType: amap.MapType.standard,
-              onMapCreated: (c) {
-                _appleMapController = c;
-                setState(() => _mapReady = true);
-              },
-              myLocationEnabled: true,
-              myLocationButtonEnabled: false,
-              zoomGesturesEnabled: true,
-              rotateGesturesEnabled: true,
-              scrollGesturesEnabled: true,
-              compassEnabled: false,
-            )
-          : GoogleMap(
-              style: isDark ? MapStyles.dark : null,
-              initialCameraPosition: CameraPosition(
-                target: _currentLatLng!,
-                zoom: 16,
-              ),
-              onMapCreated: (ctrl) {
-                _mapController = ctrl;
-                setState(() => _mapReady = true);
-              },
-              myLocationEnabled: true,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              compassEnabled: true,
-              buildingsEnabled: false,
-              tiltGesturesEnabled: false,
-              liteModeEnabled: false,
-            ),
+      child: GoogleMap(
+        style: isDark ? MapStyles.dark : null,
+        initialCameraPosition: CameraPosition(
+          target: _currentLatLng!,
+          zoom: 16,
+        ),
+        onMapCreated: (ctrl) {
+          _mapController = ctrl;
+          setState(() => _mapReady = true);
+        },
+        myLocationEnabled: true,
+        myLocationButtonEnabled: false,
+        zoomControlsEnabled: false,
+        mapToolbarEnabled: false,
+        compassEnabled: true,
+        buildingsEnabled: false,
+        tiltGesturesEnabled: false,
+        liteModeEnabled: false,
+      ),
     );
   }
 

@@ -2407,6 +2407,17 @@ class S {
   String get holdStill => _es ? 'Mantente quieto' : 'Hold Still';
   String get keepFaceCentered =>
       _es ? 'Mantén tu rostro centrado' : 'Keep your face centered';
+  String get positionFaceInFrame =>
+      _es
+          ? 'Sitúa tu cara\ndentro del marco.'
+          : 'Position your face\nwithin the frame.';
+  String get moveHeadSlowly =>
+      _es
+          ? 'Mueve lentamente tu cabeza\npara cerrar el círculo.'
+          : 'Move your head slowly\nto complete the circle.';
+  String get startOver => _es ? 'Volver a empezar' : 'Start Over';
+  String get faceVerified =>
+      _es ? 'Verificado' : 'Verified';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

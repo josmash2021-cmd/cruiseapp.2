@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../config/page_transitions.dart';
+import '../../config/driver_colors.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
@@ -133,8 +134,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: dc.bg,
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: _gold, strokeWidth: 2),

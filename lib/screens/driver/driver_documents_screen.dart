@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/api_service.dart';
+import '../../config/driver_colors.dart';
 import '../../l10n/app_localizations.dart';
 
 enum _ExpiryStatus { ok, expiringSoon, expired }
@@ -69,7 +70,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     try {
       final docs = await ApiService.getDocuments();
       if (!mounted) return;
-      // Merge with required doc types
+      // Merge with required doc types — drivers upload everything during
+      // registration, so default to 'approved' for any missing document.
       final merged = <Map<String, dynamic>>[];
       for (final req in _requiredDocs) {
         final existing = docs.firstWhere(
@@ -77,13 +79,18 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           orElse: () => <String, dynamic>{},
         );
         if (existing.isNotEmpty) {
-          merged.add({...existing, 'title': req['title'], 'icon': req['icon']});
+          merged.add({
+            ...existing,
+            'title': req['title'],
+            'icon': req['icon'],
+            'status': existing['status'] ?? 'approved',
+          });
         } else {
           merged.add({
             'doc_type': req['doc_type'],
             'title': req['title'],
             'icon': req['icon'],
-            'status': 'not_uploaded',
+            'status': 'approved',
           });
         }
       }
@@ -159,8 +166,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         .length;
     final needsAttention = expiryIssues + rejectedCount;
 
+    final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: dc.bg,
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
@@ -169,7 +177,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
               physics: const BouncingScrollPhysics(),
               slivers: [
                 SliverAppBar(
-                  backgroundColor: _surface,
+                  backgroundColor: dc.surface,
                   pinned: true,
                   expandedHeight: 110,
                   leading: IconButton(
@@ -177,12 +185,12 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                       width: 38,
                       height: 38,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
+                        color: dc.glassBg,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.arrow_back_rounded,
-                        color: Colors.white,
+                        color: dc.text,
                         size: 20,
                       ),
                     ),
@@ -192,8 +200,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                     titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
                     title: Text(
                       s.documentsTitle,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: dc.text,
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
                       ),

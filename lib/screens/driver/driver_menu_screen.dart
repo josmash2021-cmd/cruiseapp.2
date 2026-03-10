@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../config/page_transitions.dart';
+import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../splash_screen.dart';
@@ -116,13 +117,14 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
+    final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: dc.bg,
       body: Column(
         children: [
           // ── Top bar ──
           Container(
-            color: _surface,
+            color: dc.surface,
             padding: EdgeInsets.only(
               top: top + 8,
               bottom: 12,
@@ -137,21 +139,17 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
+                      color: dc.glassBg,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.close_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
+                    child: Icon(Icons.close_rounded, color: dc.text, size: 22),
                   ),
                 ),
                 const Spacer(),
                 Text(
                   S.of(context).menuTitle,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: dc.text,
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                   ),
@@ -266,17 +264,6 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                       );
                     },
                   ),
-                  _item(
-                    context,
-                    Icons.security_rounded,
-                    S.of(context).insuranceLabel,
-                    S.of(context).coverageInfo,
-                    () {
-                      Navigator.of(context).push(
-                        slideFromRightRoute(const DriverInsuranceScreen()),
-                      );
-                    },
-                  ),
 
                   const SizedBox(height: 24),
 
@@ -384,6 +371,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   //  PROFILE CARD (Uber style: photo, name, Gold badge, rating)
   // ═══════════════════════════════════════════════════
   Widget _profileCard(BuildContext context) {
+    final dc = DriverColors.of(context);
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
@@ -395,7 +383,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         margin: const EdgeInsets.symmetric(horizontal: 16),
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: _card,
+          color: dc.card,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
@@ -461,8 +449,8 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                       Flexible(
                         child: Text(
                           _driverName,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: dc.text,
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
                           ),
@@ -528,7 +516,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                       Text(
                         _rating,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: dc.textSecondary,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -538,11 +526,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                 ],
               ),
             ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: Colors.white.withValues(alpha: 0.2),
-              size: 24,
-            ),
+            Icon(Icons.chevron_right_rounded, color: dc.divider, size: 24),
           ],
         ),
       ),
@@ -609,6 +593,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     String label,
     VoidCallback onTap,
   ) {
+    final dc = DriverColors.of(context);
     return Expanded(
       child: GestureDetector(
         onTap: () {
@@ -618,18 +603,18 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: _card,
+            color: dc.card,
             borderRadius: BorderRadius.circular(16),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: Colors.white.withValues(alpha: 0.7), size: 24),
+              Icon(icon, color: dc.icon, size: 24),
               const SizedBox(height: 6),
               Text(
                 label,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.7),
+                  color: dc.textSecondary,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -645,12 +630,13 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   //  SECTION HEADER
   // ═══════════════════════════════════════════════════
   Widget _sectionHeader(String title) {
+    final dc = DriverColors.of(context);
     return Padding(
       padding: const EdgeInsets.only(left: 20, bottom: 8),
       child: Text(
         title,
         style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.4),
+          color: dc.textSecondary,
           fontSize: 13,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.5,
@@ -671,16 +657,17 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     bool accent = false,
     bool danger = false,
   }) {
+    final dc = DriverColors.of(context);
     final Color iconColor = danger
         ? const Color(0xFFCC3333)
         : accent
         ? _gold
-        : Colors.white.withValues(alpha: 0.6);
+        : dc.icon;
     final Color titleColor = danger
         ? const Color(0xFFCC3333)
         : accent
         ? _gold
-        : Colors.white;
+        : dc.text;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
@@ -714,14 +701,11 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         ),
         subtitle: Text(
           sub,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.3),
-            fontSize: 12,
-          ),
+          style: TextStyle(color: dc.textSecondary, fontSize: 12),
         ),
         trailing: Icon(
           Icons.chevron_right_rounded,
-          color: Colors.white.withValues(alpha: 0.1),
+          color: dc.divider,
           size: 20,
         ),
       ),
@@ -729,9 +713,10 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   }
 
   Widget _divider() {
+    final dc = DriverColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Divider(color: Colors.white.withValues(alpha: 0.06)),
+      child: Divider(color: dc.divider),
     );
   }
 

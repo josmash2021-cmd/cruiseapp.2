@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform, File;
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -87,6 +88,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   String? _locationError;
   bool _imagesPrecached = false;
   StreamSubscription<Position>? _locationSub;
+  BitmapDescriptor? _locationDotGoogle;
+  Uint8List? _locationDotBytes;
 
   @override
   void initState() {
@@ -119,6 +122,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _loadSavedData();
     _loadPromoUsed();
     _fetchCurrentLocation();
+    _buildLocationDot();
     _checkDriversOnline();
     _listenServiceZones();
     _driverCheckTimer = Timer.periodic(
@@ -341,6 +345,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Timer? _driverCheckTimer;
   Timer? _accountStatusTimer;
+
+  /// Renders a gold tracking dot bitmap for the minimap location marker.
+  Future<void> _buildLocationDot() async {
+    const s = 64.0;
+    final rec = ui.PictureRecorder();
+    final c = Canvas(rec, const Rect.fromLTWH(0, 0, s, s));
+    // Outer glow
+    c.drawCircle(
+      const Offset(s / 2, s / 2),
+      s / 2 - 2,
+      Paint()..color = _gold.withValues(alpha: 0.22),
+    );
+    // Gold ring
+    c.drawCircle(const Offset(s / 2, s / 2), s / 3, Paint()..color = _gold);
+    // White center
+    c.drawCircle(
+      const Offset(s / 2, s / 2),
+      s / 7,
+      Paint()..color = Colors.white,
+    );
+    final img = await rec.endRecording().toImage(s.toInt(), s.toInt());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    if (data == null || !mounted) return;
+    final bytes = data.buffer.asUint8List();
+    setState(() {
+      _locationDotBytes = bytes;
+      // ignore: deprecated_member_use
+      _locationDotGoogle = BitmapDescriptor.fromBytes(bytes);
+    });
+  }
 
   Future<void> _checkAccountStatus() async {
     try {
@@ -2491,7 +2525,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       _currentLatLng!.latitude,
                       _currentLatLng!.longitude,
                     ),
-                    icon: amap.BitmapDescriptor.defaultAnnotation,
+                    icon: _locationDotBytes != null
+                        ? amap.BitmapDescriptor.fromBytes(_locationDotBytes!)
+                        : amap.BitmapDescriptor.defaultAnnotation,
                   ),
                 },
                 myLocationEnabled: false,
@@ -2516,7 +2552,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Marker(
                     markerId: const MarkerId('current'),
                     position: _currentLatLng!,
-                    icon: BitmapDescriptor.defaultMarker,
+                    icon: _locationDotGoogle ?? BitmapDescriptor.defaultMarker,
                   ),
                 },
                 myLocationEnabled: false,

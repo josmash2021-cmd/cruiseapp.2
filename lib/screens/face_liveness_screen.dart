@@ -52,6 +52,10 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   int get _phase => _challengeIndex < 2 ? 1 : 2;
   bool _showPhase2Intro = false;
 
+  // Face detection state for background transition
+  bool _faceDetected = false;
+  late AnimationController _bgCtrl;
+
   // Animations
   late AnimationController _successCtrl;
   late AnimationController _scanCtrl;
@@ -66,6 +70,10 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   @override
   void initState() {
     super.initState();
+    _bgCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
     _scanCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 4500),
@@ -167,9 +175,11 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       final faces = await _detector!.processImage(inputImage);
       if (!mounted || _allDone) return;
       if (faces.isEmpty) {
+        _setFaceDetected(false);
         _resetHold();
         return;
       }
+      _setFaceDetected(true);
       final face = faces.first;
       if (_checkChallenge(_challenges[_challengeIndex], face)) {
         _advanceHold();
@@ -231,6 +241,16 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
           );
         });
       }
+    }
+  }
+
+  void _setFaceDetected(bool detected) {
+    if (_faceDetected == detected) return;
+    _faceDetected = detected;
+    if (detected) {
+      _bgCtrl.forward();
+    } else {
+      _bgCtrl.reverse();
     }
   }
 
@@ -339,6 +359,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
 
   @override
   void dispose() {
+    _bgCtrl.dispose();
     _scanCtrl.dispose();
     _successCtrl.dispose();
     _cam?.stopImageStream();
@@ -370,7 +391,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
+      backgroundColor: Colors.black,
       body: _camReady && _cam != null ? _buildLive() : _buildLoading(),
     );
   }
@@ -398,71 +419,94 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     const circleRadius = 130.0;
     final circleCenterY = topPad + 60 + circleRadius + 20;
 
-    return Column(
-      children: [
-        // ── Top section: semi-transparent dark background with camera circle ──
-        Expanded(
-          flex: 55,
-          child: Container(
-            color: Colors.black.withValues(alpha: 0.85),
-            child: Stack(
-              children: [
-                // Camera preview clipped to circle
-                Positioned.fill(
-                  child: _buildCirclePreview(circleRadius, circleCenterY),
-                ),
-                // Tick marks overlay
-                Positioned.fill(
-                  child: AnimatedBuilder(
-                    animation: _scanCtrl,
-                    builder: (_, _) => CustomPaint(
-                      painter: _FaceIDTickPainter(
-                        totalProgress: _totalProgress,
-                        allDone: _allDone,
-                        scanPosition: _scanCtrl.value,
-                        circleRadius: circleRadius,
-                        circleCenterY: circleCenterY,
-                      ),
-                    ),
-                  ),
-                ),
-                // Close button
-                Positioned(
-                  top: topPad + 8,
-                  left: 16,
-                  child: GestureDetector(
-                    onTap: () => Navigator.of(context).pop(null),
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: const Icon(
-                        Icons.close,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    // Background colors: no face → black top / gold bottom
+    //                     face detected → semi-transparent top / lighter bottom
+    const goldBrand = Color(0xFFE8C547);
 
-        // ── Bottom section: semi-transparent white with instructions ──
-        Expanded(
-          flex: 45,
-          child: Container(
-            width: double.infinity,
-            color: const Color(0xFFF2F2F7).withValues(alpha: 0.88),
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: _allDone ? _buildDoneSection() : _buildInstructionSection(),
-          ),
-        ),
-      ],
+    return AnimatedBuilder(
+      animation: _bgCtrl,
+      builder: (context, _) {
+        final t = _bgCtrl.value;
+        final topColor = Color.lerp(
+          Colors.black,
+          Colors.black.withValues(alpha: 0.65),
+          t,
+        )!;
+        final bottomColor = Color.lerp(
+          goldBrand.withValues(alpha: 0.92),
+          const Color(0xFFF2F2F7).withValues(alpha: 0.88),
+          t,
+        )!;
+
+        return Column(
+          children: [
+            // ── Top section: camera circle with animated background ──
+            Expanded(
+              flex: 55,
+              child: Container(
+                color: topColor,
+                child: Stack(
+                  children: [
+                    // Camera preview clipped to circle
+                    Positioned.fill(
+                      child: _buildCirclePreview(circleRadius, circleCenterY),
+                    ),
+                    // Tick marks overlay
+                    Positioned.fill(
+                      child: AnimatedBuilder(
+                        animation: _scanCtrl,
+                        builder: (_, _) => CustomPaint(
+                          painter: _FaceIDTickPainter(
+                            totalProgress: _totalProgress,
+                            allDone: _allDone,
+                            scanPosition: _scanCtrl.value,
+                            circleRadius: circleRadius,
+                            circleCenterY: circleCenterY,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Close button
+                    Positioned(
+                      top: topPad + 8,
+                      left: 16,
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).pop(null),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Bottom section: animated gold / light with instructions ──
+            Expanded(
+              flex: 45,
+              child: Container(
+                width: double.infinity,
+                color: bottomColor,
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: _allDone
+                    ? _buildDoneSection()
+                    : _buildInstructionSection(),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

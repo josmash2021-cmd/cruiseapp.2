@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import '../../config/page_transitions.dart';
+import '../../config/driver_colors.dart';
 import '../../main.dart' show themeNotifier;
 import '../privacy_screen.dart';
 import 'driver_manage_account_screen.dart';
@@ -56,13 +57,14 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
+    final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: dc.bg,
       body: Column(
         children: [
           // ── Top bar ──
           Container(
-            color: _surface,
+            color: dc.surface,
             padding: EdgeInsets.only(
               top: top + 8,
               bottom: 12,
@@ -77,12 +79,12 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
+                      color: dc.glassBg,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.arrow_back_rounded,
-                      color: Colors.white,
+                      color: dc.text,
                       size: 22,
                     ),
                   ),
@@ -90,8 +92,8 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                 const SizedBox(width: 14),
                 Text(
                   S.of(context).settingsTitle,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: dc.text,
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
                   ),
@@ -198,12 +200,13 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
   }
 
   Widget _sectionHeader(String title) {
+    final dc = DriverColors.of(context);
     return Padding(
       padding: const EdgeInsets.only(left: 20, bottom: 10),
       child: Text(
         title,
         style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.4),
+          color: dc.textSecondary,
           fontSize: 13,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.5,
@@ -213,6 +216,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
   }
 
   Widget _navItem(IconData icon, String title, String sub, VoidCallback onTap) {
+    final dc = DriverColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
       child: ListTile(
@@ -226,33 +230,26 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
           width: 42,
           height: 42,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
+            color: dc.glassBg,
             borderRadius: BorderRadius.circular(13),
           ),
-          child: Icon(
-            icon,
-            color: Colors.white.withValues(alpha: 0.6),
-            size: 20,
-          ),
+          child: Icon(icon, color: dc.icon, size: 20),
         ),
         title: Text(
           title,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: dc.text,
             fontSize: 15,
             fontWeight: FontWeight.w700,
           ),
         ),
         subtitle: Text(
           sub,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.3),
-            fontSize: 12,
-          ),
+          style: TextStyle(color: dc.textSecondary, fontSize: 12),
         ),
         trailing: Icon(
           Icons.chevron_right_rounded,
-          color: Colors.white.withValues(alpha: 0.1),
+          color: dc.divider,
           size: 20,
         ),
       ),
@@ -266,6 +263,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
     bool value,
     ValueChanged<bool> onChanged,
   ) {
+    final dc = DriverColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
       child: ListTile(
@@ -275,29 +273,22 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
           width: 42,
           height: 42,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
+            color: dc.glassBg,
             borderRadius: BorderRadius.circular(13),
           ),
-          child: Icon(
-            icon,
-            color: Colors.white.withValues(alpha: 0.6),
-            size: 20,
-          ),
+          child: Icon(icon, color: dc.icon, size: 20),
         ),
         title: Text(
           title,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: dc.text,
             fontSize: 15,
             fontWeight: FontWeight.w700,
           ),
         ),
         subtitle: Text(
           sub,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.3),
-            fontSize: 12,
-          ),
+          style: TextStyle(color: dc.textSecondary, fontSize: 12),
         ),
         trailing: Switch.adaptive(
           value: value,

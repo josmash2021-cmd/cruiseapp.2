@@ -93,7 +93,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _navigatingToTracking = false;
 
   // ── Payment state ──
-  String _selectedPaymentMethod = 'google_pay';
+  String _selectedPaymentMethod = Platform.isIOS ? 'credit_card' : 'google_pay';
   Set<String> _linkedPaymentMethods = {};
   String? _savedCardLast4;
   String? _savedCardBrand;
@@ -2288,9 +2288,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
-            final linked = _linkedPaymentMethods.contains(
-              _selectedPaymentMethod,
-            );
             return Container(
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
               decoration: const BoxDecoration(
@@ -2437,13 +2434,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                   ),
                                   const SizedBox(height: 1),
                                   Text(
-                                    linked
-                                        ? S.of(context).tapToChange
-                                        : S.of(context).notAddedTapToSetUp,
+                                    S.of(context).tapToChange,
                                     style: TextStyle(
-                                      color: linked
-                                          ? Colors.white.withValues(alpha: 0.4)
-                                          : Colors.white,
+                                      color: Colors.white.withValues(
+                                        alpha: 0.4,
+                                      ),
                                       fontSize: 12,
                                     ),
                                   ),
@@ -2461,116 +2456,71 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     ),
                     const SizedBox(height: 20),
 
-                    // Pay / Add-method button
-                    if (!linked)
-                      SizedBox(
-                        width: double.infinity,
+                    // Pay button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: _isProcessingPayment
+                              ? LinearGradient(
+                                  colors: [
+                                    c.gold.withValues(alpha: 0.5),
+                                    c.goldLight.withValues(alpha: 0.5),
+                                  ],
+                                )
+                              : LinearGradient(colors: [c.gold, c.goldLight]),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: c.gold,
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
                             foregroundColor: Colors.black,
-                            elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
                             padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
-                          onPressed: () async {
-                            Navigator.pop(ctx);
-                            await Navigator.of(context).push(
-                              slideFromRightRoute(
-                                const PaymentAccountsScreen(),
-                              ),
-                            );
-                            await _loadLinkedPayments();
-                            if (mounted) _showPaymentSheet(c, option);
-                          },
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.link_rounded, size: 18),
-                              SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  S.of(context).addPaymentMethod,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.2,
-                                  ),
+                          onPressed: _isProcessingPayment
+                              ? null
+                              : () => _processPayment(
+                                  ctx,
+                                  c,
+                                  option,
+                                  setSheetState,
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    else
-                      SizedBox(
-                        width: double.infinity,
-                        height: 54,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: _isProcessingPayment
-                                ? LinearGradient(
-                                    colors: [
-                                      c.gold.withValues(alpha: 0.5),
-                                      c.goldLight.withValues(alpha: 0.5),
-                                    ],
-                                  )
-                                : LinearGradient(colors: [c.gold, c.goldLight]),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              foregroundColor: Colors.black,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            onPressed: _isProcessingPayment
-                                ? null
-                                : () => _processPayment(
-                                    ctx,
-                                    c,
-                                    option,
-                                    setSheetState,
+                          child: _isProcessingPayment
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.black54,
                                   ),
-                            child: _isProcessingPayment
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      color: Colors.black54,
-                                    ),
-                                  )
-                                : Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(Icons.lock_rounded, size: 16),
-                                      const SizedBox(width: 8),
-                                      Flexible(
-                                        child: Text(
-                                          S.of(context).payPrice(price),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.w800,
-                                            letterSpacing: -0.2,
-                                          ),
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.lock_rounded, size: 16),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        S.of(context).payPrice(price),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: -0.2,
                                         ),
                                       ),
-                                    ],
-                                  ),
-                          ),
+                                    ),
+                                  ],
+                                ),
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -2589,126 +2539,39 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     RideOption? option,
     void Function(void Function()) setSheetState,
   ) async {
-    // 1. Double-check the method is actually linked
-    if (!_linkedPaymentMethods.contains(_selectedPaymentMethod)) {
-      _showDeclinedDialog(
-        title: S.of(context).noPaymentMethod,
-        message: S.of(context).addPaymentMethodMsg,
-      );
-      return;
-    }
-
-    // 2. For credit/debit card — verify a Stripe PaymentMethod ID exists
-    if (_selectedPaymentMethod == 'credit_card') {
-      final pmId = await LocalDataService.getStripePaymentMethodId();
-      if (pmId == null || pmId.isEmpty) {
-        _showDeclinedDialog(
-          title: S.of(context).cardNotValid,
-          message: S.of(context).cardNotValidMsg,
-        );
-        return;
-      }
-    }
-
-    // 3. Show loading spinner
+    // Show loading spinner
     setSheetState(() => _isProcessingPayment = true);
     setState(() => _isProcessingPayment = true);
 
-    try {
-      // Process payment (Stripe integration pending — validates linked method)
-      await Future.delayed(const Duration(seconds: 2));
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
 
-      // ── Check if payment was "approved" ──
-      // For now we accept all linked methods. When you add real Stripe
-      // charging, replace this with the charge result.
-      // final bool paymentApproved = chargeResult.success;
+    setSheetState(() => _isProcessingPayment = false);
+    setState(() => _isProcessingPayment = false);
+    Navigator.of(context).pop();
+    if (widget.applyPromo) await LocalDataService.setPromoUsed();
 
-      if (!mounted) return;
-
-      // Success — close sheet and start ride search
-      setSheetState(() => _isProcessingPayment = false);
-      setState(() => _isProcessingPayment = false);
-      Navigator.of(context).pop();
-      if (widget.applyPromo) await LocalDataService.setPromoUsed();
-
-      // If this is a scheduled trip, create via API and navigate to scheduled rides
-      if (_ctrl.state.scheduledAt != null) {
-        await _createScheduledTrip();
-        return;
-      }
-      _ctrl.requestRide();
-    } catch (e) {
-      if (!mounted) return;
-      setSheetState(() => _isProcessingPayment = false);
-      setState(() => _isProcessingPayment = false);
-      Navigator.of(context).pop();
-      _showDeclinedDialog(
-        title: S.of(context).paymentDeclined,
-        message: S.of(context).paymentDeclinedMsg,
-      );
+    if (_ctrl.state.scheduledAt != null) {
+      await _createScheduledTrip();
+      return;
     }
+    _ctrl.requestRide();
   }
 
-  /// Processes payment directly from the route preview sheet (no popup).
+  /// Processes payment directly from the route preview sheet.
+  /// Payment validation is bypassed — the selected method is informational.
   Future<void> _startRideDirectly(AppColors c, RideOption? option) async {
-    // 0. Test payment — skip all validation
-    if (_selectedPaymentMethod == 'test') {
-      setState(() => _isProcessingPayment = true);
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (!mounted) return;
-      setState(() => _isProcessingPayment = false);
-      if (_ctrl.state.scheduledAt != null) {
-        await _createScheduledTrip();
-        return;
-      }
-      _ctrl.requestRide();
-      return;
-    }
-
-    // 1. Check linked payment method
-    if (!_linkedPaymentMethods.contains(_selectedPaymentMethod)) {
-      _showDeclinedDialog(
-        title: S.of(context).noPaymentMethod,
-        message: S.of(context).addPaymentMethodMsg,
-      );
-      return;
-    }
-
-    // 2. For credit/debit card — verify Stripe PM ID
-    if (_selectedPaymentMethod == 'credit_card') {
-      final pmId = await LocalDataService.getStripePaymentMethodId();
-      if (pmId == null || pmId.isEmpty) {
-        _showDeclinedDialog(
-          title: S.of(context).cardNotValid,
-          message: S.of(context).cardNotValidMsg,
-        );
-        return;
-      }
-    }
-
-    // 3. Show loading
     setState(() => _isProcessingPayment = true);
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    setState(() => _isProcessingPayment = false);
+    if (widget.applyPromo) await LocalDataService.setPromoUsed();
 
-    try {
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) return;
-      setState(() => _isProcessingPayment = false);
-      if (widget.applyPromo) await LocalDataService.setPromoUsed();
-
-      // If this is a scheduled trip, create via API and navigate to scheduled rides
-      if (_ctrl.state.scheduledAt != null) {
-        await _createScheduledTrip();
-        return;
-      }
-      _ctrl.requestRide();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isProcessingPayment = false);
-      _showDeclinedDialog(
-        title: S.of(context).paymentDeclined,
-        message: S.of(context).paymentDeclinedMsg,
-      );
+    if (_ctrl.state.scheduledAt != null) {
+      await _createScheduledTrip();
+      return;
     }
+    _ctrl.requestRide();
   }
 
   /// Creates a scheduled trip via the backend API and navigates to the scheduled rides list.
@@ -2851,7 +2714,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   void _showPaymentMethodPicker(AppColors c, RideOption? option) {
     final loc = S.of(context);
     final methods = [
-      ('google_pay', 'Google Pay'),
+      if (!Platform.isIOS) ('google_pay', 'Google Pay'),
       (
         'credit_card',
         _savedCardBrand != null && _savedCardLast4 != null
@@ -2859,7 +2722,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             : loc.creditOrDebitCard,
       ),
       ('paypal', 'PayPal'),
-      ('test', 'Pay Test'),
     ];
 
     showModalBottomSheet(
@@ -2903,21 +2765,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 ...methods.map((m) {
                   final (id, label) = m;
                   final selected = id == _selectedPaymentMethod;
-                  final linked =
-                      id == 'test' || _linkedPaymentMethods.contains(id);
                   return GestureDetector(
                     onTap: () {
                       setState(() => _selectedPaymentMethod = id);
                       Navigator.pop(ctx);
-                      // If not linked and it's credit card, open credit card screen
-                      if (!linked && id == 'credit_card') {
-                        _openCreditCardScreen(c, option);
-                        return;
-                      }
-                      if (!linked) {
-                        _openPaymentAccountsAndReturn(c, option);
-                        return;
-                      }
                       _showPaymentSheet(c, option);
                     },
                     child: Container(
@@ -2954,25 +2805,16 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                if (!linked)
-                                  Text(
-                                    loc.notAdded,
-                                    style: const TextStyle(
-                                      color: Colors.white54,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
                               ],
                             ),
                           ),
-                          if (linked && selected)
+                          if (selected)
                             Icon(
                               Icons.check_circle_rounded,
                               color: c.gold,
                               size: 22,
                             )
-                          else if (linked)
+                          else
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -2986,25 +2828,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                 loc.added,
                                 style: TextStyle(
                                   color: c.gold,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            )
-                          else
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: c.gold,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                loc.addBtn,
-                                style: const TextStyle(
-                                  color: Colors.black,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -3095,8 +2918,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         return loc.creditOrDebitCard;
       case 'paypal':
         return 'PayPal';
-      case 'test':
-        return 'Pay Test';
       default:
         return 'Google Pay';
     }
@@ -3217,23 +3038,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               Icons.credit_card_rounded,
               color: Color(0xFF6B7280),
               size: 20,
-            ),
-          ),
-        );
-      case 'test':
-        return Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: Colors.green.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.green.shade300, width: 0.5),
-          ),
-          child: Center(
-            child: Icon(
-              Icons.science_rounded,
-              color: Colors.green,
-              size: size * 0.5,
             ),
           ),
         );

@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 import '../../config/map_styles.dart';
 import '../../config/page_transitions.dart';
+import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
@@ -366,8 +367,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final panelH =
         _panelCollapsedH + (_panelExpandedH - _panelCollapsedH) * _panelExtent;
 
+    final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: dc.bg,
       body: Stack(
         children: [
           // ── Full-screen map ──
@@ -427,15 +429,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  MAP
   // ═══════════════════════════════════════════════════
   Widget _buildMap() {
+    final dc = DriverColors.of(context);
     if (_currentLatLng == null) {
       return Container(
-        color: const Color(0xFF0D0D0D),
+        color: dc.bg,
         child: const Center(
           child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
         ),
       );
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return RepaintBoundary(
       child: Platform.isIOS
           ? amap.AppleMap(
@@ -459,7 +463,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               compassEnabled: false,
             )
           : GoogleMap(
-              style: MapStyles.dark,
+              style: isDark ? MapStyles.dark : null,
               initialCameraPosition: CameraPosition(
                 target: _currentLatLng!,
                 zoom: 16,
@@ -484,6 +488,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  TOP BAR
   // ═══════════════════════════════════════════════════
   Widget _buildTopBar() {
+    final dc = DriverColors.of(context);
     return Row(
       children: [
         // Menu
@@ -529,9 +534,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.6),
+              color: dc.glassBg,
               borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              border: Border.all(color: dc.divider),
             ),
             child: Row(
               children: [
@@ -629,6 +634,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Widget _glassBtn(IconData icon, {required VoidCallback onTap, int? badge}) {
+    final dc = DriverColors.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Stack(
@@ -638,17 +644,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.55),
+              color: dc.glassBg,
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              border: Border.all(color: dc.divider),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
+                  color: Colors.black.withValues(alpha: 0.15),
                   blurRadius: 8,
                 ),
               ],
             ),
-            child: Icon(icon, color: Colors.white, size: 22),
+            child: Icon(icon, color: dc.text, size: 22),
           ),
           if (badge != null)
             Positioned(
@@ -803,6 +809,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  DRAGGABLE BOTTOM PANEL (Uber Driver style)
   // ═══════════════════════════════════════════════════
   Widget _buildDraggablePanel(EdgeInsets pad) {
+    final dc = DriverColors.of(context);
     final panelH =
         _panelCollapsedH + (_panelExpandedH - _panelCollapsedH) * _panelExtent;
 
@@ -833,11 +840,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         curve: Curves.easeOutCubic,
         height: panelH + pad.bottom,
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
+          color: dc.card,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
+              color: Colors.black.withValues(alpha: 0.2),
               blurRadius: 16,
               offset: const Offset(0, -4),
             ),

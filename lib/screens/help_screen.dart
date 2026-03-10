@@ -1473,11 +1473,16 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               height: 44,
               child: ElevatedButton(
                 onPressed: () {
+                  _pollTimer?.cancel();
+                  _pollTimer = null;
                   setState(() {
                     _chatId = null;
                     _messages.clear();
                     _chatClosed = false;
                     _loading = true;
+                    _agentName = null;
+                    _subtitle = S.of(context).automatedSystem;
+                    _sending = false;
                   });
                   _initChat();
                 },

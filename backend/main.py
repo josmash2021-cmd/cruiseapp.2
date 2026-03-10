@@ -584,11 +584,12 @@ def _verify_api_key(
         _security_audit_log("invalid_api_key", client_ip)
         raise HTTPException(401, "Invalid API key")
 
-    # Verify timestamp is within 10 minutes
+    # Verify timestamp is within 30 minutes (generous window for mobile
+    # clients behind proxies / tunnels with possible clock drift)
     try:
         ts = int(x_timestamp)
         now = int(time.time())
-        if abs(now - ts) > 600:
+        if abs(now - ts) > 1800:
             logging.warning("[AUTH-DBG] expired_timestamp from %s drift=%ds", client_ip, abs(now-ts))
             _record_violation(client_ip)
             _security_audit_log("expired_timestamp", client_ip, f"drift={abs(now-ts)}s")

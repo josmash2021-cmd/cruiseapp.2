@@ -300,9 +300,77 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: _bg,
-      body: SizedBox.expand(),
+      body: AnimatedBuilder(
+        animation: Listenable.merge([_entranceCtrl, _glowCtrl, _exitCtrl]),
+        builder: (context, _) {
+          return Opacity(
+            opacity: _exitFade.value,
+            child: Transform.scale(
+              scale: _exitScale.value,
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(_letters.length, (i) {
+                    return Transform.translate(
+                      offset: Offset(0, _letterSlide[i].value),
+                      child: Transform.scale(
+                        scale: _letterScale[i].value,
+                        child: Opacity(
+                          opacity: _letterFade[i].value,
+                          child: _buildLetter(_letters[i], i),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLetter(String letter, int index) {
+    final glowIntensity = _glowCtrl.value;
+    final glowColor = Color.lerp(_gold, _goldBright, glowIntensity)!;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+      child: ShaderMask(
+        shaderCallback: (bounds) {
+          return LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              glowColor,
+              _gold,
+            ],
+            stops: const [0.3, 1.0],
+          ).createShader(bounds);
+        },
+        child: Text(
+          letter,
+          style: GoogleFonts.montserrat(
+            fontSize: 56,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+            letterSpacing: -2,
+            shadows: [
+              Shadow(
+                color: _gold.withOpacity(0.5 + glowIntensity * 0.5),
+                blurRadius: 20 + glowIntensity * 30,
+              ),
+              Shadow(
+                color: _goldBright.withOpacity(glowIntensity * 0.3),
+                blurRadius: 40,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

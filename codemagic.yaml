@@ -56,6 +56,12 @@ workflows:
           ENVEOF
           echo "env.dart generated:"
           cat lib/config/env.dart
+      - name: Configure Git for better network handling
+        script: |
+          git config --global http.postBuffer 524288000
+          git config --global http.lowSpeedLimit 0
+          git config --global http.lowSpeedTime 999999
+          echo "Git configured for large transfers"
       - name: Get Flutter packages
         script: |
           flutter pub get
@@ -65,17 +71,41 @@ workflows:
       - name: Install CocoaPods dependencies
         script: |
           cd ios
-          for i in 1 2 3; do
-            echo "=== pod install attempt $i ==="
-            pod install && break
-            echo "Attempt $i failed, waiting 30s..."
-            sleep 30
+          # Limpiar cache de CocoaPods
+          rm -rf ~/Library/Caches/CocoaPods
+          rm -rf Pods Podfile.lock
+          
+          # Configurar timeouts más largos
+          export COCOAPODS_DISABLE_STATS=true
+          
+          # Reintentar hasta 5 veces con esperas progresivas
+          for i in 1 2 3 4 5; do
+            echo "=== pod install attempt $i/5 ==="
+            
+            # Usar --verbose para ver exactamente dónde falla
+            if pod install --repo-update --verbose; then
+              echo "✅ CocoaPods installed successfully on attempt $i"
+              break
+            fi
+            
+            if [ $i -lt 5 ]; then
+              WAIT_TIME=$((i * 30))
+              echo "⚠️ Attempt $i failed, waiting ${WAIT_TIME}s before retry..."
+              sleep $WAIT_TIME
+            else
+              echo "❌ ERROR: All 5 pod install attempts failed"
+              exit 1
+            fi
           done
-          if [ ! -d Pods ]; then
-            echo "ERROR: Pods directory not found after 3 attempts"
+          
+          # Verificar que Pods existe y tiene contenido
+          if [ ! -d Pods ] || [ -z "$(ls -A Pods)" ]; then
+            echo "ERROR: Pods directory is missing or empty"
             exit 1
           fi
-          echo "CocoaPods installed successfully"
+          
+          echo "CocoaPods dependencies installed successfully"
+          echo "Pods directory size: $(du -sh Pods | cut -f1)"
       - name: Disable code signing in project
         script: |
           cd ios
@@ -270,6 +300,12 @@ workflows:
             static const String paypalSecret = '${ENV_PAYPAL_SECRET}';
           }
           ENVEOF
+      - name: Configure Git for better network handling
+        script: |
+          git config --global http.postBuffer 524288000
+          git config --global http.lowSpeedLimit 0
+          git config --global http.lowSpeedTime 999999
+          echo "Git configured for large transfers"
       - name: Get Flutter packages
         script: |
           flutter pub get
@@ -278,7 +314,25 @@ workflows:
           flutter build ios --config-only --no-codesign
       - name: Install CocoaPods dependencies
         script: |
-          cd ios && pod install
+          cd ios
+          rm -rf ~/Library/Caches/CocoaPods
+          rm -rf Pods Podfile.lock
+          export COCOAPODS_DISABLE_STATS=true
+          
+          for i in 1 2 3 4 5; do
+            echo "=== pod install attempt $i/5 ==="
+            if pod install --repo-update --verbose; then
+              echo "✅ Pods installed on attempt $i"
+              break
+            fi
+            if [ $i -lt 5 ]; then
+              echo "⚠️ Attempt $i failed, waiting $((i * 30))s..."
+              sleep $((i * 30))
+            else
+              echo "❌ All attempts failed"
+              exit 1
+            fi
+          done
       - name: Flutter build IPA (ad hoc)
         script: |
           flutter build ipa --release --no-tree-shake-icons
@@ -351,6 +405,12 @@ workflows:
             static const String paypalSecret = '${ENV_PAYPAL_SECRET}';
           }
           ENVEOF
+      - name: Configure Git for better network handling
+        script: |
+          git config --global http.postBuffer 524288000
+          git config --global http.lowSpeedLimit 0
+          git config --global http.lowSpeedTime 999999
+          echo "Git configured for large transfers"
       - name: Get Flutter packages
         script: |
           flutter pub get
@@ -359,7 +419,25 @@ workflows:
           flutter build ios --config-only --no-codesign
       - name: Install CocoaPods dependencies
         script: |
-          cd ios && pod install
+          cd ios
+          rm -rf ~/Library/Caches/CocoaPods
+          rm -rf Pods Podfile.lock
+          export COCOAPODS_DISABLE_STATS=true
+          
+          for i in 1 2 3 4 5; do
+            echo "=== pod install attempt $i/5 ==="
+            if pod install --repo-update --verbose; then
+              echo "✅ Pods installed on attempt $i"
+              break
+            fi
+            if [ $i -lt 5 ]; then
+              echo "⚠️ Attempt $i failed, waiting $((i * 30))s..."
+              sleep $((i * 30))
+            else
+              echo "❌ All attempts failed"
+              exit 1
+            fi
+          done
       - name: Flutter build IPA (App Store)
         script: |
           flutter build ipa --release --no-tree-shake-icons

@@ -386,7 +386,15 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       if (!mounted) return;
       String msg;
       if (e.statusCode == 401) {
-        msg = 'Invalid email/phone or password';
+        final detail = e.message.toLowerCase();
+        if (detail.contains('timestamp') ||
+            detail.contains('clock') ||
+            detail.contains('expired')) {
+          msg =
+              'Device clock out of sync. Go to Settings → Date & Time and enable "Set Automatically".';
+        } else {
+          msg = 'Invalid email/phone or password';
+        }
       } else if (e.statusCode == 403) {
         final detail = e.message.toLowerCase();
         if (detail.contains('deleted')) {

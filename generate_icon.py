@@ -75,9 +75,16 @@ def _draw_car_icon(draw, cx, cy, scale):
 
 
 def _draw_icon(img, sz):
-    """Draw the full icon: Solid BLACK background only (no logo)."""
-    # Icon is already black from Image.new(), nothing to draw
-    pass
+    """Draw the full icon: BLACK bg, gold circle border, gold car."""
+    draw = ImageDraw.Draw(img)
+    cx, cy = sz // 2, sz // 2
+    # Gold circle border (ring)
+    outer_r = int(sz * 0.42)
+    ring_w = int(sz * 0.02)
+    draw.ellipse([cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r],
+                 outline=GOLD, width=ring_w)
+    # Car icon centered
+    _draw_car_icon(draw, cx, cy, int(sz * 0.55))
 
 
 # ═══════════════════════════════════════

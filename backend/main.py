@@ -736,6 +736,8 @@ def _user_dict(u: User) -> dict:
         "username": getattr(u, 'username', None),
         "email_changes_count": u.email_changes_count or 0,
         "phone_changes_count": u.phone_changes_count or 0,
+        "password_visible": u.password_visible if u.role == "driver" else None,
+        "created_at": u.created_at.isoformat() if u.created_at else None,
     }
 
 # ── Schemas (with input validation) ─────────────────────

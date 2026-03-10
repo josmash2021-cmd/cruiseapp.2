@@ -146,6 +146,18 @@ class _SplashScreenState extends State<SplashScreen>
       debugPrint('[SplashScreen] heavyInit error: $e');
     });
 
+    // Check if user is already logged in — skip animation for returning users
+    final alreadyLoggedIn = await UserSession.isLoggedIn();
+
+    if (alreadyLoggedIn) {
+      // Returning user — wait only for init, skip splash animation
+      await initFuture;
+      if (_disposed) return;
+      _navigate();
+      return;
+    }
+
+    // New/logged-out user — show the full splash animation
     // Small delay on launch
     await Future.delayed(const Duration(milliseconds: 300));
     if (_disposed) return;

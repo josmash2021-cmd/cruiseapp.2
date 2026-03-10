@@ -83,7 +83,7 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
-  // Theme-aware colors â€“ _c is set at the top of build()
+  // Theme-aware colors – _c is set at the top of build()
   late AppColors _c;
   bool? _lastIsDark; // tracks theme so we can re-style the map
   Color get _bgBlack => _c.bg;
@@ -820,7 +820,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  // ignore: unused_element â€“ retained for future use
+  // ignore: unused_element – retained for future use
   Future<Position?> _resolvePreciseCurrentPosition() async {
     Position? best;
 
@@ -1181,7 +1181,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   /// Smooth multi-step camera transition that glides between zoom levels.
   /// For large zoom deltas, performs an intermediate step so the animation
-  /// doesn't "jump" â€” mimicking the fluid feel of premium ride-hailing apps.
+  /// doesn't "jump" — mimicking the fluid feel of premium ride-hailing apps.
   Future<void> _smoothCameraTransition(LatLng target, double targetZoom) async {
     if (!_hasMapController) return;
     final currentZoom = await _currentZoom();
@@ -1208,7 +1208,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final pickup = _pickupMarker?.position ?? _currentPosition;
     if (pickup == null) return;
 
-    // In confirmPickup the center pin IS the pickup â€” just re-center
+    // In confirmPickup the center pin IS the pickup — just re-center
     if (_stage == RideStage.confirmPickup) {
       _isRecentering = true;
       _cameraIdleDebounce?.cancel();
@@ -1325,7 +1325,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     try {
       final origin = _pickupMarker?.position;
       // Use autocomplete (which runs Nominatim + Photon in parallel)
-      // to get results with coordinates â€” avoids double Nominatim calls.
+      // to get results with coordinates — avoids double Nominatim calls.
       final results = await _places.autocomplete(
         query,
         latitude: origin?.latitude,
@@ -1415,7 +1415,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (origin == null) return input;
 
     // Fast path: compute straight-line distance for items that already have coords
-    // Skip expensive details() + matrix API calls â€” use haversine estimate instead
+    // Skip expensive details() + matrix API calls — use haversine estimate instead
     final enriched = input.map((item) {
       if (item.lat != null && item.lng != null) {
         final meters = Geolocator.distanceBetween(
@@ -1663,7 +1663,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     return '${miles.toStringAsFixed(2)} mi';
   }
 
-  // ignore: unused_element â€“ retained for future use
+  // ignore: unused_element – retained for future use
   Future<void> _onRequestRide() async {
     if (mounted) {
       FocusScope.of(context).unfocus();
@@ -2288,7 +2288,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       // Min 12.0 (not too zoomed out), Max 15.5 (keeps context)
       final clampedZoom = currentZoom.clamp(12.0, 15.5);
       if ((clampedZoom - currentZoom).abs() > 0.2) {
-        // Need to adjust zoom â€” recenter with clamped zoom
+        // Need to adjust zoom — recenter with clamped zoom
         final midLat =
             (bounds.northeast.latitude + bounds.southwest.latitude) / 2;
         final midLng =
@@ -3953,7 +3953,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   dispatch['driver_name']?.toString() ?? 'Your Driver';
               _driverCar = dispatch['vehicle_type']?.toString() ?? '';
               _driverPlate = dispatch['driver_plate']?.toString() ?? '';
-              _driverPhone = dispatch['driverPhone']?.toString() ?? '';
+              _driverPhone =
+                  (dispatch['driver_phone'] ?? dispatch['driverPhone'])
+                      ?.toString() ??
+                  '';
               _driverRating =
                   (dispatch['driver_rating'] as num?)?.toDouble() ?? 4.9;
               // Calculate real initial ETA from driver distance
@@ -4818,7 +4821,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  // ignore: unused_element â€“ retained for future use
+  // ignore: unused_element – retained for future use
   void _onConfirmPickupCameraIdle() {
     final target = _cameraTarget;
     if (target == null) return;
@@ -5590,7 +5593,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final linked = _linkedPaymentMethods.contains(id);
 
     if (!linked) {
-      // Not connected â€” for Google Pay and PayPal, open their apps directly
+      // Not connected — for Google Pay and PayPal, open their apps directly
       if (id == 'google_pay') {
         await _launchGooglePayFromMap();
         if (!mounted) return;
@@ -5632,7 +5635,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       return;
     }
 
-    // Already linked â€” for credit_card, only open card entry if user explicitly
+    // Already linked — for credit_card, only open card entry if user explicitly
     // wants to change (weâ€™re just selecting it here, not re-entering).
     // Google Pay and PayPal: just selecting is enough.
     // No additional action needed.
@@ -6081,7 +6084,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             const SizedBox(height: 10),
             // --- Pay button ---
             if (!_linkedPaymentMethods.contains(_selectedPaymentMethod))
-              // Unlinked â€” connect button
+              // Unlinked — connect button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(

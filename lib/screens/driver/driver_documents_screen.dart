@@ -83,14 +83,14 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
             ...existing,
             'title': req['title'],
             'icon': req['icon'],
-            'status': existing['status'] ?? 'approved',
+            'status': existing['status'] ?? 'pending',
           });
         } else {
           merged.add({
             'doc_type': req['doc_type'],
             'title': req['title'],
             'icon': req['icon'],
-            'status': 'approved',
+            'status': 'not_uploaded',
           });
         }
       }

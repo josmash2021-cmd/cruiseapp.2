@@ -20,6 +20,7 @@ import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
 import '../chat_screen.dart';
+import '../safety_screen.dart';
 import '../../navigation/car_icon_loader.dart';
 import 'driver_info_pages.dart';
 import 'driver_earnings_screen.dart';
@@ -29,8 +30,8 @@ import 'driver_inbox_screen.dart';
 import '../../services/map_launcher_service.dart';
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-//  CRUISE DRIVER â€” ONLINE SCREEN
-//  Uber Driverâ€“style: Finding trips bar, trip request card,
+//  CRUISE DRIVER — ONLINE SCREEN
+//  Uber Driver–style: Finding trips bar, trip request card,
 //  real-time driver movement, smooth transitions, all backend
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -1051,7 +1052,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  //  GPS SIMULATION â€” realistic speed drive along route
+  //  GPS SIMULATION — realistic speed drive along route
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   List<LatLng> _simRouteCopy = []; // immutable copy for simulation
 
@@ -1263,7 +1264,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   /// Trim the route polyline behind the driver so only upcoming road is shown.
-  /// Google Maps navigation style â€” route "disappears" behind the car.
+  /// Google Maps navigation style — route "disappears" behind the car.
   void _trimRouteBehindDriver(LatLng driverPos) {
     if (_routePts.length < 3) return;
     if (_phase != _Phase.enRouteToPickup && _phase != _Phase.inTrip) return;
@@ -1321,7 +1322,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final lng =
         _animFrom.longitude + (_animTo.longitude - _animFrom.longitude) * t;
     _pos = LatLng(lat, lng);
-    // Only rebuild marker set â€” minimal setState for performance
+    // Only rebuild marker set — minimal setState for performance
     setState(() {});
   }
 
@@ -1555,7 +1556,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
   }
 
-  // â”€â”€ _accept and _decline removed â€” now using _acceptOffer / _rejectOffer â”€â”€
+  // â”€â”€ _accept and _decline removed — now using _acceptOffer / _rejectOffer â”€â”€
 
   Future<void> _toPickup() async {
     if (_tripId != null) {
@@ -1665,7 +1666,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     );
   }
 
-  /// User pressed "Start Navigation" from the route summary â€” begin actual nav
+  /// User pressed "Start Navigation" from the route summary — begin actual nav
   void _beginNavigation() {
     HapticFeedback.heavyImpact();
     setState(() {
@@ -1841,7 +1842,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  //  NAV â€” Real GPS drives the navigation now.
+  //  NAV — Real GPS drives the navigation now.
   //  _simNav is kept as a no-op for backward compat.
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _simNav() {
@@ -2464,9 +2465,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       fabIcon,
                       () => Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => const DriverSafetyScreen(),
-                        ),
+                        MaterialPageRoute(builder: (_) => const SafetyScreen()),
                       ),
                     ),
                   ],
@@ -2705,7 +2704,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
             )
           : GoogleMap(
-              style: MapStyles.dark,
+              style: isDark ? MapStyles.dark : MapStyles.light,
               initialCameraPosition: CameraPosition(
                 target: _pos,
                 zoom: 15.5,
@@ -2748,7 +2747,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  //  EARNINGS PILL (top center â€” Uber style)
+  //  EARNINGS PILL (top center — Uber style)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Widget _earningsPill(bool isDark) {
     final pillBg = isDark
@@ -3233,7 +3232,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     );
   }
 
-  // â”€â”€ STACKED RIDE OFFER CARDS (Spark-style â€” persistent, no timeout) â”€â”€
+  // â”€â”€ STACKED RIDE OFFER CARDS (Spark-style — persistent, no timeout) â”€â”€
   Widget _rideOfferCards(
     bool isDark,
     Color card,
@@ -5026,7 +5025,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             ],
           ),
           const SizedBox(height: 12),
-          // FINISH TRIP button â€” only active when near dropoff
+          // FINISH TRIP button — only active when near dropoff
           SizedBox(
             width: double.infinity,
             height: 52,

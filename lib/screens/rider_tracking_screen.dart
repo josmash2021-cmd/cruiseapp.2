@@ -84,7 +84,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   _TrackPhase _phase = _TrackPhase.arriving;
   bool _greetingSent = false;
-  final bool _arrivedNotifSent = false;
+  bool _arrivedNotifSent = false;
   LatLng _driverPos = const LatLng(0, 0);
   LatLng _animPos = const LatLng(0, 0);
   double _driverBearing = 0;
@@ -221,10 +221,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _etaMinutes = (dist / 0.5).ceil().clamp(1, 99);
       if (dist < 0.05) {
         setState(() => _phase = _TrackPhase.arrived);
-        _sendRideNotification(
-          'Your driver has arrived',
-          '${widget.driverName.split(' ').first} is waiting at the pickup spot in a ${widget.vehicleColor} ${widget.vehicleModel}.',
-        );
+        if (!_arrivedNotifSent) {
+          _arrivedNotifSent = true;
+          _sendRideNotification(
+            'Your driver has arrived',
+            '${widget.driverName.split(' ').first} is waiting at the pickup spot in a ${widget.vehicleColor} ${widget.vehicleModel}.',
+          );
+        }
       }
     } else if (_phase == _TrackPhase.onTrip) {
       final dist = _hav(ll, widget.dropoffLatLng);
@@ -329,6 +332,55 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               Navigator.of(ctx).pop();
             },
             child: Text(s.save),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCancelDialog() {
+    final s = S.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A2A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          s.cancelRideQuestion,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          s.cancelRideConfirm,
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(s.no, style: const TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              if (widget.tripId != null) {
+                try {
+                  await ApiService.cancelTrip(widget.tripId!);
+                } catch (_) {}
+              }
+              if (!mounted) return;
+              Navigator.of(context).pushAndRemoveUntil(
+                PageRouteBuilder(
+                  pageBuilder: (_, _, _) => const HomeScreen(),
+                  transitionsBuilder: (_, a, _, child) =>
+                      FadeTransition(opacity: a, child: child),
+                  transitionDuration: const Duration(milliseconds: 400),
+                ),
+                (_) => false,
+              );
+            },
+            child: Text(
+              s.cancelRide,
+              style: const TextStyle(color: Color(0xFFFF3B30)),
+            ),
           ),
         ],
       ),
@@ -1358,6 +1410,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                         ChatScreen(
                           recipientName: widget.driverName.split(' ').first,
                           avatarInitial: widget.driverName[0].toUpperCase(),
+                          tripId: widget.tripId,
                         ),
                       ),
                     );
@@ -1395,13 +1448,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   width: double.infinity,
                   height: 40,
                   child: TextButton(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        slideFromRightRoute(const CruiseSupportChatScreen()),
-                      );
-                    },
+                    onPressed: _showCancelDialog,
                     child: Text(
-                      s.contactSupport,
+                      s.cancelRide,
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -2028,8 +2077,22 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 width: double.infinity,
                 height: 54,
                 child: ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     HapticFeedback.mediumImpact();
+                    // Submit rating to backend
+                    if (widget.tripId != null) {
+                      try {
+                        await ApiService.rateTrip(
+                          tripId: widget.tripId!,
+                          stars: _ratingStars,
+                          tipAmount: _tipAmount,
+                          comment: _anonymousFeedback.isNotEmpty
+                              ? _anonymousFeedback
+                              : null,
+                        );
+                      } catch (_) {}
+                    }
+                    if (!mounted) return;
                     // Navigate to rider home with smooth fade
                     Navigator.of(context).pushAndRemoveUntil(
                       PageRouteBuilder(

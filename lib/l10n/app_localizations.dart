@@ -386,7 +386,6 @@ class S {
       : 'If your trip goes off the expected route or takes longer than usual, we\'ll send you a notification to check that you\'re okay. You can also share your real-time location with your trusted contacts.';
   String get shareLocationNow =>
       _es ? 'Compartir ubicación' : 'Share location now';
-  String get close => _es ? 'Cerrar' : 'Close';
   String get rideCheckShareText => _es
       ? 'Estoy en un viaje con Cruise App. Puedes verificar que estoy bien contactándome.'
       : 'I\'m on a trip with Cruise App. You can check that I\'m safe by reaching out to me.';

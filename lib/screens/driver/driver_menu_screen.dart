@@ -723,16 +723,6 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     );
   }
 
-  String? get _resolvedPhotoUrl {
-    if (_photoUrl == null || _photoUrl!.isEmpty) return null;
-    if (_photoUrl!.startsWith('http')) return _photoUrl;
-    final base = ApiService.publicBaseUrl;
-    final clean = _photoUrl!.startsWith('/')
-        ? _photoUrl!.substring(1)
-        : _photoUrl!;
-    return '$base/$clean';
-  }
-
   // ═══════════════════════════════════════════════════
   //  HELP BOTTOM SHEET
   // ═══════════════════════════════════════════════════
@@ -776,56 +766,55 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                 S.of(context).howCanWeHelp,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 14,
-                ),
-              ),
-              if (_dispatchPassword != null &&
-                  _dispatchPassword!.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: () {
-                    Clipboard.setData(
-                      ClipboardData(text: _dispatchPassword!),
-                    );
-                    HapticFeedback.lightImpact();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text(
-                          'Dispatch password copied',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                        backgroundColor: dc.accent,
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: dc.card,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: dc.divider),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.key_rounded,
-                            size: 14, color: Colors.white70),
-                        const SizedBox(width: 4),
-                        Text(
-                          _dispatchPassword!,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
+                      if (_dispatchPassword != null &&
+                          _dispatchPassword!.isNotEmpty) ...[
+                        const SizedBox(width: 10),
+                        GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(
+                              ClipboardData(text: _dispatchPassword!),
+                            );
+                            HapticFeedback.lightImpact();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Text(
+                                  'Dispatch password copied',
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                                backgroundColor: dc.accent,
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: dc.card,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: dc.divider),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.key_rounded,
+                                    size: 14, color: Colors.white70),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _dispatchPassword!,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
-                    ),
-                  ),
+                  fontSize: 14,
                 ),
-              ],
+              ),
               const SizedBox(height: 24),
               _helpRow(
                 Icons.email_rounded,
@@ -1011,5 +1000,15 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  String? get _resolvedPhotoUrl {
+    if (_photoUrl == null || _photoUrl!.isEmpty) return null;
+    if (_photoUrl!.startsWith('http')) return _photoUrl;
+    final base = ApiService.publicBaseUrl;
+    final clean = _photoUrl!.startsWith('/')
+        ? _photoUrl!.substring(1)
+        : _photoUrl!;
+    return '$base/$clean';
   }
 }

@@ -93,6 +93,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _isConnecting = false;
       });
       debugPrint('[ChatScreen] Error fetching messages: $e');
+    }
   }
 
   @override

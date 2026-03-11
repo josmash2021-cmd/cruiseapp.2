@@ -123,16 +123,24 @@ class _SplashScreenState extends State<SplashScreen>
   void _setupExitAnimation() {
     _exitCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 1200),
     );
+    // Fade out más suave y elegante
     _exitFade = Tween<double>(
       begin: 1.0,
       end: 0.0,
-    ).animate(CurvedAnimation(parent: _exitCtrl, curve: Curves.easeInOutCubic));
+    ).animate(CurvedAnimation(
+      parent: _exitCtrl, 
+      curve: Curves.easeOutQuart, // Más suave al final
+    ));
+    // Escala sutil para efecto profesional
     _exitScale = Tween<double>(
       begin: 1.0,
-      end: 1.15,
-    ).animate(CurvedAnimation(parent: _exitCtrl, curve: Curves.easeInOutCubic));
+      end: 1.08,
+    ).animate(CurvedAnimation(
+      parent: _exitCtrl, 
+      curve: Curves.easeOutCubic,
+    ));
   }
 
   // ═══════════════════════════════════════════════════════
@@ -172,7 +180,8 @@ class _SplashScreenState extends State<SplashScreen>
     await initFuture;
     if (_disposed) return;
 
-    // Phase 3 — smooth elegant fade out
+    // Phase 3 — smooth professional fade out with longer duration
+    await Future.delayed(const Duration(milliseconds: 200));
     await _exitCtrl.forward().orCancel.catchError((_) {});
     if (_disposed) return;
 

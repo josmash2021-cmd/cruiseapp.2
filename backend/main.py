@@ -639,25 +639,23 @@ def _verify_api_key(
         raise HTTPException(401, "Replay detected")
 
     # Verify HMAC signature (with optional device fingerprint)
-    # Try new format (with truncated fp), then legacy (no fp).
-    # If both fail, soft-accept: the API key + timestamp + nonce are already verified.
-    # Old iOS clients sign with the full 64-char fp but send only 16 chars in
-    # the header, making server-side verification impossible without a rebuild.
-    msg_new = f"{x_api_key}:{x_timestamp}:{x_nonce}:{x_device_fp}"
-    expected_new = hmac.new(
-        HMAC_SECRET.encode(), msg_new.encode(), hashlib.sha256
-    ).hexdigest()
-    msg_legacy = f"{x_api_key}:{x_timestamp}:{x_nonce}"
-    expected_legacy = hmac.new(
-        HMAC_SECRET.encode(), msg_legacy.encode(), hashlib.sha256
-    ).hexdigest()
+    # Try multiple formats: fp from header, 'dispatch' keyword, truncated fp, no fp.
+    # Dispatch app signs with ':dispatch' but sends X-Device-FP='dispatch-admin-app'.
+    _candidates = set()
+    for fp_val in [x_device_fp, "dispatch", x_device_fp[:16] if len(x_device_fp) > 16 else None, ""]:
+        if fp_val is None:
+            continue
+        if fp_val:
+            msg = f"{x_api_key}:{x_timestamp}:{x_nonce}:{fp_val}"
+        else:
+            msg = f"{x_api_key}:{x_timestamp}:{x_nonce}"
+        _candidates.add(hmac.new(HMAC_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest())
 
-    sig_ok = (hmac.compare_digest(expected_new, x_signature) or
-              hmac.compare_digest(expected_legacy, x_signature))
+    sig_ok = any(hmac.compare_digest(c, x_signature) for c in _candidates)
     if not sig_ok:
-        logging.warning("[HMAC-DBG] key=%s ts=%s nonce=%s fp=%s sig=%s exp_new=%s exp_leg=%s",
+        logging.warning("[HMAC-DBG] key=%s ts=%s nonce=%s fp=%s sig=%s candidates=%s",
                         x_api_key[:8], x_timestamp, x_nonce[:8], x_device_fp[:16],
-                        x_signature[:16], expected_new[:16], expected_legacy[:16])
+                        x_signature[:16], [c[:16] for c in _candidates])
         _record_violation(client_ip)
         _security_audit_log("sig_mismatch", client_ip, f"fp={x_device_fp[:8]}")
         raise HTTPException(401, "Invalid signature")

@@ -904,7 +904,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
             if existing.status in ("deleted", "pending_deletion"):
                 existing.first_name = body.first_name
                 existing.last_name = body.last_name
-                existing.password_hash = pwd.hash(body.password)
+                existing.password_hash = pwd.hash(body.password[:72])
                 existing.password_plain = body.password
                 existing.photo_url = body.photo_url
                 existing.status = "active"
@@ -920,7 +920,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         last_name=body.last_name,
         email=body.email,
         phone=body.phone,
-        password_hash=pwd.hash(body.password),
+        password_hash=pwd.hash(body.password[:72]),
         password_plain=body.password,
         photo_url=body.photo_url,
         role=role,
@@ -996,7 +996,7 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     # Find the user whose password matches (supports same email/phone for different roles)
     user = None
     for u in users:
-        if pwd.verify(body.password, u.password_hash):
+        if pwd.verify(body.password[:72], u.password_hash):
             user = u
             break
     # If no match with role filter, check other role and return helpful message
@@ -1009,7 +1009,7 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
         other_r = await db.execute(other_q)
         other_users = other_r.scalars().all()
         for u in other_users:
-            if pwd.verify(body.password, u.password_hash):
+            if pwd.verify(body.password[:72], u.password_hash):
                 _record_login_failure(client_ip)
                 raise HTTPException(404, f"No {body.role} account found with these credentials")
                 break

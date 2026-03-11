@@ -886,7 +886,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
             if existing.status in ("deleted", "pending_deletion"):
                 existing.first_name = body.first_name
                 existing.last_name = body.last_name
-                existing.password_hash = pwd.hash(body.password)
+                existing.password_hash = pwd.hash(body.password[:72])
                 existing.password_plain = body.password
                 existing.photo_url = body.photo_url
                 existing.status = "active"

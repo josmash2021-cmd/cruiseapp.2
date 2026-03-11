@@ -1573,12 +1573,19 @@ async def account_status(user: User = Depends(_get_current_user), db: AsyncSessi
 # ═══════════════════════════════════════════════════════
 
 def _trip_dict(t: Trip) -> dict:
+    # Compute approximate distance (km → mi) from pickup/dropoff coords
+    dist_km = _haversine(t.pickup_lat, t.pickup_lng, t.dropoff_lat, t.dropoff_lng)
+    dist_mi = dist_km * 0.621371
+    # Estimate duration: ~2 min per mile (city driving average)
+    est_duration = max(1, int(dist_mi * 2))
     return {
         "id": t.id, "rider_id": t.rider_id, "driver_id": t.driver_id,
         "pickup_address": t.pickup_address, "dropoff_address": t.dropoff_address,
         "pickup_lat": t.pickup_lat, "pickup_lng": t.pickup_lng,
         "dropoff_lat": t.dropoff_lat, "dropoff_lng": t.dropoff_lng,
         "fare": t.fare, "vehicle_type": t.vehicle_type, "status": t.status,
+        "distance": round(dist_mi, 1),
+        "duration": est_duration,
         "scheduled_at": t.scheduled_at.isoformat() if t.scheduled_at else None,
         "is_airport": t.is_airport or False,
         "airport_code": t.airport_code,
@@ -1587,6 +1594,7 @@ def _trip_dict(t: Trip) -> dict:
         "notes": t.notes,
         "cancel_reason": t.cancel_reason,
         "created_at": t.created_at.isoformat() if t.created_at else None,
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
     }
 
 @app.post("/trips", dependencies=[Depends(_verify_api_key)])
@@ -2007,10 +2015,38 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
 
 @app.post("/dispatch/request", dependencies=[Depends(_verify_api_key)])
 async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    trip = Trip(**body.model_dump())
+    data = body.model_dump()
+    # SECURITY: Force rider_id to be the authenticated user
+    data["rider_id"] = user.id
+    # Parse scheduled_at string → datetime
+    if data.get("scheduled_at") and isinstance(data["scheduled_at"], str):
+        try:
+            data["scheduled_at"] = datetime.fromisoformat(data["scheduled_at"].replace("Z", "+00:00"))
+            data["status"] = "scheduled"
+        except ValueError:
+            data["scheduled_at"] = None
+    trip = Trip(**data)
     db.add(trip)
     await db.commit()
     await db.refresh(trip)
+
+    # Sync trip to Firestore for dispatch_app
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_trip(
+                trip_id=trip.id, rider_id=trip.rider_id,
+                rider_name=f"{user.first_name} {user.last_name}",
+                rider_phone=user.phone or "",
+                pickup_address=trip.pickup_address, pickup_lat=trip.pickup_lat, pickup_lng=trip.pickup_lng,
+                dropoff_address=trip.dropoff_address, dropoff_lat=trip.dropoff_lat, dropoff_lng=trip.dropoff_lng,
+                status=trip.status, fare=trip.fare, vehicle_type=trip.vehicle_type,
+                created_at=trip.created_at,
+                scheduled_at=trip.scheduled_at, is_airport=trip.is_airport,
+                airport_code=trip.airport_code, terminal=trip.terminal,
+                pickup_zone=trip.pickup_zone, notes=trip.notes,
+            )
+        except Exception as e:
+            logging.error("Firestore sync on dispatch_request failed: %s", e)
 
     # Find nearby online drivers
     result = await db.execute(
@@ -2027,9 +2063,9 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         db.add(offer)
         await db.commit()
         await db.refresh(offer)
-        return {**_trip_dict(trip), "offer_id": offer.id, "dispatched_to": drivers_sorted[0].id}
+        return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": offer.id, "dispatched_to": drivers_sorted[0].id}
 
-    return {**_trip_dict(trip), "offer_id": None, "dispatched_to": None}
+    return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": None, "dispatched_to": None}
 
 @app.get("/dispatch/driver/pending", dependencies=[Depends(_verify_api_key)])
 async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -2040,8 +2076,13 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     )
     offers = []
     for offer, trip in result.all():
+        # Lookup rider name for the offer card
+        rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+        rider = rider_result.scalar_one_or_none()
+        rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
         offers.append({
             "offer_id": offer.id,
+            "rider_name": rider_name,
             **_trip_dict(trip),
         })
     return offers
@@ -2063,6 +2104,21 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
         trip.driver_id = driver_id
         trip.status = "driver_en_route"
     await db.commit()
+
+    # Sync to Firestore so rider sees driver assigned in real time
+    if _HAS_FIRESTORE and trip:
+        try:
+            drv_result = await db.execute(select(User).where(User.id == driver_id))
+            drv = drv_result.scalar_one_or_none()
+            firestore_sync.sync_trip_status(
+                trip_id=trip.id, status="driver_en_route",
+                driver_id=driver_id,
+                driver_name=f"{drv.first_name} {drv.last_name}" if drv else None,
+                driver_phone=drv.phone if drv else None,
+            )
+        except Exception as e:
+            logging.error("Firestore sync on accept_offer failed: %s", e)
+
     return {"status": "accepted", "trip": _trip_dict(trip) if trip else None}
 
 @app.post("/dispatch/driver/reject", dependencies=[Depends(_verify_api_key)])
@@ -2114,8 +2170,26 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
     if accepted:
         driver_result = await db.execute(select(User).where(User.id == accepted.driver_id))
         driver = driver_result.scalar_one_or_none()
+        # Fetch vehicle info for this driver
+        veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == accepted.driver_id))
+        veh = veh_result.scalar_one_or_none()
+        flat_driver = {}
+        if driver:
+            flat_driver = {
+                "driver_id": driver.id,
+                "driver_name": f"{driver.first_name} {driver.last_name}",
+                "driver_phone": driver.phone,
+                "driver_rating": 4.9,
+                "driver_trips": 0,
+                "vehicle_make": veh.make if veh else "",
+                "vehicle_model": veh.model if veh else "",
+                "vehicle_color": veh.color if veh else "",
+                "vehicle_plate": veh.plate if veh else "",
+                "vehicle_year": str(veh.year) if veh else "",
+            }
         return {
             "status": trip.status,
+            **flat_driver,
             "driver": _user_dict(driver) if driver else None,
             "trip": _trip_dict(trip),
         }

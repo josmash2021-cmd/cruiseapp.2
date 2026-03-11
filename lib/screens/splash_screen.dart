@@ -70,7 +70,7 @@ class _SplashScreenState extends State<SplashScreen>
   void _setupEntranceAnimations() {
     _entranceCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1400),
     );
 
     _letterSlide = [];
@@ -78,20 +78,21 @@ class _SplashScreenState extends State<SplashScreen>
     _letterScale = [];
 
     for (int i = 0; i < _letters.length; i++) {
-      // Each letter is staggered by ~100ms, spans ~500ms
-      final start = (i * 0.12).clamp(0.0, 1.0);
-      final end = (start + 0.45).clamp(0.0, 1.0);
+      // Stagger más elegante: cada letra aparece con delay progresivo
+      final start = (i * 0.08).clamp(0.0, 0.6);
+      final end = (start + 0.5).clamp(0.0, 1.0);
 
-      final curveInterval = Interval(start, end, curve: Curves.elasticOut);
+      // Curva de entrada suave tipo "deceleración elegante"
+      final curveInterval = Interval(start, end, curve: Curves.easeOutCubic);
       final fadeInterval = Interval(
         start,
-        (start + 0.25).clamp(0.0, 1.0),
+        (start + 0.35).clamp(0.0, 1.0),
         curve: Curves.easeOut,
       );
 
       _letterSlide.add(
         Tween<double>(
-          begin: 60.0,
+          begin: 40.0,
           end: 0.0,
         ).animate(CurvedAnimation(parent: _entranceCtrl, curve: curveInterval)),
       );
@@ -105,9 +106,9 @@ class _SplashScreenState extends State<SplashScreen>
 
       _letterScale.add(
         Tween<double>(
-          begin: 0.3,
+          begin: 0.8,
           end: 1.0,
-        ).animate(CurvedAnimation(parent: _entranceCtrl, curve: curveInterval)),
+        ).animate(CurvedAnimation(parent: _entranceCtrl, curve: Curves.easeOutBack)),
       );
     }
   }
@@ -115,23 +116,23 @@ class _SplashScreenState extends State<SplashScreen>
   void _setupGlowAnimation() {
     _glowCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 1200),
     );
   }
 
   void _setupExitAnimation() {
     _exitCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 800),
     );
     _exitFade = Tween<double>(
       begin: 1.0,
       end: 0.0,
-    ).animate(CurvedAnimation(parent: _exitCtrl, curve: Curves.easeInQuart));
+    ).animate(CurvedAnimation(parent: _exitCtrl, curve: Curves.easeInOutCubic));
     _exitScale = Tween<double>(
       begin: 1.0,
-      end: 1.35,
-    ).animate(CurvedAnimation(parent: _exitCtrl, curve: Curves.easeIn));
+      end: 1.15,
+    ).animate(CurvedAnimation(parent: _exitCtrl, curve: Curves.easeInOutCubic));
   }
 
   // ═══════════════════════════════════════════════════════
@@ -152,26 +153,26 @@ class _SplashScreenState extends State<SplashScreen>
     });
 
     // Small delay on launch
-    await Future.delayed(const Duration(milliseconds: 300));
+    await Future.delayed(const Duration(milliseconds: 200));
     if (_disposed) return;
 
-    // Phase 1 — letters bounce in
+    // Phase 1 — letters appear with elegant stagger
     await _entranceCtrl.forward().orCancel.catchError((_) {});
     if (_disposed) return;
 
-    // Phase 2 — shimmer glow pulse
+    // Phase 2 — subtle shimmer glow pulse (2 cycles for elegance)
     await _glowCtrl.forward().orCancel.catchError((_) {});
     if (_disposed) return;
-
-    // Hold for a beat
-    await Future.delayed(const Duration(milliseconds: 500));
+    
+    // Hold briefly with full glow
+    await Future.delayed(const Duration(milliseconds: 400));
     if (_disposed) return;
 
-    // Ensure heavy init finished before navigating (with timeout)
+    // Ensure heavy init finished before navigating
     await initFuture;
     if (_disposed) return;
 
-    // Phase 3 — scale up + fade out
+    // Phase 3 — smooth elegant fade out
     await _exitCtrl.forward().orCancel.catchError((_) {});
     if (_disposed) return;
 
@@ -338,7 +339,7 @@ class _SplashScreenState extends State<SplashScreen>
     final glowColor = Color.lerp(_gold, _goldBright, glowIntensity)!;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 2),
+      margin: const EdgeInsets.symmetric(horizontal: 1),
       child: ShaderMask(
         shaderCallback: (bounds) {
           return LinearGradient(
@@ -348,24 +349,27 @@ class _SplashScreenState extends State<SplashScreen>
               glowColor,
               _gold,
             ],
-            stops: const [0.3, 1.0],
+            stops: const [0.2, 1.0],
           ).createShader(bounds);
         },
         child: Text(
           letter,
-          style: GoogleFonts.montserrat(
-            fontSize: 56,
-            fontWeight: FontWeight.w900,
+          style: GoogleFonts.cinzel(
+            fontSize: 52,
+            fontWeight: FontWeight.w700,
             color: Colors.white,
-            letterSpacing: -2,
+            letterSpacing: 2,
+            height: 1.0,
             shadows: [
               Shadow(
-                color: _gold.withOpacity(0.5 + glowIntensity * 0.5),
-                blurRadius: 20 + glowIntensity * 30,
+                color: _gold.withOpacity(0.6 + glowIntensity * 0.4),
+                blurRadius: 15 + glowIntensity * 25,
+                offset: const Offset(0, 0),
               ),
               Shadow(
-                color: _goldBright.withOpacity(glowIntensity * 0.3),
-                blurRadius: 40,
+                color: _goldBright.withOpacity(glowIntensity * 0.5),
+                blurRadius: 30 + glowIntensity * 20,
+                offset: const Offset(0, 2),
               ),
             ],
           ),

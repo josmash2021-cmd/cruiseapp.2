@@ -27,7 +27,7 @@ workflows:
         ENV_STRIPE_PK: "pk_test_REPLACE_WITH_YOUR_KEY"
         ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
         ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
-        ENV_TWILIO_TOKEN: "a7a068f83aa355acbd31deaafc317cf9"
+        ENV_TWILIO_TOKEN: "f18366886cb6b548d697a683ebdfc229"
         ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
         ENV_PAYPAL_SANDBOX: "true"
         ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
@@ -65,11 +65,6 @@ workflows:
       - name: Get Flutter packages
         script: |
           flutter pub get
-      - name: Generate app icons
-        script: |
-          echo "Generating launcher icons..."
-          flutter pub run flutter_launcher_icons
-          echo "Icons generated successfully"
       - name: Generate iOS config files
         script: |
           flutter build ios --config-only --no-codesign --no-pub
@@ -278,7 +273,7 @@ workflows:
         ENV_STRIPE_PK: "pk_test_REPLACE_WITH_YOUR_KEY"
         ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
         ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
-        ENV_TWILIO_TOKEN: "a7a068f83aa355acbd31deaafc317cf9"
+        ENV_TWILIO_TOKEN: "f18366886cb6b548d697a683ebdfc229"
         ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
         ENV_PAYPAL_SANDBOX: "true"
         ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
@@ -383,7 +378,7 @@ workflows:
         ENV_STRIPE_PK: "pk_test_REPLACE_WITH_YOUR_KEY"
         ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
         ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
-        ENV_TWILIO_TOKEN: "a7a068f83aa355acbd31deaafc317cf9"
+        ENV_TWILIO_TOKEN: "f18366886cb6b548d697a683ebdfc229"
         ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
         ENV_PAYPAL_SANDBOX: "true"
         ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"

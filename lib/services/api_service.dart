@@ -30,7 +30,7 @@ class ApiService {
   /// Default Cloudflare Tunnel URL.  Free tunnels change every restart;
   /// update via the in-app Settings → "Server URL" dialog instead of rebuilding.
   static const String _defaultTunnelUrl =
-      'https://api.cruiseinride.com';
+      'https://jaida-intervarsity-tashina.ngrok-free.dev';
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 

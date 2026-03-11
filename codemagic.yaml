@@ -65,6 +65,11 @@ workflows:
       - name: Get Flutter packages
         script: |
           flutter pub get
+      - name: Generate app icons
+        script: |
+          echo "Generating launcher icons..."
+          flutter pub run flutter_launcher_icons
+          echo "Icons generated successfully"
       - name: Generate iOS config files
         script: |
           flutter build ios --config-only --no-codesign --no-pub

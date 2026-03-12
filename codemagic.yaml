@@ -144,10 +144,6 @@ workflows:
           echo "xcconfig signing lines removed"
       - name: Flutter build iOS (no codesign)
         script: |
-          set -e          # exit immediately if any command fails
-          set -o pipefail # treat pipeline errors as failures
-
-          echo "=== Flutter version ==="
           flutter --version
 
           flutter build ios \
@@ -155,22 +151,14 @@ workflows:
             --no-codesign \
             --no-tree-shake-icons
 
-          echo "=== Build completed. Checking output ==="
-          # Flutter outputs to build/ios/iphoneos/Runner.app
           APP="build/ios/iphoneos/Runner.app"
-
-          # Also search in case output path differs
           if [ ! -d "$APP" ]; then
-            echo "Not found at expected path, searching..."
+            echo "Searching for Runner.app..."
             find build/ios -type d -name "Runner.app" 2>/dev/null || true
-            echo "ERROR: Runner.app not found"
             exit 1
           fi
-
-          echo "App contents:"
           ls -la "$APP/"
-          APP_SIZE=$(du -sm "$APP" | cut -f1)
-          echo "App size: ${APP_SIZE} MB"
+          echo "App size: $(du -sm "$APP" | cut -f1) MB"
       - name: Empaquetar .app en .ipa
         script: |
           APP_PATH="build/ios/iphoneos/Runner.app"

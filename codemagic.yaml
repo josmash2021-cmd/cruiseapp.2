@@ -152,91 +152,53 @@ workflows:
           printf 'CODE_SIGNING_ALLOWED=NO\nCODE_SIGNING_REQUIRED=NO\nCODE_SIGN_IDENTITY=\nCODE_SIGN_ENTITLEMENTS=\nEXPANDED_CODE_SIGN_IDENTITY=\n' >> Flutter/Release.xcconfig
       - name: Flutter build iOS (no codesign)
         script: |
-          # Disable tree-shake-icons via xcconfig (non-constant IconData in project)
-          echo 'TREE_SHAKE_ICONS=false' >> ios/Flutter/Release.xcconfig
+          # flutter build ios compiles Dart → ARM and runs xcodebuild internally.
+          # --no-codesign   : skips signing (CODE_SIGNING_ALLOWED=NO already set in Podfile)
+          # --no-tree-shake-icons : required because the project uses non-constant IconData
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --no-tree-shake-icons
 
-          # Use xcodebuild DIRECTLY to bypass Flutter's Development Team validation.
-          # flutter build ios --no-codesign still checks for a team and fails;
-          # calling xcodebuild ourselves avoids that Flutter-level check entirely.
-          xcodebuild build \
-            -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            BUILD_DIR="$(pwd)/build/ios" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGN_ENTITLEMENTS="" \
-            DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            CODE_SIGN_STYLE=Manual \
-            VALIDATE_PRODUCT=NO \
-            COMPILER_INDEX_STORE_ENABLE=NO
-
-          # Find the .app — xcodebuild puts it in Release-iphoneos/
-          APP=$(find build/ios/Release-iphoneos -name "*.app" -type d 2>/dev/null | head -1)
-          if [ -z "$APP" ]; then
-            APP=$(find build/ios -name "*.app" -type d 2>/dev/null | head -1)
-          fi
-
-          if [ -z "$APP" ]; then
-            echo "ERROR: No .app bundle found anywhere in build/ios/"
-            find build/ -type d -name "*.app" 2>/dev/null
+          # flutter always outputs to build/ios/iphoneos/Runner.app
+          APP="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP" ]; then
+            echo "ERROR: Runner.app not found at $APP"
+            find build/ios -type d -name "*.app" 2>/dev/null
             exit 1
           fi
 
-          # Verify .app has real content
           APP_SIZE=$(du -sm "$APP" | cut -f1)
-          echo "Build produced: $APP ($APP_SIZE MB)"
-
-          if [ "$APP_SIZE" -lt 2 ]; then
-            echo "WARNING: .app is small ($APP_SIZE MB), checking contents..."
+          echo "Build OK: $APP (${APP_SIZE} MB)"
+          if [ "$APP_SIZE" -lt 5 ]; then
+            echo "ERROR: .app is too small (${APP_SIZE} MB) — Dart compilation likely failed"
             ls -la "$APP/"
-            echo "ERROR: .app appears empty or corrupt"
             exit 1
           fi
-
-          echo "Build OK - .app ready for packaging"
       - name: Empaquetar .app en .ipa
         script: |
-          # Search for .app in Release-iphoneos first, then fallback
-          APP_PATH=$(find build/ios/Release-iphoneos -name "*.app" -type d 2>/dev/null | head -1)
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find build/ios -name "*.app" -type d 2>/dev/null | head -1)
-          fi
-
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app found to package"
+          APP_PATH="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: Runner.app not found at $APP_PATH"
             exit 1
           fi
-          echo "Packaging: $APP_PATH"
+          echo "Packaging: $APP_PATH ($(du -sh "$APP_PATH" | cut -f1))"
 
-          # Clean previous packaging artifacts
           rm -rf build/ios/ipa
           mkdir -p build/ios/ipa/Payload
-          cp -r "$APP_PATH" build/ios/ipa/Payload/
+          cp -r "$APP_PATH" build/ios/ipa/Payload/Runner.app
 
           cd build/ios/ipa
-
-          # Verify Payload has content
-          echo "Payload contents:"
-          ls -la Payload/
-          du -sh Payload/
+          echo "Payload contents:"; ls -la Payload/
 
           zip -r cruise-app.ipa Payload
 
-          # Show final IPA size
           IPA_SIZE_BYTES=$(stat -f%z cruise-app.ipa 2>/dev/null || stat -c%s cruise-app.ipa 2>/dev/null)
-          IPA_SIZE_MB=$(du -sm cruise-app.ipa | cut -f1)
-          echo "IPA created: cruise-app.ipa ($IPA_SIZE_BYTES bytes / $IPA_SIZE_MB MB)"
-
-          if [ "$IPA_SIZE_BYTES" -lt 50000 ]; then
-            echo "ERROR: IPA too small ($IPA_SIZE_BYTES bytes) - something went wrong"
+          echo "IPA: cruise-app.ipa (${IPA_SIZE_BYTES} bytes)"
+          if [ "${IPA_SIZE_BYTES}" -lt 50000 ]; then
+            echo "ERROR: IPA too small — packaging failed"
             exit 1
           fi
-
           echo "IPA packaging completed successfully"
     artifacts:
       - build/ios/ipa/cruise-app.ipa

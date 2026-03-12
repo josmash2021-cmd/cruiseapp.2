@@ -116,23 +116,22 @@ workflows:
 
           # ── 2. Patch Runner.xcodeproj — clear ALL signing-related settings ────────
           python3 << 'PYEOF'
-import re
-
-path = 'Runner.xcodeproj/project.pbxproj'
-with open(path, 'r') as f:
-    content = f.read()
-content = re.sub(r'DEVELOPMENT_TEAM = [^;]*;', 'DEVELOPMENT_TEAM = "";', content)
-content = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"', 'CODE_SIGN_IDENTITY = ""', content)
-content = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"', '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', content)
-content = re.sub(r'CODE_SIGN_STYLE = Automatic', 'CODE_SIGN_STYLE = Manual', content)
-content = re.sub(r'VALIDATE_PRODUCT = YES', 'VALIDATE_PRODUCT = NO', content)
-content = re.sub(r'PROVISIONING_PROFILE_SPECIFIER = "[^"]*"', 'PROVISIONING_PROFILE_SPECIFIER = ""', content)
-content = re.sub(r'PROVISIONING_PROFILE = "[^"]*"', 'PROVISIONING_PROFILE = ""', content)
-content = re.sub(r'CODE_SIGN_ENTITLEMENTS = [^;]*;', '', content)
-with open(path, 'w') as f:
-    f.write(content)
-print(f"Patched: {path}")
-PYEOF
+          import re
+          path = 'Runner.xcodeproj/project.pbxproj'
+          with open(path, 'r') as f:
+              content = f.read()
+          content = re.sub(r'DEVELOPMENT_TEAM = [^;]*;', 'DEVELOPMENT_TEAM = "";', content)
+          content = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"', 'CODE_SIGN_IDENTITY = ""', content)
+          content = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"', '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', content)
+          content = re.sub(r'CODE_SIGN_STYLE = Automatic', 'CODE_SIGN_STYLE = Manual', content)
+          content = re.sub(r'VALIDATE_PRODUCT = YES', 'VALIDATE_PRODUCT = NO', content)
+          content = re.sub(r'PROVISIONING_PROFILE_SPECIFIER = "[^"]*"', 'PROVISIONING_PROFILE_SPECIFIER = ""', content)
+          content = re.sub(r'PROVISIONING_PROFILE = "[^"]*"', 'PROVISIONING_PROFILE = ""', content)
+          content = re.sub(r'CODE_SIGN_ENTITLEMENTS = [^;]*;', '', content)
+          with open(path, 'w') as f:
+              f.write(content)
+          print(f"Patched: {path}")
+          PYEOF
           echo "Runner.xcodeproj patched (all signing settings cleared)"
 
           # ── 3. Strip signing overrides from xcconfig files ────────────────────────

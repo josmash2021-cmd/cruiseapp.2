@@ -41,6 +41,11 @@ from sqlalchemy.orm import DeclarativeBase, relationship
 
 # -- Config ----------------------------------------------
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cruise.db")
+# Railway / Render provide postgres:// — SQLAlchemy async needs postgresql+asyncpg://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 API_KEY = os.environ["API_KEY"]       # Required � set in .env
 HMAC_SECRET = os.environ["HMAC_SECRET"] # Required � set in .env
 JWT_SECRET = os.environ["JWT_SECRET"]   # Required � set in .env

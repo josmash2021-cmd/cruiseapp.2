@@ -1,0 +1,30 @@
+# Flutter / Dart
+lib/
+test/
+build/
+.dart_tool/
+pubspec.yaml
+pubspec.lock
+android/
+ios/
+web/
+linux/
+macos/
+windows/
+codemagic.yaml
+
+# Backend secrets & local DB (use env vars + managed DB in production)
+backend/.env
+backend/cruise.db
+backend/cruise.db-shm
+backend/cruise.db-wal
+backend/*.log
+backend/live_log.txt
+backend/output.log
+backend/__pycache__/
+backend/uploads/
+backend/photos/
+
+# Git
+.git/
+.gitignore

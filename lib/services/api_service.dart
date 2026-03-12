@@ -27,10 +27,9 @@ class ApiService {
   /// Local network URL — works for physical devices on same WiFi network
   static const String _localNetworkUrl = 'http://172.20.11.24:8000';
 
-  /// Default Cloudflare Tunnel URL.  Free tunnels change every restart;
-  /// update via the in-app Settings → "Server URL" dialog instead of rebuilding.
+  /// Railway cloud backend — always reachable from any network.
   static const String _defaultTunnelUrl =
-      'https://jaida-intervarsity-tashina.ngrok-free.dev';
+      'https://cruiseapp2-production.up.railway.app';
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 
@@ -79,7 +78,7 @@ class ApiService {
   }) async {
     final urls =
         candidates ??
-        [_activeUrl, _localNetworkUrl, _defaultTunnelUrl, _adbUrl, _localUrl];
+        [_defaultTunnelUrl, _activeUrl, _localNetworkUrl, _adbUrl, _localUrl];
 
     for (final url in urls) {
       try {

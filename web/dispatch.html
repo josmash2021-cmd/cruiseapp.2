@@ -439,8 +439,23 @@ async function loadTrips() {
 
 // ── LIVE CHATS ────────────────────────────────────────
 let activeChatId = null;
+let _msgRefresh = null;
+let _listRefresh = null;
+
+function startAutoRefresh() {
+    if (_msgRefresh) clearInterval(_msgRefresh);
+    if (_listRefresh) clearInterval(_listRefresh);
+    _msgRefresh = setInterval(() => {
+        if (activeChatId) loadChatMessages(activeChatId);
+    }, 10000);
+    _listRefresh = setInterval(() => {
+        const tab = document.querySelector('.tab.active');
+        if (tab && tab.id === 'tab-chats') loadChats();
+    }, 30000);
+}
 
 async function loadChats() {
+    if (!_msgRefresh) startAutoRefresh();
     const el = document.getElementById('chatsList');
     el.innerHTML = '<div class="loading">Loading…</div>';
     const showClosed = document.getElementById('showClosed').checked;

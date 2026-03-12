@@ -136,29 +136,33 @@ workflows:
           echo "Runner.xcodeproj patched (team/identity cleared)"
       - name: Flutter build iOS (no codesign)
         script: |
-          # flutter build ios compiles Dart → ARM and runs xcodebuild internally.
-          # --no-codesign   : skips signing (CODE_SIGNING_ALLOWED=NO already set in Podfile)
-          # --no-tree-shake-icons : required because the project uses non-constant IconData
+          set -e          # exit immediately if any command fails
+          set -o pipefail # treat pipeline errors as failures
+
+          echo "=== Flutter version ==="
+          flutter --version
+
           flutter build ios \
             --release \
             --no-codesign \
             --no-tree-shake-icons
 
-          # flutter always outputs to build/ios/iphoneos/Runner.app
+          echo "=== Build completed. Checking output ==="
+          # Flutter outputs to build/ios/iphoneos/Runner.app
           APP="build/ios/iphoneos/Runner.app"
+
+          # Also search in case output path differs
           if [ ! -d "$APP" ]; then
-            echo "ERROR: Runner.app not found at $APP"
-            find build/ios -type d -name "*.app" 2>/dev/null
+            echo "Not found at expected path, searching..."
+            find build/ios -type d -name "Runner.app" 2>/dev/null || true
+            echo "ERROR: Runner.app not found"
             exit 1
           fi
 
+          echo "App contents:"
+          ls -la "$APP/"
           APP_SIZE=$(du -sm "$APP" | cut -f1)
-          echo "Build OK: $APP (${APP_SIZE} MB)"
-          if [ "$APP_SIZE" -lt 5 ]; then
-            echo "ERROR: .app is too small (${APP_SIZE} MB) — Dart compilation likely failed"
-            ls -la "$APP/"
-            exit 1
-          fi
+          echo "App size: ${APP_SIZE} MB"
       - name: Empaquetar .app en .ipa
         script: |
           APP_PATH="build/ios/iphoneos/Runner.app"

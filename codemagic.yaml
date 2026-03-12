@@ -110,40 +110,39 @@ workflows:
         script: |
           cd ios
 
-          # ── 1. Replace entitlements with empty file ──────────────────────────────
-          # aps-environment (Push) and in-app-payments (Apple Pay) require a valid
-          # provisioning profile. Remove them so the unsigned build can proceed.
-          cat > Runner/Runner.entitlements << 'ENTEOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict/>
-          </plist>
-          ENTEOF
+          # ── 1. Replace entitlements with clean empty plist via plistlib ────────────
+          python3 -c "import plistlib; open('Runner/Runner.entitlements','wb').write(plistlib.dumps({},fmt=plistlib.FMT_XML))"
           echo "Runner.entitlements cleared"
 
-          # ── 2. Patch Runner.xcodeproj ──────────────────────────────────────────
+          # ── 2. Patch Runner.xcodeproj — clear ALL signing-related settings ────────
           python3 << 'PYEOF'
-          import re
+import re
 
-          path = 'Runner.xcodeproj/project.pbxproj'
-          with open(path, 'r') as f:
-              content = f.read()
-          # Clear development team
-          content = re.sub(r'DEVELOPMENT_TEAM = [^;]*;', 'DEVELOPMENT_TEAM = "";', content)
-          # Clear code sign identity
-          content = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"', 'CODE_SIGN_IDENTITY = ""', content)
-          content = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"',
-                           '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', content)
-          # Switch to manual signing
-          content = re.sub(r'CODE_SIGN_STYLE = Automatic', 'CODE_SIGN_STYLE = Manual', content)
-          # Disable product validation (requires signing)
-          content = re.sub(r'VALIDATE_PRODUCT = YES', 'VALIDATE_PRODUCT = NO', content)
-          with open(path, 'w') as f:
-              f.write(content)
-          print(f"Patched: {path}")
-          PYEOF
-          echo "Runner.xcodeproj patched (team/identity cleared)"
+path = 'Runner.xcodeproj/project.pbxproj'
+with open(path, 'r') as f:
+    content = f.read()
+content = re.sub(r'DEVELOPMENT_TEAM = [^;]*;', 'DEVELOPMENT_TEAM = "";', content)
+content = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"', 'CODE_SIGN_IDENTITY = ""', content)
+content = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"', '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', content)
+content = re.sub(r'CODE_SIGN_STYLE = Automatic', 'CODE_SIGN_STYLE = Manual', content)
+content = re.sub(r'VALIDATE_PRODUCT = YES', 'VALIDATE_PRODUCT = NO', content)
+content = re.sub(r'PROVISIONING_PROFILE_SPECIFIER = "[^"]*"', 'PROVISIONING_PROFILE_SPECIFIER = ""', content)
+content = re.sub(r'PROVISIONING_PROFILE = "[^"]*"', 'PROVISIONING_PROFILE = ""', content)
+content = re.sub(r'CODE_SIGN_ENTITLEMENTS = [^;]*;', '', content)
+with open(path, 'w') as f:
+    f.write(content)
+print(f"Patched: {path}")
+PYEOF
+          echo "Runner.xcodeproj patched (all signing settings cleared)"
+
+          # ── 3. Strip signing overrides from xcconfig files ────────────────────────
+          for xcconfig in Flutter/Release.xcconfig Flutter/Debug.xcconfig; do
+            if [ -f "$xcconfig" ]; then
+              sed -i '' '/CODE_SIGN_IDENTITY/d' "$xcconfig" || true
+              sed -i '' '/DEVELOPMENT_TEAM/d' "$xcconfig" || true
+            fi
+          done
+          echo "xcconfig signing lines removed"
       - name: Flutter build iOS (no codesign)
         script: |
           set -e          # exit immediately if any command fails

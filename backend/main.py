@@ -71,14 +71,12 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window
 
-# SQLite engine with optimized settings for stability
+# Engine — connect_args differ between SQLite and PostgreSQL
+_is_sqlite = DATABASE_URL.startswith("sqlite")
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    connect_args={
-        "timeout": 30,  # 30 second timeout for DB operations
-        "check_same_thread": False,  # Allow multi-threading
-    }
+    connect_args={"timeout": 30, "check_same_thread": False} if _is_sqlite else {},
 )
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 _TUNNEL_URL_FILE = os.path.join(os.path.dirname(__file__), "tunnel_url.txt")

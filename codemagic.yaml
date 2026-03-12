@@ -109,10 +109,20 @@ workflows:
       - name: Disable code signing in project
         script: |
           cd ios
-          # Only clear team/identity in Runner.xcodeproj — do NOT inject CODE_SIGNING_ALLOWED
-          # into the project file. flutter build ios --no-codesign passes that as a runtime
-          # xcodebuild override, which correctly builds the binary while skipping signing.
-          # Setting CODE_SIGNING_ALLOWED=NO at the project level blocks framework embedding.
+
+          # ── 1. Replace entitlements with empty file ──────────────────────────────
+          # aps-environment (Push) and in-app-payments (Apple Pay) require a valid
+          # provisioning profile. Remove them so the unsigned build can proceed.
+          cat > Runner/Runner.entitlements << 'ENTEOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict/>
+          </plist>
+          ENTEOF
+          echo "Runner.entitlements cleared"
+
+          # ── 2. Patch Runner.xcodeproj ──────────────────────────────────────────
           python3 << 'PYEOF'
           import re
 
@@ -125,7 +135,7 @@ workflows:
           content = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"', 'CODE_SIGN_IDENTITY = ""', content)
           content = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"',
                            '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', content)
-          # Switch to manual signing so Xcode doesn't auto-assign a team
+          # Switch to manual signing
           content = re.sub(r'CODE_SIGN_STYLE = Automatic', 'CODE_SIGN_STYLE = Manual', content)
           # Disable product validation (requires signing)
           content = re.sub(r'VALIDATE_PRODUCT = YES', 'VALIDATE_PRODUCT = NO', content)

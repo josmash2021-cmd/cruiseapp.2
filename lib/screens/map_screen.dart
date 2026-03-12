@@ -4110,6 +4110,33 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               message: S.of(context).arrivedAtDestination,
               type: 'ride',
             );
+            // â”€â”€ Show payment confirmation â”€â”€
+            if (mounted) {
+              final payStatus = trip['payment_status']?.toString() ?? 'unpaid';
+              final fare = (trip['fare'] as num?)?.toDouble() ?? 0.0;
+              final fareStr = fare > 0 ? '\$${fare.toStringAsFixed(2)}' : '';
+              String payMsg;
+              Color payColor;
+              if (payStatus == 'paid') {
+                payMsg = fareStr.isNotEmpty
+                    ? '✓ Payment of $fareStr processed'
+                    : '✓ Payment processed';
+                payColor = const Color(0xFF4CAF50);
+              } else if (payStatus == 'failed') {
+                payMsg = 'Payment could not be processed. Please update your payment method.';
+                payColor = const Color(0xFFF44336);
+              } else {
+                payMsg = fareStr.isNotEmpty ? 'Trip fare: $fareStr' : 'Trip completed';
+                payColor = const Color(0xFFE8C547);
+              }
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(payMsg, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  backgroundColor: payColor,
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            }
             _completeRide();
             return;
           } else if (status == 'in_trip') {

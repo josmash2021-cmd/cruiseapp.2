@@ -149,6 +149,8 @@ class Trip(Base):
     pickup_zone = Column(String(100), nullable=True)  # e.g. 'Terminal A - Door 3'
     notes = Column(Text, nullable=True)  # flight number, special instructions
     cancel_reason = Column(Text, nullable=True)
+    payment_status = Column(String(20), default="unpaid")  # unpaid, paid, failed, cash, waived
+    stripe_payment_intent_id = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -329,6 +331,8 @@ async def _migrate_add_columns(conn):
         ("users", "phone_changes_count", "INTEGER DEFAULT 0"),
         ("support_chats", "last_user_message_at", "DATETIME"),
         ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT 0"),
+        ("trips", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
+        ("trips", "stripe_payment_intent_id", "VARCHAR(100)"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1753,6 +1757,8 @@ def _trip_dict(t: Trip) -> dict:
         "pickup_zone": t.pickup_zone,
         "notes": t.notes,
         "cancel_reason": t.cancel_reason,
+        "payment_status": getattr(t, "payment_status", "unpaid") or "unpaid",
+        "stripe_payment_intent_id": getattr(t, "stripe_payment_intent_id", None),
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "updated_at": t.updated_at.isoformat() if t.updated_at else None,
     }
@@ -1850,6 +1856,70 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
 
     return _trip_dict(trip)
 
+async def _charge_trip(trip, db: AsyncSession) -> dict:
+    """Charge the rider's default Stripe payment method for a completed trip.
+    Returns a dict with status and payment_intent_id."""
+    if not _HAS_STRIPE:
+        trip.payment_status = "paid"
+        await db.commit()
+        return {"status": "mock_paid", "payment_intent_id": None}
+
+    # Find rider's default Stripe card
+    pm_r = await db.execute(
+        select(RiderPaymentMethod).where(
+            RiderPaymentMethod.user_id == trip.rider_id,
+            RiderPaymentMethod.method_type == "stripe_card",
+            RiderPaymentMethod.stripe_pm_id.isnot(None),
+        ).order_by(RiderPaymentMethod.is_default.desc(), RiderPaymentMethod.created_at.asc())
+    )
+    pm = pm_r.scalars().first()
+
+    if not pm:
+        logging.warning("[Charge] No Stripe card on file for rider %s, trip %s", trip.rider_id, trip.id)
+        trip.payment_status = "failed"
+        await db.commit()
+        return {"status": "no_card", "payment_intent_id": None}
+
+    amount_cents = max(int((trip.fare or 0) * 100), 50)  # Stripe min = 50¢
+    try:
+        intent = _stripe_mod.PaymentIntent.create(
+            amount=amount_cents,
+            currency="usd",
+            payment_method=pm.stripe_pm_id,
+            confirm=True,
+            off_session=True,
+            automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
+            metadata={"trip_id": str(trip.id), "rider_id": str(trip.rider_id)},
+        )
+        trip.payment_status = "paid" if intent.status == "succeeded" else "failed"
+        trip.stripe_payment_intent_id = intent.id
+        await db.commit()
+        logging.info("[Charge] Trip %s charged %s¢ — status: %s", trip.id, amount_cents, intent.status)
+        return {"status": intent.status, "payment_intent_id": intent.id, "amount": amount_cents}
+    except _stripe_mod.error.StripeError as e:
+        trip.payment_status = "failed"
+        await db.commit()
+        logging.error("[Charge] Stripe error for trip %s: %s", trip.id, e)
+        return {"status": "failed", "error": str(e.user_message or e)}
+
+
+@app.post("/trips/{trip_id}/charge", dependencies=[Depends(_verify_api_key)])
+async def charge_trip_endpoint(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Manually charge the rider's saved card for a completed trip."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.rider_id != user.id and user.role not in ("admin", "driver"):
+        raise HTTPException(403, "Not authorized")
+    if trip.status != "completed":
+        raise HTTPException(400, f"Trip is not completed (status: {trip.status})")
+    if trip.payment_status == "paid":
+        return {"status": "already_paid", "payment_intent_id": trip.stripe_payment_intent_id}
+    result = await _charge_trip(trip, db)
+    return result
+
+
 @app.patch("/trips/{trip_id}/status", dependencies=[Depends(_verify_api_key)])
 async def update_trip_status(trip_id: int, status: str = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
@@ -1867,6 +1937,13 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             firestore_sync.sync_trip_status(trip_id=trip.id, status=status)
         except Exception as e:
             logging.error("Firestore sync on update_trip_status failed: %s", e)
+
+    # Auto-charge rider when trip is completed
+    if status == "completed" and trip.payment_status == "unpaid":
+        try:
+            await _charge_trip(trip, db)
+        except Exception as e:
+            logging.error("[AutoCharge] Failed for trip %s: %s", trip_id, e)
 
     return _trip_dict(trip)
 
@@ -5090,7 +5167,28 @@ async def admin_dashboard_stats(db: AsyncSession = Depends(get_db)):
     total_drivers_q = await db.execute(select(User).where(User.role == "driver"))
     total_drivers = len(total_drivers_q.scalars().all())
 
+    # Total users and riders
+    total_users_q = await db.execute(select(User))
+    total_users = len(total_users_q.scalars().all())
+    total_riders_q = await db.execute(select(User).where(User.role == "rider"))
+    total_riders = len(total_riders_q.scalars().all())
+    # Open chats
+    open_chats_q = await db.execute(select(SupportChat).where(SupportChat.status == "open"))
+    open_chats = len(open_chats_q.scalars().all())
+    # Pending verifications
+    pending_verif_q = await db.execute(select(User).where(User.verification_status == "pending"))
+    pending_verifications = len(pending_verif_q.scalars().all())
+    # Total trips
+    all_trips_q = await db.execute(select(Trip))
+    total_trips = len(all_trips_q.scalars().all())
+
     return {
+        "total_users": total_users,
+        "total_drivers": total_drivers,
+        "total_riders": total_riders,
+        "open_chats": open_chats,
+        "pending_verifications": pending_verifications,
+        "total_trips": total_trips,
         "today_trips": len(today_trips),
         "today_revenue": sum(t.fare or 0 for t in today_completed),
         "today_completed": len(today_completed),
@@ -5101,7 +5199,6 @@ async def admin_dashboard_stats(db: AsyncSession = Depends(get_db)):
         "month_revenue": sum(t.fare or 0 for t in month_completed),
         "active_trips": active_count,
         "online_drivers": online_drivers,
-        "total_drivers": total_drivers,
         "completion_rate": round(len(today_completed) / max(len(today_trips), 1) * 100, 1),
     }
 

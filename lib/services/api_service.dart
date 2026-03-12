@@ -1611,6 +1611,23 @@ class ApiService {
         )
         .timeout(const Duration(seconds: 10));
   }
+
+  // ═══════════════════════════════════════════════════════
+  //  TRIP CHARGE
+  // ═══════════════════════════════════════════════════════
+
+  /// Charge the rider's saved default card for a completed trip.
+  /// Returns the charge result: {status, payment_intent_id, amount, error?}
+  static Future<Map<String, dynamic>> chargeTrip(int tripId) async {
+    final h = await _authHeaders();
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/trips/$tripId/charge'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 20));
+    return _parse(res);
+  }
 }
 
 /// Simple exception with HTTP status code.

@@ -14,6 +14,7 @@ import '../navigation/nav_state_machine.dart';
 import '../navigation/route_snapper.dart';
 import '../navigation/route_service.dart';
 import '../navigation/smooth_motion.dart';
+import '../services/api_service.dart';
 import '../services/navigation_service.dart';
 
 class DriverNavigationPage extends StatefulWidget {
@@ -983,10 +984,16 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       case TripPhase.arrivedDropoff:
         label = 'FINISH RIDE';
         bg = _gold;
-        onTap = () {
+        onTap = () async {
           HapticFeedback.heavyImpact();
           _sm.completeTrip();
-          Navigator.of(context).pop();
+          final tid = int.tryParse(widget.tripId);
+          if (tid != null) {
+            try {
+              await ApiService.updateTripStatus(tripId: tid, status: 'completed');
+            } catch (_) {}
+          }
+          if (context.mounted) Navigator.of(context).pop();
         };
         break;
       default:

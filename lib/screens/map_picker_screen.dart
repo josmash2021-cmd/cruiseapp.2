@@ -135,7 +135,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                   onCameraIdle: _scheduleGeocode,
                   myLocationEnabled: true,
                   myLocationButtonEnabled: false,
-                  mapType: amap.MapType.mutedStandard,
+                  mapType: amap.MapType.standard,
                 )
               : GoogleMap(
                   initialCameraPosition: CameraPosition(

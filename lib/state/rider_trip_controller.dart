@@ -417,8 +417,15 @@ class RiderTripController extends ChangeNotifier {
   }
 
   void _onDriverMatched(Map<String, dynamic> data, int tripId) {
+    // Validate driver_id exists before creating MatchedDriver
+    final driverId = data['driver_id']?.toString();
+    if (driverId == null || driverId.isEmpty) {
+      debugPrint('⚠️ Driver matched but driver_id is null/empty');
+      return;
+    }
+
     final driver = MatchedDriver(
-      id: (data['driver_id'] ?? '').toString(),
+      id: driverId,
       name: data['driver_name']?.toString() ?? 'Driver',
       rating: (data['driver_rating'] as num?)?.toDouble() ?? 4.9,
       totalTrips: (data['driver_trips'] as num?)?.toInt() ?? 0,
@@ -476,6 +483,26 @@ class RiderTripController extends ChangeNotifier {
     _pollTimer?.cancel();
     _state = const RiderTripState();
     notifyListeners();
+  }
+
+  /// Set a simulated driver for practice mode (bypasses backend dispatch)
+  void setSimulatedDriver(MatchedDriver driver) {
+    _searchTimer?.cancel();
+    _pollTimer?.cancel();
+    
+    _state = _state.copyWith(
+      phase: RiderPhase.driverAssigned,
+      driver: driver,
+      etaMinutes: _state.selectedOption?.etaMinutes ?? 5,
+      tripId: 999999, // Simulated trip ID
+    );
+    notifyListeners();
+
+    // After a brief transition, move to arriving phase
+    Timer(const Duration(milliseconds: 1500), () {
+      _state = _state.copyWith(phase: RiderPhase.driverArriving);
+      notifyListeners();
+    });
   }
 
   @override

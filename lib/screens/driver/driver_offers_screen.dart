@@ -191,8 +191,8 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
           Positioned.fill(
             child: GoogleMap(
               style: Theme.of(context).brightness == Brightness.dark
-                  ? MapStyles.dark
-                  : MapStyles.light,
+                  ? MapStyles.darkIOS
+                  : MapStyles.lightIOS,
               initialCameraPosition: CameraPosition(
                 target: _driverPos,
                 zoom: 14,

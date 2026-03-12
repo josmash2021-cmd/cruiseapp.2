@@ -45,6 +45,13 @@ API_KEY = os.environ["API_KEY"]       # Required � set in .env
 HMAC_SECRET = os.environ["HMAC_SECRET"] # Required � set in .env
 JWT_SECRET = os.environ["JWT_SECRET"]   # Required � set in .env
 DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")  # Separate key for admin/dispatch endpoints
+
+# -- Owner-only access configuration -------------------
+OWNER_EMAIL = os.getenv("OWNER_EMAIL", "")  # Your email for dispatch access
+OWNER_PASSWORD_HASH = os.getenv("OWNER_PASSWORD_HASH", "")  # bcrypt hash of your password
+DISPATCH_ALLOWED_IPS = os.getenv("DISPATCH_ALLOWED_IPS", "")  # Comma-separated IPs (empty = any IP)
+_dispatch_sessions: set[str] = set()  # Active owner sessions
+
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
@@ -567,6 +574,112 @@ def _send_email(to_email: str, subject: str, html_body: str):
 @app.get("/health")
 async def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+# -- Dispatch Web Interface (owner-only, multi-layer protection) ---------
+class OwnerLogin(BaseModel):
+    email: str
+    password: str
+
+@app.post("/dispatch/login")
+async def dispatch_owner_login(request: Request, credentials: OwnerLogin):
+    """Exclusive owner login with email/password + IP whitelist."""
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # LAYER 1: IP Whitelist check
+    if DISPATCH_ALLOWED_IPS:
+        allowed = [ip.strip() for ip in DISPATCH_ALLOWED_IPS.split(",")]
+        if client_ip not in allowed:
+            _security_audit_log("dispatch_ip_blocked", client_ip, f"email={credentials.email}")
+            raise HTTPException(403, "Access denied from this IP address")
+    
+    # LAYER 2: Owner credentials verification
+    if not OWNER_EMAIL or not OWNER_PASSWORD_HASH:
+        _security_audit_log("dispatch_not_configured", client_ip, "owner credentials missing")
+        raise HTTPException(503, "Dispatch authentication not configured")
+    
+    if credentials.email != OWNER_EMAIL:
+        _security_audit_log("dispatch_wrong_email", client_ip, f"tried={credentials.email}")
+        raise HTTPException(401, "Invalid credentials")
+    
+    if not pwd.verify(credentials.password, OWNER_PASSWORD_HASH):
+        _security_audit_log("dispatch_wrong_password", client_ip, f"email={credentials.email}")
+        raise HTTPException(401, "Invalid credentials")
+    
+    # LAYER 3: Create owner JWT with restricted claims
+    now = datetime.now(timezone.utc)
+    token = jwt.encode(
+        {
+            "sub": "owner",
+            "email": OWNER_EMAIL,
+            "role": "owner",
+            "type": "dispatch",
+            "iat": now,
+            "exp": now + timedelta(hours=8),  # 8 hour session max
+            "ip": client_ip,  # Bind to IP
+        },
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
+    )
+    
+    # Track active session
+    _dispatch_sessions.add(token)
+    
+    _security_audit_log("dispatch_owner_login", client_ip, f"email={OWNER_EMAIL}")
+    return {"token": token, "expires_in": 28800}  # 8 hours in seconds
+
+@app.post("/dispatch/logout")
+async def dispatch_owner_logout(request: Request, authorization: str = Header(None)):
+    """Logout owner and invalidate session."""
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        _dispatch_sessions.discard(token)
+    client_ip = request.client.host if request.client else "unknown"
+    _security_audit_log("dispatch_owner_logout", client_ip, "")
+    return {"ok": True}
+
+@app.get("/dispatch")
+async def dispatch_interface(
+    request: Request,
+    authorization: str = Header(None),
+):
+    """Serve the dispatch web interface HTML file. OWNER ONLY - requires valid JWT."""
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Verify Authorization header
+    if not authorization or not authorization.startswith("Bearer "):
+        _security_audit_log("dispatch_no_auth", client_ip, "missing bearer token")
+        raise HTTPException(401, "Authorization required")
+    
+    token = authorization.split(" ")[1]
+    
+    # Verify token is active
+    if token not in _dispatch_sessions:
+        _security_audit_log("dispatch_invalid_session", client_ip, "token not in active sessions")
+        raise HTTPException(401, "Session expired or logged out")
+    
+    # Verify JWT
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        # Verify role
+        if payload.get("role") != "owner":
+            _security_audit_log("dispatch_wrong_role", client_ip, f"role={payload.get('role')}")
+            raise HTTPException(403, "Owner access required")
+        # Verify IP binding
+        if payload.get("ip") != client_ip:
+            _security_audit_log("dispatch_ip_mismatch", client_ip, f"expected={payload.get('ip')}")
+            raise HTTPException(403, "IP address changed - please login again")
+    except JWTError:
+        _security_audit_log("dispatch_jwt_error", client_ip, "invalid token")
+        raise HTTPException(401, "Invalid token")
+    
+    # Serve the HTML file
+    import os
+    web_dir = os.path.join(os.path.dirname(__file__), "..", "web")
+    filepath = os.path.join(web_dir, "dispatch.html")
+    if os.path.exists(filepath):
+        _security_audit_log("dispatch_html_served", client_ip, f"owner={OWNER_EMAIL}")
+        return FileResponse(filepath, media_type="text/html")
+    raise HTTPException(404, "Dispatch interface not found")
 
 # -- Dependencies ----------------------------------------
 async def get_db():
@@ -5061,9 +5174,10 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     ud = _user_dict(user)
     ud["documents"] = [_doc_dict(d) for d in docs]
     ud["has_password"] = user.password_hash is not None and len(user.password_hash) > 0
-    ud["password_plain"] = user.password_plain
+    # SECURITY: Never expose plain text password in API responses
+    # ud["password_plain"] = user.password_plain  # REMOVED for security
     ud["created_at"] = user.created_at.isoformat() if user.created_at else None
-    # SECURITY: Never expose full SSN � masked version is already in _user_dict
+    # SECURITY: Never expose full SSN - masked version is already in _user_dict
     return ud
 
 

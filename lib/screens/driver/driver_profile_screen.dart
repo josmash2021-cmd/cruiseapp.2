@@ -29,6 +29,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   Color _tierColor = const Color(0xFF4CAF50);
   String? _photoUrl;
   String? _dispatchPassword;
+  bool _showPassword = false;
 
   // Stats - computed from backend trip data
   double _satisfactionRate = 0;
@@ -352,8 +353,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               );
                               HapticFeedback.lightImpact();
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Text(
+                                const SnackBar(
+                                  content: Text(
                                     'Dispatch password copied',
                                     style: TextStyle(color: Colors.white),
                                   ),
@@ -381,10 +382,28 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                                   ),
                                   const SizedBox(width: 6),
                                   Text(
-                                    _dispatchPassword!,
+                                    _showPassword
+                                        ? _dispatchPassword!
+                                        : '••••••••',
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _showPassword = !_showPassword;
+                                      });
+                                      HapticFeedback.lightImpact();
+                                    },
+                                    child: Icon(
+                                      _showPassword
+                                          ? Icons.visibility_off_rounded
+                                          : Icons.visibility_rounded,
+                                      size: 16,
+                                      color: Colors.white70,
                                     ),
                                   ),
                                 ],

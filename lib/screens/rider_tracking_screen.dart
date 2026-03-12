@@ -925,64 +925,34 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         body: Stack(
           children: [
             RepaintBoundary(
-              child: Platform.isIOS
-                  ? amap.AppleMap(
-                      initialCameraPosition: amap.CameraPosition(
-                        target: amap.LatLng(
-                          widget.pickupLatLng.latitude,
-                          widget.pickupLatLng.longitude,
-                        ),
-                        zoom: 14,
-                      ),
-                      mapType: amap.MapType.standard,
-                      onMapCreated: (ctrl) {
-                        _appleMap = ctrl;
-                      },
-                      onCameraMove: (_) {
-                        if (!_programmaticCam) {
-                          setState(() => _userMovedMap = true);
-                        }
-                      },
-                      onCameraIdle: () => _programmaticCam = false,
-                      myLocationEnabled: false,
-                      myLocationButtonEnabled: false,
-                      pitchGesturesEnabled: true,
-                      compassEnabled: false,
-                      padding: EdgeInsets.only(
-                        bottom: 370 + botPad,
-                        top: topPad + 16,
-                      ),
-                      annotations: _appleAnnotations(),
-                      polylines: _applePolylines(),
-                    )
-                  : GoogleMap(
-                      style: MapStyles.dark,
-                      initialCameraPosition: CameraPosition(
-                        target: widget.pickupLatLng,
-                        zoom: 14,
-                      ),
-                      onMapCreated: (ctrl) {
-                        _map = ctrl;
-                      },
-                      onCameraMoveStarted: () {
-                        if (!_programmaticCam) {
-                          setState(() => _userMovedMap = true);
-                        }
-                      },
-                      onCameraIdle: () => _programmaticCam = false,
-                      markers: _markers(),
-                      polylines: _polylines(),
-                      myLocationEnabled: false,
-                      myLocationButtonEnabled: false,
-                      zoomControlsEnabled: false,
-                      compassEnabled: false,
-                      mapToolbarEnabled: false,
-                      tiltGesturesEnabled: false,
-                      padding: EdgeInsets.only(
-                        bottom: 370 + botPad,
-                        top: topPad + 16,
-                      ),
-                    ),
+              child: GoogleMap(
+                style: MapStyles.darkIOS,
+                initialCameraPosition: CameraPosition(
+                  target: widget.pickupLatLng,
+                  zoom: 14,
+                ),
+                onMapCreated: (ctrl) {
+                  _map = ctrl;
+                },
+                onCameraMoveStarted: () {
+                  if (!_programmaticCam) {
+                    setState(() => _userMovedMap = true);
+                  }
+                },
+                onCameraIdle: () => _programmaticCam = false,
+                markers: _markers(),
+                polylines: _polylines(),
+                myLocationEnabled: false,
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: false,
+                compassEnabled: false,
+                mapToolbarEnabled: false,
+                tiltGesturesEnabled: false,
+                padding: EdgeInsets.only(
+                  bottom: 370 + botPad,
+                  top: topPad + 16,
+                ),
+              ),
             ),
             // ── Back button ──
             Positioned(

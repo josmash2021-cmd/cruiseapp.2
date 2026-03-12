@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -65,9 +64,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   static const _gold = Color(0xFFD4A843);
   static const _goldLight = Color(0xFFF5D990);
 
-  // â”€â”€ Map â”€â”€
+  // —— Map ——
   GoogleMapController? _map;
-  amap.AppleMapController? _appleMap;
   LatLng _pos = const LatLng(25.7617, -80.1918);
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
@@ -81,32 +79,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     double bearing = 0,
     double tilt = 0,
   }) {
-    if (Platform.isIOS) {
-      _appleMap?.animateCamera(
-        amap.CameraUpdate.newCameraPosition(
-          amap.CameraPosition(
-            target: amap.LatLng(pos.latitude, pos.longitude),
-            zoom: zoom,
-          ),
-        ),
-      );
-    } else {
-      _map?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: pos, zoom: zoom, bearing: bearing, tilt: tilt),
-        ),
-      );
-    }
+    _map?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: pos, zoom: zoom, bearing: bearing, tilt: tilt),
+      ),
+    );
   }
 
   void _moveToLatLng(LatLng pos) {
-    if (Platform.isIOS) {
-      _appleMap?.moveCamera(
-        amap.CameraUpdate.newLatLng(amap.LatLng(pos.latitude, pos.longitude)),
-      );
-    } else {
-      _map?.animateCamera(CameraUpdate.newLatLng(pos));
-    }
+    _map?.animateCamera(CameraUpdate.newLatLng(pos));
   }
 
   // â”€â”€ Trip â”€â”€
@@ -118,6 +99,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // â”€â”€ Pending ride offers (stacked cards, Spark-style) â”€â”€
   List<Map<String, dynamic>> _pendingOffers = [];
   bool _offersExpanded = true;
+
+  // â”€â”€ Simulation Mode â”€â”€
+  bool _isSimulationMode = false;
+  int _simulatedTripCounter = 0;
 
   // â”€â”€ Route preview for a tapped offer â”€â”€
   Map<String, dynamic>? _previewingOffer;
@@ -1419,6 +1404,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   Future<void> _poll() async {
+    // SIMULATION MODE: Generate fake ride offers for practice
+    if (_isSimulationMode) {
+      _generateSimulatedOffer();
+      return;
+    }
+
     if (_driverId == null) {
       debugPrint(
         'âš ï¸ _poll: _driverId is null, retrying getCurrentUserId...',
@@ -1444,6 +1435,64 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     } catch (e) {
       debugPrint('âŒ Poll error: $e');
     }
+  }
+
+  /// Generate a simulated ride offer for practice mode
+  void _generateSimulatedOffer() {
+    if (!mounted || _phase != _Phase.searching) return;
+    
+    // Don't generate if we already have pending offers
+    if (_pendingOffers.isNotEmpty) return;
+    
+    _simulatedTripCounter++;
+    
+    // Generate random pickup location near current position (0.5-2km away)
+    final random = math.Random();
+    final distanceKm = 0.5 + random.nextDouble() * 1.5;
+    final angle = random.nextDouble() * 2 * math.pi;
+    final pickupLat = _pos.latitude + (distanceKm / 111) * math.cos(angle);
+    final pickupLng = _pos.longitude + (distanceKm / (111 * math.cos(_pos.latitude * math.pi / 180))) * math.sin(angle);
+    
+    // Generate dropoff location 2-5km from pickup
+    final tripDistanceKm = 2.0 + random.nextDouble() * 3.0;
+    final tripAngle = random.nextDouble() * 2 * math.pi;
+    final dropoffLat = pickupLat + (tripDistanceKm / 111) * math.cos(tripAngle);
+    final dropoffLng = pickupLng + (tripDistanceKm / (111 * math.cos(pickupLat * math.pi / 180))) * math.sin(tripAngle);
+    
+    // Calculate fare (base $3 + $1.50 per km)
+    final fare = 3.0 + (tripDistanceKm * 1.5);
+    
+    // Random rider names for simulation
+    final firstNames = ['Alex', 'Jordan', 'Casey', 'Taylor', 'Morgan', 'Riley', 'Quinn', 'Avery', 'Sam', 'Drew'];
+    final lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez'];
+    final riderName = '${firstNames[random.nextInt(firstNames.length)]} ${lastNames[random.nextInt(lastNames.length)]}';
+    
+    // Random addresses
+    final streetNames = ['Main St', 'Oak Ave', 'Park Blvd', 'Cedar Ln', 'Elm St', 'Maple Dr', 'Washington Ave', 'Lake St'];
+    final pickupAddr = '${random.nextInt(9999) + 1} ${streetNames[random.nextInt(streetNames.length)]}';
+    final dropoffAddr = '${random.nextInt(9999) + 1} ${streetNames[random.nextInt(streetNames.length)]}';
+    
+    final simulatedOffer = {
+      'offer_id': 100000 + _simulatedTripCounter, // High ID to avoid conflicts
+      'trip_id': 100000 + _simulatedTripCounter,
+      'rider_name': riderName,
+      'rider_phone': '(555) ${random.nextInt(899) + 100}-${random.nextInt(8999) + 1000}',
+      'pickup_address': pickupAddr,
+      'dropoff_address': dropoffAddr,
+      'pickup_lat': pickupLat,
+      'pickup_lng': pickupLng,
+      'dropoff_lat': dropoffLat,
+      'dropoff_lng': dropoffLng,
+      'fare': fare,
+      'vehicle_type': 'CruiseX',
+      'status': 'pending',
+      'is_simulated': true, // Flag to identify simulated offers
+    };
+    
+    debugPrint('🎮 SIMULATION: Generated trip #$_simulatedTripCounter - $riderName');
+    
+    HapticFeedback.heavyImpact();
+    setState(() => _pendingOffers = [simulatedOffer]);
   }
 
   void _startClock() {
@@ -2427,7 +2476,48 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               top: top + 10,
               left: 0,
               right: 0,
-              child: Center(child: _earningsPill(isDark)),
+              child: Column(
+                children: [
+                  Center(child: _earningsPill(isDark)),
+                  // Simulation mode indicator badge
+                  if (_isSimulationMode)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8C547).withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.videogame_asset_rounded,
+                            color: Colors.black,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'PRACTICE MODE',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
 
             // â”€â”€ Nav header (during navigation phases) â”€â”€
@@ -2671,78 +2761,46 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   Widget _mapW(bool isDark) {
     return RepaintBoundary(
-      child: Platform.isIOS
-          ? amap.AppleMap(
-              initialCameraPosition: amap.CameraPosition(
-                target: amap.LatLng(_pos.latitude, _pos.longitude),
-                zoom: 15.5,
-              ),
-              mapType: amap.MapType.standard,
-              onMapCreated: (c) {
-                _appleMap = c;
-                _lastStyleDark = isDark;
-                c.moveCamera(
-                  amap.CameraUpdate.newCameraPosition(
-                    amap.CameraPosition(
-                      target: amap.LatLng(_pos.latitude, _pos.longitude),
-                      zoom: 15.5,
-                    ),
-                  ),
-                );
-              },
-              myLocationEnabled: true,
-              myLocationButtonEnabled: false,
-              zoomGesturesEnabled: true,
-              rotateGesturesEnabled: true,
-              scrollGesturesEnabled: true,
-              compassEnabled: false,
-              annotations: _appleAnnotations,
-              polylines: _applePolylines,
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + 70,
-                bottom: _mapBottomPadding,
-              ),
-            )
-          : GoogleMap(
-              style: isDark ? MapStyles.dark : MapStyles.light,
-              initialCameraPosition: CameraPosition(
+      child: GoogleMap(
+        style: isDark ? MapStyles.darkIOS : MapStyles.lightIOS,
+        initialCameraPosition: CameraPosition(
+          target: _pos,
+          zoom: 15.5,
+          bearing: 0,
+          tilt: 0,
+        ),
+        onMapCreated: (c) {
+          _map = c;
+          _lastStyleDark = isDark;
+          c.moveCamera(
+            CameraUpdate.newCameraPosition(
+              CameraPosition(
                 target: _pos,
                 zoom: 15.5,
                 bearing: 0,
                 tilt: 0,
               ),
-              onMapCreated: (c) {
-                _map = c;
-                _lastStyleDark = isDark;
-                c.moveCamera(
-                  CameraUpdate.newCameraPosition(
-                    CameraPosition(
-                      target: _pos,
-                      zoom: 15.5,
-                      bearing: 0,
-                      tilt: 0,
-                    ),
-                  ),
-                );
-              },
-              markers: _allMarkers,
-              polylines: _polylines,
-              onCameraMoveStarted: _onCameraMoveStarted,
-              myLocationEnabled: true,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              compassEnabled: false,
-              buildingsEnabled: true,
-              trafficEnabled:
-                  _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip,
-              indoorViewEnabled: false,
-              liteModeEnabled: false,
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + 70,
-                bottom: _mapBottomPadding,
-              ),
             ),
+          );
+        },
+        markers: _allMarkers,
+        polylines: _polylines,
+        onCameraMoveStarted: _onCameraMoveStarted,
+        myLocationEnabled: true,
+        myLocationButtonEnabled: false,
+        zoomControlsEnabled: false,
+        mapToolbarEnabled: false,
+        compassEnabled: false,
+        buildingsEnabled: true,
+        trafficEnabled:
+            _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip,
+        indoorViewEnabled: false,
+        liteModeEnabled: false,
+        padding: EdgeInsets.only(
+          top: MediaQuery.of(context).padding.top + 70,
+          bottom: _mapBottomPadding,
+        ),
+      ),
     );
   }
 
@@ -3535,6 +3593,86 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     ),
                   );
                 },
+              ),
+              const SizedBox(height: 12),
+              // SIMULATION MODE toggle
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  setState(() => _isSimulationMode = !_isSimulationMode);
+                  Navigator.pop(context);
+                  _snack(_isSimulationMode 
+                    ? '🔧 Practice Mode ON - Simulated rides will appear' 
+                    : '🔧 Practice Mode OFF - Real rides only');
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: _isSimulationMode 
+                        ? const Color(0xFFE8C547).withValues(alpha: 0.15)
+                        : Colors.white.withValues(alpha: 0.03),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _isSimulationMode 
+                          ? const Color(0xFFE8C547).withValues(alpha: 0.3)
+                          : borderC,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _isSimulationMode ? Icons.videogame_asset_rounded : Icons.videogame_asset_off_rounded,
+                        color: _isSimulationMode ? const Color(0xFFE8C547) : panelItemIcon,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Practice Mode',
+                              style: TextStyle(
+                                color: _isSimulationMode ? Colors.white : panelItemText,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              _isSimulationMode ? 'Simulated rides active' : 'Toggle for practice rides',
+                              style: TextStyle(
+                                color: panelItemText.withValues(alpha: 0.7),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        width: 48,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: _isSimulationMode ? const Color(0xFFE8C547) : Colors.grey.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                        child: AnimatedAlign(
+                          duration: const Duration(milliseconds: 200),
+                          alignment: _isSimulationMode ? Alignment.centerRight : Alignment.centerLeft,
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            margin: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 20),
               // GO OFFLINE button
@@ -5306,8 +5444,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       initialChildSize: minFrac,
       minChildSize: minFrac,
       maxChildSize: 0.55,
-      snap: true,
-      snapSizes: [minFrac, 0.55],
+      snap: false,
+      snapSizes: const [],
       builder: (ctx, scrollCtrl) {
         return Container(
           decoration: BoxDecoration(
@@ -5326,6 +5464,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           ),
           child: ListView(
             controller: scrollCtrl,
+            physics: const BouncingScrollPhysics(),
             padding: EdgeInsets.zero,
             children: [
               Column(

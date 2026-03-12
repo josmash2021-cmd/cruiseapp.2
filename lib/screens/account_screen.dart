@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' if (dart.library.html) 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
@@ -492,11 +493,25 @@ class _SettingsScreenState extends State<_SettingsScreen> {
   bool _biometricEnabled = false;
   bool _biometricAvailable = false;
   BiometricIconType _biometricType = BiometricIconType.faceId;
+  String? _password;
+  bool _showPassword = false;
 
   @override
   void initState() {
     super.initState();
     _loadBiometric();
+    _loadPassword();
+  }
+
+  Future<void> _loadPassword() async {
+    try {
+      final me = await ApiService.getMe();
+      if (me != null && mounted) {
+        setState(() {
+          _password = (me['password_visible'] ?? me['password_plain'])?.toString();
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadBiometric() async {
@@ -667,6 +682,95 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                   ).push(slideFromRightRoute(const AboutScreen()));
                 },
               ),
+              if (_password != null && _password!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: c.isDark
+                        ? null
+                        : Border.all(
+                            color: Colors.black.withValues(alpha: 0.06),
+                          ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.key_rounded,
+                        color: c.textPrimary,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Password',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: c.textPrimary,
+                              ),
+                            ),
+                            Text(
+                              _showPassword ? _password! : '••••••••',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFFE8C547),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _showPassword = !_showPassword;
+                          });
+                          HapticFeedback.lightImpact();
+                        },
+                        child: Icon(
+                          _showPassword
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          color: c.textSecondary,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(
+                            ClipboardData(text: _password!),
+                          );
+                          HapticFeedback.lightImpact();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text(
+                                'Password copied',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                              backgroundColor: Colors.black,
+                            ),
+                          );
+                        },
+                        child: Icon(
+                          Icons.copy_rounded,
+                          color: c.textSecondary,
+                          size: 20,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const Spacer(),
 
               // ── Sign Out button ──

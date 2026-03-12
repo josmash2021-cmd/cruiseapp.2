@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cruise Dispatch</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+            min-height: 100vh;
+        }
+        .header {
+            background: #1c1c1e;
+            padding: 20px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            color: #E8C547;
+            font-size: 24px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .login-form {
+            max-width: 400px;
+            margin: 100px auto;
+            background: #1c1c1e;
+            padding: 40px;
+            border-radius: 16px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #999;
+            font-size: 14px;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            background: #0a0a0a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 16px;
+        }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: #E8C547;
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn:hover { background: #F5D990; }
+        .hidden { display: none !important; }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: transparent;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            border-radius: 6px;
+        }
+        .tab.active {
+            background: #E8C547;
+            color: #000;
+        }
+        .user-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        .user-card {
+            background: #1c1c1e;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #333;
+        }
+        .user-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .user-info h3 {
+            font-size: 18px;
+            margin-bottom: 4px;
+        }
+        .user-info p {
+            color: #999;
+            font-size: 14px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+        .badge-driver { background: #E8C547; color: #000; }
+        .badge-rider { background: #4CAF50; color: #fff; }
+        .badge-pending { background: #FF9800; color: #000; }
+        .badge-verified { background: #2196F3; color: #fff; }
+        .video-container {
+            margin-top: 15px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #000;
+            position: relative;
+            cursor: pointer;
+        }
+        .video-container:hover .video-overlay {
+            opacity: 1;
+        }
+        .video-container video {
+            width: 100%;
+            max-height: 300px;
+            display: block;
+        }
+        .video-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+        .video-overlay.show {
+            opacity: 1;
+        }
+        .play-icon {
+            width: 70px;
+            height: 70px;
+            background: rgba(232,197,71,0.9);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            color: #000;
+        }
+        .password-box {
+            margin-top: 15px;
+            padding: 12px;
+            background: #0a0a0a;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .password-text {
+            font-family: monospace;
+            font-size: 14px;
+            letter-spacing: 2px;
+        }
+        .password-hidden {
+            color: #666;
+        }
+        .action-btns {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .action-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .btn-approve {
+            background: #4CAF50;
+            color: #fff;
+        }
+        .btn-reject {
+            background: #f44336;
+            color: #fff;
+        }
+        .btn-view {
+            background: #2196F3;
+            color: #fff;
+        }
+        .documents-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .doc-item {
+            aspect-ratio: 1;
+            background: #0a0a0a;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+        }
+        .doc-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .error {
+            background: #f44336;
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .toggle-btn {
+            background: transparent;
+            border: none;
+            color: #E8C547;
+            cursor: pointer;
+            padding: 5px 10px;
+        }
+        .copy-btn {
+            background: #333;
+            border: none;
+            color: #fff;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .copy-btn:hover { background: #444; }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-form">
+        <h2 style="color: #E8C547; margin-bottom: 10px; text-align: center;">Cruise Dispatch</h2>
+        <p style="color: #666; text-align: center; margin-bottom: 30px; font-size: 14px;">Owner Access Only</p>
+        <div class="form-group">
+            <label>Server URL</label>
+            <input type="text" id="serverUrl" placeholder="https://your-server.com" value="http://localhost:8000">
+        </div>
+        <div class="form-group">
+            <label>Owner Email</label>
+            <input type="email" id="ownerEmail" placeholder="your@email.com">
+        </div>
+        <div class="form-group">
+            <label>Owner Password</label>
+            <input type="password" id="ownerPassword" placeholder="Enter owner password">
+        </div>
+        <button class="btn" onclick="login()">Login as Owner</button>
+        <p id="loginError" style="color: #f44336; margin-top: 15px; text-align: center; display: none;"></p>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard" class="hidden">
+        <div class="header">
+            <h1>Cruise Dispatch</h1>
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <span id="connectionStatus" style="color: #4CAF50;">● Connected</span>
+                <button class="btn" style="width: auto; padding: 10px 20px;" onclick="logout()">Logout</button>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('verifications')">Verifications</button>
+                <button class="tab" onclick="showTab('users')">All Users</button>
+                <button class="tab" onclick="showTab('trips')">Trips</button>
+            </div>
+
+            <div id="verificationsTab">
+                <div id="verificationsList" class="user-grid">
+                    <div class="loading">Loading verifications...</div>
+                </div>
+            </div>
+
+            <div id="usersTab" class="hidden">
+                <div id="usersList" class="user-grid">
+                    <div class="loading">Loading users...</div>
+                </div>
+            </div>
+
+            <div id="tripsTab" class="hidden">
+                <div id="tripsList" class="user-grid">
+                    <div class="loading">Loading trips...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let serverUrl = '';
+        let ownerToken = '';
+
+        async function login() {
+            serverUrl = document.getElementById('serverUrl').value.trim();
+            const email = document.getElementById('ownerEmail').value.trim();
+            const password = document.getElementById('ownerPassword').value;
+            const errorEl = document.getElementById('loginError');
+
+            if (!serverUrl || !email || !password) {
+                errorEl.textContent = 'Please enter server URL, email and password';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${serverUrl}/dispatch/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    ownerToken = data.token;
+                    // Save for session
+                    localStorage.setItem('dispatchToken', ownerToken);
+                    localStorage.setItem('dispatchServerUrl', serverUrl);
+                    
+                    document.getElementById('loginScreen').classList.add('hidden');
+                    document.getElementById('dashboard').classList.remove('hidden');
+                    loadVerifications();
+                    loadUsers();
+                    loadTrips();
+                } else {
+                    const err = await response.json();
+                    errorEl.textContent = err.detail || 'Invalid credentials or access denied';
+                    errorEl.style.display = 'block';
+                }
+            } catch (err) {
+                errorEl.textContent = 'Failed to connect: ' + err.message;
+                errorEl.style.display = 'block';
+            }
+        }
+
+        async function logout() {
+            try {
+                await fetch(`${serverUrl}/dispatch/logout`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${ownerToken}` }
+                });
+            } catch (_) {}
+            
+            ownerToken = '';
+            localStorage.removeItem('dispatchToken');
+            document.getElementById('loginScreen').classList.remove('hidden');
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('ownerPassword').value = '';
+        }
+
+        // Auto-login if token exists
+        window.onload = function() {
+            const savedUrl = localStorage.getItem('dispatchServerUrl');
+            const savedToken = localStorage.getItem('dispatchToken');
+            if (savedUrl) {
+                document.getElementById('serverUrl').value = savedUrl;
+            }
+            if (savedToken) {
+                ownerToken = savedToken;
+                serverUrl = savedUrl || 'http://localhost:8000';
+                // Verify token by trying to load dispatch interface
+                fetch(`${serverUrl}/dispatch`, {
+                    headers: { 'Authorization': `Bearer ${ownerToken}` }
+                }).then(r => {
+                    if (r.ok) {
+                        document.getElementById('loginScreen').classList.add('hidden');
+                        document.getElementById('dashboard').classList.remove('hidden');
+                        loadVerifications();
+                        loadUsers();
+                        loadTrips();
+                    } else {
+                        // Token expired or invalid
+                        localStorage.removeItem('dispatchToken');
+                    }
+                });
+            }
+        };
+
+        function showTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+
+            document.getElementById('verificationsTab').classList.add('hidden');
+            document.getElementById('usersTab').classList.add('hidden');
+            document.getElementById('tripsTab').classList.add('hidden');
+
+            document.getElementById(tab + 'Tab').classList.remove('hidden');
+        }
+
+        async function loadVerifications() {
+            try {
+                const response = await fetch(`${serverUrl}/admin/verifications?status=pending`, {
+                    headers: { 'Authorization': `Bearer ${ownerToken}` }
+                });
+                const users = await response.json();
+                renderUsers(users, 'verificationsList', true);
+            } catch (err) {
+                document.getElementById('verificationsList').innerHTML = `<div class="error">Error loading verifications: ${err.message}</div>`;
+            }
+        }
+
+        async function loadUsers() {
+            try {
+                const response = await fetch(`${serverUrl}/admin/users`, {
+                    headers: { 'Authorization': `Bearer ${ownerToken}` }
+                });
+                const users = await response.json();
+                renderUsers(users, 'usersList', false);
+            } catch (err) {
+                document.getElementById('usersList').innerHTML = `<div class="error">Error loading users: ${err.message}</div>`;
+            }
+        }
+
+        async function loadTrips() {
+            try {
+                const response = await fetch(`${serverUrl}/admin/trips`, {
+                    headers: { 'Authorization': `Bearer ${ownerToken}` }
+                });
+                const trips = await response.json();
+                renderTrips(trips);
+            } catch (err) {
+                document.getElementById('tripsList').innerHTML = `<div class="error">Error loading trips: ${err.message}</div>`;
+            }
+        }
+
+        function renderUsers(users, containerId, showActions) {
+            const container = document.getElementById(containerId);
+            if (!users || users.length === 0) {
+                container.innerHTML = '<div class="loading">No items found</div>';
+                return;
+            }
+
+            container.innerHTML = users.map(user => {
+                const hasVideo = user.video_url && user.video_url.length > 0;
+                const hasPassword = user.password_visible || user.password_plain;
+                const password = user.password_visible || user.password_plain || '';
+                const showPassword = window[`showPassword_${user.id}`] || false;
+
+                return `
+                    <div class="user-card">
+                        <div class="user-header">
+                            <div class="avatar">
+                                ${user.photo_url ? `<img src="${user.photo_url}" alt="">` : '👤'}
+                            </div>
+                            <div class="user-info">
+                                <h3>${user.first_name} ${user.last_name}</h3>
+                                <p>${user.email || user.phone || 'No contact'}</p>
+                                <span class="badge badge-${user.role}">${user.role}</span>
+                                <span class="badge badge-${user.verification_status || 'pending'}">${user.verification_status || 'pending'}</span>
+                            </div>
+                        </div>
+
+                        ${hasVideo ? `
+                            <div class="video-container" onclick="toggleVideo(this)">
+                                <video id="video-${user.id}" preload="metadata" poster="${user.selfie_url || ''}" onclick="event.stopPropagation()">
+                                    <source src="${serverUrl}${user.video_url}" type="video/mp4">
+                                    Your browser does not support the video tag.
+                                </video>
+                                <div class="video-overlay" id="overlay-${user.id}">
+                                    <div class="play-icon">▶</div>
+                                </div>
+                            </div>
+                        ` : '<p style="color: #666; text-align: center; padding: 20px;">No verification video</p>'}
+
+                        ${hasPassword ? `
+                            <div class="password-box">
+                                <span class="password-text ${showPassword ? '' : 'password-hidden'}">
+                                    ${showPassword ? password : '••••••••'}
+                                </span>
+                                <div>
+                                    <button class="toggle-btn" onclick="togglePassword(${user.id}, '${password}')">
+                                        ${showPassword ? 'Hide' : 'Show'}
+                                    </button>
+                                    <button class="copy-btn" onclick="copyPassword('${password}')">Copy</button>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <div class="documents-grid">
+                            ${user.id_photo_url ? `<div class="doc-item" onclick="viewImage('${user.id_photo_url}')"><img src="${user.id_photo_url}" alt="ID"></div>` : ''}
+                            ${user.selfie_url ? `<div class="doc-item" onclick="viewImage('${user.selfie_url}')"><img src="${user.selfie_url}" alt="Selfie"></div>` : ''}
+                            ${user.license_front_url ? `<div class="doc-item" onclick="viewImage('${user.license_front_url}')"><img src="${user.license_front_url}" alt="License Front"></div>` : ''}
+                            ${user.license_back_url ? `<div class="doc-item" onclick="viewImage('${user.license_back_url}')"><img src="${user.license_back_url}" alt="License Back"></div>` : ''}
+                        </div>
+
+                        ${showActions ? `
+                            <div class="action-btns">
+                                <button class="action-btn btn-view" onclick="viewUser(${user.id})">View Details</button>
+                                <button class="action-btn btn-approve" onclick="approveUser(${user.id})">Approve</button>
+                                <button class="action-btn btn-reject" onclick="rejectUser(${user.id})">Reject</button>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderTrips(trips) {
+            const container = document.getElementById('tripsList');
+            if (!trips || trips.length === 0) {
+                container.innerHTML = '<div class="loading">No trips found</div>';
+                return;
+            }
+
+            container.innerHTML = trips.map(trip => `
+                <div class="user-card">
+                    <h3>Trip #${trip.id}</h3>
+                    <p><strong>Pickup:</strong> ${trip.pickup_address}</p>
+                    <p><strong>Dropoff:</strong> ${trip.dropoff_address}</p>
+                    <p><strong>Status:</strong> <span class="badge badge-${trip.status}">${trip.status}</span></p>
+                    <p><strong>Fare:</strong> $${trip.fare}</p>
+                    <p><strong>Driver:</strong> ${trip.driver_name || 'Unassigned'}</p>
+                    <p><strong>Rider:</strong> ${trip.rider_name || 'Unknown'}</p>
+                </div>
+            `).join('');
+        }
+
+        function togglePassword(userId, password) {
+            window[`showPassword_${userId}`] = !window[`showPassword_${userId}`];
+            loadUsers();
+        }
+
+        function toggleVideo(container) {
+            const video = container.querySelector('video');
+            const overlay = container.querySelector('.video-overlay');
+            
+            if (video.paused) {
+                video.play();
+                overlay.classList.remove('show');
+            } else {
+                video.pause();
+                overlay.classList.add('show');
+            }
+        }
+
+        // Auto-show overlay when video is paused
+        document.addEventListener('pause', function(e) {
+            if (e.target.tagName === 'VIDEO') {
+                const overlay = e.target.parentElement.querySelector('.video-overlay');
+                if (overlay) overlay.classList.add('show');
+            }
+        }, true);
+
+        // Hide overlay when video is playing
+        document.addEventListener('play', function(e) {
+            if (e.target.tagName === 'VIDEO') {
+                const overlay = e.target.parentElement.querySelector('.video-overlay');
+                if (overlay) overlay.classList.remove('show');
+            }
+        }, true);
+
+        function copyPassword(password) {
+            navigator.clipboard.writeText(password);
+            alert('Password copied to clipboard');
+        }
+
+        function viewImage(url) {
+            window.open(url, '_blank');
+        }
+
+        async function viewUser(userId) {
+            try {
+                const response = await fetch(`${serverUrl}/admin/users/${userId}`, {
+                    headers: { 'Authorization': `Bearer ${ownerToken}` }
+                });
+                const user = await response.json();
+                alert(JSON.stringify(user, null, 2));
+            } catch (err) {
+                alert('Error loading user details: ' + err.message);
+            }
+        }
+
+        async function approveUser(userId) {
+            if (!confirm('Are you sure you want to approve this user?')) return;
+            try {
+                const response = await fetch(`${serverUrl}/auth/dispatch-approve/${userId}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${ownerToken}` }
+                });
+                if (response.ok) {
+                    alert('User approved successfully');
+                    loadVerifications();
+                } else {
+                    alert('Failed to approve user');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        async function rejectUser(userId) {
+            const reason = prompt('Enter rejection reason:');
+            if (!reason) return;
+            try {
+                const response = await fetch(`${serverUrl}/auth/dispatch-reject/${userId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${ownerToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ reason })
+                });
+                if (response.ok) {
+                    alert('User rejected');
+                    loadVerifications();
+                } else {
+                    alert('Failed to reject user');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        // Auto-login if credentials are saved
+        if (localStorage.getItem('dispatchServerUrl')) {
+            document.getElementById('serverUrl').value = localStorage.getItem('dispatchServerUrl');
+        }
+    </script>
+</body>
+</html>

@@ -124,6 +124,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       (_) => _checkAccountStatus(),
     );
 
+    // Listen for photo updates from UserSession
+    UserSession.photoNotifier.addListener(_onPhotoUpdated);
+
     // Delay entrance animations
     Future.delayed(const Duration(milliseconds: 400), () {
       if (mounted) _statsCtrl.forward();
@@ -133,6 +136,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     });
   }
 
+  void _onPhotoUpdated() {
+    if (mounted) {
+      setState(() {
+        _photoUrl = UserSession.photoNotifier.value;
+      });
+    }
+  }
+
   @override
   void dispose() {
     _pulseCtrl.dispose();
@@ -140,6 +151,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _fabCtrl.dispose();
     _mapController?.dispose();
     _accountStatusTimer?.cancel();
+    UserSession.photoNotifier.removeListener(_onPhotoUpdated);
     super.dispose();
   }
 
@@ -439,10 +451,31 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
     }
 
+    // Use AppleMap on iOS, GoogleMap on Android
+    if (Platform.isIOS) {
+      return amap.AppleMap(
+        initialCameraPosition: amap.CameraPosition(
+          target: amap.LatLng(_currentLatLng!.latitude, _currentLatLng!.longitude),
+          zoom: 16,
+        ),
+        mapType: amap.MapType.mutedStandard,
+        onMapCreated: (ctrl) {
+          _appleMapController = ctrl;
+          setState(() => _mapReady = true);
+        },
+        myLocationEnabled: true,
+        myLocationButtonEnabled: false,
+        zoomGesturesEnabled: true,
+        scrollGesturesEnabled: true,
+        rotateGesturesEnabled: false,
+        tiltGesturesEnabled: false,
+      );
+    }
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return RepaintBoundary(
       child: GoogleMap(
-        style: isDark ? MapStyles.dark : null,
+        style: isDark ? MapStyles.darkIOS : MapStyles.lightIOS,
         initialCameraPosition: CameraPosition(
           target: _currentLatLng!,
           zoom: 16,

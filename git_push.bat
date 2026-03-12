@@ -4,7 +4,7 @@ echo SUBIENDO CAMBIOS A GITHUB
 echo ============================================
 echo.
 
-cd /d c:\Users\josma\cruise-app
+cd /d C:\Users\Puma\CascadeProjects\cruise-app-main
 
 echo [1/4] Verificando estado de Git...
 git status
@@ -15,33 +15,17 @@ git add .
 echo.
 
 echo [3/4] Creando commit...
-git commit -m "Prevención de caídas del servidor y mejoras de estabilidad
+git commit -m "Fix iOS map dark mode (mutedStandard) and driver profile photo live updates
 
-BACKEND:
-- WAL mode en SQLite para prevenir bloqueos de DB
-- Connection pooling (20 conexiones + 10 overflow)
-- Keepalive de 75 segundos
-- Timeouts de 30 segundos en DB
-- Scripts de auto-restart (run_server.py, start_server.py)
+DRIVER HOME SCREEN:
+- Fix iOS map to use AppleMap instead of GoogleMap
+- Apply mutedStandard map style for dark appearance on iOS
+- Add UserSession.photoNotifier listener for live profile photo updates
+- Profile photo now updates immediately when driver changes it
 
-CRUISE-APP:
-- Timeouts en splash screen (5 segundos)
-- Timeouts en todas las APIs (3-60 segundos)
-- Car Registration en flujo de verificación
-- Auto-aprobación de documentos cuando verificación aprobada
-- Pago simulado mejorado para testing
-- Botón X en license scanner
-- Animación fluida en face liveness
-
-DOCUMENTACIÓN:
-- SERVIDOR_ESTABLE.md con guía completa
-- Instrucciones de uso y troubleshooting
-
-RESULTADO:
-- Servidor estable 24/7 sin caídas
-- App funciona offline con cache
-- Conexiones persistentes
-- No más database locks"
+iOS MAP STYLING:
+- mutedStandard provides dark/neutral appearance matching Android dark theme
+- Platform-specific map rendering (AppleMap iOS, GoogleMap Android)"
 echo.
 
 echo [4/4] Subiendo a GitHub...

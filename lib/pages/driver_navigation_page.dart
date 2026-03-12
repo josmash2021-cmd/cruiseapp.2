@@ -432,63 +432,34 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         children: [
           // ── FULLSCREEN MAP ────────────────────────────────────────────────
           Positioned.fill(
-            child: Platform.isIOS
-                ? amap.AppleMap(
-                    initialCameraPosition: amap.CameraPosition(
-                      target: amap.LatLng(_pos.latitude, _pos.longitude),
-                      zoom: 16.5,
-                    ),
-                    mapType: amap.MapType.standard,
-                    onMapCreated: (c) {
-                      _appleMap = c;
-                      _mapReady = true;
-                      c.moveCamera(
-                        amap.CameraUpdate.newCameraPosition(
-                          amap.CameraPosition(
-                            target: amap.LatLng(_pos.latitude, _pos.longitude),
-                            zoom: 16.5,
-                          ),
-                        ),
-                      );
-                    },
-                    myLocationEnabled: false,
-                    myLocationButtonEnabled: false,
-                    zoomGesturesEnabled: true,
-                    rotateGesturesEnabled: true,
-                    scrollGesturesEnabled: true,
-                    compassEnabled: false,
-                    annotations: _appleAnnotations,
-                    polylines: _applePolylines,
-                    padding: EdgeInsets.only(top: top + 140, bottom: 200 + bot),
-                  )
-                : GoogleMap(
-                    style: MapStyles.dark,
-                    initialCameraPosition: CameraPosition(
-                      target: _pos,
-                      zoom: 16.5,
-                      tilt: 0,
-                    ),
-                    onMapCreated: (c) {
-                      _map = c;
-                      _mapReady = true;
-                      _map!.moveCamera(
-                        CameraUpdate.newCameraPosition(
-                          CameraPosition(target: _pos, zoom: 16.5, tilt: 0),
-                        ),
-                      );
-                    },
-                    onCameraMoveStarted: _onCameraMoveStarted,
-                    markers: _allMarkers,
-                    polylines: _polylines,
-                    myLocationEnabled: false,
-                    myLocationButtonEnabled: false,
-                    zoomControlsEnabled: false,
-                    mapToolbarEnabled: false,
-                    compassEnabled: false,
-                    buildingsEnabled: false,
-                    trafficEnabled: false,
-                    padding: EdgeInsets.only(top: top + 140, bottom: 200 + bot),
+            child: GoogleMap(
+              style: MapStyles.navigationIOS,
+              initialCameraPosition: CameraPosition(
+                target: _pos,
+                zoom: 16.5,
+                tilt: 0,
+              ),
+              onMapCreated: (c) {
+                _map = c;
+                _mapReady = true;
+                _map!.moveCamera(
+                  CameraUpdate.newCameraPosition(
+                    CameraPosition(target: _pos, zoom: 16.5, tilt: 0),
                   ),
+                );
+              },
+              onCameraMoveStarted: _onCameraMoveStarted,
+              markers: _allMarkers,
+              polylines: _polylines,
+              myLocationEnabled: false,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
+              compassEnabled: false,
+              buildingsEnabled: false,
+              trafficEnabled: false,
+              padding: EdgeInsets.only(top: top + 140, bottom: 200 + bot),
+            ),
           ),
 
           // ── TOP NAV BANNER ────────────────────────────────────────────────

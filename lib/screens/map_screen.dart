@@ -104,7 +104,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   static const _birminghamDefault = LatLng(33.5186, -86.8104);
 
   /// Picks the right JSON map style based on the system theme (light phone = light map).
-  String get _mapStyle => _c.isDark ? MapStyles.dark : MapStyles.light;
+  String get _mapStyle => _c.isDark ? MapStyles.darkIOS : MapStyles.lightIOS;
 
   static final _usBounds = LatLngBounds(
     southwest: LatLng(24.396308, -124.848974),
@@ -3953,10 +3953,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   dispatch['driver_name']?.toString() ?? 'Your Driver';
               _driverCar = dispatch['vehicle_type']?.toString() ?? '';
               _driverPlate = dispatch['driver_plate']?.toString() ?? '';
-              _driverPhone =
-                  (dispatch['driver_phone'] ?? dispatch['driverPhone'])
-                      ?.toString() ??
-                  '';
+              _driverPhone = dispatch['driver_phone']?.toString() ?? '';
               _driverRating =
                   (dispatch['driver_rating'] as num?)?.toDouble() ?? 4.9;
               // Calculate real initial ETA from driver distance

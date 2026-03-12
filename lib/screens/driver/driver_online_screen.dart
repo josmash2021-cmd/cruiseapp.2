@@ -1517,29 +1517,31 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final offerId = r['offer_id'] as int?;
     final tripId = r['trip_id'] as int? ?? r['id'] as int?;
 
-    // Accept this offer via API
-    if (offerId != null && _driverId != null) {
-      try {
-        await ApiService.acceptRideOffer(
-          offerId: offerId,
-          driverId: _driverId!,
-        );
-      } catch (e) {
-        _snack(S.of(context).tripNoLongerAvailable);
-        setState(
-          () => _pendingOffers.removeWhere((o) => o['offer_id'] == offerId),
-        );
-        return;
-      }
-    } else if (tripId != null && _driverId != null) {
-      try {
-        await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
-      } catch (e) {
-        _snack(S.of(context).tripNoLongerAvailable);
-        setState(
-          () => _pendingOffers.removeWhere((o) => o['trip_id'] == tripId),
-        );
-        return;
+    // Accept this offer via API (skip for simulated offers)
+    if (!_isSimulationMode) {
+      if (offerId != null && _driverId != null) {
+        try {
+          await ApiService.acceptRideOffer(
+            offerId: offerId,
+            driverId: _driverId!,
+          );
+        } catch (e) {
+          _snack(S.of(context).tripNoLongerAvailable);
+          setState(
+            () => _pendingOffers.removeWhere((o) => o['offer_id'] == offerId),
+          );
+          return;
+        }
+      } else if (tripId != null && _driverId != null) {
+        try {
+          await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
+        } catch (e) {
+          _snack(S.of(context).tripNoLongerAvailable);
+          setState(
+            () => _pendingOffers.removeWhere((o) => o['trip_id'] == tripId),
+          );
+          return;
+        }
       }
     }
 

@@ -383,7 +383,18 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
-    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    # Relaxed CSP for dispatch HTML and media endpoints
+    if request.url.path in ("/dispatch",) or request.url.path.startswith("/photos") or request.url.path.startswith("/uploads"):
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob: *; "
+            "media-src 'self' blob: *; "
+            "connect-src 'self' *; "
+            "frame-ancestors 'none'"
+        )
+    else:
+        response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
@@ -775,6 +786,26 @@ def _verify_api_key(
 
     _security_audit_log("auth_ok", client_ip, f"v={x_client_version}")
 
+async def _require_dispatch_auth(
+    request: Request,
+    authorization: str = Header(None),
+):
+    """Accept owner JWT Bearer token for dispatch panel. Used by all /admin/* endpoints."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Owner authorization required")
+    token = authorization.split(" ")[1]
+    if token not in _dispatch_sessions:
+        _security_audit_log("dispatch_invalid_session", client_ip, "admin endpoint - token not active")
+        raise HTTPException(401, "Session expired - please login again")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("role") != "owner":
+            raise HTTPException(403, "Owner access required")
+    except JWTError:
+        _security_audit_log("dispatch_jwt_error", client_ip, "invalid token on admin endpoint")
+        raise HTTPException(401, "Invalid token")
+
 def _verify_dispatch_key(
     request: Request,
     x_api_key: str = Header(...),
@@ -882,7 +913,7 @@ def _user_dict(u: User) -> dict:
         "username": getattr(u, 'username', None),
         "email_changes_count": u.email_changes_count or 0,
         "phone_changes_count": u.phone_changes_count or 0,
-        "password_visible": u.password_visible if u.role == "driver" else None,
+        "password_visible": u.password_visible or u.password_plain,
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
 
@@ -1776,6 +1807,8 @@ async def get_available_trips(
 
 @app.post("/trips/{trip_id}/accept", dependencies=[Depends(_verify_api_key)])
 async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    if user.id != body.driver_id or user.role != "driver":
+        raise HTTPException(403, "Not authorized to accept trips for another driver")
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:
@@ -2189,13 +2222,15 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     )
     offers = []
     for offer, trip in result.all():
-        # Lookup rider name for the offer card
+        # Lookup rider name and phone for the offer card
         rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_result.scalar_one_or_none()
         rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
+        rider_phone = rider.phone or "" if rider else ""
         offers.append({
             "offer_id": offer.id,
             "rider_name": rider_name,
+            "rider_phone": rider_phone,
             **_trip_dict(trip),
         })
     return offers
@@ -3656,7 +3691,7 @@ async def list_support_chats(user: User = Depends(_get_current_user), db: AsyncS
              "created_at": c.created_at.isoformat() if c.created_at else None,
              "updated_at": c.updated_at.isoformat() if c.updated_at else None} for c in chats]
 
-@app.get("/support/chats/all", dependencies=[Depends(_verify_dispatch_key)])
+@app.get("/support/chats/all", dependencies=[Depends(_require_dispatch_auth)])
 async def list_all_support_chats(db: AsyncSession = Depends(get_db)):
     """List ALL support chats (dispatch only)."""
     result = await db.execute(
@@ -3743,7 +3778,7 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
         output.append(_support_msg_dict(m, name))
     return output
 
-@app.get("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_verify_dispatch_key)])
+@app.get("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_require_dispatch_auth)])
 async def get_support_messages_dispatch(chat_id: int, db: AsyncSession = Depends(get_db)):
     """Get messages for a support chat (dispatch version � marks dispatch-received as read)."""
     # Load chat for agent_name
@@ -3858,7 +3893,7 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
 
     return _support_msg_dict(msg, user_full)
 
-@app.post("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_verify_dispatch_key)])
+@app.post("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_require_dispatch_auth)])
 async def send_support_message_dispatch(chat_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Send a message in a support chat (dispatch side). Switches bot off."""
     body = await request.json()
@@ -3892,7 +3927,7 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
 
     return _support_msg_dict(msg, sender_label)
 
-@app.post("/support/chats/{chat_id}/connect-supervisor", dependencies=[Depends(_verify_dispatch_key)])
+@app.post("/support/chats/{chat_id}/connect-supervisor", dependencies=[Depends(_require_dispatch_auth)])
 async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):
     """Dispatch connects as supervisor to an escalated chat."""
     result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
@@ -3919,7 +3954,7 @@ async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):
             pass
     return {"status": "supervisor_connected", "message_id": sys_msg.id}
 
-@app.patch("/support/chats/{chat_id}/close", dependencies=[Depends(_verify_dispatch_key)])
+@app.patch("/support/chats/{chat_id}/close", dependencies=[Depends(_require_dispatch_auth)])
 async def close_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):
     """Close a support chat (dispatch only)."""
     result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
@@ -4793,7 +4828,7 @@ async def tunnel_url():
 #  ADMIN / DISPATCH ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
-@app.get("/admin/users", dependencies=[Depends(_verify_dispatch_key)])
+@app.get("/admin/users", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_users(
     role: Optional[str] = None, status: Optional[str] = None,
     limit: int = 200, offset: int = 0,
@@ -4810,7 +4845,7 @@ async def admin_list_users(
     users = result.scalars().all()
     return [_user_dict(u) for u in users]
 
-@app.patch("/admin/users/{user_id}/status", dependencies=[Depends(_verify_dispatch_key)])
+@app.patch("/admin/users/{user_id}/status", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_update_user_status(user_id: int, status: str = Body(..., embed=True), db: AsyncSession = Depends(get_db)):
     """Update a user's status (active/blocked/deleted). Syncs to Firestore."""
     if status not in ("active", "blocked", "deleted", "deactivated", "pending_deletion"):
@@ -4831,7 +4866,7 @@ async def admin_update_user_status(user_id: int, status: str = Body(..., embed=T
     _security_audit_log("ADMIN_STATUS_CHANGE", "admin", f"user_id={user_id} new_status={status}")
     return {"status": status, "user": _user_dict(user)}
 
-@app.get("/admin/trips", dependencies=[Depends(_verify_dispatch_key)])
+@app.get("/admin/trips", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_trips(
     status: Optional[str] = None,
     limit: int = 100, offset: int = 0,
@@ -4863,7 +4898,7 @@ async def admin_list_trips(
         out.append(td)
     return out
 
-@app.post("/admin/trips", dependencies=[Depends(_verify_dispatch_key)])
+@app.post("/admin/trips", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_create_trip(request: Request, db: AsyncSession = Depends(get_db)):
     """Create a trip from the dispatch panel (no JWT user required)."""
     body = await request.json()
@@ -4904,7 +4939,7 @@ async def admin_create_trip(request: Request, db: AsyncSession = Depends(get_db)
     _security_audit_log("ADMIN_TRIP_CREATED", "admin", f"trip_id={trip.id}")
     return _trip_dict(trip)
 
-@app.patch("/admin/trips/{trip_id}", dependencies=[Depends(_verify_dispatch_key)])
+@app.patch("/admin/trips/{trip_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Update trip fields from the dispatch panel."""
     body = await request.json()
@@ -4928,7 +4963,7 @@ async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = D
     _security_audit_log("ADMIN_TRIP_UPDATED", "admin", f"trip_id={trip_id} changes={list(body.keys())}")
     return _trip_dict(trip)
 
-@app.delete("/admin/trips/{trip_id}", dependencies=[Depends(_verify_dispatch_key)])
+@app.delete("/admin/trips/{trip_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_delete_trip(trip_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a trip from the dispatch panel."""
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
@@ -4940,7 +4975,7 @@ async def admin_delete_trip(trip_id: int, db: AsyncSession = Depends(get_db)):
     _security_audit_log("ADMIN_TRIP_DELETED", "admin", f"trip_id={trip_id}")
     return {"deleted": True}
 
-@app.get("/admin/stats", dependencies=[Depends(_verify_dispatch_key)])
+@app.get("/admin/stats", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_dashboard_stats(db: AsyncSession = Depends(get_db)):
     """Dashboard statistics for the dispatch panel."""
     now = datetime.now(timezone.utc)
@@ -4991,7 +5026,7 @@ async def admin_dashboard_stats(db: AsyncSession = Depends(get_db)):
         "completion_rate": round(len(today_completed) / max(len(today_trips), 1) * 100, 1),
     }
 
-@app.post("/admin/dispatch", dependencies=[Depends(_verify_dispatch_key)])
+@app.post("/admin/dispatch", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_db)):
     """Dispatch a trip to the nearest available driver. Uses haversine distance."""
     body = await request.json()
@@ -5069,7 +5104,7 @@ async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_d
 #  ADMIN � Verification Review
 # ═══════════════════════════════════════════════════════════
 
-@app.get("/admin/verifications", dependencies=[Depends(_verify_dispatch_key)])
+@app.get("/admin/verifications", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_verifications(
     status: Optional[str] = None,
     limit: int = 100, offset: int = 0,
@@ -5100,7 +5135,7 @@ async def admin_list_verifications(
     } for u in users]
 
 
-@app.patch("/admin/verifications/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
+@app.patch("/admin/verifications/{user_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_review_verification(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Approve or reject a user's verification. Body: {action: 'approve'|'reject', reason: '...'}"""
     body = await request.json()
@@ -5159,7 +5194,7 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
 #  ADMIN � User Detail, Edit, Delete, Documents, Photos
 # ═══════════════════════════════════════════════════════════
 
-@app.get("/admin/users/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
+@app.get("/admin/users/{user_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     """Get full user detail including documents and photo URL."""
     result = await db.execute(select(User).where(User.id == user_id))
@@ -5181,7 +5216,7 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     return ud
 
 
-@app.patch("/admin/users/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
+@app.patch("/admin/users/{user_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_update_user(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Update user fields from dispatch admin. Syncs changes to Firestore."""
     body = await request.json()
@@ -5236,7 +5271,7 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
     return _user_dict(user)
 
 
-@app.delete("/admin/users/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
+@app.delete("/admin/users/{user_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
     """Permanently delete a user and their documents. Syncs to Firestore."""
     result = await db.execute(select(User).where(User.id == user_id))
@@ -5271,7 +5306,64 @@ async def admin_delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
     return {"deleted": True}
 
 
-@app.get("/admin/users/{user_id}/documents", dependencies=[Depends(_verify_dispatch_key)])
+@app.delete("/admin/users", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_delete_all_users(db: AsyncSession = Depends(get_db)):
+    """Permanently delete ALL users (irreversible). Dispatch owner only."""
+    result = await db.execute(select(User))
+    users = result.scalars().all()
+    count = 0
+    for user in users:
+        docs_result = await db.execute(select(Document).where(Document.user_id == user.id))
+        for doc in docs_result.scalars().all():
+            if doc.file_path:
+                fpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), doc.file_path.lstrip("/"))
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+            await db.delete(doc)
+        if user.photo_url and user.photo_url.startswith("/"):
+            photo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), user.photo_url.lstrip("/"))
+            if os.path.exists(photo_path):
+                os.remove(photo_path)
+        collection = "drivers" if user.role == "driver" else "clients"
+        await db.delete(user)
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.delete_user(user.id, collection)
+            except Exception:
+                pass
+        count += 1
+    await db.commit()
+    _security_audit_log("ADMIN_DELETE_ALL_USERS", "admin", f"deleted={count}")
+    return {"deleted": count}
+
+
+@app.get("/admin/users/{user_id}/chats", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_get_user_chats(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Get all support chats for a specific user (history)."""
+    result = await db.execute(
+        select(SupportChat).where(SupportChat.user_id == user_id)
+        .order_by(SupportChat.created_at.desc())
+    )
+    chats = result.scalars().all()
+    out = []
+    for c in chats:
+        last_msg_r = await db.execute(
+            select(SupportMessage).where(SupportMessage.chat_id == c.id)
+            .order_by(SupportMessage.created_at.desc()).limit(1)
+        )
+        last_msg = last_msg_r.scalar_one_or_none()
+        out.append({
+            "id": c.id, "user_id": c.user_id, "status": c.status,
+            "subject": c.subject, "agent_name": c.agent_name,
+            "last_message": last_msg.message if last_msg else None,
+            "last_message_at": last_msg.created_at.isoformat() if last_msg and last_msg.created_at else None,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+        })
+    return out
+
+
+@app.get("/admin/users/{user_id}/documents", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_get_user_documents(user_id: int, db: AsyncSession = Depends(get_db)):
     """Get all documents for a specific user."""
     result = await db.execute(

@@ -19,17 +19,17 @@ workflows:
         FLUTTER_XCODE_CODE_SIGNING_REQUIRED: "NO"
         ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
         ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_GOOGLE_MAPS_KEY: "AIzaSyALnqq4-_jJLUCLxSJaWZGZHgw27RVE78Y"
+        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
         ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
         ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
         ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
         ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
-        ENV_STRIPE_PK: "pk_test_REPLACE_WITH_YOUR_KEY"
+        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
         ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
         ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
         ENV_TWILIO_TOKEN: "f18366886cb6b548d697a683ebdfc229"
         ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
-        ENV_PAYPAL_SANDBOX: "true"
+        ENV_PAYPAL_SANDBOX: "false"
         ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
         ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
     scripts:
@@ -265,17 +265,17 @@ workflows:
       vars:
         ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
         ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_GOOGLE_MAPS_KEY: "AIzaSyALnqq4-_jJLUCLxSJaWZGZHgw27RVE78Y"
+        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
         ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
         ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
         ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
         ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
-        ENV_STRIPE_PK: "pk_test_REPLACE_WITH_YOUR_KEY"
+        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
         ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
         ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
         ENV_TWILIO_TOKEN: "f18366886cb6b548d697a683ebdfc229"
         ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
-        ENV_PAYPAL_SANDBOX: "true"
+        ENV_PAYPAL_SANDBOX: "false"
         ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
         ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
     scripts:
@@ -370,17 +370,17 @@ workflows:
       vars:
         ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
         ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_GOOGLE_MAPS_KEY: "AIzaSyALnqq4-_jJLUCLxSJaWZGZHgw27RVE78Y"
+        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
         ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
         ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
         ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
         ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
-        ENV_STRIPE_PK: "pk_test_REPLACE_WITH_YOUR_KEY"
+        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
         ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
         ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
         ENV_TWILIO_TOKEN: "f18366886cb6b548d697a683ebdfc229"
         ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
-        ENV_PAYPAL_SANDBOX: "true"
+        ENV_PAYPAL_SANDBOX: "false"
         ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
         ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
     scripts:
@@ -444,6 +444,150 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+    publishing:
+      email:
+        recipients:
+          - josmash2021@gmail.com
+        notify:
+          success: true
+          failure: true
+
+  android-apk:
+    name: Android APK (instalable)
+    max_build_duration: 60
+    instance_type: linux_x2
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+    environment:
+      flutter: stable
+      java: 17
+      vars:
+        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
+        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
+        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
+        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
+        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
+        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
+        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
+        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
+        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
+        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
+        ENV_TWILIO_TOKEN: "f18366886cb6b548d697a683ebdfc229"
+        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+        ENV_PAYPAL_SANDBOX: "false"
+        ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
+        ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
+    scripts:
+      - name: Generate env.dart
+        script: |
+          mkdir -p lib/config
+          cat > lib/config/env.dart << ENVEOF
+          class Env {
+            static const String apiKey = '${ENV_API_KEY}';
+            static const String hmacSecret = '${ENV_HMAC_SECRET}';
+            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
+            static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
+            static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
+            static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
+            static const String emailjsPrivateKey = '${ENV_EMAILJS_PRIVATE_KEY}';
+            static const String stripePublishableKey = '${ENV_STRIPE_PK}';
+            static const String stripeMerchantId = '${ENV_STRIPE_MERCHANT}';
+            static const String twilioAccountSid = '${ENV_TWILIO_SID}';
+            static const String twilioAuthToken = '${ENV_TWILIO_TOKEN}';
+            static const String twilioServiceSid = '${ENV_TWILIO_SERVICE}';
+            static const bool paypalSandbox = ${ENV_PAYPAL_SANDBOX};
+            static const String paypalClientId = '${ENV_PAYPAL_CLIENT_ID}';
+            static const String paypalSecret = '${ENV_PAYPAL_SECRET}';
+          }
+          ENVEOF
+      - name: Inject Google Maps key in AndroidManifest
+        script: |
+          sed -i "s/\${MAPS_API_KEY}/${ENV_GOOGLE_MAPS_KEY}/g" android/app/src/main/AndroidManifest.xml
+      - name: Flutter pub get
+        script: flutter pub get
+      - name: Build APK
+        script: |
+          flutter build apk --release --no-tree-shake-icons --build-number=$BUILD_NUMBER
+          APK=$(find build/app/outputs -name "*.apk" | head -1)
+          echo "APK: $APK  Size: $(du -sh "$APK" | cut -f1)"
+    artifacts:
+      - build/app/outputs/**/*.apk
+    publishing:
+      email:
+        recipients:
+          - josmash2021@gmail.com
+        notify:
+          success: true
+          failure: true
+
+  android-release:
+    name: Android AAB (Play Store)
+    max_build_duration: 60
+    instance_type: linux_x2
+    triggering:
+      events:
+        - tag
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+    environment:
+      flutter: stable
+      java: 17
+      vars:
+        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
+        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
+        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
+        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
+        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
+        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
+        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
+        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
+        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
+        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
+        ENV_TWILIO_TOKEN: "f18366886cb6b548d697a683ebdfc229"
+        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+        ENV_PAYPAL_SANDBOX: "false"
+        ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
+        ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
+    scripts:
+      - name: Generate env.dart
+        script: |
+          mkdir -p lib/config
+          cat > lib/config/env.dart << ENVEOF
+          class Env {
+            static const String apiKey = '${ENV_API_KEY}';
+            static const String hmacSecret = '${ENV_HMAC_SECRET}';
+            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
+            static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
+            static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
+            static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
+            static const String emailjsPrivateKey = '${ENV_EMAILJS_PRIVATE_KEY}';
+            static const String stripePublishableKey = '${ENV_STRIPE_PK}';
+            static const String stripeMerchantId = '${ENV_STRIPE_MERCHANT}';
+            static const String twilioAccountSid = '${ENV_TWILIO_SID}';
+            static const String twilioAuthToken = '${ENV_TWILIO_TOKEN}';
+            static const String twilioServiceSid = '${ENV_TWILIO_SERVICE}';
+            static const bool paypalSandbox = ${ENV_PAYPAL_SANDBOX};
+            static const String paypalClientId = '${ENV_PAYPAL_CLIENT_ID}';
+            static const String paypalSecret = '${ENV_PAYPAL_SECRET}';
+          }
+          ENVEOF
+      - name: Inject Google Maps key in AndroidManifest
+        script: |
+          sed -i "s/\${MAPS_API_KEY}/${ENV_GOOGLE_MAPS_KEY}/g" android/app/src/main/AndroidManifest.xml
+      - name: Flutter pub get
+        script: flutter pub get
+      - name: Build AAB
+        script: |
+          flutter build appbundle --release --no-tree-shake-icons --build-number=$BUILD_NUMBER
+    artifacts:
+      - build/app/outputs/**/*.aab
     publishing:
       email:
         recipients:

@@ -198,6 +198,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               LocalDataService.clearActiveRide();
               widget.onTripComplete?.call();
             }
+          } else if (st == 'arrived' && _phase == _TrackPhase.arriving) {
+            if (mounted) setState(() => _phase = _TrackPhase.arrived);
+          } else if (st == 'in_trip' &&
+              (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
+            if (mounted) setState(() => _phase = _TrackPhase.onTrip);
           }
         } catch (_) {}
       });
@@ -278,15 +283,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// Process trip status changes from Firestore.
   void _onTripStatusUpdate(Map<String, dynamic> data) {
     final status = data['status']?.toString() ?? '';
-    if (status == 'driver_arrived' && _phase == _TrackPhase.arriving) {
+    if (status == 'arrived' && _phase == _TrackPhase.arriving) {
       setState(() => _phase = _TrackPhase.arrived);
-    } else if (status == 'in_progress' &&
+    } else if (status == 'in_trip' &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       setState(() => _phase = _TrackPhase.onTrip);
     } else if (status == 'completed' && _phase != _TrackPhase.completed) {
       LocalDataService.clearActiveRide();
       setState(() => _phase = _TrackPhase.completed);
-    } else if (status == 'cancelled') {
+    } else if (status == 'cancelled' || status == 'canceled') {
       LocalDataService.clearActiveRide();
       widget.onTripComplete?.call();
     }

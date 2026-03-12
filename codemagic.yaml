@@ -146,19 +146,29 @@ workflows:
         script: |
           flutter --version
 
+          # flutter exits 1 even when .app is produced (no team selected warning)
           flutter build ios \
             --release \
             --no-codesign \
-            --no-tree-shake-icons
+            --no-tree-shake-icons || true
 
-          APP="build/ios/iphoneos/Runner.app"
-          if [ ! -d "$APP" ]; then
-            echo "Searching for Runner.app..."
-            find build/ios -type d -name "Runner.app" 2>/dev/null || true
+          # Find wherever the .app landed
+          APP=$(find build/ios -type d -name "Runner.app" 2>/dev/null | head -1)
+          if [ -z "$APP" ]; then
+            echo "ERROR: Runner.app not found anywhere under build/ios"
+            find build/ios 2>/dev/null || true
             exit 1
           fi
+          echo "Found Runner.app at: $APP"
           ls -la "$APP/"
           echo "App size: $(du -sm "$APP" | cut -f1) MB"
+
+          # Ensure it's at the expected path for Empaquetar step
+          mkdir -p build/ios/iphoneos
+          if [ "$APP" != "build/ios/iphoneos/Runner.app" ]; then
+            cp -r "$APP" build/ios/iphoneos/Runner.app
+            echo "Copied to build/ios/iphoneos/Runner.app"
+          fi
       - name: Empaquetar .app en .ipa
         script: |
           APP_PATH="build/ios/iphoneos/Runner.app"

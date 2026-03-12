@@ -46,9 +46,11 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-API_KEY = os.environ["API_KEY"]       # Required � set in .env
-HMAC_SECRET = os.environ["HMAC_SECRET"] # Required � set in .env
-JWT_SECRET = os.environ["JWT_SECRET"]   # Required � set in .env
+API_KEY = os.getenv("API_KEY", "")
+HMAC_SECRET = os.getenv("HMAC_SECRET", "")
+JWT_SECRET = os.getenv("JWT_SECRET", "changeme")
+if not API_KEY or not HMAC_SECRET:
+    logging.warning("[STARTUP] API_KEY or HMAC_SECRET not set — set env vars in Railway/production")
 DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")  # Separate key for admin/dispatch endpoints
 
 # -- Owner-only access configuration -------------------
@@ -306,10 +308,17 @@ except ImportError:
     logging.warning("firestore_sync module not available � dispatch sync disabled")
 
 async def _column_missing(conn, table: str, column: str) -> bool:
-    """Check if a column is missing from a SQLite table."""
-    result = await conn.execute(text(f"PRAGMA table_info({table})"))
-    cols = [row[1] for row in result.fetchall()]
-    return column not in cols
+    """Check if a column is missing from the given table (SQLite + PostgreSQL)."""
+    if DATABASE_URL.startswith("sqlite"):
+        result = await conn.execute(text(f"PRAGMA table_info({table})"))
+        cols = [row[1] for row in result.fetchall()]
+        return column not in cols
+    else:
+        result = await conn.execute(text(
+            f"SELECT column_name FROM information_schema.columns "
+            f"WHERE table_name='{table}' AND column_name='{column}'"
+        ))
+        return result.fetchone() is None
 
 # -- App lifecycle ---------------------------------------
 async def _migrate_add_columns(conn):
@@ -339,9 +348,15 @@ async def _migrate_add_columns(conn):
         ("trips", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
         ("trips", "stripe_payment_intent_id", "VARCHAR(100)"),
     ]
+    is_sqlite = DATABASE_URL.startswith("sqlite")
     for table, col, col_type in new_columns:
         try:
-            await conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+            if is_sqlite:
+                await conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+            else:
+                # PostgreSQL supports IF NOT EXISTS in ALTER TABLE
+                pg_type = col_type.split(" DEFAULT ")[0]  # strip DEFAULT clause
+                await conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {pg_type}"))
         except Exception:
             pass  # Column already exists
 
@@ -351,20 +366,26 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         
-        # Enable WAL mode for better concurrency and prevent DB locks
-        await conn.execute(text("PRAGMA journal_mode=WAL"))
-        await conn.execute(text("PRAGMA synchronous=NORMAL"))
-        await conn.execute(text("PRAGMA busy_timeout=30000"))  # 30 second timeout
-        await conn.execute(text("PRAGMA cache_size=-64000"))  # 64MB cache
-        
+        # SQLite-only performance settings
+        if DATABASE_URL.startswith("sqlite"):
+            await conn.execute(text("PRAGMA journal_mode=WAL"))
+            await conn.execute(text("PRAGMA synchronous=NORMAL"))
+            await conn.execute(text("PRAGMA busy_timeout=30000"))
+            await conn.execute(text("PRAGMA cache_size=-64000"))
+
         # Add password_plain column if missing (migration)
-        await conn.execute(text(
-            "ALTER TABLE users ADD COLUMN password_plain VARCHAR(255)"
-        )) if await _column_missing(conn, "users", "password_plain") else None
+        if await _column_missing(conn, "users", "password_plain"):
+            try:
+                if DATABASE_URL.startswith("sqlite"):
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN password_plain VARCHAR(255)"))
+                else:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_plain VARCHAR(255)"))
+            except Exception:
+                pass
         # Add new columns (license, insurance, ssn, etc.) if missing
         await _migrate_add_columns(conn)
     
-    logging.info("? Database initialized with WAL mode and optimizations")
+    logging.info("Database initialized successfully")
     
     # Bulk-sync existing data to Firestore on startup
     if _HAS_FIRESTORE:
@@ -375,6 +396,10 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None)
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "cruise-ride-api"}
 
 # ═══════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION

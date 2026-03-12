@@ -1558,6 +1558,59 @@ class ApiService {
         .timeout(const Duration(seconds: 15));
     return _parse(res);
   }
+
+  // ═══════════════════════════════════════════════════════
+  //  RIDER PAYMENT METHODS (server-synced)
+  // ═══════════════════════════════════════════════════════
+
+  static Future<List<Map<String, dynamic>>> getRiderPaymentMethods() async {
+    final h = await _authHeaders();
+    final res = await http
+        .get(Uri.parse('$_baseUrl/riders/payment-methods'), headers: h)
+        .timeout(const Duration(seconds: 10));
+    final body = _parse(res);
+    if (body is List) return body.cast<Map<String, dynamic>>();
+    return [];
+  }
+
+  static Future<Map<String, dynamic>> addRiderPaymentMethod({
+    required String methodType,
+    required String displayName,
+    String? stripePmId,
+    bool setDefault = false,
+  }) async {
+    final h = await _authHeaders();
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/riders/payment-methods'),
+          headers: h,
+          body: jsonEncode({
+            'method_type': methodType,
+            'display_name': displayName,
+            if (stripePmId != null) 'stripe_pm_id': stripePmId,
+            'set_default': setDefault,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  static Future<void> deleteRiderPaymentMethod(int pmId) async {
+    final h = await _authHeaders();
+    await http
+        .delete(Uri.parse('$_baseUrl/riders/payment-methods/$pmId'), headers: h)
+        .timeout(const Duration(seconds: 10));
+  }
+
+  static Future<void> setDefaultRiderPaymentMethod(int pmId) async {
+    final h = await _authHeaders();
+    await http
+        .patch(
+          Uri.parse('$_baseUrl/riders/payment-methods/$pmId/default'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+  }
 }
 
 /// Simple exception with HTTP status code.

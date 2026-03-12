@@ -168,6 +168,16 @@ class PayoutMethod(Base):
     display_name = Column(String(255), nullable=False)
     is_default = Column(Boolean, default=False)
 
+class RiderPaymentMethod(Base):
+    __tablename__ = "rider_payment_methods"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    method_type = Column(String(50), nullable=False)  # stripe_card, bank_account, paypal, google_pay, apple_pay, cruise_cash
+    display_name = Column(String(255), nullable=False)  # e.g. "Visa •••• 4242", "Chase Checking •••• 1234"
+    stripe_pm_id = Column(String(100), nullable=True)  # Stripe PaymentMethod ID for cards
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
 class Cashout(Base):
     __tablename__ = "cashouts"
     id = Column(Integer, primary_key=True, index=True)
@@ -1006,6 +1016,12 @@ class CashoutIn(BaseModel):
 class PayoutMethodIn(BaseModel):
     method_type: str
     display_name: str
+    set_default: bool = False
+
+class RiderPaymentMethodIn(BaseModel):
+    method_type: str
+    display_name: str
+    stripe_pm_id: Optional[str] = None
     set_default: bool = False
 
 class DispatchRequestIn(BaseModel):
@@ -2091,9 +2107,72 @@ async def create_plaid_link_token(user: User = Depends(_get_current_user)):
     return {"link_token": f"link-sandbox-{secrets.token_hex(16)}"}
 
 @app.post("/plaid/exchange-token", dependencies=[Depends(_verify_api_key)])
-async def exchange_plaid_token(request: Request, user: User = Depends(_get_current_user)):
+async def exchange_plaid_token(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     body = await request.json()
+    institution = body.get("institution_name", "Bank")
+    mask = body.get("account_mask", "")
+    subtype = body.get("account_subtype", "checking")
+    display = f"{institution} {subtype.capitalize()} {'••••' + mask if mask else ''}".strip()
+    pm = RiderPaymentMethod(user_id=user.id, method_type="bank_account", display_name=display)
+    db.add(pm)
+    await db.commit()
     return {"status": "ok", "account_id": body.get("account_id", "acct_stub")}
+
+# ═══════════════════════════════════════════════════════
+#  RIDER PAYMENT METHODS
+# ═══════════════════════════════════════════════════════
+
+@app.get("/riders/payment-methods", dependencies=[Depends(_verify_api_key)])
+async def get_rider_payment_methods(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(RiderPaymentMethod).where(RiderPaymentMethod.user_id == user.id).order_by(RiderPaymentMethod.created_at)
+    )
+    return [{"id": p.id, "method_type": p.method_type, "display_name": p.display_name,
+             "stripe_pm_id": p.stripe_pm_id, "is_default": p.is_default,
+             "created_at": p.created_at.isoformat() if p.created_at else None}
+            for p in result.scalars().all()]
+
+@app.post("/riders/payment-methods", dependencies=[Depends(_verify_api_key)])
+async def add_rider_payment_method(body: RiderPaymentMethodIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    if body.set_default:
+        existing = await db.execute(select(RiderPaymentMethod).where(RiderPaymentMethod.user_id == user.id))
+        for pm in existing.scalars().all():
+            pm.is_default = False
+    pm = RiderPaymentMethod(
+        user_id=user.id,
+        method_type=body.method_type,
+        display_name=body.display_name,
+        stripe_pm_id=body.stripe_pm_id,
+        is_default=body.set_default,
+    )
+    db.add(pm)
+    await db.commit()
+    await db.refresh(pm)
+    return {"id": pm.id, "method_type": pm.method_type, "display_name": pm.display_name,
+            "stripe_pm_id": pm.stripe_pm_id, "is_default": pm.is_default}
+
+@app.delete("/riders/payment-methods/{pm_id}", dependencies=[Depends(_verify_api_key)])
+async def delete_rider_payment_method(pm_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(RiderPaymentMethod).where(RiderPaymentMethod.id == pm_id, RiderPaymentMethod.user_id == user.id))
+    pm = result.scalar_one_or_none()
+    if not pm:
+        raise HTTPException(404, "Payment method not found")
+    await db.delete(pm)
+    await db.commit()
+    return {"status": "deleted"}
+
+@app.patch("/riders/payment-methods/{pm_id}/default", dependencies=[Depends(_verify_api_key)])
+async def set_default_rider_payment_method(pm_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    existing = await db.execute(select(RiderPaymentMethod).where(RiderPaymentMethod.user_id == user.id))
+    target = None
+    for pm in existing.scalars().all():
+        pm.is_default = (pm.id == pm_id)
+        if pm.id == pm_id:
+            target = pm
+    if not target:
+        raise HTTPException(404, "Payment method not found")
+    await db.commit()
+    return {"status": "ok"}
 
 # ═══════════════════════════════════════════════════════
 #  DISPATCH  ENDPOINTS
@@ -5394,6 +5473,17 @@ async def serve_document(filename: str):
     media = mime_map.get(ext, "application/octet-stream")
     return FileResponse(fpath, media_type=media)
 
+
+@app.get("/admin/users/{user_id}/payment-methods", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_get_rider_payment_methods(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Get all saved payment methods for a specific rider (dispatch view)."""
+    result = await db.execute(
+        select(RiderPaymentMethod).where(RiderPaymentMethod.user_id == user_id).order_by(RiderPaymentMethod.created_at)
+    )
+    return [{"id": p.id, "method_type": p.method_type, "display_name": p.display_name,
+             "is_default": p.is_default,
+             "created_at": p.created_at.isoformat() if p.created_at else None}
+            for p in result.scalars().all()]
 
 # ═══════════════════════════════════════════════════════
 #  STRIPE PAYMENT ENDPOINTS

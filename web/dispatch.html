@@ -102,6 +102,16 @@
         .trip-card{background:#1c1c1e;border-radius:10px;padding:16px;border:1px solid #2a2a2a}
         .trip-card h3{margin-bottom:8px;font-size:16px}
         .trip-card p{font-size:13px;color:#999;margin-bottom:4px}
+        .pm-box{margin-top:10px;padding:10px 12px;background:#111;border-radius:8px}
+        .pm-title{font-size:11px;color:#555;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+        .pm-item{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #1a1a1a}
+        .pm-item:last-child{border-bottom:none}
+        .pm-icon{font-size:14px}
+        .pm-name{font-size:13px;color:#ccc;flex:1}
+        .pm-default{font-size:10px;color:#E8C547;font-weight:700;background:rgba(232,197,71,.12);padding:2px 6px;border-radius:4px}
+        .pm-empty{font-size:12px;color:#444;font-style:italic}
+        .filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+        .filter-select{background:#1c1c1e;border:1px solid #333;color:#fff;padding:6px 10px;border-radius:6px;font-size:13px}
     </style>
 </head>
 <body>
@@ -159,8 +169,19 @@
 
         <!-- TRIPS TAB -->
         <div id="tripsTab" class="hidden">
-            <div class="top-actions">
+            <div class="top-actions filter-row">
+                <select class="filter-select" id="tripStatusFilter" onchange="loadTrips()">
+                    <option value="">All Statuses</option>
+                    <option value="requested">Requested</option>
+                    <option value="driver_en_route">En Route</option>
+                    <option value="arrived">Arrived</option>
+                    <option value="in_trip">In Trip</option>
+                    <option value="completed">Completed</option>
+                    <option value="canceled">Canceled</option>
+                    <option value="scheduled">Scheduled</option>
+                </select>
                 <button class="btn-sm" onclick="loadTrips()">↻ Refresh</button>
+                <span id="tripsAutoLabel" style="font-size:11px;color:#555">Auto-refresh: 30s</span>
             </div>
             <div id="tripsList" style="display:flex;flex-direction:column;gap:12px"><div class="loading">Loading…</div></div>
         </div>
@@ -180,6 +201,20 @@
 
 <script>
 let serverUrl = '', ownerToken = '';
+let _audioCtx = null;
+function _playBeep() {
+    try {
+        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = _audioCtx.createOscillator();
+        const g = _audioCtx.createGain();
+        o.connect(g); g.connect(_audioCtx.destination);
+        o.frequency.value = 880; o.type = 'sine';
+        g.gain.setValueAtTime(0.4, _audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.4);
+        o.start(); o.stop(_audioCtx.currentTime + 0.4);
+    } catch(_) {}
+}
+let _knownChatIds = new Set();
 const hdrs = () => ({'Authorization': `Bearer ${ownerToken}`, 'Content-Type': 'application/json'});
 
 // ── AUTH ──────────────────────────────────────────────
@@ -338,9 +373,30 @@ function buildUserCard(u, showVerifActions) {
             <button class="action-btn btn-block" onclick="setStatus(${u.id},'blocked')">Block</button>
             <button class="action-btn btn-delete" onclick="deleteUser(${u.id})">Delete</button>
             <button class="action-btn btn-view" onclick="viewUserChats(${u.id},'${esc(u.first_name+' '+u.last_name)}')">Chats</button>
+            <button class="action-btn btn-view" onclick="viewUserPayments(${u.id})">&#128179; Pay</button>
         </div>
         <div id="user-chats-${u.id}" class="hidden user-chat-hist"></div>
+        <div id="user-pm-${u.id}" class="hidden pm-box"></div>
     </div>`;
+}
+
+async function viewUserPayments(uid) {
+    const box = document.getElementById('user-pm-'+uid);
+    if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
+    box.innerHTML = '<div class="pm-title">Payment Methods</div><p class="pm-empty">Loading...</p>';
+    box.classList.remove('hidden');
+    try {
+        const r = await fetch(`${serverUrl}/admin/users/${uid}/payment-methods`, {headers: hdrs()});
+        const methods = await r.json();
+        if (!methods.length) { box.innerHTML = '<div class="pm-title">Payment Methods</div><p class="pm-empty">No payment methods on file</p>'; return; }
+        const icons = {stripe_card:'\uD83D\uDCB3', bank_account:'\uD83C\uDFE6', paypal:'\uD83D\uDCB0', google_pay:'G', apple_pay:'', cruise_cash:'\u2B50'};
+        box.innerHTML = '<div class="pm-title">Payment Methods</div>' +
+            methods.map(m => `<div class="pm-item">
+                <span class="pm-icon">${icons[m.method_type]||'\uD83D\uDCB3'}</span>
+                <span class="pm-name">${esc(m.display_name)}</span>
+                ${m.is_default ? '<span class="pm-default">DEFAULT</span>' : ''}
+            </div>`).join('');
+    } catch(e) { box.innerHTML = `<div class="pm-title">Payment Methods</div><div class="err-box">${e.message}</div>`; }
 }
 
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
@@ -420,10 +476,13 @@ async function openChatInTab(chatId) {
 async function loadTrips() {
     const el = document.getElementById('tripsList');
     el.innerHTML = '<div class="loading">Loading…</div>';
+    const statusFilter = document.getElementById('tripStatusFilter')?.value || '';
     try {
-        const r = await fetch(`${serverUrl}/admin/trips`, {headers: hdrs()});
+        const url = statusFilter ? `${serverUrl}/admin/trips?status=${statusFilter}` : `${serverUrl}/admin/trips`;
+        const r = await fetch(url, {headers: hdrs()});
         if (!r.ok) throw new Error(await r.text());
-        const trips = await r.json();
+        let trips = await r.json();
+        if (statusFilter) trips = trips.filter(t => t.status === statusFilter);
         if (!trips.length) { el.innerHTML = '<div class="loading">No trips found</div>'; return; }
         el.innerHTML = trips.map(t => `<div class="trip-card">
             <h3>Trip #${t.id} <span class="badge badge-${t.status}">${t.status}</span></h3>
@@ -441,28 +500,38 @@ async function loadTrips() {
 let activeChatId = null;
 let _msgRefresh = null;
 let _listRefresh = null;
+let _tripsRefresh = null;
 
 function startAutoRefresh() {
     if (_msgRefresh) clearInterval(_msgRefresh);
     if (_listRefresh) clearInterval(_listRefresh);
+    if (_tripsRefresh) clearInterval(_tripsRefresh);
     _msgRefresh = setInterval(() => {
         if (activeChatId) loadChatMessages(activeChatId);
     }, 10000);
-    _listRefresh = setInterval(() => {
+    _listRefresh = setInterval(async () => {
+        const prevCount = _knownChatIds.size;
+        await loadChats();
+        if (_knownChatIds.size > prevCount) _playBeep();
+    }, 30000);
+    _tripsRefresh = setInterval(() => {
         const tab = document.querySelector('.tab.active');
-        if (tab && tab.id === 'tab-chats') loadChats();
+        if (tab && tab.id === 'tab-trips') loadTrips();
     }, 30000);
 }
 
 async function loadChats() {
     if (!_msgRefresh) startAutoRefresh();
     const el = document.getElementById('chatsList');
-    el.innerHTML = '<div class="loading">Loading…</div>';
     const showClosed = document.getElementById('showClosed').checked;
     try {
         const r = await fetch(`${serverUrl}/support/chats/all`, {headers: hdrs()});
         if (!r.ok) throw new Error(await r.text());
         let chats = await r.json();
+        const newIds = new Set(chats.map(c => c.id));
+        const hasNew = [...newIds].some(id => !_knownChatIds.has(id) && _knownChatIds.size > 0);
+        if (hasNew) _playBeep();
+        _knownChatIds = newIds;
         if (!showClosed) chats = chats.filter(c => c.status === 'open');
         if (!chats.length) { el.innerHTML = '<div class="loading">No chats found</div>'; return; }
         el.innerHTML = chats.map(c => buildChatCard(c)).join('');

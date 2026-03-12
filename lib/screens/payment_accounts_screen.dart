@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
+import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/payment_service.dart';
 import 'credit_card_screen.dart';
@@ -22,14 +23,18 @@ class PaymentAccountsScreen extends StatefulWidget {
 class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
   static const _gold = Color(0xFFE8C547);
 
-  // Linked state – persisted via LocalDataService / SharedPreferences.
+  // Local state (SharedPreferences)
   bool _googlePayLinked = false;
   bool _applePayLinked = false;
   bool _paypalLinked = false;
   String? _savedCardLast4;
   String? _savedCardBrand;
 
-  // Platform availability (checked on init)
+  // Server-synced methods (cards + bank accounts)
+  List<Map<String, dynamic>> _serverMethods = [];
+  bool _loadingServer = true;
+
+  // Platform availability
   bool _googlePayAvailable = false;
   bool _applePayAvailable = false;
 
@@ -38,6 +43,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     super.initState();
     _loadLinkedState();
     _checkPlatformAvailability();
+    _loadServerMethods();
   }
 
   Future<void> _checkPlatformAvailability() async {
@@ -66,6 +72,40 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     });
   }
 
+  Future<void> _loadServerMethods() async {
+    try {
+      final methods = await ApiService.getRiderPaymentMethods();
+      if (!mounted) return;
+      setState(() {
+        _serverMethods = methods;
+        _loadingServer = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingServer = false);
+    }
+  }
+
+  Future<void> _deleteServerMethod(int id) async {
+    try {
+      await ApiService.deleteRiderPaymentMethod(id);
+      if (!mounted) return;
+      setState(() => _serverMethods.removeWhere((m) => m['id'] == id));
+      _showSnack('Payment method removed');
+    } catch (_) {
+      _showSnack('Could not remove method. Try again.');
+    }
+  }
+
+  Future<void> _setDefaultServerMethod(int id) async {
+    try {
+      await ApiService.setDefaultRiderPaymentMethod(id);
+      await _loadServerMethods();
+    } catch (_) {
+      _showSnack('Could not update default. Try again.');
+    }
+  }
+
   // ── External app launchers ──
 
   // ── Google Pay / Apple Pay via `pay` package ──
@@ -86,9 +126,15 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       builder: (ctx) => _GooglePayLinkSheet(
         onSuccess: (result) async {
           await LocalDataService.linkPaymentMethod('google_pay');
+          ApiService.addRiderPaymentMethod(
+            methodType: 'google_pay',
+            displayName: 'Google Pay',
+            setDefault: false,
+          ).catchError((_) {});
           if (!mounted) return;
           setState(() => _googlePayLinked = true);
           _showSnack(S.of(context).googlePayLinked);
+          await _loadServerMethods();
         },
       ),
     );
@@ -125,9 +171,15 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       builder: (ctx) => _ApplePayLinkSheet(
         onSuccess: (result) async {
           await LocalDataService.linkPaymentMethod('apple_pay');
+          ApiService.addRiderPaymentMethod(
+            methodType: 'apple_pay',
+            displayName: 'Apple Pay',
+            setDefault: false,
+          ).catchError((_) {});
           if (!mounted) return;
           setState(() => _applePayLinked = true);
           _showSnack(S.of(context).applePayLinked);
+          await _loadServerMethods();
         },
       ),
     );
@@ -149,8 +201,14 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     if (!mounted) return;
     if (approved == true) {
       await LocalDataService.linkPaymentMethod('paypal');
+      ApiService.addRiderPaymentMethod(
+        methodType: 'paypal',
+        displayName: 'PayPal',
+        setDefault: false,
+      ).catchError((_) {});
       setState(() => _paypalLinked = true);
       _showSnack(S.of(context).paypalLinked);
+      await _loadServerMethods();
     }
   }
 
@@ -170,6 +228,13 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     await LocalDataService.linkPaymentMethod('credit_card');
     await LocalDataService.saveCreditCardLast4(last4);
     await LocalDataService.saveCreditCardBrand(brand);
+    final stripePmId = await LocalDataService.getStripePaymentMethodId();
+    ApiService.addRiderPaymentMethod(
+      methodType: 'stripe_card',
+      displayName: '${_capitalizedBrand(brand)} •••• $last4',
+      stripePmId: stripePmId,
+      setDefault: true,
+    ).catchError((_) {});
     setState(() {
       _savedCardLast4 = last4;
       _savedCardBrand = brand;
@@ -177,6 +242,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     _showSnack(
       S.of(context).cardAddedMsg('${_capitalizedBrand(brand)} •••• $last4'),
     );
+    await _loadServerMethods();
   }
 
   String _capitalizedBrand(String? brand) {
@@ -218,7 +284,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -258,6 +324,13 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
+
+              // ── Add new methods section ──
+              Text(
+                'Add Payment Method',
+                style: TextStyle(fontSize: 13, color: c.textTertiary, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+              ),
+              const SizedBox(height: 10),
 
               // ── Google Pay (Android only) ──
               if (Platform.isAndroid) ...[
@@ -308,7 +381,107 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                 onTap: _linkCreditCard,
               ),
 
-              const Spacer(),
+              // ── Saved methods from server ──
+              if (_loadingServer) ...[
+                const SizedBox(height: 20),
+                const Center(child: CircularProgressIndicator(color: _gold, strokeWidth: 2)),
+              ] else if (_serverMethods.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                Text(
+                  'Saved Methods',
+                  style: TextStyle(fontSize: 13, color: c.textTertiary, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+                ),
+                const SizedBox(height: 8),
+                ..._serverMethods.map((m) {
+                  final isDefault = m['is_default'] == true;
+                  final type = m['method_type'] as String? ?? '';
+                  IconData icon;
+                  Color iconColor;
+                  switch (type) {
+                    case 'bank_account':
+                      icon = Icons.account_balance_rounded;
+                      iconColor = const Color(0xFF4CAF50);
+                      break;
+                    case 'stripe_card':
+                      icon = Icons.credit_card_rounded;
+                      iconColor = const Color(0xFF2196F3);
+                      break;
+                    case 'paypal':
+                      icon = Icons.account_balance_wallet_rounded;
+                      iconColor = const Color(0xFF003087);
+                      break;
+                    case 'google_pay':
+                      icon = Icons.g_mobiledata_rounded;
+                      iconColor = const Color(0xFF4285F4);
+                      break;
+                    case 'apple_pay':
+                      icon = Icons.apple;
+                      iconColor = Colors.white;
+                      break;
+                    default:
+                      icon = Icons.payment_rounded;
+                      iconColor = const Color(0xFF6B7280);
+                  }
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: isDefault ? _gold.withValues(alpha: 0.08) : c.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isDefault ? _gold.withValues(alpha: 0.4) : c.divider,
+                        width: isDefault ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: iconColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(icon, color: iconColor, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                m['display_name'] as String? ?? type,
+                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.textPrimary),
+                              ),
+                              if (isDefault)
+                                Text('Default', style: TextStyle(fontSize: 11, color: _gold, fontWeight: FontWeight.w700)),
+                            ],
+                          ),
+                        ),
+                        if (!isDefault)
+                          GestureDetector(
+                            onTap: () => _setDefaultServerMethod(m['id'] as int),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: _gold.withValues(alpha: 0.4)),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text('Set Default', style: TextStyle(fontSize: 11, color: _gold, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => _deleteServerMethod(m['id'] as int),
+                          child: Icon(Icons.delete_outline_rounded, color: Colors.red.shade400, size: 20),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+
+              const SizedBox(height: 20),
 
               // ── Footer ──
               Padding(

@@ -109,47 +109,31 @@ workflows:
       - name: Disable code signing in project
         script: |
           cd ios
+          # Only clear team/identity in Runner.xcodeproj — do NOT inject CODE_SIGNING_ALLOWED
+          # into the project file. flutter build ios --no-codesign passes that as a runtime
+          # xcodebuild override, which correctly builds the binary while skipping signing.
+          # Setting CODE_SIGNING_ALLOWED=NO at the project level blocks framework embedding.
           python3 << 'PYEOF'
-          import re, glob
+          import re
 
-          def patch_pbxproj(path):
-              with open(path, 'r') as f:
-                  content = f.read()
-              # Remove entitlements
-              content = re.sub(r'\s*CODE_SIGN_ENTITLEMENTS = [^;]*;', '', content)
-              # Clear signing identity
-              content = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"',
-                               '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', content)
-              content = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"',
-                               'CODE_SIGN_IDENTITY = ""', content)
-              # Remove development team
-              content = re.sub(r'DEVELOPMENT_TEAM = [^;]*;',
-                               'DEVELOPMENT_TEAM = "";', content)
-              # Set manual signing
-              content = re.sub(r'CODE_SIGN_STYLE = Automatic',
-                               'CODE_SIGN_STYLE = Manual', content)
-              # Disable product validation
-              content = re.sub(r'VALIDATE_PRODUCT = YES',
-                               'VALIDATE_PRODUCT = NO', content)
-              # Remove existing CODE_SIGNING_ALLOWED/REQUIRED lines to avoid dupes
-              content = re.sub(r'\n\s*CODE_SIGNING_ALLOWED = [^;]*;', '', content)
-              content = re.sub(r'\n\s*CODE_SIGNING_REQUIRED = [^;]*;', '', content)
-              # Inject CODE_SIGNING_ALLOWED=NO into every buildSettings block
-              content = content.replace(
-                  'buildSettings = {',
-                  'buildSettings = {\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;'
-              )
-              with open(path, 'w') as f:
-                  f.write(content)
-              print(f"Patched: {path}")
-
-          patch_pbxproj('Runner.xcodeproj/project.pbxproj')
-          for p in glob.glob('Pods/**/*.pbxproj', recursive=True):
-              patch_pbxproj(p)
+          path = 'Runner.xcodeproj/project.pbxproj'
+          with open(path, 'r') as f:
+              content = f.read()
+          # Clear development team
+          content = re.sub(r'DEVELOPMENT_TEAM = [^;]*;', 'DEVELOPMENT_TEAM = "";', content)
+          # Clear code sign identity
+          content = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"', 'CODE_SIGN_IDENTITY = ""', content)
+          content = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"',
+                           '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', content)
+          # Switch to manual signing so Xcode doesn't auto-assign a team
+          content = re.sub(r'CODE_SIGN_STYLE = Automatic', 'CODE_SIGN_STYLE = Manual', content)
+          # Disable product validation (requires signing)
+          content = re.sub(r'VALIDATE_PRODUCT = YES', 'VALIDATE_PRODUCT = NO', content)
+          with open(path, 'w') as f:
+              f.write(content)
+          print(f"Patched: {path}")
           PYEOF
-
-          # Inject into xcconfig (no leading spaces)
-          printf 'CODE_SIGNING_ALLOWED=NO\nCODE_SIGNING_REQUIRED=NO\nCODE_SIGN_IDENTITY=\nCODE_SIGN_ENTITLEMENTS=\nEXPANDED_CODE_SIGN_IDENTITY=\n' >> Flutter/Release.xcconfig
+          echo "Runner.xcodeproj patched (team/identity cleared)"
       - name: Flutter build iOS (no codesign)
         script: |
           # flutter build ios compiles Dart → ARM and runs xcodebuild internally.

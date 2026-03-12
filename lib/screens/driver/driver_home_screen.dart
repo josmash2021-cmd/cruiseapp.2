@@ -468,7 +468,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         zoomGesturesEnabled: true,
         scrollGesturesEnabled: true,
         rotateGesturesEnabled: false,
-        tiltGesturesEnabled: false,
       );
     }
 

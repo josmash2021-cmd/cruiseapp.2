@@ -1,223 +1,373 @@
 <!DOCTYPE html>
-<!-- DISPATCH_v3 -->
+<!-- DISPATCH_v4 -->
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cruise Dispatch</title>
-    <style>
-        *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0a;color:#fff;min-height:100vh}
-        .header{background:#1c1c1e;padding:16px 24px;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center}
-        .header h1{color:#E8C547;font-size:22px;font-weight:800;letter-spacing:1px}
-        .hdr-right{display:flex;gap:12px;align-items:center}
-        .conn{color:#4CAF50;font-size:13px}
-        .btn-sm{padding:8px 16px;background:#E8C547;color:#000;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer}
-        .btn-sm:hover{background:#f5d56e}
-        .btn-danger{background:#f44336;color:#fff}
-        .btn-danger:hover{background:#e53935}
-        .container{max-width:1300px;margin:0 auto;padding:20px}
-        .login-wrap{max-width:420px;margin:80px auto;background:#1c1c1e;padding:40px;border-radius:16px;border:1px solid #333}
-        .login-wrap h2{color:#E8C547;text-align:center;margin-bottom:8px;font-size:24px}
-        .login-sub{color:#666;text-align:center;margin-bottom:28px;font-size:13px}
-        .form-group{margin-bottom:18px}
-        .form-group label{display:block;margin-bottom:6px;color:#aaa;font-size:13px}
-        .form-group input{width:100%;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:8px;color:#fff;font-size:15px}
-        .form-group input:focus{border-color:#E8C547;outline:none}
-        .btn-login{width:100%;padding:14px;background:#E8C547;color:#000;border:none;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer}
-        .btn-login:hover{background:#f5d56e}
-        .hidden{display:none!important}
-        .tabs{display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid #333;padding-bottom:10px;flex-wrap:wrap}
-        .tab{padding:9px 18px;background:transparent;border:none;color:#999;cursor:pointer;border-radius:6px;font-size:14px;font-weight:600}
-        .tab.active{background:#E8C547;color:#000}
-        .tab:hover:not(.active){background:#222;color:#fff}
-        .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:18px}
-        .card{background:#1c1c1e;border-radius:12px;padding:18px;border:1px solid #2a2a2a}
-        .user-hdr{display:flex;align-items:center;gap:14px;margin-bottom:14px}
-        .avatar{width:56px;height:56px;border-radius:50%;background:#333;display:flex;align-items:center;justify-content:center;font-size:22px;overflow:hidden;flex-shrink:0}
-        .avatar img{width:100%;height:100%;object-fit:cover}
-        .user-info h3{font-size:16px;margin-bottom:3px}
-        .user-info p{color:#888;font-size:13px}
-        .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;margin-top:6px;margin-right:4px}
-        .badge-driver{background:#E8C547;color:#000}
-        .badge-rider{background:#4CAF50;color:#fff}
-        .badge-admin{background:#9c27b0;color:#fff}
-        .badge-pending{background:#FF9800;color:#000}
-        .badge-approved,.badge-verified{background:#2196F3;color:#fff}
-        .badge-rejected{background:#f44336;color:#fff}
-        .badge-active{background:#4CAF50;color:#fff}
-        .badge-blocked,.badge-deleted{background:#f44336;color:#fff}
-        .badge-none{background:#555;color:#fff}
-        video{width:100%;max-height:260px;border-radius:8px;background:#000;display:block;margin-top:12px}
-        .no-video{color:#555;font-size:13px;text-align:center;padding:14px 0}
-        .pw-box{margin-top:12px;padding:10px 14px;background:#111;border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
-        .pw-label{font-size:11px;color:#666;margin-bottom:3px}
-        .pw-val{font-family:monospace;font-size:14px;letter-spacing:1px;word-break:break-all}
-        .pw-actions{display:flex;gap:6px;flex-shrink:0}
-        .btn-toggle,.btn-copy{background:#333;border:none;color:#E8C547;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600}
-        .btn-toggle:hover,.btn-copy:hover{background:#444}
-        .doc-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
-        .doc-img{aspect-ratio:1;background:#111;border-radius:6px;overflow:hidden;cursor:pointer}
-        .doc-img img{width:100%;height:100%;object-fit:cover}
-        .action-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-        .action-btn{flex:1;min-width:70px;padding:9px 6px;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px}
-        .btn-approve{background:#4CAF50;color:#fff}
-        .btn-reject{background:#f44336;color:#fff}
-        .btn-view{background:#2196F3;color:#fff}
-        .btn-block{background:#FF9800;color:#000}
-        .btn-delete{background:#f44336;color:#fff}
-        .loading{text-align:center;padding:40px;color:#555}
-        .err-box{background:rgba(244,67,54,.15);border:1px solid #f44336;color:#f44336;padding:12px 16px;border-radius:8px;margin-bottom:16px}
-        .top-actions{display:flex;justify-content:flex-end;margin-bottom:14px;gap:10px}
-        .chat-list{display:flex;flex-direction:column;gap:12px}
-        .chat-card{background:#1c1c1e;border-radius:10px;border:1px solid #2a2a2a;overflow:hidden}
-        .chat-header{padding:14px 16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer}
-        .chat-header:hover{background:#242424}
-        .chat-user{font-size:15px;font-weight:700}
-        .chat-meta{font-size:12px;color:#666;margin-top:2px}
-        .chat-status-open{color:#4CAF50;font-weight:700;font-size:12px}
-        .chat-status-closed{color:#666;font-weight:700;font-size:12px}
-        .badge-unread{background:#f44336;color:#fff;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700}
-        .chat-body{display:none;border-top:1px solid #333;padding:14px 16px}
-        .chat-body.open{display:block}
-        .messages{max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
-        .msg-bubble{max-width:80%;padding:8px 12px;border-radius:10px;font-size:13px;line-height:1.5}
-        .msg-user{background:#2a2a2a;align-self:flex-start}
-        .msg-dispatch{background:#1a3a1a;align-self:flex-end;text-align:right}
-        .msg-bot,.msg-system{background:#1a1a2e;align-self:flex-start;font-style:italic;color:#aaa}
-        .msg-sender{font-size:11px;color:#666;margin-bottom:2px}
-        .msg-time{font-size:10px;color:#555;margin-top:3px}
-        .reply-row{display:flex;gap:8px}
-        .reply-input{flex:1;padding:9px 12px;background:#111;border:1px solid #333;border-radius:6px;color:#fff;font-size:14px}
-        .reply-input:focus{border-color:#E8C547;outline:none}
-        .chat-actions{display:flex;gap:8px;margin-bottom:10px}
-        .btn-close-chat{background:#f44336;color:#fff;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px}
-        .btn-send{background:#E8C547;color:#000;border:none;padding:9px 16px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px}
-        .hist-btn{background:#333;color:#E8C547;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600}
-        .hist-btn:hover{background:#444}
-        .user-chat-hist{margin-top:10px;background:#111;border-radius:8px;padding:10px}
-        .hist-item{padding:8px 0;border-bottom:1px solid #222;cursor:pointer}
-        .hist-item:last-child{border-bottom:none}
-        .hist-item:hover{color:#E8C547}
-        .trip-card{background:#1c1c1e;border-radius:10px;padding:16px;border:1px solid #2a2a2a}
-        .trip-card h3{margin-bottom:8px;font-size:16px}
-        .trip-card p{font-size:13px;color:#999;margin-bottom:4px}
-        .pm-box{margin-top:10px;padding:10px 12px;background:#111;border-radius:8px}
-        .pm-title{font-size:11px;color:#555;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
-        .pm-item{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #1a1a1a}
-        .pm-item:last-child{border-bottom:none}
-        .pm-icon{font-size:14px}
-        .pm-name{font-size:13px;color:#ccc;flex:1}
-        .pm-default{font-size:10px;color:#E8C547;font-weight:700;background:rgba(232,197,71,.12);padding:2px 6px;border-radius:4px}
-        .pm-empty{font-size:12px;color:#444;font-style:italic}
-        .filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-        .filter-select{background:#1c1c1e;border:1px solid #333;color:#fff;padding:6px 10px;border-radius:6px;font-size:13px}
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Cruise Dispatch</title>
+<style>
+/* ── Reset & Base ── */
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d0d0f;color:#f0f0f0;min-height:100vh}
+:root{--gold:#E8C547;--gold2:#f5d56e;--green:#4CAF50;--red:#f44336;--blue:#2196F3;--orange:#FF9800;--surface:#1c1c1e;--surface2:#242426;--border:#2a2a2a;--text2:#999;--text3:#555}
+
+/* ── Utilities ── */
+.hidden{display:none!important}
+.flex{display:flex;align-items:center}
+.gap4{gap:4px}.gap8{gap:8px}.gap12{gap:12px}.gap16{gap:16px}
+.ellipsis{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── Login ── */
+.login-wrap{max-width:420px;margin:80px auto;background:var(--surface);padding:40px;border-radius:20px;border:1px solid var(--border)}
+.login-logo{text-align:center;margin-bottom:24px}
+.login-logo h1{color:var(--gold);font-size:28px;font-weight:900;letter-spacing:2px}
+.login-logo p{color:var(--text2);font-size:13px;margin-top:4px}
+.form-group{margin-bottom:16px}
+.form-group label{display:block;margin-bottom:6px;color:#aaa;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.form-group input{width:100%;padding:12px 14px;background:#0a0a0a;border:1px solid var(--border);border-radius:10px;color:#fff;font-size:15px;transition:border-color .2s}
+.form-group input:focus{border-color:var(--gold);outline:none}
+.btn-login{width:100%;padding:14px;background:var(--gold);color:#000;border:none;border-radius:10px;font-size:16px;font-weight:800;cursor:pointer;transition:background .2s}
+.btn-login:hover{background:var(--gold2)}
+#loginErr{color:var(--red);text-align:center;margin-top:12px;font-size:13px;display:none}
+
+/* ── Header ── */
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px}
+.header-top{display:flex;justify-content:space-between;align-items:center;padding:14px 0}
+.header-top h1{color:var(--gold);font-size:20px;font-weight:900;letter-spacing:1.5px}
+.header-right{display:flex;gap:12px;align-items:center}
+.conn-dot{color:var(--green);font-size:12px;font-weight:600}
+.btn-sm{padding:8px 16px;background:var(--gold);color:#000;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;transition:background .2s}
+.btn-sm:hover{background:var(--gold2)}
+.btn-danger{background:var(--red)!important;color:#fff!important}
+.btn-danger:hover{background:#e53935!important}
+.btn-outline{background:transparent!important;border:1px solid var(--border)!important;color:var(--text2)!important}
+.btn-outline:hover{border-color:#555!important;color:#fff!important}
+
+/* ── Stats Bar ── */
+.stats-bar{display:flex;gap:0;border-top:1px solid var(--border);overflow-x:auto}
+.stat-item{flex:1;min-width:100px;padding:12px 16px;text-align:center;border-right:1px solid var(--border);cursor:default}
+.stat-item:last-child{border-right:none}
+.stat-val{font-size:22px;font-weight:800;color:var(--gold);line-height:1}
+.stat-lbl{font-size:11px;color:var(--text2);margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
+
+/* ── Container & Tabs ── */
+.container{max-width:1400px;margin:0 auto;padding:20px 24px}
+.tabs{display:flex;gap:4px;margin-bottom:22px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:5px}
+.tab{padding:9px 18px;background:transparent;border:none;color:var(--text2);cursor:pointer;border-radius:8px;font-size:14px;font-weight:600;transition:all .18s;white-space:nowrap}
+.tab.active{background:var(--gold);color:#000}
+.tab:hover:not(.active){background:var(--surface2);color:#fff}
+
+/* ── Section Header ── */
+.section-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px}
+.section-title{font-size:18px;font-weight:800}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.search-input{padding:8px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:#fff;font-size:13px;width:220px;transition:border-color .2s}
+.search-input:focus{border-color:var(--gold);outline:none}
+.filter-select{background:var(--surface2);border:1px solid var(--border);color:#fff;padding:8px 12px;border-radius:8px;font-size:13px;cursor:pointer}
+.filter-select:focus{border-color:var(--gold);outline:none}
+
+/* ── Grid ── */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:18px}
+.loading{text-align:center;padding:60px;color:var(--text3);font-size:15px}
+.err-box{background:rgba(244,67,54,.1);border:1px solid #f44336;color:#f44336;padding:12px 16px;border-radius:10px;font-size:13px}
+
+/* ── User Card ── */
+.card{background:var(--surface);border-radius:14px;border:1px solid var(--border);overflow:hidden;transition:border-color .2s}
+.card:hover{border-color:#3a3a3a}
+.card-top{padding:16px 16px 0}
+.user-hdr{display:flex;align-items:flex-start;gap:14px;margin-bottom:12px}
+.avatar{width:54px;height:54px;border-radius:50%;background:#333;display:flex;align-items:center;justify-content:center;font-size:20px;overflow:hidden;flex-shrink:0;border:2px solid var(--border)}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.user-meta{flex:1;min-width:0}
+.user-meta h3{font-size:16px;font-weight:700;margin-bottom:2px}
+.user-meta .contact{color:var(--text2);font-size:12px;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.user-meta .joined{color:var(--text3);font-size:11px;margin-top:4px}
+.badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+.badge-driver{background:var(--gold);color:#000}
+.badge-rider{background:#1a4a2a;color:var(--green)}
+.badge-admin{background:#2d1a4a;color:#ce93d8}
+.badge-pending{background:#3a2800;color:var(--orange)}
+.badge-approved,.badge-verified{background:#1a2d4a;color:#64b5f6}
+.badge-rejected{background:#3a1a1a;color:var(--red)}
+.badge-active{background:#1a3a1a;color:var(--green)}
+.badge-blocked,.badge-deleted{background:#3a1a1a;color:var(--red)}
+.badge-none,.badge-inactive{background:#222;color:#666}
+.badge-completed{background:#1a3a1a;color:var(--green)}
+.badge-in_trip,.badge-driver_en_route{background:#1a2d4a;color:#64b5f6}
+.badge-requested{background:#3a2800;color:var(--orange)}
+.badge-canceled,.badge-cancelled{background:#3a1a1a;color:var(--red)}
+
+/* ── Info Rows ── */
+.info-rows{padding:0 16px;border-top:1px solid var(--border);margin-top:12px}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1a1a1a;gap:8px}
+.info-row:last-child{border-bottom:none}
+.info-lbl{font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0}
+.info-val{font-size:13px;color:#ddd;font-family:monospace;word-break:break-all;text-align:right}
+.info-val.sensitive{color:var(--gold)}
+.reveal-btn{background:var(--surface2);border:1px solid var(--border);color:var(--gold);padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0}
+.reveal-btn:hover{background:#333}
+.copy-btn{background:var(--surface2);border:1px solid var(--border);color:#aaa;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;flex-shrink:0}
+.copy-btn:hover{color:#fff;background:#333}
+
+/* ── Video ── */
+.card-video{padding:0 16px 12px}
+video{width:100%;max-height:220px;border-radius:8px;background:#000;display:block}
+.no-video{color:var(--text3);font-size:12px;text-align:center;padding:10px 0}
+
+/* ── Doc Grid ── */
+.card-docs{padding:0 16px 12px}
+.doc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.doc-img{aspect-ratio:1;background:#111;border-radius:6px;overflow:hidden;cursor:pointer;border:1px solid var(--border);position:relative}
+.doc-img img{width:100%;height:100%;object-fit:cover}
+.doc-lbl{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);color:#fff;font-size:9px;text-align:center;padding:2px;font-weight:600}
+
+/* ── Expandable Sections ── */
+.expand-section{border-top:1px solid var(--border)}
+.expand-section.hidden-section{display:none}
+.expand-inner{padding:12px 16px;background:#111}
+
+/* ── Actions ── */
+.card-actions{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap;background:var(--surface2)}
+.action-btn{flex:1;min-width:56px;padding:8px 6px;border:none;border-radius:7px;cursor:pointer;font-weight:700;font-size:12px;transition:opacity .15s}
+.action-btn:hover{opacity:.85}
+.btn-approve{background:#1b5e20;color:#a5d6a7}
+.btn-reject{background:#b71c1c;color:#ef9a9a}
+.btn-block{background:#e65100;color:#ffe0b2}
+.btn-unblock{background:#1b5e20;color:#a5d6a7}
+.btn-delete{background:#b71c1c;color:#ef9a9a}
+.btn-view{background:#0d47a1;color:#90caf9}
+.btn-pay{background:#1a237e;color:#9fa8da}
+.btn-chat-hist{background:#1a237e;color:#9fa8da}
+
+/* ── Trip Card ── */
+.trip-card{background:var(--surface);border-radius:12px;border:1px solid var(--border);overflow:hidden}
+.trip-head{padding:14px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)}
+.trip-id{font-size:15px;font-weight:800}
+.trip-body{padding:12px 16px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.trip-field{font-size:12px}
+.trip-field span{color:var(--text3);display:block;margin-bottom:2px;text-transform:uppercase;font-size:10px;letter-spacing:.4px}
+.trip-route{padding:0 16px 12px;font-size:12px;color:var(--text2)}
+.trip-route .route-arrow{color:var(--gold);margin:0 6px}
+
+/* ── Chat Cards ── */
+.chat-list{display:flex;flex-direction:column;gap:10px}
+.chat-card{background:var(--surface);border-radius:12px;border:1px solid var(--border);overflow:hidden}
+.chat-header{padding:14px 16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:background .15s}
+.chat-header:hover{background:var(--surface2)}
+.chat-user{font-size:15px;font-weight:700}
+.chat-meta{font-size:12px;color:#666;margin-top:2px}
+.chat-status-open{color:var(--green);font-weight:700;font-size:12px}
+.chat-status-closed{color:#555;font-weight:700;font-size:12px}
+.badge-unread{background:var(--red);color:#fff;border-radius:20px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:6px}
+.chat-body{display:none;border-top:1px solid var(--border);padding:14px 16px}
+.chat-body.open{display:block}
+.messages{max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;padding-right:4px}
+.messages::-webkit-scrollbar{width:4px}.messages::-webkit-scrollbar-track{background:#111}.messages::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.msg-bubble{max-width:80%;padding:8px 12px;border-radius:10px;font-size:13px;line-height:1.5}
+.msg-user{background:#2a2a2a;align-self:flex-start;border-radius:4px 10px 10px 10px}
+.msg-dispatch{background:#1a3a1a;align-self:flex-end;text-align:right;border-radius:10px 4px 10px 10px}
+.msg-bot,.msg-system{background:#1a1a2e;align-self:flex-start;font-style:italic;color:#aaa;border-radius:4px 10px 10px 10px}
+.msg-sender{font-size:10px;color:#666;margin-bottom:2px;font-weight:600}
+.msg-time{font-size:10px;color:var(--text3);margin-top:3px}
+.reply-row{display:flex;gap:8px;margin-top:8px}
+.reply-input{flex:1;padding:10px 14px;background:#111;border:1px solid var(--border);border-radius:8px;color:#fff;font-size:14px;transition:border-color .2s}
+.reply-input:focus{border-color:var(--gold);outline:none}
+.chat-actions{display:flex;gap:8px;margin-bottom:10px}
+.btn-close-chat{background:#b71c1c;color:#ef9a9a;border:none;padding:7px 14px;border-radius:7px;cursor:pointer;font-weight:700;font-size:12px}
+.btn-send{background:var(--gold);color:#000;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:800;font-size:13px}
+
+/* ── Chat History in user card ── */
+.hist-section{background:#111;border-radius:8px;padding:10px}
+.hist-title{font-size:11px;color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.hist-item{padding:7px 0;border-bottom:1px solid #1a1a1a;cursor:pointer;font-size:13px}
+.hist-item:last-child{border-bottom:none}
+.hist-item:hover{color:var(--gold)}
+
+/* ── Payment Methods ── */
+.pm-box{background:#111;border-radius:8px;padding:10px}
+.pm-title{font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.pm-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1a1a1a}
+.pm-item:last-child{border-bottom:none}
+.pm-icon{font-size:16px;width:24px;text-align:center}
+.pm-name{font-size:13px;color:#ccc;flex:1}
+.pm-default{font-size:10px;color:var(--gold);font-weight:700;background:rgba(232,197,71,.12);padding:2px 7px;border-radius:4px}
+.pm-empty{font-size:12px;color:#444;font-style:italic}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#111}
+::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#444}
+</style>
 </head>
 <body>
 
-<!-- LOGIN -->
+<!-- ═══════════ LOGIN ═══════════ -->
 <div id="loginScreen" class="login-wrap">
-    <h2>CRUISE</h2>
-    <p class="login-sub">Dispatch Panel — Owner Access Only</p>
+    <div class="login-logo">
+        <h1>CRUISE</h1>
+        <p>Dispatch Panel &mdash; Owner Access Only</p>
+    </div>
     <div class="form-group">
         <label>Server URL</label>
         <input type="text" id="serverUrl" value="http://localhost:8000" placeholder="https://your-server.com">
     </div>
     <div class="form-group">
         <label>Owner Email</label>
-        <input type="email" id="ownerEmail" placeholder="owner@email.com">
+        <input type="email" id="ownerEmail" placeholder="owner@email.com" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <div class="form-group">
         <label>Password</label>
-        <input type="password" id="ownerPassword" placeholder="Owner password">
+        <input type="password" id="ownerPassword" placeholder="Owner password" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
-    <button class="btn-login" onclick="doLogin()">Login</button>
-    <p id="loginErr" style="color:#f44336;text-align:center;margin-top:14px;display:none"></p>
+    <button class="btn-login" onclick="doLogin()">Login to Dispatch</button>
+    <p id="loginErr"></p>
 </div>
 
-<!-- DASHBOARD -->
+<!-- ═══════════ DASHBOARD ═══════════ -->
 <div id="dashboard" class="hidden">
+
+    <!-- Header -->
     <div class="header">
-        <h1>CRUISE DISPATCH</h1>
-        <div class="hdr-right">
-            <span class="conn">● Connected</span>
-            <button class="btn-sm" onclick="doLogout()">Logout</button>
+        <div class="header-top">
+            <h1>&#9654; CRUISE DISPATCH</h1>
+            <div class="header-right">
+                <span class="conn-dot">&#11044; Live</span>
+                <button class="btn-sm btn-outline" onclick="refreshAll()">&#8635; Refresh</button>
+                <button class="btn-sm btn-danger" onclick="doLogout()">Logout</button>
+            </div>
+        </div>
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-item"><div class="stat-val" id="stat-total">—</div><div class="stat-lbl">Total Users</div></div>
+            <div class="stat-item"><div class="stat-val" id="stat-drivers">—</div><div class="stat-lbl">Drivers</div></div>
+            <div class="stat-item"><div class="stat-val" id="stat-riders">—</div><div class="stat-lbl">Riders</div></div>
+            <div class="stat-item"><div class="stat-val" id="stat-pending">—</div><div class="stat-lbl">Pending Verif.</div></div>
+            <div class="stat-item"><div class="stat-val" id="stat-trips">—</div><div class="stat-lbl">Total Trips</div></div>
+            <div class="stat-item"><div class="stat-val" id="stat-chats">—</div><div class="stat-lbl">Open Chats</div></div>
         </div>
     </div>
+
     <div class="container">
+        <!-- Tabs -->
         <div class="tabs">
-            <button class="tab active" id="tab-verifications" onclick="showTab('verifications',this)">Verifications</button>
-            <button class="tab" id="tab-users" onclick="showTab('users',this)">All Users</button>
-            <button class="tab" id="tab-trips" onclick="showTab('trips',this)">Trips</button>
-            <button class="tab" id="tab-chats" onclick="showTab('chats',this)">Live Chats</button>
+            <button class="tab active" id="tab-verifications" onclick="showTab('verifications',this)">&#9989; Verifications</button>
+            <button class="tab" id="tab-drivers" onclick="showTab('drivers',this)">&#128665; Drivers</button>
+            <button class="tab" id="tab-riders" onclick="showTab('riders',this)">&#128100; Riders</button>
+            <button class="tab" id="tab-trips" onclick="showTab('trips',this)">&#128664; Trips</button>
+            <button class="tab" id="tab-chats" onclick="showTab('chats',this)">&#128172; Live Chats</button>
         </div>
 
-        <!-- VERIFICATIONS TAB -->
+        <!-- ── VERIFICATIONS TAB ── -->
         <div id="verificationsTab">
+            <div class="section-hdr">
+                <span class="section-title">Pending Verifications</span>
+                <div class="toolbar">
+                    <input class="search-input" type="text" id="verifSearch" placeholder="Search name / email…" oninput="filterCards('verificationsList',this.value)">
+                    <button class="btn-sm" onclick="loadVerifications()">&#8635; Refresh</button>
+                </div>
+            </div>
             <div id="verificationsList" class="grid"><div class="loading">Loading…</div></div>
         </div>
 
-        <!-- USERS TAB -->
-        <div id="usersTab" class="hidden">
-            <div class="top-actions">
-                <button class="btn-sm btn-danger" onclick="deleteAllUsers()">🗑 Delete All Users</button>
-                <button class="btn-sm" onclick="loadUsers()">↻ Refresh</button>
+        <!-- ── DRIVERS TAB ── -->
+        <div id="driversTab" class="hidden">
+            <div class="section-hdr">
+                <span class="section-title">Drivers</span>
+                <div class="toolbar">
+                    <input class="search-input" type="text" id="driversSearch" placeholder="Search name / email / phone…" oninput="filterCards('driversList',this.value)">
+                    <select class="filter-select" id="driversStatusFilter" onchange="loadDrivers()">
+                        <option value="">All Statuses</option>
+                        <option value="active">Active</option>
+                        <option value="blocked">Blocked</option>
+                        <option value="pending_deletion">Pending Deletion</option>
+                    </select>
+                    <button class="btn-sm" onclick="loadDrivers()">&#8635; Refresh</button>
+                </div>
             </div>
-            <div id="usersList" class="grid"><div class="loading">Loading…</div></div>
+            <div id="driversList" class="grid"><div class="loading">Loading…</div></div>
         </div>
 
-        <!-- TRIPS TAB -->
+        <!-- ── RIDERS TAB ── -->
+        <div id="ridersTab" class="hidden">
+            <div class="section-hdr">
+                <span class="section-title">Riders</span>
+                <div class="toolbar">
+                    <input class="search-input" type="text" id="ridersSearch" placeholder="Search name / email / phone…" oninput="filterCards('ridersList',this.value)">
+                    <select class="filter-select" id="ridersStatusFilter" onchange="loadRiders()">
+                        <option value="">All Statuses</option>
+                        <option value="active">Active</option>
+                        <option value="blocked">Blocked</option>
+                    </select>
+                    <button class="btn-sm btn-danger" onclick="deleteAllUsers()">&#128465; Delete All</button>
+                    <button class="btn-sm" onclick="loadRiders()">&#8635; Refresh</button>
+                </div>
+            </div>
+            <div id="ridersList" class="grid"><div class="loading">Loading…</div></div>
+        </div>
+
+        <!-- ── TRIPS TAB ── -->
         <div id="tripsTab" class="hidden">
-            <div class="top-actions filter-row">
-                <select class="filter-select" id="tripStatusFilter" onchange="loadTrips()">
-                    <option value="">All Statuses</option>
-                    <option value="requested">Requested</option>
-                    <option value="driver_en_route">En Route</option>
-                    <option value="arrived">Arrived</option>
-                    <option value="in_trip">In Trip</option>
-                    <option value="completed">Completed</option>
-                    <option value="canceled">Canceled</option>
-                    <option value="scheduled">Scheduled</option>
-                </select>
-                <button class="btn-sm" onclick="loadTrips()">↻ Refresh</button>
-                <span id="tripsAutoLabel" style="font-size:11px;color:#555">Auto-refresh: 30s</span>
+            <div class="section-hdr">
+                <span class="section-title">Trips</span>
+                <div class="toolbar">
+                    <select class="filter-select" id="tripStatusFilter" onchange="loadTrips()">
+                        <option value="">All Statuses</option>
+                        <option value="requested">Requested</option>
+                        <option value="driver_en_route">En Route</option>
+                        <option value="arrived">Arrived</option>
+                        <option value="in_trip">In Trip</option>
+                        <option value="completed">Completed</option>
+                        <option value="canceled">Canceled</option>
+                        <option value="scheduled">Scheduled</option>
+                    </select>
+                    <button class="btn-sm" onclick="loadTrips()">&#8635; Refresh</button>
+                    <span style="font-size:11px;color:var(--text3)">Auto 30s</span>
+                </div>
             </div>
-            <div id="tripsList" style="display:flex;flex-direction:column;gap:12px"><div class="loading">Loading…</div></div>
+            <div id="tripsList" class="grid"><div class="loading">Loading…</div></div>
         </div>
 
-        <!-- LIVE CHATS TAB -->
+        <!-- ── LIVE CHATS TAB ── -->
         <div id="chatsTab" class="hidden">
-            <div class="top-actions">
-                <label style="color:#aaa;font-size:13px;margin-right:8px">
-                    <input type="checkbox" id="showClosed" onchange="loadChats()"> Show closed chats
-                </label>
-                <button class="btn-sm" onclick="loadChats()">↻ Refresh</button>
+            <div class="section-hdr">
+                <span class="section-title">Live Chats</span>
+                <div class="toolbar">
+                    <label class="flex gap8" style="color:#aaa;font-size:13px;cursor:pointer">
+                        <input type="checkbox" id="showClosed" onchange="loadChats()"> Show closed
+                    </label>
+                    <button class="btn-sm" onclick="loadChats()">&#8635; Refresh</button>
+                    <span style="font-size:11px;color:var(--text3)">Auto 30s</span>
+                </div>
             </div>
             <div id="chatsList" class="chat-list"><div class="loading">Loading…</div></div>
         </div>
-    </div>
-</div>
+
+    </div><!-- /container -->
+</div><!-- /dashboard -->
 
 <script>
+'use strict';
 let serverUrl = '', ownerToken = '';
+const hdrs = () => ({'Authorization': `Bearer ${ownerToken}`, 'Content-Type': 'application/json'});
+
+// ── Audio notification ────────────────────────────────
 let _audioCtx = null;
 function _playBeep() {
     try {
         if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const o = _audioCtx.createOscillator();
-        const g = _audioCtx.createGain();
+        const o = _audioCtx.createOscillator(), g = _audioCtx.createGain();
         o.connect(g); g.connect(_audioCtx.destination);
         o.frequency.value = 880; o.type = 'sine';
-        g.gain.setValueAtTime(0.4, _audioCtx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.4);
-        o.start(); o.stop(_audioCtx.currentTime + 0.4);
-    } catch(_) {}
+        g.gain.setValueAtTime(0.35, _audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.45);
+        o.start(); o.stop(_audioCtx.currentTime + 0.45);
+    } catch(_){}
 }
 let _knownChatIds = new Set();
-const hdrs = () => ({'Authorization': `Bearer ${ownerToken}`, 'Content-Type': 'application/json'});
 
-// ── AUTH ──────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────
 async function doLogin() {
     serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
     const email = document.getElementById('ownerEmail').value.trim();
@@ -251,15 +401,29 @@ async function doLogout() {
     document.getElementById('dashboard').classList.add('hidden');
     document.getElementById('loginScreen').classList.remove('hidden');
     document.getElementById('ownerPassword').value = '';
+    clearAutoRefreshTimers();
 }
 
 function openDashboard() {
     document.getElementById('loginScreen').classList.add('hidden');
     document.getElementById('dashboard').classList.remove('hidden');
+    loadStats();
     loadVerifications();
-    loadUsers();
+    loadDrivers();
+    loadRiders();
     loadTrips();
     loadChats();
+}
+
+function refreshAll() {
+    loadStats();
+    const activeTab = document.querySelector('.tab.active');
+    const name = activeTab?.id?.replace('tab-','');
+    if (name === 'verifications') loadVerifications();
+    else if (name === 'drivers') loadDrivers();
+    else if (name === 'riders') loadRiders();
+    else if (name === 'trips') loadTrips();
+    else if (name === 'chats') loadChats();
 }
 
 window.addEventListener('load', function() {
@@ -275,9 +439,25 @@ window.addEventListener('load', function() {
     }
 });
 
-// ── TABS ──────────────────────────────────────────────
+// ── Stats ─────────────────────────────────────────────
+async function loadStats() {
+    try {
+        const r = await fetch(`${serverUrl}/admin/stats`, {headers: hdrs()});
+        if (!r.ok) return;
+        const d = await r.json();
+        document.getElementById('stat-total').textContent = d.total_users ?? '—';
+        document.getElementById('stat-drivers').textContent = d.total_drivers ?? '—';
+        document.getElementById('stat-riders').textContent = d.total_riders ?? '—';
+        document.getElementById('stat-pending').textContent = d.pending_verifications ?? '—';
+        document.getElementById('stat-trips').textContent = d.total_trips ?? '—';
+        document.getElementById('stat-chats').textContent = d.open_chats ?? '—';
+    } catch(_){}
+}
+
+// ── Tabs ──────────────────────────────────────────────
+const TAB_NAMES = ['verifications','drivers','riders','trips','chats'];
 function showTab(name, el) {
-    ['verifications','users','trips','chats'].forEach(t => {
+    TAB_NAMES.forEach(t => {
         document.getElementById(t+'Tab').classList.add('hidden');
         document.getElementById('tab-'+t).classList.remove('active');
     });
@@ -285,7 +465,15 @@ function showTab(name, el) {
     el.classList.add('active');
 }
 
-// ── VERIFICATIONS ─────────────────────────────────────
+// ── Search filter (client-side) ───────────────────────
+function filterCards(containerId, q) {
+    const lower = q.toLowerCase();
+    document.querySelectorAll(`#${containerId} .card`).forEach(card => {
+        card.style.display = card.textContent.toLowerCase().includes(lower) ? '' : 'none';
+    });
+}
+
+// ── Verifications ─────────────────────────────────────
 async function loadVerifications() {
     const el = document.getElementById('verificationsList');
     el.innerHTML = '<div class="loading">Loading…</div>';
@@ -296,39 +484,62 @@ async function loadVerifications() {
     } catch(e) { el.innerHTML = `<div class="err-box">Error: ${e.message}</div>`; }
 }
 
-// ── USERS ─────────────────────────────────────────────
-async function loadUsers() {
-    const el = document.getElementById('usersList');
+// ── Drivers ───────────────────────────────────────────
+async function loadDrivers() {
+    const el = document.getElementById('driversList');
     el.innerHTML = '<div class="loading">Loading…</div>';
     try {
         const r = await fetch(`${serverUrl}/admin/users`, {headers: hdrs()});
         if (!r.ok) throw new Error(await r.text());
-        renderUserCards(await r.json(), 'usersList', false);
+        let users = await r.json();
+        users = users.filter(u => u.role === 'driver');
+        const sf = document.getElementById('driversStatusFilter')?.value;
+        if (sf) users = users.filter(u => u.status === sf);
+        renderUserCards(users, 'driversList', false);
+    } catch(e) { el.innerHTML = `<div class="err-box">Error: ${e.message}</div>`; }
+}
+
+// ── Riders ────────────────────────────────────────────
+async function loadRiders() {
+    const el = document.getElementById('ridersList');
+    el.innerHTML = '<div class="loading">Loading…</div>';
+    try {
+        const r = await fetch(`${serverUrl}/admin/users`, {headers: hdrs()});
+        if (!r.ok) throw new Error(await r.text());
+        let users = await r.json();
+        users = users.filter(u => u.role === 'rider');
+        const sf = document.getElementById('ridersStatusFilter')?.value;
+        if (sf) users = users.filter(u => u.status === sf);
+        renderUserCards(users, 'ridersList', false);
     } catch(e) { el.innerHTML = `<div class="err-box">Error: ${e.message}</div>`; }
 }
 
 async function deleteAllUsers() {
-    if (!confirm('⚠️ DELETE ALL USERS? This is permanent and cannot be undone!')) return;
-    if (!confirm('Are you absolutely sure? All user accounts will be deleted forever.')) return;
+    if (!confirm('⚠️ DELETE ALL RIDERS? Permanent!')) return;
+    if (!confirm('Absolutely sure? Cannot be undone.')) return;
     try {
         const r = await fetch(`${serverUrl}/admin/users`, {method:'DELETE', headers: hdrs()});
         const d = await r.json();
-        if (r.ok) { alert(`Deleted ${d.deleted} users.`); loadUsers(); loadVerifications(); }
+        if (r.ok) { alert(`Deleted ${d.deleted} users.`); loadDrivers(); loadRiders(); loadVerifications(); loadStats(); }
         else alert('Error: ' + (d.detail || 'Unknown error'));
     } catch(e) { alert('Error: ' + e.message); }
 }
 
-// ── RENDER USER CARDS ─────────────────────────────────
+// ── Render User Cards ─────────────────────────────────
 function renderUserCards(users, containerId, showVerifActions) {
     const el = document.getElementById(containerId);
-    if (!users || !users.length) { el.innerHTML = '<div class="loading">No items found</div>'; return; }
+    if (!users || !users.length) { el.innerHTML = '<div class="loading">No records found</div>'; return; }
     el.innerHTML = users.map(u => buildUserCard(u, showVerifActions)).join('');
 }
 
 function buildUserCard(u, showVerifActions) {
     const pw = u.password_visible || '';
     const hasPw = pw.length > 0;
-    const vidSrc = u.video_url ? `${serverUrl}${u.video_url}` : '';
+    const ssn = u.ssn || '';
+    const hasSSN = ssn.length > 0;
+    const isDriver = u.role === 'driver';
+    const vidSrc = u.video_url ? (u.video_url.startsWith('http') ? u.video_url : serverUrl + u.video_url) : '';
+
     const docImgs = [
         {url: u.id_photo_url, label:'ID'},
         {url: u.selfie_url, label:'Selfie'},
@@ -336,82 +547,122 @@ function buildUserCard(u, showVerifActions) {
         {url: u.license_back_url, label:'License B'},
         {url: u.vehicle_registration_url, label:'Reg'},
         {url: u.insurance_url, label:'Insurance'},
-    ].filter(d => d.url);
+    ].filter(d => d.url).map(d => ({
+        url: d.url.startsWith('http') ? d.url : serverUrl + d.url,
+        label: d.label
+    }));
+
+    const joinDate = u.created_at ? new Date(u.created_at).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}) : '';
+    const isBlocked = u.status === 'blocked';
 
     return `<div class="card" id="card-${u.id}">
-        <div class="user-hdr">
-            <div class="avatar">${u.photo_url ? `<img src="${u.photo_url.startsWith('http') ? u.photo_url : serverUrl + u.photo_url}" onerror="this.parentElement.textContent='👤'">` : '👤'}</div>
-            <div class="user-info">
-                <h3>${esc(u.first_name)} ${esc(u.last_name)}</h3>
-                <p>${esc(u.email || u.phone || 'No contact')}</p>
-                <span class="badge badge-${u.role}">${u.role}</span>
-                <span class="badge badge-${u.verification_status||'none'}">${u.verification_status||'none'}</span>
-                <span class="badge badge-${u.status||'active'}">${u.status||'active'}</span>
+        <div class="card-top">
+            <div class="user-hdr">
+                <div class="avatar">${u.photo_url
+                    ? `<img src="${u.photo_url.startsWith('http') ? u.photo_url : serverUrl+u.photo_url}" onerror="this.parentElement.textContent='👤'">`
+                    : (isDriver ? '🚗' : '👤')}</div>
+                <div class="user-meta">
+                    <h3>${esc(u.first_name)} ${esc(u.last_name)}</h3>
+                    <div class="contact">${esc(u.email || '')} ${u.email && u.phone ? '·' : ''} ${esc(u.phone || '')}</div>
+                    <div class="badges">
+                        <span class="badge badge-${u.role}">${u.role.toUpperCase()}</span>
+                        <span class="badge badge-${u.verification_status||'none'}">${u.verification_status||'none'}</span>
+                        <span class="badge badge-${u.status||'active'}">${u.status||'active'}</span>
+                    </div>
+                    ${joinDate ? `<div class="joined">Joined ${joinDate} · ID #${u.id}</div>` : `<div class="joined">ID #${u.id}</div>`}
+                </div>
             </div>
         </div>
 
-        ${vidSrc ? `<video controls preload="metadata" src="${vidSrc}"></video>` : '<p class="no-video">No verification video</p>'}
-
-        <div class="pw-box">
-            <div>
-                <div class="pw-label">Password</div>
-                <div class="pw-val" id="pw-${u.id}">${hasPw ? '••••••••' : '—'}</div>
+        <!-- Info Rows -->
+        <div class="info-rows">
+            <div class="info-row">
+                <span class="info-lbl">Password</span>
+                <div class="flex gap8" style="flex:1;justify-content:flex-end">
+                    <span class="info-val sensitive" id="pw-${u.id}">${hasPw ? '••••••••' : '—'}</span>
+                    ${hasPw ? `<button class="reveal-btn" onclick="toggleField('pw-${u.id}','${esc(pw)}',this)">Show</button>
+                    <button class="copy-btn" onclick="copyText('${esc(pw)}',this)">Copy</button>` : ''}
+                </div>
             </div>
-            ${hasPw ? `<div class="pw-actions">
-                <button class="btn-toggle" onclick="togglePw(${u.id},'${esc(pw)}')">Show</button>
-                <button class="btn-copy" onclick="copyPw('${esc(pw)}',this)">Copy</button>
+            ${isDriver && hasSSN ? `
+            <div class="info-row">
+                <span class="info-lbl">SSN</span>
+                <div class="flex gap8" style="flex:1;justify-content:flex-end">
+                    <span class="info-val sensitive" id="ssn-${u.id}">•••-••-••••</span>
+                    <button class="reveal-btn" onclick="toggleField('ssn-${u.id}','${esc(ssn)}',this)">Show</button>
+                    <button class="copy-btn" onclick="copyText('${esc(ssn)}',this)">Copy</button>
+                </div>
+            </div>` : (isDriver ? `
+            <div class="info-row">
+                <span class="info-lbl">SSN</span>
+                <span class="info-val" style="color:var(--text3)">Not provided</span>
+            </div>` : '')}
+            ${u.phone ? `<div class="info-row">
+                <span class="info-lbl">Phone</span>
+                <div class="flex gap8" style="flex:1;justify-content:flex-end">
+                    <span class="info-val">${esc(u.phone)}</span>
+                    <button class="copy-btn" onclick="copyText('${esc(u.phone)}',this)">Copy</button>
+                </div>
+            </div>` : ''}
+            ${u.email ? `<div class="info-row">
+                <span class="info-lbl">Email</span>
+                <div class="flex gap8" style="flex:1;justify-content:flex-end">
+                    <span class="info-val" style="font-size:12px">${esc(u.email)}</span>
+                    <button class="copy-btn" onclick="copyText('${esc(u.email)}',this)">Copy</button>
+                </div>
             </div>` : ''}
         </div>
 
-        ${docImgs.length ? `<div class="doc-grid">${docImgs.map(d=>`<div class="doc-img" onclick="window.open('${d.url}','_blank')" title="${d.label}"><img src="${d.url}" alt="${d.label}" onerror="this.style.display='none'"></div>`).join('')}</div>` : ''}
+        ${vidSrc ? `<div class="card-video" style="margin-top:12px"><video controls preload="metadata" src="${vidSrc}"></video></div>`
+            : '<div style="padding:4px 16px 4px;font-size:11px;color:var(--text3)">No verification video</div>'}
 
-        <div class="action-row">
+        ${docImgs.length ? `<div class="card-docs"><div class="doc-grid">${docImgs.map(d=>
+            `<div class="doc-img" onclick="window.open('${d.url}','_blank')" title="${d.label}">
+                <img src="${d.url}" alt="${d.label}" onerror="this.style.display='none'">
+                <div class="doc-lbl">${d.label}</div>
+            </div>`).join('')}</div></div>` : ''}
+
+        <!-- Expandable: Chats & Payments -->
+        <div id="user-chats-${u.id}" class="expand-section hidden-section">
+            <div class="expand-inner" id="user-chats-inner-${u.id}"></div>
+        </div>
+        <div id="user-pm-${u.id}" class="expand-section hidden-section">
+            <div class="expand-inner" id="user-pm-inner-${u.id}"></div>
+        </div>
+
+        <!-- Actions -->
+        <div class="card-actions">
             ${showVerifActions ? `
                 <button class="action-btn btn-approve" onclick="verifyUser(${u.id},'approve')">✓ Approve</button>
                 <button class="action-btn btn-reject" onclick="verifyUser(${u.id},'reject')">✗ Reject</button>
             ` : ''}
-            <button class="action-btn btn-block" onclick="setStatus(${u.id},'blocked')">Block</button>
+            ${isBlocked
+                ? `<button class="action-btn btn-unblock" onclick="setStatus(${u.id},'active')">Unblock</button>`
+                : `<button class="action-btn btn-block" onclick="setStatus(${u.id},'blocked')">Block</button>`}
             <button class="action-btn btn-delete" onclick="deleteUser(${u.id})">Delete</button>
-            <button class="action-btn btn-view" onclick="viewUserChats(${u.id},'${esc(u.first_name+' '+u.last_name)}')">Chats</button>
-            <button class="action-btn btn-view" onclick="viewUserPayments(${u.id})">&#128179; Pay</button>
+            <button class="action-btn btn-chat-hist" onclick="viewUserChats(${u.id},'${esc(u.first_name+' '+u.last_name)}')">Chats</button>
+            <button class="action-btn btn-pay" onclick="viewUserPayments(${u.id})">&#128179; Pay</button>
         </div>
-        <div id="user-chats-${u.id}" class="hidden user-chat-hist"></div>
-        <div id="user-pm-${u.id}" class="hidden pm-box"></div>
     </div>`;
 }
 
-async function viewUserPayments(uid) {
-    const box = document.getElementById('user-pm-'+uid);
-    if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
-    box.innerHTML = '<div class="pm-title">Payment Methods</div><p class="pm-empty">Loading...</p>';
-    box.classList.remove('hidden');
-    try {
-        const r = await fetch(`${serverUrl}/admin/users/${uid}/payment-methods`, {headers: hdrs()});
-        const methods = await r.json();
-        if (!methods.length) { box.innerHTML = '<div class="pm-title">Payment Methods</div><p class="pm-empty">No payment methods on file</p>'; return; }
-        const icons = {stripe_card:'\uD83D\uDCB3', bank_account:'\uD83C\uDFE6', paypal:'\uD83D\uDCB0', google_pay:'G', apple_pay:'', cruise_cash:'\u2B50'};
-        box.innerHTML = '<div class="pm-title">Payment Methods</div>' +
-            methods.map(m => `<div class="pm-item">
-                <span class="pm-icon">${icons[m.method_type]||'\uD83D\uDCB3'}</span>
-                <span class="pm-name">${esc(m.display_name)}</span>
-                ${m.is_default ? '<span class="pm-default">DEFAULT</span>' : ''}
-            </div>`).join('');
-    } catch(e) { box.innerHTML = `<div class="pm-title">Payment Methods</div><div class="err-box">${e.message}</div>`; }
+// ── Field reveal / copy ───────────────────────────────
+function toggleField(elId, value, btn) {
+    const el = document.getElementById(elId);
+    const isMasked = el.textContent.includes('•');
+    el.textContent = isMasked ? value : (elId.startsWith('ssn') ? '•••-••-••••' : '••••••••');
+    btn.textContent = isMasked ? 'Hide' : 'Show';
 }
 
-function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-
-function togglePw(uid, pw) {
-    const el = document.getElementById('pw-'+uid);
-    const btn = el.parentElement.nextElementSibling.querySelector('.btn-toggle');
-    if (el.textContent === '••••••••') { el.textContent = pw; btn.textContent = 'Hide'; }
-    else { el.textContent = '••••••••'; btn.textContent = 'Show'; }
+function copyText(value, btn) {
+    navigator.clipboard.writeText(value).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = '✓';
+        setTimeout(() => btn.textContent = orig, 1500);
+    });
 }
 
-function copyPw(pw, btn) {
-    navigator.clipboard.writeText(pw).then(() => { btn.textContent = '✓ Copied'; setTimeout(()=>btn.textContent='Copy',1500); });
-}
-
+// ── User actions ──────────────────────────────────────
 async function verifyUser(uid, action) {
     const reason = action === 'reject' ? prompt('Rejection reason:') : null;
     if (action === 'reject' && !reason) return;
@@ -420,18 +671,18 @@ async function verifyUser(uid, action) {
             method: 'PATCH', headers: hdrs(),
             body: JSON.stringify({action, reason: reason||''})
         });
-        if (r.ok) { alert(action === 'approve' ? 'User approved!' : 'User rejected.'); loadVerifications(); loadUsers(); }
+        if (r.ok) { loadVerifications(); loadDrivers(); loadStats(); }
         else { const d = await r.json(); alert('Error: ' + (d.detail||'Unknown')); }
     } catch(e) { alert('Error: ' + e.message); }
 }
 
 async function setStatus(uid, status) {
-    if (!confirm(`Set user ${uid} status to ${status}?`)) return;
+    if (!confirm(`Set user status to "${status}"?`)) return;
     try {
         const r = await fetch(`${serverUrl}/admin/users/${uid}/status`, {
             method: 'PATCH', headers: hdrs(), body: JSON.stringify({status})
         });
-        if (r.ok) { alert('Status updated.'); loadUsers(); }
+        if (r.ok) { loadDrivers(); loadRiders(); loadStats(); }
         else { const d = await r.json(); alert('Error: ' + (d.detail||'Unknown')); }
     } catch(e) { alert('Error: ' + e.message); }
 }
@@ -440,27 +691,56 @@ async function deleteUser(uid) {
     if (!confirm('Permanently delete this user?')) return;
     try {
         const r = await fetch(`${serverUrl}/admin/users/${uid}`, {method:'DELETE', headers: hdrs()});
-        if (r.ok) { alert('User deleted.'); loadUsers(); loadVerifications(); }
+        if (r.ok) { loadDrivers(); loadRiders(); loadVerifications(); loadStats(); }
         else { const d = await r.json(); alert('Error: ' + (d.detail||'Unknown')); }
     } catch(e) { alert('Error: ' + e.message); }
 }
 
+// ── User chats (inside card) ──────────────────────────
 async function viewUserChats(uid, name) {
-    const box = document.getElementById('user-chats-'+uid);
-    if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
-    box.innerHTML = '<div class="loading">Loading chat history…</div>';
-    box.classList.remove('hidden');
+    const sec = document.getElementById('user-chats-'+uid);
+    const inner = document.getElementById('user-chats-inner-'+uid);
+    if (!sec.classList.contains('hidden-section')) { sec.classList.add('hidden-section'); return; }
+    sec.classList.remove('hidden-section');
+    inner.innerHTML = '<div class="loading" style="padding:20px">Loading…</div>';
     try {
         const r = await fetch(`${serverUrl}/admin/users/${uid}/chats`, {headers: hdrs()});
         const chats = await r.json();
-        if (!chats.length) { box.innerHTML = '<p style="color:#666;font-size:13px">No chat history</p>'; return; }
-        box.innerHTML = `<p style="color:#E8C547;font-size:13px;font-weight:700;margin-bottom:8px">Chat history for ${esc(name)}</p>` +
-            chats.map(c => `<div class="hist-item" onclick="openChatInTab(${c.id})">
+        if (!chats.length) { inner.innerHTML = '<div class="pm-box"><p class="pm-empty">No chat history</p></div>'; return; }
+        inner.innerHTML = `<div class="hist-section">
+            <div class="hist-title">Chat history — ${esc(name)}</div>
+            ${chats.map(c=>`<div class="hist-item" onclick="openChatInTab(${c.id})">
                 <span class="badge badge-${c.status==='open'?'active':'none'}">${c.status}</span>
-                ${esc(c.subject||'Support')} — <span style="color:#666;font-size:11px">${c.updated_at||c.created_at||''}</span>
-                <br><span style="color:#888;font-size:12px">${esc((c.last_message||'').slice(0,60))}</span>
-            </div>`).join('');
-    } catch(e) { box.innerHTML = `<div class="err-box">${e.message}</div>`; }
+                &nbsp;${esc(c.subject||'Support')}
+                <span style="color:var(--text3);font-size:11px;float:right">${(c.updated_at||c.created_at||'').slice(0,10)}</span>
+                ${c.last_message ? `<br><span style="color:#666;font-size:12px">${esc(c.last_message.slice(0,70))}</span>` : ''}
+            </div>`).join('')}
+        </div>`;
+    } catch(e) { inner.innerHTML = `<div class="err-box">${e.message}</div>`; }
+}
+
+// ── User payments (inside card) ───────────────────────
+async function viewUserPayments(uid) {
+    const sec = document.getElementById('user-pm-'+uid);
+    const inner = document.getElementById('user-pm-inner-'+uid);
+    if (!sec.classList.contains('hidden-section')) { sec.classList.add('hidden-section'); return; }
+    sec.classList.remove('hidden-section');
+    inner.innerHTML = '<div class="loading" style="padding:20px">Loading…</div>';
+    try {
+        const r = await fetch(`${serverUrl}/admin/users/${uid}/payment-methods`, {headers: hdrs()});
+        const methods = await r.json();
+        const icons = {stripe_card:'💳', bank_account:'🏦', paypal:'💰', google_pay:'G', apple_pay:'', cruise_cash:'⭐'};
+        inner.innerHTML = `<div class="pm-box">
+            <div class="pm-title">Payment Methods on File</div>
+            ${!methods.length ? '<p class="pm-empty">No payment methods on file</p>' :
+            methods.map(m=>`<div class="pm-item">
+                <span class="pm-icon">${icons[m.method_type]||'💳'}</span>
+                <span class="pm-name">${esc(m.display_name)}</span>
+                ${m.is_default ? '<span class="pm-default">DEFAULT</span>' : ''}
+                <span style="font-size:11px;color:var(--text3)">${(m.created_at||'').slice(0,10)}</span>
+            </div>`).join('')}
+        </div>`;
+    } catch(e) { inner.innerHTML = `<div class="err-box">${e.message}</div>`; }
 }
 
 async function openChatInTab(chatId) {
@@ -472,51 +752,58 @@ async function openChatInTab(chatId) {
     loadChatMessages(chatId);
 }
 
-// ── TRIPS ─────────────────────────────────────────────
+// ── Trips ─────────────────────────────────────────────
 async function loadTrips() {
     const el = document.getElementById('tripsList');
     el.innerHTML = '<div class="loading">Loading…</div>';
-    const statusFilter = document.getElementById('tripStatusFilter')?.value || '';
+    const sf = document.getElementById('tripStatusFilter')?.value || '';
     try {
-        const url = statusFilter ? `${serverUrl}/admin/trips?status=${statusFilter}` : `${serverUrl}/admin/trips`;
-        const r = await fetch(url, {headers: hdrs()});
+        const r = await fetch(`${serverUrl}/admin/trips`, {headers: hdrs()});
         if (!r.ok) throw new Error(await r.text());
         let trips = await r.json();
-        if (statusFilter) trips = trips.filter(t => t.status === statusFilter);
+        if (sf) trips = trips.filter(t => t.status === sf);
         if (!trips.length) { el.innerHTML = '<div class="loading">No trips found</div>'; return; }
         el.innerHTML = trips.map(t => `<div class="trip-card">
-            <h3>Trip #${t.id} <span class="badge badge-${t.status}">${t.status}</span></h3>
-            <p><strong>Pickup:</strong> ${esc(t.pickup_address)}</p>
-            <p><strong>Dropoff:</strong> ${esc(t.dropoff_address)}</p>
-            <p><strong>Fare:</strong> $${t.fare||'0'}</p>
-            <p><strong>Driver:</strong> ${esc(t.driver_name||'Unassigned')}</p>
-            <p><strong>Rider:</strong> ${esc(t.rider_name||'Unknown')}</p>
-            <p style="color:#555;font-size:11px">${t.created_at||''}</p>
+            <div class="trip-head">
+                <span class="trip-id">Trip #${t.id}</span>
+                <span class="badge badge-${t.status}">${t.status}</span>
+            </div>
+            <div class="trip-route" style="padding:10px 16px 0;font-size:13px">
+                <span style="color:var(--text2)">&#128197; ${esc(t.pickup_address)}</span>
+                <span style="color:var(--gold);margin:0 6px">&#8594;</span>
+                <span style="color:var(--text2)">${esc(t.dropoff_address)}</span>
+            </div>
+            <div class="trip-body">
+                <div class="trip-field"><span>Fare</span><strong style="color:var(--gold)">$${t.fare||'0'}</strong></div>
+                <div class="trip-field"><span>Vehicle</span>${esc(t.vehicle_type||'—')}</div>
+                <div class="trip-field"><span>Driver</span>${esc(t.driver_name||'Unassigned')}</div>
+                <div class="trip-field"><span>Rider</span>${esc(t.rider_name||'Unknown')}</div>
+                ${t.is_airport ? '<div class="trip-field"><span>Type</span><span style="color:var(--gold)">✈ Airport</span></div>' : ''}
+                <div class="trip-field"><span>Date</span>${(t.created_at||'').slice(0,10)}</div>
+            </div>
         </div>`).join('');
     } catch(e) { el.innerHTML = `<div class="err-box">Error: ${e.message}</div>`; }
 }
 
-// ── LIVE CHATS ────────────────────────────────────────
+// ── Live Chats ────────────────────────────────────────
 let activeChatId = null;
-let _msgRefresh = null;
-let _listRefresh = null;
-let _tripsRefresh = null;
+let _msgRefresh = null, _listRefresh = null, _tripsRefresh = null;
+
+function clearAutoRefreshTimers() {
+    clearInterval(_msgRefresh); clearInterval(_listRefresh); clearInterval(_tripsRefresh);
+    _msgRefresh = _listRefresh = _tripsRefresh = null;
+}
 
 function startAutoRefresh() {
-    if (_msgRefresh) clearInterval(_msgRefresh);
-    if (_listRefresh) clearInterval(_listRefresh);
-    if (_tripsRefresh) clearInterval(_tripsRefresh);
-    _msgRefresh = setInterval(() => {
-        if (activeChatId) loadChatMessages(activeChatId);
-    }, 10000);
+    clearAutoRefreshTimers();
+    _msgRefresh = setInterval(() => { if (activeChatId) loadChatMessages(activeChatId); }, 10000);
     _listRefresh = setInterval(async () => {
-        const prevCount = _knownChatIds.size;
+        const prevSize = _knownChatIds.size;
         await loadChats();
-        if (_knownChatIds.size > prevCount) _playBeep();
+        if (_knownChatIds.size > prevSize) _playBeep();
     }, 30000);
     _tripsRefresh = setInterval(() => {
-        const tab = document.querySelector('.tab.active');
-        if (tab && tab.id === 'tab-trips') loadTrips();
+        if (document.getElementById('tab-trips').classList.contains('active')) loadTrips();
     }, 30000);
 }
 
@@ -529,8 +816,7 @@ async function loadChats() {
         if (!r.ok) throw new Error(await r.text());
         let chats = await r.json();
         const newIds = new Set(chats.map(c => c.id));
-        const hasNew = [...newIds].some(id => !_knownChatIds.has(id) && _knownChatIds.size > 0);
-        if (hasNew) _playBeep();
+        if ([...newIds].some(id => !_knownChatIds.has(id) && _knownChatIds.size > 0)) _playBeep();
         _knownChatIds = newIds;
         if (!showClosed) chats = chats.filter(c => c.status === 'open');
         if (!chats.length) { el.innerHTML = '<div class="loading">No chats found</div>'; return; }
@@ -546,10 +832,9 @@ function buildChatCard(c) {
             <div>
                 <div class="chat-user">${esc(c.user_name||'Unknown')}
                     ${c.unread_count > 0 ? `<span class="badge-unread">${c.unread_count}</span>` : ''}
+                    ${c.needs_escalation ? ' ⚠️' : ''}
                 </div>
-                <div class="chat-meta">${esc(c.subject||'Support')} · ${c.updated_at||c.created_at||''}
-                    ${c.needs_escalation ? ' · ⚠️ Escalated' : ''}
-                </div>
+                <div class="chat-meta">${esc(c.subject||'Support')} &middot; ${(c.updated_at||c.created_at||'').slice(0,16).replace('T',' ')}</div>
             </div>
             <span class="${isOpen ? 'chat-status-open' : 'chat-status-closed'}">${isOpen ? '● OPEN' : '○ CLOSED'}</span>
         </div>
@@ -557,38 +842,38 @@ function buildChatCard(c) {
             ${isOpen ? `<div class="chat-actions">
                 <button class="btn-close-chat" onclick="closeChat(${c.id})">✕ Close Chat</button>
             </div>` : ''}
-            <div class="messages" id="msgs-${c.id}"><div class="loading">Click to load messages…</div></div>
+            <div class="messages" id="msgs-${c.id}"><div class="loading" style="padding:16px">Click to load…</div></div>
             ${isOpen ? `<div class="reply-row">
                 <input class="reply-input" id="reply-${c.id}" placeholder="Type a message…" onkeydown="if(event.key==='Enter')sendMsg(${c.id})">
                 <button class="btn-send" onclick="sendMsg(${c.id})">Send</button>
-            </div>` : '<p style="color:#555;font-size:12px;margin-top:8px">Chat closed</p>'}
+            </div>` : '<p style="color:var(--text3);font-size:12px;margin-top:8px">This chat is closed</p>'}
         </div>
     </div>`;
 }
 
 function toggleChat(chatId) {
     const body = document.getElementById('chatbody-'+chatId);
-    const isOpen = body.classList.contains('open');
+    const opening = !body.classList.contains('open');
     body.classList.toggle('open');
-    if (!isOpen) loadChatMessages(chatId);
+    if (opening) loadChatMessages(chatId);
 }
 
 async function loadChatMessages(chatId) {
     activeChatId = chatId;
     const el = document.getElementById('msgs-'+chatId);
     if (!el) return;
-    el.innerHTML = '<div class="loading">Loading…</div>';
+    el.innerHTML = '<div class="loading" style="padding:16px">Loading…</div>';
     try {
         const r = await fetch(`${serverUrl}/support/chats/${chatId}/messages/dispatch`, {headers: hdrs()});
         if (!r.ok) throw new Error(await r.text());
         const msgs = await r.json();
-        if (!msgs.length) { el.innerHTML = '<p style="color:#555;font-size:13px">No messages</p>'; return; }
+        if (!msgs.length) { el.innerHTML = '<p style="color:var(--text3);font-size:13px;text-align:center;padding:12px">No messages</p>'; return; }
         el.innerHTML = msgs.map(m => {
-            const cls = m.sender_role === 'dispatch' ? 'msg-dispatch' : (m.sender_role === 'bot' || m.sender_role === 'system') ? 'msg-bot' : 'msg-user';
+            const cls = m.sender_role==='dispatch' ? 'msg-dispatch' : (m.sender_role==='bot'||m.sender_role==='system') ? 'msg-bot' : 'msg-user';
             return `<div class="msg-bubble ${cls}">
                 <div class="msg-sender">${esc(m.sender_name||m.sender_role)}</div>
                 <div>${esc(m.message)}</div>
-                <div class="msg-time">${m.created_at||''}</div>
+                <div class="msg-time">${(m.created_at||'').slice(0,16).replace('T',' ')}</div>
             </div>`;
         }).join('');
         el.scrollTop = el.scrollHeight;
@@ -604,20 +889,25 @@ async function sendMsg(chatId) {
     input.value = '';
     try {
         const r = await fetch(`${serverUrl}/support/chats/${chatId}/messages/dispatch`, {
-            method: 'POST', headers: hdrs(), body: JSON.stringify({message: msg})
+            method:'POST', headers: hdrs(), body: JSON.stringify({message: msg})
         });
         if (r.ok) loadChatMessages(chatId);
-        else { const d = await r.json(); alert('Error: ' + (d.detail||'Unknown')); }
-    } catch(e) { alert('Error: ' + e.message); }
+        else { const d = await r.json(); alert('Error: '+(d.detail||'Unknown')); }
+    } catch(e) { alert('Error: '+e.message); }
 }
 
 async function closeChat(chatId) {
     if (!confirm('Close this chat session?')) return;
     try {
         const r = await fetch(`${serverUrl}/support/chats/${chatId}/close`, {method:'PATCH', headers: hdrs()});
-        if (r.ok) { alert('Chat closed.'); loadChats(); }
-        else { const d = await r.json(); alert('Error: ' + (d.detail||'Unknown')); }
-    } catch(e) { alert('Error: ' + e.message); }
+        if (r.ok) loadChats();
+        else { const d = await r.json(); alert('Error: '+(d.detail||'Unknown')); }
+    } catch(e) { alert('Error: '+e.message); }
+}
+
+// ── Escape ────────────────────────────────────────────
+function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 </script>
 </body>

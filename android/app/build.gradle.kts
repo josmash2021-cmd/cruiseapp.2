@@ -13,7 +13,7 @@ flutter {
 }
 
 android {
-    namespace = "com.cruise_app"
+    namespace = "com.cruiseinride.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -44,7 +44,7 @@ android {
             localProperties.getProperty("MAPS_API_KEY", "")
 
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.cruise_app"
+        applicationId = "com.cruiseinride.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion  // Firebase requires API 23+

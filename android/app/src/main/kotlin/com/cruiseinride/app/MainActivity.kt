@@ -1,4 +1,4 @@
-package com.cruise_app
+package com.cruiseinride.app
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

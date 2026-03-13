@@ -41,6 +41,6 @@ class DefaultFirebaseOptions {
     messagingSenderId: '56054738352',
     projectId: 'cruise-af9f1',
     storageBucket: 'cruise-af9f1.firebasestorage.app',
-    iosBundleId: 'com.cruiseapp.cruise',
+    iosBundleId: 'com.cruiseinride.app',
   );
 }

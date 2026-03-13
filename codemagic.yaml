@@ -380,12 +380,8 @@ workflows:
           keychain add-certificates --certificate /tmp/dist.p12 --certificate-password "$CM_CERTIFICATE_PASSWORD"
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           echo "$CM_PROVISIONING_PROFILE" | base64 --decode > /tmp/profile.mobileprovision
-          UUID=$(python3 -c "
-import plistlib, subprocess, sys
-out = subprocess.check_output(['security','cms','-D','-i','/tmp/profile.mobileprovision'])
-pl = plistlib.loads(out)
-print(pl['UUID'])
-")
+          UUID=$(security cms -D -i /tmp/profile.mobileprovision 2>/dev/null | python3 -c "import plistlib,sys; pl=plistlib.loads(sys.stdin.buffer.read()); print(pl['UUID'])")
+
           cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/${UUID}.mobileprovision
           echo "Installed profile UUID: $UUID"
       - name: Get Flutter packages

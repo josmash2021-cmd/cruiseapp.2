@@ -454,6 +454,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                   border: Border.all(color: _tierColor, width: 3),
                 ),
                 child: ClipOval(
+                  child: _resolvedPhotoUrl != null
                       ? (_resolvedPhotoUrl!.startsWith('http')
                             ? Image.network(
                                 _resolvedPhotoUrl!,
@@ -463,7 +464,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                             : Image.file(
                                 File(_resolvedPhotoUrl!),
                                 fit: BoxFit.cover,
-                                errorBuilder: (_d, _e, _f) => _defaultAvatar(),
+                                errorBuilder: (_a, _b, _c) => _defaultAvatar(),
                               ))
                       : _defaultAvatar(),
                 ),

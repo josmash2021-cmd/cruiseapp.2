@@ -269,7 +269,7 @@ class RiderTripController extends ChangeNotifier {
     return [
       RideOption(
         id: 'suburban',
-        name: 'Suburban',
+        name: 'SUV',
         description: 'Premium SUV experience',
         priceEstimate: _round(baseFare * 2.20),
         etaMinutes: 5 + math.Random().nextInt(8),
@@ -278,7 +278,7 @@ class RiderTripController extends ChangeNotifier {
       ),
       RideOption(
         id: 'camry',
-        name: 'Camry',
+        name: 'Comfort Sedan',
         description: 'Comfortable sedan',
         priceEstimate: _round(baseFare * 1.35),
         etaMinutes: 4 + math.Random().nextInt(6),
@@ -287,7 +287,7 @@ class RiderTripController extends ChangeNotifier {
       ),
       RideOption(
         id: 'fusion',
-        name: 'Fusion',
+        name: 'Economy Sedan',
         description: 'Affordable rides',
         priceEstimate: _round(baseFare),
         etaMinutes: 3 + math.Random().nextInt(5),

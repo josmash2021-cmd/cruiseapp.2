@@ -126,6 +126,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   StreamSubscription<LatLng>? _driverLocSub;
   StreamSubscription<Map<String, dynamic>?>? _tripStatusSub;
   Timer? _statusPollTimer;
+  Timer? _simTimer; // demo simulation timer
 
   late AnimationController _etaPulse;
 
@@ -150,6 +151,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _interpolate,
     );
     _startRealTimeTracking();
+    _startSimIfNeeded();
     // Send greeting notification after 3 seconds
     Future.delayed(const Duration(seconds: 3), _sendDriverGreeting);
     // Notify rider that a driver was assigned
@@ -297,10 +299,54 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     }
   }
 
+  /// Start a simulation timer when there is no real Firestore trip
+  /// (demo mode). Advances the car along the route to simulate navigation.
+  void _startSimIfNeeded() {
+    final fsId = widget.firestoreTripId;
+    if (fsId != null && fsId.isNotEmpty) return; // real trip — skip sim
+
+    // Advance ~13 m/s (~30 mph) every 500ms tick
+    const tickMs = 500;
+    const speedMps = 13.0; // meters per second
+    const advancePerTick = speedMps * (tickMs / 1000);
+
+    _simTimer = Timer.periodic(const Duration(milliseconds: tickMs), (_) {
+      if (!mounted || _segDist.isEmpty) return;
+      final totalM = _segDist.last;
+      if (totalM <= 0) return;
+
+      _tgtTraveledM = (_tgtTraveledM + advancePerTick).clamp(0.0, totalM);
+
+      // Phase transitions based on progress
+      final progress = _tgtTraveledM / totalM;
+      if (_phase == _TrackPhase.arriving && progress > 0.02) {
+        // Simulate arriving at pickup after a bit of movement
+        setState(() => _phase = _TrackPhase.arrived);
+      }
+      if (_phase == _TrackPhase.arrived && progress > 0.06) {
+        setState(() => _phase = _TrackPhase.onTrip);
+      }
+      if (_phase == _TrackPhase.onTrip && progress >= 0.98) {
+        _simTimer?.cancel();
+        LocalDataService.clearActiveRide();
+        setState(() => _phase = _TrackPhase.completed);
+        return;
+      }
+
+      // Update ETA
+      final remainingM = totalM - _tgtTraveledM;
+      _etaMinutes = (remainingM / (speedMps * 60)).ceil().clamp(1, 99);
+      _distanceMiles = remainingM / 1609.34;
+
+      _throttleCam();
+    });
+  }
+
   @override
   void dispose() {
     _interpTimer?.cancel();
     _camTimer?.cancel();
+    _simTimer?.cancel();
     _driverLocSub?.cancel();
     _tripStatusSub?.cancel();
     _statusPollTimer?.cancel();
@@ -366,6 +412,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           TextButton(
             onPressed: () async {
               Navigator.of(ctx).pop();
+              // Clear persisted active ride so banner disappears
+              LocalDataService.clearActiveRide();
               if (widget.tripId != null) {
                 try {
                   await ApiService.cancelTrip(widget.tripId!);
@@ -827,7 +875,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   void _recenter() {
-    setState(() => _userMovedMap = false);
+    setState(() {
+      _userMovedMap = false;
+      _camInitialized = false; // force immediate snap instead of lerp
+    });
     _fitAllPoints();
   }
 
@@ -930,34 +981,63 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         body: Stack(
           children: [
             RepaintBoundary(
-              child: GoogleMap(
-                style: MapStyles.darkIOS,
-                initialCameraPosition: CameraPosition(
-                  target: widget.pickupLatLng,
-                  zoom: 14,
-                ),
-                onMapCreated: (ctrl) {
-                  _map = ctrl;
-                },
-                onCameraMoveStarted: () {
-                  if (!_programmaticCam) {
-                    setState(() => _userMovedMap = true);
-                  }
-                },
-                onCameraIdle: () => _programmaticCam = false,
-                markers: _markers(),
-                polylines: _polylines(),
-                myLocationEnabled: false,
-                myLocationButtonEnabled: false,
-                zoomControlsEnabled: false,
-                compassEnabled: false,
-                mapToolbarEnabled: false,
-                tiltGesturesEnabled: false,
-                padding: EdgeInsets.only(
-                  bottom: 370 + botPad,
-                  top: topPad + 16,
-                ),
-              ),
+              child: Platform.isIOS
+                  ? amap.AppleMap(
+                      initialCameraPosition: amap.CameraPosition(
+                        target: amap.LatLng(
+                          widget.pickupLatLng.latitude,
+                          widget.pickupLatLng.longitude,
+                        ),
+                        zoom: 14,
+                      ),
+                      onMapCreated: (ctrl) {
+                        _appleMap = ctrl;
+                      },
+                      onCameraMoveStarted: () {
+                        if (!_programmaticCam) {
+                          setState(() => _userMovedMap = true);
+                        }
+                      },
+                      annotations: _appleAnnotations(),
+                      polylines: _applePolylines(),
+                      myLocationEnabled: false,
+                      myLocationButtonEnabled: false,
+                      zoomGesturesEnabled: true,
+                      scrollGesturesEnabled: true,
+                      rotateGesturesEnabled: false,
+                      padding: EdgeInsets.only(
+                        bottom: 370 + botPad,
+                        top: topPad + 16,
+                      ),
+                    )
+                  : GoogleMap(
+                      style: MapStyles.darkIOS,
+                      initialCameraPosition: CameraPosition(
+                        target: widget.pickupLatLng,
+                        zoom: 14,
+                      ),
+                      onMapCreated: (ctrl) {
+                        _map = ctrl;
+                      },
+                      onCameraMoveStarted: () {
+                        if (!_programmaticCam) {
+                          setState(() => _userMovedMap = true);
+                        }
+                      },
+                      onCameraIdle: () => _programmaticCam = false,
+                      markers: _markers(),
+                      polylines: _polylines(),
+                      myLocationEnabled: false,
+                      myLocationButtonEnabled: false,
+                      zoomControlsEnabled: false,
+                      compassEnabled: false,
+                      mapToolbarEnabled: false,
+                      tiltGesturesEnabled: false,
+                      padding: EdgeInsets.only(
+                        bottom: 370 + botPad,
+                        top: topPad + 16,
+                      ),
+                    ),
             ),
             // ── Back button ──
             Positioned(

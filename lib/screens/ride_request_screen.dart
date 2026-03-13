@@ -2031,8 +2031,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   static String _carAssetForOption(String name) {
     final key = name.trim().toLowerCase();
-    if (key.contains('suburban')) return 'assets/images/suburban.png';
-    if (key.contains('camry')) return 'assets/images/camry.png';
+    if (key.contains('suv') || key.contains('suburban')) return 'assets/images/suburban.png';
+    if (key.contains('comfort') || key.contains('camry')) return 'assets/images/camry.png';
     return 'assets/images/fusion.png';
   }
 

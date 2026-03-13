@@ -305,30 +305,134 @@ class _SplashScreenState extends State<SplashScreen>
       body: AnimatedBuilder(
         animation: Listenable.merge([_entranceCtrl, _glowCtrl, _exitCtrl]),
         builder: (context, _) {
+          final glow = _glowCtrl.value;
           return Opacity(
             opacity: _exitFade.value,
             child: Transform.scale(
               scale: _exitScale.value,
-              child: Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(_letters.length, (i) {
-                    return Transform.translate(
-                      offset: Offset(0, _letterSlide[i].value),
-                      child: Transform.scale(
-                        scale: _letterScale[i].value,
-                        child: Opacity(
-                          opacity: _letterFade[i].value,
-                          child: _buildLetter(_letters[i], i),
-                        ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // ── Background radial glow ──
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        center: Alignment.center,
+                        radius: 0.75,
+                        colors: [
+                          Color.lerp(
+                            const Color(0xFF1A1500),
+                            const Color(0xFF0A0900),
+                            1 - glow * 0.6,
+                          )!,
+                          _bg,
+                        ],
+                        stops: const [0.0, 1.0],
                       ),
-                    );
-                  }),
-                ),
+                    ),
+                  ),
+                  // ── Center content ──
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Decorative top line
+                        Opacity(
+                          opacity: glow,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildDecoLine(60),
+                              const SizedBox(width: 10),
+                              _buildDiamond(),
+                              const SizedBox(width: 10),
+                              _buildDecoLine(60),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        // CRUISE letters
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: List.generate(_letters.length, (i) {
+                            return Transform.translate(
+                              offset: Offset(0, _letterSlide[i].value),
+                              child: Transform.scale(
+                                scale: _letterScale[i].value,
+                                child: Opacity(
+                                  opacity: _letterFade[i].value,
+                                  child: _buildLetter(_letters[i], i),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                        const SizedBox(height: 8),
+                        // IN RIDE tagline
+                        Opacity(
+                          opacity: (glow * 1.5).clamp(0.0, 1.0),
+                          child: Text(
+                            'I N   R I D E',
+                            style: GoogleFonts.cinzel(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w400,
+                              color: _gold.withOpacity(0.75),
+                              letterSpacing: 8,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        // Decorative bottom line
+                        Opacity(
+                          opacity: glow,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildDecoLine(60),
+                              const SizedBox(width: 10),
+                              _buildDiamond(),
+                              const SizedBox(width: 10),
+                              _buildDecoLine(60),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildDecoLine(double width) {
+    return Container(
+      width: width,
+      height: 0.8,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.transparent,
+            _gold.withOpacity(0.7),
+            Colors.transparent,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiamond() {
+    return Transform.rotate(
+      angle: 0.785398,
+      child: Container(
+        width: 5,
+        height: 5,
+        decoration: BoxDecoration(
+          color: _gold.withOpacity(0.8),
+        ),
       ),
     );
   }
@@ -338,34 +442,35 @@ class _SplashScreenState extends State<SplashScreen>
     final glowColor = Color.lerp(_gold, _goldBright, glowIntensity)!;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 2),
+      margin: const EdgeInsets.symmetric(horizontal: 1.5),
       child: ShaderMask(
         shaderCallback: (bounds) {
           return LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
+              _goldBright,
               glowColor,
               _gold,
             ],
-            stops: const [0.3, 1.0],
+            stops: const [0.0, 0.4, 1.0],
           ).createShader(bounds);
         },
         child: Text(
           letter,
           style: GoogleFonts.cinzel(
-            fontSize: 56,
+            fontSize: 62,
             fontWeight: FontWeight.w900,
             color: Colors.white,
-            letterSpacing: 4,
+            letterSpacing: 6,
             shadows: [
               Shadow(
                 color: _gold.withOpacity(0.5 + glowIntensity * 0.5),
-                blurRadius: 20 + glowIntensity * 30,
+                blurRadius: 20 + glowIntensity * 40,
               ),
               Shadow(
-                color: _goldBright.withOpacity(glowIntensity * 0.3),
-                blurRadius: 40,
+                color: _goldBright.withOpacity(glowIntensity * 0.4),
+                blurRadius: 50,
               ),
             ],
           ),

@@ -114,6 +114,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _isSimulationMode = false;
   Timer? _simulatedDriverTimer;
 
+  // ── Driver Found overlay ──
+  bool _driverFoundVisible = false;
+  Timer? _driverFoundTimer;
+
   // Combined pin+label bitmaps (pin and label in one image, always aligned)
   bool _showPinLabels = true;
   (BitmapDescriptor, Uint8List)? _pickupPinOnly;
@@ -741,6 +745,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _searchMapTimer?.cancel();
     _splashTimer?.cancel();
     _simulatedDriverTimer?.cancel();
+    _driverFoundTimer?.cancel();
     _ctrl.removeListener(_onStateChange);
     _ctrl.dispose();
     _pulseCtrl.dispose();
@@ -864,11 +869,22 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         }
         break;
       case RiderPhase.driverAssigned:
-        // Show matched state but don't navigate yet — wait for driverArriving
+        // Show "Driver Found" overlay, then auto-navigate after 2.5s
+        if (!_driverFoundVisible && !_navigatingToTracking) {
+          _driverFoundVisible = true;
+          HapticFeedback.heavyImpact();
+          _driverFoundTimer?.cancel();
+          _driverFoundTimer = Timer(const Duration(milliseconds: 2500), () {
+            if (!mounted) return;
+            _ctrl.transitionToArriving();
+          });
+        }
         break;
       case RiderPhase.driverArriving:
         if (!_navigatingToTracking) {
           _navigatingToTracking = true;
+          _driverFoundVisible = false;
+          _driverFoundTimer?.cancel();
           _goToTracking();
         }
         break;
@@ -1489,9 +1505,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
             // ── Searching bottom card (map visible behind) ──
             if ((phase == RiderPhase.requesting ||
-                    phase == RiderPhase.searchingDriver) &&
+                    phase == RiderPhase.searchingDriver ||
+                    phase == RiderPhase.driverAssigned) &&
                 _searchingShowMap)
               _buildSearchingBottomCard(c),
+
+            // ── Driver Found overlay ──
+            if (_driverFoundVisible && _ctrl.state.driver != null)
+              _buildDriverFoundOverlay(c),
           ],
         ),
       ),
@@ -3234,13 +3255,168 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     }
   }
 
+  Widget _buildDriverFoundOverlay(AppColors c) {
+    final driver = _ctrl.state.driver!;
+    final firstName = driver.name.split(' ').first;
+    return Positioned.fill(
+      child: IgnorePointer(
+        ignoring: false,
+        child: AnimatedOpacity(
+          opacity: _driverFoundVisible ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 400),
+          child: Container(
+            color: Colors.black.withValues(alpha: 0.75),
+            child: Center(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.8, end: 1.0),
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.elasticOut,
+                builder: (_, scale, child) => Transform.scale(
+                  scale: scale,
+                  child: child,
+                ),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 36),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 28,
+                    vertical: 32,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1E1E28), Color(0xFF16161E)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: c.gold.withValues(alpha: 0.3),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: c.gold.withValues(alpha: 0.2),
+                        blurRadius: 40,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Checkmark icon
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: c.gold.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.check_rounded,
+                          color: c.gold,
+                          size: 36,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        S.of(context).driverFound,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '$firstName ${S.of(context).isOnTheWay}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      // Vehicle info pill
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.directions_car_rounded,
+                              color: c.gold,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${driver.vehicleColor} ${driver.vehicleMake} ${driver.vehicleModel}',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      // Rating + plate
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.star_rounded, color: c.gold, size: 16),
+                          const SizedBox(width: 4),
+                          Text(
+                            driver.rating.toStringAsFixed(1),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Text(
+                            driver.vehiclePlate,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withValues(alpha: 0.5),
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _cancelSearching() {
     _searchMapTimer?.cancel();
     _searchMapTimer = null;
     _splashTimer?.cancel();
     _splashTimer = null;
+    _driverFoundTimer?.cancel();
+    _driverFoundTimer = null;
     _searchingShowMap = false;
     _searchingSplash = false;
+    _driverFoundVisible = false;
     _ctrl.cancelRide();
     _ctrl.reset();
     _navigatingToTracking = false;

@@ -443,12 +443,14 @@ class RiderTripController extends ChangeNotifier {
       etaMinutes: _state.selectedOption?.etaMinutes ?? 5,
     );
     notifyListeners();
+  }
 
-    // After a brief transition, move to arriving phase
-    Timer(const Duration(milliseconds: 1500), () {
+  /// Called by the UI after the "Driver Found" overlay finishes.
+  void transitionToArriving() {
+    if (_state.phase == RiderPhase.driverAssigned) {
       _state = _state.copyWith(phase: RiderPhase.driverArriving);
       notifyListeners();
-    });
+    }
   }
 
   double _calcBearing(LatLng from, LatLng to) {
@@ -497,12 +499,6 @@ class RiderTripController extends ChangeNotifier {
       tripId: 999999, // Simulated trip ID
     );
     notifyListeners();
-
-    // After a brief transition, move to arriving phase
-    Timer(const Duration(milliseconds: 1500), () {
-      _state = _state.copyWith(phase: RiderPhase.driverArriving);
-      notifyListeners();
-    });
   }
 
   @override

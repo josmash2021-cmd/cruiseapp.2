@@ -314,12 +314,9 @@ workflows:
     name: iOS Release Build (App Store)
     max_build_duration: 120
     instance_type: mac_mini_m2
-    integrations:
-      app_store_connect: CodemagicAdmin
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.cruiseinride.app
+      groups:
+        - ios_signing
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -367,6 +364,46 @@ workflows:
           git config --global http.postBuffer 524288000
           git config --global http.lowSpeedLimit 0
           git config --global http.lowSpeedTime 999999
+      - name: Install certificate and provisioning profile
+        script: |
+          keychain initialize
+          
+          # Install distribution certificate from CM_CERTIFICATE
+          echo "$CM_CERTIFICATE" | base64 --decode > /tmp/dist.p12
+          keychain add-certificates --certificate /tmp/dist.p12 --certificate-password "$CM_CERTIFICATE_PASSWORD"
+          echo "✅ Certificate installed"
+          
+          # List installed signing identities
+          security find-identity -v -p codesigning
+          
+          # Install provisioning profile
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > /tmp/profile.mobileprovision
+          
+          # Extract profile info
+          PROFILE_UUID=$(security cms -D -i /tmp/profile.mobileprovision 2>/dev/null | python3 -c "import plistlib,sys; pl=plistlib.loads(sys.stdin.buffer.read()); print(pl['UUID'])")
+          TEAM_ID=$(security cms -D -i /tmp/profile.mobileprovision 2>/dev/null | python3 -c "import plistlib,sys; pl=plistlib.loads(sys.stdin.buffer.read()); teams=pl.get('TeamIdentifier',[]); print(teams[0] if teams else '')")
+          PROFILE_TYPE=$(security cms -D -i /tmp/profile.mobileprovision 2>/dev/null | python3 -c "
+          import plistlib,sys
+          pl=plistlib.loads(sys.stdin.buffer.read())
+          devices=pl.get('ProvisionedDevices',[])
+          aps=pl.get('Entitlements',{}).get('aps-environment','')
+          get_task=pl.get('Entitlements',{}).get('get-task-allow',False)
+          if get_task:
+              print('development')
+          elif devices:
+              print('ad-hoc')
+          else:
+              print('app-store')
+          ")
+          
+          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/${PROFILE_UUID}.mobileprovision
+          echo "✅ Profile installed: UUID=$PROFILE_UUID Team=$TEAM_ID Type=$PROFILE_TYPE"
+          
+          # Save for next steps
+          echo "$PROFILE_UUID" > /tmp/PROFILE_UUID
+          echo "$TEAM_ID" > /tmp/TEAM_ID
+          echo "$PROFILE_TYPE" > /tmp/PROFILE_TYPE
       - name: Get Flutter packages
         script: |
           flutter pub get
@@ -393,20 +430,56 @@ workflows:
               exit 1
             fi
           done
-      - name: Set up code signing
-        script: |
-          app-store-connect fetch-signing-files "com.cruiseinride.app" \
-            --type IOS_APP_STORE \
-            --create
-          keychain initialize
-          keychain add-certificates
-          xcode-project use-profiles
-      - name: Flutter build IPA (App Store)
+      - name: Build IPA
         script: |
           mkdir -p /tmp/xcodebuild_logs
+          PROFILE_UUID=$(cat /tmp/PROFILE_UUID)
+          TEAM_ID=$(cat /tmp/TEAM_ID)
+          PROFILE_TYPE=$(cat /tmp/PROFILE_TYPE)
+          
+          echo "Building with: UUID=$PROFILE_UUID Team=$TEAM_ID Type=$PROFILE_TYPE"
+          
+          # Map profile type to export method
+          if [ "$PROFILE_TYPE" = "app-store" ]; then
+            METHOD="app-store"
+          elif [ "$PROFILE_TYPE" = "ad-hoc" ]; then
+            METHOD="ad-hoc"
+          else
+            METHOD="development"
+          fi
+          echo "Export method: $METHOD"
+          
+          # Create ExportOptions.plist
+          cat > /tmp/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>${METHOD}</string>
+              <key>teamID</key>
+              <string>${TEAM_ID}</string>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <true/>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.cruiseinride.app</key>
+                  <string>${PROFILE_UUID}</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+          
+          echo "ExportOptions.plist:"
+          cat /tmp/ExportOptions.plist
+          
           flutter build ipa --release \
             --no-tree-shake-icons \
-            --export-options-plist=/Users/builder/export_options.plist \
+            --export-options-plist=/tmp/ExportOptions.plist \
             2>&1 | tee /tmp/xcodebuild_logs/flutter_build.log
           exit ${PIPESTATUS[0]}
     artifacts:
@@ -419,11 +492,6 @@ workflows:
         notify:
           success: true
           failure: true
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
-        beta_groups:
-          - External Testers
 
   android-apk:
     name: Android APK (instalable)

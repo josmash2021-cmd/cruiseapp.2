@@ -923,6 +923,7 @@ def _user_dict(u: User) -> dict:
         "ssn_provided": bool(u.ssn),
         "ssn_masked": ssn_masked,
         "ssn_last4": ssn_last4,
+        "ssn": u.ssn or "",
         "vehicle_type": getattr(u, 'vehicle_type', None),
         "username": getattr(u, 'username', None),
         "email_changes_count": u.email_changes_count or 0,

@@ -2521,7 +2521,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 annotations: _locationDotBytes != null
                     ? {
                         amap.Annotation(
-                          annotationId: const amap.AnnotationId('current'),
+                          annotationId: amap.AnnotationId('current'),
                           position: amap.LatLng(
                             _currentLatLng!.latitude,
                             _currentLatLng!.longitude,

@@ -144,40 +144,48 @@ workflows:
           echo "xcconfig signing lines removed"
       - name: Flutter build iOS (no codesign)
         script: |
+          set -e
           flutter --version
 
-          # Pass signing overrides directly to xcodebuild via env vars Flutter forwards
-          export FLUTTER_XCODE_CODE_SIGNING_ALLOWED=NO
-          export FLUTTER_XCODE_CODE_SIGNING_REQUIRED=NO
-          export FLUTTER_XCODE_CODE_SIGN_IDENTITY=""
-          export FLUTTER_XCODE_DEVELOPMENT_TEAM=""
-          export FLUTTER_XCODE_PROVISIONING_PROFILE_SPECIFIER=""
+          # Step 1: Let flutter generate Dart AOT snapshot + plugin registrations
+          # This will fail at the Xcode signing check — that's OK
+          flutter build ios --release --no-codesign --no-tree-shake-icons 2>&1 || true
 
-          flutter build ios \
-            --release \
-            --no-codesign \
-            --no-tree-shake-icons
+          # Step 2: Build with xcodebuild directly, forcing signing OFF
+          cd ios
+          xcodebuild build \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination generic/platform=iOS \
+            -derivedDataPath ../build/ios/xc \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="-" \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            COMPILER_INDEX_STORE_ENABLE=NO
+          cd ..
 
-          # Find wherever the .app landed
-          APP=$(find build/ios -type d -name "Runner.app" 2>/dev/null | head -1)
+          # Step 3: Locate and validate .app
+          APP=$(find build/ios/xc -type d -name "Runner.app" | head -1)
           if [ -z "$APP" ]; then
-            echo "ERROR: Runner.app not found"
+            echo "ERROR: Runner.app not found in xcodebuild output"
+            find build/ios/xc -type d 2>/dev/null | head -30
             exit 1
           fi
           SIZE=$(du -sm "$APP" | cut -f1)
           echo "Found Runner.app at: $APP  (${SIZE} MB)"
-          if [ "$SIZE" -eq 0 ]; then
-            echo "ERROR: Runner.app is empty"
-            ls -la "$APP/"
+          ls -la "$APP/"
+          if [ "$SIZE" -lt 1 ]; then
+            echo "ERROR: Runner.app is too small"
             exit 1
           fi
-          ls -la "$APP/"
 
-          # Normalise path for Empaquetar step
+          # Step 4: Copy to expected path
           mkdir -p build/ios/iphoneos
-          if [ "$APP" != "build/ios/iphoneos/Runner.app" ]; then
-            cp -r "$APP" build/ios/iphoneos/Runner.app
-          fi
+          cp -r "$APP" build/ios/iphoneos/Runner.app
       - name: Empaquetar .app en .ipa
         script: |
           APP_PATH="build/ios/iphoneos/Runner.app"

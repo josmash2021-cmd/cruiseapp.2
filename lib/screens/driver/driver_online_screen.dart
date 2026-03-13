@@ -67,6 +67,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // —— Map ——
   GoogleMapController? _map;
+  amap.AppleMapController? _appleMap;
   LatLng _pos = const LatLng(25.7617, -80.1918);
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
@@ -80,15 +81,36 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     double bearing = 0,
     double tilt = 0,
   }) {
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: pos, zoom: zoom, bearing: bearing, tilt: tilt),
-      ),
-    );
+    if (Platform.isIOS) {
+      _appleMap?.moveCamera(
+        amap.CameraUpdate.newCameraPosition(
+          amap.CameraPosition(
+            target: amap.LatLng(pos.latitude, pos.longitude),
+            zoom: zoom,
+            heading: bearing,
+            pitch: tilt,
+          ),
+        ),
+      );
+    } else {
+      _map?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: pos, zoom: zoom, bearing: bearing, tilt: tilt),
+        ),
+      );
+    }
   }
 
   void _moveToLatLng(LatLng pos) {
-    _map?.animateCamera(CameraUpdate.newLatLng(pos));
+    if (Platform.isIOS) {
+      _appleMap?.moveCamera(
+        amap.CameraUpdate.newLatLng(
+          amap.LatLng(pos.latitude, pos.longitude),
+        ),
+      );
+    } else {
+      _map?.animateCamera(CameraUpdate.newLatLng(pos));
+    }
   }
 
   // â”€â”€ Trip â”€â”€
@@ -850,16 +872,27 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           // â”€â”€ Phase-aware camera following â”€â”€
           if (_phase == _Phase.searching) {
             // IDLE: stable top-down view, no tilt, no bearing follow (Uber style)
-            _map?.animateCamera(
-              CameraUpdate.newCameraPosition(
-                CameraPosition(
-                  target: newLL,
-                  zoom: 15.5,
-                  bearing: 0,
-                  tilt: 0,
-                ), // idle: flat overview
-              ),
-            );
+            if (Platform.isIOS) {
+              _appleMap?.moveCamera(
+                amap.CameraUpdate.newCameraPosition(
+                  amap.CameraPosition(
+                    target: amap.LatLng(newLL.latitude, newLL.longitude),
+                    zoom: 15.5,
+                  ),
+                ),
+              );
+            } else {
+              _map?.animateCamera(
+                CameraUpdate.newCameraPosition(
+                  CameraPosition(
+                    target: newLL,
+                    zoom: 15.5,
+                    bearing: 0,
+                    tilt: 0,
+                  ),
+                ),
+              );
+            }
           } else if (_phase == _Phase.routeSummary) {
             // Route summary: keep overview, don't follow driver
             // Just update position & nav stats silently
@@ -872,16 +905,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           } else if (_phase == _Phase.enRouteToPickup) {
             // TRIP: Uber-style 2.5D follow — tilt 55, zoom 17.5
             if (_cameraFollowing) {
-              _map?.animateCamera(
-                CameraUpdate.newCameraPosition(
-                  CameraPosition(
-                    target: newLL,
-                    zoom: 17.5,
-                    bearing: _smoothedBearing,
-                    tilt: 55,
-                  ),
-                ),
-              );
+              _animateToPosition(newLL, zoom: 17.5, bearing: _smoothedBearing, tilt: 55);
             }
             // Update turn-by-turn nav state
             _updateNavState(newLL);
@@ -904,16 +928,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           } else if (_phase == _Phase.inTrip) {
             // TRIP: Uber-style 2.5D follow — tilt 55, zoom 17.5
             if (_cameraFollowing) {
-              _map?.animateCamera(
-                CameraUpdate.newCameraPosition(
-                  CameraPosition(
-                    target: newLL,
-                    zoom: 17.5,
-                    bearing: _smoothedBearing,
-                    tilt: 55,
-                  ),
-                ),
-              );
+              _animateToPosition(newLL, zoom: 17.5, bearing: _smoothedBearing, tilt: 55);
             }
             // Update turn-by-turn nav state
             _updateNavState(newLL);
@@ -2149,15 +2164,27 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       minLng -= adj;
       maxLng += adj;
     }
-    _map?.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat - 0.004, minLng - 0.004),
-          northeast: LatLng(maxLat + 0.004, maxLng + 0.004),
+    if (Platform.isIOS) {
+      _appleMap?.moveCamera(
+        amap.CameraUpdate.newLatLngBounds(
+          amap.LatLngBounds(
+            southwest: amap.LatLng(minLat - 0.004, minLng - 0.004),
+            northeast: amap.LatLng(maxLat + 0.004, maxLng + 0.004),
+          ),
+          70,
         ),
-        70,
-      ),
-    );
+      );
+    } else {
+      _map?.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(minLat - 0.004, minLng - 0.004),
+            northeast: LatLng(maxLat + 0.004, maxLng + 0.004),
+          ),
+          70,
+        ),
+      );
+    }
   }
 
   void _fitBoundsMulti(List<LatLng> points) {
@@ -2182,18 +2209,30 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       minLng -= adj;
       maxLng += adj;
     }
-    _map?.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat - 0.004, minLng - 0.004),
-          northeast: LatLng(maxLat + 0.004, maxLng + 0.004),
+    if (Platform.isIOS) {
+      _appleMap?.moveCamera(
+        amap.CameraUpdate.newLatLngBounds(
+          amap.LatLngBounds(
+            southwest: amap.LatLng(minLat - 0.004, minLng - 0.004),
+            northeast: amap.LatLng(maxLat + 0.004, maxLng + 0.004),
+          ),
+          70,
         ),
-        70,
-      ),
-    );
+      );
+    } else {
+      _map?.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(minLat - 0.004, minLng - 0.004),
+            northeast: LatLng(maxLat + 0.004, maxLng + 0.004),
+          ),
+          70,
+        ),
+      );
+    }
   }
 
-  // â”€â”€ Preview offer route on map â”€â”€
+  // â"€â"€ Preview offer route on map â"€â"€
   Future<void> _previewOfferRoute(Map<String, dynamic> offer) async {
     final pickupLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
     final pickupLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
@@ -2377,11 +2416,22 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _savedPolylines = {};
       _savedMarkers = {};
     });
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: _pos, zoom: 15.5, bearing: 0, tilt: 0),
-      ),
-    );
+    if (Platform.isIOS) {
+      _appleMap?.moveCamera(
+        amap.CameraUpdate.newCameraPosition(
+          amap.CameraPosition(
+            target: amap.LatLng(_pos.latitude, _pos.longitude),
+            zoom: 15.5,
+          ),
+        ),
+      );
+    } else {
+      _map?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: _pos, zoom: 15.5, bearing: 0, tilt: 0),
+        ),
+      );
+    }
   }
 
   void _snack(String s) {
@@ -2755,14 +2805,60 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _reFollowTimer?.cancel();
     setState(() => _cameraFollowing = true);
     final bearing = _smoothedBearing;
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: _pos, zoom: 17.5, bearing: bearing, tilt: 55),
-      ),
-    );
+    if (Platform.isIOS) {
+      _appleMap?.moveCamera(
+        amap.CameraUpdate.newCameraPosition(
+          amap.CameraPosition(
+            target: amap.LatLng(_pos.latitude, _pos.longitude),
+            zoom: 17.5,
+            heading: bearing,
+            pitch: 55,
+          ),
+        ),
+      );
+    } else {
+      _map?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: _pos, zoom: 17.5, bearing: bearing, tilt: 55),
+        ),
+      );
+    }
   }
 
   Widget _mapW(bool isDark) {
+    if (Platform.isIOS) {
+      return RepaintBoundary(
+        child: amap.AppleMap(
+          initialCameraPosition: amap.CameraPosition(
+            target: amap.LatLng(_pos.latitude, _pos.longitude),
+            zoom: 15.5,
+          ),
+          mapType: amap.MapType.standard,
+          onMapCreated: (c) {
+            _appleMap = c;
+            c.moveCamera(
+              amap.CameraUpdate.newCameraPosition(
+                amap.CameraPosition(
+                  target: amap.LatLng(_pos.latitude, _pos.longitude),
+                  zoom: 15.5,
+                ),
+              ),
+            );
+          },
+          myLocationEnabled: true,
+          myLocationButtonEnabled: false,
+          zoomGesturesEnabled: true,
+          scrollGesturesEnabled: true,
+          rotateGesturesEnabled: true,
+          annotations: _appleAnnotations,
+          polylines: _applePolylines,
+          padding: EdgeInsets.only(
+            top: MediaQuery.of(context).padding.top + 70,
+            bottom: _mapBottomPadding,
+          ),
+        ),
+      );
+    }
     return RepaintBoundary(
       child: GoogleMap(
         style: isDark ? MapStyles.darkIOS : MapStyles.lightIOS,
@@ -2805,6 +2901,44 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         ),
       ),
     );
+  }
+
+  /// Convert Google Maps markers to Apple Maps annotations for iOS
+  Set<amap.Annotation> get _appleAnnotations {
+    final Set<amap.Annotation> annotations = {};
+    for (final m in _allMarkers) {
+      annotations.add(
+        amap.Annotation(
+          annotationId: amap.AnnotationId(m.markerId.value),
+          position: amap.LatLng(m.position.latitude, m.position.longitude),
+          infoWindow: m.infoWindow.title != null
+              ? amap.InfoWindow(
+                  title: m.infoWindow.title ?? '',
+                  snippet: m.infoWindow.snippet,
+                )
+              : amap.InfoWindow.noText,
+        ),
+      );
+    }
+    return annotations;
+  }
+
+  /// Convert Google Maps polylines to Apple Maps polylines for iOS
+  Set<amap.Polyline> get _applePolylines {
+    final Set<amap.Polyline> result = {};
+    for (final p in _polylines) {
+      result.add(
+        amap.Polyline(
+          polylineId: amap.PolylineId(p.polylineId.value),
+          points: p.points
+              .map((pt) => amap.LatLng(pt.latitude, pt.longitude))
+              .toList(),
+          color: p.color,
+          width: p.width,
+        ),
+      );
+    }
+    return result;
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -3254,10 +3388,40 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                           HapticFeedback.lightImpact();
                           _showOnlinePanel();
                         },
-                        child: Icon(
-                          Icons.tune_rounded,
-                          color: textMuted,
-                          size: 22,
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: _gold, width: 1.5),
+                          ),
+                          child: ClipOval(
+                            child: _driverPhotoUrl != null && _driverPhotoUrl!.isNotEmpty
+                                ? (_driverPhotoUrl!.startsWith('http')
+                                    ? Image.network(
+                                        _driverPhotoUrl!,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          Icons.person_rounded,
+                                          color: textMuted,
+                                          size: 18,
+                                        ),
+                                      )
+                                    : Image.file(
+                                        File(_driverPhotoUrl!),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          Icons.person_rounded,
+                                          color: textMuted,
+                                          size: 18,
+                                        ),
+                                      ))
+                                : Icon(
+                                    Icons.person_rounded,
+                                    color: textMuted,
+                                    size: 18,
+                                  ),
+                          ),
                         ),
                       ),
                       const Spacer(),
@@ -5447,8 +5611,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       initialChildSize: minFrac,
       minChildSize: minFrac,
       maxChildSize: 0.55,
-      snap: false,
-      snapSizes: const [],
+      snap: true,
+      snapSizes: [minFrac, 0.55],
       builder: (ctx, scrollCtrl) {
         return Container(
           decoration: BoxDecoration(
@@ -5467,7 +5631,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           ),
           child: ListView(
             controller: scrollCtrl,
-            physics: const BouncingScrollPhysics(),
+            physics: const ClampingScrollPhysics(),
             padding: EdgeInsets.zero,
             children: [
               Column(

@@ -324,13 +324,13 @@ workflows:
     integrations:
       app_store_connect: CodemagicAdmin
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.cruiseinride.app
+      groups:
+        - ios_signing
       flutter: stable
       xcode: latest
       cocoapods: default
       vars:
+        BUNDLE_ID: "com.cruiseinride.app"
         ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
         ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
         ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
@@ -373,6 +373,23 @@ workflows:
           git config --global http.postBuffer 524288000
           git config --global http.lowSpeedLimit 0
           git config --global http.lowSpeedTime 999999
+      - name: Install certificate and provisioning profile
+        script: |
+          keychain initialize
+          # Import .p12 certificate
+          echo "$CM_CERTIFICATE" | base64 --decode > /tmp/dist.p12
+          keychain add-certificates --certificate /tmp/dist.p12 --certificate-password "$CM_CERTIFICATE_PASSWORD"
+          # Install provisioning profile
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > /tmp/profile.mobileprovision
+          UUID=$(python3 -c "
+          import plistlib, subprocess, sys
+          out = subprocess.check_output(['security','cms','-D','-i','/tmp/profile.mobileprovision'])
+          pl = plistlib.loads(out)
+          print(pl['UUID'])
+          ")
+          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/${UUID}.mobileprovision
+          echo "Installed profile UUID: $UUID"
       - name: Get Flutter packages
         script: |
           flutter pub get
@@ -385,7 +402,6 @@ workflows:
           rm -rf ~/Library/Caches/CocoaPods
           rm -rf Pods Podfile.lock
           export COCOAPODS_DISABLE_STATS=true
-          
           for i in 1 2 3 4 5; do
             echo "=== pod install attempt $i/5 ==="
             if pod install --repo-update --verbose; then
@@ -400,6 +416,9 @@ workflows:
               exit 1
             fi
           done
+      - name: Set up code signing for Xcode
+        script: |
+          xcode-project use-profiles
       - name: Flutter build IPA (App Store)
         script: |
           flutter build ipa --release \

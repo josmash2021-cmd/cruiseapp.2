@@ -452,11 +452,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           target: initialTarget,
           zoom: _currentLatLng != null ? 16 : 10,
         ),
-        mapType: amap.MapType.standard,
+        mapType: amap.MapType.mutedStandard,
         onMapCreated: (ctrl) {
           _appleMapController = ctrl;
           setState(() => _mapReady = true);
-          // If location already known, move camera immediately
           if (_currentLatLng != null) {
             ctrl.moveCamera(
               amap.CameraUpdate.newCameraPosition(
@@ -473,6 +472,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         zoomGesturesEnabled: true,
         scrollGesturesEnabled: true,
         rotateGesturesEnabled: false,
+        compassEnabled: false,
+        annotationsVisibleInZoomLevel: true,
       );
     }
 

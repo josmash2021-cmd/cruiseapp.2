@@ -2833,7 +2833,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             target: amap.LatLng(_pos.latitude, _pos.longitude),
             zoom: 15.5,
           ),
-          mapType: amap.MapType.standard,
+          mapType: amap.MapType.mutedStandard,
           onMapCreated: (c) {
             _appleMap = c;
             c.moveCamera(
@@ -2850,6 +2850,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           zoomGesturesEnabled: true,
           scrollGesturesEnabled: true,
           rotateGesturesEnabled: true,
+          compassEnabled: false,
           annotations: _appleAnnotations,
           polylines: _applePolylines,
           padding: EdgeInsets.only(

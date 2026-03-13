@@ -106,7 +106,7 @@ const _pageTransitions = PageTransitionsTheme(
   },
 );
 
-// Cinzel headline/display TextTheme used for brand headings
+// Cinzel serif TextTheme — applied to all text styles for elegant branding
 TextTheme _cinzelHeadlines(TextTheme base) {
   return base.copyWith(
     displayLarge: GoogleFonts.cinzel(textStyle: base.displayLarge),
@@ -116,6 +116,14 @@ TextTheme _cinzelHeadlines(TextTheme base) {
     headlineMedium: GoogleFonts.cinzel(textStyle: base.headlineMedium),
     headlineSmall: GoogleFonts.cinzel(textStyle: base.headlineSmall),
     titleLarge: GoogleFonts.cinzel(textStyle: base.titleLarge),
+    titleMedium: GoogleFonts.cinzel(textStyle: base.titleMedium),
+    titleSmall: GoogleFonts.cinzel(textStyle: base.titleSmall),
+    bodyLarge: GoogleFonts.cinzel(textStyle: base.bodyLarge),
+    bodyMedium: GoogleFonts.cinzel(textStyle: base.bodyMedium),
+    bodySmall: GoogleFonts.cinzel(textStyle: base.bodySmall),
+    labelLarge: GoogleFonts.cinzel(textStyle: base.labelLarge),
+    labelMedium: GoogleFonts.cinzel(textStyle: base.labelMedium),
+    labelSmall: GoogleFonts.cinzel(textStyle: base.labelSmall),
   );
 }
 

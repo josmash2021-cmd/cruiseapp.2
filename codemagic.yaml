@@ -324,9 +324,8 @@ workflows:
     integrations:
       app_store_connect: CodemagicAdmin
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.cruiseinride.app
+      groups:
+        - ios_signing
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -374,6 +373,21 @@ workflows:
           git config --global http.postBuffer 524288000
           git config --global http.lowSpeedLimit 0
           git config --global http.lowSpeedTime 999999
+      - name: Install certificate and provisioning profile
+        script: |
+          keychain initialize
+          echo "$CM_CERTIFICATE" | base64 --decode > /tmp/dist.p12
+          keychain add-certificates --certificate /tmp/dist.p12 --certificate-password "$CM_CERTIFICATE_PASSWORD"
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > /tmp/profile.mobileprovision
+          UUID=$(python3 -c "
+import plistlib, subprocess, sys
+out = subprocess.check_output(['security','cms','-D','-i','/tmp/profile.mobileprovision'])
+pl = plistlib.loads(out)
+print(pl['UUID'])
+")
+          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/${UUID}.mobileprovision
+          echo "Installed profile UUID: $UUID"
       - name: Get Flutter packages
         script: |
           flutter pub get

@@ -452,7 +452,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           target: initialTarget,
           zoom: _currentLatLng != null ? 16 : 10,
         ),
-        mapType: amap.MapType.mutedStandard,
+        mapType: amap.MapType.standard,
         onMapCreated: (ctrl) {
           _appleMapController = ctrl;
           setState(() => _mapReady = true);
@@ -473,7 +473,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         scrollGesturesEnabled: true,
         rotateGesturesEnabled: false,
         compassEnabled: false,
-        annotationsVisibleInZoomLevel: true,
       );
     }
 

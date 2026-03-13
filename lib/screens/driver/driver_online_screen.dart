@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -217,6 +217,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // â”€â”€ Draggable panel â”€â”€
   bool _panelOpen = false;
   final _panelSheetCtrl = DraggableScrollableController();
+
+  // -- Driver profile photo --
+  String? _driverPhotoUrl;
 
   // -- Earnings pill swipe --
   double _weeklyEarnings = 0;
@@ -2833,7 +2836,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             target: amap.LatLng(_pos.latitude, _pos.longitude),
             zoom: 15.5,
           ),
-          mapType: amap.MapType.mutedStandard,
+          mapType: amap.MapType.standard,
           onMapCreated: (c) {
             _appleMap = c;
             c.moveCamera(
@@ -2904,45 +2907,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     );
   }
 
-  /// Convert Google Maps markers to Apple Maps annotations for iOS
-  Set<amap.Annotation> get _appleAnnotations {
-    final Set<amap.Annotation> annotations = {};
-    for (final m in _allMarkers) {
-      annotations.add(
-        amap.Annotation(
-          annotationId: amap.AnnotationId(m.markerId.value),
-          position: amap.LatLng(m.position.latitude, m.position.longitude),
-          infoWindow: m.infoWindow.title != null
-              ? amap.InfoWindow(
-                  title: m.infoWindow.title ?? '',
-                  snippet: m.infoWindow.snippet,
-                )
-              : amap.InfoWindow.noText,
-        ),
-      );
-    }
-    return annotations;
-  }
 
-  /// Convert Google Maps polylines to Apple Maps polylines for iOS
-  Set<amap.Polyline> get _applePolylines {
-    final Set<amap.Polyline> result = {};
-    for (final p in _polylines) {
-      result.add(
-        amap.Polyline(
-          polylineId: amap.PolylineId(p.polylineId.value),
-          points: p.points
-              .map((pt) => amap.LatLng(pt.latitude, pt.longitude))
-              .toList(),
-          color: p.color,
-          width: p.width,
-        ),
-      );
-    }
-    return result;
-  }
-
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  EARNINGS PILL (top center — Uber style)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Widget _earningsPill(bool isDark) {

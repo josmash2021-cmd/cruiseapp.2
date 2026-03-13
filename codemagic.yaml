@@ -109,86 +109,72 @@ workflows:
       - name: Disable code signing in project
         script: |
           cd ios
-
-          # ── 1. Inject CODE_SIGNING_ALLOWED=NO into every xcconfig ────────────────
-          # This is the NUCLEAR option — xcodebuild WILL read these and skip signing
-          for f in Flutter/Release.xcconfig Flutter/Debug.xcconfig; do
-            if [ -f "$f" ]; then
-              # Remove any existing signing lines
-              sed -i '' '/CODE_SIGN/d' "$f" || true
-              sed -i '' '/DEVELOPMENT_TEAM/d' "$f" || true
-              sed -i '' '/PROVISIONING_PROFILE/d' "$f" || true
-              # Inject our overrides
-              echo 'CODE_SIGNING_ALLOWED=NO' >> "$f"
-              echo 'CODE_SIGNING_REQUIRED=NO' >> "$f"
-              echo 'CODE_SIGN_IDENTITY=-' >> "$f"
-              echo 'DEVELOPMENT_TEAM=' >> "$f"
-              echo 'PROVISIONING_PROFILE_SPECIFIER=' >> "$f"
-            fi
-          done
-          echo "xcconfig signing overrides injected"
-          cat Flutter/Release.xcconfig
-
-          # ── 2. Patch project.pbxproj ─────────────────────────────────────────────
           python3 << 'PYEOF'
-          import re, pathlib
-          p = pathlib.Path('Runner.xcodeproj/project.pbxproj')
-          t = p.read_text()
-          t = re.sub(r'DEVELOPMENT_TEAM\s*=\s*[^;]*;', 'DEVELOPMENT_TEAM = "";', t)
-          t = re.sub(r'CODE_SIGN_IDENTITY\s*=\s*"[^"]*"', 'CODE_SIGN_IDENTITY = ""', t)
-          t = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]"\s*=\s*"[^"]*"', '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', t)
-          t = re.sub(r'CODE_SIGN_STYLE\s*=\s*\w+', 'CODE_SIGN_STYLE = Manual', t)
-          t = re.sub(r'PROVISIONING_PROFILE_SPECIFIER\s*=\s*"[^"]*"', 'PROVISIONING_PROFILE_SPECIFIER = ""', t)
-          t = re.sub(r'CODE_SIGN_ENTITLEMENTS\s*=\s*[^;]*;', '', t)
-          p.write_text(t)
-          print('pbxproj patched')
+          import re, glob
+
+          def patch_pbxproj(path):
+              with open(path, 'r') as f:
+                  content = f.read()
+              # Remove entitlements
+              content = re.sub(r'\s*CODE_SIGN_ENTITLEMENTS = [^;]*;', '', content)
+              # Clear signing identity
+              content = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"',
+                               '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', content)
+              content = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"',
+                               'CODE_SIGN_IDENTITY = ""', content)
+              # Remove development team
+              content = re.sub(r'DEVELOPMENT_TEAM = [^;]*;',
+                               'DEVELOPMENT_TEAM = "";', content)
+              # Set manual signing
+              content = re.sub(r'CODE_SIGN_STYLE = Automatic',
+                               'CODE_SIGN_STYLE = Manual', content)
+              # Disable product validation
+              content = re.sub(r'VALIDATE_PRODUCT = YES',
+                               'VALIDATE_PRODUCT = NO', content)
+              # Remove existing CODE_SIGNING_ALLOWED/REQUIRED lines to avoid dupes
+              content = re.sub(r'\n\s*CODE_SIGNING_ALLOWED = [^;]*;', '', content)
+              content = re.sub(r'\n\s*CODE_SIGNING_REQUIRED = [^;]*;', '', content)
+              # Inject CODE_SIGNING_ALLOWED=NO into every buildSettings block
+              content = content.replace(
+                  'buildSettings = {',
+                  'buildSettings = {\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;'
+              )
+              with open(path, 'w') as f:
+                  f.write(content)
+              print(f"Patched: {path}")
+
+          patch_pbxproj('Runner.xcodeproj/project.pbxproj')
+          for p in glob.glob('Pods/**/*.pbxproj', recursive=True):
+              patch_pbxproj(p)
           PYEOF
 
-          # ── 3. Clean entitlements ────────────────────────────────────────────────
-          python3 -c "
-          import plistlib
-          with open('Runner/Runner.entitlements','wb') as f:
-              plistlib.dump({}, f, fmt=plistlib.FMT_XML)
-          "
-          echo "entitlements cleared"
+          # Inject into xcconfig (no leading spaces)
+          printf 'CODE_SIGNING_ALLOWED=NO\nCODE_SIGNING_REQUIRED=NO\nCODE_SIGN_IDENTITY=\nCODE_SIGN_ENTITLEMENTS=\nEXPANDED_CODE_SIGN_IDENTITY=\n' >> Flutter/Release.xcconfig
       - name: Flutter build iOS (no codesign)
         script: |
-          flutter --version
+          # flutter build ios compiles Dart → ARM and runs xcodebuild internally.
+          # --no-codesign   : skips signing (CODE_SIGNING_ALLOWED=NO already set in Podfile)
+          # --no-tree-shake-icons : required because the project uses non-constant IconData
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --no-tree-shake-icons
 
-          # Export env vars that Flutter passes to xcodebuild
-          export FLUTTER_XCODE_CODE_SIGNING_ALLOWED=NO
-          export FLUTTER_XCODE_CODE_SIGNING_REQUIRED=NO
-          export FLUTTER_XCODE_CODE_SIGN_IDENTITY="-"
-          export FLUTTER_XCODE_DEVELOPMENT_TEAM=""
-          export FLUTTER_XCODE_PROVISIONING_PROFILE_SPECIFIER=""
-
-          flutter build ios --release --no-codesign --no-tree-shake-icons 2>&1 | tee /tmp/build.log
-          BUILD_EXIT=${PIPESTATUS[0]}
-
-          echo "========== BUILD ERRORS =========="
-          grep -i "error:" /tmp/build.log | grep -v "warning:" || echo "(no error lines found)"
-          echo "========== END ERRORS =========="
-
-          # Locate the .app regardless of exit code
-          APP=$(find build/ios -type d -name "Runner.app" 2>/dev/null | head -1)
-          if [ -n "$APP" ]; then
-            SIZE=$(du -sm "$APP" | cut -f1)
-            echo "Found Runner.app at: $APP  (${SIZE} MB)"
-            ls -la "$APP/"
-            if [ "$SIZE" -gt 0 ]; then
-              mkdir -p build/ios/iphoneos
-              if [ "$APP" != "build/ios/iphoneos/Runner.app" ]; then
-                cp -r "$APP" build/ios/iphoneos/Runner.app
-              fi
-              echo "Build OK — .app has content"
-              exit 0
-            fi
+          # flutter always outputs to build/ios/iphoneos/Runner.app
+          APP="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP" ]; then
+            echo "ERROR: Runner.app not found at $APP"
+            find build/ios -type d -name "*.app" 2>/dev/null
+            exit 1
           fi
 
-          echo "Build failed with exit code $BUILD_EXIT"
-          echo "========== LAST 50 LINES =========="
-          tail -50 /tmp/build.log
-          exit 1
+          APP_SIZE=$(du -sm "$APP" | cut -f1)
+          echo "Build OK: $APP (${APP_SIZE} MB)"
+          if [ "$APP_SIZE" -lt 5 ]; then
+            echo "ERROR: .app is too small (${APP_SIZE} MB) — Dart compilation likely failed"
+            ls -la "$APP/"
+            exit 1
+          fi
       - name: Empaquetar .app en .ipa
         script: |
           APP_PATH="build/ios/iphoneos/Runner.app"

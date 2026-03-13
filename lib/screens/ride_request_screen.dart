@@ -1298,7 +1298,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                         ),
                         zoom: 15.5,
                       ),
-                      mapType: amap.MapType.standard,
+                      mapType: amap.MapType.mutedStandard,
                       onMapCreated: (ctrl) {
                         _appleMapCtrl = ctrl;
                         setState(() => _mapReady = true);

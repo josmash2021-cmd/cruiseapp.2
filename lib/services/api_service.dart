@@ -27,9 +27,10 @@ class ApiService {
   /// Local network URL — works for physical devices on same WiFi network
   static const String _localNetworkUrl = 'http://172.20.11.24:8000';
 
-  /// Railway cloud backend — always reachable from any network.
+  /// Default Cloudflare Tunnel URL.  Free tunnels change every restart;
+  /// update via the in-app Settings → "Server URL" dialog instead of rebuilding.
   static const String _defaultTunnelUrl =
-      'https://cruiseapp2-production.up.railway.app';
+      'https://jaida-intervarsity-tashina.ngrok-free.dev';
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 
@@ -78,7 +79,7 @@ class ApiService {
   }) async {
     final urls =
         candidates ??
-        [_defaultTunnelUrl, _activeUrl, _localNetworkUrl, _adbUrl, _localUrl];
+        [_activeUrl, _localNetworkUrl, _defaultTunnelUrl, _adbUrl, _localUrl];
 
     for (final url in urls) {
       try {
@@ -755,7 +756,7 @@ class ApiService {
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
-      return List<Map<String, dynamic>>.from(list);
+      return list.cast<Map<String, dynamic>>();
     }
     throw ApiException(res.statusCode, 'Failed to load scheduled trips');
   }
@@ -773,7 +774,7 @@ class ApiService {
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
-      return List<Map<String, dynamic>>.from(list);
+      return list.cast<Map<String, dynamic>>();
     }
     throw ApiException(res.statusCode, 'Failed to load scheduled trips');
   }
@@ -814,7 +815,7 @@ class ApiService {
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
-      return List<Map<String, dynamic>>.from(list);
+      return list.cast<Map<String, dynamic>>();
     }
     return [];
   }
@@ -876,7 +877,7 @@ class ApiService {
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
-      return List<Map<String, dynamic>>.from(list);
+      return list.cast<Map<String, dynamic>>();
     }
     return [];
   }
@@ -889,7 +890,7 @@ class ApiService {
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
-      return List<Map<String, dynamic>>.from(list);
+      return list.cast<Map<String, dynamic>>();
     }
     return [];
   }
@@ -1001,7 +1002,7 @@ class ApiService {
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
-      return List<Map<String, dynamic>>.from(list);
+      return list.cast<Map<String, dynamic>>();
     }
     return [];
   }
@@ -1020,7 +1021,7 @@ class ApiService {
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
-      return List<Map<String, dynamic>>.from(list);
+      return list.cast<Map<String, dynamic>>();
     }
     return [];
   }
@@ -1164,7 +1165,7 @@ class ApiService {
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final body = jsonDecode(res.body);
       if (body is List) {
-        return List<Map<String, dynamic>>.from(body);
+        return body.cast<Map<String, dynamic>>();
       }
       // Legacy: if backend returns a single map, wrap it
       if (body is Map<String, dynamic> && body.isNotEmpty) {
@@ -1351,7 +1352,7 @@ class ApiService {
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
-      return List<Map<String, dynamic>>.from(list);
+      return list.cast<Map<String, dynamic>>();
     }
     return [];
   }
@@ -1442,7 +1443,7 @@ class ApiService {
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
-      return List<Map<String, dynamic>>.from(list);
+      return list.cast<Map<String, dynamic>>();
     }
     return [];
   }
@@ -1459,7 +1460,7 @@ class ApiService {
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
-      return List<Map<String, dynamic>>.from(list);
+      return list.cast<Map<String, dynamic>>();
     }
     return [];
   }
@@ -1568,7 +1569,7 @@ class ApiService {
         .get(Uri.parse('$_baseUrl/riders/payment-methods'), headers: h)
         .timeout(const Duration(seconds: 10));
     final body = _parse(res);
-    if (body is List) return List<Map<String, dynamic>>.from(body);
+    if (body is List) return body.cast<Map<String, dynamic>>();
     return [];
   }
 

@@ -1569,7 +1569,7 @@ class ApiService {
         .get(Uri.parse('$_baseUrl/riders/payment-methods'), headers: h)
         .timeout(const Duration(seconds: 10));
     final body = _parse(res);
-    if (body is List) return body.cast<Map<String, dynamic>>();
+    if (body is List) return List<Map<String, dynamic>>.from(body);
     return [];
   }
 

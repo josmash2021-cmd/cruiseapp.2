@@ -144,20 +144,34 @@ workflows:
           echo "xcconfig signing lines removed"
       - name: Flutter build iOS (no codesign)
         script: |
-          set -e
           flutter --version
-          flutter build ios --release --no-codesign --no-tree-shake-icons --verbose
+          flutter build ios --release --no-codesign --no-tree-shake-icons 2>&1 | tee /tmp/build.log
+          BUILD_EXIT=${PIPESTATUS[0]}
 
-          # Locate the .app
+          echo "========== BUILD ERRORS =========="
+          grep -i "error:" /tmp/build.log || echo "(no error lines found)"
+          echo "========== END ERRORS =========="
+
+          # Locate the .app regardless of exit code
           APP=$(find build/ios -type d -name "Runner.app" 2>/dev/null | head -1)
-          echo "Found Runner.app at: $APP"
-          ls -la "$APP/" || true
-
-          # Normalise path
-          mkdir -p build/ios/iphoneos
-          if [ "$APP" != "build/ios/iphoneos/Runner.app" ] && [ -n "$APP" ]; then
-            cp -r "$APP" build/ios/iphoneos/Runner.app
+          if [ -n "$APP" ]; then
+            SIZE=$(du -sm "$APP" | cut -f1)
+            echo "Found Runner.app at: $APP  (${SIZE} MB)"
+            ls -la "$APP/"
+            if [ "$SIZE" -gt 0 ]; then
+              mkdir -p build/ios/iphoneos
+              if [ "$APP" != "build/ios/iphoneos/Runner.app" ]; then
+                cp -r "$APP" build/ios/iphoneos/Runner.app
+              fi
+              echo "Build OK — .app has content"
+              exit 0
+            fi
           fi
+
+          echo "Build failed with exit code $BUILD_EXIT"
+          echo "========== LAST 50 LINES =========="
+          tail -50 /tmp/build.log
+          exit 1
       - name: Empaquetar .app en .ipa
         script: |
           APP_PATH="build/ios/iphoneos/Runner.app"

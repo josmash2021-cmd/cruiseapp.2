@@ -1022,7 +1022,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                                   child: Image.asset(
                                     'assets/images/${ride.vehicle.toLowerCase()}.png',
                                     fit: BoxFit.contain,
-                                    errorBuilder: (_, _, _) => const Icon(
+                                    errorBuilder: (_a, _b, _c) => const Icon(
                                       Icons.directions_car_rounded,
                                       color: _gold,
                                       size: 28,
@@ -1262,7 +1262,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                       shrinkWrap: true,
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       itemCount: _suggestions.length,
-                      separatorBuilder: (_, _) =>
+                      separatorBuilder: (_, __) =>
                           Divider(height: 1, color: c.border),
                       itemBuilder: (_, i) {
                         final s = _suggestions[i];

@@ -2542,8 +2542,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               markers: {
                 if (_pickupMarker != null && _tripStatus != 'in_trip')
                   _pickupMarker!,
-                ?_dropoffMarker,
-                ?_driverMarker,
+                if (_dropoffMarker != null) _dropoffMarker!,
+                if (_driverMarker != null) _driverMarker!,
               },
               polylines: _polylines,
             ),
@@ -7192,7 +7192,7 @@ class _MatchingRadarState extends State<_MatchingRadar>
 
     return ListenableBuilder(
       listenable: _ctrl,
-      builder: (_, _) {
+      builder: (_, __) {
         return CustomPaint(
           size: const Size(100, 100),
           painter: _RadarPainter(progress: _ctrl.value, color: widget.color),

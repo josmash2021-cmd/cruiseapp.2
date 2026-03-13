@@ -2475,7 +2475,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                   filterQuality: FilterQuality.high,
                                   isAntiAlias: true,
                                   cacheWidth: 256,
-                                  errorBuilder: (_, _, _) => Icon(
+                                  errorBuilder: (_a, _b, _c) => Icon(
                                     Icons.directions_car_rounded,
                                     color: c.gold,
                                     size: 28,

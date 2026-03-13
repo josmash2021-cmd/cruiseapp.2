@@ -506,7 +506,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
                     Positioned.fill(
                       child: AnimatedBuilder(
                         animation: _scanCtrl,
-                        builder: (_, _) => CustomPaint(
+                        builder: (_, __) => CustomPaint(
                           painter: _FaceIDTickPainter(
                             totalProgress: _totalProgress,
                             allDone: _allDone,

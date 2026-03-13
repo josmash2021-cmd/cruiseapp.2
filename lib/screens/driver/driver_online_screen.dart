@@ -3215,7 +3215,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               // Progress indicator line
               ListenableBuilder(
                 listenable: _searchPulseVal,
-                builder: (_, _) {
+                builder: (_, __) {
                   return SizedBox(
                     height: 2,
                     child: LinearProgressIndicator(
@@ -5475,7 +5475,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 children: [
                   ListenableBuilder(
                     listenable: _searchPulseVal,
-                    builder: (_, _) => SizedBox(
+                    builder: (_, __) => SizedBox(
                       height: 2,
                       child: LinearProgressIndicator(
                         value: null,

@@ -454,17 +454,16 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                   border: Border.all(color: _tierColor, width: 3),
                 ),
                 child: ClipOval(
-                  child: _resolvedPhotoUrl != null
                       ? (_resolvedPhotoUrl!.startsWith('http')
                             ? Image.network(
                                 _resolvedPhotoUrl!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => _defaultAvatar(),
+                                errorBuilder: (_a, _b, _c) => _defaultAvatar(),
                               )
                             : Image.file(
                                 File(_resolvedPhotoUrl!),
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => _defaultAvatar(),
+                                errorBuilder: (_d, _e, _f) => _defaultAvatar(),
                               ))
                       : _defaultAvatar(),
                 ),
@@ -817,7 +816,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: badges.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (_, i) {
           final b = badges[i];
           return Container(
@@ -923,7 +922,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               fit: BoxFit.cover,
                               width: 80,
                               height: 80,
-                              errorBuilder: (_, _, _) => const Icon(
+                              errorBuilder: (_a, _b, _c) => const Icon(
                                 Icons.person_rounded,
                                 color: _gold,
                                 size: 40,
@@ -934,7 +933,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               fit: BoxFit.cover,
                               width: 80,
                               height: 80,
-                              errorBuilder: (_, _, _) => const Icon(
+                              errorBuilder: (_a, _b, _c) => const Icon(
                                 Icons.person_rounded,
                                 color: _gold,
                                 size: 40,

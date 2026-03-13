@@ -731,15 +731,15 @@ class ApiService {
             'pickup_lng': pickupLng,
             'dropoff_lat': dropoffLat,
             'dropoff_lng': dropoffLng,
-            'fare': ?fare,
-            'vehicle_type': ?vehicleType,
+            if (fare != null) 'fare': fare,
+            if (vehicleType != null) 'vehicle_type': vehicleType,
             if (scheduledAt != null)
               'scheduled_at': scheduledAt.toUtc().toIso8601String(),
             'is_airport': isAirport,
-            'airport_code': ?airportCode,
-            'terminal': ?terminal,
-            'pickup_zone': ?pickupZone,
-            'notes': ?notes,
+            if (airportCode != null) 'airport_code': airportCode,
+            if (terminal != null) 'terminal': terminal,
+            if (pickupZone != null) 'pickup_zone': pickupZone,
+            if (notes != null) 'notes': notes,
           }),
         )
         .timeout(const Duration(seconds: 10));
@@ -1136,15 +1136,15 @@ class ApiService {
             'pickup_lng': pickupLng,
             'dropoff_lat': dropoffLat,
             'dropoff_lng': dropoffLng,
-            'fare': ?fare,
-            'vehicle_type': ?vehicleType,
+            if (fare != null) 'fare': fare,
+            if (vehicleType != null) 'vehicle_type': vehicleType,
             if (scheduledAt != null)
               'scheduled_at': scheduledAt.toUtc().toIso8601String(),
             'is_airport': isAirport,
-            'airport_code': ?airportCode,
-            'terminal': ?terminal,
-            'pickup_zone': ?pickupZone,
-            'notes': ?notes,
+            if (airportCode != null) 'airport_code': airportCode,
+            if (terminal != null) 'terminal': terminal,
+            if (pickupZone != null) 'pickup_zone': pickupZone,
+            if (notes != null) 'notes': notes,
           }),
         )
         .timeout(const Duration(seconds: 10));
@@ -1330,10 +1330,10 @@ class ApiService {
             'make': make,
             'model': model,
             'year': year,
-            'color': ?color,
+            if (color != null) 'color': color,
             'plate': plate,
-            'vin': ?vin,
-            'vehicle_type': ?vehicleType,
+            if (vin != null) 'vin': vin,
+            if (vehicleType != null) 'vehicle_type': vehicleType,
           }),
         )
         .timeout(const Duration(seconds: 10));
@@ -1371,9 +1371,9 @@ class ApiService {
           headers: h,
           body: jsonEncode({
             'doc_type': docType,
-            'photo': ?photoBase64,
-            'doc_number': ?docNumber,
-            'expiry_date': ?expiryDate,
+            if (photoBase64 != null) 'photo': photoBase64,
+            if (docNumber != null) 'doc_number': docNumber,
+            if (expiryDate != null) 'expiry_date': expiryDate,
           }),
         )
         .timeout(const Duration(seconds: 30));
@@ -1398,7 +1398,7 @@ class ApiService {
           headers: h,
           body: jsonEncode({
             'stars': stars,
-            'comment': ?comment,
+            if (comment != null) 'comment': comment,
             'tip_amount': tipAmount,
           }),
         )
@@ -1569,7 +1569,7 @@ class ApiService {
         .get(Uri.parse('$_baseUrl/riders/payment-methods'), headers: h)
         .timeout(const Duration(seconds: 10));
     final body = _parse(res);
-    if (body is List) return List<Map<String, dynamic>>.from(body);
+    if (body is List) return (body as List).cast<Map<String, dynamic>>();
     return [];
   }
 

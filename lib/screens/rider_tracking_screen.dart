@@ -374,8 +374,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               if (!mounted) return;
               Navigator.of(context).pushAndRemoveUntil(
                 PageRouteBuilder(
-                  pageBuilder: (_, _, _) => const HomeScreen(),
-                  transitionsBuilder: (_, a, _, child) =>
+                  pageBuilder: (_a, _b, _c) => const HomeScreen(),
+                  transitionsBuilder: (_a, a, _c, child) =>
                       FadeTransition(opacity: a, child: child),
                   transitionDuration: const Duration(milliseconds: 400),
                 ),
@@ -1466,7 +1466,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             const SizedBox(width: 14),
             AnimatedBuilder(
               animation: _etaPulse,
-              builder: (_, _) {
+              builder: (_, __) {
                 return Container(
                   width: 62,
                   padding: const EdgeInsets.symmetric(vertical: 10),
@@ -2071,8 +2071,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                     // Navigate to rider home with smooth fade
                     Navigator.of(context).pushAndRemoveUntil(
                       PageRouteBuilder(
-                        pageBuilder: (_, _, _) => const HomeScreen(),
-                        transitionsBuilder: (_, anim, _, child) {
+                        pageBuilder: (_a, _b, _c) => const HomeScreen(),
+                        transitionsBuilder: (_a, anim, _c, child) {
                           return FadeTransition(opacity: anim, child: child);
                         },
                         transitionDuration: const Duration(milliseconds: 500),
@@ -2165,7 +2165,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             filterQuality: FilterQuality.high,
             isAntiAlias: true,
             cacheWidth: 320,
-            errorBuilder: (_, _, _) => Icon(
+            errorBuilder: (_a, _b, _c) => Icon(
               Icons.directions_car_rounded,
               size: 36,
               color: Colors.white.withValues(alpha: 0.3),

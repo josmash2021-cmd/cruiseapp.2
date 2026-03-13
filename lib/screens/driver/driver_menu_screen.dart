@@ -411,7 +411,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                               fit: BoxFit.cover,
                               width: 60,
                               height: 60,
-                              errorBuilder: (_, _, _) => const Icon(
+                              errorBuilder: (_a, _b, _c) => const Icon(
                                 Icons.person_rounded,
                                 color: Colors.black,
                                 size: 30,
@@ -422,7 +422,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                               fit: BoxFit.cover,
                               width: 60,
                               height: 60,
-                              errorBuilder: (_, _, _) => const Icon(
+                              errorBuilder: (_a, _b, _c) => const Icon(
                                 Icons.person_rounded,
                                 color: Colors.black,
                                 size: 30,

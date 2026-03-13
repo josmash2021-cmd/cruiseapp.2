@@ -565,7 +565,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                               ? Image.network(
                                   _photoUrl!,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => const Icon(
+                                  errorBuilder: (_a, _b, _c) => const Icon(
                                     Icons.person_rounded,
                                     color: Colors.black,
                                     size: 18,
@@ -574,7 +574,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                               : Image.file(
                                   File(_photoUrl!),
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => const Icon(
+                                  errorBuilder: (_a, _b, _c) => const Icon(
                                     Icons.person_rounded,
                                     color: Colors.black,
                                     size: 18,
@@ -741,7 +741,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             },
       child: ListenableBuilder(
         listenable: _pulseAnim,
-        builder: (_, _) {
+        builder: (_, __) {
           final p = _pulseAnim.value;
           return Opacity(
             opacity: _isVerified ? 1.0 : 0.55,
@@ -901,7 +901,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 ? Image.network(
                                     _photoUrl!,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => Icon(
+                                    errorBuilder: (_a, _b, _c) => Icon(
                                       Icons.person_rounded,
                                       color: dc.text.withValues(alpha: 0.6),
                                       size: 20,
@@ -910,7 +910,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 : Image.file(
                                     File(_photoUrl!),
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => Icon(
+                                    errorBuilder: (_a, _b, _c) => Icon(
                                       Icons.person_rounded,
                                       color: dc.text.withValues(alpha: 0.6),
                                       size: 20,

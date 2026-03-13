@@ -467,7 +467,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
               // Animated check
               AnimatedBuilder(
                 animation: _checkCtrl,
-                builder: (_, _) {
+                builder: (_, __) {
                   return Transform.scale(
                     scale: Curves.elasticOut.transform(
                       _checkCtrl.value.clamp(0.0, 1.0),
@@ -629,7 +629,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           // Animated clock icon
           AnimatedBuilder(
             animation: _pulseCtrl,
-            builder: (_, _) {
+            builder: (_, __) {
               return Container(
                 width: 100,
                 height: 100,

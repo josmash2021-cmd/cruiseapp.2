@@ -213,7 +213,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                       physics: const BouncingScrollPhysics(),
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       itemCount: _methods.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
                       itemBuilder: (_, i) => _buildMethodCard(_methods[i]),
                     ),
             ),

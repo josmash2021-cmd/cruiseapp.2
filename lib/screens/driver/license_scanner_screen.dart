@@ -576,7 +576,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
 
     return AnimatedBuilder(
       animation: _cornerAnim,
-      builder: (_, _) {
+      builder: (_, __) {
         final glow = _cornerAnim.value;
         return Stack(
           children: [

@@ -221,6 +221,8 @@ workflows:
       ios_signing:
         distribution_type: ad_hoc
         bundle_identifier: com.cruiseinride.app
+      groups:
+        - ios_signing
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -326,6 +328,8 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.cruiseinride.app
+      groups:
+        - ios_signing
       flutter: stable
       xcode: latest
       cocoapods: default

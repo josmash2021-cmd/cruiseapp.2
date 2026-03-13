@@ -433,7 +433,6 @@ workflows:
           failure: true
       app_store_connect:
         auth: integration
-        apple_id: josmash2021@gmail.com
         submit_to_testflight: true
         beta_groups:
           - External Testers

@@ -110,46 +110,63 @@ workflows:
         script: |
           cd ios
 
-          # ── 1. Replace entitlements with clean empty plist via plistlib ────────────
-          python3 -c "import plistlib; open('Runner/Runner.entitlements','wb').write(plistlib.dumps({},fmt=plistlib.FMT_XML))"
-          echo "Runner.entitlements cleared"
-
-          # ── 2. Patch Runner.xcodeproj — clear ALL signing-related settings ────────
-          python3 << 'PYEOF'
-          import re
-          path = 'Runner.xcodeproj/project.pbxproj'
-          with open(path, 'r') as f:
-              content = f.read()
-          content = re.sub(r'DEVELOPMENT_TEAM = [^;]*;', 'DEVELOPMENT_TEAM = "";', content)
-          content = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"', 'CODE_SIGN_IDENTITY = ""', content)
-          content = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"', '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', content)
-          content = re.sub(r'CODE_SIGN_STYLE = Automatic', 'CODE_SIGN_STYLE = Manual', content)
-          content = re.sub(r'VALIDATE_PRODUCT = YES', 'VALIDATE_PRODUCT = NO', content)
-          content = re.sub(r'PROVISIONING_PROFILE_SPECIFIER = "[^"]*"', 'PROVISIONING_PROFILE_SPECIFIER = ""', content)
-          content = re.sub(r'PROVISIONING_PROFILE = "[^"]*"', 'PROVISIONING_PROFILE = ""', content)
-          content = re.sub(r'CODE_SIGN_ENTITLEMENTS = [^;]*;', '', content)
-          with open(path, 'w') as f:
-              f.write(content)
-          print(f"Patched: {path}")
-          PYEOF
-          echo "Runner.xcodeproj patched (all signing settings cleared)"
-
-          # ── 3. Strip signing overrides from xcconfig files ────────────────────────
-          for xcconfig in Flutter/Release.xcconfig Flutter/Debug.xcconfig; do
-            if [ -f "$xcconfig" ]; then
-              sed -i '' '/CODE_SIGN_IDENTITY/d' "$xcconfig" || true
-              sed -i '' '/DEVELOPMENT_TEAM/d' "$xcconfig" || true
+          # ── 1. Inject CODE_SIGNING_ALLOWED=NO into every xcconfig ────────────────
+          # This is the NUCLEAR option — xcodebuild WILL read these and skip signing
+          for f in Flutter/Release.xcconfig Flutter/Debug.xcconfig; do
+            if [ -f "$f" ]; then
+              # Remove any existing signing lines
+              sed -i '' '/CODE_SIGN/d' "$f" || true
+              sed -i '' '/DEVELOPMENT_TEAM/d' "$f" || true
+              sed -i '' '/PROVISIONING_PROFILE/d' "$f" || true
+              # Inject our overrides
+              echo 'CODE_SIGNING_ALLOWED=NO' >> "$f"
+              echo 'CODE_SIGNING_REQUIRED=NO' >> "$f"
+              echo 'CODE_SIGN_IDENTITY=-' >> "$f"
+              echo 'DEVELOPMENT_TEAM=' >> "$f"
+              echo 'PROVISIONING_PROFILE_SPECIFIER=' >> "$f"
             fi
           done
-          echo "xcconfig signing lines removed"
+          echo "xcconfig signing overrides injected"
+          cat Flutter/Release.xcconfig
+
+          # ── 2. Patch project.pbxproj ─────────────────────────────────────────────
+          python3 << 'PYEOF'
+          import re, pathlib
+          p = pathlib.Path('Runner.xcodeproj/project.pbxproj')
+          t = p.read_text()
+          t = re.sub(r'DEVELOPMENT_TEAM\s*=\s*[^;]*;', 'DEVELOPMENT_TEAM = "";', t)
+          t = re.sub(r'CODE_SIGN_IDENTITY\s*=\s*"[^"]*"', 'CODE_SIGN_IDENTITY = ""', t)
+          t = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]"\s*=\s*"[^"]*"', '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', t)
+          t = re.sub(r'CODE_SIGN_STYLE\s*=\s*\w+', 'CODE_SIGN_STYLE = Manual', t)
+          t = re.sub(r'PROVISIONING_PROFILE_SPECIFIER\s*=\s*"[^"]*"', 'PROVISIONING_PROFILE_SPECIFIER = ""', t)
+          t = re.sub(r'CODE_SIGN_ENTITLEMENTS\s*=\s*[^;]*;', '', t)
+          p.write_text(t)
+          print('pbxproj patched')
+          PYEOF
+
+          # ── 3. Clean entitlements ────────────────────────────────────────────────
+          python3 -c "
+          import plistlib
+          with open('Runner/Runner.entitlements','wb') as f:
+              plistlib.dump({}, f, fmt=plistlib.FMT_XML)
+          "
+          echo "entitlements cleared"
       - name: Flutter build iOS (no codesign)
         script: |
           flutter --version
+
+          # Export env vars that Flutter passes to xcodebuild
+          export FLUTTER_XCODE_CODE_SIGNING_ALLOWED=NO
+          export FLUTTER_XCODE_CODE_SIGNING_REQUIRED=NO
+          export FLUTTER_XCODE_CODE_SIGN_IDENTITY="-"
+          export FLUTTER_XCODE_DEVELOPMENT_TEAM=""
+          export FLUTTER_XCODE_PROVISIONING_PROFILE_SPECIFIER=""
+
           flutter build ios --release --no-codesign --no-tree-shake-icons 2>&1 | tee /tmp/build.log
           BUILD_EXIT=${PIPESTATUS[0]}
 
           echo "========== BUILD ERRORS =========="
-          grep -i "error:" /tmp/build.log || echo "(no error lines found)"
+          grep -i "error:" /tmp/build.log | grep -v "warning:" || echo "(no error lines found)"
           echo "========== END ERRORS =========="
 
           # Locate the .app regardless of exit code

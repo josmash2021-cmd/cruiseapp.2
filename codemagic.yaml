@@ -376,33 +376,21 @@ workflows:
           git config --global http.postBuffer 524288000
           git config --global http.lowSpeedLimit 0
           git config --global http.lowSpeedTime 999999
-      - name: Set up code signing on Mac
+      - name: Set up keychain and certificates
         script: |
-          # Create a new keychain for signing
           keychain initialize
-          
-          # Write the .p12 from base64 env var
           echo "$CM_CERTIFICATE" | base64 --decode > /tmp/dist.p12
-          
-          # Import the .p12 into the keychain
           keychain add-certificates --certificate /tmp/dist.p12 --certificate-password "$CM_CERTIFICATE_PASSWORD"
-          
-          # Write the App Store Connect API key preserving newlines
+      - name: Set up App Store Connect API key
+        script: |
           mkdir -p ~/.appstoreconnect/private_keys
           printf '%s\n' "$APP_STORE_CONNECT_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8
-          
-          # Debug: verify the key file
-          echo "Key file contents:"
-          head -1 ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8
-          wc -l ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8
-          
-          # Fetch provisioning profiles from App Store Connect
+          cat ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8 | head -1
+      - name: Fetch signing files
+        script: |
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create
-          
-          # Set up the fetched profiles for Xcode
-          xcode-project use-profiles
       - name: Get Flutter packages
         script: |
           flutter pub get
@@ -430,6 +418,9 @@ workflows:
               exit 1
             fi
           done
+      - name: Set up code signing for Xcode
+        script: |
+          xcode-project use-profiles
       - name: Flutter build IPA (App Store)
         script: |
           flutter build ipa --release \

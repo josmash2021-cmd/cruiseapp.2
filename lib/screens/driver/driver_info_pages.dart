@@ -136,6 +136,77 @@ Widget _card(String title, String body, {IconData? icon}) {
   );
 }
 
+Widget _comingSoonCard(String title, String body, {IconData? icon}) {
+  return Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: const Color(0xFF1C1C1E),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(
+        color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+      ),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (icon != null) ...[
+          Icon(icon, color: const Color(0xFFE8C547).withValues(alpha: 0.4), size: 20),
+          const SizedBox(width: 12),
+        ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8C547).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: const Text(
+                      'Coming Soon',
+                      style: TextStyle(
+                        color: Color(0xFFE8C547),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                body,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.25),
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  OPPORTUNITIES SCREEN
 // ═══════════════════════════════════════════════════════════════
@@ -198,14 +269,14 @@ class WorkHubScreen extends StatelessWidget {
           'Your primary service. Pick up and drop off riders safely and efficiently.',
           icon: Icons.local_taxi_rounded,
         ),
-        _card(
+        _comingSoonCard(
           'Package Delivery',
-          'Deliver packages for local businesses and individuals. Coming soon!',
+          'Deliver packages for local businesses and individuals.',
           icon: Icons.inventory_2_rounded,
         ),
-        _card(
+        _comingSoonCard(
           'Grocery Delivery',
-          'Partner with local grocery stores for same-day delivery. Coming soon!',
+          'Partner with local grocery stores for same-day delivery.',
           icon: Icons.shopping_cart_rounded,
         ),
         _card(
@@ -243,7 +314,7 @@ class ReferFriendsScreen extends StatelessWidget {
           child: Column(
             children: [
               const Text(
-                'EARN \$25',
+                'EARN \$50',
                 style: TextStyle(
                   color: Color(0xFFE8C547),
                   fontSize: 36,
@@ -252,7 +323,7 @@ class ReferFriendsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'for every friend who signs up and completes their first ride',
+                'for every friend who signs up and completes their first 50 rides',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.6),
@@ -290,7 +361,7 @@ class ReferFriendsScreen extends StatelessWidget {
         const SizedBox(height: 16),
         _card(
           'How it works',
-          '1. Share your unique invite link\n2. Friend signs up and completes first ride\n3. You both earn \$25 bonus',
+          '1. Share your unique invite link\n2. Your friend signs up and completes their first 50 rides\n3. You earn \$50 bonus',
           icon: Icons.info_outline_rounded,
         ),
         _card(

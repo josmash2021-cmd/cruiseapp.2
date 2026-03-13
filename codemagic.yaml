@@ -220,7 +220,7 @@ workflows:
     environment:
       ios_signing:
         distribution_type: ad_hoc
-        bundle_identifier: com.cruiseapp.cruise
+        bundle_identifier: com.cruiseinride.app
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -325,7 +325,7 @@ workflows:
     environment:
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.cruiseapp.cruise
+        bundle_identifier: com.cruiseinride.app
       flutter: stable
       xcode: latest
       cocoapods: default

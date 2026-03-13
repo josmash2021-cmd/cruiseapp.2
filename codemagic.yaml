@@ -399,16 +399,16 @@ workflows:
         script: |
           xcode-project use-profiles
           security find-identity -v -p codesigning
-          echo "TEAM_ID=$(xcode-project show-build-settings | grep DEVELOPMENT_TEAM | head -1 | awk '{print $3}')" >> $CM_ENV
-          PROFILE_UUID=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/ | head -1 | sed 's/.mobileprovision//')
-          echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
-          echo "✅ Code signing set up"
+          echo "✅ Code signing identities installed"
 
       - name: Build IPA
         script: |
           mkdir -p /tmp/xcodebuild_logs
 
-          cat > /tmp/ExportOptions.plist <<EOF
+          PROFILE_UUID=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/ | head -1 | sed 's/\.mobileprovision//')
+          echo "Using profile UUID: $PROFILE_UUID"
+
+          cat > /tmp/ExportOptions.plist << 'PLISTEOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -416,21 +416,16 @@ workflows:
               <key>method</key>
               <string>app-store</string>
               <key>teamID</key>
-              <string>${TEAM_ID}</string>
+              <string>7QLC9UVB3Z</string>
               <key>uploadBitcode</key>
               <false/>
               <key>uploadSymbols</key>
               <true/>
               <key>signingStyle</key>
               <string>manual</string>
-              <key>provisioningProfiles</key>
-              <dict>
-                  <key>com.cruiseinride.app</key>
-                  <string>${PROFILE_UUID}</string>
-              </dict>
           </dict>
           </plist>
-          EOF
+          PLISTEOF
 
           flutter build ipa --release \
             --no-tree-shake-icons \

@@ -441,6 +441,41 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  MAP
   // ═══════════════════════════════════════════════════
   Widget _buildMap() {
+    // Use AppleMap on iOS, GoogleMap on Android
+    // Show map immediately — camera animates to real location once obtained
+    if (Platform.isIOS) {
+      final initialTarget = _currentLatLng != null
+          ? amap.LatLng(_currentLatLng!.latitude, _currentLatLng!.longitude)
+          : const amap.LatLng(33.4484, -112.0740); // default: Phoenix, AZ
+      return amap.AppleMap(
+        initialCameraPosition: amap.CameraPosition(
+          target: initialTarget,
+          zoom: _currentLatLng != null ? 16 : 10,
+        ),
+        mapType: amap.MapType.standard,
+        onMapCreated: (ctrl) {
+          _appleMapController = ctrl;
+          setState(() => _mapReady = true);
+          // If location already known, move camera immediately
+          if (_currentLatLng != null) {
+            ctrl.moveCamera(
+              amap.CameraUpdate.newCameraPosition(
+                amap.CameraPosition(
+                  target: amap.LatLng(_currentLatLng!.latitude, _currentLatLng!.longitude),
+                  zoom: 16,
+                ),
+              ),
+            );
+          }
+        },
+        myLocationEnabled: true,
+        myLocationButtonEnabled: false,
+        zoomGesturesEnabled: true,
+        scrollGesturesEnabled: true,
+        rotateGesturesEnabled: false,
+      );
+    }
+
     final dc = DriverColors.of(context);
     if (_currentLatLng == null) {
       return Container(
@@ -448,26 +483,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         child: const Center(
           child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
         ),
-      );
-    }
-
-    // Use AppleMap on iOS, GoogleMap on Android
-    if (Platform.isIOS) {
-      return amap.AppleMap(
-        initialCameraPosition: amap.CameraPosition(
-          target: amap.LatLng(_currentLatLng!.latitude, _currentLatLng!.longitude),
-          zoom: 16,
-        ),
-        mapType: amap.MapType.standard,
-        onMapCreated: (ctrl) {
-          _appleMapController = ctrl;
-          setState(() => _mapReady = true);
-        },
-        myLocationEnabled: true,
-        myLocationButtonEnabled: false,
-        zoomGesturesEnabled: true,
-        scrollGesturesEnabled: true,
-        rotateGesturesEnabled: false,
       );
     }
 
@@ -901,25 +916,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 ? Image.network(
                                     _photoUrl!,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_a, _b, _c) => Icon(
-                                      Icons.person_rounded,
-                                      color: dc.text.withValues(alpha: 0.6),
-                                      size: 20,
+                                    errorBuilder: (_a, _b, _c) => Container(
+                                      color: _gold.withValues(alpha: 0.3),
                                     ),
                                   )
                                 : Image.file(
                                     File(_photoUrl!),
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_a, _b, _c) => Icon(
-                                      Icons.person_rounded,
-                                      color: dc.text.withValues(alpha: 0.6),
-                                      size: 20,
+                                    errorBuilder: (_a, _b, _c) => Container(
+                                      color: _gold.withValues(alpha: 0.3),
                                     ),
                                   ))
-                            : Icon(
-                                Icons.person_rounded,
-                                color: dc.text.withValues(alpha: 0.6),
-                                size: 20,
+                            : Container(
+                                color: _gold.withValues(alpha: 0.15),
                               ),
                       ),
                     ),

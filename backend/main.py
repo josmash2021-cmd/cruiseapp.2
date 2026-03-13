@@ -3667,7 +3667,17 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
             if not chat or chat.bot_phase == "dispatch_takeover":
                 return
             replies = await _generate_bot_replies(chat, user_msg, user_name, db)
-            for r in replies:
+            for idx, r in enumerate(replies):
+                # Add human-like typing delay between messages (simulates agent typing)
+                # System messages (join/escalation notices) appear faster
+                if idx > 0:
+                    if r["role"] == "system":
+                        await asyncio.sleep(_rng.uniform(0.8, 1.5))
+                    else:
+                        # Longer messages take longer to "type"
+                        msg_len = len(r["message"])
+                        typing_time = min(2.5 + msg_len * 0.04, 12.0)
+                        await asyncio.sleep(_rng.uniform(typing_time * 0.75, typing_time))
                 bot_msg = SupportMessage(
                     chat_id=chat_id, sender_id=0,
                     sender_role=r["role"], message=r["message"]
@@ -3675,6 +3685,8 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                 db.add(bot_msg)
                 await db.flush()
                 await db.refresh(bot_msg)
+                chat.updated_at = datetime.now(timezone.utc)
+                await db.commit()
                 if _HAS_FIRESTORE:
                     try:
                         firestore_sync.sync_support_message(
@@ -3682,8 +3694,6 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                         )
                     except Exception:
                         pass
-            chat.updated_at = datetime.now(timezone.utc)
-            await db.commit()
     except Exception as e:
         logging.error("Background bot reply failed for chat %d: %s", chat_id, e)
 
@@ -5306,6 +5316,11 @@ async def admin_list_verifications(
         "id_document_type": u.id_document_type,
         "id_photo_url": u.id_photo_url,
         "selfie_url": u.selfie_url,
+        "license_front_url": u.license_front_url,
+        "license_back_url": u.license_back_url,
+        "vehicle_registration_url": u.vehicle_registration_url,
+        "insurance_url": u.insurance_url,
+        "video_url": u.video_url,
         "is_verified": u.is_verified,
         "verified_at": u.verified_at.isoformat() if u.verified_at else None,
     } for u in users]

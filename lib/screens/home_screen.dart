@@ -2506,6 +2506,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                 ),
               )
+            else if (Platform.isIOS)
+              amap.AppleMap(
+                initialCameraPosition: amap.CameraPosition(
+                  target: amap.LatLng(
+                    _currentLatLng!.latitude,
+                    _currentLatLng!.longitude,
+                  ),
+                  zoom: 15,
+                ),
+                onMapCreated: (controller) {
+                  _appleMinimapController = controller;
+                },
+                annotations: _locationDotBytes != null
+                    ? {
+                        amap.Annotation(
+                          annotationId: const amap.AnnotationId('current'),
+                          position: amap.LatLng(
+                            _currentLatLng!.latitude,
+                            _currentLatLng!.longitude,
+                          ),
+                          icon: amap.BitmapDescriptor.fromBytes(_locationDotBytes!),
+                        ),
+                      }
+                    : {},
+                myLocationEnabled: false,
+                myLocationButtonEnabled: false,
+                zoomGesturesEnabled: false,
+                scrollGesturesEnabled: false,
+                rotateGesturesEnabled: false,
+              )
             else
               GoogleMap(
                 style: MapStyles.dark,
@@ -2532,6 +2562,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 rotateGesturesEnabled: false,
                 tiltGesturesEnabled: false,
                 liteModeEnabled: false,
+                padding: const EdgeInsets.only(bottom: 40),
               ),
             // Badge
             Positioned(

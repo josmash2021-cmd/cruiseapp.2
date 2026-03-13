@@ -724,7 +724,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     if (!mounted || _segDist.isEmpty) return;
 
     // ── Smoothly advance _traveledM toward _tgtTraveledM along the route ──
-    const chase = 0.18;
+    const chase = 0.12;
     _traveledM += (_tgtTraveledM - _traveledM) * chase;
     // Clamp small residuals
     if ((_tgtTraveledM - _traveledM).abs() < 0.01) _traveledM = _tgtTraveledM;

@@ -314,7 +314,12 @@ workflows:
     name: iOS Release Build (App Store)
     max_build_duration: 120
     instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: CodemagicAdmin
     environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.cruiseinride.app
       groups:
         - ios_signing
       flutter: stable
@@ -390,34 +395,18 @@ workflows:
               exit 1
             fi
           done
-      - name: Install certificate and provisioning profile
+      - name: Set up code signing identities
         script: |
-          keychain initialize
-
-          # Install distribution certificate
-          echo "$CM_CERTIFICATE" | base64 --decode > /tmp/dist.p12
-          keychain add-certificates --certificate /tmp/dist.p12 --certificate-password "$CM_CERTIFICATE_PASSWORD"
-
-          # Show installed identities
+          xcode-project use-profiles
           security find-identity -v -p codesigning
-
-          # Install provisioning profile
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > /tmp/profile.mobileprovision
-
-          PROFILE_UUID=$(security cms -D -i /tmp/profile.mobileprovision 2>/dev/null | python3 -c "import plistlib,sys; pl=plistlib.loads(sys.stdin.buffer.read()); print(pl['UUID'])")
-          TEAM_ID=$(security cms -D -i /tmp/profile.mobileprovision 2>/dev/null | python3 -c "import plistlib,sys; pl=plistlib.loads(sys.stdin.buffer.read()); print(pl.get('TeamIdentifier',[''])[0])")
-
-          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/${PROFILE_UUID}.mobileprovision
-          echo "✅ Profile UUID=$PROFILE_UUID Team=$TEAM_ID"
-          echo "$PROFILE_UUID" > /tmp/PROFILE_UUID
-          echo "$TEAM_ID" > /tmp/TEAM_ID
+          echo "TEAM_ID=$(xcode-project show-build-settings | grep DEVELOPMENT_TEAM | head -1 | awk '{print $3}')" >> $CM_ENV
+          PROFILE_UUID=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/ | head -1 | sed 's/.mobileprovision//')
+          echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
+          echo "✅ Code signing set up"
 
       - name: Build IPA
         script: |
           mkdir -p /tmp/xcodebuild_logs
-          PROFILE_UUID=$(cat /tmp/PROFILE_UUID)
-          TEAM_ID=$(cat /tmp/TEAM_ID)
 
           cat > /tmp/ExportOptions.plist <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -452,6 +441,9 @@ workflows:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
     publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
       email:
         recipients:
           - josmash2021@gmail.com

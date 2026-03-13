@@ -29,7 +29,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyA17wn7sSLxa7WInC8Z8FCA-Pjkb-a2eIw',
-    appId: '1:56054738352:android:d77c179bad77b942c1ba75',
+    appId: '1:56054738352:android:1868f64d184d1e63c1ba75',
     messagingSenderId: '56054738352',
     projectId: 'cruise-af9f1',
     storageBucket: 'cruise-af9f1.firebasestorage.app',
@@ -37,7 +37,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyBW_EyQYZUWbWzD6CAvxo9Btowb7bxALCU',
-    appId: '1:56054738352:ios:91b25eab1e514ad7c1ba75',
+    appId: '1:56054738352:ios:7678cdaaa6ddc913c1ba75',
     messagingSenderId: '56054738352',
     projectId: 'cruise-af9f1',
     storageBucket: 'cruise-af9f1.firebasestorage.app',

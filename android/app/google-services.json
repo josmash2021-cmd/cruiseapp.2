@@ -26,6 +26,25 @@
     },
     {
       "client_info": {
+        "mobilesdk_app_id": "1:56054738352:android:1868f64d184d1e63c1ba75",
+        "android_client_info": {
+          "package_name": "com.cruiseinride.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA17wn7sSLxa7WInC8Z8FCA-Pjkb-a2eIw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:56054738352:android:58911278032ecff4c1ba75",
         "android_client_info": {
           "package_name": "com.example.cruise_app"

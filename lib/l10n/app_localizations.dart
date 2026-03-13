@@ -1901,6 +1901,7 @@ class S {
   String get lookingForDriver =>
       _es ? 'Buscando tu conductor' : 'Looking for your driver';
   String get driverFound => _es ? '¡Conductor encontrado!' : 'Driver found!';
+  String get isOnTheWay => _es ? 'está en camino' : 'is on the way';
   String findingBestNearby(String name) => _es
       ? 'Encontrando el mejor $name cercano'
       : 'Finding the best $name nearby';

@@ -86,7 +86,7 @@ class ApiService {
         final response = await http
             .get(
               Uri.parse('$url/health'),
-              headers: {'Accept': 'application/json'},
+              headers: {'Accept': 'application/json', 'ngrok-skip-browser-warning': 'true'},
             )
             .timeout(timeout);
         if (response.statusCode == 200) {
@@ -105,7 +105,7 @@ class ApiService {
         final disc = await http
             .get(
               Uri.parse('$base/tunnel-url'),
-              headers: {'Accept': 'application/json'},
+              headers: {'Accept': 'application/json', 'ngrok-skip-browser-warning': 'true'},
             )
             .timeout(timeout);
         if (disc.statusCode == 200) {
@@ -116,7 +116,7 @@ class ApiService {
             final check = await http
                 .get(
                   Uri.parse('$tunnelUrl/health'),
-                  headers: {'Accept': 'application/json'},
+                  headers: {'Accept': 'application/json', 'ngrok-skip-browser-warning': 'true'},
                 )
                 .timeout(timeout);
             if (check.statusCode == 200) {
@@ -262,6 +262,7 @@ class ApiService {
           ? SecurityService.deviceFingerprint.substring(0, 16)
           : SecurityService.deviceFingerprint,
       'X-Client-Version': '1.0.0',
+      'ngrok-skip-browser-warning': 'true',
       if (token != null) 'Authorization': 'Bearer $token',
     };
   }

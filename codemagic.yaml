@@ -322,18 +322,16 @@ workflows:
         - pattern: main
           include: true
           source: true
-    integrations:
-      app_store_connect: CodemagicAdmin
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.cruiseinride.app
       groups:
         - ios_signing
       flutter: stable
       xcode: latest
       cocoapods: default
       vars:
+        BUNDLE_ID: "com.cruiseinride.app"
+        APP_STORE_CONNECT_ISSUER_ID: "adba0c4b-be13-474c-bd3a-8f11585b0518"
+        APP_STORE_CONNECT_KEY_IDENTIFIER: "L85UM78KN3"
         ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
         ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
         ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
@@ -376,7 +374,28 @@ workflows:
           git config --global http.postBuffer 524288000
           git config --global http.lowSpeedLimit 0
           git config --global http.lowSpeedTime 999999
-          echo "Git configured for large transfers"
+      - name: Set up code signing on Mac
+        script: |
+          # Create a new keychain for signing
+          keychain initialize
+          
+          # Write the .p12 from base64 env var
+          echo "$CM_CERTIFICATE" | base64 --decode > /tmp/dist.p12
+          
+          # Import the .p12 into the keychain
+          keychain add-certificates --certificate /tmp/dist.p12 --certificate-password "$CM_CERTIFICATE_PASSWORD"
+          
+          # Write the App Store Connect API key
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$APP_STORE_CONNECT_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8
+          
+          # Fetch provisioning profiles from App Store Connect
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          
+          # Use the fetched profiles
+          keychain use-signing-files
       - name: Get Flutter packages
         script: |
           flutter pub get
@@ -406,7 +425,9 @@ workflows:
           done
       - name: Flutter build IPA (App Store)
         script: |
-          flutter build ipa --release --no-tree-shake-icons
+          flutter build ipa --release \
+            --no-tree-shake-icons \
+            --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
@@ -417,6 +438,11 @@ workflows:
         notify:
           success: true
           failure: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - External Testers
 
   android-apk:
     name: Android APK (instalable)

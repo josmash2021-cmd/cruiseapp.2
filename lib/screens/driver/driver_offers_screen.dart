@@ -269,7 +269,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                 // Status indicator
                 AnimatedBuilder(
                   animation: _pulseAnim,
-                  builder: (_, _) => Container(
+                  builder: (_, __) => Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
                       vertical: 8,
@@ -393,7 +393,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
         children: [
           AnimatedBuilder(
             animation: _pulseAnim,
-            builder: (_, _) => Icon(
+            builder: (_, __) => Icon(
               Icons.local_taxi_rounded,
               size: 48,
               color: _gold.withValues(alpha: 0.4 + _pulseAnim.value * 0.3),

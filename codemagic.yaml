@@ -314,12 +314,7 @@ workflows:
     name: iOS Release Build (App Store)
     max_build_duration: 120
     instance_type: mac_mini_m2
-    integrations:
-      app_store_connect: CodemagicAdmin
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.cruiseinride.app
       groups:
         - ios_signing
       flutter: stable
@@ -395,32 +390,68 @@ workflows:
               exit 1
             fi
           done
-      - name: Set up code signing
+      - name: Install certificate and provisioning profile
         script: |
-          # Codemagic automatic signing fetches certificates and profiles
-          # via the App Store Connect API integration + ios_signing config.
-          # Just verify everything is in place.
-          echo "📱 Bundle ID: $BUNDLE_ID"
-          echo "🔑 Signing identities:"
-          security find-identity -v -p codesigning || true
-          echo "📄 Provisioning profiles:"
-          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ || true
+          keychain initialize
+
+          # Install distribution certificate
+          echo "$CM_CERTIFICATE" | base64 --decode > /tmp/dist.p12
+          keychain add-certificates --certificate /tmp/dist.p12 --certificate-password "$CM_CERTIFICATE_PASSWORD"
+
+          # Show installed identities
+          security find-identity -v -p codesigning
+
+          # Install provisioning profile
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > /tmp/profile.mobileprovision
+
+          PROFILE_UUID=$(security cms -D -i /tmp/profile.mobileprovision 2>/dev/null | python3 -c "import plistlib,sys; pl=plistlib.loads(sys.stdin.buffer.read()); print(pl['UUID'])")
+          TEAM_ID=$(security cms -D -i /tmp/profile.mobileprovision 2>/dev/null | python3 -c "import plistlib,sys; pl=plistlib.loads(sys.stdin.buffer.read()); print(pl.get('TeamIdentifier',[''])[0])")
+
+          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/${PROFILE_UUID}.mobileprovision
+          echo "✅ Profile UUID=$PROFILE_UUID Team=$TEAM_ID"
+          echo "$PROFILE_UUID" > /tmp/PROFILE_UUID
+          echo "$TEAM_ID" > /tmp/TEAM_ID
+
       - name: Build IPA
         script: |
           mkdir -p /tmp/xcodebuild_logs
+          PROFILE_UUID=$(cat /tmp/PROFILE_UUID)
+          TEAM_ID=$(cat /tmp/TEAM_ID)
+
+          cat > /tmp/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>teamID</key>
+              <string>${TEAM_ID}</string>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <true/>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.cruiseinride.app</key>
+                  <string>${PROFILE_UUID}</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+
           flutter build ipa --release \
             --no-tree-shake-icons \
-            --export-options-plist=/Users/builder/export_options.plist \
+            --export-options-plist=/tmp/ExportOptions.plist \
             2>&1 | tee /tmp/xcodebuild_logs/flutter_build.log
           exit ${PIPESTATUS[0]}
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
     publishing:
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
-        submit_to_app_store: false
       email:
         recipients:
           - josmash2021@gmail.com

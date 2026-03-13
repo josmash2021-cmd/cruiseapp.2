@@ -421,9 +421,12 @@ workflows:
           xcode-project use-profiles
       - name: Flutter build IPA (App Store)
         script: |
+          mkdir -p /tmp/xcodebuild_logs
           flutter build ipa --release \
             --no-tree-shake-icons \
-            --export-options-plist=/Users/builder/export_options.plist
+            --export-options-plist=/Users/builder/export_options.plist \
+            2>&1 | tee /tmp/xcodebuild_logs/flutter_build.log
+          exit ${PIPESTATUS[0]}
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

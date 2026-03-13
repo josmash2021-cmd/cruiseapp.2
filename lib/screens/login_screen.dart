@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
@@ -324,11 +325,11 @@ class _LoginScreenState extends State<LoginScreen> {
               // ── Title ──
               Text(
                 'Welcome to Cruise',
-                style: TextStyle(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w800,
+                style: GoogleFonts.cinzel(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
                   color: c.textPrimary,
-                  letterSpacing: -0.5,
+                  letterSpacing: 0.5,
                 ),
               ),
               const SizedBox(height: 10),

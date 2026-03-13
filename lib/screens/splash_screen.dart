@@ -353,11 +353,11 @@ class _SplashScreenState extends State<SplashScreen>
         },
         child: Text(
           letter,
-          style: GoogleFonts.montserrat(
+          style: GoogleFonts.cinzel(
             fontSize: 56,
             fontWeight: FontWeight.w900,
             color: Colors.white,
-            letterSpacing: -2,
+            letterSpacing: 4,
             shadows: [
               Shadow(
                 color: _gold.withOpacity(0.5 + glowIntensity * 0.5),

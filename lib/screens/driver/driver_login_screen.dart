@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
@@ -221,11 +222,12 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                           ).createShader(r),
                           child: Text(
                             S.of(context).welcomeBackDriver,
-                            style: const TextStyle(
-                              fontSize: 32,
+                            style: GoogleFonts.cinzel(
+                              fontSize: 30,
                               fontWeight: FontWeight.w900,
                               color: Colors.white,
-                              height: 1.15,
+                              height: 1.2,
+                              letterSpacing: 0.5,
                             ),
                           ),
                         ),

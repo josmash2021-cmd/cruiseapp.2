@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// Minimalist 3-color palette: Gold · Black · White
 /// Automatically adapts to system light/dark mode.
@@ -105,6 +106,19 @@ const _pageTransitions = PageTransitionsTheme(
   },
 );
 
+// Cinzel headline/display TextTheme used for brand headings
+TextTheme _cinzelHeadlines(TextTheme base) {
+  return base.copyWith(
+    displayLarge: GoogleFonts.cinzel(textStyle: base.displayLarge),
+    displayMedium: GoogleFonts.cinzel(textStyle: base.displayMedium),
+    displaySmall: GoogleFonts.cinzel(textStyle: base.displaySmall),
+    headlineLarge: GoogleFonts.cinzel(textStyle: base.headlineLarge),
+    headlineMedium: GoogleFonts.cinzel(textStyle: base.headlineMedium),
+    headlineSmall: GoogleFonts.cinzel(textStyle: base.headlineSmall),
+    titleLarge: GoogleFonts.cinzel(textStyle: base.titleLarge),
+  );
+}
+
 final ThemeData darkTheme = ThemeData.dark().copyWith(
   scaffoldBackgroundColor: const Color(0xFF08090C),
   brightness: Brightness.dark,
@@ -112,6 +126,7 @@ final ThemeData darkTheme = ThemeData.dark().copyWith(
     primary: Color(0xFFE8C547),
     surface: Color(0xFF101114),
   ),
+  textTheme: _cinzelHeadlines(ThemeData.dark().textTheme),
   pageTransitionsTheme: _pageTransitions,
 );
 
@@ -122,5 +137,6 @@ final ThemeData lightTheme = ThemeData.light().copyWith(
     primary: Color(0xFFE8C547),
     surface: Color(0xFFFFFFFF),
   ),
+  textTheme: _cinzelHeadlines(ThemeData.light().textTheme),
   pageTransitionsTheme: _pageTransitions,
 );

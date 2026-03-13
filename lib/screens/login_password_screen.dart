@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:local_auth/local_auth.dart';
 import '../config/app_theme.dart';
 import '../widgets/animated_biometric_icon.dart';
@@ -460,11 +461,11 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               // ── Title ──
               Text(
                 S.of(context).welcomeBack,
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
+                style: GoogleFonts.cinzel(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
                   color: c.textPrimary,
-                  letterSpacing: -0.5,
+                  letterSpacing: 0.5,
                 ),
               ),
               const SizedBox(height: 10),

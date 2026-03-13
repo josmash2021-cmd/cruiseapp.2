@@ -60,6 +60,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   // Animations
   late AnimationController _successCtrl;
   late AnimationController _scanCtrl;
+  late AnimationController _breatheCtrl;
 
   final _challenges = [
     _Challenge.center,
@@ -77,8 +78,12 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     );
     _scanCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3500),
+      duration: const Duration(milliseconds: 2000),
     )..repeat();
+    _breatheCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2800),
+    )..repeat(reverse: true);
     _successCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -163,7 +168,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
 
   void _onFrame(CameraImage image) {
     _frameCount++;
-    if (_frameCount % 6 != 0) return;
+    if (_frameCount % 4 != 0) return;
     if (_detecting || _allDone || _showPhase2Intro || !mounted) return;
     _detecting = true;
     _processFrame(image).whenComplete(() => _detecting = false);
@@ -304,7 +309,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       await Future.delayed(const Duration(milliseconds: 200));
       final photo = await _cam?.takePicture();
 
-      // Record verification video — captures user face after challenges complete
+      // Record a short verification video after challenges complete
       String? videoPath;
       try {
         await _cam?.startVideoRecording();
@@ -314,8 +319,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       }
 
       await _successCtrl.forward();
-      // Record for ~3 seconds total to capture clear face verification
-      await Future.delayed(const Duration(milliseconds: 2500));
+      await Future.delayed(const Duration(milliseconds: 2000));
 
       if (_recording) {
         try {
@@ -371,6 +375,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     _bgCtrl.dispose();
     _scanCtrl.dispose();
     _successCtrl.dispose();
+    _breatheCtrl.dispose();
     _cam?.stopImageStream();
     _cam?.dispose();
     _detector?.close();
@@ -505,12 +510,13 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
                     // Tick marks overlay
                     Positioned.fill(
                       child: AnimatedBuilder(
-                        animation: _scanCtrl,
+                        animation: Listenable.merge([_scanCtrl, _breatheCtrl]),
                         builder: (_, __) => CustomPaint(
                           painter: _FaceIDTickPainter(
                             totalProgress: _totalProgress,
                             allDone: _allDone,
                             scanPosition: _scanCtrl.value,
+                            breathe: _breatheCtrl.value,
                             circleRadius: circleRadius,
                             circleCenterY: circleCenterY,
                           ),
@@ -605,28 +611,39 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   Widget _buildCirclePreview(double radius, double centerY) {
     final camAspect = _cam!.value.aspectRatio;
     final previewAspect = 1 / camAspect;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final w = constraints.maxWidth;
-        final h = constraints.maxHeight;
-        final screenAspect = w / h;
-        final scale = screenAspect > previewAspect
-            ? w / (h * previewAspect)
-            : h / (w / previewAspect);
-        return ClipPath(
-          clipper: _CircleClipper(
-            center: Offset(w / 2, centerY),
-            radius: radius,
-          ),
-          child: Transform.scale(
-            scale: scale,
-            child: Center(
-              child: AspectRatio(
-                aspectRatio: previewAspect,
-                child: CameraPreview(_cam!),
+    return AnimatedBuilder(
+      animation: _breatheCtrl,
+      builder: (context, _) {
+        // Subtle breathing pulse: 1.0 → 1.02 → 1.0
+        final breathe = Curves.easeInOut.transform(_breatheCtrl.value);
+        final pulseScale = 1.0 + breathe * 0.018;
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            final h = constraints.maxHeight;
+            final screenAspect = w / h;
+            final scale = screenAspect > previewAspect
+                ? w / (h * previewAspect)
+                : h / (w / previewAspect);
+            return Transform.scale(
+              scale: pulseScale,
+              child: ClipPath(
+                clipper: _CircleClipper(
+                  center: Offset(w / 2, centerY),
+                  radius: radius,
+                ),
+                child: Transform.scale(
+                  scale: scale,
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: previewAspect,
+                      child: CameraPreview(_cam!),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -638,51 +655,75 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Challenge icon with animated ring
+        // Challenge icon with animated ring and glow
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 350),
+          duration: const Duration(milliseconds: 400),
+          switchInCurve: Curves.easeOutBack,
+          switchOutCurve: Curves.easeIn,
           transitionBuilder: (child, animation) => ScaleTransition(
             scale: animation,
             child: FadeTransition(opacity: animation, child: child),
           ),
-          child: Container(
+          child: AnimatedBuilder(
             key: ValueKey('icon_${_challengeIndex}_$_showPhase2Intro'),
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: gold.withValues(alpha: 0.1),
-              border: Border.all(
-                color: gold.withValues(alpha: 0.35),
-                width: 1.5,
-              ),
-            ),
-            child: Icon(
-              _showPhase2Intro ? Icons.swap_horiz_rounded : _challengeIcon(),
-              color: gold,
-              size: 28,
-            ),
+            animation: _breatheCtrl,
+            builder: (context, _) {
+              final b = Curves.easeInOut.transform(_breatheCtrl.value);
+              final glowAlpha = 0.08 + b * 0.12;
+              return Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      gold.withValues(alpha: 0.15),
+                      gold.withValues(alpha: 0.03),
+                    ],
+                  ),
+                  border: Border.all(
+                    color: gold.withValues(alpha: 0.4),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: gold.withValues(alpha: glowAlpha),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  _showPhase2Intro
+                      ? Icons.swap_horiz_rounded
+                      : _challengeIcon(),
+                  color: gold,
+                  size: 30,
+                ),
+              );
+            },
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 22),
 
         // Instruction text
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
+          duration: const Duration(milliseconds: 350),
+          switchInCurve: Curves.easeOut,
           child: Text(
             _instructionText(context),
             key: ValueKey('instr_${_challengeIndex}_$_showPhase2Intro'),
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
+              fontSize: 21,
+              fontWeight: FontWeight.w700,
               height: 1.3,
               letterSpacing: -0.3,
             ),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
 
         // Sub-instruction
         AnimatedSwitcher(
@@ -695,26 +736,42 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
             style: const TextStyle(color: Colors.white38, fontSize: 13),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 22),
 
-        // Challenge progress dots
+        // Challenge progress dots with smooth animation
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(_challenges.length, (i) {
             final isActive = i == _challengeIndex;
             final isDone = i < _challengeIndex || _allDone;
             return AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeOutCubic,
               margin: const EdgeInsets.symmetric(horizontal: 4),
-              width: isActive ? 24 : 8,
+              width: isActive ? 26 : 8,
               height: 8,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(4),
                 color: isDone
                     ? const Color(0xFF34C759)
                     : isActive
-                    ? gold
-                    : Colors.white.withValues(alpha: 0.15),
+                        ? gold
+                        : Colors.white.withValues(alpha: 0.12),
+                boxShadow: isDone
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF34C759).withValues(alpha: 0.4),
+                          blurRadius: 6,
+                        ),
+                      ]
+                    : isActive
+                        ? [
+                            BoxShadow(
+                              color: gold.withValues(alpha: 0.3),
+                              blurRadius: 6,
+                            ),
+                          ]
+                        : null,
               ),
             );
           }),
@@ -734,10 +791,11 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
             });
           },
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              color: Colors.white.withValues(alpha: 0.04),
             ),
             child: Text(
               S.of(context).startOver,
@@ -844,6 +902,7 @@ class _FaceIDTickPainter extends CustomPainter {
   final double totalProgress;
   final bool allDone;
   final double scanPosition;
+  final double breathe;
   final double circleRadius;
   final double circleCenterY;
 
@@ -856,6 +915,7 @@ class _FaceIDTickPainter extends CustomPainter {
     required this.totalProgress,
     required this.allDone,
     required this.scanPosition,
+    required this.breathe,
     required this.circleRadius,
     required this.circleCenterY,
   });
@@ -972,6 +1032,21 @@ class _FaceIDTickPainter extends CustomPainter {
       );
     }
 
+    // Breathing outer glow ring
+    if (!allDone) {
+      final b = Curves.easeInOut.transform(breathe);
+      final glowAlpha = 0.04 + b * 0.08;
+      canvas.drawCircle(
+        center,
+        circleRadius + 5,
+        Paint()
+          ..color = _gold.withValues(alpha: glowAlpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0 + b * 1.5
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      );
+    }
+
     // Scanning shimmer arc (golden sweep)
     if (!allDone) {
       final scanAngle = scanPosition * 2 * math.pi - math.pi / 2;
@@ -985,7 +1060,7 @@ class _FaceIDTickPainter extends CustomPainter {
           endAngle: scanAngle + shimmerLength / 2,
           colors: const [
             Color(0x00E8C547),
-            Color(0x22E8C547),
+            Color(0x33E8C547),
             Color(0x00E8C547),
           ],
           stops: const [0.0, 0.5, 1.0],
@@ -999,5 +1074,6 @@ class _FaceIDTickPainter extends CustomPainter {
   bool shouldRepaint(_FaceIDTickPainter old) =>
       old.totalProgress != totalProgress ||
       old.allDone != allDone ||
-      old.scanPosition != scanPosition;
+      old.scanPosition != scanPosition ||
+      old.breathe != breathe;
 }

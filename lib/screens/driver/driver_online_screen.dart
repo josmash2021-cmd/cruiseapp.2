@@ -66,7 +66,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // —— Map ——
   GoogleMapController? _map;
-  amap.AppleMapController? _appleMap;
   LatLng _pos = const LatLng(25.7617, -80.1918);
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
@@ -1350,33 +1349,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       }
     }
     return m;
-  }
-
-  Set<amap.Annotation> get _appleAnnotations {
-    return _allMarkers
-        .map(
-          (m) => amap.Annotation(
-            annotationId: amap.AnnotationId(m.markerId.value),
-            position: amap.LatLng(m.position.latitude, m.position.longitude),
-            anchor: m.anchor,
-          ),
-        )
-        .toSet();
-  }
-
-  Set<amap.Polyline> get _applePolylines {
-    return _polylines
-        .map(
-          (p) => amap.Polyline(
-            polylineId: amap.PolylineId(p.polylineId.value),
-            points: p.points
-                .map((ll) => amap.LatLng(ll.latitude, ll.longitude))
-                .toList(),
-            color: p.color,
-            width: p.width,
-          ),
-        )
-        .toSet();
   }
 
   /// Snap a raw GPS coordinate to the nearest point on the active route polyline.

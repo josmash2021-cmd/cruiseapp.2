@@ -7,7 +7,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -83,7 +82,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // Mini-map state
   GoogleMapController? _miniMapController;
-  amap.AppleMapController? _appleMinimapController;
   LatLng? _currentLatLng;
   String? _locationError;
   bool _imagesPrecached = false;
@@ -305,11 +303,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _miniMapController?.animateCamera(
         CameraUpdate.newLatLng(_currentLatLng!),
       );
-      _appleMinimapController?.animateCamera(
-        amap.CameraUpdate.newLatLng(
-          amap.LatLng(_currentLatLng!.latitude, _currentLatLng!.longitude),
-        ),
-      );
 
       // Check service zone for this position (once)
       if (!_stateCheckDone) {
@@ -330,11 +323,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             final ll = LatLng(p.latitude, p.longitude);
             setState(() => _currentLatLng = ll);
             _miniMapController?.animateCamera(CameraUpdate.newLatLng(ll));
-            _appleMinimapController?.animateCamera(
-              amap.CameraUpdate.newLatLng(
-                amap.LatLng(ll.latitude, ll.longitude),
-              ),
-            );
           });
     } catch (e) {
       if (mounted && _currentLatLng == null) {

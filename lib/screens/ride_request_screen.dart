@@ -1225,38 +1225,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   }
 
   // ═══════════════════════════════════════════════════════
-  //  APPLE MAPS CONVERTERS
-  // ═══════════════════════════════════════════════════════
-
-  Set<amap.Annotation> get _appleAnnotations {
-    return _markers.map((m) {
-      final id = m.markerId.value;
-      final data = _markerBitmapData[id];
-      return amap.Annotation(
-        annotationId: amap.AnnotationId(id),
-        position: amap.LatLng(m.position.latitude, m.position.longitude),
-        icon: data != null
-            ? amap.BitmapDescriptor.fromBytes(data.$1)
-            : amap.BitmapDescriptor.defaultAnnotation,
-        anchor: data != null ? data.$2 : const Offset(0.5, 1.0),
-      );
-    }).toSet();
-  }
-
-  Set<amap.Polyline> get _applePolylines {
-    return _polylines.map((p) {
-      return amap.Polyline(
-        polylineId: amap.PolylineId(p.polylineId.value),
-        points: p.points
-            .map((ll) => amap.LatLng(ll.latitude, ll.longitude))
-            .toList(),
-        color: p.color,
-        width: p.width,
-      );
-    }).toSet();
-  }
-
-  // ═══════════════════════════════════════════════════════
   //  BUILD
   // ═══════════════════════════════════════════════════════
 

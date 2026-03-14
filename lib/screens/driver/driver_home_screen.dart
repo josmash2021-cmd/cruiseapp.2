@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -256,15 +255,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
       if (!mounted) return;
       setState(() => _currentLatLng = LatLng(pos.latitude, pos.longitude));
-      if (Platform.isIOS) {
-        _appleMapController?.moveCamera(
-          amap.CameraUpdate.newLatLng(
-            amap.LatLng(_currentLatLng!.latitude, _currentLatLng!.longitude),
-          ),
-        );
-      } else {
-        _mapController?.animateCamera(CameraUpdate.newLatLng(_currentLatLng!));
-      }
+      _mapController?.animateCamera(CameraUpdate.newLatLng(_currentLatLng!));
     } catch (_) {}
   }
 

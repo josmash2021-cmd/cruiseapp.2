@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
@@ -25,7 +23,6 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   final _places = PlacesService(ApiKeys.webServices);
 
   GoogleMapController? _mapCtrl;
-  amap.AppleMapController? _appleMapCtrl;
   String _address = '';
   bool _addressIsPlaceholder = true;
   bool _loading = false;

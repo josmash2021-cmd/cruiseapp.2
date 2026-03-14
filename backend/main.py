@@ -523,8 +523,9 @@ async def crash_protection_middleware(request: Request, call_next):
             response.headers["X-Response-Checksum"] = checksum
         return response
     except Exception as e:
+        import traceback as _tb
         client_ip = request.client.host if request.client else "unknown"
-        logging.error("[CRASH] Unhandled error from %s on %s: %s", client_ip, request.url.path, str(e))
+        logging.error("[CRASH] Unhandled error from %s on %s: %s\n%s", client_ip, request.url.path, str(e), _tb.format_exc())
         _security_audit_log("crash", client_ip, f"Unhandled: {request.url.path}")
         return JSONResponse(
             {"detail": "Internal server error"},

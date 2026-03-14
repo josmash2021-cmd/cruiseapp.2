@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Compact 3D top-down car with closed roof, detailed doors,
@@ -131,11 +132,99 @@ class CarIconLoader {
 
   static Future<BitmapDescriptor> loadDriverIcon() => loadUber();
 
-  /// Returns raw PNG bytes for the uber (white sedan) icon.
-  /// Used by apple_maps_flutter on iOS to create BitmapDescriptor.
+  // ═══════════════════════════════════════════════════════════════════
+  //  MULTI-ANGLE SPRITE SYSTEM (8 directional sprites)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// The 8 view angles in degrees: 0, 45, 90, 135, 180, 225, 270, 315.
+  /// Angle = (carHeading − cameraBearing + 360) % 360
+  ///   0°  → rear   (car heading away from camera)
+  ///  90°  → left side
+  /// 180°  → front  (car heading towards camera)
+  /// 270°  → right side
+  static const List<int> _spriteAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+
+  /// Cached multi-angle sprites (8 BitmapDescriptors, index 0-7).
+  static List<BitmapDescriptor>? _navSprites;
+
+  /// Target marker size in logical pixels. Sprites are resized to this
+  /// width (height scales proportionally) so they aren't oversized on the map.
+  static const double _spriteTargetWidth = 40.0;
+
+  /// Loads 8 directional PNG sprites from assets/images/car_sprites/.
+  /// Files must be named: nav_car_0.png, nav_car_45.png, … nav_car_315.png
+  /// Each image is decoded and resized to [_spriteTargetWidth] logical px
+  /// (×devicePixelRatio) so it looks crisp but doesn't overwhelm the map.
+  /// Returns null if any sprite is missing.
+  static Future<List<BitmapDescriptor>?> loadNavCarSprites() async {
+    if (_navSprites != null) return _navSprites;
+    final sprites = <BitmapDescriptor>[];
+    // Use 3× scale for crisp rendering on retina screens
+    const double scale = 3.0;
+    final int targetPx = (_spriteTargetWidth * scale).round();
+
+    for (final angle in _spriteAngles) {
+      try {
+        final data = await rootBundle.load(
+          'assets/images/car_sprites/nav_car_$angle.png',
+        );
+        final raw = data.buffer.asUint8List();
+        if (raw.isEmpty) return null;
+
+        // Decode → resize → re-encode to get a properly sized marker
+        final codec = await ui.instantiateImageCodec(
+          raw,
+          targetWidth: targetPx,
+        );
+        final frame = await codec.getNextFrame();
+        final resized = frame.image;
+        final byteData =
+            await resized.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData == null) return null;
+        final resizedBytes = byteData.buffer.asUint8List();
+
+        // ignore: deprecated_member_use
+        sprites.add(BitmapDescriptor.fromBytes(resizedBytes));
+      } catch (_) {
+        return null; // sprite missing — caller should fall back
+      }
+    }
+    _navSprites = sprites;
+    return sprites;
+  }
+
+  /// Given the view angle (carHeading − cameraBearing), returns the
+  /// appropriate sprite index (0–7). Snaps to nearest 45°.
+  static int spriteIndexForAngle(double viewAngleDeg) {
+    final a = ((viewAngleDeg % 360) + 360) % 360; // normalize 0–360
+    final idx = ((a + 22.5) / 45).floor() % 8;
+    return idx;
+  }
+
+  /// Convenience: returns the BitmapDescriptor for a given view angle.
+  /// Returns null if sprites haven't been loaded.
+  static BitmapDescriptor? spriteForViewAngle(double viewAngleDeg) {
+    if (_navSprites == null || _navSprites!.length < 8) return null;
+    return _navSprites![spriteIndexForAngle(viewAngleDeg)];
+  }
+
+  /// Returns raw PNG bytes for the navigation car icon.
+  /// Loads from assets/images/car_sprites/nav_car.png if available,
+  /// otherwise falls back to the Canvas renderer.
   static Future<Uint8List?> loadUberBytes() async {
     if (_bytesCache.containsKey('white')) return _bytesCache['white'];
-    final bytes = await _renderDetailedBytes(_CarPalette.whitePearl);
+    // Try loading the hand-crafted PNG asset first
+    try {
+      final data = await rootBundle.load('assets/images/car_sprites/nav_car.png');
+      final bytes = data.buffer.asUint8List();
+      if (bytes.isNotEmpty) {
+        _bytesCache['white'] = bytes;
+        return bytes;
+      }
+    } catch (_) {
+      // Asset not found — fall back to Canvas renderer
+    }
+    final bytes = await _renderGmapsNavCarBytes();
     _bytesCache['white'] = bytes;
     return bytes;
   }
@@ -363,13 +452,24 @@ class CarIconLoader {
   //  GOOGLE-MAPS-STYLE NAVIGATION CAR — used for the live driver marker
   // =================================================================
 
-  /// Renders a clean Google-Maps-style top-down navigation car.
-  /// White pearl body, prominent dark windshield, drop shadow, headlights &
-  /// taillights — the same visual language as the Google Maps nav car icon.
+  /// Renders a Google-Maps-navigation-style car marker designed for 55° tilt.
+  ///
+  /// The image is intentionally tall (1:2.85 ratio) to compensate for the
+  /// vertical compression caused by the map's 55° camera tilt — cos(55°)≈0.57.
+  /// After tilt, proportions appear as a realistic ~1:1.6 SUV/crossover.
+  ///
+  /// 3D depth is conveyed through:
+  /// - Strong lateral barrel gradient (dark edges → bright centre)
+  /// - Front-to-rear lighting gradient (bright hood → darker rear)
+  /// - Heavy ambient occlusion along all edges
+  /// - Specular highlight on roof
+  /// - High-contrast windshield/rear glass
+  /// - Multi-layer drop shadow + white halo
   static Future<Uint8List> _renderGmapsNavCarBytes() async {
-    // 22×44 logical units @ 4× → 88×176 physical pixels (Retina-ready)
-    const double lw = 22.0, lh = 44.0;
-    const double scale = 4.0;
+    // 28×80 logical @ 5× = 140×400 physical pixels.
+    // Very tall so at 55° tilt it compresses to ~140×230 on screen.
+    const double lw = 28.0, lh = 80.0;
+    const double scale = 5.0;
     final int pw = (lw * scale).round();
     final int ph = (lh * scale).round();
     final double w = pw.toDouble();
@@ -378,170 +478,391 @@ class CarIconLoader {
     final rec = ui.PictureRecorder();
     final cvs = Canvas(rec, Rect.fromLTWH(0, 0, w, h));
     final cx = w * 0.5;
-    final cy = h * 0.50;
+    final cy = h * 0.47;
 
-    // ── 1. Soft drop-shadow ──────────────────────────────────────────
+    // Body half-extents — wide and very tall
+    final double bw = w * 0.38;
+    final double bh = h * 0.42;
+    final double front = cy - bh;
+    final double rear = cy + bh;
+
+    // ── 0. WHITE HALO (visible on dark map backgrounds) ──────────────
     cvs.drawOval(
-      Rect.fromCenter(
-        center: Offset(cx, cy + h * 0.04),
-        width: w * 0.82,
-        height: h * 0.88,
-      ),
+      Rect.fromCenter(center: Offset(cx, cy), width: bw * 3.2, height: bh * 2.6),
       Paint()
-        ..color = const Color(0x55000000)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9),
+        ..color = const Color(0x22FFFFFF)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 22),
     );
 
-    // ── 2. Body path (organic sedan silhouette) ──────────────────────
-    final body = _gmapsBodyPath(cx, cy, w, h);
+    // ── 1. DROP SHADOW (heavy, offset to rear) ───────────────────────
+    cvs.drawOval(
+      Rect.fromCenter(
+        center: Offset(cx, cy + bh * 0.18),
+        width: bw * 2.3,
+        height: bh * 2.0,
+      ),
+      Paint()
+        ..color = const Color(0x70000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
+    );
+    cvs.drawOval(
+      Rect.fromCenter(
+        center: Offset(cx, cy + bh * 0.08),
+        width: bw * 1.8,
+        height: bh * 1.7,
+      ),
+      Paint()
+        ..color = const Color(0x50000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
 
-    // Pearl-white lateral gradient
+    // ── 2. BODY PATH ─────────────────────────────────────────────────
+    // Tapered front, widest at mid, slightly narrower rear — SUV shape.
+    // The rear is proportionally wider than the front to enhance the
+    // perspective illusion when the map tilts the image.
+    final body = Path();
+    body.moveTo(cx, front);
+    // Front-right: narrow nose widens smoothly
+    body.cubicTo(
+      cx + bw * 0.40, front,
+      cx + bw * 0.88, front + bh * 0.12,
+      cx + bw * 0.94, front + bh * 0.35,
+    );
+    // Right side: gentle barrel
+    body.cubicTo(
+      cx + bw * 0.98, cy - bh * 0.05,
+      cx + bw * 0.98, cy + bh * 0.15,
+      cx + bw * 0.94, rear - bh * 0.15,
+    );
+    // Rear-right corner
+    body.cubicTo(
+      cx + bw * 0.88, rear - bh * 0.05,
+      cx + bw * 0.55, rear,
+      cx, rear,
+    );
+    // Rear-left corner (mirror)
+    body.cubicTo(
+      cx - bw * 0.55, rear,
+      cx - bw * 0.88, rear - bh * 0.05,
+      cx - bw * 0.94, rear - bh * 0.15,
+    );
+    // Left side: gentle barrel
+    body.cubicTo(
+      cx - bw * 0.98, cy + bh * 0.15,
+      cx - bw * 0.98, cy - bh * 0.05,
+      cx - bw * 0.94, front + bh * 0.35,
+    );
+    // Front-left
+    body.cubicTo(
+      cx - bw * 0.88, front + bh * 0.12,
+      cx - bw * 0.40, front,
+      cx, front,
+    );
+    body.close();
+
+    // ── 3. BODY FILL — strong lateral barrel gradient ────────────────
     cvs.drawPath(
       body,
       Paint()
         ..shader = ui.Gradient.linear(
-          Offset(cx - w * 0.42, cy),
-          Offset(cx + w * 0.42, cy),
+          Offset(cx - bw, cy),
+          Offset(cx + bw, cy),
           const [
-            Color(0xFFBFC4CC), // side in shadow
-            Color(0xFFD8DCE4),
-            Color(0xFFF2F4F8), // centre highlight
-            Color(0xFFD8DCE4),
-            Color(0xFFBFC4CC),
+            Color(0xFF8A9098), // far left — dark
+            Color(0xFFB8BEC8), // left quarter
+            Color(0xFFF2F4F8), // center — bright white
+            Color(0xFFB8BEC8), // right quarter
+            Color(0xFF8A9098), // far right — dark
           ],
-          [0.0, 0.22, 0.50, 0.78, 1.0],
+          [0.0, 0.20, 0.50, 0.80, 1.0],
         ),
     );
 
-    // Thin body outline
+    // ── 4. FRONT-TO-REAR depth overlay ───────────────────────────────
+    // Hood is brighter (catches light), rear is darker (in shadow)
     cvs.drawPath(
       body,
       Paint()
-        ..color = const Color(0x50505870)
+        ..shader = ui.Gradient.linear(
+          Offset(cx, front),
+          Offset(cx, rear),
+          const [
+            Color(0x30FFFFFF), // bright hood
+            Color(0x10FFFFFF), // upper mid
+            Color(0x00000000), // neutral mid
+            Color(0x18000000), // lower — slightly darker
+            Color(0x40000000), // rear — in shadow
+          ],
+          [0.0, 0.25, 0.45, 0.75, 1.0],
+        ),
+    );
+
+    // ── 5. BODY OUTLINE ──────────────────────────────────────────────
+    cvs.drawPath(
+      body,
+      Paint()
+        ..color = const Color(0x50506080)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = w * 0.028
+        ..strokeWidth = w * 0.016
         ..isAntiAlias = true,
     );
 
-    // ── 3. Windshield (front, ~28 % from nose) ──────────────────────
-    final wsTop = cy - h * 0.305;
-    final wsMid = cy - h * 0.135;
+    // ── 6. HEAVY AMBIENT OCCLUSION ───────────────────────────────────
+    cvs.save();
+    cvs.clipPath(body);
+    // Left AO
+    cvs.drawRect(
+      Rect.fromLTWH(cx - bw * 1.0, front, bw * 0.40, bh * 2.1),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx - bw, cy),
+          Offset(cx - bw * 0.60, cy),
+          const [Color(0x50000000), Color(0x00000000)],
+        ),
+    );
+    // Right AO
+    cvs.drawRect(
+      Rect.fromLTWH(cx + bw * 0.60, front, bw * 0.40, bh * 2.1),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx + bw * 0.60, cy),
+          Offset(cx + bw, cy),
+          const [Color(0x00000000), Color(0x50000000)],
+        ),
+    );
+    // Rear AO
+    cvs.drawRect(
+      Rect.fromLTWH(cx - bw, rear - bh * 0.20, bw * 2, bh * 0.22),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, rear - bh * 0.20),
+          Offset(cx, rear),
+          const [Color(0x00000000), Color(0x50000000)],
+        ),
+    );
+    // Front AO (subtle nose shadow)
+    cvs.drawRect(
+      Rect.fromLTWH(cx - bw, front, bw * 2, bh * 0.08),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, front),
+          Offset(cx, front + bh * 0.08),
+          const [Color(0x20000000), Color(0x00000000)],
+        ),
+    );
+    cvs.restore();
+
+    // ── 7. HOOD — bright front section ───────────────────────────────
+    final hoodEnd = cy - bh * 0.32;
+    cvs.save();
+    cvs.clipPath(body);
+    cvs.drawRect(
+      Rect.fromLTWH(cx - bw * 0.80, front, bw * 1.60, hoodEnd - front),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, front + bh * 0.04),
+          Offset(cx, hoodEnd),
+          const [Color(0x38FFFFFF), Color(0x10FFFFFF)],
+        ),
+    );
+    cvs.restore();
+    // Hood centre crease
+    cvs.drawLine(
+      Offset(cx, front + bh * 0.06),
+      Offset(cx, hoodEnd),
+      Paint()
+        ..color = const Color(0x30000000)
+        ..strokeWidth = w * 0.014
+        ..strokeCap = StrokeCap.round
+        ..isAntiAlias = true,
+    );
+
+    // ── 8. WINDSHIELD (very dark, high contrast) ─────────────────────
+    final wsTop = cy - bh * 0.34;
+    final wsBot = cy - bh * 0.12;
     final wsPath = Path()
-      ..moveTo(cx - w * 0.215, wsTop + h * 0.020)
-      ..lineTo(cx + w * 0.215, wsTop + h * 0.020)
-      ..lineTo(cx + w * 0.252, wsMid)
-      ..lineTo(cx - w * 0.252, wsMid)
+      ..moveTo(cx - bw * 0.50, wsTop)
+      ..lineTo(cx + bw * 0.50, wsTop)
+      ..lineTo(cx + bw * 0.62, wsBot)
+      ..lineTo(cx - bw * 0.62, wsBot)
       ..close();
     cvs.drawPath(
       wsPath,
       Paint()
-        ..color = const Color(0xD42B3D52)
+        ..shader = ui.Gradient.linear(
+          Offset(cx, wsTop),
+          Offset(cx, wsBot),
+          const [
+            Color(0xF0182838), // very dark top
+            Color(0xE0253848), // slightly lighter bottom
+          ],
+        )
         ..isAntiAlias = true,
     );
-
-    // Glass inner highlight strip
-    cvs.drawRect(
-      Rect.fromLTWH(cx - w * 0.17, wsTop + h * 0.030, w * 0.34, h * 0.022),
+    // Bright reflection strip across windshield
+    final wsRefY = wsTop + (wsBot - wsTop) * 0.30;
+    cvs.drawLine(
+      Offset(cx - bw * 0.36, wsRefY),
+      Offset(cx + bw * 0.36, wsRefY),
       Paint()
-        ..color = const Color(0x22FFFFFF)
+        ..color = const Color(0x44FFFFFF)
+        ..strokeWidth = h * 0.008
+        ..strokeCap = StrokeCap.round
         ..isAntiAlias = true,
     );
 
-    // ── 4. Roof panel (between windshield & rear glass) ──────────────
-    final roofY1 = wsTop + h * 0.020;
-    final roofY2 = cy + h * 0.135;
-    cvs.drawRect(
-      Rect.fromLTWH(cx - w * 0.215, roofY1, w * 0.430, roofY2 - roofY1),
+    // ── 9. ROOF (bright, elevated look) ──────────────────────────────
+    final roofBot = cy + bh * 0.12;
+    final roofPath = Path()
+      ..moveTo(cx - bw * 0.56, wsBot)
+      ..lineTo(cx + bw * 0.56, wsBot)
+      ..lineTo(cx + bw * 0.52, roofBot)
+      ..lineTo(cx - bw * 0.52, roofBot)
+      ..close();
+    // Lateral gradient — edges darker for 3D curvature
+    cvs.drawPath(
+      roofPath,
       Paint()
         ..shader = ui.Gradient.linear(
-          Offset(cx, roofY1),
-          Offset(cx, roofY2),
-          const [Color(0xFFDCE0E8), Color(0xFFF0F3F8), Color(0xFFDCE0E8)],
-          [0.0, 0.50, 1.0],
-        ),
+          Offset(cx - bw * 0.5, cy),
+          Offset(cx + bw * 0.5, cy),
+          const [
+            Color(0xFFC8CCD4),
+            Color(0xFFEAEDF4),
+            Color(0xFFF8FAFE), // bright centre
+            Color(0xFFEAEDF4),
+            Color(0xFFC8CCD4),
+          ],
+          [0.0, 0.22, 0.50, 0.78, 1.0],
+        )
+        ..isAntiAlias = true,
+    );
+    // Specular roof highlight (oval bright spot)
+    cvs.drawOval(
+      Rect.fromCenter(
+        center: Offset(cx, cy - bh * 0.02),
+        width: bw * 0.55,
+        height: bh * 0.10,
+      ),
+      Paint()
+        ..color = const Color(0x38FFFFFF)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
     );
 
-    // ── 5. Rear glass ────────────────────────────────────────────────
-    final rgTop = cy + h * 0.135;
-    final rgBot = cy + h * 0.290;
+    // ── 10. REAR GLASS (dark) ────────────────────────────────────────
+    final rgTop = cy + bh * 0.12;
+    final rgBot = cy + bh * 0.30;
     final rgPath = Path()
-      ..moveTo(cx - w * 0.220, rgTop)
-      ..lineTo(cx + w * 0.220, rgTop)
-      ..lineTo(cx + w * 0.195, rgBot)
-      ..lineTo(cx - w * 0.195, rgBot)
+      ..moveTo(cx - bw * 0.50, rgTop)
+      ..lineTo(cx + bw * 0.50, rgTop)
+      ..lineTo(cx + bw * 0.44, rgBot)
+      ..lineTo(cx - bw * 0.44, rgBot)
       ..close();
     cvs.drawPath(
       rgPath,
       Paint()
-        ..color = const Color(0xBB2B3D52)
+        ..color = const Color(0xD0203040)
         ..isAntiAlias = true,
     );
 
-    // ── 6. Side mirrors ──────────────────────────────────────────────
-    final mirY = wsMid - h * 0.028;
-    // Left
-    cvs.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(cx - w * 0.430, mirY, w * 0.070, h * 0.050),
-        Radius.circular(w * 0.014),
-      ),
-      Paint()
-        ..color = const Color(0xFFCDD1D8)
-        ..isAntiAlias = true,
-    );
-    // Right
-    cvs.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(cx + w * 0.360, mirY, w * 0.070, h * 0.050),
-        Radius.circular(w * 0.014),
-      ),
-      Paint()
-        ..color = const Color(0xFFCDD1D8)
-        ..isAntiAlias = true,
-    );
-
-    // ── 7. Headlights (front) ───────────────────────────────────────
-    final hlY = cy - h * 0.415;
-    for (final sx in [-0.200, 0.200]) {
-      cvs.drawOval(
-        Rect.fromCenter(
-          center: Offset(cx + w * sx, hlY),
-          width: w * 0.175,
-          height: h * 0.046,
+    // ── 11. SIDE MIRRORS ─────────────────────────────────────────────
+    final mirY = wsBot + h * 0.005;
+    for (final s in [-1.0, 1.0]) {
+      cvs.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(cx + s * bw * 0.96, mirY),
+            width: bw * 0.20,
+            height: bh * 0.06,
+          ),
+          Radius.circular(w * 0.010),
         ),
         Paint()
-          ..color = const Color(0xFFFFF9E0)
+          ..color = const Color(0xFFD2D6DE)
           ..isAntiAlias = true,
       );
     }
 
-    // ── 8. Taillights (rear) ────────────────────────────────────────
-    final tlY = cy + h * 0.415;
-    for (final sx in [-0.195, 0.195]) {
+    // ── 12. HEADLIGHTS (warm white glow) ─────────────────────────────
+    final hlY = front + bh * 0.08;
+    for (final s in [-1.0, 1.0]) {
+      final hlX = cx + s * bw * 0.55;
       cvs.drawOval(
-        Rect.fromCenter(
-          center: Offset(cx + w * sx, tlY),
-          width: w * 0.165,
-          height: h * 0.040,
-        ),
+        Rect.fromCenter(center: Offset(hlX, hlY), width: bw * 0.38, height: bh * 0.06),
         Paint()
-          ..color = const Color(0xFFFF3030)
+          ..color = const Color(0x40FFFDE0)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+      cvs.drawOval(
+        Rect.fromCenter(center: Offset(hlX, hlY), width: bw * 0.24, height: bh * 0.04),
+        Paint()..color = const Color(0xFFFFFBE8)..isAntiAlias = true,
+      );
+    }
+
+    // ── 13. TAILLIGHTS (red glow) ────────────────────────────────────
+    final tlY = rear - bh * 0.06;
+    for (final s in [-1.0, 1.0]) {
+      final tlX = cx + s * bw * 0.50;
+      cvs.drawOval(
+        Rect.fromCenter(center: Offset(tlX, tlY), width: bw * 0.34, height: bh * 0.05),
+        Paint()
+          ..color = const Color(0x50FF2020)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+      cvs.drawOval(
+        Rect.fromCenter(center: Offset(tlX, tlY), width: bw * 0.22, height: bh * 0.035),
+        Paint()..color = const Color(0xFFE83030)..isAntiAlias = true,
+      );
+    }
+
+    // ── 14. FENDER BODY LINES (strong, for 3D volume) ────────────────
+    for (final s in [-1.0, 1.0]) {
+      final fx = cx + s * bw * 0.75;
+      // Bright specular line
+      cvs.drawLine(
+        Offset(fx, front + bh * 0.20),
+        Offset(fx, rear - bh * 0.18),
+        Paint()
+          ..color = const Color(0x28FFFFFF)
+          ..strokeWidth = w * 0.018
+          ..strokeCap = StrokeCap.round
+          ..isAntiAlias = true,
+      );
+      // Dark line just outside the specular (shadow edge)
+      cvs.drawLine(
+        Offset(fx + s * w * 0.020, front + bh * 0.22),
+        Offset(fx + s * w * 0.020, rear - bh * 0.20),
+        Paint()
+          ..color = const Color(0x18000000)
+          ..strokeWidth = w * 0.012
+          ..strokeCap = StrokeCap.round
           ..isAntiAlias = true,
       );
     }
 
-    // ── 9. Hood crease / centre line ────────────────────────────────
-    final creaseTop = cy - h * 0.450;
-    final creaseMid = wsTop + h * 0.010;
+    // ── 15. FRONT BUMPER ─────────────────────────────────────────────
     cvs.drawLine(
-      Offset(cx, creaseTop),
-      Offset(cx, creaseMid),
+      Offset(cx - bw * 0.50, front + bh * 0.03),
+      Offset(cx + bw * 0.50, front + bh * 0.03),
+      Paint()
+        ..color = const Color(0x28000000)
+        ..strokeWidth = w * 0.012
+        ..strokeCap = StrokeCap.round
+        ..isAntiAlias = true,
+    );
+
+    // ── 16. REAR BUMPER LINE ─────────────────────────────────────────
+    cvs.drawLine(
+      Offset(cx - bw * 0.48, rear - bh * 0.02),
+      Offset(cx + bw * 0.48, rear - bh * 0.02),
       Paint()
         ..color = const Color(0x30000000)
-        ..strokeWidth = w * 0.018
+        ..strokeWidth = w * 0.010
+        ..strokeCap = StrokeCap.round
         ..isAntiAlias = true,
     );
 
+    // ── ENCODE ───────────────────────────────────────────────────────
     final pic = rec.endRecording();
     final img = await pic.toImage(pw, ph);
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
@@ -549,6 +870,7 @@ class CarIconLoader {
   }
 
   /// Organic sedan body — tapered nose, wider at mid/rear (Google Maps style).
+  /// Kept for backward compat — new code uses inline body path in renderer.
   static Path _gmapsBodyPath(double cx, double cy, double w, double h) {
     final path = Path();
     final front = cy - h * 0.450;

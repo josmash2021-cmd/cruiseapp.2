@@ -170,6 +170,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   double _smoothedBearing = 0;
   BitmapDescriptor? _arrowIcon;
 
+  // -- Google Maps–style 3D nav car (used during navigation) --
+  BitmapDescriptor? _navCarIcon;
+
+  // -- Multi-angle 3D car sprites (8 directions, like a real 3D model) --
+  List<BitmapDescriptor>? _navCarSprites;
+  double _cameraBearing = 0; // current camera bearing for sprite selection
+  int _lastSpriteIdx = -1; // avoid rebuilds when sprite hasn't changed
+
   // -- Vehicle-based markers (asset images) --
   BitmapDescriptor? _suvIcon; // Suburban
   BitmapDescriptor? _sedanIcon; // Fusion / Camry
@@ -411,6 +419,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _suvIcon = await CarIconLoader.loadForRide('Suburban');
     _sedanIcon = await CarIconLoader.loadForRide('Camry');
     _arrowIcon = _suvIcon;
+    // Load multi-angle 3D car sprites (8 directions) — falls back to single icon
+    _navCarSprites = await CarIconLoader.loadNavCarSprites();
+    _navCarIcon = await CarIconLoader.loadUber();
     await _loadDriverPhoto();
     await _buildGoldenDotFrames();
     _startGoldenDotAnimation();
@@ -908,6 +919,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           } else if (_phase == _Phase.enRouteToPickup) {
             // TRIP: Uber-style 2.5D follow — tilt 55, zoom 17.5
             if (_cameraFollowing) {
+              _cameraBearing = _smoothedBearing; // proactive update for sprites
               _animateToPosition(newLL, zoom: 17.5, bearing: _smoothedBearing, tilt: 55);
             }
             // Update turn-by-turn nav state
@@ -931,6 +943,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           } else if (_phase == _Phase.inTrip) {
             // TRIP: Uber-style 2.5D follow — tilt 55, zoom 17.5
             if (_cameraFollowing) {
+              _cameraBearing = _smoothedBearing; // proactive update for sprites
               _animateToPosition(newLL, zoom: 17.5, bearing: _smoothedBearing, tilt: 55);
             }
             // Update turn-by-turn nav state
@@ -1208,6 +1221,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         (_simLastCamera == null ||
             now.difference(_simLastCamera!).inMilliseconds > 33)) {
       _simLastCamera = now;
+      _cameraBearing = bearing; // sync for sprite selection
       _map?.moveCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(target: pt, zoom: 17.5, bearing: bearing, tilt: 55),
@@ -1331,9 +1345,38 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   Set<Marker> get _allMarkers {
-    // Only trip-specific markers (pickup, dropoff) — driver location
-    // is shown via the native blue tracking circle (myLocationEnabled: true)
-    return {..._markers};
+    final m = {..._markers};
+    // During navigation phases, show 3D car marker
+    final isNav = _phase == _Phase.enRouteToPickup ||
+        _phase == _Phase.inTrip ||
+        _phase == _Phase.routeSummary;
+    if (isNav) {
+      // Try multi-angle sprites first (8-direction 3D car)
+      BitmapDescriptor? icon;
+      if (_navCarSprites != null && _navCarSprites!.length == 8) {
+        final viewAngle = _heading - _cameraBearing;
+        icon = CarIconLoader.spriteForViewAngle(viewAngle);
+      }
+      // Fallback: single PNG or Canvas icon
+      icon ??= _navCarIcon ?? _vehicleIcon ?? _arrowIcon;
+      if (icon != null) {
+        m.add(
+          Marker(
+            markerId: const MarkerId('driver_car'),
+            position: _pos,
+            icon: icon,
+            // With multi-angle sprites, the sprite image already shows the
+            // correct orientation — no extra rotation needed.
+            // With single icon fallback, rotate to heading.
+            rotation: (_navCarSprites != null) ? 0 : _heading,
+            flat: _navCarSprites == null, // billboard for sprites, flat for single
+            anchor: const Offset(0.5, 0.5),
+            zIndex: 100,
+          ),
+        );
+      }
+    }
+    return m;
   }
 
   Set<amap.Annotation> get _appleAnnotations {
@@ -1734,6 +1777,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     await Future.delayed(const Duration(milliseconds: 150));
     _nearDropoffNotified = false;
     // Start navigation camera (Uber 2.5D style)
+    _cameraBearing = _heading; // sync for sprite selection
     _map?.animateCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(target: _pos, zoom: 17.5, bearing: _heading, tilt: 55),
@@ -1759,6 +1803,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       };
     });
     // Switch to Uber 2.5D navigation camera
+    _cameraBearing = _heading; // sync for sprite selection
     _map?.animateCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(target: _pos, zoom: 17.5, bearing: _heading, tilt: 55),
@@ -2820,6 +2865,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _reFollowTimer?.cancel();
     setState(() => _cameraFollowing = true);
     final bearing = _smoothedBearing;
+    _cameraBearing = bearing; // sync for sprite selection
     if (Platform.isIOS) {
       _appleMap?.moveCamera(
         amap.CameraUpdate.newCameraPosition(
@@ -2860,7 +2906,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
             );
           },
-          myLocationEnabled: true,
+          myLocationEnabled: !(_phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip || _phase == _Phase.routeSummary),
           myLocationButtonEnabled: false,
           zoomGesturesEnabled: true,
           scrollGesturesEnabled: true,
@@ -2900,8 +2946,20 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         },
         markers: _allMarkers,
         polylines: _polylines,
+        onCameraMove: (pos) {
+          // Track camera bearing for multi-angle sprite selection
+          _cameraBearing = pos.bearing;
+          if (_navCarSprites != null) {
+            final viewAngle = _heading - _cameraBearing;
+            final idx = CarIconLoader.spriteIndexForAngle(viewAngle);
+            if (idx != _lastSpriteIdx) {
+              _lastSpriteIdx = idx;
+              setState(() {}); // only rebuild when sprite actually changes
+            }
+          }
+        },
         onCameraMoveStarted: _onCameraMoveStarted,
-        myLocationEnabled: true,
+        myLocationEnabled: !(_phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip || _phase == _Phase.routeSummary),
         myLocationButtonEnabled: false,
         zoomControlsEnabled: false,
         mapToolbarEnabled: false,

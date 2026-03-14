@@ -372,12 +372,12 @@ class _SplashScreenState extends State<SplashScreen>
                         Opacity(
                           opacity: (glow * 1.5).clamp(0.0, 1.0),
                           child: Text(
-                            'I N   R I D E',
+                            'P R E M I U M   R I D E   E X P E R I E N C E',
                             style: GoogleFonts.cinzel(
-                              fontSize: 13,
+                              fontSize: 10,
                               fontWeight: FontWeight.w400,
                               color: _gold.withOpacity(0.75),
-                              letterSpacing: 8,
+                              letterSpacing: 5,
                             ),
                           ),
                         ),

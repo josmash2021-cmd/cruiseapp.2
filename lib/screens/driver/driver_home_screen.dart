@@ -572,35 +572,39 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   height: 32,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: const LinearGradient(colors: [_gold, _goldLight]),
+                    color: Colors.white.withValues(alpha: 0.12),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      width: 1,
+                    ),
                   ),
-                  child: _photoUrl != null && _photoUrl!.isNotEmpty
-                      ? ClipOval(
-                          child: _photoUrl!.startsWith('http')
-                              ? Image.network(
-                                  _photoUrl!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_a, _b, _c) => const Icon(
-                                    Icons.person_rounded,
-                                    color: Colors.black,
-                                    size: 18,
-                                  ),
-                                )
-                              : Image.file(
-                                  File(_photoUrl!),
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_a, _b, _c) => const Icon(
-                                    Icons.person_rounded,
-                                    color: Colors.black,
-                                    size: 18,
-                                  ),
+                  child: ClipOval(
+                    child: _photoUrl != null && _photoUrl!.isNotEmpty
+                        ? (_photoUrl!.startsWith('http')
+                            ? Image.network(
+                                _photoUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_a, _b, _c) => Icon(
+                                  Icons.person_rounded,
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                  size: 18,
                                 ),
-                        )
-                      : const Icon(
-                          Icons.person_rounded,
-                          color: Colors.black,
-                          size: 18,
-                        ),
+                              )
+                            : Image.file(
+                                File(_photoUrl!),
+                                fit: BoxFit.cover,
+                                errorBuilder: (_a, _b, _c) => Icon(
+                                  Icons.person_rounded,
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                  size: 18,
+                                ),
+                              ))
+                        : Icon(
+                            Icons.person_rounded,
+                            color: Colors.white.withValues(alpha: 0.6),
+                            size: 18,
+                          ),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -839,47 +843,48 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final panelH =
         _panelCollapsedH + (_panelExpandedH - _panelCollapsedH) * _panelExtent;
 
-    return GestureDetector(
-      onVerticalDragStart: (_) => _dragging = true,
-      onVerticalDragUpdate: (d) {
-        setState(() {
-          final delta = -d.delta.dy / (_panelExpandedH - _panelCollapsedH);
-          _panelExtent = (_panelExtent + delta).clamp(0.0, 1.0);
-        });
-      },
-      onVerticalDragEnd: (d) {
-        _dragging = false;
-        // Snap based on velocity + position
-        final velocity = d.primaryVelocity ?? 0;
-        double target;
-        if (velocity < -300) {
-          target = 1.0; // swiped up fast
-        } else if (velocity > 300) {
-          target = 0.0; // swiped down fast
-        } else {
-          target = _panelExtent > 0.3 ? 1.0 : 0.0;
-        }
-        _animatePanel(target);
-      },
-      child: AnimatedContainer(
-        duration: _dragging ? Duration.zero : const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-        height: panelH + pad.bottom,
-        decoration: BoxDecoration(
-          color: dc.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 16,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            // ── Drag handle ──
-            Padding(
+    return AnimatedContainer(
+      duration: _dragging ? Duration.zero : const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+      height: panelH + pad.bottom,
+      decoration: BoxDecoration(
+        color: dc.card,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // ── Drag handle — drag only registered here ──
+          GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragStart: (_) => setState(() => _dragging = true),
+            onVerticalDragUpdate: (d) {
+              setState(() {
+                final delta =
+                    -d.delta.dy / (_panelExpandedH - _panelCollapsedH);
+                _panelExtent = (_panelExtent + delta).clamp(0.0, 1.0);
+              });
+            },
+            onVerticalDragEnd: (d) {
+              setState(() => _dragging = false);
+              final velocity = d.primaryVelocity ?? 0;
+              double target;
+              if (velocity < -300) {
+                target = 1.0;
+              } else if (velocity > 300) {
+                target = 0.0;
+              } else {
+                target = _panelExtent > 0.3 ? 1.0 : 0.0;
+              }
+              _animatePanel(target);
+            },
+            child: Padding(
               padding: const EdgeInsets.only(top: 8, bottom: 4),
               child: Container(
                 width: 36,
@@ -890,8 +895,32 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 ),
               ),
             ),
-            // ── Header row: photo | status | list ──
-            Padding(
+          ),
+            // ── Header row: photo | status | list — also draggable ──
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onVerticalDragStart: (_) => setState(() => _dragging = true),
+              onVerticalDragUpdate: (d) {
+                setState(() {
+                  final delta =
+                      -d.delta.dy / (_panelExpandedH - _panelCollapsedH);
+                  _panelExtent = (_panelExtent + delta).clamp(0.0, 1.0);
+                });
+              },
+              onVerticalDragEnd: (d) {
+                setState(() => _dragging = false);
+                final velocity = d.primaryVelocity ?? 0;
+                double target;
+                if (velocity < -300) {
+                  target = 1.0;
+                } else if (velocity > 300) {
+                  target = 0.0;
+                } else {
+                  target = _panelExtent > 0.3 ? 1.0 : 0.0;
+                }
+                _animatePanel(target);
+              },
+              child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
               child: Row(
                 children: [
@@ -908,7 +937,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       height: 36,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: _gold, width: 2),
+                        color: Colors.white.withValues(alpha: 0.1),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          width: 1,
+                        ),
                       ),
                       child: ClipOval(
                         child: _photoUrl != null && _photoUrl!.isNotEmpty
@@ -916,19 +949,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 ? Image.network(
                                     _photoUrl!,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_a, _b, _c) => Container(
-                                      color: _gold.withValues(alpha: 0.3),
+                                    errorBuilder: (_a, _b, _c) => Icon(
+                                      Icons.person_rounded,
+                                      color: Colors.white.withValues(alpha: 0.5),
+                                      size: 20,
                                     ),
                                   )
                                 : Image.file(
                                     File(_photoUrl!),
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_a, _b, _c) => Container(
-                                      color: _gold.withValues(alpha: 0.3),
+                                    errorBuilder: (_a, _b, _c) => Icon(
+                                      Icons.person_rounded,
+                                      color: Colors.white.withValues(alpha: 0.5),
+                                      size: 20,
                                     ),
                                   ))
-                            : Container(
-                                color: _gold.withValues(alpha: 0.15),
+                            : Icon(
+                                Icons.person_rounded,
+                                color: Colors.white.withValues(alpha: 0.5),
+                                size: 20,
                               ),
                       ),
                     ),
@@ -975,6 +1014,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   ),
                 ],
               ),
+            ),
             ),
             // ── Expanded content ──
             if (_panelExtent > 0.02)

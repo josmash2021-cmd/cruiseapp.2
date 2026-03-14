@@ -106,9 +106,10 @@ const _pageTransitions = PageTransitionsTheme(
   },
 );
 
-// Cinzel serif TextTheme — applied to all text styles for elegant branding
+// Cinzel (titles) + Inter (body/labels) — elegant branding with readable UI
 TextTheme _cinzelHeadlines(TextTheme base) {
   return base.copyWith(
+    // ── Cinzel for all headline/title styles ──
     displayLarge: GoogleFonts.cinzel(textStyle: base.displayLarge),
     displayMedium: GoogleFonts.cinzel(textStyle: base.displayMedium),
     displaySmall: GoogleFonts.cinzel(textStyle: base.displaySmall),
@@ -118,12 +119,13 @@ TextTheme _cinzelHeadlines(TextTheme base) {
     titleLarge: GoogleFonts.cinzel(textStyle: base.titleLarge),
     titleMedium: GoogleFonts.cinzel(textStyle: base.titleMedium),
     titleSmall: GoogleFonts.cinzel(textStyle: base.titleSmall),
-    bodyLarge: GoogleFonts.cinzel(textStyle: base.bodyLarge),
-    bodyMedium: GoogleFonts.cinzel(textStyle: base.bodyMedium),
-    bodySmall: GoogleFonts.cinzel(textStyle: base.bodySmall),
-    labelLarge: GoogleFonts.cinzel(textStyle: base.labelLarge),
-    labelMedium: GoogleFonts.cinzel(textStyle: base.labelMedium),
-    labelSmall: GoogleFonts.cinzel(textStyle: base.labelSmall),
+    // ── Inter for body and label styles — clean and readable ──
+    bodyLarge: GoogleFonts.inter(textStyle: base.bodyLarge),
+    bodyMedium: GoogleFonts.inter(textStyle: base.bodyMedium),
+    bodySmall: GoogleFonts.inter(textStyle: base.bodySmall),
+    labelLarge: GoogleFonts.inter(textStyle: base.labelLarge),
+    labelMedium: GoogleFonts.inter(textStyle: base.labelMedium),
+    labelSmall: GoogleFonts.inter(textStyle: base.labelSmall),
   );
 }
 

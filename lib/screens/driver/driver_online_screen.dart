@@ -5555,7 +5555,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final isOpen = _panelSheetCtrl.isAttached &&
         _panelSheetCtrl.size > (minFrac + 0.05);
     _panelSheetCtrl.animateTo(
-      isOpen ? minFrac : 0.55,
+      isOpen ? minFrac : 0.85,
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeOutCubic,
     );
@@ -5587,9 +5587,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       controller: _panelSheetCtrl,
       initialChildSize: minFrac,
       minChildSize: minFrac,
-      maxChildSize: 0.55,
+      maxChildSize: 0.85,
       snap: true,
-      snapSizes: [minFrac, 0.55],
+      snapSizes: [minFrac, 0.55, 0.85],
       builder: (ctx, scrollCtrl) {
         return Container(
           decoration: BoxDecoration(

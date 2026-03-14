@@ -33,6 +33,8 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
   bool _canSubmit = false;
   String? _errorText;
   bool _verifying = false;
+  bool _resending = false;
+  int _resendSeconds = 0;
 
   late AnimationController _shakeCtrl;
   late Animation<double> _shakeAnim;
@@ -118,6 +120,58 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
       _shakeCtrl.forward(from: 0);
       HapticFeedback.mediumImpact();
     }
+  }
+
+  Future<void> _resendCode() async {
+    if (_resending || _resendSeconds > 0) return;
+    setState(() => _resending = true);
+
+    bool sent = false;
+    if (widget.useVerifyApi) {
+      final result = await SmsService.sendVerificationCode(toPhone: widget.email);
+      sent = result.ok;
+      if (result.trialBlocked || !sent) {
+        // Dev mode fallback
+        final devCode = _generateCode();
+        debugPrint('📱 DEV MODE — new code for ${widget.email}: $devCode');
+        _showSnack('Dev mode: check console', const Color(0xFFE8C547));
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _resending = false;
+      _resendSeconds = 60;
+    });
+    _startResendTimer();
+
+    if (sent) {
+      _showSnack('Code resent!', const Color(0xFFE8C547));
+    }
+  }
+
+  void _startResendTimer() {
+    Future.delayed(const Duration(seconds: 1), () {
+      if (!mounted) return;
+      setState(() => _resendSeconds--);
+      if (_resendSeconds > 0) _startResendTimer();
+    });
+  }
+
+  String _generateCode() {
+    final r = Random();
+    return List.generate(6, (_) => r.nextInt(10)).join();
+  }
+
+  void _showSnack(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: color,
+        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600)),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
 
   @override
@@ -263,6 +317,35 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
               ),
 
               const Spacer(),
+
+              // ── Resend code button ──
+              if (widget.useVerifyApi)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TextButton(
+                      onPressed: (_resending || _resendSeconds > 0) ? null : _resendCode,
+                      child: _resending
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: _gold),
+                            )
+                          : Text(
+                              _resendSeconds > 0
+                                  ? 'Resend in ${_resendSeconds}s'
+                                  : 'Resend code',
+                              style: TextStyle(
+                                color: _resendSeconds > 0
+                                    ? Colors.white.withValues(alpha: 0.4)
+                                    : _gold,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
 
               // ── Next button ──
               Padding(

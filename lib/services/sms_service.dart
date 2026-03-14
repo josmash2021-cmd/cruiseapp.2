@@ -49,7 +49,7 @@ class SmsService {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: {'To': toPhone, 'Channel': 'sms'},
-      );
+      ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         debugPrint('✅ Verification SMS sent to $toPhone');
@@ -59,9 +59,15 @@ class SmsService {
           '❌ Twilio Verify error ${response.statusCode}: ${response.body}',
         );
         // Error 21608 = trial account cannot send to unverified number
+        // Error 60203 = Max send attempts reached
+        // Error 60212 = Too many attempts, wait before retrying
+        final body = response.body.toLowerCase();
         final isTrialBlock =
-            response.body.contains('21608') ||
-            response.body.contains('unverified');
+            body.contains('21608') ||
+            body.contains('unverified') ||
+            body.contains('not a valid phone number');
+        final errorMsg = jsonDecode(response.body)['message'] ?? response.body;
+        debugPrint('📱 Twilio error detail: $errorMsg');
         return (ok: false, trialBlocked: isTrialBlock);
       }
     } catch (e) {

@@ -3368,10 +3368,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     Color borderC,
   ) {
     return GestureDetector(
-      onVerticalDragEnd: (d) {
-        final v = d.primaryVelocity ?? 0;
-        if (v < -200) _showOnlinePanel(); // swipe up → open panel
+      onVerticalDragUpdate: (d) {
+        // Detectar arrastre hacia arriba (dy negativo) para abrir el panel
+        if (d.delta.dy < -3) _showOnlinePanel();
       },
+      onTap: _showOnlinePanel,
+      behavior: HitTestBehavior.opaque,
       child: Container(
         decoration: BoxDecoration(
           color: surface,
@@ -3383,22 +3385,25 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Progress indicator line
-              ListenableBuilder(
-                listenable: _searchPulseVal,
-                builder: (_, __) {
-                  return SizedBox(
-                    height: 2,
-                    child: LinearProgressIndicator(
-                      value: null,
-                      backgroundColor: Colors.transparent,
-                      valueColor: AlwaysStoppedAnimation(
-                        _gold.withValues(alpha: 0.5),
+              // Progress indicator line - CLIPPED to stay inside
+              ClipRect(
+                child: ListenableBuilder(
+                  listenable: _searchPulseVal,
+                  builder: (_, __) {
+                    return SizedBox(
+                      height: 2,
+                      width: double.infinity,
+                      child: LinearProgressIndicator(
+                        value: null,
+                        backgroundColor: Colors.transparent,
+                        valueColor: AlwaysStoppedAnimation(
+                          _gold.withValues(alpha: 0.5),
+                        ),
+                        minHeight: 2,
                       ),
-                      minHeight: 2,
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
               // Drag handle
               Padding(

@@ -1139,6 +1139,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         price: s.selectedOption?.priceEstimate ?? 0,
         routePoints: routePts,
         tripId: s.tripId,
+        firestoreTripId: s.firestoreTripId,
       ),
     );
 
@@ -1160,6 +1161,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           pickupLabel: s.pickupLabel,
           dropoffLabel: s.dropoffLabel,
           tripId: s.tripId,
+          firestoreTripId: s.firestoreTripId,
           onTripComplete: () {
             LocalDataService.clearActiveRide();
             // Pop RiderTrackingScreen, then pop RideRequestScreen

@@ -184,13 +184,13 @@ class MapStyles {
   // ═════════════════════════════════════════════════════
   
   /// Obtiene el estilo dark apropiado según la plataforma
-  static String getDark() => isIOS ? darkIOS : dark;
+  static String getDark() => darkIOS;
   
   /// Obtiene el estilo light apropiado según la plataforma
-  static String getLight() => isIOS ? lightIOS : light;
+  static String getLight() => lightIOS;
   
   /// Obtiene el estilo de navegación apropiado según la plataforma
-  static String getNavigation() => isIOS ? navigationIOS : navigation;
+  static String getNavigation() => navigationIOS;
   
   /// Obtiene el estilo apropiado según tema y plataforma
   /// [isDark] - true para tema oscuro, false para tema claro

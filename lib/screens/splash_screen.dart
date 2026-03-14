@@ -26,7 +26,7 @@ class _SplashScreenState extends State<SplashScreen>
   static const _gold = Color(0xFFE8C547);
   static const _goldBright = Color(0xFFFFF1C1);
 
-  static const _letters = ['C', 'r', 'u', 'i', 's', 'e'];
+  static const _letters = ['C', 'R', 'U', 'I', 'S', 'E'];
 
   // ── Phase 1: Staggered letter entrance (1200ms total) ──
   late AnimationController _entranceCtrl;
@@ -372,12 +372,12 @@ class _SplashScreenState extends State<SplashScreen>
                         Opacity(
                           opacity: (glow * 1.5).clamp(0.0, 1.0),
                           child: Text(
-                            'P R E M I U M   R I D E   E X P E R I E N C E',
+                            'PREMIUM  RIDE  EXPERIENCE',
                             style: GoogleFonts.cinzel(
-                              fontSize: 10,
+                              fontSize: 11,
                               fontWeight: FontWeight.w400,
-                              color: _gold.withOpacity(0.75),
-                              letterSpacing: 5,
+                              color: _gold.withOpacity(0.7),
+                              letterSpacing: 6,
                             ),
                           ),
                         ),
@@ -459,10 +459,10 @@ class _SplashScreenState extends State<SplashScreen>
         child: Text(
           letter,
           style: GoogleFonts.cinzel(
-            fontSize: 62,
+            fontSize: 68,
             fontWeight: FontWeight.w900,
             color: Colors.white,
-            letterSpacing: 6,
+            letterSpacing: 8,
             shadows: [
               Shadow(
                 color: _gold.withOpacity(0.5 + glowIntensity * 0.5),

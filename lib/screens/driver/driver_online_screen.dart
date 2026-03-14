@@ -126,6 +126,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // â”€â”€ Simulation Mode â”€â”€
   bool _isSimulationMode = false;
   int _simulatedTripCounter = 0;
+  double _simulationSpeed = 1.0; // 1.0 = normal (40 mph), 2.0 = 2x faster, 0.5 = half speed
+  bool _isSimulationRunning = false;
 
   // â”€â”€ Route preview for a tapped offer â”€â”€
   Map<String, dynamic>? _previewingOffer;
@@ -1118,11 +1120,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _simLastCamera = null;
     _simLastTrim = null;
 
-    const double speedMps = 17.88;
+    const double baseSpeedMps = 17.88; // 40 mph base
+    final speedMps = baseSpeedMps * _simulationSpeed;
     final estSecs = (_simTotalM / speedMps).round();
     debugPrint(
-      '\u{1F697} Simulation: ${_simTotalM.round()} m, ETA ${estSecs}s @ 40 mph, ${_simRouteCopy.length} pts',
+      'Ὡ7 SIMULATION START: ${_simTotalM.round()}m, ETA ${estSecs}s @ ${(40 * _simulationSpeed).round()} mph (speed: ${_simulationSpeed}x), ${_simRouteCopy.length} pts',
     );
+    setState(() => _isSimulationRunning = true);
 
     _simTicker = createTicker(_onSimTick);
     _simTicker!.start();
@@ -1135,7 +1139,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       return;
     }
 
-    const double speedMps = 17.88;
+    const double baseSpeedMps = 17.88;
+    final speedMps = baseSpeedMps * _simulationSpeed;
     _simTraveledM = elapsed.inMicroseconds / 1e6 * speedMps;
     if (_simTraveledM >= _simTotalM) {
       _simTraveledM = _simTotalM;
@@ -1272,6 +1277,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _simTicker?.stop();
     _simTicker?.dispose();
     _simTicker = null;
+    setState(() => _isSimulationRunning = false);
   }
 
   void _smoothMoveTo(LatLng target, double heading) {
@@ -3883,6 +3889,102 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   ),
                 ),
               ),
+              const SizedBox(height: 20),
+              // SIMULATION SPEED control (only visible when simulation mode is on)
+              if (_isSimulationMode)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.03),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: borderC),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.speed_rounded,
+                            color: const Color(0xFFE8C547),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Simulation Speed',
+                            style: TextStyle(
+                              color: textPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${(_simulationSpeed * 40).round()} mph',
+                              style: TextStyle(
+                                color: const Color(0xFFE8C547),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          activeTrackColor: const Color(0xFFE8C547),
+                          inactiveTrackColor: Colors.white.withValues(alpha: 0.1),
+                          thumbColor: const Color(0xFFE8C547),
+                          overlayColor: const Color(0xFFE8C547).withValues(alpha: 0.2),
+                          trackHeight: 4,
+                        ),
+                        child: Slider(
+                          value: _simulationSpeed,
+                          min: 0.5,
+                          max: 3.0,
+                          divisions: 5,
+                          onChanged: (v) {
+                            setState(() => _simulationSpeed = v);
+                          },
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Slow',
+                            style: TextStyle(
+                              color: textMuted.withValues(alpha: 0.7),
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            'Normal',
+                            style: TextStyle(
+                              color: textMuted.withValues(alpha: 0.7),
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            'Fast',
+                            style: TextStyle(
+                              color: textMuted.withValues(alpha: 0.7),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 20),
               // GO OFFLINE button
               Center(

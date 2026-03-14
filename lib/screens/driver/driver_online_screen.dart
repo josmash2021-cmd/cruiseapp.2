@@ -5549,7 +5549,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   //  ONLINE PANEL (draggable with GO OFFLINE)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _showOnlinePanel() {
-    setState(() => _panelOpen = !_panelOpen);
+    final screenH = MediaQuery.of(context).size.height;
+    final botPad = MediaQuery.of(context).padding.bottom;
+    final minFrac = ((86 + botPad) / screenH).clamp(0.10, 0.20);
+    final isOpen = _panelSheetCtrl.isAttached &&
+        _panelSheetCtrl.size > (minFrac + 0.05);
+    _panelSheetCtrl.animateTo(
+      isOpen ? minFrac : 0.55,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+    setState(() => _panelOpen = !isOpen);
   }
 
   Widget _draggablePanel(

@@ -3615,6 +3615,89 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
               const SizedBox(height: 12),
               Divider(height: 1, color: borderC),
+              const SizedBox(height: 12),
+              // PRACTICE MODE toggle — always visible at top
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  setState(() => _isSimulationMode = !_isSimulationMode);
+                  Navigator.pop(context);
+                  _snack(_isSimulationMode
+                    ? '🎮 Practice Mode ON - Viajes simulados activos'
+                    : '🎮 Practice Mode OFF - Solo viajes reales');
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: _isSimulationMode
+                        ? const Color(0xFFE8C547).withValues(alpha: 0.15)
+                        : Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _isSimulationMode
+                          ? const Color(0xFFE8C547).withValues(alpha: 0.5)
+                          : Colors.white.withValues(alpha: 0.15),
+                      width: _isSimulationMode ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _isSimulationMode ? Icons.videogame_asset_rounded : Icons.videogame_asset_off_rounded,
+                        color: _isSimulationMode ? const Color(0xFFE8C547) : Colors.white.withValues(alpha: 0.7),
+                        size: 22,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Practice Mode',
+                              style: TextStyle(
+                                color: _isSimulationMode ? const Color(0xFFE8C547) : Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              _isSimulationMode ? 'Viajes simulados activos' : 'Activa para practicar',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        width: 48,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: _isSimulationMode ? const Color(0xFFE8C547) : Colors.grey.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                        child: AnimatedAlign(
+                          duration: const Duration(milliseconds: 200),
+                          alignment: _isSimulationMode ? Alignment.centerRight : Alignment.centerLeft,
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            margin: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Divider(height: 1, color: borderC),
               const SizedBox(height: 16),
               Text(
                 S.of(context).recommendedForYou,
@@ -3672,86 +3755,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     ),
                   );
                 },
-              ),
-              const SizedBox(height: 12),
-              // SIMULATION MODE toggle
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  setState(() => _isSimulationMode = !_isSimulationMode);
-                  Navigator.pop(context);
-                  _snack(_isSimulationMode 
-                    ? '🔧 Practice Mode ON - Simulated rides will appear' 
-                    : '🔧 Practice Mode OFF - Real rides only');
-                },
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: _isSimulationMode 
-                        ? const Color(0xFFE8C547).withValues(alpha: 0.15)
-                        : Colors.white.withValues(alpha: 0.03),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _isSimulationMode 
-                          ? const Color(0xFFE8C547).withValues(alpha: 0.3)
-                          : borderC,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _isSimulationMode ? Icons.videogame_asset_rounded : Icons.videogame_asset_off_rounded,
-                        color: _isSimulationMode ? const Color(0xFFE8C547) : panelItemIcon,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Practice Mode',
-                              style: TextStyle(
-                                color: _isSimulationMode ? Colors.white : panelItemText,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              _isSimulationMode ? 'Simulated rides active' : 'Toggle for practice rides',
-                              style: TextStyle(
-                                color: panelItemText.withValues(alpha: 0.7),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        width: 48,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          color: _isSimulationMode ? const Color(0xFFE8C547) : Colors.grey.withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(13),
-                        ),
-                        child: AnimatedAlign(
-                          duration: const Duration(milliseconds: 200),
-                          alignment: _isSimulationMode ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Container(
-                            width: 22,
-                            height: 22,
-                            margin: const EdgeInsets.all(2),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ),
               const SizedBox(height: 20),
               // SIMULATION SPEED control (only visible when simulation mode is on)

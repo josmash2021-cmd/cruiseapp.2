@@ -3287,6 +3287,78 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   ),
                 ),
               ),
+              // Practice Mode toggle — always visible
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  setState(() => _isSimulationMode = !_isSimulationMode);
+                  _snack(_isSimulationMode
+                    ? '🎮 Practice Mode ON'
+                    : '🎮 Practice Mode OFF');
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _isSimulationMode
+                        ? _gold.withValues(alpha: 0.15)
+                        : Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _isSimulationMode
+                          ? _gold.withValues(alpha: 0.6)
+                          : Colors.white.withValues(alpha: 0.12),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _isSimulationMode
+                            ? Icons.videogame_asset_rounded
+                            : Icons.videogame_asset_off_rounded,
+                        color: _isSimulationMode ? _gold : Colors.white.withValues(alpha: 0.5),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Practice Mode',
+                        style: TextStyle(
+                          color: _isSimulationMode ? _gold : Colors.white.withValues(alpha: 0.6),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        width: 40,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: _isSimulationMode
+                              ? _gold
+                              : Colors.grey.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: AnimatedAlign(
+                          duration: const Duration(milliseconds: 200),
+                          alignment: _isSimulationMode
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Container(
+                            width: 18,
+                            height: 18,
+                            margin: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               // Status bar
               GestureDetector(
                 onTap: _showOnlinePanel,

@@ -76,6 +76,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   GoogleMapController? _map;
   amap.AppleMapController? _appleMap;
   BitmapDescriptor? _carIcon;
+  List<BitmapDescriptor>? _navCarSprites;
+  double _cameraBearing = 0;
   Uint8List? _carIconBytes;
   Uint8List? _pickupPinBytes;
   Uint8List? _dropoffPinBytes;
@@ -458,6 +460,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Future<void> _loadCarIcon() async {
+    // Load multi-angle 3D sprites first
+    _navCarSprites = await CarIconLoader.loadNavCarSprites();
     // Use ride-specific car type: Suburban→SUV, Fusion→black, Camry→white
     final bytes =
         await CarIconLoader.loadForRideBytes(widget.rideName) ??
@@ -1147,6 +1151,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                           setState(() => _userMovedMap = true);
                         }
                       },
+                      onCameraMove: (pos) {
+                        _cameraBearing = pos.bearing;
+                      },
                       onCameraIdle: () => _programmaticCam = false,
                       markers: _markers(),
                       polylines: _polylines(),
@@ -1338,15 +1345,24 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         // ignore: deprecated_member_use
         ? BitmapDescriptor.fromBytes(_dropoffPinBytes!)
         : BitmapDescriptor.defaultMarker;
-    if (_carIcon != null) {
+    // Try multi-angle 3D sprites first
+    BitmapDescriptor? carMarker;
+    bool useSprites = false;
+    if (_navCarSprites != null && _navCarSprites!.length == 8) {
+      final viewAngle = _animBearing - _cameraBearing;
+      carMarker = CarIconLoader.spriteForViewAngle(viewAngle);
+      useSprites = carMarker != null;
+    }
+    carMarker ??= _carIcon;
+    if (carMarker != null) {
       m.add(
         Marker(
           markerId: const MarkerId('car'),
           position: _animPos,
-          icon: _carIcon!,
-          rotation: _animBearing,
+          icon: carMarker,
+          rotation: useSprites ? 0 : _animBearing,
           anchor: const Offset(0.5, 0.5),
-          flat: true,
+          flat: !useSprites,
           zIndexInt: 10,
         ),
       );

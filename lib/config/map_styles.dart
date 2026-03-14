@@ -15,9 +15,7 @@ class MapStyles {
   static const dark = '''
 [
   {"elementType":"geometry","stylers":[{"color":"#242f3e"}]},
-  {"elementType":"labels.text.fill","stylers":[{"color":"#746855"}]},
-  {"elementType":"labels.text.stroke","stylers":[{"color":"#242f3e"}]},
-  {"featureType":"administrative.locality","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
+  {"elementType":"labels","stylers":[{"visibility":"off"}]},
   {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#263238"}]},
   {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
   {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#263c3f"}]},
@@ -42,9 +40,7 @@ class MapStyles {
   static const darkIOS = '''
 [
   {"elementType":"geometry","stylers":[{"color":"#242f3e"}]},
-  {"elementType":"labels.text.fill","stylers":[{"color":"#746855"}]},
-  {"elementType":"labels.text.stroke","stylers":[{"color":"#242f3e"}]},
-  {"featureType":"administrative.locality","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
+  {"elementType":"labels","stylers":[{"visibility":"off"}]},
   {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#263238"}]},
   {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
   {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#263c3f"}]},
@@ -73,9 +69,7 @@ class MapStyles {
   static const light = '''
 [
   {"elementType":"geometry","stylers":[{"color":"#F0F0F5"}]},
-  {"elementType":"labels.icon","stylers":[{"visibility":"off"}]},
-  {"elementType":"labels.text.fill","stylers":[{"color":"#6E6E73"}]},
-  {"elementType":"labels.text.stroke","stylers":[{"color":"#FFFFFF"},{"weight":3}]},
+  {"elementType":"labels","stylers":[{"visibility":"off"}]},
   {"featureType":"administrative","elementType":"geometry","stylers":[{"color":"#D1D1D6"},{"visibility":"simplified"}]},
   {"featureType":"administrative.country","elementType":"geometry.stroke","stylers":[{"color":"#C7C7CC"}]},
   {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#EBEBF0"}]},
@@ -104,9 +98,7 @@ class MapStyles {
   static const lightIOS = '''
 [
   {"elementType":"geometry","stylers":[{"color":"#F0F0F5"}]},
-  {"elementType":"labels.icon","stylers":[{"visibility":"off"}]},
-  {"elementType":"labels.text.fill","stylers":[{"color":"#6E6E73"}]},
-  {"elementType":"labels.text.stroke","stylers":[{"color":"#FFFFFF"},{"weight":3}]},
+  {"elementType":"labels","stylers":[{"visibility":"off"}]},
   {"featureType":"administrative","elementType":"geometry","stylers":[{"color":"#D1D1D6"},{"visibility":"simplified"}]},
   {"featureType":"administrative.country","elementType":"geometry.stroke","stylers":[{"color":"#C7C7CC"}]},
   {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#EBEBF0"}]},
@@ -138,9 +130,7 @@ class MapStyles {
   static const navigation = '''
 [
   {"elementType":"geometry","stylers":[{"color":"#1a1a2e"}]},
-  {"elementType":"labels.text.fill","stylers":[{"color":"#5a5a7a"}]},
-  {"elementType":"labels.text.stroke","stylers":[{"color":"#1a1a2e"}]},
-  {"featureType":"administrative.locality","elementType":"labels.text.fill","stylers":[{"color":"#8888aa"}]},
+  {"elementType":"labels","stylers":[{"visibility":"off"}]},
   {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#16162b"}]},
   {"featureType":"landscape.man_made","elementType":"geometry.fill","stylers":[{"color":"#1e1e38"}]},
   {"featureType":"poi","elementType":"labels","stylers":[{"visibility":"off"}]},
@@ -166,9 +156,7 @@ class MapStyles {
   static const navigationIOS = '''
 [
   {"elementType":"geometry","stylers":[{"color":"#1a1a2e"}]},
-  {"elementType":"labels.text.fill","stylers":[{"color":"#5a5a7a"}]},
-  {"elementType":"labels.text.stroke","stylers":[{"color":"#1a1a2e"}]},
-  {"featureType":"administrative.locality","elementType":"labels.text.fill","stylers":[{"color":"#8888aa"}]},
+  {"elementType":"labels","stylers":[{"visibility":"off"}]},
   {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#16162b"}]},
   {"featureType":"landscape.man_made","elementType":"geometry.fill","stylers":[{"color":"#1e1e38"}]},
   {"featureType":"poi","elementType":"labels","stylers":[{"visibility":"off"}]},

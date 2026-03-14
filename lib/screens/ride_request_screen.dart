@@ -1307,83 +1307,44 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           children: [
             // ── Map ──
             RepaintBoundary(
-              child: Platform.isIOS
-                  ? amap.AppleMap(
-                      initialCameraPosition: amap.CameraPosition(
-                        target: amap.LatLng(
-                          _center.latitude,
-                          _center.longitude,
-                        ),
-                        zoom: 15.5,
-                      ),
-                      mapType: amap.MapType.standard,
-                      onMapCreated: (ctrl) {
-                        _appleMapCtrl = ctrl;
-                        setState(() => _mapReady = true);
-                        if (_userLocation != null) {
-                          ctrl.animateCamera(
-                            amap.CameraUpdate.newCameraPosition(
-                              amap.CameraPosition(
-                                target: amap.LatLng(
-                                  _userLocation!.latitude,
-                                  _userLocation!.longitude,
-                                ),
-                                zoom: 15.5,
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: false,
-                      zoomGesturesEnabled: true,
-                      scrollGesturesEnabled: true,
-                      pitchGesturesEnabled: true,
-                      compassEnabled: false,
-                      padding: EdgeInsets.only(
-                        bottom: _bottomSheetHeight(phase, bottomPad),
-                      ),
-                      annotations: _appleAnnotations,
-                      polylines: _applePolylines,
-                    )
-                  : GoogleMap(
-                      style: MapStyles.dark,
-                      initialCameraPosition: CameraPosition(
-                        target: _center,
-                        zoom: 15.5,
-                      ),
-                      onMapCreated: (ctrl) {
-                        _mapCtrl = ctrl;
-                        setState(() => _mapReady = true);
-                        if (_userLocation != null) {
-                          ctrl.animateCamera(
-                            CameraUpdate.newLatLngZoom(_userLocation!, 15.5),
-                          );
-                        }
-                      },
-                      onCameraMoveStarted: () {
-                        if (!_programmaticCam) {
-                          setState(() => _userMovedMap = true);
-                        }
-                      },
-                      onCameraMove: (_) {},
-                      onCameraIdle: () => _programmaticCam = false,
-                      markers: _markers,
-                      polylines: _polylines,
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: false,
-                      zoomControlsEnabled: false,
-                      zoomGesturesEnabled: true,
-                      scrollGesturesEnabled: true,
-                      compassEnabled: false,
-                      mapToolbarEnabled: false,
-                      buildingsEnabled: false,
-                      trafficEnabled: false,
-                      liteModeEnabled: false,
-                      padding: EdgeInsets.only(
-                        bottom: _bottomSheetHeight(phase, bottomPad),
-                      ),
-                    ),
+              child: GoogleMap(
+                style: MapStyles.darkIOS,
+                initialCameraPosition: CameraPosition(
+                  target: _center,
+                  zoom: 15.5,
+                ),
+                onMapCreated: (ctrl) {
+                  _mapCtrl = ctrl;
+                  setState(() => _mapReady = true);
+                  if (_userLocation != null) {
+                    ctrl.animateCamera(
+                      CameraUpdate.newLatLngZoom(_userLocation!, 15.5),
+                    );
+                  }
+                },
+                onCameraMoveStarted: () {
+                  if (!_programmaticCam) {
+                    setState(() => _userMovedMap = true);
+                  }
+                },
+                onCameraMove: (_) {},
+                onCameraIdle: () => _programmaticCam = false,
+                markers: _markers,
+                polylines: _polylines,
+                myLocationEnabled: true,
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: false,
+                zoomGesturesEnabled: true,
+                scrollGesturesEnabled: true,
+                compassEnabled: false,
+                mapToolbarEnabled: false,
+                buildingsEnabled: false,
+                trafficEnabled: false,
+                liteModeEnabled: false,
+                padding: EdgeInsets.only(
+                  bottom: _bottomSheetHeight(phase, bottomPad),
+                ),
+              ),
             ),
 
             // ── Back button ──

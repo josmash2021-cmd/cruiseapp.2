@@ -778,19 +778,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       }
     }
 
-    // Restore driver position and progress
+    // Restore traveled distance for ETA calculation
     if (activeRide.traveledMeters != null && activeRide.traveledMeters! > 0) {
       _traveledM = activeRide.traveledMeters!;
       _tgtTraveledM = _traveledM;
     }
 
-    if (activeRide.driverLat != null && activeRide.driverLng != null) {
-      _driverPos = LatLng(activeRide.driverLat!, activeRide.driverLng!);
-      _animPos = _driverPos;
-    } else {
-      _driverPos = widget.pickupLatLng;
-      _animPos = _driverPos;
-    }
+    // Driver position comes from Firestore real-time stream - don't restore old position
+    _driverPos = widget.pickupLatLng;
+    _animPos = _driverPos;
 
     // Calculate remaining distance
     double remainingM = _segDist.isNotEmpty ? _segDist.last - _traveledM : 0;

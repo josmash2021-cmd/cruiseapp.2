@@ -91,7 +91,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _navigatingToTracking = false;
 
   // ── Payment state ──
-  String _selectedPaymentMethod = Platform.isIOS ? 'credit_card' : 'google_pay';
+  String _selectedPaymentMethod = Platform.isIOS ? 'apple_pay' : 'google_pay';
   Set<String> _linkedPaymentMethods = {};
   String? _savedCardLast4;
   String? _savedCardBrand;
@@ -2808,6 +2808,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   void _showPaymentMethodPicker(AppColors c, RideOption? option) {
     final loc = S.of(context);
     final methods = [
+      if (Platform.isIOS) ('apple_pay', 'Apple Pay'),
       if (!Platform.isIOS) ('google_pay', 'Google Pay'),
       (
         'credit_card',

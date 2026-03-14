@@ -5795,6 +5795,95 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
               const SizedBox(height: 12),
               Divider(height: 1, color: borderC),
+              const SizedBox(height: 12),
+              // ── Practice Mode toggle ──
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  setState(() => _isSimulationMode = !_isSimulationMode);
+                  _snack(_isSimulationMode
+                    ? '🎮 Practice Mode ON'
+                    : '🎮 Practice Mode OFF');
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: _isSimulationMode
+                        ? _gold.withValues(alpha: 0.15)
+                        : Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _isSimulationMode
+                          ? _gold.withValues(alpha: 0.6)
+                          : Colors.white.withValues(alpha: 0.15),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _isSimulationMode
+                            ? Icons.videogame_asset_rounded
+                            : Icons.videogame_asset_off_rounded,
+                        color: _isSimulationMode ? _gold : Colors.white.withValues(alpha: 0.6),
+                        size: 22,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Practice Mode',
+                              style: TextStyle(
+                                color: _isSimulationMode ? _gold : Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              _isSimulationMode
+                                  ? 'Viajes simulados activos'
+                                  : 'Toca para activar viajes de práctica',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.45),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        width: 46,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: _isSimulationMode
+                              ? _gold
+                              : Colors.grey.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                        child: AnimatedAlign(
+                          duration: const Duration(milliseconds: 200),
+                          alignment: _isSimulationMode
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            margin: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Divider(height: 1, color: borderC),
               const SizedBox(height: 16),
               Center(
                 child: Text(

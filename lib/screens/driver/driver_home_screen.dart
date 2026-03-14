@@ -566,16 +566,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             ),
             child: Row(
               children: [
-                // Avatar
+                // Avatar with gold border
                 Container(
-                  width: 32,
-                  height: 32,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.12),
+                    color: Colors.white.withValues(alpha: 0.08),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      width: 1,
+                      color: _gold,
+                      width: 1.5,
                     ),
                   ),
                   child: ClipOval(
@@ -587,7 +587,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 errorBuilder: (_a, _b, _c) => Icon(
                                   Icons.person_rounded,
                                   color: Colors.white.withValues(alpha: 0.6),
-                                  size: 18,
+                                  size: 20,
                                 ),
                               )
                             : Image.file(
@@ -596,13 +596,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 errorBuilder: (_a, _b, _c) => Icon(
                                   Icons.person_rounded,
                                   color: Colors.white.withValues(alpha: 0.6),
-                                  size: 18,
+                                  size: 20,
                                 ),
                               ))
                         : Icon(
                             Icons.person_rounded,
                             color: Colors.white.withValues(alpha: 0.6),
-                            size: 18,
+                            size: 20,
                           ),
                   ),
                 ),
@@ -631,6 +631,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
+                  ),
+                ),
+                Text(
+                  'CRUISE',
+                  style: TextStyle(
+                    color: _gold.withValues(alpha: 0.35),
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2,
                   ),
                 ),
               ],

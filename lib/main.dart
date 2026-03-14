@@ -15,6 +15,7 @@ import 'services/notification_service.dart';
 import 'services/security_service.dart';
 import 'services/user_session.dart';
 import 'services/local_data_service.dart';
+import 'services/keep_alive_service.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'l10n/app_localizations.dart';
 
@@ -63,6 +64,9 @@ Future<void> heavyInit() async {
       return null;
     },
   );
+
+  // Start keep-alive pings to prevent server sleep
+  KeepAliveService.instance.start();
 
   // Initialize profile photo notifier
   await UserSession.initPhotoNotifier();
@@ -167,9 +171,11 @@ class _UberCloneAppState extends State<UberCloneApp>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       ApiService.goOffline();
+      KeepAliveService.instance.stop();
     } else if (state == AppLifecycleState.resumed) {
       // getMe marks user as online on the backend
       ApiService.getMe();
+      KeepAliveService.instance.start();
     }
   }
 

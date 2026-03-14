@@ -1665,6 +1665,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Wait for frame with updated map padding, then center on both points
     await Future.delayed(const Duration(milliseconds: 150));
     _fitBounds(_pos, _pickupLL);
+    // Auto-drive to pickup in simulation mode
+    if (_isSimulationMode && _routePts.length >= 2) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      _startSimulation();
+    }
   }
 
   Future<void> _arrivePickup() async {
@@ -1737,7 +1742,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   /// User pressed "Start Navigation" from the route summary — begin actual nav
-  void _beginNavigation() {
+  Future<void> _beginNavigation() async {
     HapticFeedback.heavyImpact();
     setState(() {
       _phase = _Phase.inTrip;
@@ -1759,15 +1764,22 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         CameraPosition(target: _pos, zoom: 17.5, bearing: _heading, tilt: 55),
       ),
     );
-    // Also launch external map app if user prefers one
-    MapLauncherService.prefersInApp().then((inApp) {
-      if (!inApp) {
-        MapLauncherService.navigate(
-          destLat: _dropoffLL.latitude,
-          destLng: _dropoffLL.longitude,
-        );
-      }
-    });
+    // Also launch external map app if user prefers one (skip in simulation)
+    if (!_isSimulationMode) {
+      MapLauncherService.prefersInApp().then((inApp) {
+        if (!inApp) {
+          MapLauncherService.navigate(
+            destLat: _dropoffLL.latitude,
+            destLng: _dropoffLL.longitude,
+          );
+        }
+      });
+    }
+    // Auto-drive to dropoff in simulation mode
+    if (_isSimulationMode && _routePts.length >= 2) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      _startSimulation();
+    }
   }
 
   void _decline() {
@@ -4831,7 +4843,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 child: SizedBox(
                   height: 48,
                   child: ElevatedButton.icon(
-                    onPressed: _beginNavigation,
+                    onPressed: () => _beginNavigation(),
                     icon: const Icon(
                       Icons.navigation_rounded,
                       color: Colors.black,

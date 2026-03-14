@@ -1107,8 +1107,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Widget _recommendItem(IconData icon, String label, VoidCallback onTap) {

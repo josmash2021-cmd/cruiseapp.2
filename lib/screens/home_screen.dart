@@ -2532,7 +2532,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 rotateGesturesEnabled: false,
                 tiltGesturesEnabled: false,
                 liteModeEnabled: false,
-                padding: const EdgeInsets.only(bottom: 40),
+                padding: const EdgeInsets.only(bottom: 70),
               ),
             // Badge
             Positioned(

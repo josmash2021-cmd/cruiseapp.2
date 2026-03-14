@@ -1342,7 +1342,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 trafficEnabled: false,
                 liteModeEnabled: false,
                 padding: EdgeInsets.only(
-                  bottom: _bottomSheetHeight(phase, bottomPad),
+                  bottom: _bottomSheetHeight(phase, bottomPad) + 30,
                 ),
               ),
             ),

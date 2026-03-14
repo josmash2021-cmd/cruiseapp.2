@@ -1135,7 +1135,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 mapToolbarEnabled: false,
                 tiltGesturesEnabled: false,
                 padding: EdgeInsets.only(
-                  bottom: 370 + botPad,
+                  bottom: 370 + botPad + 30,
                   top: topPad + 16,
                 ),
               ),
@@ -1152,7 +1152,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             // Recenter button — visible only when user panned / zoomed
             if (_userMovedMap)
               Positioned(
-                bottom: 370 + botPad,
+                bottom: 370 + botPad + 30,
                 right: 16,
                 child: _circleBtn(Icons.navigation_rounded, _recenter),
               ),

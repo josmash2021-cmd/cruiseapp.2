@@ -1,12 +1,10 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
@@ -74,15 +72,12 @@ enum _PinIcon { house, store, airplane, person }
 class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     with TickerProviderStateMixin {
   GoogleMapController? _map;
-  amap.AppleMapController? _appleMap;
   BitmapDescriptor? _carIcon;
   List<BitmapDescriptor>? _navCarSprites;
   double _cameraBearing = 0;
   Uint8List? _carIconBytes;
   Uint8List? _pickupPinBytes;
   Uint8List? _dropoffPinBytes;
-  Uint8List? _rotatedCarBytes; // pre-rotated PNG for Apple Maps
-  int _lastRotQ = -1; // last quantised bearing sent to CarIconLoader
 
   _TrackPhase _phase = _TrackPhase.arriving;
   bool _greetingSent = false;
@@ -1318,68 +1313,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       ),
     );
     return m;
-  }
-
-  // ── Apple Maps converters (iOS) ──
-
-  Set<amap.Annotation> _appleAnnotations() {
-    final a = <amap.Annotation>{};
-    // Use pre-rotated icon so the car faces the travel direction
-    final bytes = _rotatedCarBytes ?? _carIconBytes;
-    if (bytes != null) {
-      a.add(
-        amap.Annotation(
-          annotationId: amap.AnnotationId('car'),
-          position: amap.LatLng(_animPos.latitude, _animPos.longitude),
-          icon: amap.BitmapDescriptor.fromBytes(bytes),
-          anchor: const Offset(0.5, 0.5),
-          alpha: 1.0,
-        ),
-      );
-    }
-    final pickupIcon = _pickupPinBytes != null
-        ? amap.BitmapDescriptor.fromBytes(_pickupPinBytes!)
-        : amap.BitmapDescriptor.defaultAnnotation;
-    final dropoffIcon = _dropoffPinBytes != null
-        ? amap.BitmapDescriptor.fromBytes(_dropoffPinBytes!)
-        : amap.BitmapDescriptor.defaultAnnotation;
-    a.add(
-      amap.Annotation(
-        annotationId: amap.AnnotationId('pickup'),
-        position: amap.LatLng(
-          widget.pickupLatLng.latitude,
-          widget.pickupLatLng.longitude,
-        ),
-        icon: pickupIcon,
-      ),
-    );
-    a.add(
-      amap.Annotation(
-        annotationId: amap.AnnotationId('drop'),
-        position: amap.LatLng(
-          widget.dropoffLatLng.latitude,
-          widget.dropoffLatLng.longitude,
-        ),
-        icon: dropoffIcon,
-      ),
-    );
-    return a;
-  }
-
-  Set<amap.Polyline> _applePolylines() {
-    final gPolys = _polylines();
-    return gPolys
-        .map(
-          (p) => amap.Polyline(
-            polylineId: amap.PolylineId(p.polylineId.value),
-            points: p.points
-                .map((ll) => amap.LatLng(ll.latitude, ll.longitude))
-                .toList(),
-            color: p.color,
-            width: p.width,
-          ),
-        )
-        .toSet();
   }
 
   Set<Polyline> _polylines() {

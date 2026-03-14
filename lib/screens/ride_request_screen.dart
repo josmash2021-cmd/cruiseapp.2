@@ -5,7 +5,6 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -64,7 +63,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     with TickerProviderStateMixin {
   // ── Map ──
   GoogleMapController? _mapCtrl;
-  amap.AppleMapController? _appleMapCtrl;
   LatLng _center = const LatLng(25.7617, -80.1918); // Miami default
   LatLng? _userLocation;
   bool _mapReady = false;

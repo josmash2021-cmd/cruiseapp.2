@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 
 import '../config/map_styles.dart';
 import '../navigation/nav_state_machine.dart';
@@ -46,7 +45,6 @@ class DriverNavigationPage extends StatefulWidget {
 class _DriverNavigationPageState extends State<DriverNavigationPage>
     with TickerProviderStateMixin {
   GoogleMapController? _map;
-  amap.AppleMapController? _appleMap;
   bool _mapReady = false;
   late final NavStateMachine _sm;
   late final SmoothMotion _motion;
@@ -339,51 +337,6 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       );
     }
     return s;
-  }
-
-  Set<amap.Annotation> get _appleAnnotations {
-    final a = <amap.Annotation>{};
-    // Driver arrow
-    if (_arrowIconBytes != null) {
-      a.add(
-        amap.Annotation(
-          annotationId: amap.AnnotationId('driver'),
-          position: amap.LatLng(_pos.latitude, _pos.longitude),
-          icon: amap.BitmapDescriptor.fromBytes(_arrowIconBytes!),
-          anchor: const Offset(0.5, 0.5),
-        ),
-      );
-    }
-    // Destination
-    final dest =
-        _sm.phase == TripPhase.onTrip || _sm.phase == TripPhase.arrivedDropoff
-        ? widget.dropoffLatLng
-        : widget.pickupLatLng;
-    a.add(
-      amap.Annotation(
-        annotationId: amap.AnnotationId('destination'),
-        position: amap.LatLng(dest.latitude, dest.longitude),
-        icon: amap.BitmapDescriptor.markerAnnotationWithHue(
-          amap.BitmapDescriptor.hueYellow,
-        ),
-      ),
-    );
-    return a;
-  }
-
-  Set<amap.Polyline> get _applePolylines {
-    return _polylines
-        .map(
-          (p) => amap.Polyline(
-            polylineId: amap.PolylineId(p.polylineId.value),
-            points: p.points
-                .map((ll) => amap.LatLng(ll.latitude, ll.longitude))
-                .toList(),
-            color: p.color,
-            width: p.width,
-          ),
-        )
-        .toSet();
   }
 
   void _animateCameraNav(

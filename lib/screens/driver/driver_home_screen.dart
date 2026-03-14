@@ -280,11 +280,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _driverName = lastName.isNotEmpty
               ? '$firstName ${lastName[0].toUpperCase()}.'
               : firstName;
-          _photoUrl = me['photo_url'];
-          // Fallback to cached local photo if server URL is empty
-          if ((_photoUrl == null || _photoUrl!.isEmpty) &&
-              UserSession.photoNotifier.value.isNotEmpty) {
+          // Prefer locally cached photo (downloaded by UserSession)
+          if (UserSession.photoNotifier.value.isNotEmpty) {
             _photoUrl = UserSession.photoNotifier.value;
+          } else {
+            final serverPhoto = me['photo_url']?.toString() ?? '';
+            if (serverPhoto.isNotEmpty) {
+              // Relative path from API → build full URL
+              _photoUrl = serverPhoto.startsWith('http')
+                  ? serverPhoto
+                  : '${ApiService.publicBaseUrl}$serverPhoto';
+            }
           }
         });
       }
@@ -933,55 +939,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
               child: Row(
                 children: [
-                  // Driver photo
-                  GestureDetector(
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const DriverEarningsScreen()));
-                    },
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: 0.1),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          width: 1,
-                        ),
-                      ),
-                      child: ClipOval(
-                        child: _photoUrl != null && _photoUrl!.isNotEmpty
-                            ? (_photoUrl!.startsWith('http')
-                                ? Image.network(
-                                    _photoUrl!,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_a, _b, _c) => Icon(
-                                      Icons.person_rounded,
-                                      color: Colors.white.withValues(alpha: 0.5),
-                                      size: 20,
-                                    ),
-                                  )
-                                : Image.file(
-                                    File(_photoUrl!),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_a, _b, _c) => Icon(
-                                      Icons.person_rounded,
-                                      color: Colors.white.withValues(alpha: 0.5),
-                                      size: 20,
-                                    ),
-                                  ))
-                            : Icon(
-                                Icons.person_rounded,
-                                color: Colors.white.withValues(alpha: 0.5),
-                                size: 20,
-                              ),
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
                   // Status text
                   Row(
                     mainAxisSize: MainAxisSize.min,

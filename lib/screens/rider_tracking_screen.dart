@@ -732,8 +732,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     }
 
     // Check if this is the same trip
-    final isSameTrip = activeRide.tripId != null && 
-                       activeRide.tripId == widget.tripId;
+    var isSameTrip = activeRide.tripId != null && 
+                     activeRide.tripId == widget.tripId;
     
     if (!isSameTrip && widget.firestoreTripId != null && 
         widget.firestoreTripId!.isNotEmpty &&

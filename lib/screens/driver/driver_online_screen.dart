@@ -1505,7 +1505,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
   }
 
-  /// Generate a simulated ride offer for practice mode
+  /// Generate a simulated ride offer for practice mode (2-10 minute trips)
   void _generateSimulatedOffer() {
     if (!mounted || _phase != _Phase.searching) return;
     
@@ -1514,15 +1514,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     
     _simulatedTripCounter++;
     
-    // Generate random pickup location near current position (0.5-2km away)
+    // Generate random pickup location near current position (0.5-2km away = 1-3 min)
     final random = math.Random();
-    final distanceKm = 0.5 + random.nextDouble() * 1.5;
+    final pickupDistanceKm = 0.5 + random.nextDouble() * 1.5;
     final angle = random.nextDouble() * 2 * math.pi;
-    final pickupLat = _pos.latitude + (distanceKm / 111) * math.cos(angle);
-    final pickupLng = _pos.longitude + (distanceKm / (111 * math.cos(_pos.latitude * math.pi / 180))) * math.sin(angle);
+    final pickupLat = _pos.latitude + (pickupDistanceKm / 111) * math.cos(angle);
+    final pickupLng = _pos.longitude + (pickupDistanceKm / (111 * math.cos(_pos.latitude * math.pi / 180))) * math.sin(angle);
     
-    // Generate dropoff location 2-5km from pickup
-    final tripDistanceKm = 2.0 + random.nextDouble() * 3.0;
+    // Generate dropoff location 1-5km from pickup (2-8 min trip)
+    // Total trip time: 2-10 minutes
+    final tripDistanceKm = 1.0 + random.nextDouble() * 4.0;
     final tripAngle = random.nextDouble() * 2 * math.pi;
     final dropoffLat = pickupLat + (tripDistanceKm / 111) * math.cos(tripAngle);
     final dropoffLng = pickupLng + (tripDistanceKm / (111 * math.cos(pickupLat * math.pi / 180))) * math.sin(tripAngle);
@@ -1540,6 +1541,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final pickupAddr = '${random.nextInt(9999) + 1} ${streetNames[random.nextInt(streetNames.length)]}';
     final dropoffAddr = '${random.nextInt(9999) + 1} ${streetNames[random.nextInt(streetNames.length)]}';
     
+    // Calculate ETAs
+    final pickupEtaMin = (pickupDistanceKm * 1000 / 17.88 / 60).ceil().clamp(1, 5);
+    final tripEtaMin = (tripDistanceKm * 1000 / 17.88 / 60).ceil().clamp(2, 8);
+    
     final simulatedOffer = {
       'offer_id': 100000 + _simulatedTripCounter, // High ID to avoid conflicts
       'trip_id': 100000 + _simulatedTripCounter,
@@ -1555,9 +1560,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       'vehicle_type': 'CruiseX',
       'status': 'pending',
       'is_simulated': true, // Flag to identify simulated offers
+      'pickup_eta_min': pickupEtaMin,
+      'trip_eta_min': tripEtaMin,
     };
     
-    debugPrint('🎮 SIMULATION: Generated trip #$_simulatedTripCounter - $riderName');
+    debugPrint('🎮 SIMULATION: Trip #$pickupEtaMin min to pickup, $tripEtaMin min ride - $riderName');
     
     HapticFeedback.heavyImpact();
     setState(() => _pendingOffers = [simulatedOffer]);
@@ -1714,11 +1721,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Wait for frame with updated map padding, then center on both points
     await Future.delayed(const Duration(milliseconds: 150));
     _fitBounds(_pos, _pickupLL);
-    // Auto-drive to pickup in simulation mode
-    if (_isSimulationMode && _routePts.length >= 2) {
-      await Future.delayed(const Duration(milliseconds: 800));
-      _startSimulation();
-    }
+    // Auto-drive to pickup in simulation mode - DISABLED, driver drives manually
+    // if (_isSimulationMode && _routePts.length >= 2) {
+    //   await Future.delayed(const Duration(milliseconds: 800));
+    //   _startSimulation();
+    // }
   }
 
   Future<void> _arrivePickup() async {
@@ -1826,11 +1833,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         }
       });
     }
-    // Auto-drive to dropoff in simulation mode
-    if (_isSimulationMode && _routePts.length >= 2) {
-      await Future.delayed(const Duration(milliseconds: 500));
-      _startSimulation();
-    }
+    // Auto-drive to dropoff in simulation mode - DISABLED, driver drives manually
+    // if (_isSimulationMode && _routePts.length >= 2) {
+    //   await Future.delayed(const Duration(milliseconds: 500));
+    //   _startSimulation();
+    // }
   }
 
   void _decline() {

@@ -3567,24 +3567,24 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.55,
-        minChildSize: 0.3,
-        maxChildSize: 0.88,
-        expand: false,
-        builder: (_, scrollCtrl) => Container(
-          decoration: BoxDecoration(
-            color: surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(top: BorderSide(color: _gold.withValues(alpha: 0.08))),
-          ),
-          child: SafeArea(
-            top: false,
-            child: SingleChildScrollView(
-              controller: scrollCtrl,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+      enableDrag: true,
+      builder: (ctx) {
+        final maxH = MediaQuery.of(ctx).size.height * 0.82;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: Container(
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border(top: BorderSide(color: _gold.withValues(alpha: 0.08))),
+            ),
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
               const SizedBox(height: 10),
               Container(
                 width: 36,
@@ -3904,12 +3904,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
               ),
               const SizedBox(height: 20),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

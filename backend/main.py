@@ -41,9 +41,9 @@ from sqlalchemy.orm import DeclarativeBase, relationship
 
 # -- Config ----------------------------------------------
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cruise.db")
-API_KEY = os.environ["API_KEY"]       # Required � set in .env
-HMAC_SECRET = os.environ["HMAC_SECRET"] # Required � set in .env
-JWT_SECRET = os.environ["JWT_SECRET"]   # Required � set in .env
+API_KEY = os.getenv("API_KEY", "dev-api-key-change-in-production")
+HMAC_SECRET = os.getenv("HMAC_SECRET", "dev-hmac-secret-change-in-production")
+JWT_SECRET = os.getenv("JWT_SECRET", "dev-jwt-secret-change-in-production")
 DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")  # Separate key for admin/dispatch endpoints
 
 # -- Owner-only access configuration -------------------

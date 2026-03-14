@@ -41,6 +41,7 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _exitCtrl;
   late Animation<double> _exitFade;
   late Animation<double> _exitScale;
+  late List<Animation<double>> _letterExitFade;
 
   bool _disposed = false;
 
@@ -122,16 +123,31 @@ class _SplashScreenState extends State<SplashScreen>
   void _setupExitAnimation() {
     _exitCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 800),
     );
     _exitFade = Tween<double>(
       begin: 1.0,
       end: 0.0,
-    ).animate(CurvedAnimation(parent: _exitCtrl, curve: Curves.easeInQuart));
+    ).animate(CurvedAnimation(
+      parent: _exitCtrl,
+      curve: const Interval(0.5, 1.0, curve: Curves.easeInQuart),
+    ));
     _exitScale = Tween<double>(
       begin: 1.0,
-      end: 1.35,
+      end: 1.2,
     ).animate(CurvedAnimation(parent: _exitCtrl, curve: Curves.easeIn));
+
+    // Staggered per-letter fade-out: C fades first, E fades last
+    _letterExitFade = List.generate(_letters.length, (i) {
+      final start = (i * 0.10).clamp(0.0, 1.0);
+      final end = (start + 0.35).clamp(0.0, 1.0);
+      return Tween<double>(begin: 1.0, end: 0.0).animate(
+        CurvedAnimation(
+          parent: _exitCtrl,
+          curve: Interval(start, end, curve: Curves.easeIn),
+        ),
+      );
+    });
   }
 
   // ═══════════════════════════════════════════════════════
@@ -360,7 +376,8 @@ class _SplashScreenState extends State<SplashScreen>
                               child: Transform.scale(
                                 scale: _letterScale[i].value,
                                 child: Opacity(
-                                  opacity: _letterFade[i].value,
+                                  opacity: _letterFade[i].value *
+                                      _letterExitFade[i].value,
                                   child: _buildLetter(_letters[i], i),
                                 ),
                               ),

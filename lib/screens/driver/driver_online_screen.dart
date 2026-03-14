@@ -4677,11 +4677,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     Color borderC,
     Color shadowC,
   ) {
-    return _bottomSheet(
-      isDark,
-      bg,
-      shadowC,
-      Column(
+    return _wrapInDraggableSheet(
+      isDark: isDark,
+      surface: bg,
+      shadowC: shadowC,
+      minChildSize: 0.25,
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _handle(isDark),
@@ -4876,11 +4877,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     Color borderC,
     Color shadowC,
   ) {
-    return _bottomSheet(
-      isDark,
-      bg,
-      shadowC,
-      Column(
+    return _wrapInDraggableSheet(
+      isDark: isDark,
+      surface: bg,
+      shadowC: shadowC,
+      minChildSize: 0.22,
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _handle(isDark),
@@ -4985,11 +4987,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     Color borderC,
     Color shadowC,
   ) {
-    return _bottomSheet(
-      isDark,
-      bg,
-      shadowC,
-      Column(
+    return _wrapInDraggableSheet(
+      isDark: isDark,
+      surface: bg,
+      shadowC: shadowC,
+      minChildSize: 0.28,
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _handle(isDark),
@@ -5153,11 +5156,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     Color borderC,
     Color shadowC,
   ) {
-    return _bottomSheet(
-      isDark,
-      bg,
-      shadowC,
-      Column(
+    return _wrapInDraggableSheet(
+      isDark: isDark,
+      surface: bg,
+      shadowC: shadowC,
+      minChildSize: 0.30,
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _handle(isDark),
@@ -5928,6 +5932,51 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           child: child,
         ),
       ),
+    );
+  }
+
+  Widget _wrapInDraggableSheet({
+    required bool isDark,
+    required Color surface,
+    required Color shadowC,
+    required Widget child,
+    double minChildSize = 0.18,
+  }) {
+    return DraggableScrollableSheet(
+      initialChildSize: minChildSize,
+      minChildSize: minChildSize,
+      maxChildSize: 0.85,
+      snap: true,
+      snapSizes: [minChildSize, 0.55, 0.85],
+      builder: (ctx, scrollCtrl) {
+        return Container(
+          decoration: BoxDecoration(
+            color: surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(
+              top: BorderSide(color: _gold.withValues(alpha: 0.08)),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: shadowC,
+                blurRadius: 20,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: ListView(
+            controller: scrollCtrl,
+            physics: const ClampingScrollPhysics(),
+            padding: EdgeInsets.zero,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                child: child,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

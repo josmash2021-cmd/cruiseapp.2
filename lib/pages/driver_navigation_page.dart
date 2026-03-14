@@ -182,7 +182,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     // Throttle camera to ~10 Hz for smooth performance
     final now = DateTime.now();
     if (_cameraFollowing &&
-        (Platform.isIOS ? _appleMap != null : _map != null) &&
+        _map != null &&
         _mapReady &&
         (_lastCameraUpdate == null ||
             now.difference(_lastCameraUpdate!).inMilliseconds > 100)) {
@@ -392,22 +392,11 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     double bearing = 0,
     double tilt = 0,
   }) {
-    if (Platform.isIOS) {
-      _appleMap?.animateCamera(
-        amap.CameraUpdate.newCameraPosition(
-          amap.CameraPosition(
-            target: amap.LatLng(pos.latitude, pos.longitude),
-            zoom: zoom,
-          ),
-        ),
-      );
-    } else {
-      _map?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: pos, zoom: zoom, bearing: bearing, tilt: tilt),
-        ),
-      );
-    }
+    _map?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: pos, zoom: zoom, bearing: bearing, tilt: tilt),
+      ),
+    );
   }
 
   // =========================================================================

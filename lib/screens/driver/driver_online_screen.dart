@@ -74,43 +74,22 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   StreamSubscription<Position>? _posStream;
   bool _lastStyleDark = true;
 
-  /// Animate camera on both platforms.
+  /// Animate camera (Google Maps on both platforms).
   void _animateToPosition(
     LatLng pos, {
     double zoom = 15.5,
     double bearing = 0,
     double tilt = 0,
   }) {
-    if (Platform.isIOS) {
-      _appleMap?.moveCamera(
-        amap.CameraUpdate.newCameraPosition(
-          amap.CameraPosition(
-            target: amap.LatLng(pos.latitude, pos.longitude),
-            zoom: zoom,
-            heading: bearing,
-            pitch: tilt,
-          ),
-        ),
-      );
-    } else {
-      _map?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: pos, zoom: zoom, bearing: bearing, tilt: tilt),
-        ),
-      );
-    }
+    _map?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: pos, zoom: zoom, bearing: bearing, tilt: tilt),
+      ),
+    );
   }
 
   void _moveToLatLng(LatLng pos) {
-    if (Platform.isIOS) {
-      _appleMap?.moveCamera(
-        amap.CameraUpdate.newLatLng(
-          amap.LatLng(pos.latitude, pos.longitude),
-        ),
-      );
-    } else {
-      _map?.animateCamera(CameraUpdate.newLatLng(pos));
-    }
+    _map?.animateCamera(CameraUpdate.newLatLng(pos));
   }
 
   // â”€â”€ Trip â”€â”€
@@ -888,27 +867,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           // â”€â”€ Phase-aware camera following â”€â”€
           if (_phase == _Phase.searching) {
             // IDLE: stable top-down view, no tilt, no bearing follow (Uber style)
-            if (Platform.isIOS) {
-              _appleMap?.moveCamera(
-                amap.CameraUpdate.newCameraPosition(
-                  amap.CameraPosition(
-                    target: amap.LatLng(newLL.latitude, newLL.longitude),
-                    zoom: 15.5,
-                  ),
+            _map?.animateCamera(
+              CameraUpdate.newCameraPosition(
+                CameraPosition(
+                  target: newLL,
+                  zoom: 15.5,
+                  bearing: 0,
+                  tilt: 0,
                 ),
-              );
-            } else {
-              _map?.animateCamera(
-                CameraUpdate.newCameraPosition(
-                  CameraPosition(
-                    target: newLL,
-                    zoom: 15.5,
-                    bearing: 0,
-                    tilt: 0,
-                  ),
-                ),
-              );
-            }
+              ),
+            );
           } else if (_phase == _Phase.routeSummary) {
             // Route summary: keep overview, don't follow driver
             // Just update position & nav stats silently
@@ -2237,27 +2205,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       minLng -= adj;
       maxLng += adj;
     }
-    if (Platform.isIOS) {
-      _appleMap?.moveCamera(
-        amap.CameraUpdate.newLatLngBounds(
-          amap.LatLngBounds(
-            southwest: amap.LatLng(minLat - 0.004, minLng - 0.004),
-            northeast: amap.LatLng(maxLat + 0.004, maxLng + 0.004),
-          ),
-          70,
+    _map?.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat - 0.004, minLng - 0.004),
+          northeast: LatLng(maxLat + 0.004, maxLng + 0.004),
         ),
-      );
-    } else {
-      _map?.animateCamera(
-        CameraUpdate.newLatLngBounds(
-          LatLngBounds(
-            southwest: LatLng(minLat - 0.004, minLng - 0.004),
-            northeast: LatLng(maxLat + 0.004, maxLng + 0.004),
-          ),
-          70,
-        ),
-      );
-    }
+        70,
+      ),
+    );
   }
 
   void _fitBoundsMulti(List<LatLng> points) {
@@ -2282,27 +2238,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       minLng -= adj;
       maxLng += adj;
     }
-    if (Platform.isIOS) {
-      _appleMap?.moveCamera(
-        amap.CameraUpdate.newLatLngBounds(
-          amap.LatLngBounds(
-            southwest: amap.LatLng(minLat - 0.004, minLng - 0.004),
-            northeast: amap.LatLng(maxLat + 0.004, maxLng + 0.004),
-          ),
-          70,
+    _map?.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat - 0.004, minLng - 0.004),
+          northeast: LatLng(maxLat + 0.004, maxLng + 0.004),
         ),
-      );
-    } else {
-      _map?.animateCamera(
-        CameraUpdate.newLatLngBounds(
-          LatLngBounds(
-            southwest: LatLng(minLat - 0.004, minLng - 0.004),
-            northeast: LatLng(maxLat + 0.004, maxLng + 0.004),
-          ),
-          70,
-        ),
-      );
-    }
+        70,
+      ),
+    );
   }
 
   // â"€â"€ Preview offer route on map â"€â"€
@@ -2489,22 +2433,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _savedPolylines = {};
       _savedMarkers = {};
     });
-    if (Platform.isIOS) {
-      _appleMap?.moveCamera(
-        amap.CameraUpdate.newCameraPosition(
-          amap.CameraPosition(
-            target: amap.LatLng(_pos.latitude, _pos.longitude),
-            zoom: 15.5,
-          ),
-        ),
-      );
-    } else {
-      _map?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: _pos, zoom: 15.5, bearing: 0, tilt: 0),
-        ),
-      );
-    }
+    _map?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: _pos, zoom: 15.5, bearing: 0, tilt: 0),
+      ),
+    );
   }
 
   void _snack(String s) {
@@ -2879,61 +2812,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     setState(() => _cameraFollowing = true);
     final bearing = _smoothedBearing;
     _cameraBearing = bearing; // sync for sprite selection
-    if (Platform.isIOS) {
-      _appleMap?.moveCamera(
-        amap.CameraUpdate.newCameraPosition(
-          amap.CameraPosition(
-            target: amap.LatLng(_pos.latitude, _pos.longitude),
-            zoom: 17.5,
-            heading: bearing,
-            pitch: 55,
-          ),
-        ),
-      );
-    } else {
-      _map?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: _pos, zoom: 17.5, bearing: bearing, tilt: 55),
-        ),
-      );
-    }
+    _map?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: _pos, zoom: 17.5, bearing: bearing, tilt: 55),
+      ),
+    );
   }
 
   Widget _mapW(bool isDark) {
-    if (Platform.isIOS) {
-      return RepaintBoundary(
-        child: amap.AppleMap(
-          initialCameraPosition: amap.CameraPosition(
-            target: amap.LatLng(_pos.latitude, _pos.longitude),
-            zoom: 15.5,
-          ),
-          mapType: amap.MapType.standard,
-          onMapCreated: (c) {
-            _appleMap = c;
-            c.moveCamera(
-              amap.CameraUpdate.newCameraPosition(
-                amap.CameraPosition(
-                  target: amap.LatLng(_pos.latitude, _pos.longitude),
-                  zoom: 15.5,
-                ),
-              ),
-            );
-          },
-          myLocationEnabled: !(_phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip || _phase == _Phase.routeSummary),
-          myLocationButtonEnabled: false,
-          zoomGesturesEnabled: true,
-          scrollGesturesEnabled: true,
-          rotateGesturesEnabled: true,
-          compassEnabled: false,
-          annotations: _appleAnnotations,
-          polylines: _applePolylines,
-          padding: EdgeInsets.only(
-            top: MediaQuery.of(context).padding.top + 70,
-            bottom: _mapBottomPadding,
-          ),
-        ),
-      );
-    }
     return RepaintBoundary(
       child: GoogleMap(
         style: isDark ? MapStyles.darkIOS : MapStyles.lightIOS,

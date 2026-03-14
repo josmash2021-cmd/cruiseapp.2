@@ -114,30 +114,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Map
-          Platform.isIOS
-              ? amap.AppleMap(
-                  initialCameraPosition: amap.CameraPosition(
-                    target: amap.LatLng(_center.latitude, _center.longitude),
-                    zoom: 15,
-                  ),
-                  onMapCreated: (ctrl) {
-                    _appleMapCtrl = ctrl;
-                    Future.delayed(
-                      const Duration(milliseconds: 1000),
-                      _onCameraIdle,
-                    );
-                  },
-                  onCameraMove: (pos) {
-                    _center = LatLng(pos.target.latitude, pos.target.longitude);
-                    _scheduleGeocode();
-                  },
-                  onCameraIdle: _scheduleGeocode,
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: false,
-                  mapType: amap.MapType.standard,
-                )
-              : GoogleMap(
+          // Map — Google Maps on both iOS and Android
+          GoogleMap(
                   initialCameraPosition: CameraPosition(
                     target: _center,
                     zoom: 15,

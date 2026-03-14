@@ -875,52 +875,26 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _driverPos = pos;
       _driverBearing = nb;
 
-      // On iOS, pre-rotate the car icon when bearing changes (Apple Maps has no rotation)
-      if (Platform.isIOS) {
-        final q = ((nb % 360) / 10).round() % 36;
-        if (q != _lastRotQ) {
-          _lastRotQ = q;
-          CarIconLoader.rotateBytesForRide(nb, rideName: widget.rideName).then((
-            bytes,
-          ) {
-            if (mounted) setState(() => _rotatedCarBytes = bytes);
-          });
-        }
-      }
-
       setState(() {});
     }
 
     // ── Smooth camera bounds interpolation (60fps) ──
-    final hasCtrl = Platform.isIOS ? _appleMap != null : _map != null;
-    if (hasCtrl && !_userMovedMap && _camInitialized) {
+    if (_map != null && !_userMovedMap && _camInitialized) {
       const lerpSpeed = 0.06;
       _camSWLat += (_tgtSWLat - _camSWLat) * lerpSpeed;
       _camSWLng += (_tgtSWLng - _camSWLng) * lerpSpeed;
       _camNELat += (_tgtNELat - _camNELat) * lerpSpeed;
       _camNELng += (_tgtNELng - _camNELng) * lerpSpeed;
       _programmaticCam = true;
-      if (Platform.isIOS) {
-        _appleMap!.moveCamera(
-          amap.CameraUpdate.newLatLngBounds(
-            amap.LatLngBounds(
-              southwest: amap.LatLng(_camSWLat, _camSWLng),
-              northeast: amap.LatLng(_camNELat, _camNELng),
-            ),
-            50,
+      _map!.moveCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(_camSWLat, _camSWLng),
+            northeast: LatLng(_camNELat, _camNELng),
           ),
-        );
-      } else {
-        _map!.moveCamera(
-          CameraUpdate.newLatLngBounds(
-            LatLngBounds(
-              southwest: LatLng(_camSWLat, _camSWLng),
-              northeast: LatLng(_camNELat, _camNELng),
-            ),
-            50,
-          ),
-        );
-      }
+          50,
+        ),
+      );
     }
   }
 
@@ -931,8 +905,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   // ── Compute ideal bounds and set as smooth target ──
   void _updateCamTarget() {
-    final hasCtrl = Platform.isIOS ? _appleMap != null : _map != null;
-    if (!hasCtrl || _userMovedMap) return;
+    if (_map == null || _userMovedMap) return;
     final pts = <LatLng>[_animPos];
     if (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived) {
       pts.add(widget.pickupLatLng);
@@ -973,27 +946,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _camNELng = _tgtNELng;
       _camInitialized = true;
       _programmaticCam = true;
-      if (Platform.isIOS) {
-        _appleMap!.moveCamera(
-          amap.CameraUpdate.newLatLngBounds(
-            amap.LatLngBounds(
-              southwest: amap.LatLng(_camSWLat, _camSWLng),
-              northeast: amap.LatLng(_camNELat, _camNELng),
-            ),
-            50,
+      _map!.moveCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(_camSWLat, _camSWLng),
+            northeast: LatLng(_camNELat, _camNELng),
           ),
-        );
-      } else {
-        _map!.moveCamera(
-          CameraUpdate.newLatLngBounds(
-            LatLngBounds(
-              southwest: LatLng(_camSWLat, _camSWLng),
-              northeast: LatLng(_camNELat, _camNELng),
-            ),
-            50,
-          ),
-        );
-      }
+          50,
+        ),
+      );
     }
   }
 

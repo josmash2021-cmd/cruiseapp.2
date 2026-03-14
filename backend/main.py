@@ -41,6 +41,12 @@ from sqlalchemy.orm import DeclarativeBase, relationship
 
 # -- Config ----------------------------------------------
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cruise.db")
+# Auto-convert Railway's postgresql:// to async driver scheme
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+IS_SQLITE = DATABASE_URL.startswith("sqlite")
 API_KEY = os.getenv("API_KEY", "dev-api-key-change-in-production")
 HMAC_SECRET = os.getenv("HMAC_SECRET", "dev-hmac-secret-change-in-production")
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-jwt-secret-change-in-production")
@@ -64,15 +70,18 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window
 
-# SQLite engine with optimized settings for stability
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    connect_args={
-        "timeout": 30,  # 30 second timeout for DB operations
-        "check_same_thread": False,  # Allow multi-threading
+# Database engine – SQLite uses special connect_args; PostgreSQL does not
+_engine_kwargs: dict = {"echo": False}
+if IS_SQLITE:
+    _engine_kwargs["connect_args"] = {
+        "timeout": 30,
+        "check_same_thread": False,
     }
-)
+else:
+    _engine_kwargs["pool_size"] = 5
+    _engine_kwargs["max_overflow"] = 10
+
+engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 _TUNNEL_URL_FILE = os.path.join(os.path.dirname(__file__), "tunnel_url.txt")
 class _Pwd:
@@ -346,20 +355,21 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         
-        # Enable WAL mode for better concurrency and prevent DB locks
-        await conn.execute(text("PRAGMA journal_mode=WAL"))
-        await conn.execute(text("PRAGMA synchronous=NORMAL"))
-        await conn.execute(text("PRAGMA busy_timeout=30000"))  # 30 second timeout
-        await conn.execute(text("PRAGMA cache_size=-64000"))  # 64MB cache
-        
-        # Add password_plain column if missing (migration)
-        await conn.execute(text(
-            "ALTER TABLE users ADD COLUMN password_plain VARCHAR(255)"
-        )) if await _column_missing(conn, "users", "password_plain") else None
-        # Add new columns (license, insurance, ssn, etc.) if missing
-        await _migrate_add_columns(conn)
+        if IS_SQLITE:
+            # Enable WAL mode for better concurrency and prevent DB locks
+            await conn.execute(text("PRAGMA journal_mode=WAL"))
+            await conn.execute(text("PRAGMA synchronous=NORMAL"))
+            await conn.execute(text("PRAGMA busy_timeout=30000"))  # 30 second timeout
+            await conn.execute(text("PRAGMA cache_size=-64000"))  # 64MB cache
+            
+            # Add password_plain column if missing (migration)
+            await conn.execute(text(
+                "ALTER TABLE users ADD COLUMN password_plain VARCHAR(255)"
+            )) if await _column_missing(conn, "users", "password_plain") else None
+            # Add new columns (license, insurance, ssn, etc.) if missing
+            await _migrate_add_columns(conn)
     
-    logging.info("? Database initialized with WAL mode and optimizations")
+    logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
     
     # Bulk-sync existing data to Firestore on startup
     if _HAS_FIRESTORE:

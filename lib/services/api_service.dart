@@ -27,14 +27,13 @@ class ApiService {
   /// Local network URL — works for physical devices on same WiFi network
   static const String _localNetworkUrl = 'http://172.20.11.24:8000';
 
-  /// Default Cloudflare Tunnel URL.  Free tunnels change every restart;
-  /// update via the in-app Settings → "Server URL" dialog instead of rebuilding.
+  /// Production Railway URL — works from any network (cellular, WiFi, etc.)
   static const String _defaultTunnelUrl =
-      'https://jaida-intervarsity-tashina.ngrok-free.dev';
+      'https://www.cruiseinride.com';
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 
-  /// In-memory active URL.  Populated by [init]; defaults to tunnel so the
+  /// In-memory active URL.  Populated by [init]; defaults to production so the
   /// first call before [init] completes still reaches *something*.
   static String _activeUrl = _defaultTunnelUrl;
 
@@ -70,16 +69,16 @@ class ApiService {
   }
 
   /// Try each candidate URL with a lightweight health-check (`GET /health`).
+  /// Prioritizes production URL for mobile networks.
   /// Keeps the first one that responds 200 within [timeout] and persists it.
-  /// If the hard-coded tunnel fails, queries the local-network endpoint for
-  /// the latest tunnel URL written by cruise_service.ps1.
   static Future<String?> probeAndSetBestUrl({
     List<String>? candidates,
-    Duration timeout = const Duration(seconds: 6),
+    Duration timeout = const Duration(seconds: 10), // Increased for mobile networks
   }) async {
+    // Always try production URL first (works on any network)
     final urls =
         candidates ??
-        [_activeUrl, _localNetworkUrl, _defaultTunnelUrl, _adbUrl, _localUrl];
+        [_defaultTunnelUrl, _activeUrl, _localNetworkUrl, _adbUrl, _localUrl];
 
     for (final url in urls) {
       try {
@@ -131,7 +130,10 @@ class ApiService {
       }
     }
 
-    return null; // No reachable endpoint found
+    // Last resort: force production URL so the app always has a working endpoint
+    debugPrint('[ApiService] No reachable URL found — forcing production URL');
+    await setServerUrl(_defaultTunnelUrl);
+    return _defaultTunnelUrl;
   }
 
   // ── Internal helper ────────────────────────────────────────────────────────

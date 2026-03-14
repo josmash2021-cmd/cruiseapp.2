@@ -1,0 +1,354 @@
+{
+  "glb_models": [
+    {
+      "file": "Maps-26.10.01.877073638.apk_res__7mS.glb",
+      "size": 44420,
+      "valid": true,
+      "version": 2,
+      "meshes": 2,
+      "materials": 6,
+      "vertices": 477,
+      "triangles": 474,
+      "animations": 1,
+      "textures": 1
+    },
+    {
+      "file": "Maps-26.10.01.877073638.apk_res__RoX.glb",
+      "size": 31892,
+      "valid": true,
+      "version": 2,
+      "meshes": 2,
+      "materials": 3,
+      "vertices": 244,
+      "triangles": 240,
+      "animations": 1,
+      "textures": 1
+    },
+    {
+      "file": "Maps-26.10.01.877073638.apk_res__THd.glb",
+      "size": 4544,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 1,
+      "vertices": 4,
+      "triangles": 2,
+      "animations": 0,
+      "textures": 1
+    },
+    {
+      "file": "Maps-26.10.01.877073638.apk_res__V5A.glb",
+      "size": 19980,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 1,
+      "vertices": 22,
+      "triangles": 20,
+      "animations": 1,
+      "textures": 0
+    },
+    {
+      "file": "Maps-26.10.01.877073638.apk_res__aqg.glb",
+      "size": 23396,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 1,
+      "vertices": 4,
+      "triangles": 2,
+      "animations": 0,
+      "textures": 1
+    },
+    {
+      "file": "Maps-26.10.01.877073638.apk_res__l0n.glb",
+      "size": 2116,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 1,
+      "vertices": 20,
+      "triangles": 18,
+      "animations": 0,
+      "textures": 0
+    },
+    {
+      "file": "so_embedded_glb_0_at_2833360.glb",
+      "size": 3240,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 2,
+      "vertices": 296,
+      "triangles": 224,
+      "animations": 0,
+      "textures": 0
+    },
+    {
+      "file": "so_embedded_glb_0_at_2850304.glb",
+      "size": 3240,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 2,
+      "vertices": 296,
+      "triangles": 224,
+      "animations": 0,
+      "textures": 0
+    },
+    {
+      "file": "so_embedded_glb_1_at_2836608.glb",
+      "size": 3292,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 2,
+      "vertices": 296,
+      "triangles": 224,
+      "animations": 0,
+      "textures": 0
+    },
+    {
+      "file": "so_embedded_glb_1_at_2853552.glb",
+      "size": 3292,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 2,
+      "vertices": 296,
+      "triangles": 224,
+      "animations": 0,
+      "textures": 0
+    },
+    {
+      "file": "so_embedded_glb_2_at_2839904.glb",
+      "size": 4868,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 2,
+      "vertices": 792,
+      "triangles": 520,
+      "animations": 0,
+      "textures": 0
+    },
+    {
+      "file": "so_embedded_glb_2_at_2856848.glb",
+      "size": 4868,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 2,
+      "vertices": 792,
+      "triangles": 520,
+      "animations": 0,
+      "textures": 0
+    },
+    {
+      "file": "so_embedded_glb_3_at_3269088.glb",
+      "size": 2924,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 2,
+      "vertices": 12,
+      "triangles": 8,
+      "animations": 0,
+      "textures": 0
+    },
+    {
+      "file": "so_embedded_glb_3_at_3281152.glb",
+      "size": 2924,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 2,
+      "vertices": 12,
+      "triangles": 8,
+      "animations": 0,
+      "textures": 0
+    },
+    {
+      "file": "so_embedded_glb_4_at_3491600.glb",
+      "size": 112308,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 1,
+      "vertices": 986,
+      "triangles": 1680,
+      "animations": 4,
+      "textures": 1
+    },
+    {
+      "file": "so_embedded_glb_4_at_3500112.glb",
+      "size": 112308,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 1,
+      "vertices": 986,
+      "triangles": 1680,
+      "animations": 4,
+      "textures": 1
+    },
+    {
+      "file": "so_embedded_glb_5_at_3603920.glb",
+      "size": 59852,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 2,
+      "vertices": 2092,
+      "triangles": 1304,
+      "animations": 0,
+      "textures": 0
+    },
+    {
+      "file": "so_embedded_glb_5_at_3612432.glb",
+      "size": 59852,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 2,
+      "vertices": 2092,
+      "triangles": 1304,
+      "animations": 0,
+      "textures": 0
+    },
+    {
+      "file": "so_embedded_glb_6_at_3663776.glb",
+      "size": 52812,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 1,
+      "vertices": 6,
+      "triangles": 4,
+      "animations": 0,
+      "textures": 1
+    },
+    {
+      "file": "so_embedded_glb_6_at_3672288.glb",
+      "size": 52812,
+      "valid": true,
+      "version": 2,
+      "meshes": 1,
+      "materials": 1,
+      "vertices": 6,
+      "triangles": 4,
+      "animations": 0,
+      "textures": 1
+    }
+  ],
+  "cruise_assets": [
+    {
+      "name": "camry.png",
+      "path": "assets\\images\\camry.png",
+      "size": 2167387,
+      "is_car_related": true
+    },
+    {
+      "name": "cruise_foreground_1024.png",
+      "path": "assets\\images\\cruise_foreground_1024.png",
+      "size": 19878,
+      "is_car_related": false
+    },
+    {
+      "name": "fusion.png",
+      "path": "assets\\images\\fusion.png",
+      "size": 2183085,
+      "is_car_related": true
+    },
+    {
+      "name": "google_g.png",
+      "path": "assets\\images\\google_g.png",
+      "size": 16379,
+      "is_car_related": false
+    },
+    {
+      "name": "logoapp.png",
+      "path": "assets\\images\\logoapp.png",
+      "size": 680825,
+      "is_car_related": false
+    },
+    {
+      "name": "paypal_logo.png",
+      "path": "assets\\images\\paypal_logo.png",
+      "size": 11273,
+      "is_car_related": false
+    },
+    {
+      "name": "sedan_top.png",
+      "path": "assets\\images\\sedan_top.png",
+      "size": 67199,
+      "is_car_related": true
+    },
+    {
+      "name": "sedan_white_top.png",
+      "path": "assets\\images\\sedan_white_top.png",
+      "size": 20668,
+      "is_car_related": true
+    },
+    {
+      "name": "suburban.png",
+      "path": "assets\\images\\suburban.png",
+      "size": 2742939,
+      "is_car_related": true
+    },
+    {
+      "name": "suv_top.png",
+      "path": "assets\\images\\suv_top.png",
+      "size": 65742,
+      "is_car_related": true
+    },
+    {
+      "name": "nav_car_0.png",
+      "path": "assets\\images\\car_sprites\\nav_car_0.png",
+      "size": 5434,
+      "is_car_related": true
+    },
+    {
+      "name": "nav_car_135.png",
+      "path": "assets\\images\\car_sprites\\nav_car_135.png",
+      "size": 12309,
+      "is_car_related": true
+    },
+    {
+      "name": "nav_car_180.png",
+      "path": "assets\\images\\car_sprites\\nav_car_180.png",
+      "size": 5409,
+      "is_car_related": true
+    },
+    {
+      "name": "nav_car_225.png",
+      "path": "assets\\images\\car_sprites\\nav_car_225.png",
+      "size": 13364,
+      "is_car_related": true
+    },
+    {
+      "name": "nav_car_270.png",
+      "path": "assets\\images\\car_sprites\\nav_car_270.png",
+      "size": 6411,
+      "is_car_related": true
+    },
+    {
+      "name": "nav_car_315.png",
+      "path": "assets\\images\\car_sprites\\nav_car_315.png",
+      "size": 12375,
+      "is_car_related": true
+    },
+    {
+      "name": "nav_car_45.png",
+      "path": "assets\\images\\car_sprites\\nav_car_45.png",
+      "size": 13336,
+      "is_car_related": true
+    },
+    {
+      "name": "nav_car_90.png",
+      "path": "assets\\images\\car_sprites\\nav_car_90.png",
+      "size": 6450,
+      "is_car_related": true
+    }
+  ]
+}

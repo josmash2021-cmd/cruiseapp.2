@@ -207,14 +207,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               CameraPosition(target: target, zoom: 17),
             ),
           );
-          _appleMapCtrl?.animateCamera(
-            amap.CameraUpdate.newCameraPosition(
-              amap.CameraPosition(
-                target: amap.LatLng(details.lat, details.lng),
-                zoom: 17,
-              ),
-            ),
-          );
           return;
         }
       }
@@ -812,14 +804,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _fetchingLocation = false;
       });
       _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(ll, 15.5));
-      _appleMapCtrl?.animateCamera(
-        amap.CameraUpdate.newCameraPosition(
-          amap.CameraPosition(
-            target: amap.LatLng(ll.latitude, ll.longitude),
-            zoom: 15.5,
-          ),
-        ),
-      );
 
       // Reverse geocode for address
       final places = PlacesService(ApiKeys.webServices);
@@ -1077,9 +1061,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   void _togglePinLabels() {}
 
   void _fitRoute(List<LatLng> pts) {
-    if (pts.isEmpty) return;
-    final hasCtrl = Platform.isIOS ? _appleMapCtrl != null : _mapCtrl != null;
-    if (!hasCtrl) return;
+    if (pts.isEmpty || _mapCtrl == null) return;
     double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
     for (final p in pts) {
       if (p.latitude < minLat) minLat = p.latitude;
@@ -1087,27 +1069,15 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (p.longitude < minLng) minLng = p.longitude;
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
-    if (Platform.isIOS) {
-      _appleMapCtrl!.animateCamera(
-        amap.CameraUpdate.newLatLngBounds(
-          amap.LatLngBounds(
-            southwest: amap.LatLng(minLat, minLng),
-            northeast: amap.LatLng(maxLat, maxLng),
-          ),
-          80,
+    _mapCtrl!.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
         ),
-      );
-    } else {
-      _mapCtrl!.animateCamera(
-        CameraUpdate.newLatLngBounds(
-          LatLngBounds(
-            southwest: LatLng(minLat, minLng),
-            northeast: LatLng(maxLat, maxLng),
-          ),
-          80,
-        ),
-      );
-    }
+        80,
+      ),
+    );
   }
 
   void _goToTracking() {
@@ -3575,34 +3545,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         ),
       );
       _mapCtrl?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
-      _appleMapCtrl?.animateCamera(
-        amap.CameraUpdate.newLatLngBounds(
-          amap.LatLngBounds(
-            southwest: amap.LatLng(
-              bounds.southwest.latitude,
-              bounds.southwest.longitude,
-            ),
-            northeast: amap.LatLng(
-              bounds.northeast.latitude,
-              bounds.northeast.longitude,
-            ),
-          ),
-          80,
-        ),
-      );
     } else if (_userLocation != null) {
       _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(_userLocation!, 15.5));
-      _appleMapCtrl?.animateCamera(
-        amap.CameraUpdate.newCameraPosition(
-          amap.CameraPosition(
-            target: amap.LatLng(
-              _userLocation!.latitude,
-              _userLocation!.longitude,
-            ),
-            zoom: 15.5,
-          ),
-        ),
-      );
     }
   }
 

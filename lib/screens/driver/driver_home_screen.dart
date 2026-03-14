@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:apple_maps_flutter/apple_maps_flutter.dart' as amap;
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -43,7 +42,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   // ── Map ──
   GoogleMapController? _mapController;
-  amap.AppleMapController? _appleMapController;
   LatLng? _currentLatLng;
   // ignore: unused_field
   bool _mapReady = false;
@@ -447,41 +445,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  MAP
   // ═══════════════════════════════════════════════════
   Widget _buildMap() {
-    // Use AppleMap on iOS, GoogleMap on Android
-    // Show map immediately — camera animates to real location once obtained
-    if (Platform.isIOS) {
-      final initialTarget = _currentLatLng != null
-          ? amap.LatLng(_currentLatLng!.latitude, _currentLatLng!.longitude)
-          : const amap.LatLng(33.4484, -112.0740); // default: Phoenix, AZ
-      return amap.AppleMap(
-        initialCameraPosition: amap.CameraPosition(
-          target: initialTarget,
-          zoom: _currentLatLng != null ? 16 : 10,
-        ),
-        mapType: amap.MapType.standard,
-        onMapCreated: (ctrl) {
-          _appleMapController = ctrl;
-          setState(() => _mapReady = true);
-          if (_currentLatLng != null) {
-            ctrl.moveCamera(
-              amap.CameraUpdate.newCameraPosition(
-                amap.CameraPosition(
-                  target: amap.LatLng(_currentLatLng!.latitude, _currentLatLng!.longitude),
-                  zoom: 16,
-                ),
-              ),
-            );
-          }
-        },
-        myLocationEnabled: true,
-        myLocationButtonEnabled: false,
-        zoomGesturesEnabled: true,
-        scrollGesturesEnabled: true,
-        rotateGesturesEnabled: false,
-        compassEnabled: false,
-      );
-    }
-
+    // Use Google Maps on both iOS and Android
     final dc = DriverColors.of(context);
     if (_currentLatLng == null) {
       return Container(

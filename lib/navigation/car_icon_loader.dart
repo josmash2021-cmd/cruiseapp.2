@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import 'navatar_loader.dart';
+
 /// Compact 3D top-down car with closed roof, detailed doors,
 /// properly placed lights, and strong shadows.
 class _CarPalette {
@@ -151,15 +153,22 @@ class CarIconLoader {
   /// width (height scales proportionally) so they aren't oversized on the map.
   static const double _spriteTargetWidth = 40.0;
 
-  /// Loads 8 directional PNG sprites from assets/images/car_sprites/.
-  /// Files must be named: nav_car_0.png, nav_car_45.png, … nav_car_315.png
-  /// Each image is decoded and resized to [_spriteTargetWidth] logical px
-  /// (×devicePixelRatio) so it looks crisp but doesn't overwhelm the map.
-  /// Returns null if any sprite is missing.
+  /// Loads 8 directional PNG sprites for the navigation car marker.
+  ///
+  /// Tries Navatar sprites first (assets/images/navatars/{model}/),
+  /// then falls back to legacy car_sprites/ folder.
   static Future<List<BitmapDescriptor>?> loadNavCarSprites() async {
     if (_navSprites != null) return _navSprites;
+
+    // Try Navatar system first (6 models × 8 angles)
+    final navatarSprites = await NavatarLoader.loadCurrentSprites();
+    if (navatarSprites != null && navatarSprites.length == 8) {
+      _navSprites = navatarSprites;
+      return _navSprites;
+    }
+
+    // Fallback: legacy car_sprites/ folder
     final sprites = <BitmapDescriptor>[];
-    // Use 3× scale for crisp rendering on retina screens
     const double scale = 3.0;
     final int targetPx = (_spriteTargetWidth * scale).round();
 
@@ -171,7 +180,6 @@ class CarIconLoader {
         final raw = data.buffer.asUint8List();
         if (raw.isEmpty) return null;
 
-        // Decode → resize → re-encode to get a properly sized marker
         final codec = await ui.instantiateImageCodec(
           raw,
           targetWidth: targetPx,
@@ -186,7 +194,7 @@ class CarIconLoader {
         // ignore: deprecated_member_use
         sprites.add(BitmapDescriptor.fromBytes(resizedBytes));
       } catch (_) {
-        return null; // sprite missing — caller should fall back
+        return null;
       }
     }
     _navSprites = sprites;
@@ -254,6 +262,8 @@ class CarIconLoader {
     _cardCache.clear();
     _rotatedCache.clear();
     _rotatedCacheByType.clear();
+    _navSprites = null;
+    NavatarLoader.invalidate();
   }
 
   // ── Pre-rotated icon for Apple Maps (no native rotation support) ──

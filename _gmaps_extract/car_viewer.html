@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Google Maps Car Navigation Viewer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0f0f0f; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif; }
+h1 { text-align: center; padding: 24px; color: #4285f4; font-size: 28px; }
+h2 { color: #4285f4; margin-bottom: 16px; font-size: 20px; border-bottom: 2px solid #333; padding-bottom: 8px; }
+h3 { color: #81b4ff; margin: 12px 0 8px; font-size: 16px; }
+.container { max-width: 1400px; margin: 0 auto; padding: 0 24px 40px; }
+.section { background: #1a1a1a; border-radius: 16px; padding: 24px; margin-bottom: 24px; border: 1px solid #333; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.card { background: #222; border-radius: 12px; padding: 16px; border: 1px solid #3a3a3a; transition: border-color 0.2s; }
+.card:hover { border-color: #4285f4; }
+.card-title { font-weight: 600; color: #fff; margin-bottom: 8px; font-size: 14px; }
+.card-meta { font-size: 12px; color: #888; margin-bottom: 12px; }
+.lottie-container { width: 100%; aspect-ratio: 1; background: #111; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.glb-canvas { width: 100%; height: 300px; background: #111; border-radius: 8px; }
+.png-img { max-width: 100%; max-height: 250px; object-fit: contain; display: block; margin: 0 auto; background: #111; border-radius: 8px; padding: 8px; }
+.controls { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.btn { background: #4285f4; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.btn:hover { background: #5a95f5; }
+.btn.outline { background: transparent; border: 1px solid #4285f4; color: #4285f4; }
+.layer-list { font-size: 11px; color: #aaa; max-height: 120px; overflow-y: auto; margin-top: 8px; padding: 8px; background: #1a1a1a; border-radius: 6px; }
+.layer-item { padding: 2px 0; }
+.layer-item.car { color: #4caf50; font-weight: 600; }
+.comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 768px) { .comparison { grid-template-columns: 1fr; } }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; margin-left: 6px; }
+.tag.lottie { background: #e91e6320; color: #f48fb1; border: 1px solid #e91e6340; }
+.tag.glb { background: #4caf5020; color: #81c784; border: 1px solid #4caf5040; }
+.tag.car { background: #ff980020; color: #ffb74d; border: 1px solid #ff980040; }
+.big-lottie { width: 100%; max-width: 500px; margin: 0 auto; aspect-ratio: 400/421; }
+#main-car-lottie { width: 100%; height: 100%; }
+.speed-controls { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 12px; }
+.speed-controls label { font-size: 12px; color: #888; }
+.speed-controls input { width: 120px; }
+</style>
+</head>
+<body>
+
+<h1>Google Maps Navigation Car Viewer</h1>
+
+<div class="container">
+
+  <!-- MAIN: Enroute Car Animation -->
+  <div class="section">
+    <h2>Carrito de Navegacion Principal <span class="tag lottie">LOTTIE</span> <span class="tag car">CAR</span></h2>
+    <p style="color:#888; margin-bottom:16px; font-size:14px;">
+      <code>enroute_animation_lottie</code> - 400x421px @ 60fps, 451 frames<br>
+      Layers: Car-FrontWheel, Car-RearWheel, Car-Cab, Car-Trunk, Car-Shadow, Car Bounce, Car Position
+    </p>
+    <div class="big-lottie">
+      <div id="main-car-lottie" class="lottie-container"></div>
+    </div>
+    <div class="speed-controls">
+      <button class="btn" onclick="mainAnim.goToAndStop(0,true)">|&lt;</button>
+      <button class="btn" onclick="mainAnim.setSpeed(0.3); mainAnim.play()">0.3x</button>
+      <button class="btn" onclick="mainAnim.setSpeed(0.5); mainAnim.play()">0.5x</button>
+      <button class="btn" onclick="mainAnim.setSpeed(1); mainAnim.play()">1x</button>
+      <button class="btn" onclick="mainAnim.setSpeed(2); mainAnim.play()">2x</button>
+      <button class="btn" onclick="mainAnim.pause()">Pause</button>
+      <button class="btn" onclick="mainAnim.play()">Play</button>
+    </div>
+    <div class="layer-list" style="margin-top:12px;">
+      <div class="layer-item car">Car-FrontWheel Outlines</div>
+      <div class="layer-item car">Car-RearWheel Outlines</div>
+      <div class="layer-item car">Car-Cab</div>
+      <div class="layer-item car">Car-Trunk Outlines</div>
+      <div class="layer-item car">Car-Shadow Outlines</div>
+      <div class="layer-item car">Car Bounce Rotation Null</div>
+      <div class="layer-item car">Car Position Null</div>
+      <div class="layer-item">Store-Orange Outlines</div>
+      <div class="layer-item">Store-Banana Outlines</div>
+      <div class="layer-item">Store-Bread Outlines</div>
+      <div class="layer-item">Store-Steak Outlines</div>
+      <div class="layer-item">Store-Wine Outlines</div>
+    </div>
+  </div>
+
+  <!-- 3D Models -->
+  <div class="section">
+    <h2>Modelos 3D Embebidos (GLB/glTF) <span class="tag glb">GLB</span></h2>
+    <p style="color:#888; margin-bottom:16px; font-size:14px;">
+      Modelos encontrados dentro de <code>libgmm-jni.so</code> y los resources del APK
+    </p>
+    <div class="grid" id="glb-grid"></div>
+  </div>
+
+  <!-- Other Lottie animations -->
+  <div class="section">
+    <h2>Otras Animaciones de Navegacion <span class="tag lottie">LOTTIE</span></h2>
+    <div class="grid" id="lottie-grid"></div>
+  </div>
+
+  <!-- PNG Textures -->
+  <div class="section">
+    <h2>Texturas PNG Extraidas</h2>
+    <div class="grid" id="png-grid"></div>
+  </div>
+
+  <!-- Comparison -->
+  <div class="section">
+    <h2>Comparacion: Google Maps vs Cruise App</h2>
+    <div class="comparison">
+      <div class="card">
+        <div class="card-title" style="color:#4285f4;">Google Maps</div>
+        <ul style="font-size:13px; padding-left:18px; line-height:1.8;">
+          <li>Lottie animado (cab, ruedas, trunk, sombra)</li>
+          <li>Modelos 3D GLB con PBR materials</li>
+          <li>KHR_materials_clearcoat para brillo</li>
+          <li>Draco mesh compression</li>
+          <li>"Magic Carpet" 3D para ruta (75 joints)</li>
+          <li>Animaciones: open, close, idle</li>
+          <li>~300KB total assets</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:#34a853;">Cruise App (Tu Proyecto)</div>
+        <ul style="font-size:13px; padding-left:18px; line-height:1.8;">
+          <li>PNG sprites 2D estaticos</li>
+          <li>sedan_top.png, suv_top.png</li>
+          <li>8 angulos de rotacion (nav_car_*.png)</li>
+          <li>Imagenes pesadas (camry 2.1MB, suburban 2.7MB)</li>
+          <li>Polyline 2D para ruta</li>
+          <li>Sin animaciones</li>
+          <li>7.68MB total assets</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+// GLB files to display
+const glbFiles = [
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__7mS.glb', name: 'Navigation Arrow + Disc', desc: '474 tris, animated, Blue clearcoat material' },
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__RoX.glb', name: 'Location Puck (Blue Dot)', desc: '240 tris, animated, Blue+White+Shadow' },
+  { file: 'cars_found/so_embedded_glb_4_at_3491600.glb', name: 'Magic Carpet (Route)', desc: '1680 tris, 75 joints, open/close animations' },
+  { file: 'cars_found/so_embedded_glb_5_at_3603920.glb', name: '3D Route Curve', desc: '1304 tris, Front_back + Side materials' },
+  { file: 'cars_found/so_embedded_glb_2_at_2839904.glb', name: 'Blue Circle Puck', desc: '520 tris, blue + darkBlue' },
+  { file: 'cars_found/so_embedded_glb_0_at_2833360.glb', name: 'Direction Arrow', desc: '224 tris, white + grey, Draco compressed' },
+  { file: 'cars_found/so_embedded_glb_6_at_3663776.glb', name: 'Route Texture Plane', desc: '4 tris, 1024x512 texture, armature' },
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__V5A.glb', name: 'Fan Animation', desc: '20 tris, 66 channel animation, 24 nodes' },
+];
+
+const grid = document.getElementById('glb-grid');
+
+glbFiles.forEach((item, index) => {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="card-title">${item.name} <span class="tag glb">GLB</span></div>
+    <div class="card-meta">${item.desc}</div>
+    <canvas id="glb-${index}" class="glb-canvas"></canvas>
+    <div class="controls">
+      <button class="btn" onclick="window.resetCam(${index})">Reset</button>
+      <button class="btn outline" onclick="window.toggleWire(${index})">Wireframe</button>
+      <button class="btn outline" onclick="window.toggleAnim(${index})">Anim</button>
+    </div>
+  `;
+  grid.appendChild(card);
+
+  const canvas = card.querySelector(`#glb-${index}`);
+  initGLB(canvas, item.file, index);
+});
+
+const scenes = {};
+const mixers = {};
+const clocks = {};
+
+function initGLB(canvas, file, index) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
+  
+  const camera = new THREE.PerspectiveCamera(45, canvas.clientWidth / canvas.clientHeight, 0.01, 100);
+  camera.position.set(0, 2, 3);
+  
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  
+  const controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 2;
+  
+  // Lights
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dir = new THREE.DirectionalLight(0xffffff, 1);
+  dir.position.set(2, 4, 3);
+  scene.add(dir);
+  
+  // Grid
+  const gridH = new THREE.GridHelper(4, 20, 0x333333, 0x222222);
+  scene.add(gridH);
+  
+  const loader = new GLTFLoader();
+  const dracoLoader = new DRACOLoader();
+  dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
+  loader.setDRACOLoader(dracoLoader);
+  
+  const clock = new THREE.Clock();
+  clocks[index] = clock;
+  
+  loader.load(file, (gltf) => {
+    const model = gltf.scene;
+    
+    // Auto-center and scale
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const scale = 2 / (maxDim || 1);
+    model.scale.setScalar(scale);
+    model.position.sub(center.multiplyScalar(scale));
+    
+    scene.add(model);
+    scenes[index] = { scene, camera, renderer, controls, model, wireframe: false };
+    
+    // Animations
+    if (gltf.animations && gltf.animations.length > 0) {
+      const mixer = new THREE.AnimationMixer(model);
+      gltf.animations.forEach(clip => {
+        mixer.clipAction(clip).play();
+      });
+      mixers[index] = mixer;
+    }
+    
+    camera.lookAt(0, 0, 0);
+  }, undefined, (err) => {
+    console.warn('GLB load error:', file, err);
+  });
+  
+  function animate() {
+    requestAnimationFrame(animate);
+    const delta = clock.getDelta();
+    if (mixers[index]) mixers[index].update(delta);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+}
+
+window.resetCam = (i) => {
+  if (scenes[i]) {
+    scenes[i].camera.position.set(0, 2, 3);
+    scenes[i].controls.reset();
+  }
+};
+
+window.toggleWire = (i) => {
+  if (scenes[i]) {
+    scenes[i].wireframe = !scenes[i].wireframe;
+    scenes[i].model.traverse(child => {
+      if (child.isMesh && child.material) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(m => m.wireframe = scenes[i].wireframe);
+      }
+    });
+  }
+};
+
+window.toggleAnim = (i) => {
+  if (mixers[i]) {
+    mixers[i].timeScale = mixers[i].timeScale === 0 ? 1 : 0;
+  }
+};
+</script>
+
+<script>
+// Main car Lottie animation
+const mainAnim = lottie.loadAnimation({
+  container: document.getElementById('main-car-lottie'),
+  renderer: 'svg',
+  loop: true,
+  autoplay: true,
+  path: 'cars_found/Maps-26.10.01.877073638.apk_res__bvj.json'
+});
+window.mainAnim = mainAnim;
+
+// Other Lottie animations
+const otherLotties = [
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__Bwb.json', name: 'Navigation Icon', desc: 'Center arrow + bars + dashes' },
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__z6G.json', name: 'Hand Gesture + Arrow', desc: '800x800, arrowhead + dotted path' },
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__OfJ.json', name: 'Blue Dot Location', desc: '480x480, BlueDot + DotHalo + Map' },
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__Gwe.json', name: 'Route Recalculation', desc: '240x240, loading animation' },
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__lBm.json', name: 'Swipe Up Arrow', desc: '200x200, arrow swipe gesture' },
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__kEZ.json', name: 'Tilt Down', desc: '1080x1080, phone tilt animation' },
+];
+
+const lottieGrid = document.getElementById('lottie-grid');
+otherLotties.forEach((item, i) => {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="card-title">${item.name} <span class="tag lottie">LOTTIE</span></div>
+    <div class="card-meta">${item.desc}</div>
+    <div id="lottie-${i}" class="lottie-container" style="aspect-ratio:1; max-height:250px;"></div>
+  `;
+  lottieGrid.appendChild(card);
+  
+  lottie.loadAnimation({
+    container: card.querySelector(`#lottie-${i}`),
+    renderer: 'svg',
+    loop: true,
+    autoplay: true,
+    path: item.file
+  });
+});
+
+// PNG textures
+const pngs = [
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__7mS.glb_texture_0.png', name: 'Arrow Texture', desc: '300x300' },
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__RoX.glb_texture_0.png', name: 'Puck Shadow Texture', desc: '300x300' },
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_res__aqg.glb_texture_0.png', name: 'Material Texture', desc: '512x512' },
+  { file: 'cars_found/so_embedded_glb_6_at_3663776.glb_texture_0.png', name: 'Route Texture', desc: '1024x512' },
+  { file: 'cars_found/Maps-26.10.01.877073638.apk_blob_res__3Kg.png', name: 'Extracted PNG', desc: '576x576' },
+];
+
+const pngGrid = document.getElementById('png-grid');
+pngs.forEach(item => {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="card-title">${item.name}</div>
+    <div class="card-meta">${item.desc}</div>
+    <img src="${item.file}" class="png-img" onerror="this.style.display='none'">
+  `;
+  pngGrid.appendChild(card);
+});
+</script>
+
+</body>
+</html>

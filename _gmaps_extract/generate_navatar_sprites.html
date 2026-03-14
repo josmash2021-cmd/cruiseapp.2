@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Navatar Sprite Generator for Flutter (iOS + Android)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;color:#eee;font-family:'Segoe UI',sans-serif;padding:20px}
+h1{color:#4285f4;font-size:20px;margin-bottom:4px}
+.sub{color:#666;font-size:13px;margin-bottom:16px}
+.info{background:#0d1b0d;border:1px solid #34a853;border-radius:8px;padding:12px;font-size:12px;line-height:1.6;margin-bottom:16px}
+.info b{color:#34a853}
+#status{background:#111;border:1px solid #333;border-radius:8px;padding:12px;font-size:13px;line-height:1.7;margin-bottom:16px;max-height:200px;overflow-y:auto}
+.done{color:#34a853} .working{color:#fbbc04} .err{color:#ea4335}
+.preview-section{margin-bottom:24px}
+.preview-section h2{color:#81b4ff;font-size:15px;margin-bottom:8px;border-bottom:1px solid #222;padding-bottom:6px}
+.sprite-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end}
+.sprite-cell{text-align:center}
+.sprite-cell canvas{background:#1a1a1a;border:1px solid #333;border-radius:4px}
+.sprite-cell p{font-size:9px;color:#666;margin-top:2px}
+.btn{padding:8px 20px;background:#34a853;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;margin:4px}
+.btn:hover{background:#46b965}
+.btn.blue{background:#4285f4}
+.btn.blue:hover{background:#5a95f5}
+.download-bar{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:16px;padding:12px;background:#111;border-radius:8px;border:1px solid #333}
+</style>
+</head>
+<body>
+<h1>Navatar Sprite Generator</h1>
+<p class="sub">Generates 8-angle PNG sprites for each car model | Ready for Flutter (iOS + Android)</p>
+
+<div class="info">
+<b>How this works:</b> Renders each 3D car model from 8 angles (0, 45, 90... 315 degrees) as transparent PNG sprites.<br>
+These drop into <code>assets/images/navatars/</code> in your Flutter project, replacing the current 2D car sprites.<br>
+<b>Output:</b> 6 cars x 8 angles = 48 PNG sprites + 6 GLB files for 3D viewer
+</div>
+
+<div id="status">Initializing...</div>
+
+<div class="download-bar" id="downloadBar" style="display:none">
+  <button class="btn" onclick="downloadAllSprites()">Download ALL Sprites (48 PNGs)</button>
+  <button class="btn blue" onclick="downloadAllGLBs()">Download ALL GLBs (6 models)</button>
+</div>
+
+<div id="output"></div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+const ANGLES = [0, 45, 90, 135, 180, 225, 270, 315];
+const SPRITE_SIZE = 256; // px - high res for retina
+const statusEl = document.getElementById('status');
+const outputEl = document.getElementById('output');
+window.allSprites = {}; // {carName: {angle: canvas}}
+window.allGLBs = {};
+
+function log(msg, cls='') { statusEl.innerHTML += `<div class="${cls}">${msg}</div>`; statusEl.scrollTop = 99999; }
+
+// ---- Materials ----
+function makeMats(bodyHex=0xe8eaed) {
+  return {
+    body: new THREE.MeshPhysicalMaterial({color:bodyHex,metalness:0.35,roughness:0.35,clearcoat:0.9,clearcoatRoughness:0.1}),
+    glass: new THREE.MeshPhysicalMaterial({color:0x88ccff,metalness:0.1,roughness:0.05,transmission:0.5,transparent:true,opacity:0.7}),
+    wheel: new THREE.MeshStandardMaterial({color:0x2a2a2a,metalness:0.5,roughness:0.6}),
+    hub: new THREE.MeshStandardMaterial({color:0x999999,metalness:0.85,roughness:0.15}),
+    accent: new THREE.MeshPhysicalMaterial({color:0x4285f4,metalness:0.2,roughness:0.3,clearcoat:1.0}),
+    hl: new THREE.MeshStandardMaterial({color:0xffffdd,emissive:0xffffcc,emissiveIntensity:0.4}),
+    tl: new THREE.MeshStandardMaterial({color:0xff2222,emissive:0xff0000,emissiveIntensity:0.3}),
+    dark: new THREE.MeshStandardMaterial({color:0x1a1a1a,metalness:0.3,roughness:0.7}),
+    chrome: new THREE.MeshStandardMaterial({color:0xdddddd,metalness:0.95,roughness:0.05}),
+  };
+}
+
+function rBox(w,h,d,r){const s=new THREE.Shape(),hw=w/2,hh=h/2;s.moveTo(-hw+r,-hh);s.lineTo(hw-r,-hh);s.quadraticCurveTo(hw,-hh,hw,-hh+r);s.lineTo(hw,hh-r);s.quadraticCurveTo(hw,hh,hw-r,hh);s.lineTo(-hw+r,hh);s.quadraticCurveTo(-hw,hh,-hw,hh-r);s.lineTo(-hw,-hh+r);s.quadraticCurveTo(-hw,-hh,-hw+r,-hh);return new THREE.ExtrudeGeometry(s,{depth:d,bevelEnabled:true,bevelThickness:r*0.3,bevelSize:r*0.3,bevelSegments:3})}
+function addW(g,x,y,z,r,w,m){const t=new THREE.Mesh(new THREE.CylinderGeometry(r,r,w,16),m.wheel);t.rotation.z=Math.PI/2;t.position.set(x,y,z);g.add(t);const h=new THREE.Mesh(new THREE.CylinderGeometry(r*.55,r*.55,w+.01,8),m.hub);h.rotation.z=Math.PI/2;h.position.set(x,y,z);g.add(h)}
+
+// ---- Car Builders ----
+function buildSedan(m){const g=new THREE.Group();g.name='navatar_sedan';
+const b=new THREE.Mesh(rBox(.82,.26,1.85,.08),m.body);b.position.set(0,.26,-.925);b.castShadow=true;g.add(b);
+const c=new THREE.Mesh(rBox(.72,.29,.92,.1),m.body);c.position.set(0,.54,-.66);c.castShadow=true;g.add(c);
+g.add(Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(.62,.23),m.glass),{position:new THREE.Vector3(0,.58,-.18),rotation:new THREE.Euler(-.3,0,0)}));
+g.add(Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(.58,.2),m.glass),{position:new THREE.Vector3(0,.56,-1.14),rotation:new THREE.Euler(.3,0,0)}));
+[-1,1].forEach(s=>{const w=new THREE.Mesh(new THREE.PlaneGeometry(.72,.19),m.glass);w.position.set(s*.37,.57,-.66);w.rotation.y=s*Math.PI/2;g.add(w)});
+[[-0.3,.29,.02],[.3,.29,.02]].forEach(p=>{const l=new THREE.Mesh(new THREE.SphereGeometry(.06,8,8),m.hl);l.position.set(...p);g.add(l)});
+[[-0.3,.29,-1.87],[.3,.29,-1.87]].forEach(p=>{const l=new THREE.Mesh(new THREE.BoxGeometry(.1,.06,.02),m.tl);l.position.set(...p);g.add(l)});
+[[.42,.12,-.36],[-.42,.12,-.36],[.42,.12,-1.48],[-.42,.12,-1.48]].forEach(p=>addW(g,...p,.12,.08,m));
+const st=new THREE.Mesh(new THREE.BoxGeometry(.84,.02,1.87),m.accent);st.position.set(0,.13,-.925);g.add(st);
+g.position.set(0,0,.925);return g}
+
+function buildSUV(m){const g=new THREE.Group();g.name='navatar_suv';
+const b=new THREE.Mesh(rBox(.88,.36,1.75,.08),m.body);b.position.set(0,.36,-.875);b.castShadow=true;g.add(b);
+const c=new THREE.Mesh(rBox(.8,.36,1.02,.06),m.body);c.position.set(0,.7,-.71);c.castShadow=true;g.add(c);
+g.add(Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(.68,.29),m.glass),{position:new THREE.Vector3(0,.74,-.18),rotation:new THREE.Euler(-.25,0,0)}));
+[-1,1].forEach(s=>{const w=new THREE.Mesh(new THREE.PlaneGeometry(.82,.24),m.glass);w.position.set(s*.41,.74,-.71);w.rotation.y=s*Math.PI/2;g.add(w)});
+const r=new THREE.Mesh(new THREE.BoxGeometry(.62,.02,.82),m.dark);r.position.set(0,.9,-.71);g.add(r);
+[[-0.34,.39,.02],[.34,.39,.02]].forEach(p=>{g.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(.07,8,8),m.hl),{position:new THREE.Vector3(...p)}))});
+[[-0.34,.39,-1.78],[.34,.39,-1.78]].forEach(p=>{g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(.12,.07,.02),m.tl),{position:new THREE.Vector3(...p)}))});
+[[.46,.16,-.32],[-.46,.16,-.32],[.46,.16,-1.42],[-.46,.16,-1.42]].forEach(p=>addW(g,...p,.16,.1,m));
+const st=new THREE.Mesh(new THREE.BoxGeometry(.9,.02,1.77),m.accent);st.position.set(0,.18,-.875);g.add(st);
+g.position.set(0,0,.875);return g}
+
+function buildPickup(m){const g=new THREE.Group();g.name='navatar_pickup';
+const f=new THREE.Mesh(rBox(.88,.36,.92,.08),m.body);f.position.set(0,.36,-.46);f.castShadow=true;g.add(f);
+const c=new THREE.Mesh(rBox(.8,.36,.62,.06),m.body);c.position.set(0,.7,-.51);c.castShadow=true;g.add(c);
+g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(.82,.05,.82),m.body),{position:new THREE.Vector3(0,.36,-1.37)}));
+g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(.82,.26,.05),m.body),{position:new THREE.Vector3(0,.49,-1.76)}));
+[-1,1].forEach(s=>{g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(.05,.26,.82),m.body),{position:new THREE.Vector3(s*.41,.49,-1.37)}))});
+g.add(Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(.68,.29),m.glass),{position:new THREE.Vector3(0,.74,-.18),rotation:new THREE.Euler(-.25,0,0)}));
+[[-0.34,.39,.02],[.34,.39,.02]].forEach(p=>{g.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(.07,8,8),m.hl),{position:new THREE.Vector3(...p)}))});
+[[-0.2,.92,-.51],[0,.92,-.51],[.2,.92,-.51]].forEach(p=>{g.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(.035,6,6),m.hl),{position:new THREE.Vector3(...p)}))});
+[[.48,.16,-.32],[-.48,.16,-.32],[.48,.16,-1.48],[-.48,.16,-1.48]].forEach(p=>addW(g,...p,.16,.12,m));
+const st=new THREE.Mesh(new THREE.BoxGeometry(.9,.02,1.8),m.accent);st.position.set(0,.18,-.9);g.add(st);
+g.position.set(0,0,.9);return g}
+
+function buildCityCar(m){const g=new THREE.Group();g.name='navatar_city_car';
+const b=new THREE.Mesh(rBox(.72,.26,1.22,.12),m.body);b.position.set(0,.26,-.61);b.castShadow=true;g.add(b);
+const c=new THREE.Mesh(rBox(.62,.33,.72,.14),m.body);c.position.set(0,.54,-.51);c.castShadow=true;g.add(c);
+g.add(Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(.52,.27),m.glass),{position:new THREE.Vector3(0,.58,-.13),rotation:new THREE.Euler(-.4,0,0)}));
+[-1,1].forEach(s=>{const w=new THREE.Mesh(new THREE.CircleGeometry(.15,12),m.glass);w.position.set(s*.32,.58,-.51);w.rotation.y=s*Math.PI/2;g.add(w)});
+[[-0.26,.29,.02],[.26,.29,.02]].forEach(p=>{g.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(.08,12,12),m.hl),{position:new THREE.Vector3(...p)}))});
+[[.38,.1,-.22],[-.38,.1,-.22],[.38,.1,-1.02],[-.38,.1,-1.02]].forEach(p=>addW(g,...p,.1,.07,m));
+const st=new THREE.Mesh(new THREE.BoxGeometry(.74,.02,1.24),m.accent);st.position.set(0,.13,-.61);g.add(st);
+g.position.set(0,0,.61);return g}
+
+function buildSports(m){const g=new THREE.Group();g.name='navatar_sports';
+const b=new THREE.Mesh(rBox(.9,.21,1.85,.06),m.body);b.position.set(0,.21,-.925);b.castShadow=true;g.add(b);
+const c=new THREE.Mesh(rBox(.72,.21,.72,.1),m.body);c.position.set(0,.4,-.76);c.castShadow=true;g.add(c);
+g.add(Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(.6,.18),m.glass),{position:new THREE.Vector3(0,.42,-.38),rotation:new THREE.Euler(-.5,0,0)}));
+const sp=new THREE.Mesh(new THREE.BoxGeometry(.72,.02,.15),m.dark);sp.position.set(0,.36,-1.82);g.add(sp);
+[-1,1].forEach(s=>{g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(.03,.1,.03),m.dark),{position:new THREE.Vector3(s*.26,.31,-1.82)}))});
+[[-0.32,.23,.02],[.32,.23,.02]].forEach(p=>{g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(.16,.04,.02),m.hl),{position:new THREE.Vector3(...p)}))});
+[[.47,.11,-.36],[-.47,.11,-.36],[.47,.11,-1.48],[-.47,.11,-1.48]].forEach(p=>addW(g,...p,.11,.1,m));
+const st=new THREE.Mesh(new THREE.BoxGeometry(.92,.02,1.87),m.accent);st.position.set(0,.1,-.925);g.add(st);
+g.position.set(0,0,.925);return g}
+
+function buildClassic(m){const g=new THREE.Group();g.name='navatar_classic';
+const b=new THREE.Mesh(rBox(.82,.29,1.75,.1),m.body);b.position.set(0,.29,-.875);b.castShadow=true;g.add(b);
+const c=new THREE.Mesh(rBox(.68,.32,.78,.12),m.body);c.position.set(0,.6,-.67);c.castShadow=true;g.add(c);
+g.add(Object.assign(new THREE.Mesh(new THREE.ConeGeometry(.02,.08,6),m.chrome),{position:new THREE.Vector3(0,.45,-.01)}));
+g.add(Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(.58,.26),m.glass),{position:new THREE.Vector3(0,.64,-.26),rotation:new THREE.Euler(-.2,0,0)}));
+g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(.72,.04,.04),m.chrome),{position:new THREE.Vector3(0,.17,.02)}));
+[[-0.32,.32,.02],[.32,.32,.02]].forEach(p=>{g.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(.07,12,12),m.hl),{position:new THREE.Vector3(...p)}))});
+[[.44,.13,-.32],[-.44,.13,-.32],[.44,.13,-1.42],[-.44,.13,-1.42]].forEach(p=>addW(g,...p,.13,.08,m));
+const st=new THREE.Mesh(new THREE.BoxGeometry(.84,.02,1.77),m.accent);st.position.set(0,.15,-.875);g.add(st);
+g.position.set(0,0,.875);return g}
+
+// ---- Render sprite from angle ----
+function renderSprite(model, angleDeg, size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  
+  const scene = new THREE.Scene();
+  // Transparent background!
+  
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+  // Position camera at Google Maps-like angle (elevated ~55 degrees)
+  const dist = 3.5;
+  const elevAngle = 55 * Math.PI / 180;
+  const rotAngle = (angleDeg + 180) * Math.PI / 180; // +180 so 0 = front-facing
+  camera.position.set(
+    Math.sin(rotAngle) * Math.cos(elevAngle) * dist,
+    Math.sin(elevAngle) * dist,
+    Math.cos(rotAngle) * Math.cos(elevAngle) * dist
+  );
+  camera.lookAt(0, 0.3, 0);
+  
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setSize(size, size);
+  renderer.setClearColor(0x000000, 0); // Transparent
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.3;
+  
+  // Lighting
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dl = new THREE.DirectionalLight(0xffffff, 1.3);
+  dl.position.set(3, 8, 4); dl.castShadow = true;
+  dl.shadow.mapSize.width = 512; dl.shadow.mapSize.height = 512;
+  dl.shadow.camera.near = 0.5; dl.shadow.camera.far = 20;
+  dl.shadow.camera.left = -3; dl.shadow.camera.right = 3;
+  dl.shadow.camera.top = 3; dl.shadow.camera.bottom = -3;
+  scene.add(dl);
+  scene.add(new THREE.DirectionalLight(0x8888ff, 0.25).translateX(-2).translateY(3));
+  
+  // Shadow ground (semi-transparent for map overlay)
+  const gp = new THREE.Mesh(
+    new THREE.CircleGeometry(1.2, 32),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.15 })
+  );
+  gp.rotation.x = -Math.PI / 2;
+  gp.position.y = 0.001;
+  scene.add(gp);
+  
+  scene.add(model.clone());
+  renderer.render(scene, camera);
+  renderer.dispose();
+  
+  return canvas;
+}
+
+// ---- Main generation ----
+const carDefs = [
+  { name: 'sedan', label: 'Sedan', builder: buildSedan, color: 0xe8eaed },
+  { name: 'suv', label: 'SUV', builder: buildSUV, color: 0xe8eaed },
+  { name: 'pickup', label: 'Pickup Truck', builder: buildPickup, color: 0xf0f0f0 },
+  { name: 'city_car', label: 'City Car', builder: buildCityCar, color: 0xeef1f5 },
+  { name: 'sports', label: 'Sports Car', builder: buildSports, color: 0xd0d5dd },
+  { name: 'classic', label: 'Classic Sedan', builder: buildClassic, color: 0xe8e0d8 },
+];
+
+async function generateAll() {
+  const exporter = new GLTFExporter();
+  
+  for (const def of carDefs) {
+    log(`Generating ${def.label}...`, 'working');
+    const mats = makeMats(def.color);
+    const model = def.builder(mats);
+    
+    // Section
+    const section = document.createElement('div');
+    section.className = 'preview-section';
+    section.innerHTML = `<h2>${def.label}</h2>`;
+    const row = document.createElement('div');
+    row.className = 'sprite-row';
+    section.appendChild(row);
+    outputEl.appendChild(section);
+    
+    window.allSprites[def.name] = {};
+    
+    // Render 8 angles
+    for (const angle of ANGLES) {
+      const canvas = renderSprite(model, angle, SPRITE_SIZE);
+      window.allSprites[def.name][angle] = canvas;
+      
+      // Show preview (smaller)
+      const previewCanvas = document.createElement('canvas');
+      previewCanvas.width = 80; previewCanvas.height = 80;
+      const ctx = previewCanvas.getContext('2d');
+      ctx.drawImage(canvas, 0, 0, 80, 80);
+      
+      const cell = document.createElement('div');
+      cell.className = 'sprite-cell';
+      cell.appendChild(previewCanvas);
+      cell.innerHTML += `<p>${angle}°</p>`;
+      row.appendChild(cell);
+    }
+    
+    // Export GLB
+    const glb = await new Promise((resolve, reject) => {
+      exporter.parse(model, resolve, reject, { binary: true });
+    });
+    window.allGLBs[def.name] = new Blob([glb], { type: 'application/octet-stream' });
+    
+    log(`  ${def.label}: 8 sprites + GLB (${(window.allGLBs[def.name].size/1024).toFixed(1)}KB)`, 'done');
+    await new Promise(r => setTimeout(r, 30));
+  }
+  
+  document.getElementById('downloadBar').style.display = 'flex';
+  window.generationDone = true;
+  log(`All done! 6 cars x 8 angles = 48 sprites + 6 GLBs ready.`, 'done');
+}
+
+window.downloadAllSprites = async function() {
+  for (const def of carDefs) {
+    for (const angle of ANGLES) {
+      const canvas = allSprites[def.name][angle];
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `navatar_${def.name}_${angle}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+};
+
+window.downloadAllGLBs = async function() {
+  for (const def of carDefs) {
+    const url = URL.createObjectURL(window.allGLBs[def.name]);
+    const a = document.createElement('a');
+    a.href = url; a.download = `navatar_${def.name}.glb`; a.click();
+    URL.revokeObjectURL(url);
+    await new Promise(r => setTimeout(r, 300));
+  }
+};
+
+generateAll();
+</script>
+</body>
+</html>

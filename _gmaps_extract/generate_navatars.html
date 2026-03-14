@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Navatar GLB Generator</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0a0a; color:#eee; font-family:'Segoe UI',sans-serif; padding:24px; }
+h1 { color:#4285f4; margin-bottom:8px; }
+.sub { color:#666; margin-bottom:20px; font-size:14px; }
+#status { background:#111; border:1px solid #333; border-radius:10px; padding:16px; margin-bottom:20px; font-size:14px; line-height:1.8; }
+.done { color:#34a853; }
+.working { color:#fbbc04; }
+.pending { color:#666; }
+.preview-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:20px; }
+.preview-card { background:#111; border:1px solid #333; border-radius:10px; padding:12px; text-align:center; }
+.preview-card canvas { width:100%; height:200px; border-radius:6px; }
+.preview-card h3 { color:#4285f4; font-size:14px; margin:8px 0 4px; }
+.preview-card p { color:#666; font-size:11px; }
+.btn { display:inline-block; padding:10px 24px; background:#34a853; color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; margin:4px; }
+.btn:hover { background:#46b965; }
+.btn.blue { background:#4285f4; }
+.download-section { margin-top:20px; background:#0d1b0d; border:1px solid #34a853; border-radius:10px; padding:16px; }
+.download-section h2 { color:#34a853; margin-bottom:8px; font-size:16px; }
+</style>
+</head>
+<body>
+
+<h1>Navatar 3D Car Generator</h1>
+<p class="sub">Generating 6 car models as GLB files for iOS & Android (Flutter)</p>
+
+<div id="status">Initializing Three.js...</div>
+
+<div class="download-section" id="downloadSection" style="display:none;">
+  <h2>Download All Navatars</h2>
+  <div id="downloadButtons"></div>
+</div>
+
+<div class="preview-grid" id="previews"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+const status = document.getElementById('status');
+const previews = document.getElementById('previews');
+const downloadSection = document.getElementById('downloadSection');
+const downloadButtons = document.getElementById('downloadButtons');
+
+// Shared materials
+function makeMats(bodyHex = 0xe8eaed, accentHex = 0x4285f4) {
+  return {
+    body: new THREE.MeshPhysicalMaterial({ color: bodyHex, metalness: 0.35, roughness: 0.35, clearcoat: 0.9, clearcoatRoughness: 0.1 }),
+    glass: new THREE.MeshPhysicalMaterial({ color: 0x88ccff, metalness: 0.1, roughness: 0.05, transmission: 0.5, transparent: true, opacity: 0.7 }),
+    wheel: new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.5, roughness: 0.6 }),
+    hub: new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.85, roughness: 0.15 }),
+    accent: new THREE.MeshPhysicalMaterial({ color: accentHex, metalness: 0.2, roughness: 0.3, clearcoat: 1.0 }),
+    headlight: new THREE.MeshStandardMaterial({ color: 0xffffdd, emissive: 0xffffcc, emissiveIntensity: 0.4 }),
+    taillight: new THREE.MeshStandardMaterial({ color: 0xff2222, emissive: 0xff0000, emissiveIntensity: 0.3 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.3, roughness: 0.7 }),
+    chrome: new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.95, roughness: 0.05 }),
+    shadow: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.2, side: THREE.DoubleSide }),
+  };
+}
+
+function rBox(w, h, d, r) {
+  const shape = new THREE.Shape();
+  const hw = w/2, hh = h/2;
+  shape.moveTo(-hw+r, -hh); shape.lineTo(hw-r, -hh);
+  shape.quadraticCurveTo(hw, -hh, hw, -hh+r); shape.lineTo(hw, hh-r);
+  shape.quadraticCurveTo(hw, hh, hw-r, hh); shape.lineTo(-hw+r, hh);
+  shape.quadraticCurveTo(-hw, hh, -hw, hh-r); shape.lineTo(-hw, -hh+r);
+  shape.quadraticCurveTo(-hw, -hh, -hw+r, -hh);
+  return new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: true, bevelThickness: r*0.3, bevelSize: r*0.3, bevelSegments: 3 });
+}
+
+function addWheel(group, x, y, z, r, w, mats) {
+  const tire = new THREE.Mesh(new THREE.CylinderGeometry(r, r, w, 16), mats.wheel);
+  tire.rotation.z = Math.PI/2; tire.position.set(x, y, z);
+  group.add(tire);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(r*0.55, r*0.55, w+0.01, 8), mats.hub);
+  hub.rotation.z = Math.PI/2; hub.position.set(x, y, z);
+  group.add(hub);
+}
+
+function addLights(group, positions, mat, geo) {
+  positions.forEach(([x,y,z]) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    group.add(m);
+  });
+}
+
+function addShadow(group, w, d, mats) {
+  const s = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mats.shadow);
+  s.rotation.x = -Math.PI/2; s.position.y = 0.005;
+  group.add(s);
+}
+
+// ====================================================================
+// 6 NAVATAR MODELS
+// ====================================================================
+
+function buildSedan(mats) {
+  const g = new THREE.Group(); g.name = 'navatar_sedan';
+  // Body
+  const lower = new THREE.Mesh(rBox(0.82, 0.26, 1.85, 0.08), mats.body);
+  lower.position.set(0, 0.26, -0.925); lower.castShadow = true; g.add(lower);
+  // Cabin
+  const cab = new THREE.Mesh(rBox(0.72, 0.29, 0.92, 0.1), mats.body);
+  cab.position.set(0, 0.54, -0.66); cab.castShadow = true; g.add(cab);
+  // Windows
+  const wf = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.23), mats.glass);
+  wf.position.set(0, 0.58, -0.18); wf.rotation.x = -0.3; g.add(wf);
+  const wb = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.2), mats.glass);
+  wb.position.set(0, 0.56, -1.14); wb.rotation.x = 0.3; g.add(wb);
+  [-1,1].forEach(s => {
+    const sw = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.19), mats.glass);
+    sw.position.set(s*0.37, 0.57, -0.66); sw.rotation.y = s*Math.PI/2; g.add(sw);
+  });
+  // Lights
+  addLights(g, [[-0.3,0.29,0.02],[0.3,0.29,0.02]], mats.headlight, new THREE.SphereGeometry(0.06,8,8));
+  addLights(g, [[-0.3,0.29,-1.87],[0.3,0.29,-1.87]], mats.taillight, new THREE.BoxGeometry(0.1,0.06,0.02));
+  // Wheels
+  [[0.42,0.12,-0.36],[-0.42,0.12,-0.36],[0.42,0.12,-1.48],[-0.42,0.12,-1.48]].forEach(p => addWheel(g,...p,0.12,0.08,mats));
+  // Accent stripe
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.02, 1.87), mats.accent);
+  stripe.position.set(0, 0.13, -0.925); g.add(stripe);
+  addShadow(g, 1.2, 2.2, mats);
+  g.position.set(0, 0, 0.925);
+  return g;
+}
+
+function buildSUV(mats) {
+  const g = new THREE.Group(); g.name = 'navatar_suv';
+  const lower = new THREE.Mesh(rBox(0.88, 0.36, 1.75, 0.08), mats.body);
+  lower.position.set(0, 0.36, -0.875); lower.castShadow = true; g.add(lower);
+  const cab = new THREE.Mesh(rBox(0.8, 0.36, 1.02, 0.06), mats.body);
+  cab.position.set(0, 0.7, -0.71); cab.castShadow = true; g.add(cab);
+  // Windows
+  const wf = new THREE.Mesh(new THREE.PlaneGeometry(0.68, 0.29), mats.glass);
+  wf.position.set(0, 0.74, -0.18); wf.rotation.x = -0.25; g.add(wf);
+  [-1,1].forEach(s => {
+    const sw = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 0.24), mats.glass);
+    sw.position.set(s*0.41, 0.74, -0.71); sw.rotation.y = s*Math.PI/2; g.add(sw);
+  });
+  // Roof rack
+  const rack = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.02, 0.82), mats.dark);
+  rack.position.set(0, 0.9, -0.71); g.add(rack);
+  addLights(g, [[-0.34,0.39,0.02],[0.34,0.39,0.02]], mats.headlight, new THREE.SphereGeometry(0.07,8,8));
+  addLights(g, [[-0.34,0.39,-1.78],[0.34,0.39,-1.78]], mats.taillight, new THREE.BoxGeometry(0.12,0.07,0.02));
+  [[0.46,0.16,-0.32],[-0.46,0.16,-0.32],[0.46,0.16,-1.42],[-0.46,0.16,-1.42]].forEach(p => addWheel(g,...p,0.16,0.1,mats));
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.02, 1.77), mats.accent);
+  stripe.position.set(0, 0.18, -0.875); g.add(stripe);
+  addShadow(g, 1.3, 2.2, mats);
+  g.position.set(0, 0, 0.875);
+  return g;
+}
+
+function buildPickup(mats) {
+  const g = new THREE.Group(); g.name = 'navatar_pickup';
+  // Front body
+  const front = new THREE.Mesh(rBox(0.88, 0.36, 0.92, 0.08), mats.body);
+  front.position.set(0, 0.36, -0.46); front.castShadow = true; g.add(front);
+  // Cabin
+  const cab = new THREE.Mesh(rBox(0.8, 0.36, 0.62, 0.06), mats.body);
+  cab.position.set(0, 0.7, -0.51); cab.castShadow = true; g.add(cab);
+  // Bed
+  const bedF = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.05, 0.82), mats.body);
+  bedF.position.set(0, 0.36, -1.37); bedF.castShadow = true; g.add(bedF);
+  const bedB = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.26, 0.05), mats.body);
+  bedB.position.set(0, 0.49, -1.76); g.add(bedB);
+  [-1,1].forEach(s => {
+    const bs = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.26, 0.82), mats.body);
+    bs.position.set(s*0.41, 0.49, -1.37); g.add(bs);
+  });
+  // Windows
+  const wf = new THREE.Mesh(new THREE.PlaneGeometry(0.68, 0.29), mats.glass);
+  wf.position.set(0, 0.74, -0.18); wf.rotation.x = -0.25; g.add(wf);
+  // Lights + roof lights
+  addLights(g, [[-0.34,0.39,0.02],[0.34,0.39,0.02]], mats.headlight, new THREE.SphereGeometry(0.07,8,8));
+  addLights(g, [[-0.2,0.92,-0.51],[0,0.92,-0.51],[0.2,0.92,-0.51]], mats.headlight, new THREE.SphereGeometry(0.035,6,6));
+  addLights(g, [[-0.34,0.39,-1.78],[0.34,0.39,-1.78]], mats.taillight, new THREE.BoxGeometry(0.12,0.07,0.02));
+  [[0.48,0.16,-0.32],[-0.48,0.16,-0.32],[0.48,0.16,-1.48],[-0.48,0.16,-1.48]].forEach(p => addWheel(g,...p,0.16,0.12,mats));
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.02, 1.8), mats.accent);
+  stripe.position.set(0, 0.18, -0.9); g.add(stripe);
+  addShadow(g, 1.3, 2.2, mats);
+  g.position.set(0, 0, 0.9);
+  return g;
+}
+
+function buildCityCar(mats) {
+  const g = new THREE.Group(); g.name = 'navatar_city_car';
+  const lower = new THREE.Mesh(rBox(0.72, 0.26, 1.22, 0.12), mats.body);
+  lower.position.set(0, 0.26, -0.61); lower.castShadow = true; g.add(lower);
+  const cab = new THREE.Mesh(rBox(0.62, 0.33, 0.72, 0.14), mats.body);
+  cab.position.set(0, 0.54, -0.51); cab.castShadow = true; g.add(cab);
+  const wf = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.27), mats.glass);
+  wf.position.set(0, 0.58, -0.13); wf.rotation.x = -0.4; g.add(wf);
+  [-1,1].forEach(s => {
+    const sw = new THREE.Mesh(new THREE.CircleGeometry(0.15, 12), mats.glass);
+    sw.position.set(s*0.32, 0.58, -0.51); sw.rotation.y = s*Math.PI/2; g.add(sw);
+  });
+  addLights(g, [[-0.26,0.29,0.02],[0.26,0.29,0.02]], mats.headlight, new THREE.SphereGeometry(0.08,12,12));
+  addLights(g, [[-0.26,0.29,-1.24],[0.26,0.29,-1.24]], mats.taillight, new THREE.SphereGeometry(0.05,8,8));
+  [[0.38,0.1,-0.22],[-0.38,0.1,-0.22],[0.38,0.1,-1.02],[-0.38,0.1,-1.02]].forEach(p => addWheel(g,...p,0.1,0.07,mats));
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.02, 1.24), mats.accent);
+  stripe.position.set(0, 0.13, -0.61); g.add(stripe);
+  addShadow(g, 1.0, 1.6, mats);
+  g.position.set(0, 0, 0.61);
+  return g;
+}
+
+function buildSports(mats) {
+  const g = new THREE.Group(); g.name = 'navatar_sports';
+  const lower = new THREE.Mesh(rBox(0.9, 0.21, 1.85, 0.06), mats.body);
+  lower.position.set(0, 0.21, -0.925); lower.castShadow = true; g.add(lower);
+  const cab = new THREE.Mesh(rBox(0.72, 0.21, 0.72, 0.1), mats.body);
+  cab.position.set(0, 0.4, -0.76); cab.castShadow = true; g.add(cab);
+  const wf = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.18), mats.glass);
+  wf.position.set(0, 0.42, -0.38); wf.rotation.x = -0.5; g.add(wf);
+  // Spoiler
+  const spoiler = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.02, 0.15), mats.dark);
+  spoiler.position.set(0, 0.36, -1.82); g.add(spoiler);
+  [-1,1].forEach(s => {
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.03), mats.dark);
+    stand.position.set(s*0.26, 0.31, -1.82); g.add(stand);
+  });
+  addLights(g, [[-0.32,0.23,0.02],[0.32,0.23,0.02]], mats.headlight, new THREE.BoxGeometry(0.16,0.04,0.02));
+  addLights(g, [[-0.34,0.23,-1.87],[0.34,0.23,-1.87]], mats.taillight, new THREE.BoxGeometry(0.16,0.03,0.02));
+  [[0.47,0.11,-0.36],[-0.47,0.11,-0.36],[0.47,0.11,-1.48],[-0.47,0.11,-1.48]].forEach(p => addWheel(g,...p,0.11,0.1,mats));
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.02, 1.87), mats.accent);
+  stripe.position.set(0, 0.1, -0.925); g.add(stripe);
+  addShadow(g, 1.3, 2.2, mats);
+  g.position.set(0, 0, 0.925);
+  return g;
+}
+
+function buildClassic(mats) {
+  const g = new THREE.Group(); g.name = 'navatar_classic';
+  const lower = new THREE.Mesh(rBox(0.82, 0.29, 1.75, 0.1), mats.body);
+  lower.position.set(0, 0.29, -0.875); lower.castShadow = true; g.add(lower);
+  const cab = new THREE.Mesh(rBox(0.68, 0.32, 0.78, 0.12), mats.body);
+  cab.position.set(0, 0.6, -0.67); cab.castShadow = true; g.add(cab);
+  // Hood ornament
+  const orn = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.08, 6), mats.chrome);
+  orn.position.set(0, 0.45, -0.01); g.add(orn);
+  const wf = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.26), mats.glass);
+  wf.position.set(0, 0.64, -0.26); wf.rotation.x = -0.2; g.add(wf);
+  // Bumpers
+  const fb = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.04, 0.04), mats.chrome);
+  fb.position.set(0, 0.17, 0.02); g.add(fb);
+  const rb = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.04, 0.04), mats.chrome);
+  rb.position.set(0, 0.17, -1.77); g.add(rb);
+  addLights(g, [[-0.32,0.32,0.02],[0.32,0.32,0.02]], mats.headlight, new THREE.SphereGeometry(0.07,12,12));
+  addLights(g, [[-0.32,0.32,-1.77],[0.32,0.32,-1.77]], mats.taillight, new THREE.SphereGeometry(0.05,8,8));
+  [[0.44,0.13,-0.32],[-0.44,0.13,-0.32],[0.44,0.13,-1.42],[-0.44,0.13,-1.42]].forEach(p => addWheel(g,...p,0.13,0.08,mats));
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.02, 1.77), mats.accent);
+  stripe.position.set(0, 0.15, -0.875); g.add(stripe);
+  addShadow(g, 1.2, 2.1, mats);
+  g.position.set(0, 0, 0.875);
+  return g;
+}
+
+// ====================================================================
+// GENERATE & EXPORT
+// ====================================================================
+const carDefs = [
+  { name: 'sedan', label: 'Sedan', builder: buildSedan, color: 0xe8eaed },
+  { name: 'suv', label: 'SUV', builder: buildSUV, color: 0xe8eaed },
+  { name: 'pickup', label: 'Pickup Truck', builder: buildPickup, color: 0xf0f0f0 },
+  { name: 'city_car', label: 'City Car', builder: buildCityCar, color: 0xeef1f5 },
+  { name: 'sports', label: 'Sports Car', builder: buildSports, color: 0xd0d5dd },
+  { name: 'classic', label: 'Classic Sedan', builder: buildClassic, color: 0xe8e0d8 },
+];
+
+const exportedBlobs = {};
+
+async function generateAll() {
+  const exporter = new GLTFExporter();
+  
+  for (let i = 0; i < carDefs.length; i++) {
+    const def = carDefs[i];
+    status.innerHTML += `<div class="working">Generating ${def.label}...</div>`;
+    
+    const mats = makeMats(def.color, 0x4285f4);
+    const model = def.builder(mats);
+    
+    // Create preview
+    const card = document.createElement('div');
+    card.className = 'preview-card';
+    const canvas = document.createElement('canvas');
+    canvas.width = 400; canvas.height = 300;
+    card.appendChild(canvas);
+    card.innerHTML += `<h3>${def.label}</h3><p id="stats-${def.name}">Generating...</p>`;
+    previews.appendChild(card);
+    
+    // Render preview
+    renderPreview(canvas, model);
+    
+    // Count stats
+    let verts = 0, tris = 0, meshes = 0;
+    model.traverse(c => {
+      if (c.isMesh) {
+        meshes++;
+        const geo = c.geometry;
+        verts += geo.attributes.position ? geo.attributes.position.count : 0;
+        tris += geo.index ? geo.index.count / 3 : (geo.attributes.position ? geo.attributes.position.count / 3 : 0);
+      }
+    });
+    
+    document.getElementById(`stats-${def.name}`).textContent = 
+      `${meshes} meshes | ${verts} verts | ~${Math.round(tris)} tris`;
+    
+    // Export GLB
+    const glb = await new Promise((resolve, reject) => {
+      exporter.parse(model, resolve, reject, { binary: true });
+    });
+    
+    const blob = new Blob([glb], { type: 'application/octet-stream' });
+    exportedBlobs[def.name] = { blob, size: blob.size, verts, tris: Math.round(tris), meshes };
+    
+    status.innerHTML += `<div class="done">  ${def.label}: ${(blob.size/1024).toFixed(1)}KB GLB (${verts} verts, ~${Math.round(tris)} tris)</div>`;
+    
+    // Small delay for UI update
+    await new Promise(r => setTimeout(r, 50));
+  }
+  
+  // Show download buttons
+  downloadSection.style.display = 'block';
+  
+  // Individual downloads
+  carDefs.forEach(def => {
+    const b = exportedBlobs[def.name];
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = `${def.label} (${(b.size/1024).toFixed(1)}KB)`;
+    btn.onclick = () => downloadBlob(b.blob, `navatar_${def.name}.glb`);
+    downloadButtons.appendChild(btn);
+  });
+  
+  // Download all button
+  const allBtn = document.createElement('button');
+  allBtn.className = 'btn blue';
+  allBtn.textContent = 'Download ALL as ZIP';
+  allBtn.onclick = downloadAllZip;
+  downloadButtons.appendChild(allBtn);
+  
+  status.innerHTML += `<div class="done" style="font-size:16px; margin-top:8px;">All 6 Navatars generated! Ready to download.</div>`;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadAllZip() {
+  // Simple concatenated download (no zip library needed - download one by one)
+  for (const def of carDefs) {
+    downloadBlob(exportedBlobs[def.name].blob, `navatar_${def.name}.glb`);
+    await new Promise(r => setTimeout(r, 500));
+  }
+}
+
+function renderPreview(canvas, model) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
+  
+  const camera = new THREE.PerspectiveCamera(35, canvas.width/canvas.height, 0.1, 50);
+  camera.position.set(2.5, 3, 4);
+  camera.lookAt(0, 0.3, 0);
+  
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setSize(canvas.width, canvas.height);
+  renderer.shadowMap.enabled = true;
+  
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const dl = new THREE.DirectionalLight(0xffffff, 1.2);
+  dl.position.set(3, 6, 4); dl.castShadow = true;
+  scene.add(dl);
+  scene.add(new THREE.DirectionalLight(0x8888ff, 0.3).translateX(-2).translateY(3));
+  
+  // Ground shadow
+  const gp = new THREE.Mesh(
+    new THREE.PlaneGeometry(5,5),
+    new THREE.ShadowMaterial({ opacity: 0.3 })
+  );
+  gp.rotation.x = -Math.PI/2; gp.receiveShadow = true;
+  scene.add(gp);
+  
+  // Blue circle
+  const circ = new THREE.Mesh(
+    new THREE.RingGeometry(0.85, 0.9, 48),
+    new THREE.MeshBasicMaterial({ color: 0x4285f4, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+  );
+  circ.rotation.x = -Math.PI/2; circ.position.y = 0.001;
+  scene.add(circ);
+  
+  scene.add(model.clone());
+  renderer.render(scene, camera);
+}
+
+// Start generation
+generateAll();
+</script>
+</body>
+</html>

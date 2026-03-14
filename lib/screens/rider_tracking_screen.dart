@@ -145,7 +145,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
     _loadCarIcon();
-    _initRoute();
+    _initFromPersistence(); // Restore state if resuming
     _interpTimer = Timer.periodic(
       const Duration(milliseconds: 16),
       _interpolate,
@@ -159,6 +159,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       'Driver Assigned',
       '${widget.driverName.split(' ').first} is on the way in a ${widget.vehicleColor} ${widget.vehicleModel}',
     );
+    // Save state periodically for resume support
+    Timer.periodic(const Duration(seconds: 5), (_) => _saveRideState());
   }
 
   /// Connect to Firestore for real-time driver location and trip status.
@@ -718,6 +720,131 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
     setState(() {});
     Future.delayed(const Duration(milliseconds: 600), _fitAllPoints);
+  }
+
+  /// Initialize from persisted state or start fresh
+  Future<void> _initFromPersistence() async {
+    final activeRide = await LocalDataService.getActiveRide();
+    if (activeRide == null) {
+      // No persisted ride - initialize fresh
+      await _initRoute();
+      return;
+    }
+
+    // Check if this is the same trip
+    final isSameTrip = activeRide.tripId != null && 
+                       activeRide.tripId == widget.tripId;
+    
+    if (!isSameTrip && widget.firestoreTripId != null && 
+        widget.firestoreTripId!.isNotEmpty &&
+        activeRide.firestoreTripId == widget.firestoreTripId) {
+      // Same trip by Firestore ID
+      isSameTrip = true;
+    }
+
+    if (!isSameTrip) {
+      // Different trip - start fresh
+      await _initRoute();
+      return;
+    }
+
+    // Restore route
+    if (activeRide.routePoints.isNotEmpty) {
+      _routePts = activeRide.routePoints
+          .map((p) => LatLng(p[0], p[1]))
+          .toList();
+    } else if (widget.routePoints != null && widget.routePoints!.isNotEmpty) {
+      _routePts = List.from(widget.routePoints!);
+    }
+
+    if (_routePts.isEmpty) {
+      await _initRoute();
+      return;
+    }
+
+    _buildSegDist();
+
+    // Restore phase
+    if (activeRide.phase != null) {
+      switch (activeRide.phase) {
+        case 'arriving':
+          _phase = _TrackPhase.arriving;
+        case 'arrived':
+          _phase = _TrackPhase.arrived;
+        case 'onTrip':
+          _phase = _TrackPhase.onTrip;
+        default:
+          _phase = _TrackPhase.arriving;
+      }
+    }
+
+    // Restore driver position and progress
+    if (activeRide.traveledMeters != null && activeRide.traveledMeters! > 0) {
+      _traveledM = activeRide.traveledMeters!;
+      _tgtTraveledM = _traveledM;
+    }
+
+    if (activeRide.driverLat != null && activeRide.driverLng != null) {
+      _driverPos = LatLng(activeRide.driverLat!, activeRide.driverLng!);
+      _animPos = _driverPos;
+    } else {
+      _driverPos = widget.pickupLatLng;
+      _animPos = _driverPos;
+    }
+
+    // Calculate remaining distance
+    double remainingM = _segDist.isNotEmpty ? _segDist.last - _traveledM : 0;
+    _distanceMiles = remainingM / 1609.34;
+    _etaMinutes = (_distanceMiles / 0.5).ceil().clamp(1, 99);
+
+    setState(() {});
+    Future.delayed(const Duration(milliseconds: 600), _fitAllPoints);
+  }
+
+  /// Save current ride state for resuming later
+  Future<void> _saveRideState() async {
+    if (_phase == _TrackPhase.completed) return;
+
+    final activeRide = await LocalDataService.getActiveRide();
+    if (activeRide == null) return;
+
+    // Update with current progress
+    String phaseStr = 'arriving';
+    switch (_phase) {
+      case _TrackPhase.arrived:
+        phaseStr = 'arrived';
+      case _TrackPhase.onTrip:
+        phaseStr = 'onTrip';
+      default:
+        phaseStr = 'arriving';
+    }
+
+    final updatedRide = ActiveRideInfo(
+      pickupLat: activeRide.pickupLat,
+      pickupLng: activeRide.pickupLng,
+      dropoffLat: activeRide.dropoffLat,
+      dropoffLng: activeRide.dropoffLng,
+      pickupLabel: activeRide.pickupLabel,
+      dropoffLabel: activeRide.dropoffLabel,
+      driverName: activeRide.driverName,
+      driverRating: activeRide.driverRating,
+      vehicleMake: activeRide.vehicleMake,
+      vehicleModel: activeRide.vehicleModel,
+      vehicleColor: activeRide.vehicleColor,
+      vehiclePlate: activeRide.vehiclePlate,
+      vehicleYear: activeRide.vehicleYear,
+      rideName: activeRide.rideName,
+      price: activeRide.price,
+      routePoints: activeRide.routePoints,
+      tripId: activeRide.tripId,
+      firestoreTripId: activeRide.firestoreTripId,
+      phase: phaseStr,
+      driverLat: _animPos.latitude,
+      driverLng: _animPos.longitude,
+      traveledMeters: _traveledM,
+    );
+
+    await LocalDataService.setActiveRide(updatedRide);
   }
 
   void _interpolate(Timer t) {

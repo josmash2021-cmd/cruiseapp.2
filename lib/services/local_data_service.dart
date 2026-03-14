@@ -636,6 +636,11 @@ class ActiveRideInfo {
   final List<List<double>> routePoints;
   final int? tripId;
   final String? firestoreTripId;
+  // Persisted state for resuming
+  final String? phase; // 'arriving', 'arrived', 'onTrip'
+  final double? driverLat;
+  final double? driverLng;
+  final double? traveledMeters;
 
   const ActiveRideInfo({
     required this.pickupLat,
@@ -656,6 +661,10 @@ class ActiveRideInfo {
     required this.routePoints,
     this.tripId,
     this.firestoreTripId,
+    this.phase,
+    this.driverLat,
+    this.driverLng,
+    this.traveledMeters,
   });
 
   Map<String, dynamic> toJson() => {
@@ -677,6 +686,10 @@ class ActiveRideInfo {
     'routePoints': routePoints,
     'tripId': tripId,
     'firestoreTripId': firestoreTripId,
+    'phase': phase,
+    'driverLat': driverLat,
+    'driverLng': driverLng,
+    'traveledMeters': traveledMeters,
   };
 
   static ActiveRideInfo fromJson(Map<String, dynamic> j) => ActiveRideInfo(
@@ -702,5 +715,9 @@ class ActiveRideInfo {
         [],
     tripId: j['tripId'] as int?,
     firestoreTripId: j['firestoreTripId'] as String?,
+    phase: j['phase'] as String?,
+    driverLat: (j['driverLat'] as num?)?.toDouble(),
+    driverLng: (j['driverLng'] as num?)?.toDouble(),
+    traveledMeters: (j['traveledMeters'] as num?)?.toDouble(),
   );
 }

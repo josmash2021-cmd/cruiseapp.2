@@ -19,7 +19,6 @@ import 'driver_trip_history_screen.dart';
 import 'driver_menu_screen.dart';
 import 'driver_online_screen.dart';
 import 'driver_inbox_screen.dart';
-import '../car_preview_screen.dart';
 import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_profile_photo_screen.dart';
@@ -717,17 +716,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             ).push(slideFromRightRoute(const DriverInboxScreen()));
           },
           badge: _unreadCount > 0 ? _unreadCount : null,
-        ),
-
-        const SizedBox(width: 12),
-
-        // Car preview (temp debug button)
-        _glassBtn(
-          Icons.directions_car_rounded,
-          onTap: () {
-            HapticFeedback.selectionClick();
-            Navigator.of(context).pushNamed('/car-preview');
-          },
         ),
       ],
     );

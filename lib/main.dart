@@ -10,7 +10,6 @@ import 'config/api_keys.dart';
 import 'config/app_theme.dart';
 import 'config/theme_notifier.dart';
 import 'screens/splash_screen.dart';
-import 'screens/car_preview_screen.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
 import 'services/security_service.dart';
@@ -211,9 +210,6 @@ class _UberCloneAppState extends State<UberCloneApp>
               return const Locale('en');
             },
             home: const SplashScreen(),
-            routes: {
-              '/car-preview': (_) => const CarPreviewScreen(),
-            },
           ),
         );
       },

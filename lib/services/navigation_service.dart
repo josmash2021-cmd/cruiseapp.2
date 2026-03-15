@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// A single turn-by-turn navigation step parsed from Google Directions API.
@@ -404,45 +405,23 @@ class _ClosestPointResult {
 
 /// Maneuver icon data with Material icon and label.
 class ManeuverIcon {
-  final int iconCodePoint;
+  final IconData icon;
   final String label;
-  const ManeuverIcon(this.iconCodePoint, this.label);
+  const ManeuverIcon(this.icon, this.label);
 
-  // Maneuver icons using Material Icons code points
-  static const straight = ManeuverIcon(0xe574, 'Continue straight'); // straight
-  static const turnLeft = ManeuverIcon(0xe635, 'Turn left'); // turn_left
-  static const turnRight = ManeuverIcon(0xe636, 'Turn right'); // turn_right
-  static const slightLeft = ManeuverIcon(
-    0xeba4,
-    'Slight left',
-  ); // turn_slight_left
-  static const slightRight = ManeuverIcon(
-    0xeb9a,
-    'Slight right',
-  ); // turn_slight_right
-  static const sharpLeft = ManeuverIcon(
-    0xeba3,
-    'Sharp left',
-  ); // turn_sharp_left
-  static const sharpRight = ManeuverIcon(
-    0xeb99,
-    'Sharp right',
-  ); // turn_sharp_right
-  static const uTurn = ManeuverIcon(0xe637, 'U-turn'); // u_turn_left
-  static const merge = ManeuverIcon(0xe9bd, 'Merge'); // merge
-  static const rampLeft = ManeuverIcon(0xef4f, 'Take ramp left'); // ramp_left
-  static const rampRight = ManeuverIcon(
-    0xef50,
-    'Take ramp right',
-  ); // ramp_right
-  static const roundabout = ManeuverIcon(0xeb99, 'Roundabout'); // roundabout
-  static const keepLeft = ManeuverIcon(
-    0xeba4,
-    'Keep left',
-  ); // keep_left (reusing slight_left)
-  static const keepRight = ManeuverIcon(
-    0xeb9a,
-    'Keep right',
-  ); // keep_right (reusing slight_right)
-  static const ferry = ManeuverIcon(0xe532, 'Ferry'); // directions_boat
+  static const straight = ManeuverIcon(Icons.straight, 'Continue straight');
+  static const turnLeft = ManeuverIcon(Icons.turn_left, 'Turn left');
+  static const turnRight = ManeuverIcon(Icons.turn_right, 'Turn right');
+  static const slightLeft = ManeuverIcon(Icons.turn_slight_left, 'Slight left');
+  static const slightRight = ManeuverIcon(Icons.turn_slight_right, 'Slight right');
+  static const sharpLeft = ManeuverIcon(Icons.turn_sharp_left, 'Sharp left');
+  static const sharpRight = ManeuverIcon(Icons.turn_sharp_right, 'Sharp right');
+  static const uTurn = ManeuverIcon(Icons.u_turn_left, 'U-turn');
+  static const merge = ManeuverIcon(Icons.merge, 'Merge');
+  static const rampLeft = ManeuverIcon(Icons.ramp_left, 'Take ramp left');
+  static const rampRight = ManeuverIcon(Icons.ramp_right, 'Take ramp right');
+  static const roundabout = ManeuverIcon(Icons.roundabout_left, 'Roundabout');
+  static const keepLeft = ManeuverIcon(Icons.turn_slight_left, 'Keep left');
+  static const keepRight = ManeuverIcon(Icons.turn_slight_right, 'Keep right');
+  static const ferry = ManeuverIcon(Icons.directions_boat, 'Ferry');
 }

@@ -2493,78 +2493,78 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             // â”€â”€ Map â”€â”€
             _mapW(isDark),
 
-            // â”€â”€ Top-left: Home button â”€â”€
-            Positioned(
-              top: top + 10,
-              left: 16,
-              child: _fab(
-                Icons.arrow_back_ios_new_rounded,
-                48,
-                fabBg,
-                fabBorder,
-                fabIcon,
-                _goBack,
-              ),
-            ),
-
-            // â”€â”€ Top-center: Earnings pill + TODAY â”€â”€
-            Positioned(
-              top: top + 10,
-              left: 0,
-              right: 0,
-              child: Column(
-                children: [
-                  Center(child: _earningsPill(isDark)),
-                  // Simulation mode indicator badge
-                  if (_isSimulationMode)
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8C547).withValues(alpha: 0.9),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.videogame_asset_rounded,
-                            color: Colors.black,
-                            size: 14,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'PRACTICE MODE',
-                            style: TextStyle(
-                              color: Colors.black,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
             // â”€â”€ Nav header (during navigation phases) â”€â”€
-            if (_phase == _Phase.enRouteToPickup ||
-                _phase == _Phase.inTrip ||
-                _phase == _Phase.routeSummary)
+            if (isNav)
               Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
                 child: _navHeader(),
+              ),
+
+            // â”€â”€ Top-left: Home button (hidden during nav — nav header has its own back) â”€â”€
+            if (!isNav)
+              Positioned(
+                top: top + 10,
+                left: 16,
+                child: _fab(
+                  Icons.arrow_back_ios_new_rounded,
+                  48,
+                  fabBg,
+                  fabBorder,
+                  fabIcon,
+                  _goBack,
+                ),
+              ),
+
+            // â”€â”€ Top-center: Earnings pill + TODAY (hidden during nav) â”€â”€
+            if (!isNav)
+              Positioned(
+                top: top + 10,
+                left: 0,
+                right: 0,
+                child: Column(
+                  children: [
+                    Center(child: _earningsPill(isDark)),
+                    // Simulation mode indicator badge
+                    if (_isSimulationMode)
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8C547).withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.videogame_asset_rounded,
+                              color: Colors.black,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'PRACTICE MODE',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
               ),
 
             // â”€â”€ Side floating buttons (only when searching with no offers) â”€â”€
@@ -3008,10 +3008,7 @@ Widget _navHeader() {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
-                    IconData(
-                      maneuverInfo.iconCodePoint,
-                      fontFamily: 'MaterialIcons',
-                    ),
+                    maneuverInfo.icon,
                     color: Colors.white,
                     size: 36,
                   ),
@@ -3095,12 +3092,9 @@ Widget _navHeader() {
                   ),
                   const SizedBox(width: 8),
                   Icon(
-                    IconData(
-                      NavigationService.getManeuverIcon(
-                        _navState!.nextStep!.maneuver,
-                      ).iconCodePoint,
-                      fontFamily: 'MaterialIcons',
-                    ),
+                    NavigationService.getManeuverIcon(
+                      _navState!.nextStep!.maneuver,
+                    ).icon,
                     color: Colors.white.withValues(alpha: 0.75),
                     size: 17,
                   ),
@@ -5712,59 +5706,62 @@ Widget _navHeader() {
           ),
           child: ListView(
             controller: scrollCtrl,
-            physics: const ClampingScrollPhysics(),
             padding: EdgeInsets.zero,
             children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListenableBuilder(
-                    listenable: _searchPulseVal,
-                    builder: (_, __) => SizedBox(
-                      height: 2,
-                      child: LinearProgressIndicator(
-                        value: null,
-                        backgroundColor: Colors.transparent,
-                        valueColor: AlwaysStoppedAnimation(
-                          _gold.withValues(alpha: 0.5),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _showOnlinePanel,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListenableBuilder(
+                      listenable: _searchPulseVal,
+                      builder: (_, __) => SizedBox(
+                        height: 2,
+                        child: LinearProgressIndicator(
+                          value: null,
+                          backgroundColor: Colors.transparent,
+                          valueColor: AlwaysStoppedAnimation(
+                            _gold.withValues(alpha: 0.5),
+                          ),
+                          minHeight: 2,
                         ),
-                        minHeight: 2,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _handle(isDark),
-                  Icon(
-                    Icons.keyboard_arrow_up_rounded,
-                    color: textMuted.withValues(alpha: 0.5),
-                    size: 18,
-                  ),
-                  SizedBox(
-                    height: 40,
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 16),
-                        Icon(Icons.tune_rounded, color: textMuted, size: 22),
-                        const Spacer(),
-                        Text(
-                          S.of(context).findingTrips,
-                          style: TextStyle(
-                            color: textMuted,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const Spacer(),
-                        Icon(
-                          Icons.format_list_bulleted_rounded,
-                          color: textMuted,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 16),
-                      ],
+                    const SizedBox(height: 8),
+                    _handle(isDark),
+                    Icon(
+                      Icons.keyboard_arrow_up_rounded,
+                      color: textMuted.withValues(alpha: 0.5),
+                      size: 18,
                     ),
-                  ),
-                ],
+                    SizedBox(
+                      height: 40,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 16),
+                          Icon(Icons.tune_rounded, color: textMuted, size: 22),
+                          const Spacer(),
+                          Text(
+                            S.of(context).findingTrips,
+                            style: TextStyle(
+                              color: textMuted,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Spacer(),
+                          Icon(
+                            Icons.format_list_bulleted_rounded,
+                            color: textMuted,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 16),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
 
               const SizedBox(height: 12),
@@ -6155,7 +6152,7 @@ Widget _navHeader() {
           ),
           child: ListView(
             controller: scrollCtrl,
-            physics: const ClampingScrollPhysics(),
+            physics: const BouncingScrollPhysics(),
             padding: EdgeInsets.zero,
             children: [
               Padding(

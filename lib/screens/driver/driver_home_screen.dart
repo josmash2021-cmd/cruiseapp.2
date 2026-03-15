@@ -955,6 +955,29 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         height: 1,
                       ),
                       const SizedBox(height: 16),
+                      // ── Today's stats row ──
+                      Row(
+                        children: [
+                          _panelStat(
+                            Icons.attach_money_rounded,
+                            '\$${_todayEarnings.toStringAsFixed(2)}',
+                            S.of(context).earningsToday,
+                          ),
+                          const SizedBox(width: 8),
+                          _panelStat(
+                            Icons.local_taxi_rounded,
+                            '$_todayTrips',
+                            S.of(context).tripsToday,
+                          ),
+                          const SizedBox(width: 8),
+                          _panelStat(
+                            Icons.schedule_rounded,
+                            '${_todayHours.toStringAsFixed(1)}h',
+                            S.of(context).hoursOnline,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
                       Text(
                         S.of(context).recommendedForYou,
                         style: TextStyle(
@@ -1011,7 +1034,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Go Offline',
+                                  S.of(context).goOffline,
                                   style: TextStyle(
                                     color: const Color(0xFFEF4444),
                                     fontSize: 15,

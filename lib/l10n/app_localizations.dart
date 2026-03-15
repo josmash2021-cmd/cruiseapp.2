@@ -2439,6 +2439,23 @@ class S {
       : 'Move your head slowly\nto complete the circle.';
   String get startOver => _es ? 'Volver a empezar' : 'Start Over';
   String get faceVerified => _es ? 'Verificado' : 'Verified';
+
+  // ── Driver Navigation Page ──
+  String get arrivedAtDest =>
+      _es ? 'Llegaste al destino' : 'Arrived at destination';
+  String get endTrip => _es ? 'FINALIZAR VIAJE' : 'END TRIP';
+  String get finishRide => _es ? 'TERMINAR VIAJE' : 'FINISH RIDE';
+  String get goHomeLabel => _es ? 'Ir a inicio' : 'Go Home';
+  String get muteLabel => _es ? 'Silenciar' : 'Mute';
+  String get unmuteLabel =>
+      _es ? 'Activar sonido' : 'Unmute';
+  String get reportIncident =>
+      _es ? 'Reportar incidente' : 'Report incident';
+  String get incidentReported =>
+      _es ? 'Incidente reportado' : 'Incident reported';
+  String get arrivalLabel => _es ? 'llegada' : 'arrival';
+  String get remainingLabel => _es ? 'restante' : 'remaining';
+  String get resumeNav => _es ? 'Reanudar' : 'Resume';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

@@ -15,6 +15,7 @@ import '../navigation/route_service.dart';
 import '../navigation/smooth_motion.dart';
 import '../services/api_service.dart';
 import '../services/navigation_service.dart';
+import '../l10n/app_localizations.dart';
 
 class DriverNavigationPage extends StatefulWidget {
   const DriverNavigationPage({
@@ -365,7 +366,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
+        statusBarIconBrightness: Brightness.light,
       ),
     );
 
@@ -493,7 +494,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Icon(
-                    IconData(mInfo.iconCodePoint, fontFamily: 'MaterialIcons'),
+                    mInfo.icon,
                     color: stripColor,
                     size: 32,
                   ),
@@ -542,10 +543,10 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                       color: const Color(0xFFD32F2F),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text(
-                      'OFF\nROUTE',
+                    child: Text(
+                      S.of(context).offRoute.toUpperCase(),
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 9,
                         fontWeight: FontWeight.w900,
@@ -598,19 +599,20 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   }
 
   String get _phaseInstruction {
+    final s = S.of(context);
     switch (_sm.phase) {
       case TripPhase.toPickup:
-        return 'Head to pickup';
+        return s.headToPickup;
       case TripPhase.arrivedPickup:
-        return 'Arrived at pickup';
+        return s.arrivedAtPickup;
       case TripPhase.onTrip:
-        return 'Head to drop-off';
+        return s.headToDropOff;
       case TripPhase.arrivedDropoff:
-        return 'Arrived at destination';
+        return s.arrivedAtDest;
       case TripPhase.completed:
-        return 'Trip complete';
+        return s.tripComplete;
       default:
-        return 'Ready';
+        return s.readyLabel;
     }
   }
 
@@ -674,14 +676,14 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       children: [
         _circleFab(
           icon: Icons.home_rounded,
-          tooltip: 'Go Home',
+          tooltip: S.of(context).goHomeLabel,
           iconColor: Colors.grey.shade700,
           onTap: () => Navigator.of(context).pop(),
         ),
         const SizedBox(height: 10),
         _circleFab(
           icon: _muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-          tooltip: _muted ? 'Unmute' : 'Mute',
+          tooltip: _muted ? S.of(context).unmuteLabel : S.of(context).muteLabel,
           iconColor: _muted ? _blue : Colors.grey.shade700,
           onTap: () {
             HapticFeedback.lightImpact();
@@ -691,14 +693,14 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         const SizedBox(height: 10),
         _circleFab(
           icon: Icons.report_problem_rounded,
-          tooltip: 'Report incident',
+          tooltip: S.of(context).reportIncident,
           iconColor: Colors.grey.shade700,
           onTap: () {
             HapticFeedback.mediumImpact();
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Incident reported'),
-                duration: Duration(seconds: 1),
+              SnackBar(
+                content: Text(S.of(context).incidentReported),
+                duration: const Duration(seconds: 1),
               ),
             );
           },
@@ -790,7 +792,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
             Icon(Icons.navigation_rounded, color: _blue, size: 20),
             const SizedBox(width: 8),
             Text(
-              'Resume',
+              S.of(context).resumeNav,
               style: TextStyle(
                 color: _blue,
                 fontSize: 15,
@@ -834,18 +836,18 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       child: Row(
         children: [
           Expanded(
-            child: _etaCell(primary: arrivalStr, secondary: 'arrival'),
+            child: _etaCell(primary: arrivalStr, secondary: S.of(context).arrivalLabel),
           ),
           _etaDivider(),
           Expanded(
             child: _etaCell(
               primary: '$_etaMinutes min',
-              secondary: 'remaining',
+              secondary: S.of(context).remainingLabel,
             ),
           ),
           _etaDivider(),
           Expanded(
-            child: _etaCell(primary: distStr, secondary: 'distance'),
+            child: _etaCell(primary: distStr, secondary: S.of(context).distance),
           ),
         ],
       ),
@@ -900,7 +902,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     VoidCallback onTap;
     switch (_sm.phase) {
       case TripPhase.toPickup:
-        label = 'ARRIVED AT PICKUP';
+        label = S.of(context).arrivedAtPickup;
         bg = const Color(0xFF2E7D32);
         onTap = () {
           HapticFeedback.heavyImpact();
@@ -908,7 +910,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         };
         break;
       case TripPhase.arrivedPickup:
-        label = 'START TRIP';
+        label = S.of(context).startTrip;
         bg = _gold;
         onTap = () {
           HapticFeedback.heavyImpact();
@@ -916,7 +918,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         };
         break;
       case TripPhase.onTrip:
-        label = 'END TRIP';
+        label = S.of(context).endTrip;
         bg = _red;
         onTap = () {
           HapticFeedback.heavyImpact();
@@ -924,7 +926,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         };
         break;
       case TripPhase.arrivedDropoff:
-        label = 'FINISH RIDE';
+        label = S.of(context).finishRide;
         bg = _gold;
         onTap = () async {
           HapticFeedback.heavyImpact();

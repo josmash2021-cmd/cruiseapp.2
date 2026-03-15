@@ -4896,7 +4896,7 @@ Widget _navHeader() {
       isDark: isDark,
       surface: bg,
       shadowC: shadowC,
-      minChildSize: 0.25,
+      minChildSize: 0.45,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -5111,7 +5111,7 @@ Widget _navHeader() {
       isDark: isDark,
       surface: bg,
       shadowC: shadowC,
-      minChildSize: 0.22,
+      minChildSize: 0.35,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -5219,7 +5219,7 @@ Widget _navHeader() {
       isDark: isDark,
       surface: bg,
       shadowC: shadowC,
-      minChildSize: 0.28,
+      minChildSize: 0.38,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -5386,7 +5386,7 @@ Widget _navHeader() {
       isDark: isDark,
       surface: bg,
       shadowC: shadowC,
-      minChildSize: 0.30,
+      minChildSize: 0.40,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

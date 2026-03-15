@@ -43,9 +43,9 @@ class ApiService {
   /// This eliminates the 300-800 ms handshake overhead on cellular networks.
   static final http.Client _client = http.Client();
 
-  /// In-memory active URL.  Populated by [init]; defaults to production so the
+  /// In-memory active URL.  Populated by [init]; defaults to local network so the
   /// first call before [init] completes still reaches *something*.
-  static String _activeUrl = _defaultTunnelUrl;
+  static String _activeUrl = _localNetworkUrl;
 
   /// Returns the URL currently in use by all API calls.
   static String get activeServerUrl => _activeUrl;

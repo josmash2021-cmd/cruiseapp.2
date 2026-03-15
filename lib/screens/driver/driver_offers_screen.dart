@@ -14,6 +14,7 @@ import '../../models/ride_offer.dart';
 import '../../navigation/offers_controller.dart';
 import '../../navigation/route_service.dart';
 import '../../pages/driver_navigation_page.dart';
+import '../../widgets/gold_location_dot.dart';
 
 /// Instacart-style driver offers screen.
 ///
@@ -42,6 +43,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   LatLng _driverPos = const LatLng(25.7617, -80.1918);
   bool _loading = true;
   bool _accepting = false;
+  final GoldLocationDot _goldDot = GoldLocationDot();
 
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
@@ -58,11 +60,13 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
       end: 1.0,
     ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
 
+    _goldDot.build(() { if (mounted) setState(() {}); });
     _initLocation();
   }
 
   @override
   void dispose() {
+    _goldDot.dispose();
     _pulseCtrl.dispose();
     _ctrl.dispose();
     _map?.dispose();
@@ -206,12 +210,16 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                 zoom: 14,
               ),
               onMapCreated: (c) => _map = c,
-              myLocationEnabled: true,
+              myLocationEnabled: false,
               myLocationButtonEnabled: false,
               zoomControlsEnabled: false,
               mapToolbarEnabled: false,
               compassEnabled: false,
               liteModeEnabled: false,
+              markers: {
+                if (_goldDot.isReady)
+                  _goldDot.marker(_driverPos)!,
+              },
             ),
           ),
 

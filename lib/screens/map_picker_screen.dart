@@ -126,7 +126,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                   },
                   onCameraMove: _onCameraMove,
                   onCameraIdle: _scheduleGeocode,
-                  myLocationEnabled: true,
+                  myLocationEnabled: false,
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,

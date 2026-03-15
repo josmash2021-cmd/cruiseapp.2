@@ -1388,6 +1388,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final isNav = _phase == _Phase.enRouteToPickup ||
         _phase == _Phase.inTrip ||
         _phase == _Phase.routeSummary;
+    // Non-nav phases: show gold animated location dot instead of native blue dot
+    if (!isNav && _goldenDotFrames.isNotEmpty) {
+      m.add(
+        Marker(
+          markerId: const MarkerId('my_location_gold'),
+          position: _pos,
+          icon: _goldenDotFrames[_goldenDotFrame % _goldenDotFrames.length],
+          anchor: const Offset(0.5, 0.5),
+          flat: true,
+          zIndex: 1,
+        ),
+      );
+    }
     if (isNav) {
       // Try multi-angle sprites first (8-direction 3D car)
       BitmapDescriptor? icon;
@@ -2900,7 +2913,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           }
         },
         onCameraMoveStarted: _onCameraMoveStarted,
-        myLocationEnabled: !(_phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip || _phase == _Phase.routeSummary),
+        myLocationEnabled: false,
         myLocationButtonEnabled: false,
         zoomControlsEnabled: false,
         mapToolbarEnabled: false,

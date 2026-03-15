@@ -26,6 +26,7 @@ import 'ride_options_sheet.dart';
 import 'rider_tracking_screen.dart';
 import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/gold_location_dot.dart';
 import 'scheduled_rides_screen.dart';
 
 /// Main Uber-like ride request screen.
@@ -101,6 +102,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _userMovedMap = false;
   bool _rideOptionsExpanded = true;
   bool _programmaticCam = false;
+  final GoldLocationDot _goldDot = GoldLocationDot();
 
   // ── Searching overlay: splash first, then map with address bars ──
   bool _searchingShowMap = false;
@@ -167,6 +169,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _autoSetDropoff(widget.initialDropoffAddress!);
       }
     });
+    _goldDot.build(() { if (mounted) setState(() {}); });
     _loadLinkedPayments();
     _loadPinIcon();
   }
@@ -736,6 +739,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _splashTimer?.cancel();
     _simulatedDriverTimer?.cancel();
     _driverFoundTimer?.cancel();
+    _goldDot.dispose();
     _ctrl.removeListener(_onStateChange);
     _ctrl.dispose();
     _pulseCtrl.dispose();
@@ -1266,9 +1270,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 },
                 onCameraMove: (_) {},
                 onCameraIdle: () => _programmaticCam = false,
-                markers: _markers,
+                markers: {
+                  ..._markers,
+                  if (_goldDot.isReady && _userLocation != null)
+                    _goldDot.marker(_userLocation!)!,
+                },
                 polylines: _polylines,
-                myLocationEnabled: true,
+                myLocationEnabled: false,
                 myLocationButtonEnabled: false,
                 zoomControlsEnabled: false,
                 zoomGesturesEnabled: true,

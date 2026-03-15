@@ -23,6 +23,7 @@ import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_profile_photo_screen.dart';
 import '../../l10n/app_localizations.dart';
+import '../../widgets/gold_location_dot.dart';
 
 /// ═══════════════════════════════════════════════════════════════
 ///  CRUISE DRIVER HOME — Premium dashboard with map, stats, go-online
@@ -47,6 +48,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   LatLng? _currentLatLng;
   // ignore: unused_field
   bool _mapReady = false;
+  final GoldLocationDot _goldDot = GoldLocationDot();
 
   // ── Stats ──
   double _todayEarnings = 0.0;
@@ -118,6 +120,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
     _fabScale = CurvedAnimation(parent: _fabCtrl, curve: Curves.elasticOut);
 
+    _goldDot.build(() { if (mounted) setState(() {}); });
     _initLocation();
     _loadDriverData();
     _checkVerification();
@@ -154,6 +157,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _pulseCtrl.dispose();
     _statsCtrl.dispose();
     _fabCtrl.dispose();
+    _goldDot.dispose();
     _mapController?.dispose();
     _accountStatusTimer?.cancel();
     _tripPollTimer?.cancel();
@@ -547,7 +551,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _mapController = ctrl;
           setState(() => _mapReady = true);
         },
-        myLocationEnabled: true,
+        myLocationEnabled: false,
         myLocationButtonEnabled: false,
         zoomControlsEnabled: false,
         mapToolbarEnabled: false,
@@ -555,6 +559,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         buildingsEnabled: true,
         tiltGesturesEnabled: true,
         liteModeEnabled: false,
+        markers: {
+          if (_goldDot.isReady && _currentLatLng != null)
+            _goldDot.marker(_currentLatLng!)!,
+        },
       ),
     );
   }

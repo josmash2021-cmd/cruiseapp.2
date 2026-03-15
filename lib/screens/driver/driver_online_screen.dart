@@ -63,6 +63,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // â”€â”€ Brand â”€â”€
   static const _gold = Color(0xFFD4A843);
   static const _goldLight = Color(0xFFF5D990);
+  // — Route polyline —
+  static const _navyRoute = Color(0xFF0A2463);
+  static const _navyGlow  = Color(0x400A2463);
 
   // —— Map ——
   GoogleMapController? _map;
@@ -581,10 +584,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
   }
 
-  /// Renders a single car marker sprite using Canvas.
+  /// Renders a 3D box-style car marker ("cajita") using Canvas.
   ///  - Car points UP (north) so `rotation = bearing` works correctly.
-  ///  - Isometric 3/4 top-down view with 3D depth.
-  ///  - Transparent background + soft shadow.
+  ///  - Simple boxy shape with visible top, front, and side faces for 3D depth.
+  ///  - Looks great at 55° camera tilt.
   Future<BitmapDescriptor> _paintCarSprite({
     required Color bodyColor,
     required Color bodyHighlight,
@@ -599,166 +602,164 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     required double heightRatio,
     required double roofHeightRatio,
   }) async {
-    // Canvas — front of car = TOP, rear = BOTTOM
-    // Proportions matched to reference photos: wide body, circular wheels, large cabin
-    const double cW = 200.0;
-    const double cH = 300.0;
+    const double cW = 160.0;
+    const double cH = 260.0;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, cW, cH));
 
     final double cx = cW / 2;
     final double cy = cH / 2;
 
-    // Body half-extents (slightly wider ratio like the reference)
-    final double bW = 78.0 * widthRatio; // half-width  → full = 156px
-    final double bH = 110.0 * heightRatio; // half-height → full = 220px
+    // Box dimensions — boxy rectangular car
+    final double bW = 52.0 * widthRatio;   // half-width
+    final double bH = 80.0 * heightRatio;  // half-height
+    final double depth = 28.0 * heightRatio; // 3D extrusion depth (visible side/bottom)
+    const double r = 8.0; // corner radius — boxy but not harsh
 
     // ── 1. DROP SHADOW ───────────────────────────────────────────────────
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(cx + 3, cy + 5),
-        width: (bW + 22) * 2,
-        height: (bH + 16) * 2,
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(cx + 2, cy + depth / 2 + 6),
+          width: bW * 2 + 16,
+          height: bH * 2 + depth + 12,
+        ),
+        const Radius.circular(12),
       ),
       Paint()
         ..color = shadowColor
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
     );
 
-    // ── 2. WHEELS (drawn BEFORE body so edges peek out from under it) ────
-    // Wheel radius: near-circular, slightly taller than wide (top-down view)
-    final double wW = 34.0 * widthRatio; // wheel width
-    final double wH = 42.0 * heightRatio; // wheel height
-    final wheelPositions = <Offset>[
-      Offset(cx - bW * 0.88, cy - bH * 0.62), // front-left
-      Offset(cx + bW * 0.88, cy - bH * 0.62), // front-right
-      Offset(cx - bW * 0.88, cy + bH * 0.60), // rear-left
-      Offset(cx + bW * 0.88, cy + bH * 0.60), // rear-right
+    // ── 2. BOTTOM FACE (rear bumper depth — visible when tilted) ─────────
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(cx - bW, cy + bH, bW * 2, depth),
+        const Radius.circular(r),
+      ),
+      Paint()..color = Color.lerp(bodyColor, Colors.black, 0.45)!,
+    );
+
+    // ── 3. LEFT SIDE FACE (3D depth panel) ───────────────────────────────
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(cx - bW - depth * 0.4, cy - bH * 0.7, depth * 0.4, bH * 1.4 + depth),
+        const Radius.circular(r * 0.5),
+      ),
+      Paint()..color = Color.lerp(bodyColor, Colors.black, 0.35)!,
+    );
+
+    // ── 4. RIGHT SIDE FACE (3D depth panel, slightly lighter) ────────────
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(cx + bW, cy - bH * 0.7, depth * 0.4, bH * 1.4 + depth),
+        const Radius.circular(r * 0.5),
+      ),
+      Paint()..color = Color.lerp(bodyColor, Colors.black, 0.25)!,
+    );
+
+    // ── 5. WHEELS (peek out from sides) ──────────────────────────────────
+    final double wW = 18.0 * widthRatio;
+    final double wH = 28.0 * heightRatio;
+    final wheels = [
+      Offset(cx - bW - 4, cy - bH * 0.52), // front-left
+      Offset(cx + bW + 4, cy - bH * 0.52), // front-right
+      Offset(cx - bW - 4, cy + bH * 0.48), // rear-left
+      Offset(cx + bW + 4, cy + bH * 0.48), // rear-right
     ];
-    for (final wp in wheelPositions) {
-      // Dark tyre
-      canvas.drawOval(
-        Rect.fromCenter(center: wp, width: wW, height: wH),
+    for (final wp in wheels) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: wp, width: wW, height: wH),
+          const Radius.circular(4),
+        ),
         Paint()..color = wheelColor,
       );
-      // Small rim highlight
-      canvas.drawOval(
-        Rect.fromCenter(center: wp, width: wW * 0.44, height: wH * 0.44),
-        Paint()..color = const Color(0xFF888888),
+      // Rim
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: wp, width: wW * 0.5, height: wH * 0.5),
+          const Radius.circular(3),
+        ),
+        Paint()..color = const Color(0xFF666666),
       );
     }
 
-    // ── 3. BODY ──────────────────────────────────────────────────────────
-    // Front (top): very round nose — matches photo's pointed oval front
-    // Rear (bottom): slightly less rounded
-    final bodyRect = Rect.fromCenter(
+    // ── 6. TOP FACE (main body — roof view) ──────────────────────────────
+    final topRect = Rect.fromCenter(
       center: Offset(cx, cy),
       width: bW * 2,
       height: bH * 2,
     );
-    final bodyRRect = RRect.fromRectAndCorners(
-      bodyRect,
-      topLeft: Radius.circular(bW * 0.72),
-      topRight: Radius.circular(bW * 0.72),
-      bottomLeft: Radius.circular(bW * 0.40),
-      bottomRight: Radius.circular(bW * 0.40),
-    );
-    // Solid base color + very subtle top highlight (flat look)
-    canvas.drawRRect(bodyRRect, Paint()..color = bodyColor);
-    // Soft highlight sweep on upper-left (light source top-left)
+    final topRRect = RRect.fromRectAndRadius(topRect, Radius.circular(r));
+    // Base body color
+    canvas.drawRRect(topRRect, Paint()..color = bodyColor);
+    // Highlight gradient (light from top-left)
     canvas.drawRRect(
-      bodyRRect,
+      topRRect,
       Paint()
-        ..shader = RadialGradient(
-          center: const Alignment(-0.3, -0.55),
-          radius: 0.85,
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
           colors: [bodyHighlight, bodyColor],
-        ).createShader(bodyRect),
+        ).createShader(topRect),
     );
-
-    // ── 4. BODY BORDER (thin dark outline matching photos) ───────────────
+    // Body outline
     canvas.drawRRect(
-      bodyRRect,
+      topRRect,
       Paint()
-        ..color = const Color(0xFFBBBBBB)
+        ..color = Color.lerp(bodyColor, Colors.black, 0.2)!
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
+        ..strokeWidth = 2.0,
     );
 
-    // ── 5. CABIN / GREENHOUSE ────────────────────────────────────────────
-    // 3D DEPTH PANELS — dark side/bottom strips visible under camera tilt.
-    // With flat:false billboard mode at 55° tilt these strips simulate the
-    // extruded side-panels and bumper thickness of a real car body.
-    // Left side strip
-    canvas.drawRRect(
-      RRect.fromRectAndCorners(
-        Rect.fromLTWH(cx - bW - 14, cy - bH * 0.72, 14, bH * 1.60),
-        bottomLeft: Radius.circular(bW * 0.38),
-      ),
-      Paint()..color = const Color(0x50000000),
+    // ── 7. WINDSHIELD (front window — top portion of body) ───────────────
+    final wsRect = Rect.fromCenter(
+      center: Offset(cx, cy - bH * 0.42),
+      width: bW * 1.4,
+      height: bH * 0.48,
     );
-    // Right side strip
     canvas.drawRRect(
       RRect.fromRectAndCorners(
-        Rect.fromLTWH(cx + bW, cy - bH * 0.72, 14, bH * 1.60),
-        bottomRight: Radius.circular(bW * 0.38),
+        wsRect,
+        topLeft: Radius.circular(r),
+        topRight: Radius.circular(r),
+        bottomLeft: Radius.circular(r * 0.5),
+        bottomRight: Radius.circular(r * 0.5),
       ),
-      Paint()..color = const Color(0x3A000000),
+      Paint()..color = windowColor,
     );
-    // Bottom face strip — bumper thickness (rear of car, visible when tilted)
+    // Glass sheen
     canvas.drawRRect(
-      RRect.fromRectAndCorners(
-        Rect.fromLTWH(cx - bW + 5, cy + bH + 1, bW * 2 - 10, 18),
-        bottomLeft: Radius.circular(bW * 0.38),
-        bottomRight: Radius.circular(bW * 0.38),
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(wsRect.left + 4, wsRect.top + 3, wsRect.width * 0.3, wsRect.height * 0.5),
+        const Radius.circular(4),
       ),
-      Paint()..color = const Color(0x5A000000),
+      Paint()..color = windowShine.withValues(alpha: 0.2),
     );
 
-    // In the reference photos the cabin is a large dark rounded rectangle
-    // spanning ~52% of body height, centered slightly toward the front
-    final double cabinH = bH * 1.04; // total cabin height
-    final double cabinCy = cy - bH * 0.04; // center slightly forward
-    final cabinRRect = RRect.fromRectAndCorners(
-      Rect.fromCenter(
-        center: Offset(cx, cabinCy),
-        width: bW * 1.28,
-        height: cabinH,
-      ),
-      topLeft: Radius.circular(bW * 0.48),
-      topRight: Radius.circular(bW * 0.48),
-      bottomLeft: Radius.circular(bW * 0.22),
-      bottomRight: Radius.circular(bW * 0.22),
-    );
-    canvas.drawRRect(cabinRRect, Paint()..color = windowColor);
-
-    // Gloss sheen — left side streak seen in photo 2
-    final sheen = Path()
-      ..addRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(
-            cx - bW * 0.56,
-            cabinCy - cabinH / 2 + 6,
-            bW * 0.22,
-            cabinH * 0.50,
-          ),
-          const Radius.circular(8),
+    // ── 8. REAR WINDOW ───────────────────────────────────────────────────
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(cx, cy + bH * 0.42),
+          width: bW * 1.3,
+          height: bH * 0.36,
         ),
-      );
-    canvas.drawPath(
-      sheen,
-      Paint()..color = windowShine.withValues(alpha: 0.18),
+        Radius.circular(r * 0.6),
+      ),
+      Paint()..color = windowColor,
     );
 
-    // ── 6. HEADLIGHTS — two small white/yellow rectangles at front corners ─
-    final double hlY = cy - bH * 0.88;
+    // ── 9. HEADLIGHTS (front, white/yellow) ──────────────────────────────
+    final hlY = cy - bH * 0.92;
     for (final sign in [-1.0, 1.0]) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromCenter(
-            center: Offset(cx + sign * bW * 0.46, hlY),
-            width: bW * 0.38,
-            height: 9,
+            center: Offset(cx + sign * bW * 0.6, hlY),
+            width: bW * 0.4,
+            height: 8,
           ),
           const Radius.circular(4),
         ),
@@ -766,14 +767,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       );
     }
 
-    // ── 7. TAILLIGHTS — thin red bars at rear corners ────────────────────
-    final double tlY = cy + bH * 0.88;
+    // ── 10. TAILLIGHTS (rear, red) ───────────────────────────────────────
+    final tlY = cy + bH * 0.92;
     for (final sign in [-1.0, 1.0]) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromCenter(
-            center: Offset(cx + sign * bW * 0.44, tlY),
-            width: bW * 0.36,
+            center: Offset(cx + sign * bW * 0.55, tlY),
+            width: bW * 0.38,
             height: 7,
           ),
           const Radius.circular(3),
@@ -782,15 +783,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       );
     }
 
-    // ── 8. ENCODE ────────────────────────────────────────────────────────
+    // ── 11. ENCODE ───────────────────────────────────────────────────────
     final picture = recorder.endRecording();
     final image = await picture.toImage(cW.toInt(), cH.toInt());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     if (byteData == null) return BitmapDescriptor.defaultMarker;
     return BitmapDescriptor.bytes(
       byteData.buffer.asUint8List(),
-      width: 40,
-      height: 60,
+      width: 36,
+      height: 58,
     );
   }
 
@@ -999,9 +1000,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     final dest = _phase == _Phase.enRouteToPickup ? _pickupLL : _dropoffLL;
     final routeId = _phase == _Phase.enRouteToPickup ? 'pickup' : 'trip';
-    final routeColor = _phase == _Phase.enRouteToPickup ? _goldLight : _gold;
-
-    await _drawRoute(from, dest, routeId, routeColor);
+    await _drawRoute(from, dest, routeId, _navyRoute);
     _isRerouting = false;
   }
 
@@ -1287,13 +1286,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     // Rebuild polylines with trimmed route
     final routeId = _phase == _Phase.enRouteToPickup ? 'pickup' : 'trip';
-    final routeColor = _phase == _Phase.enRouteToPickup ? _goldLight : _gold;
     setState(() {
       _polylines = {
         Polyline(
           polylineId: PolylineId('${routeId}_g'),
           points: List.from(_routePts),
-          color: routeColor.withValues(alpha: 0.12),
+          color: _navyGlow,
           width: 14,
           startCap: Cap.roundCap,
           endCap: Cap.roundCap,
@@ -1301,8 +1299,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         Polyline(
           polylineId: PolylineId(routeId),
           points: List.from(_routePts),
-          color: routeColor,
-          width: 5,
+          color: _navyRoute,
+          width: 7,
           startCap: Cap.roundCap,
           endCap: Cap.roundCap,
         ),
@@ -1662,7 +1660,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         ),
       };
     });
-    await _drawRoute(_pos, _pickupLL, 'pickup', _goldLight);
+    await _drawRoute(_pos, _pickupLL, 'pickup', _navyRoute);
     // Wait for frame with updated map padding, then center on both points
     await Future.delayed(const Duration(milliseconds: 150));
     _fitBounds(_pos, _pickupLL);
@@ -1731,7 +1729,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         ),
       };
     });
-    await _drawRoute(_pos, _dropoffLL, 'trip', _gold);
+    await _drawRoute(_pos, _dropoffLL, 'trip', _navyRoute);
     await Future.delayed(const Duration(milliseconds: 150));
     _nearDropoffNotified = false;
     // Start navigation camera (Uber 2.5D style)

@@ -61,23 +61,29 @@ class ApiService {
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_serverUrlPrefKey);
+    if (saved != null && _isLocalUrl(saved)) {
+      // Stale local IP saved from a previous dev session — clear it so we
+      // never boot pointing at an unreachable private address on cellular.
+      await prefs.remove(_serverUrlPrefKey);
+    }
     if (saved != null && saved.isNotEmpty && !_isLocalUrl(saved)) {
-      // Use saved URL only if it is a publicly reachable address
       _activeUrl = saved;
     } else {
-      // Local IP saved or first launch — always start with production so
-      // the first request succeeds on cellular without any wait.
       _activeUrl = _defaultTunnelUrl;
     }
     debugPrint('[ApiService] active URL: $_activeUrl');
   }
 
-  /// Persist a new server URL and update all subsequent requests immediately.
+  /// Update the active server URL.
+  /// Local/private-network URLs are kept in memory only — never persisted —
+  /// so the app always boots with the production URL on the next launch.
   static Future<void> setServerUrl(String url) async {
     _activeUrl = url.trimRight().replaceAll(RegExp(r'/+$'), '');
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_serverUrlPrefKey, _activeUrl);
-    debugPrint('[ApiService] server URL updated → $_activeUrl');
+    if (!_isLocalUrl(_activeUrl)) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_serverUrlPrefKey, _activeUrl);
+    }
+    debugPrint('[ApiService] server URL updated → $_activeUrl (persisted: ${!_isLocalUrl(_activeUrl)})');
   }
 
   /// Try each candidate URL with a lightweight health-check (`GET /health`).
@@ -97,11 +103,13 @@ class ApiService {
       'ngrok-skip-browser-warning': 'true',
     };
 
-    // ── Step 1: production first (2 s) ────────────────────────────────────
+    // ── Step 1: production first (5 s) ────────────────────────────────────
+    // 5 s is generous enough to survive cellular DNS + TLS handshake and
+    // a Railway cold-start, while still being fast for normal connections.
     try {
       final res = await _client
           .get(Uri.parse('$_defaultTunnelUrl/health'), headers: _probeHeaders)
-          .timeout(const Duration(seconds: 2));
+          .timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         await setServerUrl(_defaultTunnelUrl);
         debugPrint('[ApiService] probe → production');

@@ -54,8 +54,17 @@ void main() async {
 /// Heavy async init that runs while the splash animation plays.
 /// Called from SplashScreen.initState().
 Future<void> heavyInit() async {
-  // Probe for best URL in background (production-first, <2 s on cellular)
-  ApiService.probeAndSetBestUrl().catchError((_) {});
+  // Probe + warm up the server BEFORE the user reaches the login screen.
+  // 10 s total covers cellular DNS/TLS overhead AND Railway cold-starts.
+  await ApiService.probeAndSetBestUrl(
+    timeout: const Duration(seconds: 8),
+  ).timeout(
+    const Duration(seconds: 10),
+    onTimeout: () {
+      debugPrint('[heavyInit] probe timed out — using production URL');
+      return null;
+    },
+  );
 
   // Start keep-alive pings to prevent server sleep
   KeepAliveService.instance.start();

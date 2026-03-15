@@ -65,8 +65,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   static const _gold = Color(0xFFD4A843);
   static const _goldLight = Color(0xFFF5D990);
   // — Route polyline —
-  static const _navyRoute = Color(0xFF0A2463);
-  static const _navyGlow  = Color(0x400A2463);
+  static const _navyRoute = Color(0xFF5BA3F5);
+  static const _navyGlow  = Color(0x405BA3F5);
 
   // —— Map ——
   GoogleMapController? _map;
@@ -2906,8 +2906,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         mapToolbarEnabled: false,
         compassEnabled: false,
         buildingsEnabled: true,
-        trafficEnabled:
-            _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip,
+        trafficEnabled: false,
         indoorViewEnabled: false,
         liteModeEnabled: false,
         padding: EdgeInsets.only(

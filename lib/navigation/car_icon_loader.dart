@@ -498,31 +498,44 @@ class CarIconLoader {
 
     // ── 0. WHITE HALO (visible on dark map backgrounds) ──────────────
     cvs.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy), width: bw * 3.2, height: bh * 2.6),
+      Rect.fromCenter(center: Offset(cx, cy), width: bw * 3.4, height: bh * 2.8),
       Paint()
-        ..color = const Color(0x22FFFFFF)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 22),
+        ..color = const Color(0x28FFFFFF)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 26),
     );
 
-    // ── 1. DROP SHADOW (heavy, offset to rear) ───────────────────────
+    // ── 1. DROP SHADOW (heavy, offset to rear — 3D elevation) ────────
+    // Outer soft shadow (large spread for floating effect)
     cvs.drawOval(
       Rect.fromCenter(
-        center: Offset(cx, cy + bh * 0.18),
+        center: Offset(cx, cy + bh * 0.28),
+        width: bw * 2.6,
+        height: bh * 2.2,
+      ),
+      Paint()
+        ..color = const Color(0x60000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 24),
+    );
+    // Mid shadow (darker core)
+    cvs.drawOval(
+      Rect.fromCenter(
+        center: Offset(cx, cy + bh * 0.22),
         width: bw * 2.3,
         height: bh * 2.0,
       ),
       Paint()
-        ..color = const Color(0x70000000)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
+        ..color = const Color(0x80000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
     );
+    // Inner tight shadow (contact shadow)
     cvs.drawOval(
       Rect.fromCenter(
-        center: Offset(cx, cy + bh * 0.08),
+        center: Offset(cx, cy + bh * 0.10),
         width: bw * 1.8,
         height: bh * 1.7,
       ),
       Paint()
-        ..color = const Color(0x50000000)
+        ..color = const Color(0x58000000)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
 

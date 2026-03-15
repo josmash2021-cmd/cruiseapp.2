@@ -487,7 +487,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         await CarIconLoader.loadUberBytes();
     if (bytes != null) {
       _carIconBytes = bytes;
-      final icon = BitmapDescriptor.bytes(bytes, width: 22, height: 44);
+      final icon = BitmapDescriptor.bytes(bytes, width: 32, height: 64);
       if (mounted) setState(() => _carIcon = icon);
     }
     await _loadPins();
@@ -1348,7 +1348,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         Polyline(
           polylineId: const PolylineId('full'),
           points: _routePts,
-          color: const Color(0xFF3A3A3A),
+          color: const Color(0xFF2A3A5A),
           width: 4,
           geodesic: true,
         ),
@@ -1367,7 +1367,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         Polyline(
           polylineId: const PolylineId('route'),
           points: remaining,
-          color: const Color(0xFF4285F4),
+          color: const Color(0xFF5BA3F5),
           width: 5,
           geodesic: true,
         ),

@@ -936,8 +936,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       Polyline(
         polylineId: const PolylineId('route'),
         points: s.route!.points,
-        color: const Color(0xFF4285F4),
-        width: 3,
+        color: const Color(0xFF5BA3F5),
+        width: 4,
         geodesic: true,
       ),
     };

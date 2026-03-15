@@ -158,6 +158,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   AnimationController? _glowController;
   double _routeGlowPhase = 0.0;
 
+  // Gold animated 3D location dot (replaces native blue dot)
+  List<BitmapDescriptor> _goldDotFrames = [];
+  int _goldDotFrame = 0;
+  Timer? _goldDotTimer;
+
   /// Toggle state for the recenter (my_location) button.
   /// false = next tap centers on pickup at default zoom
   /// true  = next tap zooms IN close to pickup
@@ -510,6 +515,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     )..addListener(_onRiderDriverAnimTick);
     _loadPinIcons();
     _buildDriverCarIcon();
+    _buildGoldDotFrames();
     _initLocation();
     _applyStartupIntent();
     _loadLinkedPayments();
@@ -569,6 +575,97 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     });
   }
 
+  Future<void> _buildGoldDotFrames() async {
+    const int frameCount = 12;
+    const double canvasSize = 140.0;
+    final frames = <BitmapDescriptor>[];
+
+    for (int i = 0; i < frameCount; i++) {
+      final t = i / frameCount;
+      final pulseRadius = 40.0 + 20.0 * t;
+      final pulseAlpha = (0.35 * (1.0 - t)).clamp(0.0, 1.0);
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(
+        recorder,
+        const Rect.fromLTWH(0, 0, canvasSize, canvasSize),
+      );
+      final center = const Offset(canvasSize / 2, canvasSize / 2);
+
+      // 3D shadow beneath dot (offset down for elevation illusion)
+      canvas.drawCircle(
+        center.translate(0, 4),
+        22,
+        Paint()
+          ..color = const Color(0x50000000)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+      );
+
+      // Outer pulse ring (fading gold)
+      canvas.drawCircle(
+        center,
+        pulseRadius,
+        Paint()
+          ..color = _gold.withValues(alpha: pulseAlpha * 0.4)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawCircle(
+        center,
+        pulseRadius,
+        Paint()
+          ..color = _gold.withValues(alpha: pulseAlpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5,
+      );
+
+      // Gold outer ring (3D gradient)
+      canvas.drawCircle(
+        center,
+        18,
+        Paint()
+          ..shader = ui.Gradient.radial(
+            center.translate(-4, -4),
+            22,
+            [const Color(0xFFF5E27A), _gold, const Color(0xFFB8941E)],
+            [0.0, 0.5, 1.0],
+          ),
+      );
+
+      // White inner dot
+      canvas.drawCircle(
+        center,
+        9,
+        Paint()..color = Colors.white,
+      );
+
+      // Highlight (specular reflection for 3D look)
+      canvas.drawCircle(
+        center.translate(-3, -3),
+        5,
+        Paint()..color = const Color(0x40FFFFFF),
+      );
+
+      final img = await recorder
+          .endRecording()
+          .toImage(canvasSize.toInt(), canvasSize.toInt());
+      final data = await img.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) return;
+      // ignore: deprecated_member_use
+      frames.add(BitmapDescriptor.fromBytes(data.buffer.asUint8List()));
+    }
+
+    if (!mounted || frames.length != frameCount) return;
+    setState(() => _goldDotFrames = frames);
+
+    // Start pulse animation
+    _goldDotTimer = Timer.periodic(const Duration(milliseconds: 130), (_) {
+      if (!mounted || _goldDotFrames.isEmpty) return;
+      setState(() {
+        _goldDotFrame = (_goldDotFrame + 1) % _goldDotFrames.length;
+      });
+    });
+  }
+
   Future<void> _applyStartupIntent() async {
     if (widget.preSelectedRideIndex != null) {
       _preSelectedRideIndex = widget.preSelectedRideIndex;
@@ -591,6 +688,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _goldDotTimer?.cancel();
     _liveLocationTimer?.cancel();
     _livePositionSub?.cancel();
     _searchDebounce?.cancel();
@@ -2526,7 +2624,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               ),
               cameraTargetBounds: CameraTargetBounds(_usBounds),
               padding: _mapPaddingForContext(context),
-              myLocationEnabled: true,
+              myLocationEnabled: false,
               myLocationButtonEnabled: false,
               zoomControlsEnabled: false,
               zoomGesturesEnabled: true,
@@ -2538,6 +2636,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               buildingsEnabled: false,
               liteModeEnabled: false,
               markers: {
+                // Gold animated 3D location dot
+                if (_goldDotFrames.isNotEmpty && _currentPosition != null)
+                  Marker(
+                    markerId: const MarkerId('my_location_gold'),
+                    position: _currentPosition!,
+                    icon: _goldDotFrames[_goldDotFrame],
+                    anchor: const Offset(0.5, 0.5),
+                    flat: true,
+                    zIndexInt: 1,
+                  ),
                 if (_pickupMarker != null && _tripStatus != 'in_trip')
                   _pickupMarker!,
                 if (_dropoffMarker != null) _dropoffMarker!,

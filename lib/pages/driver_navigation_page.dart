@@ -452,7 +452,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         Polyline(
           polylineId: const PolylineId('shadow'),
           points: _displayRoutePts,
-          color: const Color(0x400A2463),
+          color: const Color(0x405BA3F5),
           width: 14,
           startCap: Cap.roundCap,
           endCap: Cap.roundCap,
@@ -462,7 +462,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         Polyline(
           polylineId: const PolylineId('route'),
           points: _displayRoutePts,
-          color: const Color(0xFF0A2463),
+          color: const Color(0xFF5BA3F5),
           width: 7,
           startCap: Cap.roundCap,
           endCap: Cap.roundCap,
@@ -534,7 +534,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
               mapToolbarEnabled: false,
               compassEnabled: false,
               buildingsEnabled: true,
-              trafficEnabled: true,
+              trafficEnabled: false,
               padding: EdgeInsets.only(top: top + 140, bottom: 200 + bot),
             ),
           ),

@@ -178,17 +178,27 @@ class NavatarLoader {
   }
 
   /// Generate 3D sprites via Canvas when PNG assets are unavailable.
+  /// Resizes from the large canvas (480px) down to map-marker size (120px).
   static Future<List<BitmapDescriptor>?> _generateAndCache(String key) async {
     try {
       final genBytes = await NavatarSpriteGenerator.generateAll();
       if (genBytes.length != 8) return null;
       final genSprites = <BitmapDescriptor>[];
+      final resizedBytes = <Uint8List>[];
+      const int targetPx = 120; // 40 logical px × 3.0 scale
       for (final b in genBytes) {
+        final codec = await ui.instantiateImageCodec(b, targetWidth: targetPx);
+        final frame = await codec.getNextFrame();
+        final byteData =
+            await frame.image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData == null) return null;
+        final small = byteData.buffer.asUint8List();
+        resizedBytes.add(small);
         // ignore: deprecated_member_use
-        genSprites.add(BitmapDescriptor.fromBytes(b));
+        genSprites.add(BitmapDescriptor.fromBytes(small));
       }
       _spriteCache[key] = genSprites;
-      _bytesCache[key] = genBytes;
+      _bytesCache[key] = resizedBytes;
       return genSprites;
     } catch (_) {
       return null;

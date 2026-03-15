@@ -30,7 +30,6 @@ import 'schedule_booking_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'trip_receipt_screen.dart';
 import '../navigation/car_icon_loader.dart';
-import '../navigation/navatar_loader.dart';
 import '../services/api_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
@@ -201,9 +200,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   LatLng? _driverPosition;
   LatLng? _prevDriverPosition; // for smooth interpolation
   double _driverBearing = 0; // bearing toward destination
-  BitmapDescriptor? _driverCarIcon; // canvas-painted car icon
-  List<BitmapDescriptor>? _navCarSprites; // 8-angle navatar sprites
-  double _cameraBearing = 0; // current camera bearing for sprite selection
+  BitmapDescriptor? _driverCarIcon; // canvas-painted car icon (same as driver)
   DateTime? _lastDriverMarkerRebuild;
   AnimationController? _riderDriverAnim; // 60fps smooth driver animation
   LatLng _riderAnimFrom = _birminghamDefault;
@@ -521,7 +518,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     )..addListener(_onRiderDriverAnimTick);
     _loadPinIcons();
     _buildDriverCarIcon();
-    _loadNavCarSprites();
     _buildGoldDotFrames();
     _initLocation();
     _applyStartupIntent();
@@ -4832,23 +4828,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
     _lastDriverMarkerRebuild = now;
 
-    // Pick the right sprite for the current viewing angle (like Google Maps)
-    BitmapDescriptor? icon;
-    double markerRotation = _driverBearing;
-    if (_navCarSprites != null && _navCarSprites!.length == 8) {
-      final viewAngle = _driverBearing - _cameraBearing;
-      final idx = NavatarLoader.indexForAngle(viewAngle);
-      icon = _navCarSprites![idx];
-      markerRotation = 0; // sprites already show the correct angle
-    }
-    icon ??= _driverCarIcon ??
-        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
-
     _driverMarker = Marker(
       markerId: const MarkerId('driver'),
       position: _driverPosition!,
-      icon: icon,
-      rotation: markerRotation,
+      icon: _driverCarIcon ??
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      rotation: _driverBearing,
       anchor: const Offset(0.5, 0.5),
       flat: false,
       zIndexInt: 100,
@@ -4916,7 +4901,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
     // ── 3D Chase-Cam: follow driver every frame for game-like feel ──
     if (_stage == RideStage.riding && _driverPosition != null) {
-      _cameraBearing = _driverBearing; // track for sprite angle selection
       _panTo(_driverPosition!, zoom: 18.5, bearing: _driverBearing, tilt: 55);
     }
 
@@ -4933,13 +4917,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         ? BitmapDescriptor.bytes(_driverCarIconBytes!)
         : await CarIconLoader.loadUber();
     if (mounted) setState(() => _driverCarIcon = icon);
-  }
-
-  Future<void> _loadNavCarSprites() async {
-    final sprites = await NavatarLoader.loadCurrentSprites();
-    if (mounted && sprites != null && sprites.length == 8) {
-      setState(() => _navCarSprites = sprites);
-    }
   }
 
   // Keep legacy method for compatibility

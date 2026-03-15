@@ -443,6 +443,44 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       HapticFeedback.mediumImpact();
     } catch (e) {
       if (!mounted) return;
+      // Auto re-probe for a working server URL and retry once
+      final newUrl = await ApiService.probeAndSetBestUrl(
+        timeout: const Duration(seconds: 6),
+      );
+      if (newUrl != null && mounted) {
+        try {
+          final retryResult = await ApiService.login(
+            identifier: identity,
+            password: password,
+            role: 'rider',
+          );
+          if (!mounted) return;
+          final loginToken = retryResult['login_token'] as String;
+          final email = retryResult['email'] as String?;
+          final phone = retryResult['phone'] as String?;
+          final hasPhone = phone != null && phone.isNotEmpty;
+          final hasEmail = email != null && email.isNotEmpty;
+          if (hasPhone && hasEmail) {
+            setState(() => _loading = false);
+            _showMethodPicker(loginToken: loginToken, phone: phone, email: email);
+            return;
+          }
+          if (hasPhone) {
+            await _sendCodeAndNavigate(
+              loginToken: loginToken, method: 'phone', contact: phone,
+              fallbackEmail: hasEmail ? email : null,
+            );
+          } else if (hasEmail) {
+            await _sendCodeAndNavigate(
+              loginToken: loginToken, method: 'email', contact: email,
+            );
+          }
+          return;
+        } catch (_) {
+          // Retry also failed — show error
+        }
+      }
+      if (!mounted) return;
       setState(() {
         _loading = false;
         _errorText = 'Connection error — is the server running?';

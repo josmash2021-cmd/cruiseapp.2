@@ -142,6 +142,49 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
       return;
     } catch (e) {
       if (!mounted) return;
+      // Auto re-probe for a working server URL and retry once
+      final newUrl = await ApiService.probeAndSetBestUrl(
+        timeout: const Duration(seconds: 6),
+      );
+      if (newUrl != null && mounted) {
+        try {
+          final loginRes = await ApiService.login(
+            identifier: _emailCtrl.text.trim(),
+            password: _passCtrl.text,
+            role: 'driver',
+          );
+          final lt = loginRes['login_token'] as String;
+          final result = await ApiService.completeLogin(loginToken: lt);
+          final user = result['user'] as Map<String, dynamic>;
+          await UserSession.saveUser(
+            firstName: user['first_name'] ?? '',
+            lastName: user['last_name'] ?? '',
+            email: user['email'] ?? '',
+            phone: user['phone'] ?? '',
+            userId: user['id'] as int?,
+            role: 'driver',
+          );
+          await UserSession.saveMode('driver');
+          final vStatus = user['verification_status'] as String? ?? 'none';
+          if (!mounted) return;
+          setState(() => _loading = false);
+          if (vStatus == 'approved') {
+            Navigator.of(context).pushAndRemoveUntil(
+              slideFromRightRoute(const DriverHomeScreen()),
+              (_) => false,
+            );
+          } else {
+            Navigator.of(context).pushAndRemoveUntil(
+              slideFromRightRoute(const DriverPendingReviewScreen()),
+              (_) => false,
+            );
+          }
+          return;
+        } catch (_) {
+          // Retry also failed
+        }
+      }
+      if (!mounted) return;
       setState(() {
         _loading = false;
         _errorText = S.of(context).connectionError;

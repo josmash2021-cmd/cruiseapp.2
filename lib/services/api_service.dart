@@ -115,12 +115,9 @@ class ApiService {
 
   /// Try each candidate URL with a lightweight health-check (`GET /health`).
   ///
-  /// Strategy (fast on cellular):
-  ///   1. Try production URL first with a 2-second timeout.
-  ///      On any network (cellular, WiFi) this returns in <500 ms if reachable.
-  ///      → Return immediately without ever touching local IPs.
-  ///   2. If production fails, probe remaining URLs IN PARALLEL (not sequential)
-  ///      so the total wait is max [timeout], not timeout × N.
+  /// Strategy: probe ALL URLs in parallel — first 200 wins.
+  /// This avoids the 5-second wait when production is down (cellular users
+  /// hit the tunnel URL in <1 s instead of waiting for production to timeout).
   static Future<String?> probeAndSetBestUrl({
     List<String>? candidates,
     Duration timeout = const Duration(seconds: 5),
@@ -130,40 +127,27 @@ class ApiService {
       'ngrok-skip-browser-warning': 'true',
     };
 
-    // ── Step 1: production first (5 s) ────────────────────────────────────
-    // 5 s is generous enough to survive cellular DNS + TLS handshake and
-    // a Railway cold-start, while still being fast for normal connections.
-    try {
-      final res = await _client
-          .get(Uri.parse('$_defaultTunnelUrl/health'), headers: _probeHeaders)
-          .timeout(const Duration(seconds: 5));
-      if (res.statusCode == 200) {
-        await setServerUrl(_defaultTunnelUrl);
-        debugPrint('[ApiService] probe → production');
-        return _defaultTunnelUrl;
-      }
-    } catch (_) {}
-
-    // ── Step 2: probe remaining URLs in parallel ───────────────────────────
-    // Include the dynamic Firestore tunnel URL (highest priority after prod)
+    // Build the full list of URLs to try — all at once, in parallel.
+    // Order doesn't matter since we fire them all simultaneously.
     final allCandidates = candidates ?? [
+      _defaultTunnelUrl,
       if (_dynamicTunnelUrl != null) _dynamicTunnelUrl!,
-      _activeUrl,
       _tunnelUrl,
+      _activeUrl,
       _localNetworkUrl,
       _adbUrl,
       _localUrl,
     ];
-    final remaining = allCandidates
-        .where((u) => u != _defaultTunnelUrl && u.isNotEmpty)
+    final urls = allCandidates
+        .where((u) => u.isNotEmpty)
         .toSet()
         .toList();
 
-    if (remaining.isNotEmpty) {
+    if (urls.isNotEmpty) {
       final completer = Completer<String?>();
-      var pending = remaining.length;
+      var pending = urls.length;
 
-      for (final url in remaining) {
+      for (final url in urls) {
         _client
             .get(Uri.parse('$url/health'), headers: _probeHeaders)
             .timeout(timeout)
@@ -186,15 +170,17 @@ class ApiService {
 
       if (winner != null) {
         await setServerUrl(winner);
-        debugPrint('[ApiService] probe → local ($winner)');
+        debugPrint('[ApiService] probe → $winner');
         return winner;
       }
     }
 
-    // Last resort: force production so the app always has a working endpoint
-    await setServerUrl(_defaultTunnelUrl);
-    debugPrint('[ApiService] probe → fallback to production');
-    return _defaultTunnelUrl;
+    // Last resort: prefer Firestore tunnel URL or hardcoded tunnel over
+    // dead production, so cellular users still have a working endpoint.
+    final fallback = _dynamicTunnelUrl ?? _tunnelUrl;
+    await setServerUrl(fallback);
+    debugPrint('[ApiService] probe → fallback to $fallback');
+    return fallback;
   }
 
   // ── Internal helper ────────────────────────────────────────────────────────

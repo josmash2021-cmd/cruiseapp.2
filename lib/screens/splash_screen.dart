@@ -175,7 +175,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Start heavy init in parallel with the splash animation
     final initFuture = heavyInit().timeout(
-      const Duration(seconds: 5),
+      const Duration(seconds: 12),
       onTimeout: () {
         debugPrint('[SplashScreen] heavyInit timeout - continuing anyway');
       },

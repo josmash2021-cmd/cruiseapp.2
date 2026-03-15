@@ -511,7 +511,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     )..addListener(_onGlowTick);
     _riderDriverAnim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 1200),
     )..addListener(_onRiderDriverAnimTick);
     _loadPinIcons();
     _buildDriverCarIcon();
@@ -4888,11 +4888,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         (_riderAnimTo.longitude - _riderAnimFrom.longitude) * t;
     _driverPosition = LatLng(lat, lng);
 
-    // Smooth bearing interpolation
+    // Smooth bearing interpolation — follows the same eased curve as position
     _driverBearing = _lerpAngle(
       _driverBearing,
       _riderTargetBearing,
-      t.clamp(0.0, 0.5),
+      (t * 0.15).clamp(0.0, 1.0),
     );
 
     _updateDriverMarkerFromPosition();

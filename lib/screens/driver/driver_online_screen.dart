@@ -238,7 +238,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _driverAnim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 1200),
     );
     _driverAnim.addListener(_onDriverAnimTick);
 
@@ -433,20 +433,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
   }
 
-  /// Pre-render 12 frames of the driver marker.
-  /// If a photo is available: circular photo with gold border + pulsing ring.
-  /// Otherwise: pulsing golden dot (Apple Maps blue dot style).
+  /// Pre-render 24 frames of a pure golden dot (no profile photo).
   Future<void> _buildGoldenDotFrames() async {
-    const int frameCount = 12;
-    const double canvasSize = 160.0;
-    const double photoRadius = 28.0;
-    const double borderWidth = 4.0;
+    const int frameCount = 24;
+    const double canvasSize = 140.0;
     final frames = <BitmapDescriptor>[];
-    final hasPhoto = _driverPhotoImage != null;
 
     for (int i = 0; i < frameCount; i++) {
       final t = i / frameCount;
-      final pulseRadius = 48.0 + 24.0 * t;
+      final pulseRadius = 40.0 + 20.0 * t;
       final pulseAlpha = (0.35 * (1.0 - t)).clamp(0.0, 1.0);
 
       final recorder = ui.PictureRecorder();
@@ -454,14 +449,23 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         recorder,
         const Rect.fromLTWH(0, 0, canvasSize, canvasSize),
       );
-      final center = const Offset(canvasSize / 2, canvasSize / 2);
+      const center = Offset(canvasSize / 2, canvasSize / 2);
 
-      // Outer pulse ring (fading gold ring)
+      // 3D shadow beneath dot
+      canvas.drawCircle(
+        center.translate(0, 4),
+        22,
+        Paint()
+          ..color = const Color(0x50000000)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+      );
+
+      // Outer pulse ring (fading gold)
       canvas.drawCircle(
         center,
         pulseRadius,
         Paint()
-          ..color = const Color(0xFFE8C547).withValues(alpha: pulseAlpha * 0.5)
+          ..color = const Color(0xFFE8C547).withValues(alpha: pulseAlpha * 0.4)
           ..style = PaintingStyle.fill,
       );
       canvas.drawCircle(
@@ -470,92 +474,31 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         Paint()
           ..color = const Color(0xFFE8C547).withValues(alpha: pulseAlpha)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 3,
+          ..strokeWidth = 2.5,
       );
 
-      if (hasPhoto) {
-        // Shadow under photo circle
-        canvas.drawCircle(
-          center.translate(0, 2),
-          photoRadius + borderWidth / 2,
-          Paint()
-            ..color = Colors.black.withValues(alpha: 0.3)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-        );
+      // Gold outer ring (3D gradient)
+      canvas.drawCircle(
+        center,
+        18,
+        Paint()
+          ..shader = ui.Gradient.radial(
+            center.translate(-4, -4),
+            22,
+            [const Color(0xFFF5E27A), const Color(0xFFE8C547), const Color(0xFFB8941E)],
+            [0.0, 0.5, 1.0],
+          ),
+      );
 
-        // Gold border
-        canvas.drawCircle(
-          center,
-          photoRadius + borderWidth / 2,
-          Paint()
-            ..shader =
-                const RadialGradient(
-                  colors: [Color(0xFFF5D990), Color(0xFFD4A843)],
-                ).createShader(
-                  Rect.fromCircle(
-                    center: center,
-                    radius: photoRadius + borderWidth,
-                  ),
-                ),
-        );
+      // White inner dot
+      canvas.drawCircle(center, 9, Paint()..color = Colors.white);
 
-        // Clip and draw photo
-        canvas.save();
-        canvas.clipPath(
-          Path()..addOval(Rect.fromCircle(center: center, radius: photoRadius)),
-        );
-        final src = Rect.fromLTWH(
-          0,
-          0,
-          _driverPhotoImage!.width.toDouble(),
-          _driverPhotoImage!.height.toDouble(),
-        );
-        final dst = Rect.fromCircle(center: center, radius: photoRadius);
-        canvas.drawImageRect(_driverPhotoImage!, src, dst, Paint());
-        canvas.restore();
-
-        // White inner border for polish
-        canvas.drawCircle(
-          center,
-          photoRadius,
-          Paint()
-            ..color = Colors.white
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2,
-        );
-      } else {
-        // Fallback: golden dot
-        canvas.drawCircle(
-          center.translate(0, 2),
-          22,
-          Paint()
-            ..color = Colors.black.withValues(alpha: 0.25)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-        );
-        canvas.drawCircle(
-          center,
-          20,
-          Paint()
-            ..shader = const RadialGradient(
-              colors: [Color(0xFFF5D990), Color(0xFFD4A843)],
-            ).createShader(Rect.fromCircle(center: center, radius: 20)),
-        );
-        canvas.drawCircle(
-          center,
-          20,
-          Paint()
-            ..color = Colors.white
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 4,
-        );
-        canvas.drawCircle(
-          center.translate(-4, -4),
-          7,
-          Paint()
-            ..color = Colors.white.withValues(alpha: 0.45)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-        );
-      }
+      // Specular highlight for 3D look
+      canvas.drawCircle(
+        center.translate(-3, -3),
+        5,
+        Paint()..color = const Color(0x40FFFFFF),
+      );
 
       final picture = recorder.endRecording();
       final image = await picture.toImage(
@@ -578,7 +521,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   void _startGoldenDotAnimation() {
     _goldenDotTimer?.cancel();
-    _goldenDotTimer = Timer.periodic(const Duration(milliseconds: 130), (_) {
+    _goldenDotTimer = Timer.periodic(const Duration(milliseconds: 65), (_) {
       if (!mounted || _goldenDotFrames.isEmpty) return;
       setState(() {
         _goldenDotFrame = (_goldenDotFrame + 1) % _goldenDotFrames.length;
@@ -1314,10 +1257,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     setState(() => _isSimulationRunning = false);
   }
 
+  double _targetHeading = 0;
+
   void _smoothMoveTo(LatLng target, double heading) {
     _animFrom = _pos;
     _animTo = target;
-    _heading = heading;
+    _targetHeading = heading;
     _driverAnim.forward(from: 0);
   }
 
@@ -1379,6 +1324,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final lng =
         _animFrom.longitude + (_animTo.longitude - _animFrom.longitude) * t;
     _pos = LatLng(lat, lng);
+
+    // Smooth bearing interpolation — gradual turn, no snap
+    double diff = _targetHeading - _heading;
+    // Normalize to [-180, 180]
+    while (diff > 180) diff -= 360;
+    while (diff < -180) diff += 360;
+    _heading += diff * (t * 0.15).clamp(0.0, 1.0);
+
     // Only rebuild marker set — minimal setState for performance
     setState(() {});
   }

@@ -18,7 +18,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 ///   4. Set myLocationEnabled: false on GoogleMap.
 class GoldLocationDot {
   static const Color _gold = Color(0xFFE8C547);
-  static const int _frameCount = 12;
+  static const int _frameCount = 24;
   static const double _canvasSize = 140.0;
 
   List<BitmapDescriptor> _frames = [];
@@ -104,7 +104,7 @@ class GoldLocationDot {
     if (frames.length != _frameCount) return;
     _frames = frames;
 
-    _timer = Timer.periodic(const Duration(milliseconds: 130), (_) {
+    _timer = Timer.periodic(const Duration(milliseconds: 65), (_) {
       _frame = (_frame + 1) % _frames.length;
       onTick();
     });

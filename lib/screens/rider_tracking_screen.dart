@@ -1339,7 +1339,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           icon: _carIcon!,
           rotation: _animBearing,
           anchor: const Offset(0.5, 0.5),
-          flat: true,
+          flat: false,
           zIndexInt: 10,
         ),
       );

@@ -2667,7 +2667,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               ),
             ),
 
-          Positioned(top: 48, left: 14, child: _backButton()),
+          Positioned(top: 48, right: 14, child: _backButton()),
           Positioned(
             right: 14,
             bottom:
@@ -2699,8 +2699,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               _stage != RideStage.riding)
             Positioned(
               top: 50,
-              left: 74,
-              right: 16,
+              left: 16,
+              right: 74,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(
@@ -2736,8 +2736,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           if (_stage == RideStage.riding)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
-              left: 60,
-              right: 16,
+              left: 16,
+              right: 60,
               child: _buildRiderNavHeader(),
             ),
           Positioned(
@@ -4833,7 +4833,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
       rotation: _driverBearing,
       anchor: const Offset(0.5, 0.5),
-      flat: true,
+      flat: false,
       zIndexInt: 100,
       infoWindow: InfoWindow(title: _driverName, snippet: _driverCar),
     );

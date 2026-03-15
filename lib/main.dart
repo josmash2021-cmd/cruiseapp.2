@@ -54,16 +54,8 @@ void main() async {
 /// Heavy async init that runs while the splash animation plays.
 /// Called from SplashScreen.initState().
 Future<void> heavyInit() async {
-  // Auto-detect best reachable server
-  await ApiService.probeAndSetBestUrl(
-    timeout: const Duration(seconds: 3),
-  ).timeout(
-    const Duration(seconds: 8),
-    onTimeout: () {
-      debugPrint('[ApiService] probe timed out — using saved/default URL');
-      return null;
-    },
-  );
+  // Probe for best URL in background (production-first, <2 s on cellular)
+  ApiService.probeAndSetBestUrl().catchError((_) {});
 
   // Start keep-alive pings to prevent server sleep
   KeepAliveService.instance.start();

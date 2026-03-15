@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -33,6 +34,10 @@ class ApiService {
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 
+  /// Persistent HTTP client — reuses TCP/TLS connections across requests.
+  /// This eliminates the 300-800 ms handshake overhead on cellular networks.
+  static final http.Client _client = http.Client();
+
   /// In-memory active URL.  Populated by [init]; defaults to production so the
   /// first call before [init] completes still reaches *something*.
   static String _activeUrl = _defaultTunnelUrl;
@@ -40,24 +45,31 @@ class ApiService {
   /// Returns the URL currently in use by all API calls.
   static String get activeServerUrl => _activeUrl;
 
+  /// Returns true if [url] is a private/local network address that only
+  /// works on the same WiFi — these must not be used on cellular.
+  static bool _isLocalUrl(String url) {
+    return url.startsWith('http://10.') ||
+        url.startsWith('http://172.') ||
+        url.startsWith('http://192.168.') ||
+        url.startsWith('http://localhost') ||
+        url.startsWith('http://127.');
+  }
+
   /// Load persisted server URL from SharedPreferences.
   /// Call once in main() before runApp().
+  /// Does NOT probe — probing blocks startup. heavyInit() probes in the background.
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_serverUrlPrefKey);
-    if (saved != null && saved.isNotEmpty) {
+    if (saved != null && saved.isNotEmpty && !_isLocalUrl(saved)) {
+      // Use saved URL only if it is a publicly reachable address
       _activeUrl = saved;
+    } else {
+      // Local IP saved or first launch — always start with production so
+      // the first request succeeds on cellular without any wait.
+      _activeUrl = _defaultTunnelUrl;
     }
     debugPrint('[ApiService] active URL: $_activeUrl');
-    // Probe to find a working URL before the app starts making requests
-    try {
-      final url = await probeAndSetBestUrl(timeout: const Duration(seconds: 6));
-      if (url != null) {
-        debugPrint('[ApiService] probe found reachable URL: $url');
-      } else {
-        debugPrint('[ApiService] probe: no reachable URL found');
-      }
-    } catch (_) {}
   }
 
   /// Persist a new server URL and update all subsequent requests immediately.
@@ -69,70 +81,76 @@ class ApiService {
   }
 
   /// Try each candidate URL with a lightweight health-check (`GET /health`).
-  /// Prioritizes production URL for mobile networks.
-  /// Keeps the first one that responds 200 within [timeout] and persists it.
+  ///
+  /// Strategy (fast on cellular):
+  ///   1. Try production URL first with a 2-second timeout.
+  ///      On any network (cellular, WiFi) this returns in <500 ms if reachable.
+  ///      → Return immediately without ever touching local IPs.
+  ///   2. If production fails, probe remaining URLs IN PARALLEL (not sequential)
+  ///      so the total wait is max [timeout], not timeout × N.
   static Future<String?> probeAndSetBestUrl({
     List<String>? candidates,
-    Duration timeout = const Duration(seconds: 10), // Increased for mobile networks
+    Duration timeout = const Duration(seconds: 5),
   }) async {
-    // Always try production URL first (works on any network)
-    final urls =
-        candidates ??
-        [_defaultTunnelUrl, _activeUrl, _localNetworkUrl, _adbUrl, _localUrl];
+    const _probeHeaders = {
+      'Accept': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
+    };
 
-    for (final url in urls) {
-      try {
-        final response = await http
-            .get(
-              Uri.parse('$url/health'),
-              headers: {'Accept': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-            )
-            .timeout(timeout);
-        if (response.statusCode == 200) {
-          await setServerUrl(url);
-          return url;
-        }
-      } catch (_) {
-        // This endpoint not reachable — try next
+    // ── Step 1: production first (2 s) ────────────────────────────────────
+    try {
+      final res = await _client
+          .get(Uri.parse('$_defaultTunnelUrl/health'), headers: _probeHeaders)
+          .timeout(const Duration(seconds: 2));
+      if (res.statusCode == 200) {
+        await setServerUrl(_defaultTunnelUrl);
+        debugPrint('[ApiService] probe → production');
+        return _defaultTunnelUrl;
+      }
+    } catch (_) {}
+
+    // ── Step 2: probe remaining URLs in parallel ───────────────────────────
+    final remaining = (candidates ??
+            [_activeUrl, _localNetworkUrl, _adbUrl, _localUrl])
+        .where((u) => u != _defaultTunnelUrl && u.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (remaining.isNotEmpty) {
+      final completer = Completer<String?>();
+      var pending = remaining.length;
+
+      for (final url in remaining) {
+        _client
+            .get(Uri.parse('$url/health'), headers: _probeHeaders)
+            .timeout(timeout)
+            .then((res) {
+              if (!completer.isCompleted && res.statusCode == 200) {
+                completer.complete(url);
+              }
+            })
+            .catchError((_) {})
+            .whenComplete(() {
+              pending--;
+              if (pending == 0 && !completer.isCompleted) {
+                completer.complete(null);
+              }
+            });
+      }
+
+      final winner = await completer.future
+          .timeout(timeout + const Duration(seconds: 1), onTimeout: () => null);
+
+      if (winner != null) {
+        await setServerUrl(winner);
+        debugPrint('[ApiService] probe → local ($winner)');
+        return winner;
       }
     }
 
-    // None of the known URLs worked — try discovering the latest tunnel URL
-    // via the local-network backend (only reachable on the same WiFi).
-    for (final base in [_localNetworkUrl, _localUrl]) {
-      try {
-        final disc = await http
-            .get(
-              Uri.parse('$base/tunnel-url'),
-              headers: {'Accept': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-            )
-            .timeout(timeout);
-        if (disc.statusCode == 200) {
-          final body = jsonDecode(disc.body);
-          final tunnelUrl = body['tunnel_url'] as String?;
-          if (tunnelUrl != null && tunnelUrl.isNotEmpty) {
-            // Verify the discovered tunnel URL actually works
-            final check = await http
-                .get(
-                  Uri.parse('$tunnelUrl/health'),
-                  headers: {'Accept': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-                )
-                .timeout(timeout);
-            if (check.statusCode == 200) {
-              await setServerUrl(tunnelUrl);
-              debugPrint('[ApiService] Discovered new tunnel URL: $tunnelUrl');
-              return tunnelUrl;
-            }
-          }
-        }
-      } catch (_) {
-        // Discovery endpoint not reachable — try next
-      }
-    }
-
-    // Last resort: force production URL so the app always has a working endpoint
-    debugPrint('[ApiService] No reachable URL found — forcing production URL');
+    // Last resort: force production so the app always has a working endpoint
     await setServerUrl(_defaultTunnelUrl);
+    debugPrint('[ApiService] probe → fallback to production');
     return _defaultTunnelUrl;
   }
 
@@ -199,7 +217,7 @@ class ApiService {
     try {
       final refreshToken = await _getRefreshToken();
       if (refreshToken == null) return false;
-      final res = await http
+      final res = await _client
           .post(
             Uri.parse('$_baseUrl/auth/refresh'),
             headers: _jsonHeaders(refreshToken),
@@ -325,7 +343,7 @@ class ApiService {
     String? photoUrl,
     String role = 'rider',
   }) async {
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/auth/register'),
           headers: _jsonHeaders(),
@@ -358,7 +376,7 @@ class ApiService {
     try {
       final payload = <String, dynamic>{'identifier': identifier.trim()};
       if (role != null) payload['role'] = role;
-      final res = await http.post(
+      final res = await _client.post(
         Uri.parse('$_baseUrl/auth/check-exists'),
         headers: _jsonHeaders(),
         body: jsonEncode(payload),
@@ -386,7 +404,7 @@ class ApiService {
       'password': password,
     };
     if (role != null) body['role'] = role;
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/auth/login'),
           headers: _jsonHeaders(),
@@ -402,7 +420,7 @@ class ApiService {
   static Future<Map<String, dynamic>> completeLogin({
     required String loginToken,
   }) async {
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/auth/complete-login'),
           headers: _jsonHeaders(),
@@ -425,7 +443,7 @@ class ApiService {
   /// Send an OTP via the backend (which calls Twilio Verify server-side).
   /// Throws [ApiException] on failure.
   static Future<void> sendOtp({required String phone}) async {
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/auth/send-otp'),
           headers: _jsonHeaders(),
@@ -442,7 +460,7 @@ class ApiService {
     required String code,
   }) async {
     try {
-      final res = await http
+      final res = await _client
           .post(
             Uri.parse('$_baseUrl/auth/verify-otp'),
             headers: _jsonHeaders(),
@@ -463,7 +481,7 @@ class ApiService {
     if (token == null) return null;
 
     try {
-      final res = await http
+      final res = await _client
           .get(Uri.parse('$_baseUrl/auth/me'), headers: _jsonHeaders(token))
           .timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) return jsonDecode(res.body);
@@ -472,7 +490,7 @@ class ApiService {
         final refreshed = await refreshAccessToken();
         if (refreshed) {
           final newToken = await getToken();
-          final retry = await http
+          final retry = await _client
               .get(
                 Uri.parse('$_baseUrl/auth/me'),
                 headers: _jsonHeaders(newToken),
@@ -495,7 +513,7 @@ class ApiService {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
 
-    final res = await http
+    final res = await _client
         .patch(
           Uri.parse('$_baseUrl/auth/me'),
           headers: _jsonHeaders(token),
@@ -512,7 +530,7 @@ class ApiService {
   static Future<void> deleteAccount() async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await http
+    final res = await _client
         .delete(Uri.parse('$_baseUrl/auth/me'), headers: _jsonHeaders(token))
         .timeout(const Duration(seconds: 10));
     _parse(res);
@@ -524,7 +542,7 @@ class ApiService {
     final token = await getToken();
     if (token == null) return;
     try {
-      await http
+      await _client
           .post(
             Uri.parse('$_baseUrl/auth/offline'),
             headers: _jsonHeaders(token),
@@ -546,7 +564,7 @@ class ApiService {
   }) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/support/chats'),
           headers: _jsonHeaders(token),
@@ -560,7 +578,7 @@ class ApiService {
   static Future<List<Map<String, dynamic>>> getSupportChats() async {
     final token = await getToken();
     if (token == null) return [];
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/support/chats'), headers: _jsonHeaders(token))
         .timeout(const Duration(seconds: 10));
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -574,7 +592,7 @@ class ApiService {
   static Future<List<dynamic>> getSupportMessages(int chatId) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await http
+    final res = await _client
         .get(
           Uri.parse('$_baseUrl/support/chats/$chatId/messages'),
           headers: _jsonHeaders(token),
@@ -592,7 +610,7 @@ class ApiService {
   ) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/support/chats/$chatId/messages'),
           headers: _jsonHeaders(token),
@@ -606,7 +624,7 @@ class ApiService {
   static Future<void> closeSupportChat(int chatId) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    await http
+    await _client
         .patch(
           Uri.parse('$_baseUrl/support/chats/$chatId/close-user'),
           headers: _jsonHeaders(token),
@@ -617,7 +635,7 @@ class ApiService {
   /// Get the support voice call phone number.
   static Future<String?> getSupportPhoneNumber() async {
     try {
-      final res = await http
+      final res = await _client
           .get(Uri.parse('$_baseUrl/voice/phone-number'))
           .timeout(const Duration(seconds: 10));
       final data = _parse(res);
@@ -634,7 +652,7 @@ class ApiService {
   ) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/auth/verify-request'),
           headers: _jsonHeaders(token),
@@ -648,7 +666,7 @@ class ApiService {
   static Future<Map<String, dynamic>> getVerificationStatus() async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await http
+    final res = await _client
         .get(
           Uri.parse('$_baseUrl/auth/verification-status'),
           headers: _jsonHeaders(token),
@@ -661,7 +679,7 @@ class ApiService {
   static Future<Map<String, dynamic>> getDriverApprovalStatus() async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await http
+    final res = await _client
         .get(
           Uri.parse('$_baseUrl/auth/driver-approval-status'),
           headers: _jsonHeaders(token),
@@ -674,7 +692,7 @@ class ApiService {
   static Future<String> getAccountStatus() async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await http
+    final res = await _client
         .get(
           Uri.parse('$_baseUrl/auth/account-status'),
           headers: _jsonHeaders(token),
@@ -695,7 +713,7 @@ class ApiService {
     if (token == null) throw ApiException(401, 'Not logged in');
     final bytes = await File(filePath).readAsBytes();
     final b64 = base64Encode(bytes);
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/auth/photo'),
           headers: _jsonHeaders(token),
@@ -712,7 +730,7 @@ class ApiService {
   static Future<String> downloadPhoto(String photoUrl) async {
     try {
       final url = '$_baseUrl$photoUrl';
-      final res = await http
+      final res = await _client
           .get(Uri.parse(url))
           .timeout(const Duration(seconds: 15));
       if (res.statusCode != 200 || res.bodyBytes.isEmpty) return '';
@@ -756,7 +774,7 @@ class ApiService {
     String? notes,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/trips'),
           headers: h,
@@ -788,7 +806,7 @@ class ApiService {
     int riderId,
   ) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/trips/scheduled/rider/$riderId'), headers: h)
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -803,7 +821,7 @@ class ApiService {
     int driverId,
   ) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(
           Uri.parse('$_baseUrl/trips/scheduled/driver/$driverId'),
           headers: h,
@@ -819,7 +837,7 @@ class ApiService {
   /// Cancel a trip (scheduled or active).
   static Future<Map<String, dynamic>> cancelTrip(int tripId) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(Uri.parse('$_baseUrl/trips/$tripId/cancel'), headers: h)
         .timeout(const Duration(seconds: 8));
     return _parse(res);
@@ -828,7 +846,7 @@ class ApiService {
   /// Get a trip by ID (for polling status).
   static Future<Map<String, dynamic>> getTrip(int tripId) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/trips/$tripId'), headers: h)
         .timeout(const Duration(seconds: 8));
     return _parse(res);
@@ -841,7 +859,7 @@ class ApiService {
     double radiusKm = 15.0,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(
           Uri.parse(
             '$_baseUrl/trips/available?lat=$lat&lng=$lng&radius_km=$radiusKm',
@@ -863,7 +881,7 @@ class ApiService {
     required int driverId,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/trips/$tripId/accept'),
           headers: h,
@@ -879,7 +897,7 @@ class ApiService {
     required String status,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .patch(
           Uri.parse('$_baseUrl/trips/$tripId/status?status=$status'),
           headers: h,
@@ -896,7 +914,7 @@ class ApiService {
     bool isOnline = true,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .patch(
           Uri.parse('$_baseUrl/drivers/$driverId/location'),
           headers: h,
@@ -909,7 +927,7 @@ class ApiService {
   /// Get rider's trip history.
   static Future<List<Map<String, dynamic>>> getRiderTrips(int riderId) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/riders/$riderId/trips'), headers: h)
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -922,7 +940,7 @@ class ApiService {
   /// Get driver's trip history.
   static Future<List<Map<String, dynamic>>> getDriverTrips(int driverId) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/drivers/$driverId/trips'), headers: h)
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -935,7 +953,7 @@ class ApiService {
   /// Get driver stats (acceptance rate, on-time rate, etc.) from backend.
   static Future<Map<String, dynamic>> getDriverStats(int driverId) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/drivers/$driverId/stats'), headers: h)
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -986,7 +1004,7 @@ class ApiService {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
 
-    final res = await http
+    final res = await _client
         .get(
           Uri.parse('$_baseUrl/drivers/earnings?period=$period'),
           headers: _jsonHeaders(token),
@@ -1015,7 +1033,7 @@ class ApiService {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
 
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/drivers/cashout'),
           headers: _jsonHeaders(token),
@@ -1030,7 +1048,7 @@ class ApiService {
     final token = await getToken();
     if (token == null) return [];
 
-    final res = await http
+    final res = await _client
         .get(
           Uri.parse('$_baseUrl/drivers/cashouts'),
           headers: _jsonHeaders(token),
@@ -1049,7 +1067,7 @@ class ApiService {
     final token = await getToken();
     if (token == null) return [];
 
-    final res = await http
+    final res = await _client
         .get(
           Uri.parse('$_baseUrl/drivers/payout-methods'),
           headers: _jsonHeaders(token),
@@ -1072,7 +1090,7 @@ class ApiService {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
 
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/drivers/payout-methods'),
           headers: _jsonHeaders(token),
@@ -1091,7 +1109,7 @@ class ApiService {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
 
-    await http
+    await _client
         .delete(
           Uri.parse('$_baseUrl/drivers/payout-methods/$payoutId'),
           headers: _jsonHeaders(token),
@@ -1106,7 +1124,7 @@ class ApiService {
   /// Create a Plaid Link token (backend calls Plaid API).
   static Future<String> createPlaidLinkToken() async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(Uri.parse('$_baseUrl/plaid/create-link-token'), headers: h)
         .timeout(const Duration(seconds: 15));
     final data = _parse(res);
@@ -1122,7 +1140,7 @@ class ApiService {
     String? accountSubtype,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/plaid/exchange-token'),
           headers: h,
@@ -1161,7 +1179,7 @@ class ApiService {
     String? notes,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/dispatch/request'),
           headers: h,
@@ -1193,7 +1211,7 @@ class ApiService {
     int driverId,
   ) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(
           Uri.parse('$_baseUrl/dispatch/driver/pending?driver_id=$driverId'),
           headers: h,
@@ -1218,7 +1236,7 @@ class ApiService {
     required int driverId,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse(
             '$_baseUrl/dispatch/driver/accept?offer_id=$offerId&driver_id=$driverId',
@@ -1235,7 +1253,7 @@ class ApiService {
     required int driverId,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse(
             '$_baseUrl/dispatch/driver/reject?offer_id=$offerId&driver_id=$driverId',
@@ -1249,7 +1267,7 @@ class ApiService {
   /// Rider polls dispatch status to see if a driver accepted.
   static Future<Map<String, dynamic>> getDispatchStatus(int tripId) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(
           Uri.parse('$_baseUrl/dispatch/trip/status?trip_id=$tripId'),
           headers: h,
@@ -1278,7 +1296,7 @@ class ApiService {
             'key': Env.googleMapsKey,
             'mode': 'driving',
           });
-      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      final res = await _client.get(uri).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         if (data['status'] == 'OK' && (data['routes'] as List).isNotEmpty) {
@@ -1294,7 +1312,7 @@ class ApiService {
         'overview': 'full',
         'geometries': 'polyline',
       });
-      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      final res = await _client.get(uri).timeout(const Duration(seconds: 10));
       final data = jsonDecode(res.body);
       if (data is Map<String, dynamic> &&
           data['code']?.toString().toUpperCase() == 'OK') {
@@ -1314,7 +1332,7 @@ class ApiService {
   }) async {
     try {
       final h = await _authHeaders();
-      final res = await http
+      final res = await _client
           .get(
             Uri.parse(
               '$_baseUrl/drivers/nearby?lat=$lat&lng=$lng&radius_km=$radiusKm',
@@ -1341,7 +1359,7 @@ class ApiService {
   /// Get the driver's vehicle info.
   static Future<Map<String, dynamic>?> getVehicle() async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/drivers/vehicle'), headers: h)
         .timeout(const Duration(seconds: 8));
     final data = _parse(res);
@@ -1359,7 +1377,7 @@ class ApiService {
     String? vehicleType,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/drivers/vehicle'),
           headers: h,
@@ -1384,7 +1402,7 @@ class ApiService {
   /// Get all driver documents.
   static Future<List<Map<String, dynamic>>> getDocuments() async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/drivers/documents'), headers: h)
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -1402,7 +1420,7 @@ class ApiService {
     String? expiryDate,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/drivers/documents'),
           headers: h,
@@ -1429,7 +1447,7 @@ class ApiService {
     double tipAmount = 0.0,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/trips/$tripId/rate'),
           headers: h,
@@ -1446,7 +1464,7 @@ class ApiService {
   /// Get ratings for a user.
   static Future<Map<String, dynamic>> getUserRatings(int userId) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/users/$userId/ratings'), headers: h)
         .timeout(const Duration(seconds: 8));
     return _parse(res);
@@ -1462,7 +1480,7 @@ class ApiService {
     required String message,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/trips/$tripId/chat'),
           headers: h,
@@ -1475,7 +1493,7 @@ class ApiService {
   /// Get chat messages for a trip.
   static Future<List<Map<String, dynamic>>> getChatMessages(int tripId) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/trips/$tripId/chat'), headers: h)
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -1492,7 +1510,7 @@ class ApiService {
   /// Get user notifications.
   static Future<List<Map<String, dynamic>>> getNotifications() async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/notifications'), headers: h)
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -1505,7 +1523,7 @@ class ApiService {
   /// Mark a notification as read.
   static Future<void> markNotificationRead(int notifId) async {
     final h = await _authHeaders();
-    await http
+    await _client
         .patch(Uri.parse('$_baseUrl/notifications/$notifId/read'), headers: h)
         .timeout(const Duration(seconds: 5));
   }
@@ -1513,7 +1531,7 @@ class ApiService {
   /// Mark all notifications as read.
   static Future<void> markAllNotificationsRead() async {
     final h = await _authHeaders();
-    await http
+    await _client
         .post(Uri.parse('$_baseUrl/notifications/read-all'), headers: h)
         .timeout(const Duration(seconds: 5));
   }
@@ -1524,7 +1542,7 @@ class ApiService {
 
   /// Request a password reset code.
   static Future<Map<String, dynamic>> forgotPassword(String identifier) async {
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/auth/forgot-password'),
           headers: _jsonHeaders(),
@@ -1539,7 +1557,7 @@ class ApiService {
     required String code,
     required String newPassword,
   }) async {
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/auth/reset-password'),
           headers: _jsonHeaders(),
@@ -1557,7 +1575,7 @@ class ApiService {
   /// Returns `{"code": "...", "discount_percent": 15, "message": "..."}`.
   static Future<Map<String, dynamic>> validatePromoCode(String code) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/promo/validate'),
           headers: h,
@@ -1573,7 +1591,7 @@ class ApiService {
     required String currency,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/payments/paypal/create-order'),
           headers: h,
@@ -1586,7 +1604,7 @@ class ApiService {
   /// Capture a PayPal order after user approval.
   static Future<Map<String, dynamic>> capturePayPalOrder(String orderId) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/payments/paypal/capture-order'),
           headers: h,
@@ -1602,7 +1620,7 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> getRiderPaymentMethods() async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .get(Uri.parse('$_baseUrl/riders/payment-methods'), headers: h)
         .timeout(const Duration(seconds: 10));
     final body = _parse(res);
@@ -1617,7 +1635,7 @@ class ApiService {
     bool setDefault = false,
   }) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/riders/payment-methods'),
           headers: h,
@@ -1634,14 +1652,14 @@ class ApiService {
 
   static Future<void> deleteRiderPaymentMethod(int pmId) async {
     final h = await _authHeaders();
-    await http
+    await _client
         .delete(Uri.parse('$_baseUrl/riders/payment-methods/$pmId'), headers: h)
         .timeout(const Duration(seconds: 10));
   }
 
   static Future<void> setDefaultRiderPaymentMethod(int pmId) async {
     final h = await _authHeaders();
-    await http
+    await _client
         .patch(
           Uri.parse('$_baseUrl/riders/payment-methods/$pmId/default'),
           headers: h,
@@ -1657,7 +1675,7 @@ class ApiService {
   /// Returns the charge result: {status, payment_intent_id, amount, error?}
   static Future<Map<String, dynamic>> chargeTrip(int tripId) async {
     final h = await _authHeaders();
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$_baseUrl/trips/$tripId/charge'),
           headers: h,

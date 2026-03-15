@@ -213,6 +213,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   double _lastTripEarnings = 0;
   final _earningsPageCtrl = PageController(initialPage: 1);
   int _earningsPage = 1; // 0=weekly, 1=today, 2=last trip
+  double _currentSpeedMph = 0.0;
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  LIFECYCLE
@@ -398,8 +399,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _suvIcon = await CarIconLoader.loadForRide('Suburban');
     _sedanIcon = await CarIconLoader.loadForRide('Camry');
     _arrowIcon = _suvIcon;
-    // Load multi-angle 3D car sprites (8 directions) — falls back to single icon
-    _navCarSprites = await CarIconLoader.loadNavCarSprites();
+    // Skip PNG navatar sprites (contain blue circle overlay); use single rotated canvas car
+    _navCarSprites = null;
     _navCarIcon = await CarIconLoader.loadUber();
     await _loadDriverPhoto();
     await _buildGoldenDotFrames();
@@ -855,6 +856,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           if (!mounted) return;
           final newLL = LatLng(pos.latitude, pos.longitude);
           _smoothedBearing = _lerpAngle(_smoothedBearing, pos.heading, 0.15);
+          _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);
           _smoothMoveTo(snappedLL, _smoothedBearing);
@@ -2439,11 +2441,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final bot = MediaQuery.of(context).padding.bottom;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Adapt status bar icons
+    // Adapt status bar icons — always light (white) during navigation so they show over dark teal header
+    final isNav = _phase == _Phase.enRouteToPickup ||
+        _phase == _Phase.inTrip ||
+        _phase == _Phase.routeSummary;
     SystemChrome.setSystemUIOverlayStyle(
       SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        statusBarIconBrightness:
+            isNav ? Brightness.light : (isDark ? Brightness.light : Brightness.dark),
       ),
     );
 
@@ -2555,9 +2561,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 _phase == _Phase.inTrip ||
                 _phase == _Phase.routeSummary)
               Positioned(
-                top: top + 64,
-                left: 16,
-                right: 16,
+                top: 0,
+                left: 0,
+                right: 0,
                 child: _navHeader(),
               ),
 
@@ -2842,7 +2848,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         indoorViewEnabled: false,
         liteModeEnabled: false,
         padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + 70,
+          top: MediaQuery.of(context).padding.top +
+              ((_phase == _Phase.enRouteToPickup ||
+                      _phase == _Phase.inTrip ||
+                      _phase == _Phase.routeSummary)
+                  ? 165
+                  : 70),
           bottom: _mapBottomPadding,
         ),
       ),
@@ -2955,48 +2966,45 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     );
   }
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  //  NAV HEADER (Uber-style turn card)
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  Widget _navHeader() {
-    final toPickup = _phase == _Phase.enRouteToPickup;
-    final accent = toPickup ? _goldLight : _gold;
-    final title = toPickup
-        ? S.of(context).pickupLabel.toUpperCase()
-        : S.of(context).dropOffLabel.toUpperCase();
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//  NAV HEADER (Google Maps–style full-width turn bar)
+// ═══════════════════════════════════════════════════════════════════════════════
+Widget _navHeader() {
+  final toPickup = _phase == _Phase.enRouteToPickup;
+  final maneuverStr = _navState?.currentManeuver ?? 'straight';
+  final maneuverInfo = NavigationService.getManeuverIcon(maneuverStr);
+  final distToTurn = _navState?.distanceToTurnText ?? '';
+  final isOffRoute = _navState?.isOffRoute ?? false;
+  final topPad = MediaQuery.of(context).padding.top;
 
-    // Get maneuver icon from NavigationService
-    final maneuverStr = _navState?.currentManeuver ?? 'straight';
-    final maneuverInfo = NavigationService.getManeuverIcon(maneuverStr);
-    final distToTurn = _navState?.distanceToTurnText ?? '';
-    final isOffRoute = _navState?.isOffRoute ?? false;
+  // Google Maps–style dark teal (matches Google nav header closely)
+  const Color navBg = Color(0xFF1C3F5E);
+  const Color navBgSub = Color(0xFF162F46);
+  final Color bg = isOffRoute ? const Color(0xFFC0392B) : navBg;
+  final Color bgSub = isOffRoute ? const Color(0xFFA93226) : navBgSub;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: isOffRoute ? const Color(0xFFFF6B35) : accent,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: (isOffRoute ? const Color(0xFFFF6B35) : accent).withValues(
-              alpha: 0.3,
-            ),
-            blurRadius: 20,
-            spreadRadius: 1,
-          ),
-        ],
-      ),
+  return Material(
+    color: Colors.transparent,
+    child: Container(
+      color: bg,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Status bar safe area — same dark colour
+          SizedBox(height: topPad),
+          // ── Main turn instruction row ──────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Maneuver icon (turn arrow)
+                // Turn arrow box
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 58,
+                  height: 58,
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.15),
+                    color: Colors.white.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
@@ -3004,41 +3012,45 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       maneuverInfo.iconCodePoint,
                       fontFamily: 'MaterialIcons',
                     ),
-                    color: Colors.black,
-                    size: 26,
+                    color: Colors.white,
+                    size: 36,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (distToTurn.isNotEmpty && !isOffRoute)
+                      if (!isOffRoute && distToTurn.isNotEmpty)
                         Text(
                           distToTurn,
                           style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 22,
+                            color: Colors.white,
+                            fontSize: 30,
                             fontWeight: FontWeight.w900,
+                            height: 1.0,
                           ),
                         ),
                       if (isOffRoute)
                         Text(
                           S.of(context).rerouting,
                           style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 18,
+                            color: Colors.white,
+                            fontSize: 22,
                             fontWeight: FontWeight.w900,
+                            height: 1.1,
                           ),
                         ),
+                      const SizedBox(height: 2),
                       Text(
                         isOffRoute ? S.of(context).offRoute : _navInstruct,
                         style: TextStyle(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
+                          color: Colors.white.withValues(alpha: 0.9),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
                         ),
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
@@ -3049,38 +3061,36 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   GestureDetector(
                     onTap: _cancel,
                     child: Container(
-                      width: 34,
-                      height: 34,
+                      width: 36,
+                      height: 36,
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
                         Icons.close_rounded,
-                        color: Colors.black,
-                        size: 17,
+                        color: Colors.white,
+                        size: 18,
                       ),
                     ),
                   ),
               ],
             ),
           ),
-          // Next maneuver preview (if available)
+          // ── "Then" next-maneuver sub-row ───────────────────────
           if (_navState?.nextStep != null && !isOffRoute)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.06),
-              ),
+              color: bgSub,
+              padding: const EdgeInsets.fromLTRB(16, 7, 16, 7),
               child: Row(
                 children: [
                   Text(
                     S.of(context).thenLabel,
                     style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1,
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -3091,99 +3101,61 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       ).iconCodePoint,
                       fontFamily: 'MaterialIcons',
                     ),
-                    color: Colors.black.withValues(alpha: 0.5),
-                    size: 16,
+                    color: Colors.white.withValues(alpha: 0.75),
+                    size: 17,
                   ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       _navState!.nextStep!.instruction,
                       style: TextStyle(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  // Progress + ETA compact row
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '$_navEta min  ·  ${(_navDist * 0.621371).toStringAsFixed(1)} mi',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 40,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(2),
+                          child: LinearProgressIndicator(
+                            value: _navProgress,
+                            backgroundColor: Colors.white.withValues(alpha: 0.15),
+                            valueColor: const AlwaysStoppedAnimation(Colors.white),
+                            minHeight: 3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.1),
-              borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(18),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.timer_rounded,
-                  color: Colors.black.withValues(alpha: 0.5),
-                  size: 15,
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  '$_navEta min',
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Icon(
-                  Icons.straighten_rounded,
-                  color: Colors.black.withValues(alpha: 0.5),
-                  size: 15,
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  '${(_navDist * 0.621371).toStringAsFixed(1)} mi',
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const Spacer(),
-                // Heading to label
-                Text(
-                  S.of(context).toLabel(title),
-                  style: TextStyle(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 50,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: LinearProgressIndicator(
-                      value: _navProgress,
-                      backgroundColor: Colors.black.withValues(alpha: 0.12),
-                      valueColor: const AlwaysStoppedAnimation(Colors.black),
-                      minHeight: 3,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  //  BOTTOM AREA (per phase)
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//  BOTTOM AREA (per phase)
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Widget _bottomArea(
     bool isDark,
     Color bg,

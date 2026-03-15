@@ -1406,7 +1406,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             // correct orientation — no extra rotation needed.
             // With single icon fallback, rotate to heading.
             rotation: (_navCarSprites != null) ? 0 : _heading,
-            flat: _navCarSprites == null, // billboard for sprites, flat for single
+            flat: false, // billboard mode — always faces camera, no tilt squish
             anchor: const Offset(0.5, 0.5),
             zIndex: 100,
           ),

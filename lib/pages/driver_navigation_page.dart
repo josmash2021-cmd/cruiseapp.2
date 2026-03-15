@@ -71,10 +71,14 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   BitmapDescriptor? _arrowIcon;
   Uint8List? _arrowIconBytes;
 
-  static const _blue = Color(0xFF4285F4);
+  static const _navy = Color(0xFF0A2463);
   static const _green = Color(0xFF34A853);
   static const _red = Color(0xFFEF5350);
   static const _gold = Color(0xFFD4A24C);
+  static const _cardBg = Color(0xFF1A1E2E);
+  static const _cardBorder = Color(0xFF2A2F42);
+  static const _textPrimary = Color(0xFFF0F0F5);
+  static const _textSecondary = Color(0xFF8A8FA0);
 
   @override
   void initState() {
@@ -421,7 +425,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         position: _pos,
         icon: _arrowIcon ?? BitmapDescriptor.defaultMarker,
         rotation: _bearing,
-        flat: true,
+        flat: false,
         anchor: const Offset(0.5, 0.5),
         zIndexInt: 100,
       ),
@@ -592,11 +596,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _cardBg,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _cardBorder, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
+            color: Colors.black.withValues(alpha: 0.4),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -607,29 +612,25 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         mainAxisSize: MainAxisSize.min,
         children: [
           // Colored top accent strip
-          Container(height: 5, color: stripColor),
+          Container(height: 4, color: stripColor),
           // Main row
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Maneuver icon with colored background
+                // Maneuver icon
                 Container(
-                  width: 56,
-                  height: 56,
+                  width: 54,
+                  height: 54,
                   decoration: BoxDecoration(
-                    color: stripColor.withValues(alpha: 0.1),
+                    color: stripColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(
-                    mInfo.icon,
-                    color: stripColor,
-                    size: 32,
-                  ),
+                  child: Icon(mInfo.icon, color: stripColor, size: 30),
                 ),
                 const SizedBox(width: 14),
-                // Distance + instruction + off-route badge
+                // Distance + instruction
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -640,7 +641,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                           distText,
                           style: TextStyle(
                             color: stripColor,
-                            fontSize: 28,
+                            fontSize: 26,
                             fontWeight: FontWeight.w900,
                             height: 1.0,
                             fontFeatures: const [FontFeature.tabularFigures()],
@@ -650,8 +651,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                       Text(
                         instruction,
                         style: const TextStyle(
-                          color: Color(0xFF202124),
-                          fontSize: 15,
+                          color: _textPrimary,
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
                           height: 1.2,
                         ),
@@ -664,10 +665,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                 if (isOffRoute)
                   Container(
                     margin: const EdgeInsets.only(left: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                     decoration: BoxDecoration(
                       color: const Color(0xFFD32F2F),
                       borderRadius: BorderRadius.circular(8),
@@ -692,25 +690,19 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8F9FA),
-                border: const Border(
-                  top: BorderSide(color: Color(0xFFE8EAED), width: 1),
-                ),
+              decoration: const BoxDecoration(
+                color: Color(0xFF141828),
+                border: Border(top: BorderSide(color: _cardBorder, width: 1)),
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.turn_slight_right_rounded,
-                    size: 14,
-                    color: Colors.grey.shade500,
-                  ),
+                  Icon(Icons.turn_slight_right_rounded, size: 14, color: _textSecondary),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       streetName,
                       style: const TextStyle(
-                        color: Color(0xFF5F6368),
+                        color: _textSecondary,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.2,
@@ -754,12 +746,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       width: 48,
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.black, width: 2.5),
+        color: _cardBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _cardBorder, width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
+            color: Colors.black.withValues(alpha: 0.4),
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),
@@ -772,9 +764,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
             'SPEED\nLIMIT',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.black,
-              fontSize: 7.5,
-              fontWeight: FontWeight.w900,
+              color: _textSecondary,
+              fontSize: 7,
+              fontWeight: FontWeight.w800,
               height: 1.15,
               letterSpacing: 0.2,
             ),
@@ -783,7 +775,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           Text(
             '${widget.speedLimitMph}',
             style: const TextStyle(
-              color: Colors.black,
+              color: _textPrimary,
               fontSize: 22,
               fontWeight: FontWeight.w900,
               height: 1,
@@ -806,14 +798,14 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         _circleFab(
           icon: Icons.home_rounded,
           tooltip: S.of(context).goHomeLabel,
-          iconColor: Colors.grey.shade700,
+          iconColor: _textSecondary,
           onTap: () => Navigator.of(context).pop(),
         ),
         const SizedBox(height: 10),
         _circleFab(
           icon: _muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
           tooltip: _muted ? S.of(context).unmuteLabel : S.of(context).muteLabel,
-          iconColor: _muted ? _blue : Colors.grey.shade700,
+          iconColor: _muted ? _gold : _textSecondary,
           onTap: () {
             HapticFeedback.lightImpact();
             setState(() => _muted = !_muted);
@@ -823,7 +815,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         _circleFab(
           icon: Icons.report_problem_rounded,
           tooltip: S.of(context).reportIncident,
-          iconColor: Colors.grey.shade700,
+          iconColor: _textSecondary,
           onTap: () {
             HapticFeedback.mediumImpact();
             ScaffoldMessenger.of(context).showSnackBar(
@@ -853,11 +845,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           width: 46,
           height: 46,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: _cardBg,
             shape: BoxShape.circle,
+            border: Border.all(color: _cardBorder, width: 1),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.18),
+                color: Colors.black.withValues(alpha: 0.35),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -865,7 +858,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           ),
           child: Icon(
             icon,
-            color: iconColor ?? (active ? _blue : Colors.grey.shade700),
+            color: iconColor ?? (active ? _gold : _textSecondary),
             size: 22,
           ),
         ),
@@ -884,17 +877,18 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _cardBg,
           shape: BoxShape.circle,
+          border: Border.all(color: _cardBorder, width: 1),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
+              color: Colors.black.withValues(alpha: 0.35),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),
           ],
         ),
-        child: Icon(Icons.navigation_rounded, color: _blue, size: 24),
+        child: Icon(Icons.navigation_rounded, color: _gold, size: 24),
       ),
     );
   }
@@ -905,11 +899,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _cardBg,
           borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: _cardBorder, width: 1),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
+              color: Colors.black.withValues(alpha: 0.35),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),
@@ -918,12 +913,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.navigation_rounded, color: _blue, size: 20),
+            Icon(Icons.navigation_rounded, color: _gold, size: 20),
             const SizedBox(width: 8),
             Text(
               S.of(context).resumeNav,
               style: TextStyle(
-                color: _blue,
+                color: _gold,
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.2,
@@ -952,11 +947,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     return Container(
       padding: EdgeInsets.only(top: 14, bottom: botPad + 14),
       decoration: const BoxDecoration(
-        color: Colors.white,
+        color: _cardBg,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        border: Border(top: BorderSide(color: _cardBorder, width: 1)),
         boxShadow: [
           BoxShadow(
-            color: Color(0x22000000),
+            color: Color(0x55000000),
             blurRadius: 16,
             offset: Offset(0, -4),
           ),
@@ -991,7 +987,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           primary,
           textAlign: TextAlign.center,
           style: const TextStyle(
-            color: Color(0xFF202124),
+            color: _textPrimary,
             fontSize: 17,
             fontWeight: FontWeight.w800,
             fontFeatures: [FontFeature.tabularFigures()],
@@ -1003,7 +999,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           secondary,
           textAlign: TextAlign.center,
           style: const TextStyle(
-            color: Color(0xFF5F6368),
+            color: _textSecondary,
             fontSize: 11,
             fontWeight: FontWeight.w500,
           ),
@@ -1013,7 +1009,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   }
 
   Widget _etaDivider() =>
-      Container(width: 1, height: 28, color: const Color(0xFFE8EAED));
+      Container(width: 1, height: 28, color: _cardBorder);
 
   // =========================================================================
   //  ACTION PILL  — floating above bottom bar, only when action needed

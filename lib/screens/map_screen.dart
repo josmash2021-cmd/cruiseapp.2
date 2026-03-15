@@ -2621,6 +2621,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               initialCameraPosition: CameraPosition(
                 target: _currentPosition!,
                 zoom: 14,
+                tilt: 45,
               ),
               cameraTargetBounds: CameraTargetBounds(_usBounds),
               padding: _mapPaddingForContext(context),

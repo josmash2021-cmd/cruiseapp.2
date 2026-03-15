@@ -62,6 +62,10 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
 TWILIO_SERVICE_SID = os.getenv("TWILIO_SERVICE_SID", "")  # Verify Service SID (VA...)
+
+# ── In-memory OTP store: phone → {code, expires} ──
+_otp_store: dict = {}  # {phone: {"code": str, "expires": float}}
+_OTP_TTL = 300  # 5 minutes
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
@@ -1232,34 +1236,75 @@ class VerifyOtpIn(BaseModel):
 
 @app.post("/auth/send-otp", dependencies=[Depends(_verify_api_key)])
 async def send_otp(body: SendOtpIn):
-    """Send a verification code via Twilio Verify. Credentials stay server-side."""
+    """Send a verification code via Twilio SMS. Generates code server-side.
+    Uses Twilio Verify API if SERVICE_SID is configured, otherwise falls back
+    to direct Twilio Messages API (requires only ACCOUNT_SID + AUTH_TOKEN + PHONE_NUMBER)."""
     import urllib.request, urllib.parse
     phone = body.phone.strip()
     if not phone:
         raise HTTPException(400, "Phone number required")
-    if not TWILIO_ACCOUNT_SID.startswith("AC") or not TWILIO_SERVICE_SID.startswith("VA"):
+    if not TWILIO_ACCOUNT_SID.startswith("AC") or not TWILIO_AUTH_TOKEN:
         raise HTTPException(503, "SMS service not configured")
-    url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/Verifications"
-    data = urllib.parse.urlencode({"To": phone, "Channel": "sms"}).encode()
+
     creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+
+    # ── Try Verify API first (if SERVICE_SID is configured) ──
+    if TWILIO_SERVICE_SID.startswith("VA"):
+        url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/Verifications"
+        data = urllib.parse.urlencode({"To": phone, "Channel": "sms"}).encode()
+        req = urllib.request.Request(url, data=data, headers={
+            "Authorization": f"Basic {creds}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }, method="POST")
+        try:
+            loop = asyncio.get_event_loop()
+            def _do_verify():
+                try:
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        return resp.status, resp.read().decode()
+                except urllib.error.HTTPError as e:
+                    return e.code, e.read().decode()
+            status, resp_body = await loop.run_in_executor(None, _do_verify)
+            if status in (200, 201):
+                return {"ok": True}
+            logging.warning("[OTP] Verify API failed %s, falling back to SMS", status)
+        except Exception as e:
+            logging.warning("[OTP] Verify API error: %s, falling back to SMS", e)
+
+    # ── Fallback: Direct Twilio Messages API ──
+    if not TWILIO_PHONE_NUMBER:
+        raise HTTPException(503, "SMS service not configured (no phone number)")
+
+    code = "".join([str(secrets.randbelow(10)) for _ in range(6)])
+    _otp_store[phone] = {"code": code, "expires": time.time() + _OTP_TTL}
+    # Clean expired entries
+    now = time.time()
+    expired = [k for k, v in _otp_store.items() if v["expires"] < now]
+    for k in expired:
+        del _otp_store[k]
+
+    sms_body = f"Your Cruise verification code is: {code}"
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json"
+    data = urllib.parse.urlencode({"To": phone, "From": TWILIO_PHONE_NUMBER, "Body": sms_body}).encode()
     req = urllib.request.Request(url, data=data, headers={
         "Authorization": f"Basic {creds}",
         "Content-Type": "application/x-www-form-urlencoded",
     }, method="POST")
     try:
         loop = asyncio.get_event_loop()
-        def _do_request():
+        def _do_sms():
             try:
                 with urllib.request.urlopen(req, timeout=15) as resp:
                     return resp.status, resp.read().decode()
             except urllib.error.HTTPError as e:
                 return e.code, e.read().decode()
-        status, resp_body = await loop.run_in_executor(None, _do_request)
+        status, resp_body = await loop.run_in_executor(None, _do_sms)
         if status in (200, 201):
+            logging.info("[OTP] SMS sent to %s via Messages API", phone)
             return {"ok": True}
         body_json = json.loads(resp_body) if resp_body else {}
         msg = body_json.get("message", resp_body)
-        logging.warning("[OTP] Twilio send failed %s: %s", status, msg)
+        logging.warning("[OTP] Twilio SMS failed %s: %s", status, msg)
         raise HTTPException(502, f"SMS failed: {msg}")
     except HTTPException:
         raise
@@ -1269,40 +1314,45 @@ async def send_otp(body: SendOtpIn):
 
 @app.post("/auth/verify-otp", dependencies=[Depends(_verify_api_key)])
 async def verify_otp(body: VerifyOtpIn):
-    """Check a Twilio Verify code. Returns {valid: bool}."""
+    """Check a verification code. Tries Verify API first, then local store."""
     import urllib.request, urllib.parse
     phone = body.phone.strip()
     code = body.code.strip()
     if not phone or not code:
         raise HTTPException(400, "Phone and code required")
-    if not TWILIO_ACCOUNT_SID.startswith("AC") or not TWILIO_SERVICE_SID.startswith("VA"):
-        raise HTTPException(503, "SMS service not configured")
-    url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/VerificationCheck"
-    data = urllib.parse.urlencode({"To": phone, "Code": code}).encode()
-    creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
-    req = urllib.request.Request(url, data=data, headers={
-        "Authorization": f"Basic {creds}",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }, method="POST")
-    try:
-        loop = asyncio.get_event_loop()
-        def _do_request():
-            try:
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    return resp.status, resp.read().decode()
-            except urllib.error.HTTPError as e:
-                return e.code, e.read().decode()
-        status, resp_body = await loop.run_in_executor(None, _do_request)
-        if status == 200:
-            data_json = json.loads(resp_body)
-            return {"valid": data_json.get("status") == "approved"}
-        logging.warning("[OTP] Twilio verify failed %s: %s", status, resp_body)
-        return {"valid": False}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error("[OTP] verify_otp error: %s", e)
-        return {"valid": False}
+
+    # ── Try Verify API if configured ──
+    if TWILIO_ACCOUNT_SID.startswith("AC") and TWILIO_SERVICE_SID.startswith("VA"):
+        creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+        url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/VerificationCheck"
+        data = urllib.parse.urlencode({"To": phone, "Code": code}).encode()
+        req = urllib.request.Request(url, data=data, headers={
+            "Authorization": f"Basic {creds}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }, method="POST")
+        try:
+            loop = asyncio.get_event_loop()
+            def _do_verify():
+                try:
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        return resp.status, resp.read().decode()
+                except urllib.error.HTTPError as e:
+                    return e.code, e.read().decode()
+            status, resp_body = await loop.run_in_executor(None, _do_verify)
+            if status == 200:
+                data_json = json.loads(resp_body)
+                if data_json.get("status") == "approved":
+                    return {"valid": True}
+        except Exception as e:
+            logging.warning("[OTP] Verify API check error: %s", e)
+
+    # ── Check local OTP store (for codes sent via Messages API) ──
+    entry = _otp_store.get(phone)
+    if entry and entry["code"] == code and entry["expires"] > time.time():
+        del _otp_store[phone]  # one-time use
+        return {"valid": True}
+
+    return {"valid": False}
 
 @app.post("/auth/complete-login", dependencies=[Depends(_verify_api_key)])
 async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_db)):

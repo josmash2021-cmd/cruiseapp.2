@@ -870,7 +870,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     if (!mounted || _segDist.isEmpty) return;
 
     // ── Smoothly advance _traveledM toward _tgtTraveledM along the route ──
-    const chase = 0.18;
+    const chase = 0.25;
     _traveledM += (_tgtTraveledM - _traveledM) * chase;
     // Clamp small residuals
     if ((_tgtTraveledM - _traveledM).abs() < 0.05) _traveledM = _tgtTraveledM;
@@ -882,7 +882,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final nb = (_animBearing + db * 0.10) % 360;
+    final nb = (_animBearing + db * 0.28) % 360;
 
     // Only rebuild if something changed visually
     final dLat = (pos.latitude - _animPos.latitude).abs();
@@ -899,7 +899,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
     // ── Smooth camera bounds interpolation (60fps) ──
     if (_map != null && !_userMovedMap && _camInitialized) {
-      const lerpSpeed = 0.08;
+      const lerpSpeed = 0.14;
       _camSWLat += (_tgtSWLat - _camSWLat) * lerpSpeed;
       _camSWLng += (_tgtSWLng - _camSWLng) * lerpSpeed;
       _camNELat += (_tgtNELat - _camNELat) * lerpSpeed;

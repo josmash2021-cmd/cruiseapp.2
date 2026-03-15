@@ -136,7 +136,9 @@ final ThemeData darkTheme = ThemeData.dark().copyWith(
     primary: Color(0xFFE8C547),
     surface: Color(0xFF101114),
   ),
-  textTheme: _cinzelHeadlines(ThemeData.dark().textTheme),
+  textTheme: _cinzelHeadlines(
+    GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+  ),
   pageTransitionsTheme: _pageTransitions,
 );
 
@@ -147,6 +149,8 @@ final ThemeData lightTheme = ThemeData.light().copyWith(
     primary: Color(0xFFE8C547),
     surface: Color(0xFFFFFFFF),
   ),
-  textTheme: _cinzelHeadlines(ThemeData.light().textTheme),
+  textTheme: _cinzelHeadlines(
+    GoogleFonts.interTextTheme(ThemeData.light().textTheme),
+  ),
   pageTransitionsTheme: _pageTransitions,
 );

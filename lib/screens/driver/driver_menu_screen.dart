@@ -62,10 +62,18 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
       curve: Curves.easeOutCubic,
     );
     _loadProfile();
+    UserSession.photoNotifier.addListener(_onPhotoChanged);
+  }
+
+  void _onPhotoChanged() {
+    if (!mounted) return;
+    final v = UserSession.photoNotifier.value;
+    if (v.isNotEmpty) setState(() => _photoUrl = v);
   }
 
   @override
   void dispose() {
+    UserSession.photoNotifier.removeListener(_onPhotoChanged);
     _entranceCtrl.dispose();
     super.dispose();
   }

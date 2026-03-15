@@ -42,6 +42,8 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double> _exitFade;
   late Animation<double> _exitScale;
   late List<Animation<double>> _letterExitFade;
+  late Animation<double> _taglineExitFade;
+  late Animation<double> _decoExitFade;
 
   bool _disposed = false;
 
@@ -148,6 +150,20 @@ class _SplashScreenState extends State<SplashScreen>
         ),
       );
     });
+    // Tagline fades out early (before letters finish)
+    _taglineExitFade = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _exitCtrl,
+        curve: const Interval(0.0, 0.35, curve: Curves.easeIn),
+      ),
+    );
+    // Decorative lines fade out alongside tagline
+    _decoExitFade = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _exitCtrl,
+        curve: const Interval(0.0, 0.30, curve: Curves.easeIn),
+      ),
+    );
   }
 
   // ═══════════════════════════════════════════════════════
@@ -354,7 +370,7 @@ class _SplashScreenState extends State<SplashScreen>
                       children: [
                         // Decorative top line
                         Opacity(
-                          opacity: glow,
+                          opacity: glow * _decoExitFade.value,
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -387,7 +403,7 @@ class _SplashScreenState extends State<SplashScreen>
                         const SizedBox(height: 8),
                         // IN RIDE tagline
                         Opacity(
-                          opacity: (glow * 1.5).clamp(0.0, 1.0),
+                          opacity: ((glow * 1.5).clamp(0.0, 1.0)) * _taglineExitFade.value,
                           child: Text(
                             'PREMIUM  RIDE  EXPERIENCE',
                             style: GoogleFonts.cinzel(
@@ -401,7 +417,7 @@ class _SplashScreenState extends State<SplashScreen>
                         const SizedBox(height: 14),
                         // Decorative bottom line
                         Opacity(
-                          opacity: glow,
+                          opacity: glow * _decoExitFade.value,
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [

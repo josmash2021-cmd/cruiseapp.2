@@ -51,6 +51,19 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   void initState() {
     super.initState();
     _loadProfileData();
+    UserSession.photoNotifier.addListener(_onPhotoChanged);
+  }
+
+  void _onPhotoChanged() {
+    if (!mounted) return;
+    final v = UserSession.photoNotifier.value;
+    if (v.isNotEmpty) setState(() => _photoUrl = v);
+  }
+
+  @override
+  void dispose() {
+    UserSession.photoNotifier.removeListener(_onPhotoChanged);
+    super.dispose();
   }
 
   Future<void> _loadProfileData() async {

@@ -19,6 +19,8 @@ import 'driver_trip_history_screen.dart';
 import 'driver_menu_screen.dart';
 import 'driver_online_screen.dart';
 import 'driver_inbox_screen.dart';
+import 'driver_promos_screen.dart';
+import 'driver_analytics_screen.dart';
 import 'driver_profile_photo_screen.dart';
 import '../../l10n/app_localizations.dart';
 
@@ -1085,12 +1087,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       _recommendItem(
                         Icons.star_outline_rounded,
                         S.of(context).seeUpcomingPromotions,
-                        () {},
+                        () {
+                          Navigator.of(context).push(
+                            slideFromRightRoute(const DriverPromosScreen()),
+                          );
+                        },
                       ),
                       _recommendItem(
                         Icons.schedule_rounded,
                         S.of(context).seeDrivingTime,
-                        () {},
+                        () {
+                          Navigator.of(context).push(
+                            slideFromRightRoute(const DriverAnalyticsScreen()),
+                          );
+                        },
                       ),
                       const SizedBox(height: 16),
                       // Go offline button

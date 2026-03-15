@@ -3,7 +3,8 @@ import 'package:flutter/scheduler.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Smoothly interpolates between raw GPS positions so the driver marker
-/// doesn't jump. Uses a lerp factor each frame to ease towards the target.
+/// doesn't jump. Uses **time-based** exponential decay so the animation is
+/// frame-rate independent and buttery smooth at any refresh rate.
 class SmoothMotion {
   SmoothMotion({
     required this.onTick,
@@ -14,7 +15,8 @@ class SmoothMotion {
   /// Called each frame with the interpolated position and bearing.
   final void Function(LatLng pos, double bearing) onTick;
 
-  /// How fast to catch up to the target each frame (0–1). Higher = snappier.
+  /// Base lerp speed (used as reference at 60 fps). Actual per-frame factor
+  /// is adjusted by delta-time so the animation looks the same at any fps.
   final double lerpFactor;
 
   /// Whether to predict ahead slightly based on velocity.
@@ -24,6 +26,7 @@ class SmoothMotion {
   double _currentBearing = 0;
   LatLng _target = const LatLng(0, 0);
   double _targetBearing = 0;
+  Duration _lastElapsed = Duration.zero;
 
   Ticker? _ticker;
 
@@ -31,6 +34,7 @@ class SmoothMotion {
   /// that uses `TickerProviderStateMixin`).
   void start(TickerProvider vsync) {
     _ticker?.dispose();
+    _lastElapsed = Duration.zero;
     _ticker = vsync.createTicker(_onFrame);
     _ticker!.start();
   }
@@ -50,14 +54,26 @@ class SmoothMotion {
   }
 
   void _onFrame(Duration elapsed) {
+    // Compute delta-time in seconds (clamped to avoid huge jumps on resume)
+    final dtMs = (elapsed - _lastElapsed).inMilliseconds.clamp(1, 100);
+    _lastElapsed = elapsed;
+    final dt = dtMs / 1000.0;
+
+    // Time-based exponential decay: factor = 1 - (1 - base)^(dt * 60)
+    // At 60 fps (dt≈0.0167) this gives exactly `lerpFactor` per frame.
+    // At 30 fps (dt≈0.033) the factor is larger, keeping speed consistent.
+    final posF = 1.0 - math.pow(1.0 - lerpFactor, dt * 60);
+    // Bearing uses a higher factor for snappier turns
+    final brgF = 1.0 - math.pow(1.0 - (lerpFactor * 2.0).clamp(0.0, 0.95), dt * 60);
+
     // Lerp position
     _current = LatLng(
-      _lerpD(_current.latitude, _target.latitude, lerpFactor),
-      _lerpD(_current.longitude, _target.longitude, lerpFactor),
+      _lerpD(_current.latitude, _target.latitude, posF),
+      _lerpD(_current.longitude, _target.longitude, posF),
     );
 
     // Lerp bearing (shortest-arc)
-    _currentBearing = _lerpAngle(_currentBearing, _targetBearing, lerpFactor);
+    _currentBearing = _lerpAngle(_currentBearing, _targetBearing, brgF);
 
     onTick(_current, _currentBearing);
   }

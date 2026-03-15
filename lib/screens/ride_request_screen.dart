@@ -1248,6 +1248,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 initialCameraPosition: CameraPosition(
                   target: _center,
                   zoom: 15.5,
+                  tilt: 45,
                 ),
                 onMapCreated: (ctrl) {
                   _mapCtrl = ctrl;

@@ -922,7 +922,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         ).listen((pos) {
           if (!mounted) return;
           final newLL = LatLng(pos.latitude, pos.longitude);
-          _smoothedBearing = _lerpAngle(_smoothedBearing, pos.heading, 0.15);
+          _smoothedBearing = _lerpAngle(_smoothedBearing, pos.heading, 0.30);
           _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);

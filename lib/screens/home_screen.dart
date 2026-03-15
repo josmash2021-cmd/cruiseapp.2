@@ -774,10 +774,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           CustomScrollView(
             physics: const BouncingScrollPhysics(
               parent: AlwaysScrollableScrollPhysics(),
-              decelerationRate: ScrollDecelerationRate.normal,
+              decelerationRate: ScrollDecelerationRate.fast,
             ),
-            cacheExtent:
-                2000, // pre-render more off-screen for buttery smooth scroll
+            cacheExtent: 3000,
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             slivers: [
               SliverToBoxAdapter(child: SizedBox(height: topPad + 16)),

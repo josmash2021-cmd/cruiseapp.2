@@ -77,7 +77,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     LatLng pos, {
     double zoom = 15.5,
     double bearing = 0,
-    double tilt = 0,
+    double tilt = 45,
   }) {
     _map?.animateCamera(
       CameraUpdate.newCameraPosition(
@@ -87,7 +87,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   void _moveToLatLng(LatLng pos) {
-    _map?.animateCamera(CameraUpdate.newLatLng(pos));
+    _map?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: pos, zoom: 15.5, tilt: 45),
+      ),
+    );
   }
 
   // â”€â”€ Trip â”€â”€
@@ -2799,14 +2803,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   Widget _mapW(bool isDark) {
+    final bool isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
+    final mapStyle = isNav ? MapStyles.navigation : MapStyles.dark;
+    final double mapTilt = isNav ? 55.0 : 45.0;
     return RepaintBoundary(
       child: GoogleMap(
-        style: isDark ? MapStyles.darkIOS : MapStyles.lightIOS,
+        style: mapStyle,
         initialCameraPosition: CameraPosition(
           target: _pos,
           zoom: 15.5,
-          bearing: 0,
-          tilt: 0,
+          bearing: _heading,
+          tilt: mapTilt,
         ),
         onMapCreated: (c) {
           _map = c;
@@ -2816,8 +2823,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               CameraPosition(
                 target: _pos,
                 zoom: 15.5,
-                bearing: 0,
-                tilt: 0,
+                bearing: _heading,
+                tilt: mapTilt,
               ),
             ),
           );

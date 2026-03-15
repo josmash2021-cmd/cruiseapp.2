@@ -256,7 +256,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
       if (!mounted) return;
       setState(() => _currentLatLng = LatLng(pos.latitude, pos.longitude));
-      _mapController?.animateCamera(CameraUpdate.newLatLng(_currentLatLng!));
+      _mapController?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: _currentLatLng!, zoom: 16, tilt: 45),
+        ),
+      );
     } catch (_) {}
   }
 
@@ -448,13 +452,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
     }
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return RepaintBoundary(
       child: GoogleMap(
-        style: isDark ? MapStyles.darkIOS : MapStyles.lightIOS,
+        style: MapStyles.dark,
         initialCameraPosition: CameraPosition(
           target: _currentLatLng!,
           zoom: 16,
+          tilt: 45,
         ),
         onMapCreated: (ctrl) {
           _mapController = ctrl;
@@ -464,9 +468,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         myLocationButtonEnabled: false,
         zoomControlsEnabled: false,
         mapToolbarEnabled: false,
-        compassEnabled: true,
-        buildingsEnabled: false,
-        tiltGesturesEnabled: false,
+        compassEnabled: false,
+        buildingsEnabled: true,
+        tiltGesturesEnabled: true,
         liteModeEnabled: false,
       ),
     );
@@ -691,7 +695,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         if (_currentLatLng != null) {
           _mapController?.animateCamera(
             CameraUpdate.newCameraPosition(
-              CameraPosition(target: _currentLatLng!, zoom: 16),
+              CameraPosition(target: _currentLatLng!, zoom: 16, tilt: 45),
             ),
           );
         }

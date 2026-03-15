@@ -1,108 +1,61 @@
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
-
 /// Google Maps JSON styling for light and dark themes.
-/// Usage: `mapCtrl.setMapStyle(isDark ? MapStyles.dark : MapStyles.light);`
+/// All styles show WHITE labels on both iOS and Android.
+/// Gold roads + blue buildings + 3D-ready dark backgrounds.
 class MapStyles {
   MapStyles._();
-  
-  /// Detecta si es iOS
-  static bool get isIOS => !kIsWeb && Platform.isIOS;
 
   // ═════════════════════════════════════════════════════
-  //  DARK — Google Maps dark with all POIs, labels & icons
+  //  DARK — Uber Driver-style: navy bg, gold roads, blue buildings, WHITE labels
   // ═════════════════════════════════════════════════════
   static const dark = '''
 [
-  {"elementType":"geometry","stylers":[{"color":"#242f3e"}]},
-  {"elementType":"labels","stylers":[{"visibility":"off"}]},
-  {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#263238"}]},
-  {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
-  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#263c3f"}]},
-  {"featureType":"poi.park","elementType":"labels.text.fill","stylers":[{"color":"#6b9a76"}]},
-  {"featureType":"road","elementType":"geometry","stylers":[{"color":"#38414e"}]},
-  {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#212a37"}]},
-  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#9ca5b3"}]},
-  {"featureType":"road.highway","elementType":"geometry","stylers":[{"color":"#746855"}]},
-  {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#1f2835"}]},
-  {"featureType":"road.highway","elementType":"labels.text.fill","stylers":[{"color":"#f3d19c"}]},
-  {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#2f3948"}]},
-  {"featureType":"transit.station","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
-  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#17263c"}]},
-  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#515c6d"}]},
-  {"featureType":"water","elementType":"labels.text.stroke","stylers":[{"color":"#17263c"}]}
-]
-''';
-
-  // ═════════════════════════════════════════════════════
-  //  DARK iOS — Carreteras doradas para iOS
-  // ═════════════════════════════════════════════════════
-  static const darkIOS = '''
-[
-  {"elementType":"geometry","stylers":[{"color":"#242f3e"}]},
-  {"elementType":"labels.text.stroke","stylers":[{"color":"#242f3e"}]},
-  {"elementType":"labels.text.fill","stylers":[{"color":"#d4c27a"}]},
-  {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#263238"}]},
-  {"featureType":"poi","elementType":"geometry","stylers":[{"color":"#263c3f"}]},
-  {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
-  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#263c3f"}]},
-  {"featureType":"poi.park","elementType":"labels.text.fill","stylers":[{"color":"#6b9a76"}]},
-  {"featureType":"road","elementType":"geometry","stylers":[{"color":"#E8C547"}]},
+  {"elementType":"geometry","stylers":[{"color":"#0a0e1a"}]},
+  {"elementType":"labels.text.fill","stylers":[{"color":"#ffffff"}]},
+  {"elementType":"labels.text.stroke","stylers":[{"color":"#0a0e1a"},{"weight":3}]},
+  {"elementType":"labels.icon","stylers":[{"visibility":"on"}]},
+  {"featureType":"administrative","elementType":"geometry.stroke","stylers":[{"color":"#1a2040"}]},
+  {"featureType":"administrative","elementType":"labels.text.fill","stylers":[{"color":"#8090b0"}]},
+  {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#0d1220"}]},
+  {"featureType":"landscape.man_made","elementType":"geometry.fill","stylers":[{"color":"#121832"}]},
+  {"featureType":"landscape.man_made","elementType":"geometry.stroke","stylers":[{"color":"#1a2548"}]},
+  {"featureType":"poi","elementType":"geometry","stylers":[{"color":"#101828"}]},
+  {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#c0c8d8"}]},
+  {"featureType":"poi","elementType":"labels.icon","stylers":[{"visibility":"on"},{"saturation":-40},{"lightness":-20}]},
+  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#0a1a12"}]},
+  {"featureType":"poi.park","elementType":"labels.text.fill","stylers":[{"color":"#5a9a6a"}]},
+  {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#E8C547"}]},
   {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#B8972E"}]},
-  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#1a1a1a"}]},
-  {"featureType":"road","elementType":"labels.text.stroke","stylers":[{"color":"#E8C547"}]},
-  {"featureType":"road.highway","elementType":"geometry","stylers":[{"color":"#E8C547"}]},
-  {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#B8972E"}]},
-  {"featureType":"road.highway","elementType":"labels.text.fill","stylers":[{"color":"#1a1a1a"}]},
-  {"featureType":"road.arterial","elementType":"geometry","stylers":[{"color":"#E8C547"}]},
-  {"featureType":"road.arterial","elementType":"geometry.stroke","stylers":[{"color":"#B8972E"}]},
-  {"featureType":"road.local","elementType":"geometry","stylers":[{"color":"#D4B03A"}]},
-  {"featureType":"road.local","elementType":"geometry.stroke","stylers":[{"color":"#A88B2A"}]},
-  {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#2f3948"}]},
-  {"featureType":"transit.station","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
-  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#17263c"}]},
-  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#515c6d"}]},
-  {"featureType":"water","elementType":"labels.text.stroke","stylers":[{"color":"#17263c"}]}
+  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#ffffff"}]},
+  {"featureType":"road","elementType":"labels.text.stroke","stylers":[{"color":"#0a0e1a"},{"weight":4}]},
+  {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#E8C547"}]},
+  {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#B8972E"},{"weight":1.5}]},
+  {"featureType":"road.highway","elementType":"labels.text.fill","stylers":[{"color":"#ffffff"}]},
+  {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#D4B03A"}]},
+  {"featureType":"road.arterial","elementType":"geometry.stroke","stylers":[{"color":"#A88B2A"}]},
+  {"featureType":"road.local","elementType":"geometry.fill","stylers":[{"color":"#1a2548"}]},
+  {"featureType":"road.local","elementType":"geometry.stroke","stylers":[{"color":"#0d1220"}]},
+  {"featureType":"road.local","elementType":"labels.text.fill","stylers":[{"color":"#8090b0"}]},
+  {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#101828"}]},
+  {"featureType":"transit.station","elementType":"labels.text.fill","stylers":[{"color":"#c0a050"}]},
+  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#060a14"}]},
+  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#3a5a8a"}]}
 ]
 ''';
 
   // ═════════════════════════════════════════════════════
-  //  LIGHT — Apple Maps-inspired clean white
+  //  DARK iOS — Same as dark (unified white labels)
+  // ═════════════════════════════════════════════════════
+  static const darkIOS = dark;
+
+  // ═════════════════════════════════════════════════════
+  //  LIGHT — Clean white with gold accent roads, WHITE labels
   // ═════════════════════════════════════════════════════
   static const light = '''
 [
   {"elementType":"geometry","stylers":[{"color":"#F0F0F5"}]},
-  {"elementType":"labels","stylers":[{"visibility":"off"}]},
-  {"featureType":"administrative","elementType":"geometry","stylers":[{"color":"#D1D1D6"},{"visibility":"simplified"}]},
-  {"featureType":"administrative.country","elementType":"geometry.stroke","stylers":[{"color":"#C7C7CC"}]},
-  {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#EBEBF0"}]},
-  {"featureType":"landscape.man_made","elementType":"geometry.fill","stylers":[{"color":"#E8E8ED"}]},
-  {"featureType":"poi","elementType":"geometry","stylers":[{"color":"#E5E5EA"}]},
-  {"featureType":"poi","elementType":"labels","stylers":[{"visibility":"off"}]},
-  {"featureType":"poi.park","elementType":"geometry.fill","stylers":[{"color":"#C8E6C5"}]},
-  {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#FFFFFF"}]},
-  {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#D6D6DB"},{"weight":0.5}]},
-  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#8E8E93"}]},
-  {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#FFFFFF"}]},
-  {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#FFF9E8"}]},
-  {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#E8DFC0"},{"weight":0.5}]},
-  {"featureType":"road.highway.controlled_access","elementType":"geometry.fill","stylers":[{"color":"#FFF3D1"}]},
-  {"featureType":"road.local","elementType":"geometry.fill","stylers":[{"color":"#FFFFFF"}]},
-  {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#E5E5EA"}]},
-  {"featureType":"transit.station","elementType":"labels","stylers":[{"visibility":"off"}]},
-  {"featureType":"water","elementType":"geometry.fill","stylers":[{"color":"#A8D4E6"}]},
-  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#7FBBD4"}]}
-]
-''';
-
-  // ═════════════════════════════════════════════════════
-  //  LIGHT iOS — Carreteras doradas para iOS
-  // ═════════════════════════════════════════════════════
-  static const lightIOS = '''
-[
-  {"elementType":"geometry","stylers":[{"color":"#F0F0F5"}]},
   {"elementType":"labels.text.fill","stylers":[{"color":"#333333"}]},
-  {"elementType":"labels.text.stroke","stylers":[{"color":"#F0F0F5"}]},
+  {"elementType":"labels.text.stroke","stylers":[{"color":"#F0F0F5"},{"weight":3}]},
+  {"elementType":"labels.icon","stylers":[{"visibility":"on"}]},
   {"featureType":"administrative","elementType":"geometry","stylers":[{"color":"#D1D1D6"},{"visibility":"simplified"}]},
   {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#EBEBF0"}]},
   {"featureType":"landscape.man_made","elementType":"geometry.fill","stylers":[{"color":"#E8E8ED"}]},
@@ -113,8 +66,7 @@ class MapStyles {
   {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#E8C547"}]},
   {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#D4B03A"},{"weight":1}]},
   {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#222222"}]},
-  {"featureType":"road","elementType":"labels.text.stroke","stylers":[{"color":"#E8C547"}]},
-  {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#E8C547"}]},
+  {"featureType":"road","elementType":"labels.text.stroke","stylers":[{"color":"#FFFFFF"},{"weight":4}]},
   {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#E8C547"}]},
   {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#B8972E"},{"weight":1.5}]},
   {"featureType":"road.local","elementType":"geometry.fill","stylers":[{"color":"#F5E8B8"}]},
@@ -125,78 +77,64 @@ class MapStyles {
 ''';
 
   // ═════════════════════════════════════════════════════
-  //  NAVIGATION — Ultra-dark Google Maps navigation style
+  //  LIGHT iOS — Same as light (unified labels)
+  // ═════════════════════════════════════════════════════
+  static const lightIOS = light;
+
+  // ═════════════════════════════════════════════════════
+  //  NAVIGATION — Ultra-dark 3D nav: gold roads, blue buildings, WHITE labels
   // ═════════════════════════════════════════════════════
   static const navigation = '''
 [
-  {"elementType":"geometry","stylers":[{"color":"#1a1a2e"}]},
-  {"elementType":"labels","stylers":[{"visibility":"off"}]},
-  {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#16162b"}]},
-  {"featureType":"landscape.man_made","elementType":"geometry.fill","stylers":[{"color":"#1e1e38"}]},
-  {"featureType":"poi","elementType":"labels","stylers":[{"visibility":"off"}]},
-  {"featureType":"poi","elementType":"geometry","stylers":[{"color":"#1e1e38"}]},
-  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#1a2e1a"}]},
-  {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#2a2a4a"}]},
-  {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#141428"}]},
-  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#7a7a9a"}]},
-  {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#3a3a5a"}]},
-  {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#1a1a30"}]},
-  {"featureType":"road.highway","elementType":"labels.text.fill","stylers":[{"color":"#8a8aaa"}]},
-  {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#2e2e4e"}]},
-  {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#1e1e38"}]},
-  {"featureType":"transit.station","elementType":"labels","stylers":[{"visibility":"off"}]},
-  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#0e1a2e"}]},
-  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#3a4a6a"}]}
-]
-''';
-
-  // ═════════════════════════════════════════════════════
-  //  NAVIGATION iOS — Carreteras doradas para iOS
-  // ═════════════════════════════════════════════════════
-  static const navigationIOS = '''
-[
-  {"elementType":"geometry","stylers":[{"color":"#1a1a2e"}]},
-  {"elementType":"labels.text.stroke","stylers":[{"color":"#1a1a2e"}]},
-  {"elementType":"labels.text.fill","stylers":[{"color":"#d4c27a"}]},
-  {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#16162b"}]},
-  {"featureType":"landscape.man_made","elementType":"geometry.fill","stylers":[{"color":"#1e1e38"}]},
-  {"featureType":"poi","elementType":"geometry","stylers":[{"color":"#1e1e38"}]},
-  {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
-  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#1a2e1a"}]},
-  {"featureType":"poi.park","elementType":"labels.text.fill","stylers":[{"color":"#6b9a76"}]},
+  {"elementType":"geometry","stylers":[{"color":"#080c16"}]},
+  {"elementType":"labels.text.fill","stylers":[{"color":"#ffffff"}]},
+  {"elementType":"labels.text.stroke","stylers":[{"color":"#080c16"},{"weight":3}]},
+  {"elementType":"labels.icon","stylers":[{"visibility":"on"},{"saturation":-60},{"lightness":-30}]},
+  {"featureType":"administrative","elementType":"labels.text.fill","stylers":[{"color":"#607090"}]},
+  {"featureType":"landscape","elementType":"geometry.fill","stylers":[{"color":"#0a0f1c"}]},
+  {"featureType":"landscape.man_made","elementType":"geometry.fill","stylers":[{"color":"#101830"}]},
+  {"featureType":"landscape.man_made","elementType":"geometry.stroke","stylers":[{"color":"#182040"}]},
+  {"featureType":"poi","elementType":"geometry","stylers":[{"color":"#0e1424"}]},
+  {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#8898b0"}]},
+  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#0a1a10"}]},
+  {"featureType":"poi.park","elementType":"labels.text.fill","stylers":[{"color":"#4a8a5a"}]},
   {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#E8C547"}]},
   {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#B8972E"}]},
-  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#1a1a1a"}]},
-  {"featureType":"road","elementType":"labels.text.stroke","stylers":[{"color":"#E8C547"}]},
+  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#ffffff"}]},
+  {"featureType":"road","elementType":"labels.text.stroke","stylers":[{"color":"#080c16"},{"weight":4}]},
   {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#E8C547"}]},
-  {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#B8972E"}]},
-  {"featureType":"road.highway","elementType":"labels.text.fill","stylers":[{"color":"#1a1a1a"}]},
-  {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#E8C547"}]},
-  {"featureType":"road.arterial","elementType":"geometry.stroke","stylers":[{"color":"#B8972E"}]},
-  {"featureType":"road.local","elementType":"geometry.fill","stylers":[{"color":"#D4B03A"}]},
-  {"featureType":"road.local","elementType":"geometry.stroke","stylers":[{"color":"#A88B2A"}]},
-  {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#1e1e38"}]},
-  {"featureType":"transit.station","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
-  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#0e1a2e"}]},
-  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#3a4a6a"}]}
+  {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#B8972E"},{"weight":1.5}]},
+  {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#D4B03A"}]},
+  {"featureType":"road.arterial","elementType":"geometry.stroke","stylers":[{"color":"#A88B2A"}]},
+  {"featureType":"road.local","elementType":"geometry.fill","stylers":[{"color":"#141e38"}]},
+  {"featureType":"road.local","elementType":"geometry.stroke","stylers":[{"color":"#0a0f1c"}]},
+  {"featureType":"road.local","elementType":"labels.text.fill","stylers":[{"color":"#607090"}]},
+  {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#0e1424"}]},
+  {"featureType":"transit.station","elementType":"labels.text.fill","stylers":[{"color":"#b0903a"}]},
+  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#040810"}]},
+  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#2a4a7a"}]}
 ]
 ''';
 
   // ═════════════════════════════════════════════════════
-  //  MÉTODOS HELPER - Selección automática según plataforma
+  //  NAVIGATION iOS — Same as navigation (unified white labels)
+  // ═════════════════════════════════════════════════════
+  static const navigationIOS = navigation;
+
+  // ═════════════════════════════════════════════════════
+  //  HELPER METHODS
   // ═════════════════════════════════════════════════════
   
-  /// Obtiene el estilo dark apropiado según la plataforma
-  static String getDark() => darkIOS;
+  /// Dark style (unified for all platforms)
+  static String getDark() => dark;
   
-  /// Obtiene el estilo light apropiado según la plataforma
-  static String getLight() => lightIOS;
+  /// Light style (unified for all platforms)
+  static String getLight() => light;
   
-  /// Obtiene el estilo de navegación apropiado según la plataforma
-  static String getNavigation() => navigationIOS;
+  /// Navigation style (unified for all platforms)
+  static String getNavigation() => navigation;
   
-  /// Obtiene el estilo apropiado según tema y plataforma
-  /// [isDark] - true para tema oscuro, false para tema claro
-  static String getStyle({required bool isDark}) => isDark ? getDark() : getLight();
+  /// Get style by theme
+  static String getStyle({required bool isDark}) => isDark ? dark : light;
 }
 

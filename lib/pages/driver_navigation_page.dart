@@ -342,9 +342,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
 
   void _animateCameraNav(
     LatLng pos, {
-    double zoom = 16.5,
+    double zoom = 17,
     double bearing = 0,
-    double tilt = 0,
+    double tilt = 55,
   }) {
     _map?.animateCamera(
       CameraUpdate.newCameraPosition(
@@ -371,24 +371,25 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     );
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFF080c16),
       body: Stack(
         children: [
           // ── FULLSCREEN MAP ────────────────────────────────────────────────
           Positioned.fill(
             child: GoogleMap(
-              style: MapStyles.navigationIOS,
+              style: MapStyles.navigation,
               initialCameraPosition: CameraPosition(
                 target: _pos,
-                zoom: 16.5,
-                tilt: 0,
+                zoom: 17,
+                tilt: 55,
+                bearing: _bearing,
               ),
               onMapCreated: (c) {
                 _map = c;
                 _mapReady = true;
                 _map!.moveCamera(
                   CameraUpdate.newCameraPosition(
-                    CameraPosition(target: _pos, zoom: 16.5, tilt: 0),
+                    CameraPosition(target: _pos, zoom: 17, tilt: 55, bearing: _bearing),
                   ),
                 );
               },
@@ -400,8 +401,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
               zoomControlsEnabled: false,
               mapToolbarEnabled: false,
               compassEnabled: false,
-              buildingsEnabled: false,
-              trafficEnabled: false,
+              buildingsEnabled: true,
+              trafficEnabled: true,
               padding: EdgeInsets.only(top: top + 140, bottom: 200 + bot),
             ),
           ),

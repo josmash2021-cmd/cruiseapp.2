@@ -584,10 +584,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
   }
 
-  /// Renders a 3D box-style car marker ("cajita") using Canvas.
+  /// Renders a top-down car marker with proper car silhouette using Canvas.
   ///  - Car points UP (north) so `rotation = bearing` works correctly.
-  ///  - Simple boxy shape with visible top, front, and side faces for 3D depth.
-  ///  - Looks great at 55° camera tilt.
+  ///  - Shaped like a real car: rounded nose, wide body, tapered trunk.
+  ///  - 3D depth panels visible at 55° tilt.
   Future<BitmapDescriptor> _paintCarSprite({
     required Color bodyColor,
     required Color bodyHighlight,
@@ -602,70 +602,55 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     required double heightRatio,
     required double roofHeightRatio,
   }) async {
-    const double cW = 160.0;
-    const double cH = 260.0;
+    const double cW = 180.0;
+    const double cH = 300.0;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, cW, cH));
 
     final double cx = cW / 2;
     final double cy = cH / 2;
-
-    // Box dimensions — boxy rectangular car
-    final double bW = 52.0 * widthRatio;   // half-width
-    final double bH = 80.0 * heightRatio;  // half-height
-    final double depth = 28.0 * heightRatio; // 3D extrusion depth (visible side/bottom)
-    const double r = 8.0; // corner radius — boxy but not harsh
+    final double bW = 60.0 * widthRatio;   // half-width at widest
+    final double bH = 100.0 * heightRatio; // half-height
+    final double depth = 20.0 * heightRatio;
 
     // ── 1. DROP SHADOW ───────────────────────────────────────────────────
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(cx + 2, cy + depth / 2 + 6),
-          width: bW * 2 + 16,
-          height: bH * 2 + depth + 12,
-        ),
-        const Radius.circular(12),
-      ),
+    canvas.drawPath(
+      _carBodyPath(cx, cy + 5, bW + 8, bH + 6),
       Paint()
         ..color = shadowColor
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
     );
 
-    // ── 2. BOTTOM FACE (rear bumper depth — visible when tilted) ─────────
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(cx - bW, cy + bH, bW * 2, depth),
-        const Radius.circular(r),
-      ),
-      Paint()..color = Color.lerp(bodyColor, Colors.black, 0.45)!,
+    // ── 2. 3D DEPTH — bottom face (rear bumper, visible when tilted) ─────
+    canvas.drawPath(
+      _carBodyPath(cx, cy + depth * 0.45, bW, bH).shift(const Offset(0, 2)),
+      Paint()..color = Color.lerp(bodyColor, Colors.black, 0.50)!,
     );
+    // Left side depth strip
+    final sideL = Path()
+      ..moveTo(cx - bW * 0.92, cy - bH * 0.55)
+      ..lineTo(cx - bW * 0.92 - depth * 0.3, cy - bH * 0.45)
+      ..lineTo(cx - bW * 0.92 - depth * 0.3, cy + bH * 0.75 + depth * 0.4)
+      ..lineTo(cx - bW * 0.78, cy + bH * 0.85)
+      ..close();
+    canvas.drawPath(sideL, Paint()..color = Color.lerp(bodyColor, Colors.black, 0.38)!);
+    // Right side depth strip
+    final sideR = Path()
+      ..moveTo(cx + bW * 0.92, cy - bH * 0.55)
+      ..lineTo(cx + bW * 0.92 + depth * 0.3, cy - bH * 0.45)
+      ..lineTo(cx + bW * 0.92 + depth * 0.3, cy + bH * 0.75 + depth * 0.4)
+      ..lineTo(cx + bW * 0.78, cy + bH * 0.85)
+      ..close();
+    canvas.drawPath(sideR, Paint()..color = Color.lerp(bodyColor, Colors.black, 0.28)!);
 
-    // ── 3. LEFT SIDE FACE (3D depth panel) ───────────────────────────────
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(cx - bW - depth * 0.4, cy - bH * 0.7, depth * 0.4, bH * 1.4 + depth),
-        const Radius.circular(r * 0.5),
-      ),
-      Paint()..color = Color.lerp(bodyColor, Colors.black, 0.35)!,
-    );
-
-    // ── 4. RIGHT SIDE FACE (3D depth panel, slightly lighter) ────────────
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(cx + bW, cy - bH * 0.7, depth * 0.4, bH * 1.4 + depth),
-        const Radius.circular(r * 0.5),
-      ),
-      Paint()..color = Color.lerp(bodyColor, Colors.black, 0.25)!,
-    );
-
-    // ── 5. WHEELS (peek out from sides) ──────────────────────────────────
-    final double wW = 18.0 * widthRatio;
-    final double wH = 28.0 * heightRatio;
+    // ── 3. WHEELS ────────────────────────────────────────────────────────
+    final double wW = 16.0 * widthRatio;
+    final double wH = 32.0 * heightRatio;
     final wheels = [
-      Offset(cx - bW - 4, cy - bH * 0.52), // front-left
-      Offset(cx + bW + 4, cy - bH * 0.52), // front-right
-      Offset(cx - bW - 4, cy + bH * 0.48), // rear-left
-      Offset(cx + bW + 4, cy + bH * 0.48), // rear-right
+      Offset(cx - bW * 0.94, cy - bH * 0.48),
+      Offset(cx + bW * 0.94, cy - bH * 0.48),
+      Offset(cx - bW * 0.90, cy + bH * 0.50),
+      Offset(cx + bW * 0.90, cy + bH * 0.50),
     ];
     for (final wp in wheels) {
       canvas.drawRRect(
@@ -675,124 +660,200 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         ),
         Paint()..color = wheelColor,
       );
-      // Rim
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromCenter(center: wp, width: wW * 0.5, height: wH * 0.5),
+          Rect.fromCenter(center: wp, width: wW * 0.45, height: wH * 0.45),
           const Radius.circular(3),
         ),
-        Paint()..color = const Color(0xFF666666),
+        Paint()..color = const Color(0xFF555555),
       );
     }
 
-    // ── 6. TOP FACE (main body — roof view) ──────────────────────────────
-    final topRect = Rect.fromCenter(
-      center: Offset(cx, cy),
-      width: bW * 2,
-      height: bH * 2,
-    );
-    final topRRect = RRect.fromRectAndRadius(topRect, Radius.circular(r));
-    // Base body color
-    canvas.drawRRect(topRRect, Paint()..color = bodyColor);
-    // Highlight gradient (light from top-left)
-    canvas.drawRRect(
-      topRRect,
+    // ── 4. BODY (car silhouette path — rounded nose, wide hips, tapered rear)
+    final bodyPath = _carBodyPath(cx, cy, bW, bH);
+    // Base fill
+    canvas.drawPath(bodyPath, Paint()..color = bodyColor);
+    // Highlight gradient
+    final bodyBounds = bodyPath.getBounds();
+    canvas.drawPath(
+      bodyPath,
       Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+        ..shader = RadialGradient(
+          center: const Alignment(-0.25, -0.4),
+          radius: 0.9,
           colors: [bodyHighlight, bodyColor],
-        ).createShader(topRect),
+        ).createShader(bodyBounds),
     );
-    // Body outline
-    canvas.drawRRect(
-      topRRect,
+    // Outline
+    canvas.drawPath(
+      bodyPath,
       Paint()
-        ..color = Color.lerp(bodyColor, Colors.black, 0.2)!
+        ..color = Color.lerp(bodyColor, Colors.black, 0.15)!
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0,
+        ..strokeWidth = 2.0
+        ..strokeJoin = StrokeJoin.round,
     );
 
-    // ── 7. WINDSHIELD (front window — top portion of body) ───────────────
-    final wsRect = Rect.fromCenter(
-      center: Offset(cx, cy - bH * 0.42),
-      width: bW * 1.4,
-      height: bH * 0.48,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndCorners(
-        wsRect,
-        topLeft: Radius.circular(r),
-        topRight: Radius.circular(r),
-        bottomLeft: Radius.circular(r * 0.5),
-        bottomRight: Radius.circular(r * 0.5),
-      ),
-      Paint()..color = windowColor,
-    );
-    // Glass sheen
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(wsRect.left + 4, wsRect.top + 3, wsRect.width * 0.3, wsRect.height * 0.5),
-        const Radius.circular(4),
-      ),
-      Paint()..color = windowShine.withValues(alpha: 0.2),
-    );
+    // ── 5. HOOD LINES (subtle creases on the hood) ───────────────────────
+    for (final sign in [-1.0, 1.0]) {
+      canvas.drawLine(
+        Offset(cx + sign * bW * 0.28, cy - bH * 0.82),
+        Offset(cx + sign * bW * 0.22, cy - bH * 0.38),
+        Paint()
+          ..color = Color.lerp(bodyColor, Colors.black, 0.08)!
+          ..strokeWidth = 1.2
+          ..strokeCap = StrokeCap.round,
+      );
+    }
 
-    // ── 8. REAR WINDOW ───────────────────────────────────────────────────
+    // ── 6. WINDSHIELD (front — wider, trapezoid shape) ───────────────────
+    final wsPath = Path()
+      ..moveTo(cx - bW * 0.58, cy - bH * 0.38)
+      ..lineTo(cx - bW * 0.50, cy - bH * 0.12)
+      ..lineTo(cx + bW * 0.50, cy - bH * 0.12)
+      ..lineTo(cx + bW * 0.58, cy - bH * 0.38)
+      ..close();
+    canvas.drawPath(wsPath, Paint()..color = windowColor);
+    // Sheen
+    final sheenPath = Path()
+      ..moveTo(cx - bW * 0.52, cy - bH * 0.35)
+      ..lineTo(cx - bW * 0.42, cy - bH * 0.16)
+      ..lineTo(cx - bW * 0.30, cy - bH * 0.16)
+      ..lineTo(cx - bW * 0.38, cy - bH * 0.35)
+      ..close();
+    canvas.drawPath(sheenPath, Paint()..color = windowShine.withValues(alpha: 0.22));
+
+    // ── 7. ROOF PANEL (between windows) ──────────────────────────────────
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(
-          center: Offset(cx, cy + bH * 0.42),
-          width: bW * 1.3,
-          height: bH * 0.36,
+          center: Offset(cx, cy + bH * 0.04),
+          width: bW * 0.94,
+          height: bH * 0.22,
         ),
-        Radius.circular(r * 0.6),
+        const Radius.circular(4),
       ),
-      Paint()..color = windowColor,
+      Paint()..color = Color.lerp(bodyColor, bodyHighlight, 0.3)!,
     );
 
-    // ── 9. HEADLIGHTS (front, white/yellow) ──────────────────────────────
-    final hlY = cy - bH * 0.92;
+    // ── 8. REAR WINDOW (narrower trapezoid) ──────────────────────────────
+    final rwPath = Path()
+      ..moveTo(cx - bW * 0.48, cy + bH * 0.18)
+      ..lineTo(cx - bW * 0.42, cy + bH * 0.40)
+      ..lineTo(cx + bW * 0.42, cy + bH * 0.40)
+      ..lineTo(cx + bW * 0.48, cy + bH * 0.18)
+      ..close();
+    canvas.drawPath(rwPath, Paint()..color = windowColor);
+
+    // ── 9. SIDE WINDOWS (small trapezoids left & right) ──────────────────
+    for (final sign in [-1.0, 1.0]) {
+      final swPath = Path()
+        ..moveTo(cx + sign * bW * 0.54, cy - bH * 0.32)
+        ..lineTo(cx + sign * bW * 0.82, cy - bH * 0.22)
+        ..lineTo(cx + sign * bW * 0.82, cy + bH * 0.12)
+        ..lineTo(cx + sign * bW * 0.54, cy + bH * 0.12)
+        ..close();
+      canvas.drawPath(swPath, Paint()..color = windowColor.withValues(alpha: 0.7));
+    }
+
+    // ── 10. HEADLIGHTS (wraparound at front corners) ─────────────────────
+    for (final sign in [-1.0, 1.0]) {
+      final hlPath = Path()
+        ..moveTo(cx + sign * bW * 0.50, cy - bH * 0.88)
+        ..quadraticBezierTo(
+          cx + sign * bW * 0.82, cy - bH * 0.84,
+          cx + sign * bW * 0.78, cy - bH * 0.72,
+        )
+        ..lineTo(cx + sign * bW * 0.58, cy - bH * 0.74)
+        ..close();
+      canvas.drawPath(hlPath, Paint()..color = headlightColor);
+    }
+
+    // ── 11. TAILLIGHTS (wide bars at rear) ───────────────────────────────
     for (final sign in [-1.0, 1.0]) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromCenter(
-            center: Offset(cx + sign * bW * 0.6, hlY),
-            width: bW * 0.4,
+            center: Offset(cx + sign * bW * 0.48, cy + bH * 0.88),
+            width: bW * 0.48,
             height: 8,
           ),
           const Radius.circular(4),
         ),
-        Paint()..color = headlightColor,
-      );
-    }
-
-    // ── 10. TAILLIGHTS (rear, red) ───────────────────────────────────────
-    final tlY = cy + bH * 0.92;
-    for (final sign in [-1.0, 1.0]) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(
-            center: Offset(cx + sign * bW * 0.55, tlY),
-            width: bW * 0.38,
-            height: 7,
-          ),
-          const Radius.circular(3),
-        ),
         Paint()..color = taillightColor,
       );
     }
+    // Tail connector strip
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(cx, cy + bH * 0.88),
+          width: bW * 0.5,
+          height: 4,
+        ),
+        const Radius.circular(2),
+      ),
+      Paint()..color = taillightColor.withValues(alpha: 0.4),
+    );
 
-    // ── 11. ENCODE ───────────────────────────────────────────────────────
+    // ── 12. SIDE MIRRORS ─────────────────────────────────────────────────
+    for (final sign in [-1.0, 1.0]) {
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(cx + sign * (bW + 6), cy - bH * 0.28),
+          width: 10,
+          height: 14,
+        ),
+        Paint()..color = bodyColor,
+      );
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(cx + sign * (bW + 6), cy - bH * 0.28),
+          width: 10,
+          height: 14,
+        ),
+        Paint()
+          ..color = Color.lerp(bodyColor, Colors.black, 0.15)!
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+    }
+
+    // ── 13. ENCODE ───────────────────────────────────────────────────────
     final picture = recorder.endRecording();
     final image = await picture.toImage(cW.toInt(), cH.toInt());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     if (byteData == null) return BitmapDescriptor.defaultMarker;
     return BitmapDescriptor.bytes(
       byteData.buffer.asUint8List(),
-      width: 36,
-      height: 58,
+      width: 38,
+      height: 64,
     );
+  }
+
+  /// Car body silhouette path — rounded nose, wide at cabin, tapered trunk.
+  /// Front = top, rear = bottom.
+  static Path _carBodyPath(double cx, double cy, double bW, double bH) {
+    return Path()
+      // Start at front-center (nose)
+      ..moveTo(cx, cy - bH * 0.95)
+      // Front bumper curve (rounded nose)
+      ..quadraticBezierTo(cx + bW * 0.55, cy - bH * 0.94, cx + bW * 0.72, cy - bH * 0.78)
+      // Front fender flare
+      ..quadraticBezierTo(cx + bW * 0.92, cy - bH * 0.62, cx + bW * 0.92, cy - bH * 0.40)
+      // Straight body sides (widest point at doors)
+      ..lineTo(cx + bW * 0.88, cy + bH * 0.30)
+      // Rear fender taper
+      ..quadraticBezierTo(cx + bW * 0.86, cy + bH * 0.68, cx + bW * 0.68, cy + bH * 0.85)
+      // Rear bumper curve
+      ..quadraticBezierTo(cx + bW * 0.40, cy + bH * 0.95, cx, cy + bH * 0.96)
+      // Mirror left side
+      ..quadraticBezierTo(cx - bW * 0.40, cy + bH * 0.95, cx - bW * 0.68, cy + bH * 0.85)
+      ..quadraticBezierTo(cx - bW * 0.86, cy + bH * 0.68, cx - bW * 0.88, cy + bH * 0.30)
+      ..lineTo(cx - bW * 0.92, cy - bH * 0.40)
+      ..quadraticBezierTo(cx - bW * 0.92, cy - bH * 0.62, cx - bW * 0.72, cy - bH * 0.78)
+      ..quadraticBezierTo(cx - bW * 0.55, cy - bH * 0.94, cx, cy - bH * 0.95)
+      ..close();
   }
 
   /// Get the correct vehicle icon based on the vehicle type of the active trip.

@@ -222,77 +222,166 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   // =========================================================================
 
   Future<void> _buildArrowIcon() async {
-    const double w = 80;
-    const double h = 120;
+    const double w = 100;
+    const double h = 160;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w, h));
 
-    const cx = w / 2;
-    const cy = h / 2;
-    const bW = 26.0;  // half-width
-    const bH = 38.0;  // half-height
-    const depth = 14.0; // 3D extrusion
-    const r = 5.0;
-    const body = Color(0xFF0A2463);       // navy blue
-    const bodyHi = Color(0xFF1A3A8A);     // highlight
-    const side = Color(0xFF061440);       // dark side
-    const win = Color(0xFF1C2040);        // window
+    const double cx = w / 2;
+    const double cy = h / 2;
+    const double bW = 32.0;  // half-width at widest
+    const double bH = 54.0;  // half-height
+    const double depth = 12.0;
+    const body = Color(0xFF0A2463);
+    const bodyHi = Color(0xFF1A3A8A);
+    const win = Color(0xFF1C2040);
     const headlight = Color(0xFFFFE082);
     const taillight = Color(0xFFEF5350);
 
+    // Car body silhouette path
+    Path carPath(double ox, double oy, double w2, double h2) => Path()
+      ..moveTo(ox, oy - h2 * 0.95)
+      ..quadraticBezierTo(ox + w2 * 0.55, oy - h2 * 0.94, ox + w2 * 0.72, oy - h2 * 0.78)
+      ..quadraticBezierTo(ox + w2 * 0.92, oy - h2 * 0.62, ox + w2 * 0.92, oy - h2 * 0.40)
+      ..lineTo(ox + w2 * 0.88, oy + h2 * 0.30)
+      ..quadraticBezierTo(ox + w2 * 0.86, oy + h2 * 0.68, ox + w2 * 0.68, oy + h2 * 0.85)
+      ..quadraticBezierTo(ox + w2 * 0.40, oy + h2 * 0.95, ox, oy + h2 * 0.96)
+      ..quadraticBezierTo(ox - w2 * 0.40, oy + h2 * 0.95, ox - w2 * 0.68, oy + h2 * 0.85)
+      ..quadraticBezierTo(ox - w2 * 0.86, oy + h2 * 0.68, ox - w2 * 0.88, oy + h2 * 0.30)
+      ..lineTo(ox - w2 * 0.92, oy - h2 * 0.40)
+      ..quadraticBezierTo(ox - w2 * 0.92, oy - h2 * 0.62, ox - w2 * 0.72, oy - h2 * 0.78)
+      ..quadraticBezierTo(ox - w2 * 0.55, oy - h2 * 0.94, ox, oy - h2 * 0.95)
+      ..close();
+
     // Shadow
+    canvas.drawPath(
+      carPath(cx, cy + 4, bW + 5, bH + 4),
+      Paint()..color = Colors.black.withValues(alpha: 0.30)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+    );
+    // 3D bottom face
+    canvas.drawPath(
+      carPath(cx, cy + depth * 0.4, bW, bH).shift(const Offset(0, 1)),
+      Paint()..color = Color.lerp(body, Colors.black, 0.50)!,
+    );
+    // Left depth strip
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx - bW * 0.92, cy - bH * 0.50)
+        ..lineTo(cx - bW * 0.92 - depth * 0.25, cy - bH * 0.40)
+        ..lineTo(cx - bW * 0.92 - depth * 0.25, cy + bH * 0.70 + depth * 0.3)
+        ..lineTo(cx - bW * 0.78, cy + bH * 0.82)
+        ..close(),
+      Paint()..color = Color.lerp(body, Colors.black, 0.38)!,
+    );
+    // Right depth strip
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx + bW * 0.92, cy - bH * 0.50)
+        ..lineTo(cx + bW * 0.92 + depth * 0.25, cy - bH * 0.40)
+        ..lineTo(cx + bW * 0.92 + depth * 0.25, cy + bH * 0.70 + depth * 0.3)
+        ..lineTo(cx + bW * 0.78, cy + bH * 0.82)
+        ..close(),
+      Paint()..color = Color.lerp(body, Colors.black, 0.28)!,
+    );
+
+    // Wheels
+    for (final wp in [
+      Offset(cx - bW * 0.94, cy - bH * 0.48),
+      Offset(cx + bW * 0.94, cy - bH * 0.48),
+      Offset(cx - bW * 0.90, cy + bH * 0.50),
+      Offset(cx + bW * 0.90, cy + bH * 0.50),
+    ]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromCenter(center: wp, width: 8, height: 16), const Radius.circular(3)),
+        Paint()..color = const Color(0xFF1A1A1A),
+      );
+    }
+
+    // Body
+    final bp = carPath(cx, cy, bW, bH);
+    final bRect = bp.getBounds();
+    canvas.drawPath(bp, Paint()..color = body);
+    canvas.drawPath(bp, Paint()..shader = RadialGradient(
+      center: const Alignment(-0.25, -0.4), radius: 0.9, colors: [bodyHi, body],
+    ).createShader(bRect));
+    canvas.drawPath(bp, Paint()..color = Color.lerp(body, Colors.black, 0.15)!..style = PaintingStyle.stroke..strokeWidth = 1.5..strokeJoin = StrokeJoin.round);
+
+    // Hood creases
+    for (final s in [-1.0, 1.0]) {
+      canvas.drawLine(
+        Offset(cx + s * bW * 0.28, cy - bH * 0.80),
+        Offset(cx + s * bW * 0.22, cy - bH * 0.38),
+        Paint()..color = Color.lerp(body, Colors.black, 0.08)!..strokeWidth = 0.8..strokeCap = StrokeCap.round,
+      );
+    }
+
+    // Windshield
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx - bW * 0.56, cy - bH * 0.36)
+        ..lineTo(cx - bW * 0.48, cy - bH * 0.12)
+        ..lineTo(cx + bW * 0.48, cy - bH * 0.12)
+        ..lineTo(cx + bW * 0.56, cy - bH * 0.36)
+        ..close(),
+      Paint()..color = win,
+    );
+    // Roof panel
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx + 1, cy + depth / 2 + 4), width: bW * 2 + 10, height: bH * 2 + depth + 8),
-        const Radius.circular(8),
+        Rect.fromCenter(center: Offset(cx, cy + bH * 0.04), width: bW * 0.90, height: bH * 0.20),
+        const Radius.circular(3),
       ),
-      Paint()..color = Colors.black.withValues(alpha: 0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
-    );
-    // Bottom face
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(cx - bW, cy + bH, bW * 2, depth), const Radius.circular(r)),
-      Paint()..color = side,
-    );
-    // Left side
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(cx - bW - depth * 0.35, cy - bH * 0.65, depth * 0.35, bH * 1.3 + depth), const Radius.circular(r * 0.4)),
-      Paint()..color = Color.lerp(body, Colors.black, 0.4)!,
-    );
-    // Right side
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(cx + bW, cy - bH * 0.65, depth * 0.35, bH * 1.3 + depth), const Radius.circular(r * 0.4)),
-      Paint()..color = Color.lerp(body, Colors.black, 0.3)!,
-    );
-    // Top face (body)
-    final topRect = Rect.fromCenter(center: Offset(cx, cy), width: bW * 2, height: bH * 2);
-    final topRR = RRect.fromRectAndRadius(topRect, const Radius.circular(r));
-    canvas.drawRRect(topRR, Paint()..color = body);
-    canvas.drawRRect(topRR, Paint()..shader = const LinearGradient(
-      begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [bodyHi, body],
-    ).createShader(topRect));
-    canvas.drawRRect(topRR, Paint()..color = side..style = PaintingStyle.stroke..strokeWidth = 1.5);
-    // Windshield
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(cx, cy - bH * 0.38), width: bW * 1.3, height: bH * 0.44), const Radius.circular(r * 0.8)),
-      Paint()..color = win,
+      Paint()..color = Color.lerp(body, bodyHi, 0.3)!,
     );
     // Rear window
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(cx, cy + bH * 0.4), width: bW * 1.2, height: bH * 0.32), const Radius.circular(r * 0.5)),
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx - bW * 0.46, cy + bH * 0.18)
+        ..lineTo(cx - bW * 0.40, cy + bH * 0.38)
+        ..lineTo(cx + bW * 0.40, cy + bH * 0.38)
+        ..lineTo(cx + bW * 0.46, cy + bH * 0.18)
+        ..close(),
       Paint()..color = win,
     );
+    // Side windows
+    for (final s in [-1.0, 1.0]) {
+      canvas.drawPath(
+        Path()
+          ..moveTo(cx + s * bW * 0.52, cy - bH * 0.30)
+          ..lineTo(cx + s * bW * 0.80, cy - bH * 0.20)
+          ..lineTo(cx + s * bW * 0.80, cy + bH * 0.10)
+          ..lineTo(cx + s * bW * 0.52, cy + bH * 0.10)
+          ..close(),
+        Paint()..color = win.withValues(alpha: 0.7),
+      );
+    }
+
     // Headlights
     for (final s in [-1.0, 1.0]) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(cx + s * bW * 0.58, cy - bH * 0.9), width: bW * 0.4, height: 5), const Radius.circular(3)),
+      canvas.drawPath(
+        Path()
+          ..moveTo(cx + s * bW * 0.48, cy - bH * 0.87)
+          ..quadraticBezierTo(cx + s * bW * 0.80, cy - bH * 0.83, cx + s * bW * 0.76, cy - bH * 0.72)
+          ..lineTo(cx + s * bW * 0.56, cy - bH * 0.74)
+          ..close(),
         Paint()..color = headlight,
       );
     }
     // Taillights
     for (final s in [-1.0, 1.0]) {
       canvas.drawRRect(
-        RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(cx + s * bW * 0.52, cy + bH * 0.9), width: bW * 0.35, height: 5), const Radius.circular(2)),
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(cx + s * bW * 0.46, cy + bH * 0.87), width: bW * 0.44, height: 5),
+          const Radius.circular(3),
+        ),
         Paint()..color = taillight,
+      );
+    }
+    // Side mirrors
+    for (final s in [-1.0, 1.0]) {
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx + s * (bW + 4), cy - bH * 0.26), width: 6, height: 8),
+        Paint()..color = body,
       );
     }
 

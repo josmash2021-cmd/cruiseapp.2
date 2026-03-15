@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import 'navatar_sprite_generator.dart';
+
 /// Available Navatar car models — same set as Google Maps Navatars.
 enum NavatarModel {
   sedan,
@@ -127,23 +129,24 @@ class NavatarLoader {
   // ── Loading ────────────────────────────────────────────────────────
 
   /// Loads 8 directional sprites for [model] from assets.
-  /// Returns the list of BitmapDescriptors, or null if assets are missing.
+  /// Falls back to Canvas-generated 3D sprites if PNGs are missing.
   static Future<List<BitmapDescriptor>?> loadSprites(NavatarModel model) async {
     final key = model.assetName;
     if (_spriteCache.containsKey(key)) return _spriteCache[key];
 
+    // Try loading PNG assets first
     final sprites = <BitmapDescriptor>[];
     final bytesList = <Uint8List>[];
     final int targetPx = (_spriteTargetWidth * _spriteScale).round();
+    bool pngOk = true;
 
     for (final angle in _angles) {
       try {
         final path = 'assets/images/navatars/$key/navatar_${key}_$angle.png';
         final data = await rootBundle.load(path);
         final raw = data.buffer.asUint8List();
-        if (raw.isEmpty) return null;
+        if (raw.isEmpty) { pngOk = false; break; }
 
-        // Decode and resize for crisp map markers
         final codec = await ui.instantiateImageCodec(
           raw,
           targetWidth: targetPx,
@@ -152,20 +155,44 @@ class NavatarLoader {
         final resized = frame.image;
         final byteData =
             await resized.toByteData(format: ui.ImageByteFormat.png);
-        if (byteData == null) return null;
+        if (byteData == null) { pngOk = false; break; }
         final resizedBytes = byteData.buffer.asUint8List();
 
         // ignore: deprecated_member_use
         sprites.add(BitmapDescriptor.fromBytes(resizedBytes));
         bytesList.add(resizedBytes);
       } catch (_) {
-        return null;
+        pngOk = false;
+        break;
       }
     }
 
-    _spriteCache[key] = sprites;
-    _bytesCache[key] = bytesList;
-    return sprites;
+    if (pngOk && sprites.length == 8) {
+      _spriteCache[key] = sprites;
+      _bytesCache[key] = bytesList;
+      return sprites;
+    }
+
+    // Fallback: generate 3D sprites with Canvas
+    return _generateAndCache(key);
+  }
+
+  /// Generate 3D sprites via Canvas when PNG assets are unavailable.
+  static Future<List<BitmapDescriptor>?> _generateAndCache(String key) async {
+    try {
+      final genBytes = await NavatarSpriteGenerator.generateAll();
+      if (genBytes.length != 8) return null;
+      final genSprites = <BitmapDescriptor>[];
+      for (final b in genBytes) {
+        // ignore: deprecated_member_use
+        genSprites.add(BitmapDescriptor.fromBytes(b));
+      }
+      _spriteCache[key] = genSprites;
+      _bytesCache[key] = genBytes;
+      return genSprites;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Loads sprites for the currently selected navatar.

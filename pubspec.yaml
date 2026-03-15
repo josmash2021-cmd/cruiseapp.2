@@ -103,13 +103,13 @@ flutter:
   assets:
     - assets/images/
     - assets/images/welcome_bg.mp4
-    - assets/images/car_sprites/
-    - assets/images/navatars/sedan/
-    - assets/images/navatars/suv/
-    - assets/images/navatars/pickup/
-    - assets/images/navatars/city_car/
-    - assets/images/navatars/sports/
-    - assets/images/navatars/classic/
+    # - assets/images/car_sprites/
+    # - assets/images/navatars/sedan/
+    # - assets/images/navatars/suv/
+    # - assets/images/navatars/pickup/
+    # - assets/images/navatars/city_car/
+    # - assets/images/navatars/sports/
+    # - assets/images/navatars/classic/
     - assets/markers/
     - assets/google_fonts/
     - assets/fonts/

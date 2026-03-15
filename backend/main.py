@@ -140,6 +140,11 @@ class User(Base):
     deletion_requested_at = Column(DateTime, nullable=True)  # when user requested account deletion
     email_changes_count = Column(Integer, default=0)  # max 3 changes allowed
     phone_changes_count = Column(Integer, default=0)  # max 3 changes allowed
+    stripe_connect_id = Column(String(100), nullable=True)  # Stripe Connect account ID for driver payouts
+    referral_code = Column(String(20), unique=True, nullable=True)  # User's unique referral code
+    referred_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Who referred this user
+    total_earnings = Column(Float, default=0.0)  # Driver total lifetime earnings
+    pending_balance = Column(Float, default=0.0)  # Driver pending payout balance
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class Trip(Base):
@@ -165,6 +170,16 @@ class Trip(Base):
     cancel_reason = Column(Text, nullable=True)
     payment_status = Column(String(20), default="unpaid")  # unpaid, paid, failed, cash, waived
     stripe_payment_intent_id = Column(String(100), nullable=True)
+    surge_multiplier = Column(Float, default=1.0)  # 1.0 = no surge, 1.5 = 1.5x, etc.
+    base_fare = Column(Float, nullable=True)  # Base fare before surge
+    cancellation_fee = Column(Float, default=0.0)  # Fee charged for late cancellation
+    tip_amount = Column(Float, default=0.0)  # Tip amount
+    wait_time_minutes = Column(Integer, default=0)  # Wait time at pickup
+    wait_time_charge = Column(Float, default=0.0)  # Charge for wait time
+    distance = Column(Float, nullable=True)  # Trip distance in miles
+    duration = Column(Integer, nullable=True)  # Trip duration in minutes
+    driver_earnings = Column(Float, nullable=True)  # Driver's cut after platform fee
+    platform_fee = Column(Float, nullable=True)  # Platform commission
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -304,6 +319,68 @@ class PasswordResetToken(Base):
     code = Column(String(10), unique=True, nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     expires_at = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class Referral(Base):
+    __tablename__ = "referrals"
+    id = Column(Integer, primary_key=True, index=True)
+    referrer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    referee_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    referral_code = Column(String(20), nullable=False)
+    status = Column(String(20), default="pending")  # pending, completed, rewarded
+    referrer_bonus = Column(Float, default=10.0)
+    referee_bonus = Column(Float, default=10.0)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class FavoriteLocation(Base):
+    __tablename__ = "favorite_locations"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    label = Column(String(50), nullable=False)  # "Home", "Work", "Gym"
+    address = Column(Text, nullable=False)
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+    icon = Column(String(20), default="home")  # home, work, star, heart
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class DriverIncentive(Base):
+    __tablename__ = "driver_incentives"
+    id = Column(Integer, primary_key=True, index=True)
+    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    incentive_type = Column(String(50), nullable=False)  # quest, streak, peak_hours, referral
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    target_trips = Column(Integer, default=0)  # e.g., "Complete 10 trips"
+    current_trips = Column(Integer, default=0)
+    bonus_amount = Column(Float, nullable=False)
+    status = Column(String(20), default="active")  # active, completed, expired, claimed
+    expires_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class SurgeZone(Base):
+    __tablename__ = "surge_zones"
+    id = Column(Integer, primary_key=True, index=True)
+    zone_name = Column(String(100), nullable=False)
+    center_lat = Column(Float, nullable=False)
+    center_lng = Column(Float, nullable=False)
+    radius_km = Column(Float, default=2.0)
+    surge_multiplier = Column(Float, default=1.0)  # 1.0 = no surge, 2.0 = 2x
+    active_riders = Column(Integer, default=0)  # Demand
+    active_drivers = Column(Integer, default=0)  # Supply
+    is_active = Column(Boolean, default=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class ServiceArea(Base):
+    __tablename__ = "service_areas"
+    id = Column(Integer, primary_key=True, index=True)
+    area_name = Column(String(100), nullable=False)
+    center_lat = Column(Float, nullable=False)
+    center_lng = Column(Float, nullable=False)
+    radius_km = Column(Float, default=50.0)  # Service radius
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 # -- Firestore Sync -------------------------------------
@@ -5962,6 +6039,269 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
     return {"status": "ok"}
 
+
+# ═══════════════════════════════════════════════════════
+#  STRIPE CONNECT - Driver Payouts
+# ═══════════════════════════════════════════════════════
+
+@app.post("/drivers/stripe-connect/onboard", dependencies=[Depends(_verify_api_key)])
+async def stripe_connect_onboard(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Create Stripe Connect account for driver to receive payouts."""
+    if user.role != "driver":
+        raise HTTPException(403, "Only drivers can onboard to Stripe Connect")
+    
+    if not _HAS_STRIPE:
+        return {"account_link": "https://connect.stripe.com/mock", "mock": True}
+    
+    if user.stripe_connect_id:
+        account_id = user.stripe_connect_id
+    else:
+        account = _stripe_mod.Account.create(
+            type="express",
+            country="US",
+            email=user.email,
+            capabilities={"card_payments": {"requested": True}, "transfers": {"requested": True}},
+            business_type="individual",
+        )
+        account_id = account.id
+        user.stripe_connect_id = account_id
+        await db.commit()
+    
+    account_link = _stripe_mod.AccountLink.create(
+        account=account_id,
+        refresh_url="cruiseapp://stripe-connect/refresh",
+        return_url="cruiseapp://stripe-connect/complete",
+        type="account_onboarding",
+    )
+    return {"account_link": account_link.url, "account_id": account_id}
+
+@app.post("/drivers/payout/transfer", dependencies=[Depends(_verify_api_key)])
+async def driver_payout_transfer(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Transfer driver's pending balance to their Stripe Connect account."""
+    if user.role != "driver":
+        raise HTTPException(403, "Only drivers can request payouts")
+    if not user.stripe_connect_id:
+        raise HTTPException(400, "Driver must complete Stripe Connect onboarding first")
+    if user.pending_balance <= 0:
+        raise HTTPException(400, "No pending balance to transfer")
+    
+    if not _HAS_STRIPE:
+        amount = user.pending_balance
+        user.pending_balance = 0.0
+        await db.commit()
+        return {"amount": amount, "status": "paid", "mock": True}
+    
+    amount_cents = int(user.pending_balance * 100)
+    transfer = _stripe_mod.Transfer.create(
+        amount=amount_cents, currency="usd", destination=user.stripe_connect_id,
+        description=f"Weekly payout for driver {user.id}",
+    )
+    payout_amount = user.pending_balance
+    user.pending_balance = 0.0
+    await db.commit()
+    return {"amount": payout_amount, "transfer_id": transfer.id, "status": "paid", "estimated_arrival": "2-3 business days"}
+
+# ═══════════════════════════════════════════════════════
+#  SURGE PRICING
+# ═══════════════════════════════════════════════════════
+
+@app.get("/surge/current", dependencies=[Depends(_verify_api_key)])
+async def get_current_surge(lat: float = Query(...), lng: float = Query(...), db: AsyncSession = Depends(get_db)):
+    """Get current surge multiplier for a location."""
+    result = await db.execute(select(SurgeZone).where(SurgeZone.is_active == True))
+    zones = result.scalars().all()
+    best_multiplier = 1.0
+    for zone in zones:
+        dist = _haversine(lat, lng, zone.center_lat, zone.center_lng)
+        if dist <= zone.radius_km:
+            best_multiplier = max(best_multiplier, zone.surge_multiplier)
+    return {"surge_multiplier": best_multiplier, "is_surge": best_multiplier > 1.0, "message": f"{best_multiplier}x" if best_multiplier > 1.0 else "No surge"}
+
+@app.post("/admin/surge/update", dependencies=[Depends(_require_dispatch_auth)])
+async def update_surge_zone(zone_name: str = Body(...), center_lat: float = Body(...), center_lng: float = Body(...), surge_multiplier: float = Body(...), radius_km: float = Body(2.0), db: AsyncSession = Depends(get_db)):
+    """Admin: Update or create surge zone."""
+    result = await db.execute(select(SurgeZone).where(SurgeZone.zone_name == zone_name))
+    zone = result.scalar_one_or_none()
+    if zone:
+        zone.surge_multiplier = surge_multiplier
+        zone.center_lat = center_lat
+        zone.center_lng = center_lng
+        zone.radius_km = radius_km
+        zone.updated_at = datetime.now(timezone.utc)
+    else:
+        zone = SurgeZone(zone_name=zone_name, center_lat=center_lat, center_lng=center_lng, surge_multiplier=surge_multiplier, radius_km=radius_km)
+        db.add(zone)
+    await db.commit()
+    return {"status": "ok", "zone": zone_name, "multiplier": surge_multiplier}
+
+# ═══════════════════════════════════════════════════════
+#  CANCELLATION FEES
+# ═══════════════════════════════════════════════════════
+
+@app.post("/trips/{trip_id}/cancel", dependencies=[Depends(_verify_api_key)])
+async def cancel_trip_with_fee(trip_id: int, reason: str = Body(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Cancel trip with automatic cancellation fee calculation."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if user.id not in (trip.rider_id, trip.driver_id) and user.role != "admin":
+        raise HTTPException(403, "Not authorized")
+    
+    cancellation_fee = 0.0
+    now = datetime.now(timezone.utc)
+    if trip.status in ("driver_en_route", "arrived"):
+        time_since_accept = (now - trip.created_at).total_seconds() / 60
+        if time_since_accept > 2:
+            cancellation_fee = 5.0
+    
+    trip.status = "canceled"
+    trip.cancel_reason = reason
+    trip.cancellation_fee = cancellation_fee
+    trip.updated_at = now
+    await db.commit()
+    
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.update_field("trips", trip.id, "status", "canceled")
+            firestore_sync.update_field("trips", trip.id, "cancel_reason", reason)
+        except Exception as e:
+            logging.error("Firestore sync failed: %s", e)
+    
+    return {"status": "canceled", "cancellation_fee": cancellation_fee, "message": f"${cancellation_fee:.2f} cancellation fee applied" if cancellation_fee > 0 else "No fee"}
+
+# ═══════════════════════════════════════════════════════
+#  TIPPING
+# ═══════════════════════════════════════════════════════
+
+@app.post("/trips/{trip_id}/tip", dependencies=[Depends(_verify_api_key)])
+async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Add tip to completed trip."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.rider_id != user.id:
+        raise HTTPException(403, "Only the rider can tip")
+    if trip.status != "completed":
+        raise HTTPException(400, "Can only tip completed trips")
+    
+    trip.tip_amount = tip_amount
+    if trip.driver_id:
+        driver_result = await db.execute(select(User).where(User.id == trip.driver_id))
+        driver = driver_result.scalar_one_or_none()
+        if driver:
+            driver.pending_balance += tip_amount
+            driver.total_earnings += tip_amount
+    await db.commit()
+    return {"status": "ok", "tip_amount": tip_amount, "message": "Tip added successfully"}
+
+# ═══════════════════════════════════════════════════════
+#  REFERRAL SYSTEM
+# ═══════════════════════════════════════════════════════
+
+@app.get("/referral/code", dependencies=[Depends(_verify_api_key)])
+async def get_referral_code(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get user's referral code or generate one."""
+    if not user.referral_code:
+        import string, random
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        user.referral_code = code
+        await db.commit()
+    result = await db.execute(select(func.count(Referral.id)).where(Referral.referrer_id == user.id, Referral.status == "rewarded"))
+    successful_referrals = result.scalar() or 0
+    return {"referral_code": user.referral_code, "successful_referrals": successful_referrals, "share_message": f"Join Cruise with my code {user.referral_code} and get $10 off your first ride!"}
+
+@app.post("/referral/apply", dependencies=[Depends(_verify_api_key)])
+async def apply_referral_code(referral_code: str = Body(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Apply referral code during signup."""
+    if user.referred_by:
+        raise HTTPException(400, "Referral code already applied")
+    result = await db.execute(select(User).where(User.referral_code == referral_code))
+    referrer = result.scalar_one_or_none()
+    if not referrer:
+        raise HTTPException(404, "Invalid referral code")
+    if referrer.id == user.id:
+        raise HTTPException(400, "Cannot refer yourself")
+    referral = Referral(referrer_id=referrer.id, referee_id=user.id, referral_code=referral_code, status="pending")
+    db.add(referral)
+    user.referred_by = referrer.id
+    await db.commit()
+    return {"status": "ok", "message": "Referral code applied! Complete your first trip to unlock $10 credit."}
+
+# ═══════════════════════════════════════════════════════
+#  FAVORITE LOCATIONS
+# ═══════════════════════════════════════════════════════
+
+@app.get("/favorites", dependencies=[Depends(_verify_api_key)])
+async def get_favorite_locations(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get user's favorite locations."""
+    result = await db.execute(select(FavoriteLocation).where(FavoriteLocation.user_id == user.id))
+    favorites = result.scalars().all()
+    return [{"id": f.id, "label": f.label, "address": f.address, "lat": f.lat, "lng": f.lng, "icon": f.icon} for f in favorites]
+
+@app.post("/favorites", dependencies=[Depends(_verify_api_key)])
+async def add_favorite_location(label: str = Body(...), address: str = Body(...), lat: float = Body(...), lng: float = Body(...), icon: str = Body("star"), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Add a favorite location."""
+    favorite = FavoriteLocation(user_id=user.id, label=label, address=address, lat=lat, lng=lng, icon=icon)
+    db.add(favorite)
+    await db.commit()
+    await db.refresh(favorite)
+    return {"id": favorite.id, "label": label, "status": "added"}
+
+@app.delete("/favorites/{favorite_id}", dependencies=[Depends(_verify_api_key)])
+async def delete_favorite_location(favorite_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Delete a favorite location."""
+    result = await db.execute(select(FavoriteLocation).where(FavoriteLocation.id == favorite_id, FavoriteLocation.user_id == user.id))
+    favorite = result.scalar_one_or_none()
+    if not favorite:
+        raise HTTPException(404, "Favorite not found")
+    await db.delete(favorite)
+    await db.commit()
+    return {"status": "deleted"}
+
+# ═══════════════════════════════════════════════════════
+#  DRIVER INCENTIVES & QUESTS
+# ═══════════════════════════════════════════════════════
+
+@app.get("/drivers/incentives", dependencies=[Depends(_verify_api_key)])
+async def get_driver_incentives(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get driver's active incentives and quests."""
+    if user.role != "driver":
+        raise HTTPException(403, "Only drivers can view incentives")
+    result = await db.execute(select(DriverIncentive).where(DriverIncentive.driver_id == user.id, DriverIncentive.status.in_(["active", "completed"])).order_by(DriverIncentive.created_at.desc()))
+    incentives = result.scalars().all()
+    return [{"id": i.id, "type": i.incentive_type, "title": i.title, "description": i.description, "progress": f"{i.current_trips}/{i.target_trips}", "bonus_amount": i.bonus_amount, "status": i.status, "expires_at": i.expires_at.isoformat() if i.expires_at else None} for i in incentives]
+
+@app.post("/drivers/incentives/{incentive_id}/claim", dependencies=[Depends(_verify_api_key)])
+async def claim_incentive_bonus(incentive_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Claim completed incentive bonus."""
+    result = await db.execute(select(DriverIncentive).where(DriverIncentive.id == incentive_id, DriverIncentive.driver_id == user.id))
+    incentive = result.scalar_one_or_none()
+    if not incentive:
+        raise HTTPException(404, "Incentive not found")
+    if incentive.status != "completed":
+        raise HTTPException(400, "Incentive not yet completed")
+    incentive.status = "claimed"
+    user.pending_balance += incentive.bonus_amount
+    user.total_earnings += incentive.bonus_amount
+    await db.commit()
+    return {"status": "claimed", "bonus_amount": incentive.bonus_amount, "new_balance": user.pending_balance}
+
+# ═══════════════════════════════════════════════════════
+#  GEOFENCING & SERVICE AREA VALIDATION
+# ═══════════════════════════════════════════════════════
+
+@app.get("/service-area/check", dependencies=[Depends(_verify_api_key)])
+async def check_service_area(lat: float = Query(...), lng: float = Query(...), db: AsyncSession = Depends(get_db)):
+    """Check if location is within service area."""
+    result = await db.execute(select(ServiceArea).where(ServiceArea.is_active == True))
+    areas = result.scalars().all()
+    for area in areas:
+        dist = _haversine(lat, lng, area.center_lat, area.center_lng)
+        if dist <= area.radius_km:
+            return {"in_service_area": True, "area_name": area.area_name, "message": "Location is within service area"}
+    return {"in_service_area": False, "message": "Sorry, we don't service this area yet", "nearest_area": areas[0].area_name if areas else None}
 
 # -------------------------------------------------------
 #  SCHEDULED RIDE AUTO-DISPATCH (background task)

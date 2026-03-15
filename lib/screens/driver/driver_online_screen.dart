@@ -2721,13 +2721,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
             // â”€â”€ Bottom: Phase-specific panel â”€â”€
             if (_phase == _Phase.searching && _pendingOffers.isEmpty)
-              _draggablePanel(
-                isDark,
-                surface,
-                textMuted,
-                borderC,
-                textPrimary,
-                shadowC,
+              Positioned.fill(
+                child: _draggablePanel(
+                  isDark,
+                  surface,
+                  textMuted,
+                  borderC,
+                  textPrimary,
+                  shadowC,
+                ),
               )
             else if (_phase != _Phase.searching || _pendingOffers.isEmpty)
               Positioned(

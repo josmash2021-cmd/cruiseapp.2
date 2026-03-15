@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
+import '../config/page_transitions.dart';
 import '../config/map_styles.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
@@ -451,7 +452,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
       Navigator.of(context).popUntil((r) => r.isFirst);
       Navigator.of(
         context,
-      ).push(MaterialPageRoute(builder: (_) => const ScheduledRidesScreen()));
+      ).push(slideFromRightRoute(const ScheduledRidesScreen()));
     } catch (e) {
       if (mounted) _showErr(S.of(context).failedToBook('$e'));
     } finally {
@@ -532,9 +533,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                         if (!mounted) return;
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) => const PaymentAccountsScreen(),
-                          ),
+                          slideFromRightRoute(const PaymentAccountsScreen()),
                         ).then((_) => _loadPayments());
                       });
                     }

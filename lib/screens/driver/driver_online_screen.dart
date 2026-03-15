@@ -12,6 +12,7 @@ import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
 import '../../services/trip_firestore_service.dart';
@@ -1654,7 +1655,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _pickupAddr = r['pickup_address'] ?? 'Pickup';
     _dropoffAddr = r['dropoff_address'] ?? 'Drop-off';
     _fare = (r['fare'] as num?)?.toDouble() ?? 0;
-    _vehicleType = r['vehicle_type'] ?? 'CruiseX';
+    _vehicleType = _mapRideType((r['vehicle_type'] ?? 'Comfort') as String);
     _distToPickup = _hav(_pos, _pickupLL);
     _etaToPickup = (_distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
     _tripDist = _hav(_pickupLL, _dropoffLL);
@@ -2200,6 +2201,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
   }
 
+  static String _mapRideType(String raw) {
+    final lower = raw.toLowerCase().trim();
+    if (lower.contains('premium')) return 'Premium';
+    if (lower.contains('sedan')) return 'Sedan';
+    if (lower.contains('comfort')) return 'Comfort';
+    if (lower == 'cruisex' || lower == 'cruise_x' || lower == 'cruise') return 'Comfort';
+    // Fallback: capitalize first letter
+    if (raw.isEmpty) return 'Comfort';
+    return raw[0].toUpperCase() + raw.substring(1);
+  }
+
   double _hav(LatLng a, LatLng b) {
     const R = 6371.0;
     final dLat = (b.latitude - a.latitude) * math.pi / 180;
@@ -2331,15 +2343,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _polylines = {};
     });
 
-    // Draw driver â†’ pickup route (green-ish)
+    // Draw driver → pickup route (navy blue)
     await _drawPreviewRoute(
       _pos,
       pickupLL,
       'prev_to_pickup',
-      Colors.greenAccent,
+      _navyRoute,
     );
-    // Draw pickup â†’ dropoff route (gold)
-    await _drawPreviewRoute(pickupLL, dropoffLL, 'prev_trip', _gold);
+    // Draw pickup → dropoff route (navy blue)
+    await _drawPreviewRoute(pickupLL, dropoffLL, 'prev_trip', _navyRoute);
 
     // Wait for frame to render with updated map padding, then fit bounds
     if (!mounted) return;
@@ -2638,15 +2650,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 child: Column(
                   children: [
                     _fab(
-                      Icons.tune_rounded,
-                      44,
-                      fabBg,
-                      fabBorder,
-                      fabIcon,
-                      () => _showOnlinePanel(),
-                    ),
-                    const SizedBox(height: 10),
-                    _fab(
                       Icons.shield_outlined,
                       44,
                       fabBg,
@@ -2654,7 +2657,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       fabIcon,
                       () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const SafetyScreen()),
+                        slideFromRightRoute(const SafetyScreen()),
                       ),
                     ),
                   ],
@@ -2673,9 +2676,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       fabIcon,
                       () => Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => const DriverInboxScreen(),
-                        ),
+                        slideFromRightRoute(const DriverInboxScreen()),
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -2687,9 +2688,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       fabIcon,
                       () => Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => const DriverPromosScreen(),
-                        ),
+                        slideFromRightRoute(const DriverPromosScreen()),
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -2701,9 +2700,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       fabIcon,
                       () => Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => const DriverAnalyticsScreen(),
-                        ),
+                        slideFromRightRoute(const DriverAnalyticsScreen()),
                       ),
                     ),
                   ],
@@ -3008,6 +3005,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       child: PageView(
         controller: _earningsPageCtrl,
         onPageChanged: (i) => setState(() => _earningsPage = i),
+        clipBehavior: Clip.none,
         children: [
           Center(
             child: pillPage(
@@ -3831,9 +3829,7 @@ Widget _navHeader() {
                   Navigator.pop(context);
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const DriverEarningsScreen(),
-                    ),
+                    slideFromRightRoute(const DriverEarningsScreen()),
                   );
                 },
               ),
@@ -3847,9 +3843,7 @@ Widget _navHeader() {
                   Navigator.pop(context);
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const DriverPromosScreen(),
-                    ),
+                    slideFromRightRoute(const DriverPromosScreen()),
                   );
                 },
               ),
@@ -3863,9 +3857,7 @@ Widget _navHeader() {
                   Navigator.pop(context);
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const DriverAnalyticsScreen(),
-                    ),
+                    slideFromRightRoute(const DriverAnalyticsScreen()),
                   );
                 },
               ),
@@ -4042,7 +4034,7 @@ Widget _navHeader() {
     final pickupLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
     final dropoffLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
     final dropoffLng = (offer['dropoff_lng'] as num?)?.toDouble() ?? 0;
-    final vehicleType = (offer['vehicle_type'] ?? 'CruiseX') as String;
+    final vehicleType = _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
 
@@ -4378,7 +4370,7 @@ Widget _navHeader() {
     final dropoffLng = (offer['dropoff_lng'] as num?)?.toDouble() ?? 0;
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
-    final vehicleType = (offer['vehicle_type'] ?? 'CruiseX') as String;
+    final vehicleType = _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
     final distToPickup = _hav(_pos, pickupLL);
     final etaToPickup = (distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
     final tripDist = _hav(pickupLL, dropoffLL);
@@ -5081,13 +5073,11 @@ Widget _navHeader() {
               const SizedBox(width: 8),
               _actionBtn(Icons.chat_bubble_rounded, () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ChatScreen(
-                      recipientName: _riderName,
-                      recipientPhone: _riderPhone,
-                      tripId: _tripId,
-                    ),
-                  ),
+                  slideFromRightRoute(ChatScreen(
+                    recipientName: _riderName,
+                    recipientPhone: _riderPhone,
+                    tripId: _tripId,
+                  )),
                 );
               }),
             ],
@@ -5239,13 +5229,11 @@ Widget _navHeader() {
               const SizedBox(width: 8),
               _actionBtn(Icons.chat_bubble_rounded, () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ChatScreen(
-                      recipientName: _riderName,
-                      recipientPhone: _riderPhone,
-                      tripId: _tripId,
-                    ),
-                  ),
+                  slideFromRightRoute(ChatScreen(
+                    recipientName: _riderName,
+                    recipientPhone: _riderPhone,
+                    tripId: _tripId,
+                  )),
                 );
               }),
             ],
@@ -5942,9 +5930,7 @@ Widget _navHeader() {
                 () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const DriverEarningsScreen(),
-                    ),
+                    slideFromRightRoute(const DriverEarningsScreen()),
                   );
                 },
               ),
@@ -5957,9 +5943,7 @@ Widget _navHeader() {
                 () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const DriverPromosScreen(),
-                    ),
+                    slideFromRightRoute(const DriverPromosScreen()),
                   );
                 },
               ),
@@ -5972,9 +5956,7 @@ Widget _navHeader() {
                 () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const DriverAnalyticsScreen(),
-                    ),
+                    slideFromRightRoute(const DriverAnalyticsScreen()),
                   );
                 },
               ),
@@ -6258,20 +6240,15 @@ Widget _navHeader() {
         HapticFeedback.lightImpact();
         tap();
       },
-      child: ClipOval(
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            width: sz,
-            height: sz,
-            decoration: BoxDecoration(
-              color: bg,
-              shape: BoxShape.circle,
-              border: Border.all(color: border),
-            ),
-            child: Icon(ic, color: iconColor, size: sz * 0.44),
-          ),
+      child: Container(
+        width: sz,
+        height: sz,
+        decoration: BoxDecoration(
+          color: bg,
+          shape: BoxShape.circle,
+          border: Border.all(color: border),
         ),
+        child: Icon(ic, color: iconColor, size: sz * 0.44),
       ),
     );
   }

@@ -220,10 +220,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                             GestureDetector(
                               onTap: () {
                                 Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        const DriverTripHistoryScreen(),
-                                  ),
+                                  slideFromRightRoute(
+                                      const DriverTripHistoryScreen()),
                                 );
                               },
                               child: Container(

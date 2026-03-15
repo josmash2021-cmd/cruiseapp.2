@@ -231,13 +231,11 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
   Future<void> _openPayPal() async {
     if (!mounted) return;
     final approved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => PayPalCheckoutScreen(
-          amount: '1.00',
-          currency: 'USD',
-          description: S.of(context).cruiseAccountVerificationDesc,
-        ),
-      ),
+      slideFromRightRoute(PayPalCheckoutScreen(
+        amount: '1.00',
+        currency: 'USD',
+        description: S.of(context).cruiseAccountVerificationDesc,
+      )),
     );
     if (!mounted) return;
     if (approved == true) {

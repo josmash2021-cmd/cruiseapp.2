@@ -153,7 +153,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     await LocalDataService.setDriverApprovalStatus('none');
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const DriverSignupScreen()),
+      smoothFadeRoute(const DriverSignupScreen()),
       (_) => false,
     );
   }
@@ -163,7 +163,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     await ApiService.clearToken();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+      smoothFadeRoute(const WelcomeScreen()),
       (_) => false,
     );
   }

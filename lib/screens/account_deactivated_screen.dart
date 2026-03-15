@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/user_session.dart';
 import 'welcome_screen.dart';
@@ -63,7 +64,7 @@ class AccountDeactivatedScreen extends StatelessWidget {
                     await UserSession.logout();
                     if (!context.mounted) return;
                     Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                      smoothFadeRoute(const WelcomeScreen()),
                       (_) => false,
                     );
                   },

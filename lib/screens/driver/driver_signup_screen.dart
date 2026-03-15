@@ -541,7 +541,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
   Future<void> _runBiometricCheck() async {
     final result = await Navigator.of(context).push<Map<String, String?>?>(
-      MaterialPageRoute(builder: (_) => const FaceLivenessScreen()),
+      slideFromRightRoute(const FaceLivenessScreen()),
     );
     if (!mounted || result == null) return;
     setState(() {
@@ -958,9 +958,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             required_: true,
             onTap: () async {
               final path = await Navigator.of(context).push<String?>(
-                MaterialPageRoute(
-                  builder: (_) => const LicenseScannerScreen(side: 'Front'),
-                ),
+                slideFromRightRoute(const LicenseScannerScreen(side: 'Front')),
               );
               if (path != null && mounted) {
                 setState(() => _licenseFrontPath = path);
@@ -977,9 +975,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             required_: true,
             onTap: () async {
               final path = await Navigator.of(context).push<String?>(
-                MaterialPageRoute(
-                  builder: (_) => const LicenseScannerScreen(side: 'Back'),
-                ),
+                slideFromRightRoute(const LicenseScannerScreen(side: 'Back')),
               );
               if (path != null && mounted) {
                 setState(() => _licenseBackPath = path);

@@ -19,6 +19,7 @@ import '../config/api_keys.dart';
 import 'chat_screen.dart';
 import 'help_screen.dart';
 import 'home_screen.dart';
+import 'rider_rating_screen.dart';
 import '../l10n/app_localizations.dart';
 
 class RiderTrackingScreen extends StatefulWidget {
@@ -192,6 +193,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             if (mounted && _phase != _TrackPhase.completed) {
               LocalDataService.clearActiveRide();
               setState(() => _phase = _TrackPhase.completed);
+              _goToRating();
             }
           } else if (st == 'cancelled' || st == 'canceled') {
             _statusPollTimer?.cancel();
@@ -292,6 +294,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     } else if (status == 'completed' && _phase != _TrackPhase.completed) {
       LocalDataService.clearActiveRide();
       setState(() => _phase = _TrackPhase.completed);
+      _goToRating();
     } else if (status == 'cancelled' || status == 'canceled') {
       LocalDataService.clearActiveRide();
       widget.onTripComplete?.call();
@@ -329,6 +332,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         _simTimer?.cancel();
         LocalDataService.clearActiveRide();
         setState(() => _phase = _TrackPhase.completed);
+        _goToRating();
         return;
       }
 
@@ -351,6 +355,26 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _statusPollTimer?.cancel();
     _etaPulse.dispose();
     super.dispose();
+  }
+
+  void _goToRating() {
+    if (!mounted) return;
+    // Small delay so the user sees the completed banner briefly
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (_a, _b, _c) => RiderRatingScreen(
+            driverName: widget.driverName,
+            tripId: widget.tripId,
+            fare: widget.price,
+          ),
+          transitionsBuilder: (_a, anim, _c, child) =>
+              FadeTransition(opacity: anim, child: child),
+          transitionDuration: const Duration(milliseconds: 500),
+        ),
+      );
+    });
   }
 
   void _showFeedbackDialog() {
@@ -846,19 +870,19 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     if (!mounted || _segDist.isEmpty) return;
 
     // ── Smoothly advance _traveledM toward _tgtTraveledM along the route ──
-    const chase = 0.12;
+    const chase = 0.18;
     _traveledM += (_tgtTraveledM - _traveledM) * chase;
     // Clamp small residuals
-    if ((_tgtTraveledM - _traveledM).abs() < 0.01) _traveledM = _tgtTraveledM;
+    if ((_tgtTraveledM - _traveledM).abs() < 0.05) _traveledM = _tgtTraveledM;
 
     // Get exact position & bearing ON the route polyline (no shortcuts)
     final (pos, brg) = _posAtDist(_traveledM);
 
-    // Smooth bearing interpolation
+    // Smooth bearing interpolation (use gentler factor for natural turning)
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final nb = (_animBearing + db * chase) % 360;
+    final nb = (_animBearing + db * 0.10) % 360;
 
     // Only rebuild if something changed visually
     final dLat = (pos.latitude - _animPos.latitude).abs();
@@ -875,7 +899,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
     // ── Smooth camera bounds interpolation (60fps) ──
     if (_map != null && !_userMovedMap && _camInitialized) {
-      const lerpSpeed = 0.06;
+      const lerpSpeed = 0.08;
       _camSWLat += (_tgtSWLat - _camSWLat) * lerpSpeed;
       _camSWLng += (_tgtSWLng - _camSWLng) * lerpSpeed;
       _camNELat += (_tgtNELat - _camNELat) * lerpSpeed;
@@ -1091,8 +1115,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 mapToolbarEnabled: false,
                 tiltGesturesEnabled: false,
                 padding: EdgeInsets.only(
-                  bottom: 370 + botPad + 30,
+                  bottom: 380 + botPad + 40,
                   top: topPad + 16,
+                  left: 8,
+                  right: 8,
                 ),
               ),
             ),
@@ -1116,9 +1142,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               left: 0,
               right: 0,
               bottom: 0,
-              child: _phase == _TrackPhase.completed
-                  ? _ratingOverlay(botPad)
-                  : _bottomCard(c, botPad),
+              child: _bottomCard(c, botPad),
             ),
           ],
         ),

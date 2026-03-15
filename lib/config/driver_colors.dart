@@ -24,6 +24,6 @@ class DriverColors {
       ? Colors.white.withValues(alpha: 0.06)
       : Colors.black.withValues(alpha: 0.08);
   Color get glassBg => _dark
-      ? Colors.white.withValues(alpha: 0.06)
-      : Colors.black.withValues(alpha: 0.05);
+      ? const Color(0xFF2C2C2E)
+      : const Color(0xFFE5E5EA);
 }

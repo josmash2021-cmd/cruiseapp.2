@@ -76,6 +76,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   // ── Online state (driver pressed back but is still connected) ──
   bool _isStillOnline = false;
+  Timer? _tripPollTimer;
+  int? _driverId;
 
   @override
   void initState() {
@@ -125,6 +127,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // Listen for photo updates from UserSession
     UserSession.photoNotifier.addListener(_onPhotoUpdated);
 
+    // Resolve driver ID for trip polling
+    _resolveDriverId();
+
     // Delay entrance animations
     Future.delayed(const Duration(milliseconds: 400), () {
       if (mounted) _statsCtrl.forward();
@@ -149,6 +154,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _fabCtrl.dispose();
     _mapController?.dispose();
     _accountStatusTimer?.cancel();
+    _tripPollTimer?.cancel();
     UserSession.photoNotifier.removeListener(_onPhotoUpdated);
     super.dispose();
   }
@@ -167,14 +173,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         await UserSession.logout();
         if (!mounted) return;
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+          smoothFadeRoute(const WelcomeScreen()),
           (_) => false,
         );
       } else if (status == 'deactivated') {
         _accountStatusTimer?.cancel();
         if (!mounted) return;
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const AccountDeactivatedScreen()),
+          smoothFadeRoute(const AccountDeactivatedScreen()),
           (_) => false,
         );
       }
@@ -368,6 +374,81 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!mounted) return;
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
+    if (stillOnline) {
+      _startTripPolling();
+    } else {
+      _stopTripPolling();
+    }
+  }
+
+  // ═══════════════════════════════════════════════════
+  //  TRIP POLLING (when driver is still online on home screen)
+  // ═══════════════════════════════════════════════════
+  Future<void> _resolveDriverId() async {
+    try {
+      final id = await ApiService.getCurrentUserId();
+      if (id != null && mounted) _driverId = id;
+    } catch (_) {}
+  }
+
+  void _startTripPolling() {
+    _tripPollTimer?.cancel();
+    _tripPollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_isStillOnline) {
+        _tripPollTimer?.cancel();
+        return;
+      }
+      _pollForTrips();
+    });
+  }
+
+  void _stopTripPolling() {
+    _tripPollTimer?.cancel();
+    _tripPollTimer = null;
+  }
+
+  Future<void> _pollForTrips() async {
+    if (_driverId == null) {
+      await _resolveDriverId();
+      if (_driverId == null) return;
+    }
+    try {
+      final offers = await ApiService.getDriverPendingOffers(_driverId!);
+      if (!mounted || !_isStillOnline) return;
+      if (offers.isNotEmpty) {
+        // Trip arrived! Redirect to online screen
+        _stopTripPolling();
+        HapticFeedback.heavyImpact();
+        _navigateToOnlineScreen();
+      }
+    } catch (_) {}
+  }
+
+  void _navigateToOnlineScreen() async {
+    if (!mounted) return;
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (ctx, anim1, anim2) =>
+            DriverOnlineScreen(photoUrl: _photoUrl),
+        transitionDuration: const Duration(milliseconds: 600),
+        reverseTransitionDuration: const Duration(milliseconds: 450),
+        transitionsBuilder: (ctx2, anim, anim2b, child) {
+          return FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+            child: child,
+          );
+        },
+      ),
+    );
+    if (!mounted) return;
+    final stillOnline = result?['stillOnline'] == true;
+    setState(() => _isStillOnline = stillOnline);
+    if (stillOnline) {
+      _startTripPolling();
+    } else {
+      _stopTripPolling();
+    }
   }
 
   // ═══════════════════════════════════════════════════

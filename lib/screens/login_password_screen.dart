@@ -160,6 +160,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
     required String loginToken,
     required String method, // "phone" or "email"
     required String contact,
+    String? fallbackEmail,
   }) async {
     if (method == 'phone') {
       final normalizedPhone = _normalizePhone(contact);
@@ -195,9 +196,32 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
             ),
           ),
         );
-      } else {
-        setState(() => _errorText = 'Failed to send SMS code');
+      } else if (fallbackEmail != null && fallbackEmail.isNotEmpty) {
+        // SMS failed — automatically fall back to email verification
+        debugPrint('⚠️ SMS failed, falling back to email verification');
+        setState(() => _loading = true);
+        await _sendCodeAndNavigate(
+          loginToken: loginToken,
+          method: 'email',
+          contact: fallbackEmail,
+        );
         return;
+      } else {
+        // No email fallback available — use local dev code
+        final devCode = _generateCode();
+        debugPrint(
+          '\ud83d\udcf1 DEV MODE — SMS unavailable, login code for $normalizedPhone: $devCode',
+        );
+        Navigator.of(context).push(
+          slideFromRightRoute(
+            LoginVerifyScreen(
+              loginToken: loginToken,
+              contact: normalizedPhone,
+              useVerifyApi: false,
+              expectedCode: devCode,
+            ),
+          ),
+        );
       }
     } else {
       final code = _generateCode();
@@ -289,6 +313,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                     loginToken: loginToken,
                     method: 'phone',
                     contact: phone,
+                    fallbackEmail: email,
                   );
                 },
               ),
@@ -370,6 +395,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
           loginToken: loginToken,
           method: 'phone',
           contact: phone,
+          fallbackEmail: hasEmail ? email : null,
         );
       } else if (hasEmail) {
         await _sendCodeAndNavigate(

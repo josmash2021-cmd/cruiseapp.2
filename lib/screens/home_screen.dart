@@ -373,14 +373,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         await UserSession.logout();
         if (!mounted) return;
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+          smoothFadeRoute(const WelcomeScreen()),
           (_) => false,
         );
       } else if (status == 'deactivated') {
         _accountStatusTimer?.cancel();
         if (!mounted) return;
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const AccountDeactivatedScreen()),
+          smoothFadeRoute(const AccountDeactivatedScreen()),
           (_) => false,
         );
       }
@@ -777,16 +777,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               decelerationRate: ScrollDecelerationRate.normal,
             ),
             cacheExtent:
-                1500, // pre-render more off-screen for buttery smooth scroll
+                2000, // pre-render more off-screen for buttery smooth scroll
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             slivers: [
               SliverToBoxAdapter(child: SizedBox(height: topPad + 16)),
 
               // ━━━ TOP BAR: greeting + avatar + bell ━━━
               SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildTopBar(),
+                child: RepaintBoundary(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: _buildTopBar(),
+                  ),
                 ),
               ),
 
@@ -794,9 +796,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
               // ━━━ HERO: "Where to?" large CTA card ━━━
               SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildHeroCTA(),
+                child: RepaintBoundary(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: _buildHeroCTA(),
+                  ),
                 ),
               ),
 
@@ -804,9 +808,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
               // ━━━ CIRCULAR ACTION BUTTONS ━━━
               SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildCircularActions(),
+                child: RepaintBoundary(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: _buildCircularActions(),
+                  ),
                 ),
               ),
 
@@ -843,9 +849,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               SliverToBoxAdapter(child: const SizedBox(height: 16)),
               SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildQuickAccessGrid(),
+                child: RepaintBoundary(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: _buildQuickAccessGrid(),
+                  ),
                 ),
               ),
 
@@ -864,9 +872,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
                 SliverToBoxAdapter(child: const SizedBox(height: 16)),
                 SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: _buildRecentTimeline(),
+                  child: RepaintBoundary(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _buildRecentTimeline(),
+                    ),
                   ),
                 ),
               ] else if (_loadingSavedData) ...[

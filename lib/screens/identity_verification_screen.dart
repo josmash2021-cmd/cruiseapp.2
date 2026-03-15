@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
@@ -79,7 +80,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
         ? 'Front'
         : (_docType == 'passport' ? 'Passport' : 'ID');
     final frontPath = await Navigator.of(context).push<String?>(
-      MaterialPageRoute(builder: (_) => LicenseScannerScreen(side: frontLabel)),
+      slideFromRightRoute(LicenseScannerScreen(side: frontLabel)),
     );
     if (frontPath == null || !mounted) return;
     _licenseFrontPath = frontPath;
@@ -89,9 +90,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
       await Future.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
       final backPath = await Navigator.of(context).push<String?>(
-        MaterialPageRoute(
-          builder: (_) => const LicenseScannerScreen(side: 'Back'),
-        ),
+        slideFromRightRoute(const LicenseScannerScreen(side: 'Back')),
       );
       if (backPath == null || !mounted) return;
       _licenseBackPath = backPath;
@@ -101,9 +100,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     await Future.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
     final regPath = await Navigator.of(context).push<String?>(
-      MaterialPageRoute(
-        builder: (_) => const LicenseScannerScreen(side: 'Car Registration'),
-      ),
+      slideFromRightRoute(const LicenseScannerScreen(side: 'Car Registration')),
     );
     if (regPath == null || !mounted) return;
     _carRegistrationPath = regPath;

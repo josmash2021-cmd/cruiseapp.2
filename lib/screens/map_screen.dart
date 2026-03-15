@@ -2089,10 +2089,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       Navigator.of(ctx).pop();
                       if (!mounted) return;
                       Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              ScheduleBookingScreen(scheduledAt: dt),
-                        ),
+                        slideFromRightRoute(
+                            ScheduleBookingScreen(scheduledAt: dt)),
                       );
                     },
                   ),
@@ -3824,7 +3822,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       if (mounted) {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const ScheduledRidesScreen()),
+          slideFromRightRoute(const ScheduledRidesScreen()),
         );
       }
       return;
@@ -6772,11 +6770,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     onPressed: () async {
                       final result = await Navigator.of(context)
                           .push<Map<String, dynamic>>(
-                            MaterialPageRoute(
-                              builder: (_) => PickupDropoffSearchScreen(
-                                initialPickupText: _pickupAddress,
-                              ),
-                            ),
+                            slideFromRightRoute(PickupDropoffSearchScreen(
+                              initialPickupText: _pickupAddress,
+                            )),
                           );
                       if (result != null &&
                           result['dropoffLabel'] != null &&

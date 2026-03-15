@@ -74,8 +74,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     with TickerProviderStateMixin {
   GoogleMapController? _map;
   BitmapDescriptor? _carIcon;
-  List<BitmapDescriptor>? _navCarSprites;
-  double _cameraBearing = 0;
   Uint8List? _carIconBytes;
   Uint8List? _pickupPinBytes;
   Uint8List? _dropoffPinBytes;
@@ -479,15 +477,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Future<void> _loadCarIcon() async {
-    // Load multi-angle 3D sprites first
-    _navCarSprites = await CarIconLoader.loadNavCarSprites();
-    // Use ride-specific car type: Suburban→SUV, Fusion→black, Camry→white
-    final bytes =
-        await CarIconLoader.loadForRideBytes(widget.rideName) ??
-        await CarIconLoader.loadUberBytes();
+    // Use Google Maps-style 3D nav car (same as driver navigation)
+    final bytes = await CarIconLoader.loadUberBytes();
     if (bytes != null) {
       _carIconBytes = bytes;
-      final icon = BitmapDescriptor.bytes(bytes, width: 32, height: 64);
+      // ignore: deprecated_member_use
+      final icon = BitmapDescriptor.fromBytes(bytes);
       if (mounted) setState(() => _carIcon = icon);
     }
     await _loadPins();
@@ -807,9 +802,18 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _tgtTraveledM = _traveledM;
     }
 
-    // Driver position comes from Firestore real-time stream - don't restore old position
-    _driverPos = widget.pickupLatLng;
-    _animPos = _driverPos;
+    // Compute position from restored traveled distance so we resume
+    // at the correct point on the route (not back at pickup).
+    if (_segDist.isNotEmpty && _traveledM > 0) {
+      final (pos, brg) = _posAtDist(_traveledM);
+      _driverPos = pos;
+      _animPos = pos;
+      _animBearing = brg;
+      _driverBearing = brg;
+    } else {
+      _driverPos = widget.pickupLatLng;
+      _animPos = _driverPos;
+    }
 
     // Calculate remaining distance
     double remainingM = _segDist.isNotEmpty ? _segDist.last - _traveledM : 0;
@@ -878,11 +882,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // Get exact position & bearing ON the route polyline (no shortcuts)
     final (pos, brg) = _posAtDist(_traveledM);
 
-    // Smooth bearing interpolation (use gentler factor for natural turning)
+    // Smooth bearing interpolation — snappy so the car turns at the
+    // actual curve, not 30 m before it.  0.55 reacts quickly yet stays
+    // visually smooth at 60 fps.
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final nb = (_animBearing + db * 0.28) % 360;
+    final nb = (_animBearing + db * 0.55) % 360;
 
     // Only rebuild if something changed visually
     final dLat = (pos.latitude - _animPos.latitude).abs();
@@ -1052,8 +1058,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final lng = a.longitude + (b.longitude - a.longitude) * t;
     final pos = LatLng(lat, lng);
 
-    // Bearing: look ahead ~30m for smooth heading
-    final lookAhead = math.min(distM + 30, totalM);
+    // Bearing: look ahead only ~5m so the car turns at the actual
+    // curve instead of starting to rotate 30 m before it.
+    final lookAhead = math.min(distM + 5, totalM);
     int llo = lo, lhi = hi;
     if (lookAhead > _segDist[hi]) {
       llo = hi;
@@ -1081,9 +1088,25 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final topPad = MediaQuery.of(context).padding.top;
     final botPad = MediaQuery.of(context).viewPadding.bottom;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        // Save state and go home — tracking continues via Firestore
+        _saveRideState();
+        Navigator.of(context).pushAndRemoveUntil(
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const HomeScreen(),
+            transitionsBuilder: (_, a, __, child) =>
+                FadeTransition(opacity: a, child: child),
+            transitionDuration: const Duration(milliseconds: 300),
+          ),
+          (_) => false,
+        );
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Scaffold(
         backgroundColor: const Color(0xFF1A1A1A),
         body: Stack(
           children: [
@@ -1102,9 +1125,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                     setState(() => _userMovedMap = true);
                   }
                 },
-                onCameraMove: (pos) {
-                  _cameraBearing = pos.bearing;
-                },
+                onCameraMove: (pos) {},
+
                 onCameraIdle: () => _programmaticCam = false,
                 markers: _markers(),
                 polylines: _polylines(),
@@ -1122,13 +1144,25 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 ),
               ),
             ),
-            // ── Back button ──
+            // ── Back button — go home but keep ride tracking alive ──
             Positioned(
               top: topPad + 12,
               left: 16,
               child: _circleBtn(
                 Icons.arrow_back,
-                () => Navigator.of(context).pop(),
+                () {
+                  // Save state before leaving so tracking resumes
+                  _saveRideState();
+                  Navigator.of(context).pushAndRemoveUntil(
+                    PageRouteBuilder(
+                      pageBuilder: (_, __, ___) => const HomeScreen(),
+                      transitionsBuilder: (_, a, __, child) =>
+                          FadeTransition(opacity: a, child: child),
+                      transitionDuration: const Duration(milliseconds: 300),
+                    ),
+                    (_) => false,
+                  );
+                },
               ),
             ),
             // Recenter button — visible only when user panned / zoomed
@@ -1146,6 +1180,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1296,24 +1331,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         // ignore: deprecated_member_use
         ? BitmapDescriptor.fromBytes(_dropoffPinBytes!)
         : BitmapDescriptor.defaultMarker;
-    // Try multi-angle 3D sprites first
-    BitmapDescriptor? carMarker;
-    bool useSprites = false;
-    if (_navCarSprites != null && _navCarSprites!.length == 8) {
-      final viewAngle = _animBearing - _cameraBearing;
-      carMarker = CarIconLoader.spriteForViewAngle(viewAngle);
-      useSprites = carMarker != null;
-    }
-    carMarker ??= _carIcon;
-    if (carMarker != null) {
+    if (_carIcon != null) {
       m.add(
         Marker(
           markerId: const MarkerId('car'),
           position: _animPos,
-          icon: carMarker,
-          rotation: useSprites ? 0 : _animBearing,
+          icon: _carIcon!,
+          rotation: _animBearing,
           anchor: const Offset(0.5, 0.5),
-          flat: !useSprites,
+          flat: true,
           zIndexInt: 10,
         ),
       );

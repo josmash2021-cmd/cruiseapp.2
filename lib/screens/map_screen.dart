@@ -4908,17 +4908,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  /// Uber-style driver car icon (delegates to CarIconLoader).
+  /// Google Maps-style 3D nav car icon (same as driver navigation).
   Future<void> _buildDriverCarIcon() async {
-    // Use ride-specific car: Suburban→SUV, Fusion→black sedan, default→white sedan
-    final rideName = _rides.isNotEmpty ? _rides[_selectedRide].vehicle : '';
-    _driverCarIconBytes =
-        await CarIconLoader.loadForRideBytes(rideName) ??
-        await CarIconLoader.loadUberBytes();
-    final icon = _driverCarIconBytes != null
-        ? BitmapDescriptor.bytes(_driverCarIconBytes!)
-        : await CarIconLoader.loadUber();
-    if (mounted) setState(() => _driverCarIcon = icon);
+    _driverCarIconBytes = await CarIconLoader.loadUberBytes();
+    if (_driverCarIconBytes != null) {
+      // ignore: deprecated_member_use
+      final icon = BitmapDescriptor.fromBytes(_driverCarIconBytes!);
+      if (mounted) setState(() => _driverCarIcon = icon);
+    } else {
+      final icon = await CarIconLoader.loadUber();
+      if (mounted) setState(() => _driverCarIcon = icon);
+    }
   }
 
   // Keep legacy method for compatibility

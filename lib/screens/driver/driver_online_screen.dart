@@ -142,6 +142,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   double _navProgress = 0;
   List<LatLng> _routePts = [];
   Timer? _navTimer;
+  bool _isPickupSummary = false;
 
   // â”€â”€ Session â”€â”€
   double _earnings = 0;
@@ -1679,8 +1680,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _nearPickupNotified = false;
     _nearDropoffNotified = false;
 
-    // Go straight to pickup
-    _toPickup();
+    // Show route summary with client info before navigation
+    _showPickupSummary();
   }
 
   Future<void> _rejectOffer(Map<String, dynamic> r) async {
@@ -1701,6 +1702,53 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   // â”€â”€ _accept and _decline removed — now using _acceptOffer / _rejectOffer â”€â”€
+
+  Future<void> _showPickupSummary() async {
+    if (_tripId != null) {
+      try {
+        await ApiService.updateTripStatus(
+          tripId: _tripId!,
+          status: 'driver_en_route',
+        );
+      } catch (_) {}
+    }
+    setState(() {
+      _isPickupSummary = true;
+      _phase = _Phase.routeSummary;
+      _cameraFollowing = false;
+      _navDist = _hav(_pos, _pickupLL);
+      _navEta = (_navDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      _navInstruct = S.of(context).headToPickup;
+      _navProgress = 0;
+      _slideVal = 0;
+      _slid = false;
+      _markers = {
+        Marker(
+          markerId: const MarkerId('pickup'),
+          position: _pickupLL,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueGreen,
+          ),
+          infoWindow: InfoWindow(
+            title: S.of(context).pickupLabel,
+            snippet: _pickupAddr,
+          ),
+        ),
+        Marker(
+          markerId: const MarkerId('drop'),
+          position: _dropoffLL,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: InfoWindow(
+            title: S.of(context).dropOffLabel,
+            snippet: _dropoffAddr,
+          ),
+        ),
+      };
+    });
+    await _drawRoute(_pos, _pickupLL, 'pickup', _navyRoute);
+    await Future.delayed(const Duration(milliseconds: 150));
+    _fitBounds(_pos, _pickupLL);
+  }
 
   Future<void> _toPickup() async {
     if (_tripId != null) {
@@ -1783,8 +1831,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
     // Show route summary with Start Navigation button
     setState(() {
+      _isPickupSummary = false;
       _phase = _Phase.routeSummary;
-      _cameraFollowing = true;
+      _cameraFollowing = false;
       _reFollowTimer?.cancel();
       _navDist = _hav(_pos, _dropoffLL);
       _navEta = (_navDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
@@ -1807,55 +1856,87 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     await _drawRoute(_pos, _dropoffLL, 'trip', _navyRoute);
     await Future.delayed(const Duration(milliseconds: 150));
     _nearDropoffNotified = false;
-    // Start navigation camera (Uber 2.5D style)
-    _cameraBearing = _heading; // sync for sprite selection
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: _pos, zoom: 17.5, bearing: _heading, tilt: 55),
-      ),
-    );
+    // Show overview of route to dropoff (not navigation camera yet)
+    _fitBounds(_pos, _dropoffLL);
   }
 
-  /// User pressed "Start Navigation" from the route summary — begin actual nav
+  /// User pressed "Start Navigation" from the route summary — begin actual nav.
+  /// If _isPickupSummary, transition to enRouteToPickup; otherwise inTrip.
   Future<void> _beginNavigation() async {
     HapticFeedback.heavyImpact();
-    setState(() {
-      _phase = _Phase.inTrip;
-      _cameraFollowing = true;
-      _reFollowTimer?.cancel();
-      _slideVal = 0;
-      _slid = false;
-      _markers = {
-        Marker(
-          markerId: const MarkerId('drop'),
-          position: _dropoffLL,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-        ),
-      };
-    });
-    // Switch to Uber 2.5D navigation camera
-    _cameraBearing = _heading; // sync for sprite selection
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: _pos, zoom: 17.5, bearing: _heading, tilt: 55),
-      ),
-    );
-    // Also launch external map app if user prefers one (skip in simulation)
-    if (!_isSimulationMode) {
-      MapLauncherService.prefersInApp().then((inApp) {
-        if (!inApp) {
-          MapLauncherService.navigate(
-            destLat: _dropoffLL.latitude,
-            destLng: _dropoffLL.longitude,
-          );
-        }
+
+    if (_isPickupSummary) {
+      // ── Navigate to pickup ──
+      setState(() {
+        _isPickupSummary = false;
+        _phase = _Phase.enRouteToPickup;
+        _cameraFollowing = true;
+        _reFollowTimer?.cancel();
+        _slideVal = 0;
+        _slid = false;
+        _markers = {
+          Marker(
+            markerId: const MarkerId('pickup'),
+            position: _pickupLL,
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueGreen,
+            ),
+            infoWindow: InfoWindow(
+              title: S.of(context).pickupLabel,
+              snippet: _pickupAddr,
+            ),
+          ),
+        };
       });
+      _cameraBearing = _heading;
+      _map?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: _pos, zoom: 17.5, bearing: _heading, tilt: 55),
+        ),
+      );
+      if (!_isSimulationMode) {
+        MapLauncherService.prefersInApp().then((inApp) {
+          if (!inApp) {
+            MapLauncherService.navigate(
+              destLat: _pickupLL.latitude,
+              destLng: _pickupLL.longitude,
+            );
+          }
+        });
+      }
+    } else {
+      // ── Navigate to dropoff ──
+      setState(() {
+        _phase = _Phase.inTrip;
+        _cameraFollowing = true;
+        _reFollowTimer?.cancel();
+        _slideVal = 0;
+        _slid = false;
+        _markers = {
+          Marker(
+            markerId: const MarkerId('drop'),
+            position: _dropoffLL,
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          ),
+        };
+      });
+      _cameraBearing = _heading;
+      _map?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: _pos, zoom: 17.5, bearing: _heading, tilt: 55),
+        ),
+      );
+      if (!_isSimulationMode) {
+        MapLauncherService.prefersInApp().then((inApp) {
+          if (!inApp) {
+            MapLauncherService.navigate(
+              destLat: _dropoffLL.latitude,
+              destLng: _dropoffLL.longitude,
+            );
+          }
+        });
+      }
     }
-    // Auto-drive to dropoff in simulation mode - DISABLED, driver drives manually
-    // if (_isSimulationMode && _routePts.length >= 2) {
-    //   await Future.delayed(const Duration(milliseconds: 500));
-    //   _startSimulation();
-    // }
   }
 
   void _decline() {
@@ -4832,6 +4913,23 @@ Widget _navHeader() {
     );
   }
 
+  Widget _summaryBadge(IconData icon, String text, Color primary, Color muted) {
+    return Column(
+      children: [
+        Icon(icon, color: _gold, size: 20),
+        const SizedBox(height: 4),
+        Text(
+          text,
+          style: TextStyle(
+            color: primary,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
   // â”€â”€ ROUTE SUMMARY PANEL (Google Maps-style overview before navigation) â”€â”€
   Widget _routeSummaryPanel(
     bool isDark,
@@ -4851,105 +4949,30 @@ Widget _navHeader() {
         children: [
           _handle(isDark),
           const SizedBox(height: 10),
-          // Route summary header
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _gold.withValues(alpha: 0.12)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.route_rounded, color: _gold, size: 22),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        S.of(context).routeOverview,
-                        style: TextStyle(
-                          color: textMuted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _dropoffAddr,
-                        style: TextStyle(
-                          color: textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${(_navDist * 0.621371).toStringAsFixed(1)} mi',
-                      style: const TextStyle(
-                        color: _gold,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    Text(
-                      '$_navEta min',
-                      style: TextStyle(
-                        color: textMuted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          // Rider info row
+          // Rider info header with fare
           Row(
             children: [
-              _avatar(38),
+              _avatar(42),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      S.of(context).droppingOff(_riderName),
+                      _riderName,
                       style: TextStyle(
                         color: textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.location_on_rounded,
-                          size: 11,
-                          color: textMuted,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            _dropoffAddr,
-                            style: TextStyle(color: textMuted, fontSize: 11),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                    Text(
+                      _vehicleType,
+                      style: TextStyle(
+                        color: _gold,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
@@ -4958,11 +4981,101 @@ Widget _navHeader() {
                 '\$${_fare.toStringAsFixed(2)}',
                 style: const TextStyle(
                   color: _gold,
-                  fontSize: 18,
+                  fontSize: 20,
                   fontWeight: FontWeight.w900,
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          // Distance / ETA / Trip info badges
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _summaryBadge(
+                Icons.navigation_rounded,
+                '${(_navDist * 0.621371).toStringAsFixed(1)} mi',
+                textPrimary,
+                textMuted,
+              ),
+              _summaryBadge(
+                Icons.access_time_rounded,
+                '$_navEta min',
+                textPrimary,
+                textMuted,
+              ),
+              _summaryBadge(
+                Icons.route_rounded,
+                '${(_tripDist * 0.621371).toStringAsFixed(1)} mi trip',
+                textPrimary,
+                textMuted,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Pickup & Dropoff addresses
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _gold.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _gold.withValues(alpha: 0.10)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 10, height: 10,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF34A853),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _pickupAddr,
+                        style: TextStyle(color: textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      width: 2, height: 16,
+                      color: textMuted.withValues(alpha: 0.3),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      width: 10, height: 10,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEA4335),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _dropoffAddr,
+                        style: TextStyle(color: textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 10),
           // Re-center button + Start Navigation button

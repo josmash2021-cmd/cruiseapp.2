@@ -26,6 +26,10 @@ class DriverNavigationPage extends StatefulWidget {
     this.initialDriverPos,
     this.routePoints,
     this.riderName = 'Rider',
+    this.riderPhotoUrl = '',
+    this.riderRating = 0,
+    this.pickupLabel = '',
+    this.dropoffLabel = '',
     this.vehiclePlate = '',
     this.speedLimitMph = 35,
   });
@@ -36,6 +40,10 @@ class DriverNavigationPage extends StatefulWidget {
   final LatLng? initialDriverPos;
   final List<LatLng>? routePoints;
   final String riderName;
+  final String riderPhotoUrl;
+  final double riderRating;
+  final String pickupLabel;
+  final String dropoffLabel;
   final String vehiclePlate;
   final int speedLimitMph;
 
@@ -425,7 +433,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         position: _pos,
         icon: _arrowIcon ?? BitmapDescriptor.defaultMarker,
         rotation: _bearing,
-        flat: false,
+        flat: true,
         anchor: const Offset(0.5, 0.5),
         zIndexInt: 100,
       ),
@@ -551,7 +559,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           // ── RECENTER BUTTON ───────────────────────────────────────────────
           if (!_cameraFollowing)
             Positioned(
-              bottom: 190 + bot,
+              bottom: 290 + bot,
               left: _hasResumedOnce ? 80 : 0,
               right: _hasResumedOnce ? null : 0,
               child: _hasResumedOnce
@@ -559,17 +567,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                   : Center(child: _resumePill()),
             ),
 
-          // ── ACTION PILL (ARRIVED / START / END TRIP) ──────────────────────
-          if (_showActionPill)
-            Positioned(
-              bottom: 132 + bot,
-              left: 16,
-              right: 16,
-              child: _actionPill(),
-            ),
-
-          // ── BOTTOM ETA BAR ────────────────────────────────────────────────
-          Positioned(bottom: 0, left: 0, right: 0, child: _etaBar(bot)),
+          // ── BOTTOM PANEL: Rider info + ETA + Action ────────────────────────
+          Positioned(bottom: 0, left: 0, right: 0, child: _bottomPanel(bot)),
         ],
       ),
     );
@@ -931,10 +930,10 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   }
 
   // =========================================================================
-  //  BOTTOM ETA BAR  — 3 columns: arrival | time remaining | distance
+  //  BOTTOM PANEL — Uber-style: rider info + ETA + phase action button
   // =========================================================================
 
-  Widget _etaBar(double botPad) {
+  Widget _bottomPanel(double botPad) {
     final arrival = DateTime.now().add(Duration(minutes: _etaMinutes));
     final h12 = arrival.hour % 12 == 0 ? 12 : arrival.hour % 12;
     final min = arrival.minute.toString().padLeft(2, '0');
@@ -943,36 +942,150 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final distStr = _distRemainingMi < 0.1
         ? '${(_distRemainingMi * 5280).round()} ft'
         : '${_distRemainingMi.toStringAsFixed(1)} mi';
+    final s = S.of(context);
 
     return Container(
-      padding: EdgeInsets.only(top: 14, bottom: botPad + 14),
       decoration: const BoxDecoration(
         color: _cardBg,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        border: Border(top: BorderSide(color: _cardBorder, width: 1)),
         boxShadow: [
-          BoxShadow(
-            color: Color(0x55000000),
-            blurRadius: 16,
-            offset: Offset(0, -4),
+          BoxShadow(color: Color(0x55000000), blurRadius: 16, offset: Offset(0, -4)),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── ETA row ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              children: [
+                Expanded(child: _etaCell(primary: arrivalStr, secondary: s.arrivalLabel)),
+                _etaDivider(),
+                Expanded(child: _etaCell(primary: '$_etaMinutes min', secondary: s.remainingLabel)),
+                _etaDivider(),
+                Expanded(child: _etaCell(primary: distStr, secondary: s.distance)),
+              ],
+            ),
+          ),
+          Container(height: 1, color: _cardBorder),
+          // ── Rider info row ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                // Avatar
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: _gold, width: 2),
+                    image: widget.riderPhotoUrl.isNotEmpty
+                        ? DecorationImage(
+                            image: NetworkImage(widget.riderPhotoUrl),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                    color: const Color(0xFF2A2F42),
+                  ),
+                  child: widget.riderPhotoUrl.isEmpty
+                      ? const Icon(Icons.person, color: _textSecondary, size: 22)
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                // Name + rating
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.riderName,
+                        style: const TextStyle(
+                          color: _textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                      ),
+                      if (widget.riderRating > 0)
+                        Row(
+                          children: [
+                            const Icon(Icons.star_rounded, color: _gold, size: 14),
+                            const SizedBox(width: 3),
+                            Text(
+                              widget.riderRating.toStringAsFixed(1),
+                              style: const TextStyle(
+                                color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+                // Contact buttons
+                _miniBtn(Icons.message_rounded, () {
+                  HapticFeedback.lightImpact();
+                }),
+                const SizedBox(width: 8),
+                _miniBtn(Icons.phone_rounded, () {
+                  HapticFeedback.lightImpact();
+                }),
+              ],
+            ),
+          ),
+          // ── Address info ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Column(
+              children: [
+                if (widget.pickupLabel.isNotEmpty &&
+                    (_sm.phase == TripPhase.toPickup || _sm.phase == TripPhase.arrivedPickup))
+                  _addressRow(Icons.radio_button_checked, const Color(0xFF4CAF50), widget.pickupLabel),
+                if (widget.dropoffLabel.isNotEmpty &&
+                    (_sm.phase == TripPhase.onTrip || _sm.phase == TripPhase.arrivedDropoff))
+                  _addressRow(Icons.location_on_rounded, _red, widget.dropoffLabel),
+              ],
+            ),
+          ),
+          // ── Phase action button ──
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, botPad + 14),
+            child: _actionButton(),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _miniBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 38, height: 38,
+        decoration: BoxDecoration(
+          color: const Color(0xFF232840),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _cardBorder, width: 1),
+        ),
+        child: Icon(icon, color: _textSecondary, size: 18),
+      ),
+    );
+  }
+
+  Widget _addressRow(IconData icon, Color iconColor, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
+          Icon(icon, color: iconColor, size: 14),
+          const SizedBox(width: 8),
           Expanded(
-            child: _etaCell(primary: arrivalStr, secondary: S.of(context).arrivalLabel),
-          ),
-          _etaDivider(),
-          Expanded(
-            child: _etaCell(
-              primary: '$_etaMinutes min',
-              secondary: S.of(context).remainingLabel,
+            child: Text(
+              label,
+              style: const TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w500),
+              maxLines: 1, overflow: TextOverflow.ellipsis,
             ),
-          ),
-          _etaDivider(),
-          Expanded(
-            child: _etaCell(primary: distStr, secondary: S.of(context).distance),
           ),
         ],
       ),
@@ -1008,51 +1121,48 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     );
   }
 
-  Widget _etaDivider() =>
-      Container(width: 1, height: 28, color: _cardBorder);
+  Widget _etaDivider() => Container(width: 1, height: 28, color: _cardBorder);
 
   // =========================================================================
-  //  ACTION PILL  — floating above bottom bar, only when action needed
+  //  ACTION BUTTON — context-aware (Uber-style slide-to-act feel)
   // =========================================================================
 
-  bool get _showActionPill =>
-      _sm.phase == TripPhase.toPickup ||
-      _sm.phase == TripPhase.arrivedPickup ||
-      _sm.phase == TripPhase.onTrip ||
-      _sm.phase == TripPhase.arrivedDropoff;
-
-  Widget _actionPill() {
+  Widget _actionButton() {
     String label;
     Color bg;
+    IconData icon;
     VoidCallback onTap;
+    final s = S.of(context);
+
     switch (_sm.phase) {
       case TripPhase.toPickup:
-        label = S.of(context).arrivedAtPickup;
+        label = s.arrivedAtPickup;
         bg = const Color(0xFF2E7D32);
+        icon = Icons.check_circle_outline_rounded;
         onTap = () {
           HapticFeedback.heavyImpact();
           _sm.arriveAtPickup();
         };
-        break;
       case TripPhase.arrivedPickup:
-        label = S.of(context).startTrip;
+        label = s.startTrip;
         bg = _gold;
+        icon = Icons.play_arrow_rounded;
         onTap = () {
           HapticFeedback.heavyImpact();
           _sm.beginTrip();
         };
-        break;
       case TripPhase.onTrip:
-        label = S.of(context).endTrip;
+        label = s.endTrip;
         bg = _red;
+        icon = Icons.stop_rounded;
         onTap = () {
           HapticFeedback.heavyImpact();
           _sm.arriveAtDropoff();
         };
-        break;
       case TripPhase.arrivedDropoff:
-        label = S.of(context).finishRide;
+        label = s.finishRide;
         bg = _gold;
+        icon = Icons.flag_rounded;
         onTap = () async {
           HapticFeedback.heavyImpact();
           _sm.completeTrip();
@@ -1064,30 +1174,30 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           }
           if (context.mounted) Navigator.of(context).pop();
         };
-        break;
       default:
         return const SizedBox.shrink();
     }
+
     return SizedBox(
-      height: 50,
-      child: ElevatedButton(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton.icon(
         onPressed: onTap,
+        icon: Icon(icon, size: 22),
+        label: Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+          ),
+        ),
         style: ElevatedButton.styleFrom(
           backgroundColor: bg,
           foregroundColor: Colors.white,
-          elevation: 4,
-          shadowColor: Colors.black54,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(25),
-          ),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.1,
-          ),
+          elevation: 6,
+          shadowColor: bg.withValues(alpha: 0.4),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
     );

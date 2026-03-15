@@ -164,6 +164,14 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
           initialDriverPos: _driverPos,
           routePoints: routePts,
           riderName: accepted.riderName,
+          riderPhotoUrl: accepted.riderPhotoUrl,
+          riderRating: accepted.riderRating,
+          pickupLabel: accepted.pickupAddress.isNotEmpty
+              ? accepted.pickupAddress
+              : offer.pickupAddress,
+          dropoffLabel: accepted.dropoffAddress.isNotEmpty
+              ? accepted.dropoffAddress
+              : offer.dropoffAddress,
         ),
       ),
     );
@@ -329,7 +337,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                 ? _loadingIndicator()
                 : ValueListenableBuilder<List<RideOffer>>(
                     valueListenable: _ctrl.offersNotifier,
-                    builder: (_, offers, _) {
+                    builder: (_, offers, __) {
                       if (offers.isEmpty) return _emptyState();
                       return _offersList(offers, pad.bottom);
                     },

@@ -55,11 +55,19 @@ class AcceptedOffer {
   final LatLng pickupLatLng;
   final LatLng dropoffLatLng;
   final String riderName;
+  final String riderPhotoUrl;
+  final double riderRating;
+  final String pickupAddress;
+  final String dropoffAddress;
 
   const AcceptedOffer({
     required this.offerId,
     required this.pickupLatLng,
     required this.dropoffLatLng,
     required this.riderName,
+    this.riderPhotoUrl = '',
+    this.riderRating = 0,
+    this.pickupAddress = '',
+    this.dropoffAddress = '',
   });
 }

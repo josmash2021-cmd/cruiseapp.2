@@ -52,7 +52,8 @@ class RouteSnapper {
     }
 
     // Search window: start a few segments back from lastIndex
-    final searchStart = (lastIndex - 3).clamp(0, route.length - 2);
+    // If last offset was large, search all segments to find the true closest
+    final searchStart = (lastIndex - 5).clamp(0, route.length - 2);
 
     double bestDist = double.infinity;
     LatLng bestPoint = route[searchStart];
@@ -67,7 +68,7 @@ class RouteSnapper {
         bestSeg = i;
       }
       // If we're past lastIndex by a lot and distance is increasing, stop early
-      if (i > lastIndex + 20 && d > bestDist * 2) break;
+      if (i > lastIndex + 30 && d > bestDist * 3) break;
     }
 
     final bearing = _computeBearing(

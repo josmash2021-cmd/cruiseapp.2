@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'security_service.dart';
 import '../config/env.dart';
@@ -30,7 +31,7 @@ class ApiService {
 
   /// Cloudflare tunnel URL — works from any network as fallback
   static const String _tunnelUrl =
-      'https://balanced-quantitative-intermediate-container.trycloudflare.com';
+      'https://skills-inn-boots-philosophy.trycloudflare.com';
 
   /// Production Railway URL — works from any network (cellular, WiFi, etc.)
   static const String _defaultTunnelUrl =
@@ -59,15 +60,13 @@ class ApiService {
         url.startsWith('http://127.');
   }
 
-  /// Load persisted server URL from SharedPreferences.
+  /// Load persisted server URL from SharedPreferences, then check Firestore
+  /// for a dynamically-updated tunnel URL.
   /// Call once in main() before runApp().
-  /// Does NOT probe — probing blocks startup. heavyInit() probes in the background.
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_serverUrlPrefKey);
     if (saved != null && _isLocalUrl(saved)) {
-      // Stale local IP saved from a previous dev session — clear it so we
-      // never boot pointing at an unreachable private address on cellular.
       await prefs.remove(_serverUrlPrefKey);
     }
     if (saved != null && saved.isNotEmpty && !_isLocalUrl(saved)) {
@@ -75,8 +74,32 @@ class ApiService {
     } else {
       _activeUrl = _defaultTunnelUrl;
     }
+
+    // Try to read the latest tunnel URL from Firestore (written by startup
+    // script).  This is the key to working from ANY network — the tunnel
+    // URL is always current even after a restart.
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('config')
+          .doc('server')
+          .get()
+          .timeout(const Duration(seconds: 4));
+      if (doc.exists) {
+        final url = doc.data()?['tunnel_url'] as String?;
+        if (url != null && url.isNotEmpty && url.startsWith('https://')) {
+          _dynamicTunnelUrl = url;
+          debugPrint('[ApiService] Firestore tunnel URL: $url');
+        }
+      }
+    } catch (e) {
+      debugPrint('[ApiService] Firestore config read failed: $e');
+    }
+
     debugPrint('[ApiService] active URL: $_activeUrl');
   }
+
+  /// Dynamic tunnel URL fetched from Firestore at init.
+  static String? _dynamicTunnelUrl;
 
   /// Update the active server URL.
   /// Local/private-network URLs are kept in memory only — never persisted —
@@ -122,8 +145,16 @@ class ApiService {
     } catch (_) {}
 
     // ── Step 2: probe remaining URLs in parallel ───────────────────────────
-    final remaining = (candidates ??
-            [_activeUrl, _tunnelUrl, _localNetworkUrl, _adbUrl, _localUrl])
+    // Include the dynamic Firestore tunnel URL (highest priority after prod)
+    final allCandidates = candidates ?? [
+      if (_dynamicTunnelUrl != null) _dynamicTunnelUrl!,
+      _activeUrl,
+      _tunnelUrl,
+      _localNetworkUrl,
+      _adbUrl,
+      _localUrl,
+    ];
+    final remaining = allCandidates
         .where((u) => u != _defaultTunnelUrl && u.isNotEmpty)
         .toSet()
         .toList();

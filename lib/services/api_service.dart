@@ -28,6 +28,10 @@ class ApiService {
   /// Local network URL — works for physical devices on same WiFi network
   static const String _localNetworkUrl = 'http://172.20.11.24:8000';
 
+  /// Cloudflare tunnel URL — works from any network as fallback
+  static const String _tunnelUrl =
+      'https://balanced-quantitative-intermediate-container.trycloudflare.com';
+
   /// Production Railway URL — works from any network (cellular, WiFi, etc.)
   static const String _defaultTunnelUrl =
       'https://www.cruiseinride.com';
@@ -119,7 +123,7 @@ class ApiService {
 
     // ── Step 2: probe remaining URLs in parallel ───────────────────────────
     final remaining = (candidates ??
-            [_activeUrl, _localNetworkUrl, _adbUrl, _localUrl])
+            [_activeUrl, _tunnelUrl, _localNetworkUrl, _adbUrl, _localUrl])
         .where((u) => u != _defaultTunnelUrl && u.isNotEmpty)
         .toSet()
         .toList();

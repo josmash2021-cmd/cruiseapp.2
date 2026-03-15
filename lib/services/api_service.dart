@@ -51,7 +51,7 @@ class ApiService {
     debugPrint('[ApiService] active URL: $_activeUrl');
     // Probe to find a working URL before the app starts making requests
     try {
-      final url = await probeAndSetBestUrl(timeout: const Duration(seconds: 3));
+      final url = await probeAndSetBestUrl(timeout: const Duration(seconds: 6));
       if (url != null) {
         debugPrint('[ApiService] probe found reachable URL: $url');
       } else {

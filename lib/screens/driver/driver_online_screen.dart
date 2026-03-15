@@ -5098,7 +5098,7 @@ Widget _navHeader() {
     );
   }
 
-  // â”€â”€ PICKUP PANEL â”€â”€
+  // ── PICKUP PANEL (Uber-style) ──
   Widget _pickupPanel(
     bool isDark,
     Color bg,
@@ -5107,106 +5107,125 @@ Widget _navHeader() {
     Color borderC,
     Color shadowC,
   ) {
-    return _wrapInDraggableSheet(
-      isDark: isDark,
-      surface: bg,
-      shadowC: shadowC,
-      minChildSize: 0.35,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _handle(isDark),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _avatar(42),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      S.of(context).pickingUp(_riderName),
-                      style: TextStyle(
-                        color: textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    Text(
-                      _pickupAddr,
-                      style: TextStyle(color: textMuted, fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              _actionBtn(Icons.phone_rounded, () async {
-                if (_riderPhone.isNotEmpty) {
-                  final uri = Uri(scheme: 'tel', path: _riderPhone);
-                  if (await canLaunchUrl(uri)) await launchUrl(uri);
-                }
-              }),
-              const SizedBox(width: 8),
-              _actionBtn(Icons.chat_bubble_rounded, () {
-                Navigator.of(context).push(
-                  slideFromRightRoute(ChatScreen(
-                    recipientName: _riderName,
-                    recipientPhone: _riderPhone,
-                    tripId: _tripId,
-                  )),
-                );
-              }),
-            ],
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 16,
+            offset: const Offset(0, -2),
           ),
-          const SizedBox(height: 14),
-          // Show ARRIVED button (prominent when near pickup)
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton.icon(
-              onPressed: _arrivePickup,
-              icon: const Icon(
-                Icons.place_rounded,
-                color: Colors.black,
-                size: 20,
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Compact rider info
+              Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF34C759),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF34C759).withValues(alpha: 0.4),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _riderName,
+                          style: TextStyle(
+                            color: textPrimary,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _pickupAddr,
+                          style: TextStyle(
+                            color: textMuted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () async {
+                      if (_riderPhone.isNotEmpty) {
+                        final uri = Uri(scheme: 'tel', path: _riderPhone);
+                        if (await canLaunchUrl(uri)) await launchUrl(uri);
+                      }
+                    },
+                    icon: Icon(
+                      Icons.phone,
+                      color: textPrimary,
+                      size: 22,
+                    ),
+                    style: IconButton.styleFrom(
+                      backgroundColor: isDark
+                          ? Colors.white.withValues(alpha: 0.1)
+                          : Colors.black.withValues(alpha: 0.05),
+                    ),
+                  ),
+                ],
               ),
-              label: Flexible(
-                child: Text(
-                  _nearPickupNotified
-                      ? S.of(context).arrived
-                      : S.of(context).arrivedAtPickup,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
+              const SizedBox(height: 16),
+              // Large ARRIVED button (Uber-style)
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _arrivePickup,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    _nearPickupNotified
+                        ? S.of(context).arrived.toUpperCase()
+                        : S.of(context).arrivedAtPickup.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _nearPickupNotified
-                    ? _gold
-                    : _gold.withValues(alpha: 0.85),
-                foregroundColor: Colors.black,
-                elevation: _nearPickupNotified ? 6 : 2,
-                shadowColor: _gold.withValues(alpha: 0.4),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
+            ],
           ),
-          const SizedBox(height: 8),
-          _cancelRow(isDark),
-        ],
+        ),
       ),
     );
   }
 
-  // â”€â”€ ARRIVED PANEL â”€â”€
+  // ── ARRIVED PANEL ──
   Widget _arrivedPanel(
     bool isDark,
     Color bg,
@@ -5382,195 +5401,143 @@ Widget _navHeader() {
     Color borderC,
     Color shadowC,
   ) {
-    return _wrapInDraggableSheet(
-      isDark: isDark,
-      surface: bg,
-      shadowC: shadowC,
-      minChildSize: 0.40,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _handle(isDark),
-          const SizedBox(height: 10),
-          // Trip progress
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _gold.withValues(alpha: 0.12)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _gold,
-                    boxShadow: [
-                      BoxShadow(
-                        color: _gold.withValues(alpha: 0.5),
-                        blurRadius: 6,
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 16,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ETA strip - Uber style
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '$_navEta min',
+                        style: TextStyle(
+                          color: textPrimary,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          height: 1.0,
+                        ),
+                      ),
+                      Text(
+                        '${(_navDist * 0.621371).toStringAsFixed(1)} mi away',
+                        style: TextStyle(
+                          color: textMuted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  S.of(context).tripInProgress,
-                  style: TextStyle(
-                    color: textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '\$${_fare.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: _gold,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value: _navProgress,
-              backgroundColor: isDark
-                  ? Colors.white.withValues(alpha: 0.04)
-                  : Colors.black.withValues(alpha: 0.06),
-              valueColor: const AlwaysStoppedAnimation(_gold),
-              minHeight: 4,
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Google Maps–style ETA / distance strip ──────────────────────
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.07),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _navStat(Icons.schedule_rounded, '$_navEta min', textPrimary),
-                Container(
-                  width: 1,
-                  height: 20,
-                  color: textMuted.withValues(alpha: 0.25),
-                ),
-                _navStat(
-                  Icons.straighten_rounded,
-                  '${(_navDist * 0.621371).toStringAsFixed(1)} mi',
-                  textPrimary,
-                ),
-                Container(
-                  width: 1,
-                  height: 20,
-                  color: textMuted.withValues(alpha: 0.25),
-                ),
-                _navStat(
-                  Icons.place_rounded,
-                  S.of(context).dropOffLabel.toUpperCase(),
-                  _gold,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _avatar(38),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      S.of(context).droppingOff(_riderName),
-                      style: TextStyle(
-                        color: textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
+                  Text(
+                    '\$${_fare.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      color: textPrimary,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
                     ),
-                    Row(
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Rider info - compact
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          Icons.location_on_rounded,
-                          size: 11,
-                          color: textMuted,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            _dropoffAddr,
-                            style: TextStyle(color: textMuted, fontSize: 11),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        Text(
+                          _riderName,
+                          style: TextStyle(
+                            color: textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
                           ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _dropoffAddr,
+                          style: TextStyle(
+                            color: textMuted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
-                  ],
+                  ),
+                  IconButton(
+                    onPressed: () async {
+                      if (_riderPhone.isNotEmpty) {
+                        final uri = Uri(scheme: 'tel', path: _riderPhone);
+                        if (await canLaunchUrl(uri)) await launchUrl(uri);
+                      }
+                    },
+                    icon: Icon(
+                      Icons.phone,
+                      color: textPrimary,
+                      size: 22,
+                    ),
+                    style: IconButton.styleFrom(
+                      backgroundColor: isDark
+                          ? Colors.white.withValues(alpha: 0.1)
+                          : Colors.black.withValues(alpha: 0.05),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // COMPLETE TRIP button - Uber style
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _complete,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _nearDropoffNotified
+                        ? Colors.black
+                        : Colors.black.withValues(alpha: 0.3),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    _nearDropoffNotified
+                        ? S.of(context).finishTrip.toUpperCase()
+                        : 'COMPLETE TRIP',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
                 ),
               ),
-              _actionBtn(Icons.phone_rounded, () async {
-                if (_riderPhone.isNotEmpty) {
-                  final uri = Uri(scheme: 'tel', path: _riderPhone);
-                  if (await canLaunchUrl(uri)) await launchUrl(uri);
-                }
-              }),
             ],
           ),
-          const SizedBox(height: 12),
-          // FINISH TRIP button — only active when near dropoff
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton.icon(
-              onPressed:
-                  _complete, // always enabled — driver manually ends trip
-              icon: const Icon(
-                Icons.flag_rounded,
-                color: Colors.black,
-                size: 20,
-              ),
-              label: Text(
-                _nearDropoffNotified
-                    ? S.of(context).finishTrip
-                    : '${(_navDist * 0.621371).toStringAsFixed(1)} mi',
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _nearDropoffNotified
-                    ? _gold
-                    : _gold.withValues(alpha: 0.65),
-                foregroundColor: Colors.black,
-                elevation: _nearDropoffNotified ? 6 : 2,
-                shadowColor: _gold.withValues(alpha: 0.4),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          _cancelRow(isDark),
-        ],
+        ),
       ),
     );
   }

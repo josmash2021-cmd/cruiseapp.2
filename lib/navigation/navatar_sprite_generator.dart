@@ -170,15 +170,30 @@ class NavatarSpriteGenerator {
     cvs.drawPath(path, Paint()..color = const Color(0x14000000)..style = PaintingStyle.stroke..strokeWidth = 0.7..isAntiAlias = true);
   }
 
-  // Car model — dark charcoal SUV
+  // Car model — dark premium sedan (BMW/Audi style)
   static List<_F3> _car() {
-    const hw = 23.0, fl = 50.0, rl = 50.0, bh = 16.0;
-    const fhw = hw * 0.85, rhw = hw * 0.95;
-    const cb = Color(0xFF1C2028), cg = Color(0xFF0A1828);
-    const ch = Color(0xFF222830), ct = Color(0xFF1A1E24);
-    const cr = Color(0xFF2A3038), cbm = Color(0xFF141820);
-    const cw = Color(0xFF101418);
-    const clf = Color(0xFFFFFBE0), clr = Color(0xFFE83030);
+    const hw = 24.0, fl = 52.0, rl = 52.0, bh = 17.0;
+    const fhw = hw * 0.84, rhw = hw * 0.96;
+    // Dark navy body
+    const cb = Color(0xFF161A24);
+    // Blue-tinted glass
+    const cg = Color(0xFF1A3858);
+    // Hood (slightly lighter than body)
+    const ch = Color(0xFF1E2230);
+    // Trunk
+    const ct = Color(0xFF181C24);
+    // Roof (dark with subtle blue)
+    const cr = Color(0xFF222838);
+    // Front/rear panels (darkest)
+    const cbm = Color(0xFF0E1018);
+    // Tire rubber
+    const cw = Color(0xFF0C0C10);
+    // Silver rim
+    const cwRim = Color(0xFF707880);
+    // Headlights (bright white)
+    const clf = Color(0xFFFFFFFF);
+    // Taillights (bright red)
+    const clr = Color(0xFFFF2020);
 
     return [
       // Body sides
@@ -188,34 +203,45 @@ class NavatarSpriteGenerator {
       _F3([_V3(-fhw,2,fl),_V3(fhw,2,fl),_V3(fhw,bh,fl),_V3(-fhw,bh,fl)], cbm, 'bf'),
       _F3([_V3(rhw,2,-rl),_V3(-rhw,2,-rl),_V3(-rhw,bh,-rl),_V3(rhw,bh,-rl)], cbm, 'br'),
       // Hood
-      _F3([_V3(-fhw*0.95,bh,fl),_V3(fhw*0.95,bh,fl),_V3(hw*0.88,bh+2,18),_V3(-hw*0.88,bh+2,18)], ch, 'hood'),
+      _F3([_V3(-fhw*0.95,bh,fl),_V3(fhw*0.95,bh,fl),_V3(hw*0.88,bh+2,20),_V3(-hw*0.88,bh+2,20)], ch, 'hood'),
       // Windshield
-      _F3([_V3(-hw*0.82,bh+2,18),_V3(hw*0.82,bh+2,18),_V3(hw*0.72,30,8),_V3(-hw*0.72,30,8)], cg, 'glass'),
+      _F3([_V3(-hw*0.82,bh+2,20),_V3(hw*0.82,bh+2,20),_V3(hw*0.72,31,9),_V3(-hw*0.72,31,9)], cg, 'glass'),
       // Roof
-      _F3([_V3(-hw*0.70,32,8),_V3(hw*0.70,32,8),_V3(hw*0.68,32,-13),_V3(-hw*0.68,32,-13)], cr, 'roof'),
+      _F3([_V3(-hw*0.70,33,9),_V3(hw*0.70,33,9),_V3(hw*0.68,33,-14),_V3(-hw*0.68,33,-14)], cr, 'roof'),
       // Rear window
-      _F3([_V3(-hw*0.68,32,-13),_V3(hw*0.68,32,-13),_V3(hw*0.78,bh+1,-22),_V3(-hw*0.78,bh+1,-22)], cg, 'glass_r'),
+      _F3([_V3(-hw*0.68,33,-14),_V3(hw*0.68,33,-14),_V3(hw*0.78,bh+1,-24),_V3(-hw*0.78,bh+1,-24)], cg, 'glass_r'),
       // Trunk
-      _F3([_V3(-hw*0.80,bh+1,-22),_V3(hw*0.80,bh+1,-22),_V3(rhw*0.92,bh,-rl),_V3(-rhw*0.92,bh,-rl)], ct, 'trunk'),
+      _F3([_V3(-hw*0.80,bh+1,-24),_V3(hw*0.80,bh+1,-24),_V3(rhw*0.92,bh,-rl),_V3(-rhw*0.92,bh,-rl)], ct, 'trunk'),
       // Side windows
-      _F3([_V3(-hw-0.5,bh+3,6),_V3(-hw-0.5,bh+3,-11),_V3(-hw-0.5,28,-11),_V3(-hw-0.5,28,6)], cg, 'glass_s'),
-      _F3([_V3(hw+0.5,bh+3,-11),_V3(hw+0.5,bh+3,6),_V3(hw+0.5,28,6),_V3(hw+0.5,28,-11)], cg, 'glass_s'),
-      // Headlights
-      _F3([_V3(-fhw*0.75-6,bh*0.65,fl+.5),_V3(-fhw*0.75,bh*0.65,fl+.5),_V3(-fhw*0.75,bh*0.65+4,fl+.5),_V3(-fhw*0.75-6,bh*0.65+4,fl+.5)], clf, 'lf'),
-      _F3([_V3(fhw*0.75,bh*0.65,fl+.5),_V3(fhw*0.75+6,bh*0.65,fl+.5),_V3(fhw*0.75+6,bh*0.65+4,fl+.5),_V3(fhw*0.75,bh*0.65+4,fl+.5)], clf, 'lf'),
-      // Taillights
-      _F3([_V3(-rhw*0.75,bh*0.6,-rl-.5),_V3(-rhw*0.75+7,bh*0.6,-rl-.5),_V3(-rhw*0.75+7,bh*0.6+4.5,-rl-.5),_V3(-rhw*0.75,bh*0.6+4.5,-rl-.5)], clr, 'lr'),
-      _F3([_V3(rhw*0.75-7,bh*0.6,-rl-.5),_V3(rhw*0.75,bh*0.6,-rl-.5),_V3(rhw*0.75,bh*0.6+4.5,-rl-.5),_V3(rhw*0.75-7,bh*0.6+4.5,-rl-.5)], clr, 'lr'),
-      // Wheels
-      _F3([_V3(-hw-5,1,fl*0.55-5),_V3(-hw,1,fl*0.55-5),_V3(-hw,7,fl*0.55-5),_V3(-hw-5,7,fl*0.55-5)], cw, 'w'),
-      _F3([_V3(hw,1,fl*0.55-5),_V3(hw+5,1,fl*0.55-5),_V3(hw+5,7,fl*0.55-5),_V3(hw,7,fl*0.55-5)], cw, 'w'),
-      _F3([_V3(-hw-5,1,-rl*0.55-5),_V3(-hw,1,-rl*0.55-5),_V3(-hw,7,-rl*0.55-5),_V3(-hw-5,7,-rl*0.55-5)], cw, 'w'),
-      _F3([_V3(hw,1,-rl*0.55-5),_V3(hw+5,1,-rl*0.55-5),_V3(hw+5,7,-rl*0.55-5),_V3(hw,7,-rl*0.55-5)], cw, 'w'),
-      // Wheel side faces
-      _F3([_V3(-hw-5,1,fl*0.55+5),_V3(-hw-5,1,fl*0.55-5),_V3(-hw-5,7,fl*0.55-5),_V3(-hw-5,7,fl*0.55+5)], cw, 'w'),
-      _F3([_V3(hw+5,1,fl*0.55-5),_V3(hw+5,1,fl*0.55+5),_V3(hw+5,7,fl*0.55+5),_V3(hw+5,7,fl*0.55-5)], cw, 'w'),
-      _F3([_V3(-hw-5,1,-rl*0.55+5),_V3(-hw-5,1,-rl*0.55-5),_V3(-hw-5,7,-rl*0.55-5),_V3(-hw-5,7,-rl*0.55+5)], cw, 'w'),
-      _F3([_V3(hw+5,1,-rl*0.55-5),_V3(hw+5,1,-rl*0.55+5),_V3(hw+5,7,-rl*0.55+5),_V3(hw+5,7,-rl*0.55-5)], cw, 'w'),
+      _F3([_V3(-hw-0.5,bh+3,7),_V3(-hw-0.5,bh+3,-12),_V3(-hw-0.5,29,-12),_V3(-hw-0.5,29,7)], cg, 'glass_s'),
+      _F3([_V3(hw+0.5,bh+3,-12),_V3(hw+0.5,bh+3,7),_V3(hw+0.5,29,7),_V3(hw+0.5,29,-12)], cg, 'glass_s'),
+      // Headlights (larger, brighter)
+      _F3([_V3(-fhw*0.78-7,bh*0.55,fl+.5),_V3(-fhw*0.78+1,bh*0.55,fl+.5),_V3(-fhw*0.78+1,bh*0.55+5,fl+.5),_V3(-fhw*0.78-7,bh*0.55+5,fl+.5)], clf, 'lf'),
+      _F3([_V3(fhw*0.78-1,bh*0.55,fl+.5),_V3(fhw*0.78+7,bh*0.55,fl+.5),_V3(fhw*0.78+7,bh*0.55+5,fl+.5),_V3(fhw*0.78-1,bh*0.55+5,fl+.5)], clf, 'lf'),
+      // Taillights (larger, brighter red)
+      _F3([_V3(-rhw*0.78,bh*0.5,-rl-.5),_V3(-rhw*0.78+8,bh*0.5,-rl-.5),_V3(-rhw*0.78+8,bh*0.5+5.5,-rl-.5),_V3(-rhw*0.78,bh*0.5+5.5,-rl-.5)], clr, 'lr'),
+      _F3([_V3(rhw*0.78-8,bh*0.5,-rl-.5),_V3(rhw*0.78,bh*0.5,-rl-.5),_V3(rhw*0.78,bh*0.5+5.5,-rl-.5),_V3(rhw*0.78-8,bh*0.5+5.5,-rl-.5)], clr, 'lr'),
+      // Front wheels — tire (outer face)
+      _F3([_V3(-hw-6,0,fl*0.52-6),_V3(-hw,0,fl*0.52-6),_V3(-hw,8,fl*0.52-6),_V3(-hw-6,8,fl*0.52-6)], cw, 'w'),
+      _F3([_V3(hw,0,fl*0.52-6),_V3(hw+6,0,fl*0.52-6),_V3(hw+6,8,fl*0.52-6),_V3(hw,8,fl*0.52-6)], cw, 'w'),
+      // Rear wheels — tire (outer face)
+      _F3([_V3(-hw-6,0,-rl*0.52-6),_V3(-hw,0,-rl*0.52-6),_V3(-hw,8,-rl*0.52-6),_V3(-hw-6,8,-rl*0.52-6)], cw, 'w'),
+      _F3([_V3(hw,0,-rl*0.52-6),_V3(hw+6,0,-rl*0.52-6),_V3(hw+6,8,-rl*0.52-6),_V3(hw,8,-rl*0.52-6)], cw, 'w'),
+      // Wheel side faces (tire sides)
+      _F3([_V3(-hw-6,0,fl*0.52+6),_V3(-hw-6,0,fl*0.52-6),_V3(-hw-6,8,fl*0.52-6),_V3(-hw-6,8,fl*0.52+6)], cw, 'w'),
+      _F3([_V3(hw+6,0,fl*0.52-6),_V3(hw+6,0,fl*0.52+6),_V3(hw+6,8,fl*0.52+6),_V3(hw+6,8,fl*0.52-6)], cw, 'w'),
+      _F3([_V3(-hw-6,0,-rl*0.52+6),_V3(-hw-6,0,-rl*0.52-6),_V3(-hw-6,8,-rl*0.52-6),_V3(-hw-6,8,-rl*0.52+6)], cw, 'w'),
+      _F3([_V3(hw+6,0,-rl*0.52-6),_V3(hw+6,0,-rl*0.52+6),_V3(hw+6,8,-rl*0.52+6),_V3(hw+6,8,-rl*0.52-6)], cw, 'w'),
+      // Wheel rim faces (silver — visible from side)
+      _F3([_V3(-hw-6,1.5,fl*0.52-4),_V3(-hw-1,1.5,fl*0.52-4),_V3(-hw-1,6.5,fl*0.52-4),_V3(-hw-6,6.5,fl*0.52-4)], cwRim, 'rim'),
+      _F3([_V3(hw+1,1.5,fl*0.52-4),_V3(hw+6,1.5,fl*0.52-4),_V3(hw+6,6.5,fl*0.52-4),_V3(hw+1,6.5,fl*0.52-4)], cwRim, 'rim'),
+      _F3([_V3(-hw-6,1.5,-rl*0.52-4),_V3(-hw-1,1.5,-rl*0.52-4),_V3(-hw-1,6.5,-rl*0.52-4),_V3(-hw-6,6.5,-rl*0.52-4)], cwRim, 'rim'),
+      _F3([_V3(hw+1,1.5,-rl*0.52-4),_V3(hw+6,1.5,-rl*0.52-4),_V3(hw+6,6.5,-rl*0.52-4),_V3(hw+1,6.5,-rl*0.52-4)], cwRim, 'rim'),
+      // Rim side faces
+      _F3([_V3(-hw-6,1.5,fl*0.52+4),_V3(-hw-6,1.5,fl*0.52-4),_V3(-hw-6,6.5,fl*0.52-4),_V3(-hw-6,6.5,fl*0.52+4)], cwRim, 'rim'),
+      _F3([_V3(hw+6,1.5,fl*0.52-4),_V3(hw+6,1.5,fl*0.52+4),_V3(hw+6,6.5,fl*0.52+4),_V3(hw+6,6.5,fl*0.52-4)], cwRim, 'rim'),
+      _F3([_V3(-hw-6,1.5,-rl*0.52+4),_V3(-hw-6,1.5,-rl*0.52-4),_V3(-hw-6,6.5,-rl*0.52-4),_V3(-hw-6,6.5,-rl*0.52+4)], cwRim, 'rim'),
+      _F3([_V3(hw+6,1.5,-rl*0.52-4),_V3(hw+6,1.5,-rl*0.52+4),_V3(hw+6,6.5,-rl*0.52+4),_V3(hw+6,6.5,-rl*0.52-4)], cwRim, 'rim'),
     ];
   }
 }

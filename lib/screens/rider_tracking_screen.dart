@@ -10,6 +10,7 @@ import '../config/app_theme.dart';
 import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
 import '../navigation/car_icon_loader.dart';
+import '../navigation/navatar_loader.dart';
 import '../services/api_service.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
@@ -75,6 +76,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   GoogleMapController? _map;
   BitmapDescriptor? _carIcon;
   Uint8List? _carIconBytes;
+  List<BitmapDescriptor>? _navCarSprites;
+  double _cameraBearing = 0;
   Uint8List? _pickupPinBytes;
   Uint8List? _dropoffPinBytes;
 
@@ -141,6 +144,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
     _loadCarIcon();
+    _loadNavSprites();
     _initFromPersistence(); // Restore state if resuming
     _interpTimer = Timer.periodic(
       const Duration(milliseconds: 16),
@@ -486,6 +490,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       if (mounted) setState(() => _carIcon = icon);
     }
     await _loadPins();
+  }
+
+  Future<void> _loadNavSprites() async {
+    final sprites = await NavatarLoader.loadCurrentSprites();
+    if (mounted && sprites != null && sprites.length == 8) {
+      setState(() => _navCarSprites = sprites);
+    }
   }
 
   Future<void> _loadPins() async {
@@ -1331,13 +1342,22 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         // ignore: deprecated_member_use
         ? BitmapDescriptor.fromBytes(_dropoffPinBytes!)
         : BitmapDescriptor.defaultMarker;
-    if (_carIcon != null) {
+    if (_carIcon != null || (_navCarSprites != null && _navCarSprites!.length == 8)) {
+      BitmapDescriptor? icon;
+      double rotation = _animBearing;
+      if (_navCarSprites != null && _navCarSprites!.length == 8) {
+        final viewAngle = _animBearing - _cameraBearing;
+        final idx = NavatarLoader.indexForAngle(viewAngle);
+        icon = _navCarSprites![idx];
+        rotation = 0;
+      }
+      icon ??= _carIcon!;
       m.add(
         Marker(
           markerId: const MarkerId('car'),
           position: _animPos,
-          icon: _carIcon!,
-          rotation: _animBearing,
+          icon: icon,
+          rotation: rotation,
           anchor: const Offset(0.5, 0.5),
           flat: false,
           zIndexInt: 10,

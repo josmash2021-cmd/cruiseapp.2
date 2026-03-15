@@ -37,6 +37,15 @@ void main() async {
       // Only minimal sync work before runApp — everything else moves to
       // SplashScreen so the first frame paints instantly (no white flash).
       await SecurityService.init();
+      // Firebase MUST be initialized before ApiService.init() so the
+      // Firestore dynamic tunnel URL read works on any network.
+      try {
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+      } catch (e) {
+        debugPrint('[Firebase] early init error: $e');
+      }
       await ApiService.init();
 
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -85,11 +94,13 @@ Future<void> heavyInit() async {
     debugPrint('[Stripe] skipped — placeholder key detected');
   }
 
-  // ── Firebase ──
+  // ── Firebase (may already be initialized in main()) ──
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
     try {
       final messaging = FirebaseMessaging.instance;
       await messaging.requestPermission(alert: true, badge: true, sound: true);

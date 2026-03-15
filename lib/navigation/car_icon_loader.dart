@@ -579,7 +579,7 @@ class CarIconLoader {
     body.cubicTo(cx - bw * 0.90, front + bh * 0.10, cx - bw * 0.42, front, cx, front);
     body.close();
 
-    // ── 4. BODY FILL — dark navy barrel gradient ─────────────────────
+    // ── 4. BODY FILL — dark navy barrel gradient (more opaque) ───────
     cvs.drawPath(
       body,
       Paint()
@@ -587,11 +587,11 @@ class CarIconLoader {
           Offset(cx - bw, cy),
           Offset(cx + bw, cy),
           const [
-            Color(0xFF0C0E14), // far left — almost black
-            Color(0xFF181C28), // left quarter
-            Color(0xFF242A3A), // center — dark navy
-            Color(0xFF181C28), // right quarter
-            Color(0xFF0C0E14), // far right — almost black
+            Color(0xFF101218), // far left — darker
+            Color(0xFF1C2230), // left quarter
+            Color(0xFF2A3244), // center — solid dark navy
+            Color(0xFF1C2230), // right quarter
+            Color(0xFF101218), // far right — darker
           ],
           [0.0, 0.22, 0.50, 0.78, 1.0],
         ),
@@ -668,7 +668,7 @@ class CarIconLoader {
         ..isAntiAlias = true,
     );
 
-    // ── 9. WINDSHIELD (blue-tinted glass) ────────────────────────────
+    // ── 9. WINDSHIELD (blue-tinted glass, more opaque) ───────────────
     final wsTop = cy - bh * 0.36;
     final wsBot = cy - bh * 0.14;
     final wsPath = Path()
@@ -684,8 +684,8 @@ class CarIconLoader {
           Offset(cx, wsTop),
           Offset(cx, wsBot),
           const [
-            Color(0xF0283848), // dark blue top
-            Color(0xE8385878), // lighter blue bottom
+            Color(0xFF1A2838), // solid dark blue top
+            Color(0xFF2A3848), // solid medium blue bottom
           ],
         )
         ..isAntiAlias = true,

@@ -1318,19 +1318,37 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   void _onDriverAnimTick() {
     if (!mounted) return;
-    final t = Curves.easeOutCubic.transform(_driverAnim.value);
+    final t = Curves.easeInOutCubic.transform(_driverAnim.value);
     final lat =
         _animFrom.latitude + (_animTo.latitude - _animFrom.latitude) * t;
     final lng =
         _animFrom.longitude + (_animTo.longitude - _animFrom.longitude) * t;
     _pos = LatLng(lat, lng);
 
-    // Smooth bearing interpolation — gradual turn, no snap
+    // Super smooth bearing interpolation — gradual turn, no snap
     double diff = _targetHeading - _heading;
     // Normalize to [-180, 180]
     while (diff > 180) diff -= 360;
     while (diff < -180) diff += 360;
-    _heading += diff * (t * 0.15).clamp(0.0, 1.0);
+    // Use smoother interpolation factor for fluid rotation
+    _heading += diff * (t * 0.25).clamp(0.0, 1.0);
+
+    // Update camera bearing for chase-cam during navigation
+    final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
+    if (isNav && _cameraFollowing) {
+      _cameraBearing = _heading;
+      // Chase camera: follow car from behind with smooth tilt
+      _map?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: _pos,
+            zoom: 18.0,
+            bearing: _heading,
+            tilt: 60,
+          ),
+        ),
+      );
+    }
 
     // Only rebuild marker set — minimal setState for performance
     setState(() {});

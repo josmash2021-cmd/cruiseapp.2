@@ -104,7 +104,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   static const _birminghamDefault = LatLng(33.5186, -86.8104);
 
   /// Picks the right JSON map style based on the system theme (light phone = light map).
-  String get _mapStyle => _c.isDark ? MapStyles.darkIOS : MapStyles.lightIOS;
+  String get _mapStyle {
+    if (_stage == RideStage.riding) return MapStyles.navigation;
+    return _c.isDark ? MapStyles.darkIOS : MapStyles.lightIOS;
+  }
 
   static final _usBounds = LatLngBounds(
     southwest: LatLng(24.396308, -124.848974),
@@ -4899,7 +4902,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
     // ── 3D Chase-Cam: follow driver every frame for game-like feel ──
     if (_stage == RideStage.riding && _driverPosition != null) {
-      _panTo(_driverPosition!, zoom: 18.5, bearing: _driverBearing, tilt: 45);
+      _panTo(_driverPosition!, zoom: 18.5, bearing: _driverBearing, tilt: 55);
     }
 
     // Trim route behind driver on every frame for seamless visual
@@ -4909,11 +4912,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _buildDriverCarIcon() async {
-    // Use ride-specific car: Suburban→SUV, Fusion→black sedan, default→white sedan
-    final rideName = _rides.isNotEmpty ? _rides[_selectedRide].vehicle : '';
-    _driverCarIconBytes =
-        await CarIconLoader.loadForRideBytes(rideName) ??
-        await CarIconLoader.loadUberBytes();
+    // Use the Google Maps–style nav car (tall proportions optimised for 55° tilt)
+    _driverCarIconBytes = await CarIconLoader.loadUberBytes();
     final icon = _driverCarIconBytes != null
         ? BitmapDescriptor.bytes(_driverCarIconBytes!)
         : await CarIconLoader.loadUber();

@@ -31,7 +31,7 @@ class ApiService {
 
   /// Cloudflare tunnel URL — works from any network as fallback
   static const String _tunnelUrl =
-      'https://phoenix-bugs-assuming-korean.trycloudflare.com';
+      'https://authorization-announces-movement-keith.trycloudflare.com';
 
   /// Production Railway URL — works from any network (cellular, WiFi, etc.)
   static const String _defaultTunnelUrl =

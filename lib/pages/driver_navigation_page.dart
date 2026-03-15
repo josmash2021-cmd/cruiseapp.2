@@ -78,6 +78,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   bool _muted = false;
   BitmapDescriptor? _arrowIcon;
   Uint8List? _arrowIconBytes;
+  double _currentSpeedMph = 0;
 
   static const _navy = Color(0xFF0A2463);
   static const _green = Color(0xFF34A853);
@@ -105,7 +106,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     );
     _motion = SmoothMotion(
       onTick: _onMotionTick,
-      lerpFactor: 0.15,
+      lerpFactor: 0.22,
       enablePrediction: true,
     );
     _motion.start(this);
@@ -155,6 +156,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           ),
         ).listen((pos) {
           if (!mounted) return;
+          // speed is in m/s, convert to mph
+          _currentSpeedMph = (pos.speed * 2.23694).clamp(0, 200);
           _onRawPosition(LatLng(pos.latitude, pos.longitude), pos.heading);
         });
   }
@@ -190,15 +193,15 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     _bearing = bearing;
     setState(() {});
 
-    // Throttle camera to ~10 Hz for smooth performance
+    // Throttle camera to ~20 Hz for fluid real-time tracking
     final now = DateTime.now();
     if (_cameraFollowing &&
         _map != null &&
         _mapReady &&
         (_lastCameraUpdate == null ||
-            now.difference(_lastCameraUpdate!).inMilliseconds > 100)) {
+            now.difference(_lastCameraUpdate!).inMilliseconds > 50)) {
       _lastCameraUpdate = now;
-      _animateCameraNav(pos, zoom: 16.5, bearing: bearing);
+      _animateCameraNav(pos, zoom: 17, bearing: bearing, tilt: 60);
     }
   }
 
@@ -585,135 +588,214 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final instruction = _navState?.currentInstruction ?? _phaseInstruction;
     final streetName = _navState?.currentStep?.streetName ?? '';
     final isOffRoute = _navState?.isOffRoute ?? false;
+    final nextStep = _navState?.nextStep;
+    final nextMInfo = nextStep != null
+        ? NavigationService.getManeuverIcon(nextStep.maneuver)
+        : null;
 
-    // Strip color: red if off-route, dark-green for pickup leg, blue for trip
-    final stripColor = isOffRoute
+    // Banner color: green for pickup, blue for trip, red if off-route
+    final bannerColor = isOffRoute
         ? const Color(0xFFD32F2F)
         : (_sm.phase == TripPhase.toPickup
               ? const Color(0xFF2E7D32)
               : const Color(0xFF1A73E8));
 
-    return Container(
-      decoration: BoxDecoration(
-        color: _cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _cardBorder, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ── PRIMARY TURN CARD (Google Maps style) ──
+        Container(
+          decoration: BoxDecoration(
+            color: bannerColor,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
-      clipBehavior: Clip.hardEdge,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Colored top accent strip
-          Container(height: 4, color: stripColor),
-          // Main row
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Maneuver icon
-                Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    color: stripColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(mInfo.icon, color: stripColor, size: 30),
-                ),
-                const SizedBox(width: 14),
-                // Distance + instruction
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (distText.isNotEmpty)
-                        Text(
-                          distText,
+          clipBehavior: Clip.hardEdge,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Main turn row
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Large maneuver icon
+                    Icon(mInfo.icon, color: Colors.white, size: 44),
+                    const SizedBox(width: 12),
+                    // Distance + road info
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              if (distText.isNotEmpty)
+                                Text(
+                                  distText,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.0,
+                                    fontFeatures: [FontFeature.tabularFigures()],
+                                  ),
+                                ),
+                              if (streetName.isNotEmpty) ...[
+                                const SizedBox(width: 10),
+                                // Road badge (like Google Maps highway shields)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    streetName,
+                                    style: TextStyle(
+                                      color: bannerColor,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            instruction,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (isOffRoute)
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'OFF\nROUTE',
+                          textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: stripColor,
-                            fontSize: 26,
+                            color: Colors.white,
+                            fontSize: 9,
                             fontWeight: FontWeight.w900,
-                            height: 1.0,
-                            fontFeatures: const [FontFeature.tabularFigures()],
+                            letterSpacing: 0.5,
+                            height: 1.2,
                           ),
                         ),
-                      const SizedBox(height: 3),
+                      ),
+                  ],
+                ),
+              ),
+              // ── Lane guidance arrows row ──
+              _laneGuidanceRow(maneuver, bannerColor),
+              // ── Next step preview ──
+              if (nextStep != null && nextMInfo != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  color: bannerColor.withValues(alpha: 0.85),
+                  child: Row(
+                    children: [
                       Text(
-                        instruction,
-                        style: const TextStyle(
-                          color: _textPrimary,
-                          fontSize: 14,
+                        'Then',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          height: 1.2,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(nextMInfo.icon, color: Colors.white.withValues(alpha: 0.8), size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          nextStep.streetName.isNotEmpty
+                              ? nextStep.streetName
+                              : nextStep.distanceText,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                if (isOffRoute)
-                  Container(
-                    margin: const EdgeInsets.only(left: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD32F2F),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      S.of(context).offRoute.toUpperCase(),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1,
-                        height: 1.2,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
-          // Street name sub-row
-          if (streetName.isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: const BoxDecoration(
-                color: Color(0xFF141828),
-                border: Border(top: BorderSide(color: _cardBorder, width: 1)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.turn_slight_right_rounded, size: 14, color: _textSecondary),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      streetName,
-                      style: const TextStyle(
-                        color: _textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.2,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
+        ),
+      ],
+    );
+  }
+
+  /// Lane guidance arrows (Google Maps style green/white arrows)
+  Widget _laneGuidanceRow(String maneuver, Color bannerColor) {
+    // Determine lane arrows based on current maneuver
+    final isLeft = maneuver.contains('left');
+    final isRight = maneuver.contains('right');
+    final isStraight = maneuver == 'straight' || maneuver.isEmpty;
+    final isRamp = maneuver.contains('ramp') || maneuver.contains('fork');
+    final laneCount = isRamp ? 4 : 5;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      color: bannerColor.withValues(alpha: 0.7),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(laneCount, (i) {
+          final isHighlighted = isStraight
+              ? true
+              : isLeft
+                  ? (i == 0)
+                  : isRight
+                      ? (i == laneCount - 1)
+                      : (i == laneCount ~/ 2);
+          final arrowIcon = isStraight
+              ? Icons.straight
+              : (i == 0 && isLeft)
+                  ? Icons.turn_left
+                  : (i == laneCount - 1 && isRight)
+                      ? Icons.turn_right
+                      : Icons.straight;
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Icon(
+              arrowIcon,
+              size: 18,
+              color: isHighlighted
+                  ? Colors.white
+                  : Colors.white.withValues(alpha: 0.3),
             ),
-        ],
+          );
+        }),
       ),
     );
   }
@@ -737,52 +819,106 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   }
 
   // =========================================================================
-  //  SPEED LIMIT SIGN — US MUTCD style (white box, black border, number)
+  //  SPEED + SPEED LIMIT — Google Maps style (current speed + limit badge)
   // =========================================================================
 
   Widget _speedLimitSign() {
-    return Container(
-      width: 48,
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-      decoration: BoxDecoration(
-        color: _cardBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _cardBorder, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+    final speed = _currentSpeedMph.round();
+    final overLimit = speed > widget.speedLimitMph + 5;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Speed limit badge (MUTCD style)
+        Container(
+          width: 44,
+          padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.black87, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            'SPEED\nLIMIT',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _textSecondary,
-              fontSize: 7,
-              fontWeight: FontWeight.w800,
-              height: 1.15,
-              letterSpacing: 0.2,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'SPEED\nLIMIT',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.black87,
+                  fontSize: 6,
+                  fontWeight: FontWeight.w900,
+                  height: 1.1,
+                ),
+              ),
+              Text(
+                '${widget.speedLimitMph}',
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  height: 1.1,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        // Current speed (large, like Google Maps)
+        Container(
+          width: 54,
+          height: 54,
+          decoration: BoxDecoration(
+            color: overLimit ? _red : _cardBg,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: overLimit ? _red : _cardBorder,
+              width: 2,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
-          const SizedBox(height: 1),
-          Text(
-            '${widget.speedLimitMph}',
-            style: const TextStyle(
-              color: _textPrimary,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-              height: 1,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '$speed',
+                style: TextStyle(
+                  color: overLimit ? Colors.white : _textPrimary,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              Text(
+                'mph',
+                style: TextStyle(
+                  color: overLimit
+                      ? Colors.white.withValues(alpha: 0.8)
+                      : _textSecondary,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                  height: 1,
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -942,7 +1078,6 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final distStr = _distRemainingMi < 0.1
         ? '${(_distRemainingMi * 5280).round()} ft'
         : '${_distRemainingMi.toStringAsFixed(1)} mi';
-    final s = S.of(context);
 
     return Container(
       decoration: const BoxDecoration(
@@ -955,28 +1090,63 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── ETA row ──
+          // ── Google Maps style ETA row: green ETA left, details right ──
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Row(
               children: [
-                Expanded(child: _etaCell(primary: arrivalStr, secondary: s.arrivalLabel)),
-                _etaDivider(),
-                Expanded(child: _etaCell(primary: '$_etaMinutes min', secondary: s.remainingLabel)),
-                _etaDivider(),
-                Expanded(child: _etaCell(primary: distStr, secondary: s.distance)),
+                // Big green ETA
+                Text(
+                  '$_etaMinutes min',
+                  style: const TextStyle(
+                    color: Color(0xFF34A853),
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+                if (!_muted)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Icon(Icons.volume_up_rounded, color: _green, size: 18),
+                  ),
+                const Spacer(),
+                // Distance · Arrival
+                Text(
+                  '$distStr · $arrivalStr',
+                  style: const TextStyle(
+                    color: _textSecondary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // Recenter / compass button (Google Maps style)
+                GestureDetector(
+                  onTap: _recenter,
+                  child: Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF232840),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: _cardBorder, width: 1),
+                    ),
+                    child: const Icon(Icons.near_me_rounded, color: _textSecondary, size: 18),
+                  ),
+                ),
               ],
             ),
           ),
           Container(height: 1, color: _cardBorder),
           // ── Rider info row ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             child: Row(
               children: [
                 // Avatar
                 Container(
-                  width: 44, height: 44,
+                  width: 40, height: 40,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(color: _gold, width: 2),
@@ -989,10 +1159,10 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                     color: const Color(0xFF2A2F42),
                   ),
                   child: widget.riderPhotoUrl.isEmpty
-                      ? const Icon(Icons.person, color: _textSecondary, size: 22)
+                      ? const Icon(Icons.person, color: _textSecondary, size: 20)
                       : null,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 // Name + rating
                 Expanded(
                   child: Column(
@@ -1002,7 +1172,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                         widget.riderName,
                         style: const TextStyle(
                           color: _textPrimary,
-                          fontSize: 16,
+                          fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
                         maxLines: 1, overflow: TextOverflow.ellipsis,
@@ -1010,12 +1180,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                       if (widget.riderRating > 0)
                         Row(
                           children: [
-                            const Icon(Icons.star_rounded, color: _gold, size: 14),
-                            const SizedBox(width: 3),
+                            const Icon(Icons.star_rounded, color: _gold, size: 13),
+                            const SizedBox(width: 2),
                             Text(
                               widget.riderRating.toStringAsFixed(1),
                               style: const TextStyle(
-                                color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w600,
+                                color: _textSecondary, fontSize: 11, fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
@@ -1023,34 +1193,20 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                     ],
                   ),
                 ),
+                // Address pill
+                Expanded(
+                  child: _currentAddressPill(),
+                ),
                 // Contact buttons
-                _miniBtn(Icons.message_rounded, () {
-                  HapticFeedback.lightImpact();
-                }),
-                const SizedBox(width: 8),
-                _miniBtn(Icons.phone_rounded, () {
-                  HapticFeedback.lightImpact();
-                }),
-              ],
-            ),
-          ),
-          // ── Address info ──
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: Column(
-              children: [
-                if (widget.pickupLabel.isNotEmpty &&
-                    (_sm.phase == TripPhase.toPickup || _sm.phase == TripPhase.arrivedPickup))
-                  _addressRow(Icons.radio_button_checked, const Color(0xFF4CAF50), widget.pickupLabel),
-                if (widget.dropoffLabel.isNotEmpty &&
-                    (_sm.phase == TripPhase.onTrip || _sm.phase == TripPhase.arrivedDropoff))
-                  _addressRow(Icons.location_on_rounded, _red, widget.dropoffLabel),
+                _miniBtn(Icons.message_rounded, () => HapticFeedback.lightImpact()),
+                const SizedBox(width: 6),
+                _miniBtn(Icons.phone_rounded, () => HapticFeedback.lightImpact()),
               ],
             ),
           ),
           // ── Phase action button ──
           Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, botPad + 14),
+            padding: EdgeInsets.fromLTRB(16, 6, 16, botPad + 12),
             child: _actionButton(),
           ),
         ],
@@ -1058,70 +1214,43 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     );
   }
 
-  Widget _miniBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 38, height: 38,
-        decoration: BoxDecoration(
-          color: const Color(0xFF232840),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _cardBorder, width: 1),
-        ),
-        child: Icon(icon, color: _textSecondary, size: 18),
-      ),
-    );
-  }
+  Widget _currentAddressPill() {
+    final isPickupPhase = _sm.phase == TripPhase.toPickup || _sm.phase == TripPhase.arrivedPickup;
+    final label = isPickupPhase ? widget.pickupLabel : widget.dropoffLabel;
+    if (label.isEmpty) return const SizedBox.shrink();
+    final icon = isPickupPhase ? Icons.radio_button_checked : Icons.location_on_rounded;
+    final color = isPickupPhase ? const Color(0xFF4CAF50) : _red;
 
-  Widget _addressRow(IconData icon, Color iconColor, String label) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          Icon(icon, color: iconColor, size: 14),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w500),
-              maxLines: 1, overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _etaCell({required String primary, required String secondary}) {
-    return Column(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          primary,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: _textPrimary,
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-            fontFeatures: [FontFeature.tabularFigures()],
-            height: 1,
-          ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          secondary,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: _textSecondary,
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
+        Icon(icon, color: color, size: 12),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            label,
+            style: const TextStyle(color: _textSecondary, fontSize: 11, fontWeight: FontWeight.w500),
+            maxLines: 1, overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
     );
   }
 
-  Widget _etaDivider() => Container(width: 1, height: 28, color: _cardBorder);
+  Widget _miniBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36, height: 36,
+        decoration: BoxDecoration(
+          color: const Color(0xFF232840),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _cardBorder, width: 1),
+        ),
+        child: Icon(icon, color: _textSecondary, size: 16),
+      ),
+    );
+  }
 
   // =========================================================================
   //  ACTION BUTTON — context-aware (Uber-style slide-to-act feel)

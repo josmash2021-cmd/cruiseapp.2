@@ -57,12 +57,11 @@ class ApiService {
     if (saved != null && _isLocalUrl(saved)) {
       await prefs.remove(_serverUrlPrefKey);
     }
-    // On web (Chrome): always force Railway — clear any stale cached URL
-    if (kIsWeb) {
-      await prefs.setString(_serverUrlPrefKey, _productionUrl);
-      _activeUrl = _productionUrl;
+    if (saved != null && saved.isNotEmpty && !_isLocalUrl(saved)) {
+      _activeUrl = saved;
     } else {
-      _activeUrl = _productionUrl;
+      // Default to localhost for development - will auto-switch to production if localhost fails
+      _activeUrl = _localUrl;
     }
 
     // Try to read the latest tunnel URL from Firestore (written by startup
@@ -117,15 +116,6 @@ class ApiService {
       'ngrok-skip-browser-warning': 'true',
     };
 
-    // On web (Chrome), only use production Railway — never localhost.
-    // This ensures Chrome and phone share the same database.
-    if (kIsWeb) {
-      final url = _dynamicTunnelUrl ?? _productionUrl;
-      await setServerUrl(url);
-      debugPrint('[ApiService] web probe → $url');
-      return url;
-    }
-
     // Build the full list of URLs to try — all at once, in parallel.
     // Order doesn't matter since we fire them all simultaneously.
     final allCandidates = candidates ?? [
@@ -171,8 +161,9 @@ class ApiService {
       }
     }
 
-    // Last resort: prefer Firestore tunnel URL or production URL
-    final fallback = _dynamicTunnelUrl ?? _productionUrl;
+    // Last resort: prefer Firestore tunnel URL or hardcoded tunnel over
+    // dead production, so cellular users still have a working endpoint.
+    final fallback = _dynamicTunnelUrl ?? _tunnelUrl;
     await setServerUrl(fallback);
     debugPrint('[ApiService] probe → fallback to $fallback');
     return fallback;

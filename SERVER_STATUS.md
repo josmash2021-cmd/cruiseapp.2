@@ -40,46 +40,25 @@
 
 ---
 
-## 🌐 OPCIONES PARA EXPONER EL BACKEND
+## 🌐 CONFIGURACIÓN SIMPLIFICADA
 
-### Opción 1: Usar Localhost (Para Testing)
-Si estás probando en el mismo dispositivo:
-```dart
-// lib/services/api_service.dart
-static const String _baseUrl = "http://localhost:8000";
+### ✅ Configuración Actual (Automática)
+
+La app detecta automáticamente la mejor URL disponible:
+
+1. **Desarrollo Local:** http://localhost:8000
+2. **Producción:** https://www.cruiseinride.com
+
+**No necesitas configurar nada manualmente** - la app prueba ambas URLs automáticamente y usa la que responda primero.
+
+### Para Desarrollo
+```powershell
+cd C:\Users\Puma\CascadeProjects\cruise-app-main
+python backend/server_guardian.py
 ```
 
-### Opción 2: Usar IP Local (Para dispositivos en la misma red)
-1. Encuentra tu IP local:
-   ```powershell
-   ipconfig
-   ```
-   Busca "IPv4 Address" (ej: 192.168.1.100)
-
-2. Actualiza api_service.dart:
-   ```dart
-   static const String _baseUrl = "http://192.168.1.100:8000";
-   ```
-
-### Opción 3: Usar Cloudflare Tunnel (Para acceso público)
-1. Instalar cloudflared:
-   ```powershell
-   winget install cloudflare.cloudflared
-   ```
-
-2. Ejecutar tunnel:
-   ```powershell
-   cloudflared tunnel --url http://localhost:8000
-   ```
-
-3. Copiar la URL generada (ej: https://xxx.trycloudflare.com)
-
-4. Actualizar api_service.dart con la URL del tunnel
-
-### Opción 4: Usar Railway (Para producción)
-1. Subir backend a Railway
-2. Obtener URL de producción
-3. Actualizar api_service.dart
+### Para Producción
+Despliega en Railway siguiendo: `RAILWAY_DEPLOYMENT.md`
 
 ---
 
@@ -169,4 +148,53 @@ Si necesitas ayuda:
 2. Visita http://localhost:8000/docs para ver la documentación de la API
 3. Verifica que la base de datos esté migrada correctamente
 
-**Last Updated:** March 15, 2026, 3:30 PM
+---
+
+## 🛡️ SERVIDOR PERMANENTE - NUNCA SE CAE
+
+### Opción 1: Railway (Recomendado - 24/7 en la nube)
+
+**Ventajas:**
+- ✅ Servidor activo 24/7 sin necesidad de tu PC
+- ✅ Auto-reinicio si falla
+- ✅ HTTPS gratis
+- ✅ Accesible desde cualquier red
+
+**Cómo activar:**
+1. Lee la guía completa: `RAILWAY_DEPLOYMENT.md`
+2. Ve a https://railway.app/ e inicia sesión
+3. Conecta tu repositorio GitHub
+4. Railway desplegará automáticamente usando el `Dockerfile`
+5. Obtén la URL de producción y actualízala en la app
+
+**Configuración automática:**
+- ✅ Healthcheck cada 60 segundos
+- ✅ Reinicio automático en caso de fallo (hasta 3 intentos)
+- ✅ Auto-deploy con cada push a GitHub
+
+### Opción 2: Server Guardian (Local - Requiere PC encendida)
+
+**Ventajas:**
+- ✅ Reinicio automático si el servidor local falla
+- ✅ Monitoreo continuo del estado
+- ✅ Logs en tiempo real
+- ✅ Gratis (no requiere servicios externos)
+
+**Cómo usar:**
+```powershell
+cd C:\Users\Puma\CascadeProjects\cruise-app-main
+python backend/server_guardian.py
+```
+
+El Server Guardian:
+- Inicia el servidor automáticamente
+- Monitorea el estado cada 5 segundos
+- Reinicia automáticamente si detecta que el servidor se cayó
+- Muestra logs en tiempo real
+- Presiona Ctrl+C para detener
+
+**Recomendación:** Usa Railway para producción (siempre activo) y Server Guardian para desarrollo local.
+
+---
+
+**Last Updated:** March 15, 2026, 9:30 PM

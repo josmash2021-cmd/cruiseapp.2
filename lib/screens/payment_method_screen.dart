@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:pay/pay.dart';
 import '../config/app_theme.dart';
@@ -49,14 +48,14 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
       icon: Icons.monetization_on_rounded,
       iconColor: const Color(0xFFE8C547),
     ),
-    if (!kIsWeb && Platform.isAndroid)
+    if (Platform.isAndroid)
       const _PaymentOption(
         id: 'google_pay',
         label: 'Google Pay',
         icon: Icons.g_mobiledata_rounded,
         iconColor: Colors.white,
       ),
-    if (!kIsWeb && Platform.isIOS)
+    if (Platform.isIOS)
       const _PaymentOption(
         id: 'apple_pay',
         label: 'Apple Pay',

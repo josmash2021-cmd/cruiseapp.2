@@ -122,18 +122,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (sent) {
       _showSnack('Code sent to $email', const Color(0xFFE8C547));
-    } else {
-      // Email send failed (CORS on web, or EmailJS not configured)
-      // Let user proceed — code is printed in debug console
-      debugPrint('🔑 Verification code for $email: $code');
+      Navigator.of(context).push(
+        slideFromRightRoute(VerifyCodeScreen(email: email, expectedCode: code)),
+      );
+    } else if (!EmailService.isConfigured) {
+      // Dev mode — let them through even without email
       _showSnack(
-        'Code: $code (dev mode)',
+        'EmailJS not configured — check console for code',
         const Color(0xFFE8C547),
       );
+      Navigator.of(context).push(
+        slideFromRightRoute(VerifyCodeScreen(email: email, expectedCode: code)),
+      );
+    } else {
+      _showSnack(
+        'Failed to send code. Try again.',
+        Colors.white.withValues(alpha: 0.6),
+      );
     }
-    Navigator.of(context).push(
-      slideFromRightRoute(VerifyCodeScreen(email: email, expectedCode: code)),
-    );
   }
 
   void _continueWithPhone(String phone) async {

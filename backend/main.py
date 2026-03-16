@@ -463,9 +463,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None)
 
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════
 
 # -- LAYER 1: CORS � Allow mobile-app connections from any origin ----
 # Mobile apps (Flutter) don't send browser-origin headers; CORS does not
@@ -474,7 +474,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Timestamp", "X-Nonce", "X-Signature"],
 )
 
@@ -504,13 +504,21 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
-# -- LAYER 3: Rate Limiting - DISABLED FOR TESTING --------
+# -- LAYER 3: Rate Limiting (per-IP, anti-DDoS) --------
 _rate_buckets: dict[str, collections.deque] = {}
-_RATE_LIMIT = 10000
-_RATE_WINDOW = 60
+_RATE_LIMIT = 60          # max requests �
+_RATE_WINDOW = 60         # � per this many seconds
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    bucket = _rate_buckets.setdefault(client_ip, collections.deque())
+    while bucket and bucket[0] < now - _RATE_WINDOW:
+        bucket.popleft()
+    if len(bucket) >= _RATE_LIMIT:
+        return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
+    bucket.append(now)
     return await call_next(request)
 
 # -- LAYER 4: Request Size Limit (anti-payload bomb) ---
@@ -616,25 +624,6 @@ async def crash_protection_middleware(request: Request, call_next):
             status_code=500,
         )
 
-# -- LAYER 0: CORS Handler (declared last = executes first) ----
-@app.middleware("http")
-async def cors_handler_middleware(request: Request, call_next):
-    if request.method == "OPTIONS":
-        return Response(
-            status_code=200,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Max-Age": "3600",
-            }
-        )
-    response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    return response
-
 # -- LAYER 9: Nonce Replay Protection -----------------
 _used_nonces: collections.OrderedDict[str, float] = collections.OrderedDict()
 _NONCE_TTL = 600  # 10 minutes � nonces older than this are evicted
@@ -703,23 +692,6 @@ def _send_email(to_email: str, subject: str, html_body: str):
 @app.get("/health")
 async def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
-
-@app.get("/debug-db")
-async def debug_db(db: AsyncSession = Depends(get_db)):
-    try:
-        result = await db.execute(text("SELECT 1"))
-        return {"db": "ok", "result": str(result.fetchone())}
-    except Exception as e:
-        import traceback
-        return {"db": "error", "error": str(e), "trace": traceback.format_exc()}
-
-@app.options("/health")
-async def health_options():
-    return Response(status_code=200, headers={
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "*",
-    })
 
 # -- Dispatch Web Interface (owner-only, multi-layer protection) ---------
 class OwnerLogin(BaseModel):
@@ -857,15 +829,69 @@ async def _require_admin(
 
 def _verify_api_key(
     request: Request,
-    x_api_key: str = Header(""),
-    x_timestamp: str = Header(""),
-    x_nonce: str = Header(""),
-    x_signature: str = Header(""),
+    x_api_key: str = Header(...),
+    x_timestamp: str = Header(...),
+    x_nonce: str = Header(...),
+    x_signature: str = Header(...),
     x_device_fp: str = Header(""),
     x_client_version: str = Header(""),
 ):
-    """Security verification - DISABLED FOR TESTING."""
-    pass  # All checks bypassed for Chrome/web testing
+    """Validates API key, HMAC signature, nonce replay, and device fingerprint."""
+    client_ip = request.client.host if request.client else "unknown"
+
+    # Accept either the mobile API key or the dispatch admin key
+    valid_keys = {API_KEY}
+    if DISPATCH_API_KEY:
+        valid_keys.add(DISPATCH_API_KEY)
+    if x_api_key not in valid_keys:
+        logging.warning("[AUTH-DBG] invalid_api_key from %s key=%s", client_ip, x_api_key[:12])
+        _record_violation(client_ip)
+        _security_audit_log("invalid_api_key", client_ip)
+        raise HTTPException(401, "Invalid API key")
+
+    # Verify timestamp is within 30 minutes (generous window for mobile
+    # clients behind proxies / tunnels with possible clock drift)
+    try:
+        ts = int(x_timestamp)
+        now = int(time.time())
+        if abs(now - ts) > 1800:
+            logging.warning("[AUTH-DBG] expired_timestamp from %s drift=%ds", client_ip, abs(now-ts))
+            _record_violation(client_ip)
+            _security_audit_log("expired_timestamp", client_ip, f"drift={abs(now-ts)}s")
+            raise HTTPException(401, "Timestamp expired � please sync your device clock")
+    except ValueError:
+        raise HTTPException(401, "Invalid timestamp")
+
+    # L9: Check nonce replay
+    if _check_nonce_replay(x_nonce):
+        logging.warning("[AUTH-DBG] nonce_replay from %s nonce=%s", client_ip, x_nonce[:8])
+        _record_violation(client_ip)
+        _security_audit_log("nonce_replay", client_ip, f"nonce={x_nonce[:8]}...")
+        raise HTTPException(401, "Replay detected")
+
+    # Verify HMAC signature (with optional device fingerprint)
+    # Try multiple formats: fp from header, 'dispatch' keyword, truncated fp, no fp.
+    # Dispatch app signs with ':dispatch' but sends X-Device-FP='dispatch-admin-app'.
+    _candidates = set()
+    for fp_val in [x_device_fp, "dispatch", x_device_fp[:16] if len(x_device_fp) > 16 else None, ""]:
+        if fp_val is None:
+            continue
+        if fp_val:
+            msg = f"{x_api_key}:{x_timestamp}:{x_nonce}:{fp_val}"
+        else:
+            msg = f"{x_api_key}:{x_timestamp}:{x_nonce}"
+        _candidates.add(hmac.new(HMAC_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest())
+
+    sig_ok = any(hmac.compare_digest(c, x_signature) for c in _candidates)
+    if not sig_ok:
+        logging.warning("[HMAC-DBG] key=%s ts=%s nonce=%s fp=%s sig=%s candidates=%s",
+                        x_api_key[:8], x_timestamp, x_nonce[:8], x_device_fp[:16],
+                        x_signature[:16], [c[:16] for c in _candidates])
+        _record_violation(client_ip)
+        _security_audit_log("sig_mismatch", client_ip, f"fp={x_device_fp[:8]}")
+        raise HTTPException(401, "Invalid signature")
+
+    _security_audit_log("auth_ok", client_ip, f"v={x_client_version}")
 
 async def _require_dispatch_auth(
     request: Request,
@@ -1169,16 +1195,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         role=role,
     )
     db.add(user)
-    try:
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        err_str = str(e).lower()
-        if "unique" in err_str and "phone" in err_str:
-            raise HTTPException(409, "Phone already registered")
-        if "unique" in err_str and "email" in err_str:
-            raise HTTPException(409, "Email already registered")
-        raise HTTPException(409, "Account already exists")
+    await db.commit()
     await db.refresh(user)
 
     # Sync new user to Firestore so dispatch_app sees it in real-time
@@ -1225,9 +1242,10 @@ async def check_exists(body: CheckExistsIn, db: AsyncSession = Depends(get_db)):
 async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_db)):
     client_ip = request.client.host if request.client else "unknown"
 
-    # Layer 5: Brute force protection - DISABLED FOR TESTING
-    # if _check_login_throttle(client_ip):
-    #     raise HTTPException(429, "Too many login attempts. Try again in 5 minutes.")
+    # Layer 5: Brute force protection
+    if _check_login_throttle(client_ip):
+        _record_violation(client_ip)
+        raise HTTPException(429, "Too many login attempts. Try again in 5 minutes.")
 
     identifier = body.identifier.strip()
     _sanitize_string(identifier)

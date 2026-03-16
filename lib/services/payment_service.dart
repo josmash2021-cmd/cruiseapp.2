@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:pay/pay.dart';
 
 /// Central helper for Google Pay (Android) and Apple Pay (iOS).
@@ -11,12 +10,12 @@ class PaymentService {
   static Future<Pay> _getClient() async {
     if (_client != null) return _client!;
     final configs = <PayProvider, PaymentConfiguration>{};
-    if (!kIsWeb && Platform.isAndroid) {
+    if (Platform.isAndroid) {
       configs[PayProvider.google_pay] = await PaymentConfiguration.fromAsset(
         'google_pay.yaml',
       );
     }
-    if (!kIsWeb && Platform.isIOS) {
+    if (Platform.isIOS) {
       configs[PayProvider.apple_pay] = await PaymentConfiguration.fromAsset(
         'apple_pay.yaml',
       );
@@ -26,7 +25,7 @@ class PaymentService {
 
   /// Returns true if the device supports Google Pay and has at least one card.
   static Future<bool> isGooglePayAvailable() async {
-    if (kIsWeb || !Platform.isAndroid) return false;
+    if (!Platform.isAndroid) return false;
     try {
       final client = await _getClient();
       return await client.userCanPay(PayProvider.google_pay);
@@ -37,7 +36,7 @@ class PaymentService {
 
   /// Returns true if the device supports Apple Pay and has at least one card.
   static Future<bool> isApplePayAvailable() async {
-    if (kIsWeb || !Platform.isIOS) return false;
+    if (!Platform.isIOS) return false;
     try {
       final client = await _getClient();
       return await client.userCanPay(PayProvider.apple_pay);

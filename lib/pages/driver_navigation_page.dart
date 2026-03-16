@@ -16,6 +16,7 @@ import '../navigation/smooth_motion.dart';
 import '../services/api_service.dart';
 import '../services/navigation_service.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/driver_action_panel.dart';
 
 class DriverNavigationPage extends StatefulWidget {
   const DriverNavigationPage({
@@ -106,7 +107,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     );
     _motion = SmoothMotion(
       onTick: _onMotionTick,
-      lerpFactor: 0.22,
+      lerpFactor: 0.08,  // Más suave/fluido (antes 0.22)
       enablePrediction: true,
     );
     _motion.start(this);
@@ -193,15 +194,15 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     _bearing = bearing;
     setState(() {});
 
-    // Throttle camera to ~20 Hz for fluid real-time tracking
+    // Throttle camera to ~60 Hz for super fluid real-time tracking
     final now = DateTime.now();
     if (_cameraFollowing &&
         _map != null &&
         _mapReady &&
         (_lastCameraUpdate == null ||
-            now.difference(_lastCameraUpdate!).inMilliseconds > 50)) {
+            now.difference(_lastCameraUpdate!).inMilliseconds > 16)) {  // 60fps
       _lastCameraUpdate = now;
-      _animateCameraNav(pos, zoom: 17, bearing: bearing, tilt: 60);
+      _animateCameraNav(pos, zoom: 17.5, bearing: bearing, tilt: 65);
     }
   }
 
@@ -239,241 +240,332 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   Future<void> _buildArrowIcon() async {
     // Render at 2x for crisp retina display
     const double w = 120;
-    const double h = 200;
+    const double h = 220;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w, h));
 
     const double cx = w / 2;
-    const double cy = h / 2;
+    const double cy = h / 2 + 5;  // Slightly lower for longer hood
 
-    // ── Google Maps-style dark sedan colors ──
-    const bodyMain = Color(0xFF2D2D2D);    // dark charcoal
-    const bodyLight = Color(0xFF404040);   // lighter charcoal for roof highlight
-    const bodyDark = Color(0xFF1A1A1A);    // darker edges
-    const underBody = Color(0xFF111111);   // 3D depth underneath
-    const glass = Color(0xFF5A6E82);       // windshield dark tinted glass
-    const glassHi = Color(0xFF8EAEC4);    // glass reflection highlight
-    const wheelColor = Color(0xFF0D0D0D);  // near-black wheels
-    const headlightCol = Color(0xFFE8E4D4); // warm white headlights
-    const taillightCol = Color(0xFFCC2222); // red taillights
+    // ── MODERN SPORTY CAR COLORS ──
+    const bodyMain = Color(0xFF2E4A5E);      // Modern metallic blue-gray
+    const bodyLight = Color(0xFF4A6B82);     // Lighter metallic
+    const bodyDark = Color(0xFF1A2E3D);      // Darker edges
+    const bodyHi = Color(0xFF6B8FA3);        // Highlight
+    const underBody = Color(0xFF0F1A22);     // Shadow underneath
+    const glass = Color(0xFF2A3A4A);         // Dark tinted glass
+    const glassHi = Color(0xFF5A7A8A);       // Glass reflection
+    const wheelColor = Color(0xFF0A0A0A);    // Deep black wheels
+    const rimColor = Color(0xFF4A4A4A);      // Silver rims
+    const headlightCol = Color(0xFFFFFFFF);  // Bright LED white
+    const taillightCol = Color(0xFFFF2222);  // Bright red LED
+    const outlineColor = Color(0xFF000000);  // Black outline
+    const spoilerColor = Color(0xFF1A2E3D);  // Dark spoiler
 
-    // Proportions - compact sedan
-    const double bW = 26.0;   // half-width
-    const double bH = 48.0;   // half-height
-    const double depth = 6.0; // 3D lift
+    // Proportions - Modern sporty sedan (lower, wider)
+    const double bW = 28.0;   // half-width (wider)
+    const double bH = 52.0;   // half-height (lower profile)
+    const double depth = 5.0; // 3D depth
 
-    // ── Car body outline (smooth sedan shape, nose at top) ──
-    Path carBody(double ox, double oy, double hw, double hh) {
+    // ── MODERN AERODYNAMIC BODY SHAPE ──
+    Path modernCarBody(double ox, double oy, double hw, double hh) {
       return Path()
-        // Front bumper (top, rounded nose)
+        // Front nose - sharp, aerodynamic
         ..moveTo(ox, oy - hh)
         ..cubicTo(
-          ox + hw * 0.5, oy - hh,
-          ox + hw, oy - hh * 0.82,
-          ox + hw, oy - hh * 0.55,
+          ox + hw * 0.3, oy - hh,
+          ox + hw * 0.7, oy - hh * 0.88,
+          ox + hw, oy - hh * 0.65,
         )
-        // Right side
-        ..lineTo(ox + hw * 0.95, oy + hh * 0.45)
-        // Rear right
+        // Hood curve - sleek line
+        ..lineTo(ox + hw * 0.98, oy - hh * 0.35)
+        // Windshield base
         ..cubicTo(
-          ox + hw * 0.95, oy + hh * 0.75,
-          ox + hw * 0.7, oy + hh * 0.95,
-          ox, oy + hh,
+          ox + hw * 0.95, oy - hh * 0.15,
+          ox + hw * 0.85, oy + hh * 0.05,
+          ox + hw * 0.75, oy + hh * 0.12,
         )
-        // Rear left
+        // Roof line - fastback style
+        ..lineTo(ox + hw * 0.4, oy + hh * 0.15)
+        // Rear pillar curve
         ..cubicTo(
-          ox - hw * 0.7, oy + hh * 0.95,
-          ox - hw * 0.95, oy + hh * 0.75,
-          ox - hw * 0.95, oy + hh * 0.45,
+          ox + hw * 0.15, oy + hh * 0.18,
+          ox + hw * 0.05, oy + hh * 0.55,
+          ox, oy + hh * 0.95,
         )
-        // Left side
-        ..lineTo(ox - hw, oy - hh * 0.55)
-        // Front left
+        // Rear bumper - integrated
         ..cubicTo(
-          ox - hw, oy - hh * 0.82,
-          ox - hw * 0.5, oy - hh,
+          ox - hw * 0.1, oy + hh,
+          ox - hw * 0.3, oy + hh,
+          ox - hw * 0.4, oy + hh * 0.92,
+        )
+        // Left side mirrors back
+        ..lineTo(ox - hw * 0.75, oy + hh * 0.12)
+        // Left windshield base
+        ..cubicTo(
+          ox - hw * 0.85, oy + hh * 0.05,
+          ox - hw * 0.95, oy - hh * 0.15,
+          ox - hw * 0.98, oy - hh * 0.35,
+        )
+        // Left hood
+        ..lineTo(ox - hw, oy - hh * 0.65)
+        // Left front curve
+        ..cubicTo(
+          ox - hw * 0.7, oy - hh * 0.88,
+          ox - hw * 0.3, oy - hh,
           ox, oy - hh,
         )
         ..close();
     }
 
-    // ── 1. Ground shadow (soft, offset down) ──
+    // ── 1. Ground shadow ──
     canvas.drawPath(
-      carBody(cx, cy + 8, bW + 4, bH + 3),
+      modernCarBody(cx, cy + 10, bW + 3, bH + 2),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.45)
+        ..color = Colors.black.withOpacity(0.5)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
     );
 
-    // ── 2. 3D undercarriage (slightly offset down for depth) ──
+    // ── 2. 3D undercarriage ──
     canvas.drawPath(
-      carBody(cx, cy + depth, bW, bH),
+      modernCarBody(cx, cy + depth, bW, bH),
       Paint()..color = underBody,
     );
 
-    // ── 3. Wheels (tucked under body, visible at sides) ──
+    // ── 3. MODERN ALLOY WHEELS ──
     for (final wp in [
-      Offset(cx - bW * 0.88, cy - bH * 0.45), // front-left
-      Offset(cx + bW * 0.88, cy - bH * 0.45), // front-right
-      Offset(cx - bW * 0.85, cy + bH * 0.42), // rear-left
-      Offset(cx + bW * 0.85, cy + bH * 0.42), // rear-right
+      Offset(cx - bW * 0.75, cy - bH * 0.42), // front-left
+      Offset(cx + bW * 0.75, cy - bH * 0.42), // front-right
+      Offset(cx - bW * 0.70, cy + bH * 0.48), // rear-left
+      Offset(cx + bW * 0.70, cy + bH * 0.48), // rear-right
     ]) {
+      final wheelCenter = wp.translate(0, depth * 0.5);
+      // Tire
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromCenter(center: wp.translate(0, depth * 0.5), width: 7, height: 14),
-          const Radius.circular(2.5),
+          Rect.fromCenter(center: wheelCenter, width: 9, height: 16),
+          const Radius.circular(3),
         ),
         Paint()..color = wheelColor,
       );
+      // Rim (silver)
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: wheelCenter, width: 5, height: 10),
+          const Radius.circular(2),
+        ),
+        Paint()..color = rimColor,
+      );
+      // Rim spokes highlight
+      canvas.drawLine(
+        wheelCenter.translate(-2, -3),
+        wheelCenter.translate(2, 3),
+        Paint()..color = Colors.white.withOpacity(0.3)..strokeWidth = 1,
+      );
     }
 
-    // ── 4. Main body ──
-    final bodyPath = carBody(cx, cy, bW, bH);
+    // ── 4. MAIN BODY (Modern metallic) ──
+    final bodyPath = modernCarBody(cx, cy, bW, bH);
     final bodyRect = bodyPath.getBounds();
 
-    // Base fill
+    // Base metallic fill
     canvas.drawPath(bodyPath, Paint()..color = bodyMain);
 
-    // Top-down lighting gradient (lighter on top/front, darker at rear)
+    // Metallic gradient (top to bottom)
     canvas.drawPath(
       bodyPath,
       Paint()
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [bodyLight, bodyMain, bodyDark],
-          stops: const [0.0, 0.5, 1.0],
+          colors: [bodyHi, bodyLight, bodyMain, bodyDark],
+          stops: const [0.0, 0.3, 0.6, 1.0],
         ).createShader(bodyRect),
     );
 
-    // Side highlight (subtle left-side light source)
+    // Side highlight for 3D effect
     canvas.drawPath(
       bodyPath,
       Paint()
-        ..shader = RadialGradient(
-          center: const Alignment(-0.6, -0.3),
-          radius: 1.2,
+        ..shader = LinearGradient(
+          begin: const Alignment(-0.8, -0.3),
+          end: const Alignment(0.8, 0.3),
           colors: [
-            Colors.white.withValues(alpha: 0.08),
+            Colors.white.withOpacity(0.2),
             Colors.transparent,
+            Colors.transparent,
+            Colors.black.withOpacity(0.15),
           ],
         ).createShader(bodyRect),
     );
 
-    // Thin outline for definition
+    // Sharp outline
     canvas.drawPath(
       bodyPath,
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.3)
+        ..color = outlineColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0,
+        ..strokeWidth = 1.5,
     );
 
-    // ── 5. Hood surface (subtle creases) ──
+    // ── 5. AERODYNAMIC HOOD LINES ──
     for (final side in [-1.0, 1.0]) {
       canvas.drawLine(
-        Offset(cx + side * bW * 0.25, cy - bH * 0.85),
-        Offset(cx + side * bW * 0.20, cy - bH * 0.40),
+        Offset(cx + side * bW * 0.20, cy - bH * 0.82),
+        Offset(cx + side * bW * 0.15, cy - bH * 0.45),
         Paint()
-          ..color = Colors.white.withValues(alpha: 0.04)
-          ..strokeWidth = 0.8
+          ..color = Colors.white.withOpacity(0.25)
+          ..strokeWidth = 1.2
           ..strokeCap = StrokeCap.round,
       );
     }
+    // Center hood crease
+    canvas.drawLine(
+      Offset(cx, cy - bH * 0.85),
+      Offset(cx, cy - bH * 0.40),
+      Paint()
+        ..color = Colors.white.withOpacity(0.15)
+        ..strokeWidth = 0.8,
+    );
 
-    // ── 6. Windshield (front, trapezoidal) ──
+    // ── 6. PANORAMIC WINDSHIELD ──
     final windshieldPath = Path()
-      ..moveTo(cx - bW * 0.62, cy - bH * 0.38)
-      ..lineTo(cx - bW * 0.50, cy - bH * 0.14)
-      ..lineTo(cx + bW * 0.50, cy - bH * 0.14)
-      ..lineTo(cx + bW * 0.62, cy - bH * 0.38)
+      ..moveTo(cx - bW * 0.65, cy - bH * 0.32)
+      ..lineTo(cx - bW * 0.55, cy - bH * 0.08)
+      ..lineTo(cx + bW * 0.55, cy - bH * 0.08)
+      ..lineTo(cx + bW * 0.65, cy - bH * 0.32)
       ..close();
-    // Glass base
+    
     canvas.drawPath(windshieldPath, Paint()..color = glass);
-    // Reflection gradient (top-left to bottom-right shine)
+    
+    // Windshield reflection
     canvas.drawPath(
       windshieldPath,
       Paint()
         ..shader = LinearGradient(
-          begin: const Alignment(-1, -1),
-          end: const Alignment(1, 1),
+          begin: const Alignment(-0.8, -0.8),
+          end: const Alignment(0.5, 0.5),
           colors: [
-            glassHi.withValues(alpha: 0.5),
-            Colors.transparent,
-            glassHi.withValues(alpha: 0.15),
+            glassHi.withOpacity(0.6),
+            glass,
+            glass.withOpacity(0.8),
           ],
-          stops: const [0.0, 0.4, 1.0],
         ).createShader(windshieldPath.getBounds()),
     );
 
-    // ── 7. Roof panel (lighter, raised look) ──
+    // ── 7. PANORAMIC ROOF (glass roof) ──
     final roofPath = Path()
-      ..moveTo(cx - bW * 0.48, cy - bH * 0.12)
-      ..lineTo(cx - bW * 0.46, cy + bH * 0.14)
-      ..lineTo(cx + bW * 0.46, cy + bH * 0.14)
-      ..lineTo(cx + bW * 0.48, cy - bH * 0.12)
+      ..moveTo(cx - bW * 0.52, cy - bH * 0.05)
+      ..lineTo(cx - bW * 0.48, cy + bH * 0.18)
+      ..lineTo(cx + bW * 0.48, cy + bH * 0.18)
+      ..lineTo(cx + bW * 0.52, cy - bH * 0.05)
       ..close();
-    canvas.drawPath(roofPath, Paint()..color = bodyLight);
-    // Roof center highlight
+    
+    canvas.drawPath(roofPath, Paint()..color = glass.withOpacity(0.9));
+    
+    // Roof reflection
     canvas.drawPath(
       roofPath,
       Paint()
-        ..shader = RadialGradient(
-          center: const Alignment(0, -0.2),
-          radius: 0.8,
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [
-            Colors.white.withValues(alpha: 0.12),
+            Colors.white.withOpacity(0.3),
             Colors.transparent,
           ],
         ).createShader(roofPath.getBounds()),
     );
 
-    // ── 8. Rear window ──
-    canvas.drawPath(
-      Path()
-        ..moveTo(cx - bW * 0.44, cy + bH * 0.16)
-        ..lineTo(cx - bW * 0.38, cy + bH * 0.34)
-        ..lineTo(cx + bW * 0.38, cy + bH * 0.34)
-        ..lineTo(cx + bW * 0.44, cy + bH * 0.16)
-        ..close(),
-      Paint()..color = glass.withValues(alpha: 0.8),
-    );
+    // ── 8. REAR WINDOW (fastback style) ──
+    final rearWindowPath = Path()
+      ..moveTo(cx - bW * 0.45, cy + bH * 0.22)
+      ..lineTo(cx - bW * 0.35, cy + bH * 0.52)
+      ..lineTo(cx + bW * 0.35, cy + bH * 0.52)
+      ..lineTo(cx + bW * 0.45, cy + bH * 0.22)
+      ..close();
+    
+    canvas.drawPath(rearWindowPath, Paint()..color = glass);
 
-    // ── 9. Side windows (subtle) ──
+    // ── 9. SIDE WINDOWS (frameless) ──
     for (final side in [-1.0, 1.0]) {
       canvas.drawPath(
         Path()
-          ..moveTo(cx + side * bW * 0.54, cy - bH * 0.32)
-          ..lineTo(cx + side * bW * 0.78, cy - bH * 0.26)
-          ..lineTo(cx + side * bW * 0.76, cy + bH * 0.08)
-          ..lineTo(cx + side * bW * 0.52, cy + bH * 0.08)
+          ..moveTo(cx + side * bW * 0.58, cy - bH * 0.28)
+          ..lineTo(cx + side * bW * 0.78, cy - bH * 0.22)
+          ..lineTo(cx + side * bW * 0.74, cy + bH * 0.15)
+          ..lineTo(cx + side * bW * 0.54, cy + bH * 0.12)
           ..close(),
-        Paint()..color = glass.withValues(alpha: 0.5),
+        Paint()..color = glass,
+      );
+      // Chrome window trim
+      canvas.drawPath(
+        Path()
+          ..moveTo(cx + side * bW * 0.58, cy - bH * 0.28)
+          ..lineTo(cx + side * bW * 0.78, cy - bH * 0.22)
+          ..lineTo(cx + side * bW * 0.74, cy + bH * 0.15),
+        Paint()
+          ..color = Colors.white.withOpacity(0.4)
+          ..strokeWidth = 1
+          ..style = PaintingStyle.stroke,
       );
     }
 
-    // ── 10. Headlights (warm white, slim) ──
+    // ── 10. MODERN LED HEADLIGHTS (slim, aggressive) ──
     for (final side in [-1.0, 1.0]) {
+      // Main LED strip
       canvas.drawPath(
         Path()
-          ..moveTo(cx + side * bW * 0.40, cy - bH * 0.92)
+          ..moveTo(cx + side * bW * 0.35, cy - bH * 0.95)
           ..quadraticBezierTo(
-            cx + side * bW * 0.75, cy - bH * 0.88,
-            cx + side * bW * 0.80, cy - bH * 0.75,
+            cx + side * bW * 0.70, cy - bH * 0.92,
+            cx + side * bW * 0.85, cy - bH * 0.78,
           )
-          ..lineTo(cx + side * bW * 0.60, cy - bH * 0.78)
+          ..lineTo(cx + side * bW * 0.75, cy - bH * 0.82)
+          ..quadraticBezierTo(
+            cx + side * bW * 0.60, cy - bH * 0.88,
+            cx + side * bW * 0.45, cy - bH * 0.88,
+          )
           ..close(),
-        Paint()..color = headlightCol.withValues(alpha: 0.9),
+        Paint()..color = headlightCol,
+      );
+      // LED glow effect
+      canvas.drawPath(
+        Path()
+          ..moveTo(cx + side * bW * 0.35, cy - bH * 0.95)
+          ..quadraticBezierTo(
+            cx + side * bW * 0.70, cy - bH * 0.92,
+            cx + side * bW * 0.85, cy - bH * 0.78,
+          )
+          ..lineTo(cx + side * bW * 0.75, cy - bH * 0.82)
+          ..lineTo(cx + side * bW * 0.60, cy - bH * 0.88)
+          ..close(),
+        Paint()
+          ..color = Colors.white.withOpacity(0.3)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
       );
     }
 
-    // ── 11. Taillights (red, LED-strip style) ──
+    // ── 11. LED TAILLIGHTS (continuous strip) ──
+    // Center strip
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(cx, cy + bH * 0.92),
+          width: bW * 0.8,
+          height: 3,
+        ),
+        const Radius.circular(1.5),
+      ),
+      Paint()..color = taillightCol,
+    );
+    // Side extensions
     for (final side in [-1.0, 1.0]) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromCenter(
-            center: Offset(cx + side * bW * 0.50, cy + bH * 0.88),
-            width: bW * 0.50,
+            center: Offset(cx + side * bW * 0.55, cy + bH * 0.90),
+            width: bW * 0.35,
             height: 4,
           ),
           const Radius.circular(2),
@@ -481,30 +573,73 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         Paint()..color = taillightCol,
       );
     }
-
-    // ── 12. Side mirrors (tiny, subtle) ──
-    for (final side in [-1.0, 1.0]) {
-      canvas.drawOval(
+    // LED glow
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
         Rect.fromCenter(
-          center: Offset(cx + side * (bW + 3), cy - bH * 0.28),
-          width: 5,
-          height: 6,
+          center: Offset(cx, cy + bH * 0.92),
+          width: bW * 0.85,
+          height: 5,
         ),
+        const Radius.circular(2),
+      ),
+      Paint()
+        ..color = Colors.red.withOpacity(0.25)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
+
+    // ── 12. SPORTY SIDE MIRRORS (aerodynamic) ──
+    for (final side in [-1.0, 1.0]) {
+      // Mirror body
+      canvas.drawPath(
+        Path()
+          ..moveTo(cx + side * (bW + 2), cy - bH * 0.25)
+          ..lineTo(cx + side * (bW + 6), cy - bH * 0.28)
+          ..lineTo(cx + side * (bW + 6), cy - bH * 0.18)
+          ..lineTo(cx + side * (bW + 2), cy - bH * 0.20)
+          ..close(),
         Paint()..color = bodyMain,
       );
-    }
-
-    // ── 13. A-pillar highlights ──
-    for (final side in [-1.0, 1.0]) {
+      // Mirror highlight
       canvas.drawLine(
-        Offset(cx + side * bW * 0.56, cy - bH * 0.36),
-        Offset(cx + side * bW * 0.50, cy - bH * 0.13),
+        Offset(cx + side * (bW + 3), cy - bH * 0.24),
+        Offset(cx + side * (bW + 5), cy - bH * 0.26),
         Paint()
-          ..color = Colors.white.withValues(alpha: 0.06)
-          ..strokeWidth = 1.5
-          ..strokeCap = StrokeCap.round,
+          ..color = Colors.white.withOpacity(0.3)
+          ..strokeWidth = 1,
       );
     }
+
+    // ── 13. REAR SPOILER (sporty ducktail) ──
+    final spoilerPath = Path()
+      ..moveTo(cx - bW * 0.35, cy + bH * 0.88)
+      ..lineTo(cx - bW * 0.30, cy + bH * 0.78)
+      ..lineTo(cx + bW * 0.30, cy + bH * 0.78)
+      ..lineTo(cx + bW * 0.35, cy + bH * 0.88)
+      ..close();
+    
+    canvas.drawPath(spoilerPath, Paint()..color = spoilerColor);
+    // Spoiler highlight
+    canvas.drawLine(
+      Offset(cx - bW * 0.25, cy + bH * 0.80),
+      Offset(cx + bW * 0.25, cy + bH * 0.80),
+      Paint()
+        ..color = Colors.white.withOpacity(0.2)
+        ..strokeWidth = 1,
+    );
+
+    // ── 14. FRONT GRILL (modern black panel) ──
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(cx, cy - bH * 0.88),
+          width: bW * 0.5,
+          height: 6,
+        ),
+        const Radius.circular(2),
+      ),
+      Paint()..color = Colors.black,
+    );
 
     final img = await recorder.endRecording().toImage(w.toInt(), h.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
@@ -536,12 +671,15 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
 
   Set<Marker> get _allMarkers {
     final m = <Marker>{};
+    // Calculate corrected bearing for marker rotation
+    // The car icon points UP (toward negative Y), so we add 90° to align with bearing
+    final correctedBearing = (_bearing + 90) % 360;
     m.add(
       Marker(
         markerId: const MarkerId('driver'),
         position: _pos,
         icon: _arrowIcon ?? BitmapDescriptor.defaultMarker,
-        rotation: _bearing,
+        rotation: correctedBearing,
         flat: true,
         anchor: const Offset(0.5, 0.5),
         zIndexInt: 100,
@@ -627,6 +765,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           Positioned.fill(
             child: GoogleMap(
               style: MapStyles.navigation,
+              mapType: MapType.normal,
               initialCameraPosition: CameraPosition(
                 target: _pos,
                 zoom: 17,
@@ -652,12 +791,43 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
               compassEnabled: false,
               buildingsEnabled: true,
               trafficEnabled: false,
-              padding: EdgeInsets.only(top: top + 140, bottom: 200 + bot),
+              tiltGesturesEnabled: true,
+              rotateGesturesEnabled: true,
+              scrollGesturesEnabled: true,
+              zoomGesturesEnabled: true,
+              fortyFiveDegreeImageryEnabled: true,
+              padding: EdgeInsets.only(top: top + 140, bottom: 220 + bot),
             ),
           ),
 
           // ── TOP NAV BANNER ────────────────────────────────────────────────
           Positioned(top: top + 8, left: 12, right: 12, child: _navBanner()),
+
+          // ── DRIVER ACTION PANEL (solo mostrar cuando no es idle/completed) ──
+          if (_sm.phase != TripPhase.idle && _sm.phase != TripPhase.completed)
+            Positioned(
+              top: top + 140,
+              left: 12,
+              right: 12,
+              child: DriverActionPanel(
+                phase: _sm.phase,
+                onArrivedAtPickup: () => _sm.arriveAtPickup(),
+                onStartTrip: () => _sm.beginTrip(),
+                onArrivedAtDropoff: () => _sm.arriveAtDropoff(),
+                onFinishTrip: () async {
+                  _sm.completeTrip();
+                  final tid = int.tryParse(widget.tripId);
+                  if (tid != null) {
+                    try {
+                      await ApiService.updateTripStatus(tripId: tid, status: 'completed');
+                    } catch (_) {}
+                  }
+                  if (context.mounted) Navigator.of(context).pop();
+                },
+                distanceToDestination: _distRemainingMi,
+                etaMinutes: _etaMinutes,
+              ),
+            ),
 
           // ── SPEED LIMIT SIGN (bottom-left above ETA bar) ──────────────────
           Positioned(bottom: 172 + bot, left: 14, child: _speedLimitSign()),

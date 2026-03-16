@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -92,7 +93,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _navigatingToTracking = false;
 
   // ── Payment state ──
-  String _selectedPaymentMethod = Platform.isIOS ? 'apple_pay' : 'google_pay';
+  String _selectedPaymentMethod = (!kIsWeb && Platform.isIOS) ? 'apple_pay' : 'google_pay';
   Set<String> _linkedPaymentMethods = {};
   String? _savedCardLast4;
   String? _savedCardBrand;
@@ -2817,8 +2818,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   void _showPaymentMethodPicker(AppColors c, RideOption? option) {
     final loc = S.of(context);
     final methods = [
-      if (Platform.isIOS) ('apple_pay', 'Apple Pay'),
-      if (!Platform.isIOS) ('google_pay', 'Google Pay'),
+      if (!kIsWeb && Platform.isIOS) ('apple_pay', 'Apple Pay'),
+      if (kIsWeb || !Platform.isIOS) ('google_pay', 'Google Pay'),
       (
         'credit_card',
         _savedCardBrand != null && _savedCardLast4 != null

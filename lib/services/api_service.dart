@@ -20,22 +20,11 @@ import '../config/env.dart';
 class ApiService {
   // ── Known endpoints ────────────────────────────────────────────────────────
 
-  /// Android emulator loopback — maps to host machine localhost.
-  static const String _localUrl = 'http://10.0.2.2:8000';
-
-  /// Physical device via ADB reverse — maps to host machine localhost.
-  static const String _adbUrl = 'http://localhost:8000';
-
-  /// Local network URL — works for physical devices on same WiFi network
-  static const String _localNetworkUrl = 'http://172.20.11.24:8000';
-
-  /// Cloudflare tunnel URL — works from any network as fallback
-  static const String _tunnelUrl =
-      'https://network-spray-novel-allen.trycloudflare.com';
+  /// Localhost — for development on same machine
+  static const String _localUrl = 'http://localhost:8000';
 
   /// Production Railway URL — works from any network (cellular, WiFi, etc.)
-  static const String _defaultTunnelUrl =
-      'https://www.cruiseinride.com';
+  static const String _productionUrl = 'https://cruiseapp2-production.up.railway.app';
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 
@@ -43,9 +32,8 @@ class ApiService {
   /// This eliminates the 300-800 ms handshake overhead on cellular networks.
   static final http.Client _client = http.Client();
 
-  /// In-memory active URL.  Populated by [init]; defaults to local network so the
-  /// first call before [init] completes still reaches *something*.
-  static String _activeUrl = _localNetworkUrl;
+  /// In-memory active URL.  Populated by [init]; defaults to localhost for development.
+  static String _activeUrl = _localUrl;
 
   /// Returns the URL currently in use by all API calls.
   static String get activeServerUrl => _activeUrl;
@@ -69,11 +57,8 @@ class ApiService {
     if (saved != null && _isLocalUrl(saved)) {
       await prefs.remove(_serverUrlPrefKey);
     }
-    if (saved != null && saved.isNotEmpty && !_isLocalUrl(saved)) {
-      _activeUrl = saved;
-    } else {
-      _activeUrl = _defaultTunnelUrl;
-    }
+    // Always use Railway (production) so Chrome and phone share the same database
+    _activeUrl = _productionUrl;
 
     // Try to read the latest tunnel URL from Firestore (written by startup
     // script).  This is the key to working from ANY network — the tunnel
@@ -130,13 +115,10 @@ class ApiService {
     // Build the full list of URLs to try — all at once, in parallel.
     // Order doesn't matter since we fire them all simultaneously.
     final allCandidates = candidates ?? [
-      _defaultTunnelUrl,
+      _productionUrl,
       if (_dynamicTunnelUrl != null) _dynamicTunnelUrl!,
-      _tunnelUrl,
-      _activeUrl,
-      _localNetworkUrl,
-      _adbUrl,
       _localUrl,
+      _activeUrl,
     ];
     final urls = allCandidates
         .where((u) => u.isNotEmpty)
@@ -175,9 +157,8 @@ class ApiService {
       }
     }
 
-    // Last resort: prefer Firestore tunnel URL or hardcoded tunnel over
-    // dead production, so cellular users still have a working endpoint.
-    final fallback = _dynamicTunnelUrl ?? _tunnelUrl;
+    // Last resort: prefer Firestore tunnel URL or production URL
+    final fallback = _dynamicTunnelUrl ?? _productionUrl;
     await setServerUrl(fallback);
     debugPrint('[ApiService] probe → fallback to $fallback');
     return fallback;

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:pay/pay.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -331,7 +332,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               const SizedBox(height: 10),
 
               // ── Google Pay (Android only) ──
-              if (Platform.isAndroid) ...[
+              if (!kIsWeb && Platform.isAndroid) ...[
                 _accountTile(
                   c: c,
                   logoWidget: _googlePayLogo(),
@@ -345,7 +346,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               ],
 
               // ── Apple Pay (iOS only) ──
-              if (Platform.isIOS) ...[
+              if (!kIsWeb && Platform.isIOS) ...[
                 _accountTile(
                   c: c,
                   logoWidget: _applePayLogo(),

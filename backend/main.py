@@ -463,9 +463,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None)
 
-# ═══════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION
-# ═══════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════
 
 # -- LAYER 1: CORS � Allow mobile-app connections from any origin ----
 # Mobile apps (Flutter) don't send browser-origin headers; CORS does not
@@ -474,7 +474,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Timestamp", "X-Nonce", "X-Signature"],
 )
 
@@ -624,6 +624,25 @@ async def crash_protection_middleware(request: Request, call_next):
             status_code=500,
         )
 
+# -- LAYER 0: CORS Handler (declared last = executes first) ----
+@app.middleware("http")
+async def cors_handler_middleware(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Max-Age": "3600",
+            }
+        )
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
 # -- LAYER 9: Nonce Replay Protection -----------------
 _used_nonces: collections.OrderedDict[str, float] = collections.OrderedDict()
 _NONCE_TTL = 600  # 10 minutes � nonces older than this are evicted
@@ -692,6 +711,14 @@ def _send_email(to_email: str, subject: str, html_body: str):
 @app.get("/health")
 async def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+@app.options("/health")
+async def health_options():
+    return Response(status_code=200, headers={
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+    })
 
 # -- Dispatch Web Interface (owner-only, multi-layer protection) ---------
 class OwnerLogin(BaseModel):
@@ -1195,7 +1222,16 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         role=role,
     )
     db.add(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        err_str = str(e).lower()
+        if "unique" in err_str and "phone" in err_str:
+            raise HTTPException(409, "Phone already registered")
+        if "unique" in err_str and "email" in err_str:
+            raise HTTPException(409, "Email already registered")
+        raise HTTPException(409, "Account already exists")
     await db.refresh(user)
 
     # Sync new user to Firestore so dispatch_app sees it in real-time

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -55,12 +56,12 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
     if (mounted && canCheck) {
       final types = await auth.getAvailableBiometrics();
       // Face ID on iOS only, Fingerprint on Android only
-      if (Platform.isIOS && types.contains(BiometricType.face)) {
+      if (!kIsWeb && Platform.isIOS && types.contains(BiometricType.face)) {
         setState(() {
           _biometricAvailable = true;
           _biometricType = BiometricIconType.faceId;
         });
-      } else if (Platform.isAndroid &&
+      } else if (!kIsWeb && Platform.isAndroid &&
           types.contains(BiometricType.fingerprint)) {
         setState(() {
           _biometricAvailable = true;

@@ -1322,7 +1322,18 @@ async def send_otp(body: SendOtpIn):
     phone = body.phone.strip()
     if not phone:
         raise HTTPException(400, "Phone number required")
+    
+    # Debug logging for Twilio credentials
+    logging.info("[OTP] Twilio config check:")
+    logging.info("[OTP]   ACCOUNT_SID starts with AC: %s", TWILIO_ACCOUNT_SID.startswith("AC") if TWILIO_ACCOUNT_SID else "False (empty)")
+    logging.info("[OTP]   ACCOUNT_SID length: %d", len(TWILIO_ACCOUNT_SID) if TWILIO_ACCOUNT_SID else 0)
+    logging.info("[OTP]   AUTH_TOKEN length: %d", len(TWILIO_AUTH_TOKEN) if TWILIO_AUTH_TOKEN else 0)
+    logging.info("[OTP]   PHONE_NUMBER: %s", TWILIO_PHONE_NUMBER if TWILIO_PHONE_NUMBER else "Not set")
+    
     if not TWILIO_ACCOUNT_SID.startswith("AC") or not TWILIO_AUTH_TOKEN:
+        logging.error("[OTP] Twilio not configured properly - SID starts with AC: %s, Token present: %s",
+                      TWILIO_ACCOUNT_SID.startswith("AC") if TWILIO_ACCOUNT_SID else False,
+                      bool(TWILIO_AUTH_TOKEN))
         raise HTTPException(503, "SMS service not configured")
 
     creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()

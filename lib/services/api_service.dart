@@ -454,8 +454,9 @@ class ApiService {
   }
 
   /// Send an OTP via the backend (which calls Twilio Verify server-side).
+  /// Returns the code if backend sends it (for debugging when SMS fails).
   /// Throws [ApiException] on failure.
-  static Future<void> sendOtp({required String phone}) async {
+  static Future<String?> sendOtp({required String phone}) async {
     final res = await _client
         .post(
           Uri.parse('$_baseUrl/auth/send-otp'),
@@ -463,7 +464,9 @@ class ApiService {
           body: jsonEncode({'phone': phone}),
         )
         .timeout(const Duration(seconds: 15));
-    _parse(res);
+    final data = _parse(res);
+    // Return code if provided (fallback when SMS unavailable)
+    return data['code'] as String?;
   }
 
   /// Verify an OTP code via the backend.

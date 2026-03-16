@@ -171,17 +171,31 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _sending = false);
 
     if (result.ok) {
-      // Twilio sent the SMS successfully
-      _showSnack('Code sent to $normalizedPhone', const Color(0xFFE8C547));
-      Navigator.of(context).push(
-        slideFromRightRoute(
-          VerifyCodeScreen(
-            email: normalizedPhone,
-            expectedCode: '',
-            useVerifyApi: true,
+      if (result.code != null) {
+        // Backend returned code directly (SMS unavailable) - show to user
+        _showSnack('SMS unavailable. Use code: ${result.code}', const Color(0xFFE8C547));
+        Navigator.of(context).push(
+          slideFromRightRoute(
+            VerifyCodeScreen(
+              email: normalizedPhone,
+              expectedCode: result.code!,
+              useVerifyApi: false,
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        // Twilio sent the SMS successfully
+        _showSnack('Code sent to $normalizedPhone', const Color(0xFFE8C547));
+        Navigator.of(context).push(
+          slideFromRightRoute(
+            VerifyCodeScreen(
+              email: normalizedPhone,
+              expectedCode: '',
+              useVerifyApi: true,
+            ),
+          ),
+        );
+      }
     } else if (result.trialBlocked) {
       // Trial account can't send to this number — use local code for dev
       final devCode = _generateCode();

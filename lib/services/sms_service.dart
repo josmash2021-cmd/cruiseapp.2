@@ -11,23 +11,28 @@ class SmsService {
   static bool get isConfigured => true;
 
   /// Sends a verification code via SMS to [toPhone] through the backend.
-  /// Returns a result record: `(ok: bool, trialBlocked: bool)`.
-  static Future<({bool ok, bool trialBlocked})> sendVerificationCode({
+  /// Returns a result record: `(ok: bool, trialBlocked: bool, code: String?)`.
+  /// If [code] is not null, it means SMS failed but backend provided code directly.
+  static Future<({bool ok, bool trialBlocked, String? code})> sendVerificationCode({
     required String toPhone,
   }) async {
     try {
-      await ApiService.sendOtp(phone: toPhone);
+      final returnedCode = await ApiService.sendOtp(phone: toPhone);
+      if (returnedCode != null) {
+        debugPrint('📱 Backend returned code directly (SMS unavailable): $returnedCode');
+        return (ok: true, trialBlocked: false, code: returnedCode);
+      }
       debugPrint('✅ OTP sent via backend to $toPhone');
-      return (ok: true, trialBlocked: false);
+      return (ok: true, trialBlocked: false, code: null);
     } on ApiException catch (e) {
       debugPrint('❌ send-otp backend error ${e.statusCode}: ${e.message}');
       if (e.statusCode == 503) {
-        return (ok: false, trialBlocked: false);
+        return (ok: false, trialBlocked: false, code: null);
       }
-      return (ok: false, trialBlocked: false);
+      return (ok: false, trialBlocked: false, code: null);
     } catch (e) {
       debugPrint('❌ send-otp failed: $e');
-      return (ok: false, trialBlocked: false);
+      return (ok: false, trialBlocked: false, code: null);
     }
   }
 

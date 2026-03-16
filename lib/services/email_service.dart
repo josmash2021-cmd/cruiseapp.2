@@ -76,7 +76,7 @@ class EmailService {
           'accessToken': _privateKey,
           'template_params': {
             'to_email': toEmail,
-            'to_name': toName,
+            'name': toName,
             'code': code,
           },
         }),

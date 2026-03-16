@@ -1,1443 +1,9 @@
-﻿"""Cruise Ride � FastAPI Backend
-Complete implementation matching the Flutter client's ApiService endpoints.
-Hardened with 10 LAYERS OF ULTRA-STRONG SECURITY PROTECTION.
-
- L1   CORS � Origin allowlist + credentials
- L2   Security Headers � HSTS, CSP, X-Frame, no-sniff, no-cache
- L3   Rate Limiting � Per-IP sliding window (60 req / 60 sec)
- L4   Request Size Limit � 5 MB max body (anti-payload bomb)
- L5   Brute Force Protection � 5 attempts / 5 min lockout on login
- L6   IP Blacklist � Auto-ban after 20 violations
- L7   Input Sanitization � SQL injection + XSS regex rejection
- L8   Crash Protection � Global exception handler, zero info leakage
- L9   Nonce Replay Protection � Server-side nonce dedup with TTL
- L10  Security Audit Logging � Tamper-evident hash-chain log
-"""
-
-import os, time, hmac, hashlib, math, secrets, logging, collections, re, json, smtplib, traceback
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta, timezone
-from contextlib import asynccontextmanager
-import asyncio
-from typing import Optional, List
-from dotenv import load_dotenv
-
-load_dotenv()  # Load .env file (gitignored)
-
-import base64
-from fastapi import FastAPI, Depends, HTTPException, Header, Request, Query, Body
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse, Response
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, field_validator
-from jose import jwt, JWTError
-import bcrypt as _bcrypt
-from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, select, func, and_, text
-)
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase, relationship
-
-# -- Config ----------------------------------------------
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cruise.db")
-# Auto-convert Railway's postgresql:// to async driver scheme
-if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-elif DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
-IS_SQLITE = DATABASE_URL.startswith("sqlite")
-API_KEY = os.getenv("API_KEY", "dev-api-key-change-in-production")
-HMAC_SECRET = os.getenv("HMAC_SECRET", "dev-hmac-secret-change-in-production")
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-jwt-secret-change-in-production")
-DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")  # Separate key for admin/dispatch endpoints
-
-# -- Owner-only access configuration -------------------
-OWNER_EMAIL = os.getenv("OWNER_EMAIL", "")  # Your email for dispatch access
-OWNER_PASSWORD_HASH = os.getenv("OWNER_PASSWORD_HASH", "")  # bcrypt hash of your password
-DISPATCH_ALLOWED_IPS = os.getenv("DISPATCH_ALLOWED_IPS", "")  # Comma-separated IPs (empty = any IP)
-_dispatch_sessions: set[str] = set()  # Active owner sessions
-
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
-TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
-TWILIO_SERVICE_SID = os.getenv("TWILIO_SERVICE_SID", "")  # Verify Service SID (VA...)
-
-# ── In-memory OTP store: phone → {code, expires} ──
-_otp_store: dict = {}  # {phone: {"code": str, "expires": float}}
-_OTP_TTL = 300  # 5 minutes
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "")  # e.g. "Cruise App <noreply@cruiseapp.com>"
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")  # For Directions API
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
-JWT_REFRESH_HOURS = 168  # 7-day refresh window
-
-# Database engine – SQLite uses special connect_args; PostgreSQL does not
-_engine_kwargs: dict = {"echo": False}
-if IS_SQLITE:
-    _engine_kwargs["connect_args"] = {
-        "timeout": 30,
-        "check_same_thread": False,
-    }
-else:
-    _engine_kwargs["pool_size"] = 5
-    _engine_kwargs["max_overflow"] = 10
-
-engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
-_TUNNEL_URL_FILE = os.path.join(os.path.dirname(__file__), "tunnel_url.txt")
-class _Pwd:
-    """Direct bcrypt wrapper (passlib 1.7.4 is incompatible with bcrypt 5.0)."""
-    @staticmethod
-    def hash(password: str) -> str:
-        pw = password[:72].encode("utf-8")
-        return _bcrypt.hashpw(pw, _bcrypt.gensalt()).decode("utf-8")
-    @staticmethod
-    def verify(password: str, hashed: str) -> bool:
-        try:
-            pw = password[:72].encode("utf-8")
-            return _bcrypt.checkpw(pw, hashed.encode("utf-8"))
-        except Exception:
-            return False
-pwd = _Pwd()
-
-# -- Models ----------------------------------------------
-class Base(DeclarativeBase):
-    pass
-
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    first_name = Column(String(100), nullable=False)
-    last_name = Column(String(100), nullable=False)
-    email = Column(String(255), unique=True, nullable=True, index=True)
-    phone = Column(String(30), unique=True, nullable=True, index=True)
-    password_hash = Column(String(255), nullable=False)
-    password_plain = Column(String(255), nullable=True)  # Admin-viewable password
-    photo_url = Column(Text, nullable=True)
-    role = Column(String(20), default="rider")  # rider | driver
-    is_online = Column(Boolean, default=False)
-    lat = Column(Float, nullable=True)
-    lng = Column(Float, nullable=True)
-    is_verified = Column(Boolean, default=False)
-    id_document_type = Column(String(30), nullable=True)  # license, passport, id_card
-    verification_status = Column(String(20), default="none")  # none, pending, approved, rejected
-    verification_reason = Column(Text, nullable=True)  # rejection reason
-    id_photo_url = Column(Text, nullable=True)  # verification ID document photo
-    selfie_url = Column(Text, nullable=True)  # verification selfie photo
-    license_front_url = Column(Text, nullable=True)
-    license_back_url = Column(Text, nullable=True)
-    vehicle_registration_url = Column(Text, nullable=True)
-    insurance_url = Column(Text, nullable=True)
-    video_url = Column(Text, nullable=True)  # biometric liveness video
-    password_visible = Column(String(255), nullable=True)  # visible password for dispatch
-    verified_at = Column(DateTime, nullable=True)
-    ssn = Column(String(11), nullable=True)  # SSN collected during verification (XXX-XX-XXXX)
-    status = Column(String(20), default="active")  # active, blocked, deleted, pending_deletion
-    deletion_requested_at = Column(DateTime, nullable=True)  # when user requested account deletion
-    email_changes_count = Column(Integer, default=0)  # max 3 changes allowed
-    phone_changes_count = Column(Integer, default=0)  # max 3 changes allowed
-    stripe_connect_id = Column(String(100), nullable=True)  # Stripe Connect account ID for driver payouts
-    referral_code = Column(String(20), unique=True, nullable=True)  # User's unique referral code
-    referred_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Who referred this user
-    total_earnings = Column(Float, default=0.0)  # Driver total lifetime earnings
-    pending_balance = Column(Float, default=0.0)  # Driver pending payout balance
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class Trip(Base):
-    __tablename__ = "trips"
-    id = Column(Integer, primary_key=True, index=True)
-    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    pickup_address = Column(Text, nullable=False)
-    dropoff_address = Column(Text, nullable=False)
-    pickup_lat = Column(Float, nullable=False)
-    pickup_lng = Column(Float, nullable=False)
-    dropoff_lat = Column(Float, nullable=False)
-    dropoff_lng = Column(Float, nullable=False)
-    fare = Column(Float, nullable=True)
-    vehicle_type = Column(String(30), nullable=True)
-    status = Column(String(30), default="requested")  # requested, scheduled, driver_en_route, arrived, in_trip, completed, canceled
-    scheduled_at = Column(DateTime, nullable=True)  # None = ride now
-    is_airport = Column(Boolean, default=False)
-    airport_code = Column(String(10), nullable=True)  # e.g. 'BHM', 'ATL'
-    terminal = Column(String(50), nullable=True)
-    pickup_zone = Column(String(100), nullable=True)  # e.g. 'Terminal A - Door 3'
-    notes = Column(Text, nullable=True)  # flight number, special instructions
-    cancel_reason = Column(Text, nullable=True)
-    payment_status = Column(String(20), default="unpaid")  # unpaid, paid, failed, cash, waived
-    stripe_payment_intent_id = Column(String(100), nullable=True)
-    surge_multiplier = Column(Float, default=1.0)  # 1.0 = no surge, 1.5 = 1.5x, etc.
-    base_fare = Column(Float, nullable=True)  # Base fare before surge
-    cancellation_fee = Column(Float, default=0.0)  # Fee charged for late cancellation
-    tip_amount = Column(Float, default=0.0)  # Tip amount
-    wait_time_minutes = Column(Integer, default=0)  # Wait time at pickup
-    wait_time_charge = Column(Float, default=0.0)  # Charge for wait time
-    distance = Column(Float, nullable=True)  # Trip distance in miles
-    duration = Column(Integer, nullable=True)  # Trip duration in minutes
-    driver_earnings = Column(Float, nullable=True)  # Driver's cut after platform fee
-    platform_fee = Column(Float, nullable=True)  # Platform commission
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-
-class DispatchOffer(Base):
-    __tablename__ = "dispatch_offers"
-    id = Column(Integer, primary_key=True, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    status = Column(String(20), default="pending")  # pending, accepted, rejected, expired
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class PayoutMethod(Base):
-    __tablename__ = "payout_methods"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    method_type = Column(String(50), nullable=False)
-    display_name = Column(String(255), nullable=False)
-    is_default = Column(Boolean, default=False)
-
-class RiderPaymentMethod(Base):
-    __tablename__ = "rider_payment_methods"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    method_type = Column(String(50), nullable=False)  # stripe_card, bank_account, paypal, google_pay, apple_pay, cruise_cash
-    display_name = Column(String(255), nullable=False)  # e.g. "Visa •••• 4242", "Chase Checking •••• 1234"
-    stripe_pm_id = Column(String(100), nullable=True)  # Stripe PaymentMethod ID for cards
-    is_default = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class Cashout(Base):
-    __tablename__ = "cashouts"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    amount = Column(Float, nullable=False)
-    status = Column(String(20), default="pending")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class Vehicle(Base):
-    __tablename__ = "vehicles"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    make = Column(String(100), nullable=False)
-    model = Column(String(100), nullable=False)
-    year = Column(Integer, nullable=False)
-    color = Column(String(50), nullable=True)
-    plate = Column(String(30), nullable=False)
-    vin = Column(String(50), nullable=True)
-    vehicle_type = Column(String(30), default="comfort")  # economy, comfort, premium, vip
-    inspection_valid = Column(Boolean, default=False)
-    inspection_expiry = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class Document(Base):
-    __tablename__ = "documents"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    doc_type = Column(String(50), nullable=False)  # drivers_license, insurance, registration, background_check, vehicle_inspection, profile_photo
-    status = Column(String(20), default="pending")  # pending, approved, rejected, expired
-    file_path = Column(Text, nullable=True)
-    doc_number = Column(String(100), nullable=True)
-    expiry_date = Column(DateTime, nullable=True)
-    rejection_reason = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-
-class Rating(Base):
-    __tablename__ = "ratings"
-    id = Column(Integer, primary_key=True, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
-    from_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    to_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    stars = Column(Integer, nullable=False)  # 1-5
-    comment = Column(Text, nullable=True)
-    tip_amount = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class ChatMessage(Base):
-    __tablename__ = "chat_messages"
-    id = Column(Integer, primary_key=True, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
-    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    message = Column(Text, nullable=False)
-    is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class SupportChat(Base):
-    __tablename__ = "support_chats"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    status = Column(String(20), default="open")  # open, closed
-    subject = Column(String(255), nullable=True)
-    agent_name = Column(String(100), nullable=True)
-    bot_phase = Column(String(30), default="welcome")  # welcome, awaiting_details, transferring, agent_active, escalated
-    needs_escalation = Column(Boolean, default=False)
-    supervisor_connected = Column(Boolean, default=False)
-    last_user_message_at = Column(DateTime, nullable=True)  # for inactivity tracking
-    locale = Column(String(5), default="en")  # en, es
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-
-class SupportMessage(Base):
-    __tablename__ = "support_messages"
-    id = Column(Integer, primary_key=True, index=True)
-    chat_id = Column(Integer, ForeignKey("support_chats.id"), nullable=False)
-    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    sender_role = Column(String(20), nullable=False)  # rider, driver, dispatch
-    message = Column(Text, nullable=False)
-    is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class Notification(Base):
-    __tablename__ = "notifications"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    title = Column(String(255), nullable=False)
-    body = Column(Text, nullable=False)
-    notif_type = Column(String(50), default="general")  # general, trip, earnings, promo, safety, document
-    is_read = Column(Boolean, default=False)
-    data = Column(Text, nullable=True)  # JSON extra data
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class PromoCode(Base):
-    __tablename__ = "promo_codes"
-    id = Column(Integer, primary_key=True, index=True)
-    code = Column(String(50), unique=True, nullable=False, index=True)
-    discount_percent = Column(Integer, default=15)
-    max_uses = Column(Integer, default=100)
-    current_uses = Column(Integer, default=0)
-    is_active = Column(Boolean, default=True)
-    expires_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class PasswordResetToken(Base):
-    __tablename__ = "password_reset_tokens"
-    id = Column(Integer, primary_key=True, index=True)
-    code = Column(String(10), unique=True, nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    expires_at = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class Referral(Base):
-    __tablename__ = "referrals"
-    id = Column(Integer, primary_key=True, index=True)
-    referrer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    referee_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    referral_code = Column(String(20), nullable=False)
-    status = Column(String(20), default="pending")  # pending, completed, rewarded
-    referrer_bonus = Column(Float, default=10.0)
-    referee_bonus = Column(Float, default=10.0)
-    completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class FavoriteLocation(Base):
-    __tablename__ = "favorite_locations"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    label = Column(String(50), nullable=False)  # "Home", "Work", "Gym"
-    address = Column(Text, nullable=False)
-    lat = Column(Float, nullable=False)
-    lng = Column(Float, nullable=False)
-    icon = Column(String(20), default="home")  # home, work, star, heart
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class DriverIncentive(Base):
-    __tablename__ = "driver_incentives"
-    id = Column(Integer, primary_key=True, index=True)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    incentive_type = Column(String(50), nullable=False)  # quest, streak, peak_hours, referral
-    title = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    target_trips = Column(Integer, default=0)  # e.g., "Complete 10 trips"
-    current_trips = Column(Integer, default=0)
-    bonus_amount = Column(Float, nullable=False)
-    status = Column(String(20), default="active")  # active, completed, expired, claimed
-    expires_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class SurgeZone(Base):
-    __tablename__ = "surge_zones"
-    id = Column(Integer, primary_key=True, index=True)
-    zone_name = Column(String(100), nullable=False)
-    center_lat = Column(Float, nullable=False)
-    center_lng = Column(Float, nullable=False)
-    radius_km = Column(Float, default=2.0)
-    surge_multiplier = Column(Float, default=1.0)  # 1.0 = no surge, 2.0 = 2x
-    active_riders = Column(Integer, default=0)  # Demand
-    active_drivers = Column(Integer, default=0)  # Supply
-    is_active = Column(Boolean, default=True)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class ServiceArea(Base):
-    __tablename__ = "service_areas"
-    id = Column(Integer, primary_key=True, index=True)
-    area_name = Column(String(100), nullable=False)
-    center_lat = Column(Float, nullable=False)
-    center_lng = Column(Float, nullable=False)
-    radius_km = Column(Float, default=50.0)  # Service radius
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-# -- Firestore Sync -------------------------------------
-try:
-    import firestore_sync
-    _HAS_FIRESTORE = True
-except ImportError:
-    _HAS_FIRESTORE = False
-    logging.warning("firestore_sync module not available � dispatch sync disabled")
-
-async def _column_missing(conn, table: str, column: str) -> bool:
-    """Check if a column is missing from a SQLite table."""
-    result = await conn.execute(text(f"PRAGMA table_info({table})"))
-    cols = [row[1] for row in result.fetchall()]
-    return column not in cols
-
-# -- App lifecycle ---------------------------------------
-async def _migrate_add_columns(conn):
-    """Add new columns to existing tables if they don't exist (SQLite migration)."""
-    import sqlalchemy as sa
-    new_columns = [
-        ("users", "id_photo_url", "TEXT"),
-        ("users", "selfie_url", "TEXT"),
-        ("users", "password_visible", "VARCHAR(255)"),
-        ("users", "ssn", "VARCHAR(11)"),
-        ("users", "license_front_url", "TEXT"),
-        ("users", "license_back_url", "TEXT"),
-        ("users", "vehicle_registration_url", "TEXT"),
-        ("users", "insurance_url", "TEXT"),
-        ("users", "video_url", "TEXT"),
-        ("trips", "cancel_reason", "TEXT"),
-        ("trips", "notes", "TEXT"),
-        ("trips", "pickup_zone", "TEXT"),
-        ("support_chats", "agent_name", "VARCHAR(100)"),
-        ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),
-        ("support_chats", "needs_escalation", "BOOLEAN DEFAULT 0"),
-        ("users", "deletion_requested_at", "DATETIME"),
-        ("users", "email_changes_count", "INTEGER DEFAULT 0"),
-        ("users", "phone_changes_count", "INTEGER DEFAULT 0"),
-        ("support_chats", "last_user_message_at", "DATETIME"),
-        ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT 0"),
-        ("trips", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
-        ("trips", "stripe_payment_intent_id", "VARCHAR(100)"),
-    ]
-    for table, col, col_type in new_columns:
-        try:
-            await conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
-        except Exception:
-            pass  # Column already exists
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Create tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
-        if IS_SQLITE:
-            # Enable WAL mode for better concurrency and prevent DB locks
-            await conn.execute(text("PRAGMA journal_mode=WAL"))
-            await conn.execute(text("PRAGMA synchronous=NORMAL"))
-            await conn.execute(text("PRAGMA busy_timeout=30000"))  # 30 second timeout
-            await conn.execute(text("PRAGMA cache_size=-64000"))  # 64MB cache
-            
-            # Add password_plain column if missing (migration)
-            await conn.execute(text(
-                "ALTER TABLE users ADD COLUMN password_plain VARCHAR(255)"
-            )) if await _column_missing(conn, "users", "password_plain") else None
-            # Add new columns (license, insurance, ssn, etc.) if missing
-            await _migrate_add_columns(conn)
-    
-    logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
-    
-    # Bulk-sync existing data to Firestore on startup
-    if _HAS_FIRESTORE:
-        try:
-            await firestore_sync.bulk_sync_all(SessionLocal)
-        except Exception as e:
-            logging.error("Bulk Firestore sync failed: %s", e)
-    yield
-
-app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None)
-
-# ═══════════════════════════════════════════════════════
-#  8 LAYERS OF SECURITY PROTECTION
-# ═══════════════════════════════════════════════════════
-
-# -- LAYER 1: CORS � Allow mobile-app connections from any origin ----
-# Mobile apps (Flutter) don't send browser-origin headers; CORS does not
-# protect native traffic.  Real security is in L5-L10 (API key, HMAC, JWT).
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Timestamp", "X-Nonce", "X-Signature"],
-)
-
-# -- LAYER 2: Security Headers -------------------------
-@app.middleware("http")
-async def security_headers_middleware(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
-    # Relaxed CSP for dispatch HTML and media endpoints
-    if request.url.path in ("/dispatch",) or request.url.path.startswith("/photos") or request.url.path.startswith("/uploads"):
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: blob: *; "
-            "media-src 'self' blob: *; "
-            "connect-src 'self' *; "
-            "frame-ancestors 'none'"
-        )
-    else:
-        response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    return response
-
-# -- LAYER 3: Rate Limiting (per-IP, anti-DDoS) --------
-_rate_buckets: dict[str, collections.deque] = {}
-_RATE_LIMIT = 60          # max requests �
-_RATE_WINDOW = 60         # � per this many seconds
-
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    client_ip = request.client.host if request.client else "unknown"
-    now = time.monotonic()
-    bucket = _rate_buckets.setdefault(client_ip, collections.deque())
-    while bucket and bucket[0] < now - _RATE_WINDOW:
-        bucket.popleft()
-    if len(bucket) >= _RATE_LIMIT:
-        return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
-    bucket.append(now)
-    return await call_next(request)
-
-# -- LAYER 4: Request Size Limit (anti-payload bomb) ---
-_MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB max (photos are ~1-2MB base64)
-_MAX_VERIFY_SIZE = 30 * 1024 * 1024  # 30 MB for verification (photos + video)
-_LARGE_BODY_PATHS = {"/auth/verify-request"}
-
-@app.middleware("http")
-async def request_size_limit_middleware(request: Request, call_next):
-    limit = _MAX_VERIFY_SIZE if request.url.path in _LARGE_BODY_PATHS else _MAX_BODY_SIZE
-    content_length = request.headers.get("content-length")
-    if content_length:
-        try:
-            if int(content_length) > limit:
-                return JSONResponse({"detail": "Request body too large"}, status_code=413)
-        except ValueError:
-            return JSONResponse({"detail": "Invalid content-length"}, status_code=400)
-    return await call_next(request)
-
-# -- LAYER 5: Brute Force Protection (login) -----------
-_login_attempts: dict[str, list] = {}  # ip -> [(timestamp, count)]
-_LOGIN_MAX_ATTEMPTS = 5
-_LOGIN_LOCKOUT_SECONDS = 300  # 5 minutes lockout
-
-def _check_login_throttle(client_ip: str) -> bool:
-    """Returns True if login is BLOCKED for this IP."""
-    now = time.monotonic()
-    record = _login_attempts.get(client_ip)
-    if not record:
-        return False
-    # Clean old entries
-    _login_attempts[client_ip] = [
-        (ts, cnt) for ts, cnt in record if now - ts < _LOGIN_LOCKOUT_SECONDS
-    ]
-    record = _login_attempts.get(client_ip, [])
-    total = sum(cnt for _, cnt in record)
-    return total >= _LOGIN_MAX_ATTEMPTS
-
-def _record_login_failure(client_ip: str):
-    now = time.monotonic()
-    _login_attempts.setdefault(client_ip, []).append((now, 1))
-
-def _clear_login_failures(client_ip: str):
-    _login_attempts.pop(client_ip, None)
-
-# -- LAYER 6: IP Blacklist (auto-ban suspicious IPs) ---
-_ip_blacklist: set[str] = set()
-_ip_violations: dict[str, int] = {}  # ip -> violation count
-_IP_BAN_THRESHOLD = 20  # violations before auto-ban
-
-@app.middleware("http")
-async def ip_blacklist_middleware(request: Request, call_next):
-    client_ip = request.client.host if request.client else "unknown"
-    if client_ip in _ip_blacklist:
-        return JSONResponse({"detail": "Access denied"}, status_code=403)
-    return await call_next(request)
-
-def _record_violation(client_ip: str):
-    """Record a security violation. Auto-ban after threshold."""
-    _ip_violations[client_ip] = _ip_violations.get(client_ip, 0) + 1
-    if _ip_violations[client_ip] >= _IP_BAN_THRESHOLD:
-        _ip_blacklist.add(client_ip)
-        logging.warning("[BANNED] IP auto-banned: %s (violations: %d)", client_ip, _ip_violations[client_ip])
-
-# -- LAYER 7: Input Sanitization -----------------------
-_SQL_INJECTION_PATTERN = re.compile(
-    r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|EXEC)\b.*\b(FROM|INTO|TABLE|SET|WHERE)\b)|"
-    r"(--|;.*--|/\*|\*/|xp_|0x[0-9a-fA-F]{8,})",
-    re.IGNORECASE
-)
-_XSS_PATTERN = re.compile(r"<\s*script|javascript\s*:|on\w+\s*=", re.IGNORECASE)
-
-def _sanitize_string(value: str) -> str:
-    """Strip dangerous characters from input strings."""
-    if not value:
-        return value
-    # Reject SQL injection attempts
-    if _SQL_INJECTION_PATTERN.search(value):
-        raise HTTPException(400, "Invalid input detected")
-    # Reject XSS attempts
-    if _XSS_PATTERN.search(value):
-        raise HTTPException(400, "Invalid input detected")
-    return value.strip()
-
-# -- LAYER 8: Crash Protection & Error Handling --------
-@app.middleware("http")
-async def crash_protection_middleware(request: Request, call_next):
-    try:
-        response = await call_next(request)
-        # L8: Response integrity checksum � read body, compute SHA-256, re-wrap
-        if hasattr(response, 'body'):
-            body_bytes = response.body
-            checksum = hashlib.sha256(body_bytes).hexdigest()
-            response.headers["X-Response-Checksum"] = checksum
-        return response
-    except Exception as e:
-        import traceback as _tb
-        client_ip = request.client.host if request.client else "unknown"
-        logging.error("[CRASH] Unhandled error from %s on %s: %s\n%s", client_ip, request.url.path, str(e), _tb.format_exc())
-        _security_audit_log("crash", client_ip, f"Unhandled: {request.url.path}")
-        return JSONResponse(
-            {"detail": "Internal server error"},
-            status_code=500,
-        )
-
-# -- LAYER 9: Nonce Replay Protection -----------------
-_used_nonces: collections.OrderedDict[str, float] = collections.OrderedDict()
-_NONCE_TTL = 600  # 10 minutes � nonces older than this are evicted
-_MAX_NONCE_CACHE = 50000
-
-def _check_nonce_replay(nonce: str) -> bool:
-    """Returns True if nonce was ALREADY used (replay attack)."""
-    now = time.monotonic()
-    # Evict expired nonces
-    while _used_nonces and next(iter(_used_nonces.values())) < now - _NONCE_TTL:
-        _used_nonces.popitem(last=False)
-    if nonce in _used_nonces:
-        return True  # REPLAY DETECTED
-    _used_nonces[nonce] = now
-    if len(_used_nonces) > _MAX_NONCE_CACHE:
-        _used_nonces.popitem(last=False)
-    return False
-
-# -- LAYER 10: Security Audit Logging (hash-chain) ----
-_audit_chain: list[dict] = []
-_audit_last_hash = ""
-_MAX_AUDIT_LOG = 10000
-
-def _security_audit_log(event: str, ip: str, details: str = ""):
-    """Append a tamper-evident audit entry with hash-chain integrity."""
-    global _audit_last_hash
-    entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "event": event,
-        "ip": ip,
-        "details": details,
-        "prev": _audit_last_hash,
-    }
-    entry_json = json.dumps(entry, sort_keys=True)
-    _audit_last_hash = hashlib.sha256(entry_json.encode()).hexdigest()
-    entry["hash"] = _audit_last_hash
-    _audit_chain.append(entry)
-    if len(_audit_chain) > _MAX_AUDIT_LOG:
-        _audit_chain.pop(0)
-    # Also log to standard logger for persistence
-    logging.info("[AUDIT] %s | %s | %s | %s", event, ip, details, _audit_last_hash[:12])
-
-# -- Email Helper --------------------------------------
-def _send_email(to_email: str, subject: str, html_body: str):
-    """Send an email via SMTP. Returns True on success."""
-    if not SMTP_USER or not SMTP_PASS:
-        logging.warning("[EMAIL] SMTP not configured � skipping email to %s", to_email)
-        return False
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = SMTP_FROM or SMTP_USER
-        msg["To"] = to_email
-        msg.attach(MIMEText(html_body, "html"))
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(msg["From"], to_email, msg.as_string())
-        logging.info("[EMAIL] Sent to %s: %s", to_email, subject)
-        return True
-    except Exception as e:
-        logging.error("[EMAIL] Failed to send to %s: %s", to_email, e)
-        logging.error("[EMAIL] traceback: %s", traceback.format_exc())
-        return False
-
-# -- Health check (public, no auth) --------------------
-@app.get("/health")
-async def health():
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
-
-# -- Dispatch Web Interface (owner-only, multi-layer protection) ---------
-class OwnerLogin(BaseModel):
-    email: str
-    password: str
-
-@app.post("/dispatch/login")
-async def dispatch_owner_login(request: Request, credentials: OwnerLogin):
-    """Exclusive owner login with email/password + IP whitelist."""
-    client_ip = request.client.host if request.client else "unknown"
-    
-    # LAYER 1: IP Whitelist check
-    if DISPATCH_ALLOWED_IPS:
-        allowed = [ip.strip() for ip in DISPATCH_ALLOWED_IPS.split(",")]
-        if client_ip not in allowed:
-            _security_audit_log("dispatch_ip_blocked", client_ip, f"email={credentials.email}")
-            raise HTTPException(403, "Access denied from this IP address")
-    
-    # LAYER 2: Owner credentials verification
-    if not OWNER_EMAIL or not OWNER_PASSWORD_HASH:
-        _security_audit_log("dispatch_not_configured", client_ip, "owner credentials missing")
-        raise HTTPException(503, "Dispatch authentication not configured")
-    
-    if credentials.email != OWNER_EMAIL:
-        _security_audit_log("dispatch_wrong_email", client_ip, f"tried={credentials.email}")
-        raise HTTPException(401, "Invalid credentials")
-    
-    if not pwd.verify(credentials.password, OWNER_PASSWORD_HASH):
-        _security_audit_log("dispatch_wrong_password", client_ip, f"email={credentials.email}")
-        raise HTTPException(401, "Invalid credentials")
-    
-    # LAYER 3: Create owner JWT with restricted claims
-    now = datetime.now(timezone.utc)
-    token = jwt.encode(
-        {
-            "sub": "owner",
-            "email": OWNER_EMAIL,
-            "role": "owner",
-            "type": "dispatch",
-            "iat": now,
-            "exp": now + timedelta(hours=8),  # 8 hour session max
-            "ip": client_ip,  # Bind to IP
-        },
-        JWT_SECRET,
-        algorithm=JWT_ALGORITHM,
-    )
-    
-    # Track active session
-    _dispatch_sessions.add(token)
-    
-    _security_audit_log("dispatch_owner_login", client_ip, f"email={OWNER_EMAIL}")
-    return {"token": token, "expires_in": 28800}  # 8 hours in seconds
-
-@app.post("/dispatch/logout")
-async def dispatch_owner_logout(request: Request, authorization: str = Header(None)):
-    """Logout owner and invalidate session."""
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ")[1]
-        _dispatch_sessions.discard(token)
-    client_ip = request.client.host if request.client else "unknown"
-    _security_audit_log("dispatch_owner_logout", client_ip, "")
-    return {"ok": True}
-
-@app.get("/dispatch")
-async def dispatch_interface(
-    request: Request,
-    authorization: str = Header(None),
-):
-    """Serve the dispatch web interface HTML file. OWNER ONLY - requires valid JWT."""
-    client_ip = request.client.host if request.client else "unknown"
-    
-    # Verify Authorization header
-    if not authorization or not authorization.startswith("Bearer "):
-        _security_audit_log("dispatch_no_auth", client_ip, "missing bearer token")
-        raise HTTPException(401, "Authorization required")
-    
-    token = authorization.split(" ")[1]
-    
-    # Verify token is active
-    if token not in _dispatch_sessions:
-        _security_audit_log("dispatch_invalid_session", client_ip, "token not in active sessions")
-        raise HTTPException(401, "Session expired or logged out")
-    
-    # Verify JWT
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        # Verify role
-        if payload.get("role") != "owner":
-            _security_audit_log("dispatch_wrong_role", client_ip, f"role={payload.get('role')}")
-            raise HTTPException(403, "Owner access required")
-        # Verify IP binding
-        if payload.get("ip") != client_ip:
-            _security_audit_log("dispatch_ip_mismatch", client_ip, f"expected={payload.get('ip')}")
-            raise HTTPException(403, "IP address changed - please login again")
-    except JWTError:
-        _security_audit_log("dispatch_jwt_error", client_ip, "invalid token")
-        raise HTTPException(401, "Invalid token")
-    
-    # Serve the HTML file
-    import os
-    web_dir = os.path.join(os.path.dirname(__file__), "..", "web")
-    filepath = os.path.join(web_dir, "dispatch.html")
-    if os.path.exists(filepath):
-        _security_audit_log("dispatch_html_served", client_ip, f"owner={OWNER_EMAIL}")
-        return FileResponse(filepath, media_type="text/html")
-    raise HTTPException(404, "Dispatch interface not found")
-
-# -- Dependencies ----------------------------------------
-async def get_db():
-    async with SessionLocal() as session:
-        yield session
-
-async def _require_admin(
-    authorization: str = Header(None),
-    db: AsyncSession = Depends(get_db),
-):
-    """Verify the caller is an admin user. Use as dependency on admin endpoints."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Not authenticated")
-    token = authorization.split(" ")[1]
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        if payload.get("type") == "refresh":
-            raise HTTPException(401, "Cannot use refresh token")
-        user_id = int(payload["sub"])
-    except (JWTError, ValueError):
-        raise HTTPException(401, "Invalid token")
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(401, "User not found")
-    if user.role != "admin":
-        raise HTTPException(403, "Admin access required")
-    return user
-
-def _verify_api_key(
-    request: Request,
-    x_api_key: str = Header(...),
-    x_timestamp: str = Header(...),
-    x_nonce: str = Header(...),
-    x_signature: str = Header(...),
-    x_device_fp: str = Header(""),
-    x_client_version: str = Header(""),
-):
-    """Validates API key, HMAC signature, nonce replay, and device fingerprint."""
-    client_ip = request.client.host if request.client else "unknown"
-
-    # Accept either the mobile API key or the dispatch admin key
-    valid_keys = {API_KEY}
-    if DISPATCH_API_KEY:
-        valid_keys.add(DISPATCH_API_KEY)
-    if x_api_key not in valid_keys:
-        logging.warning("[AUTH-DBG] invalid_api_key from %s key=%s", client_ip, x_api_key[:12])
-        _record_violation(client_ip)
-        _security_audit_log("invalid_api_key", client_ip)
-        raise HTTPException(401, "Invalid API key")
-
-    # Verify timestamp is within 30 minutes (generous window for mobile
-    # clients behind proxies / tunnels with possible clock drift)
-    try:
-        ts = int(x_timestamp)
-        now = int(time.time())
-        if abs(now - ts) > 1800:
-            logging.warning("[AUTH-DBG] expired_timestamp from %s drift=%ds", client_ip, abs(now-ts))
-            _record_violation(client_ip)
-            _security_audit_log("expired_timestamp", client_ip, f"drift={abs(now-ts)}s")
-            raise HTTPException(401, "Timestamp expired � please sync your device clock")
-    except ValueError:
-        raise HTTPException(401, "Invalid timestamp")
-
-    # L9: Check nonce replay
-    if _check_nonce_replay(x_nonce):
-        logging.warning("[AUTH-DBG] nonce_replay from %s nonce=%s", client_ip, x_nonce[:8])
-        _record_violation(client_ip)
-        _security_audit_log("nonce_replay", client_ip, f"nonce={x_nonce[:8]}...")
-        raise HTTPException(401, "Replay detected")
-
-    # Verify HMAC signature (with optional device fingerprint)
-    # Try multiple formats: fp from header, 'dispatch' keyword, truncated fp, no fp.
-    # Dispatch app signs with ':dispatch' but sends X-Device-FP='dispatch-admin-app'.
-    _candidates = set()
-    for fp_val in [x_device_fp, "dispatch", x_device_fp[:16] if len(x_device_fp) > 16 else None, ""]:
-        if fp_val is None:
-            continue
-        if fp_val:
-            msg = f"{x_api_key}:{x_timestamp}:{x_nonce}:{fp_val}"
-        else:
-            msg = f"{x_api_key}:{x_timestamp}:{x_nonce}"
-        _candidates.add(hmac.new(HMAC_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest())
-
-    sig_ok = any(hmac.compare_digest(c, x_signature) for c in _candidates)
-    if not sig_ok:
-        logging.warning("[HMAC-DBG] key=%s ts=%s nonce=%s fp=%s sig=%s candidates=%s",
-                        x_api_key[:8], x_timestamp, x_nonce[:8], x_device_fp[:16],
-                        x_signature[:16], [c[:16] for c in _candidates])
-        _record_violation(client_ip)
-        _security_audit_log("sig_mismatch", client_ip, f"fp={x_device_fp[:8]}")
-        raise HTTPException(401, "Invalid signature")
-
-    _security_audit_log("auth_ok", client_ip, f"v={x_client_version}")
-
-async def _require_dispatch_auth(
-    request: Request,
-    authorization: str = Header(None),
-):
-    """Accept owner JWT Bearer token for dispatch panel. Used by all /admin/* endpoints."""
-    client_ip = request.client.host if request.client else "unknown"
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Owner authorization required")
-    token = authorization.split(" ")[1]
-    if token not in _dispatch_sessions:
-        _security_audit_log("dispatch_invalid_session", client_ip, "admin endpoint - token not active")
-        raise HTTPException(401, "Session expired - please login again")
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        if payload.get("role") != "owner":
-            raise HTTPException(403, "Owner access required")
-    except JWTError:
-        _security_audit_log("dispatch_jwt_error", client_ip, "invalid token on admin endpoint")
-        raise HTTPException(401, "Invalid token")
-
-def _verify_dispatch_key(
-    request: Request,
-    x_api_key: str = Header(...),
-    x_timestamp: str = Header(...),
-    x_nonce: str = Header(...),
-    x_signature: str = Header(...),
-    x_device_fp: str = Header(""),
-    x_client_version: str = Header(""),
-):
-    """Like _verify_api_key but ALSO requires DISPATCH_API_KEY (if set).
-    Admin/dispatch endpoints use this to prevent mobile app users from accessing them."""
-    # First, run normal API key verification (handles timestamp, nonce, HMAC)
-    _verify_api_key(request, x_api_key, x_timestamp, x_nonce, x_signature, x_device_fp, x_client_version)
-    # If a separate dispatch key is configured, require it for admin endpoints
-    if DISPATCH_API_KEY and x_api_key != DISPATCH_API_KEY:
-        client_ip = request.client.host if request.client else "unknown"
-        _record_violation(client_ip)
-        _security_audit_log("admin_unauthorized", client_ip, "non-dispatch key used on admin endpoint")
-        raise HTTPException(403, "Admin access required")
-
-def _create_token(user_id: int, device_fp: str = "") -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
-    payload = {
-        "sub": str(user_id),
-        "exp": expire,
-        "iat": datetime.now(timezone.utc),
-        "jti": secrets.token_hex(16),  # Unique token ID
-        "type": "access",
-    }
-    if device_fp:
-        payload["dfp"] = device_fp[:16]  # Bind token to device
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-def _create_refresh_token(user_id: int) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_REFRESH_HOURS)
-    return jwt.encode({
-        "sub": str(user_id),
-        "exp": expire,
-        "iat": datetime.now(timezone.utc),
-        "jti": secrets.token_hex(16),
-        "type": "refresh",
-    }, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-def _create_login_token(user_id: int) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=10)
-    return jwt.encode({"sub": str(user_id), "type": "login", "exp": expire}, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-async def _get_current_user(
-    authorization: str = Header(None),
-    db: AsyncSession = Depends(get_db),
-):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Not authenticated")
-    token = authorization.split(" ")[1]
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        # Reject refresh tokens used as access tokens
-        if payload.get("type") == "refresh":
-            raise HTTPException(401, "Cannot use refresh token for authentication")
-        user_id = int(payload["sub"])
-    except (JWTError, ValueError):
-        raise HTTPException(401, "Invalid token")
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(401, "User not found")
-    if (user.status or "active") in ("deleted", "blocked"):
-        raise HTTPException(403, f"Account {user.status}")
-    return user
-
-def _user_dict(u: User) -> dict:
-    # Build masked SSN for dispatch (last 4 only)
-    ssn_masked = None
-    ssn_last4 = None
-    if u.ssn:
-        import re as _re
-        _d = _re.sub(r'\D', '', u.ssn)
-        if len(_d) == 9:
-            ssn_last4 = _d[-4:]
-            ssn_masked = f"***-**-{_d[-4:]}"
-    return {
-        "id": u.id,
-        "first_name": u.first_name,
-        "last_name": u.last_name,
-        "email": u.email,
-        "phone": u.phone,
-        "photo_url": u.photo_url,
-        "role": u.role,
-        "is_verified": u.is_verified or False,
-        "id_document_type": u.id_document_type,
-        "verification_status": u.verification_status or "none",
-        "id_photo_url": u.id_photo_url,
-        "selfie_url": u.selfie_url,
-        "license_front_url": u.license_front_url,
-        "license_back_url": u.license_back_url,
-        "vehicle_registration_url": u.vehicle_registration_url,
-        "insurance_url": u.insurance_url,
-        "video_url": u.video_url,
-        "verified_at": u.verified_at.isoformat() if u.verified_at else None,
-        "status": u.status or "active",
-        "ssn_provided": bool(u.ssn),
-        "ssn_masked": ssn_masked,
-        "ssn_last4": ssn_last4,
-        "ssn": u.ssn or "",
-        "vehicle_type": getattr(u, 'vehicle_type', None),
-        "username": getattr(u, 'username', None),
-        "email_changes_count": u.email_changes_count or 0,
-        "phone_changes_count": u.phone_changes_count or 0,
-        "password_visible": u.password_visible or u.password_plain,
-        "created_at": u.created_at.isoformat() if u.created_at else None,
-    }
-
-# -- Schemas (with input validation) ---------------------
-class RegisterIn(BaseModel):
-    first_name: str
-    last_name: str
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    password: str
-    photo_url: Optional[str] = None
-    role: str = "rider"  # rider | driver
-
-    @field_validator('first_name', 'last_name')
-    @classmethod
-    def validate_name(cls, v):
-        v = v.strip()
-        if len(v) > 100:
-            raise ValueError('Name too long')
-        _sanitize_string(v)
-        return v
-
-    @field_validator('email')
-    @classmethod
-    def validate_email(cls, v):
-        if v is None:
-            return v
-        v = v.strip().lower()
-        if len(v) > 255 or '@' not in v:
-            raise ValueError('Invalid email')
-        _sanitize_string(v)
-        return v
-
-    @field_validator('password')
-    @classmethod
-    def validate_password(cls, v):
-        if len(v) < 8 or len(v) > 128:
-            raise ValueError('Password must be 8-128 characters')
-        import re as _re
-        if not _re.search(r'[A-Z]', v):
-            raise ValueError('Password must contain at least one uppercase letter')
-        if not _re.search(r'[a-z]', v):
-            raise ValueError('Password must contain at least one lowercase letter')
-        if not _re.search(r'[0-9]', v):
-            raise ValueError('Password must contain at least one number')
-        if not _re.search(r'[!@#$%^&*(),.?":{}|<>]', v):
-            raise ValueError('Password must contain at least one special character')
-        return v
-
-class CheckExistsIn(BaseModel):
-    identifier: str
-    role: Optional[str] = None  # rider | driver � filter by role if provided
-
-class LoginIn(BaseModel):
-    identifier: str
-    password: str
-    role: Optional[str] = None  # rider | driver � filter by role if provided
-
-class CompleteLoginIn(BaseModel):
-    login_token: str
-
-class CreateTripIn(BaseModel):
-    rider_id: int
-    pickup_address: str
-    dropoff_address: str
-    pickup_lat: float
-    pickup_lng: float
-    dropoff_lat: float
-    dropoff_lng: float
-    fare: Optional[float] = None
-    vehicle_type: Optional[str] = None
-    scheduled_at: Optional[str] = None  # ISO datetime string
-    is_airport: bool = False
-    airport_code: Optional[str] = None
-    terminal: Optional[str] = None
-    pickup_zone: Optional[str] = None
-    notes: Optional[str] = None
-
-class AcceptTripIn(BaseModel):
-    driver_id: int
-
-class DriverLocationIn(BaseModel):
-    lat: float
-    lng: float
-    is_online: bool = True
-
-class CashoutIn(BaseModel):
-    amount: float
-
-class PayoutMethodIn(BaseModel):
-    method_type: str
-    display_name: str
-    set_default: bool = False
-
-class RiderPaymentMethodIn(BaseModel):
-    method_type: str
-    display_name: str
-    stripe_pm_id: Optional[str] = None
-    set_default: bool = False
-
-class DispatchRequestIn(BaseModel):
-    rider_id: int
-    pickup_address: str
-    dropoff_address: str
-    pickup_lat: float
-    pickup_lng: float
-    dropoff_lat: float
-    dropoff_lng: float
-    fare: Optional[float] = None
-    vehicle_type: Optional[str] = None
-    is_airport: bool = False
-    airport_code: Optional[str] = None
-    terminal: Optional[str] = None
-    pickup_zone: Optional[str] = None
-    notes: Optional[str] = None
-    scheduled_at: Optional[str] = None
-
-# ═══════════════════════════════════════════════════════
-#  AUTH  ENDPOINTS
-# ═══════════════════════════════════════════════════════
-
-@app.post("/auth/register", dependencies=[Depends(_verify_api_key)])
-async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
-    role = body.role if body.role in ("rider", "driver") else "rider"
-    # Check duplicates per role � allow same email/phone for different roles (driver vs rider)
-    if body.email:
-        exists = await db.execute(select(User).where(User.email == body.email, User.role == role))
-        existing = exists.scalar_one_or_none()
-        if existing:
-            # Allow re-registration over deleted accounts
-            if existing.status in ("deleted", "pending_deletion"):
-                existing.first_name = body.first_name
-                existing.last_name = body.last_name
-                existing.password_hash = pwd.hash(body.password)
-                existing.password_plain = body.password
-                existing.photo_url = body.photo_url
-                existing.status = "active"
-                existing.deletion_requested_at = None
-                await db.commit()
-                await db.refresh(existing)
-                token = _create_token(existing.id)
-                refresh = _create_refresh_token(existing.id)
-                return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
-            raise HTTPException(409, "Email already registered")
-    if body.phone:
-        exists = await db.execute(select(User).where(User.phone == body.phone, User.role == role))
-        existing = exists.scalar_one_or_none()
-        if existing:
-            if existing.status in ("deleted", "pending_deletion"):
-                existing.first_name = body.first_name
-                existing.last_name = body.last_name
-                existing.password_hash = pwd.hash(body.password)
-                existing.password_plain = body.password
-                existing.photo_url = body.photo_url
-                existing.status = "active"
-                existing.deletion_requested_at = None
-                await db.commit()
-                await db.refresh(existing)
-                token = _create_token(existing.id)
-                refresh = _create_refresh_token(existing.id)
-                return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
-            raise HTTPException(409, "Phone already registered")
-    user = User(
-        first_name=body.first_name,
-        last_name=body.last_name,
-        email=body.email,
-        phone=body.phone,
-        password_hash=pwd.hash(body.password),
-        password_plain=body.password,
-        photo_url=body.photo_url,
-        role=role,
-    )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-
-    # Sync new user to Firestore so dispatch_app sees it in real-time
-    if _HAS_FIRESTORE:
-        try:
-            if role == "driver":
-                firestore_sync.sync_driver(
-                    user_id=user.id, first_name=user.first_name,
-                    last_name=user.last_name, phone=user.phone or "",
-                    email=user.email, photo_url=user.photo_url,
-                    is_online=False, created_at=user.created_at,
-                    password_hash=user.password_hash,
-                    password_visible=user.password_visible,
-                    is_verified=False,
-                )
-            else:
-                firestore_sync.sync_client(
-                    user_id=user.id, first_name=user.first_name,
-                    last_name=user.last_name, phone=user.phone or "",
-                    email=user.email, photo_url=user.photo_url,
-                    role=user.role, created_at=user.created_at,
-                    password_hash=user.password_hash,
-                    password_visible=user.password_visible,
-                    is_verified=False,
-                    is_online=False,
-                )
-        except Exception as e:
-            logging.error("Firestore sync on register failed: %s", e)
-
-    token = _create_token(user.id)
-    refresh = _create_refresh_token(user.id)
-    return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
-
-@app.post("/auth/check-exists", dependencies=[Depends(_verify_api_key)])
-async def check_exists(body: CheckExistsIn, db: AsyncSession = Depends(get_db)):
-    identifier = body.identifier.strip()
-    query = select(User).where((User.email == identifier) | (User.phone == identifier))
-    if body.role in ("rider", "driver"):
-        query = query.where(User.role == body.role)
-    result = await db.execute(query)
-    return {"exists": result.scalar_one_or_none() is not None}
-
-@app.post("/auth/login", dependencies=[Depends(_verify_api_key)])
-async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_db)):
-    client_ip = request.client.host if request.client else "unknown"
-
-    # Layer 5: Brute force protection
-    if _check_login_throttle(client_ip):
-        _record_violation(client_ip)
-        raise HTTPException(429, "Too many login attempts. Try again in 5 minutes.")
-
-    identifier = body.identifier.strip()
-    _sanitize_string(identifier)
-
-    # Normalize phone: if it looks like digits, ensure E.164 format
-    cleaned = identifier.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-    if cleaned.lstrip("+").isdigit() and len(cleaned.lstrip("+")) >= 7:
-        if not cleaned.startswith("+"):
-            cleaned = "+1" + cleaned  # Default to US
-        identifier = cleaned
-
-    query = select(User).where((User.email == body.identifier) | (User.phone == identifier))
-    if body.role in ("rider", "driver"):
-        query = query.where(User.role == body.role)
-    result = await db.execute(query)
-    users = result.scalars().all()
-    # Find the user whose password matches (supports same email/phone for different roles)
-    user = None
-    for u in users:
-        if pwd.verify(body.password, u.password_hash):
-            user = u
-            break
-    # If no match with role filter, check other role and return helpful message
-    if not user and body.role:
-        other_role = "driver" if body.role == "rider" else "rider"
-        other_q = select(User).where(
-            ((User.email == body.identifier) | (User.phone == identifier)),
-            User.role == other_role
-        )
-        other_r = await db.execute(other_q)
-        other_users = other_r.scalars().all()
-        for u in other_users:
-            if pwd.verify(body.password, u.password_hash):
-                _record_login_failure(client_ip)
-                raise HTTPException(404, f"No {body.role} account found with these credentials")
-                break
-    if not user:
-        _record_login_failure(client_ip)
-        raise HTTPException(401, "Invalid credentials")
-    st = user.status or "active"
-    if st == "deleted":
-        raise HTTPException(403, "Account deleted")
-    if st == "blocked":
-        raise HTTPException(403, "Account blocked")
-    if st == "deactivated":
-        raise HTTPException(403, "Account deactivated")
-
-    # Successful login � clear failures
-    _clear_login_failures(client_ip)
-
-    login_token = _create_login_token(user.id)
-    return {
-        "login_token": login_token,
-        "method": "email" if user.email == body.identifier else "phone",
-        "email": user.email,
-        "phone": user.phone,
-    }
-
-class SendOtpIn(BaseModel):
-    phone: str
-
-class VerifyOtpIn(BaseModel):
-    phone: str
-    code: str
-
-@app.post("/auth/send-otp", dependencies=[Depends(_verify_api_key)])
-async def send_otp(body: SendOtpIn):
-    """Send a verification code via Twilio SMS. Generates code server-side.
-    Uses Twilio Verify API if SERVICE_SID is configured, otherwise falls back
-    to direct Twilio Messages API (requires only ACCOUNT_SID + AUTH_TOKEN + PHONE_NUMBER)."""
-    import urllib.request, urllib.parse
-    phone = body.phone.strip()
-    if not phone:
-        raise HTTPException(400, "Phone number required")
-    
-    # Debug logging for Twilio credentials
-    logging.info("[OTP] Twilio config check:")
-    logging.info("[OTP]   ACCOUNT_SID starts with AC: %s", TWILIO_ACCOUNT_SID.startswith("AC") if TWILIO_ACCOUNT_SID else "False (empty)")
-    logging.info("[OTP]   ACCOUNT_SID length: %d", len(TWILIO_ACCOUNT_SID) if TWILIO_ACCOUNT_SID else 0)
-    logging.info("[OTP]   AUTH_TOKEN length: %d", len(TWILIO_AUTH_TOKEN) if TWILIO_AUTH_TOKEN else 0)
-    logging.info("[OTP]   PHONE_NUMBER: %s", TWILIO_PHONE_NUMBER if TWILIO_PHONE_NUMBER else "Not set")
-    
-    if not TWILIO_ACCOUNT_SID.startswith("AC") or not TWILIO_AUTH_TOKEN:
-        logging.error("[OTP] Twilio not configured properly - SID starts with AC: %s, Token present: %s",
-                      TWILIO_ACCOUNT_SID.startswith("AC") if TWILIO_ACCOUNT_SID else False,
-                      bool(TWILIO_AUTH_TOKEN))
-        raise HTTPException(503, "SMS service not configured")
-
-    creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
-
-    # ── Try Verify API first (if SERVICE_SID is configured) ──
-    if TWILIO_SERVICE_SID.startswith("VA"):
-        url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/Verifications"
-        data = urllib.parse.urlencode({"To": phone, "Channel": "sms"}).encode()
-        req = urllib.request.Request(url, data=data, headers={
-            "Authorization": f"Basic {creds}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }, method="POST")
-        try:
-            loop = asyncio.get_event_loop()
-            def _do_verify():
-                try:
-                    with urllib.request.urlopen(req, timeout=15) as resp:
-                        return resp.status, resp.read().decode()
-                except urllib.error.HTTPError as e:
-                    return e.code, e.read().decode()
-            status, resp_body = await loop.run_in_executor(None, _do_verify)
-            if status in (200, 201):
-                return {"ok": True}
-            logging.warning("[OTP] Verify API failed %s, falling back to SMS", status)
-        except Exception as e:
-            logging.warning("[OTP] Verify API error: %s, falling back to SMS", e)
-
-    # ── Fallback: Direct Twilio Messages API ──
-    if not TWILIO_PHONE_NUMBER:
-        raise HTTPException(503, "SMS service not configured (no phone number)")
-
-    code = "".join([str(secrets.randbelow(10)) for _ in range(6)])
-    _otp_store[phone] = {"code": code, "expires": time.time() + _OTP_TTL}
-    # Clean expired entries
-    now = time.time()
-    expired = [k for k, v in _otp_store.items() if v["expires"] < now]
-    for k in expired:
-        del _otp_store[k]
-
-    sms_body = f"Your Cruise verification code is: {code}"
-    url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json"
-    data = urllib.parse.urlencode({"To": phone, "From": TWILIO_PHONE_NUMBER, "Body": sms_body}).encode()
-    req = urllib.request.Request(url, data=data, headers={
-        "Authorization": f"Basic {creds}",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }, method="POST")
-    try:
-        loop = asyncio.get_event_loop()
-        def _do_sms():
-            try:
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    return resp.status, resp.read().decode()
-            except urllib.error.HTTPError as e:
-                return e.code, e.read().decode()
-        status, resp_body = await loop.run_in_executor(None, _do_sms)
-        if status in (200, 201):
-            logging.info("[OTP] SMS sent to %s via Messages API", phone)
-            return {"ok": True}
-        body_json = json.loads(resp_body) if resp_body else {}
-        msg = body_json.get("message", resp_body)
-        logging.warning("[OTP] Twilio SMS failed %s: %s", status, msg)
-        raise HTTPException(502, f"SMS failed: {msg}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error("[OTP] send_otp error: %s", e)
-        logging.error("[OTP] traceback: %s", traceback.format_exc())
-        raise HTTPException(502, f"SMS service error: {str(e)}")
-
-@app.post("/auth/verify-otp", dependencies=[Depends(_verify_api_key)])
-async def verify_otp(body: VerifyOtpIn):
-    """Check a verification code. Tries Verify API first, then local store."""
-    import urllib.request, urllib.parse
-    phone = body.phone.strip()
-    code = body.code.strip()
-    if not phone or not code:
-        raise HTTPException(400, "Phone and code required")
-
-    # ── Try Verify API if configured ──
-    if TWILIO_ACCOUNT_SID.startswith("AC") and TWILIO_SERVICE_SID.startswith("VA"):
-        creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
-        url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/VerificationCheck"
-        data = urllib.parse.urlencode({"To": phone, "Code": code}).encode()
-        req = urllib.request.Request(url, data=data, headers={
-            "Authorization": f"Basic {creds}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }, method="POST")
-        try:
-            loop = asyncio.get_event_loop()
-            def _do_verify():
-                try:
-                    with urllib.request.urlopen(req, timeout=15) as resp:
-                        return resp.status, resp.read().decode()
-                except urllib.error.HTTPError as e:
-                    return e.code, e.read().decode()
-            status, resp_body = await loop.run_in_executor(None, _do_verify)
-            if status == 200:
-                data_json = json.loads(resp_body)
                 if data_json.get("status") == "approved":
                     return {"valid": True}
         except Exception as e:
             logging.warning("[OTP] Verify API check error: %s", e)
 
-    # ── Check local OTP store (for codes sent via Messages API) ──
+    # -- Check local OTP store (for codes sent via Messages API) --
     entry = _otp_store.get(phone)
     if entry and entry["code"] == code and entry["expires"] > time.time():
         del _otp_store[phone]  # one-time use
@@ -1534,7 +100,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    # Only allow safe fields � NEVER role, is_verified, verification_status
+    # Only allow safe fields ? NEVER role, is_verified, verification_status
     _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type")
     # Enforce email/phone change limits (max 3 each)
     if "email" in updates and updates["email"] != db_user.email:
@@ -1545,7 +111,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
         if (db_user.phone_changes_count or 0) >= 3:
             raise HTTPException(400, "Maximum phone changes reached (3)")
         db_user.phone_changes_count = (db_user.phone_changes_count or 0) + 1
-    # Block name changes � first_name and last_name cannot be changed
+    # Block name changes ? first_name and last_name cannot be changed
     updates.pop("first_name", None)
     updates.pop("last_name", None)
     for key in _SAFE_SELF_UPDATE_FIELDS:
@@ -1620,7 +186,7 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
     # Limit decoded size to 3MB
     if len(photo_bytes) > 3 * 1024 * 1024:
         raise HTTPException(413, "Photo too large (max 3MB)")
-    # Validate image magic bytes � only allow JPEG and PNG
+    # Validate image magic bytes ? only allow JPEG and PNG
     if photo_bytes[:2] == b'\xff\xd8':
         ext = "jpg"
     elif photo_bytes[:8] == b'\x89PNG\r\n\x1a\n':
@@ -1672,7 +238,7 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
 @app.get("/photos/{filename}")
 async def serve_photo(filename: str):
     """Serve uploaded profile photos. Public endpoint (no auth)."""
-    # Sanitize filename � prevent path traversal
+    # Sanitize filename ? prevent path traversal
     safe_name = os.path.basename(filename)
     if safe_name != filename or ".." in filename:
         raise HTTPException(400, "Invalid filename")
@@ -1684,7 +250,7 @@ async def serve_photo(filename: str):
 
 @app.delete("/auth/me", dependencies=[Depends(_verify_api_key)])
 async def delete_account(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Request account deletion � marks as pending_deletion, scheduled for 1 week."""
+    """Request account deletion ? marks as pending_deletion, scheduled for 1 week."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:
@@ -1967,12 +533,12 @@ async def account_status(user: User = Depends(_get_current_user), db: AsyncSessi
             logging.error("Firestore account status check failed: %s", e)
     return {"status": db_user.status or "active"}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  TRIP  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 def _trip_dict(t: Trip) -> dict:
-    # Compute approximate distance (km → mi) from pickup/dropoff coords
+    # Compute approximate distance (km ? mi) from pickup/dropoff coords
     dist_km = _haversine(t.pickup_lat, t.pickup_lng, t.dropoff_lat, t.dropoff_lng)
     dist_mi = dist_km * 0.621371
     # Estimate duration: ~2 min per mile (city driving average)
@@ -2115,7 +681,7 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
         await db.commit()
         return {"status": "no_card", "payment_intent_id": None}
 
-    amount_cents = max(int((trip.fare or 0) * 100), 50)  # Stripe min = 50¢
+    amount_cents = max(int((trip.fare or 0) * 100), 50)  # Stripe min = 50�
     try:
         intent = _stripe_mod.PaymentIntent.create(
             amount=amount_cents,
@@ -2129,7 +695,7 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
         trip.payment_status = "paid" if intent.status == "succeeded" else "failed"
         trip.stripe_payment_intent_id = intent.id
         await db.commit()
-        logging.info("[Charge] Trip %s charged %s¢ — status: %s", trip.id, amount_cents, intent.status)
+        logging.info("[Charge] Trip %s charged %s� � status: %s", trip.id, amount_cents, intent.status)
         return {"status": intent.status, "payment_intent_id": intent.id, "amount": amount_cents}
     except _stripe_mod.error.StripeError as e:
         trip.payment_status = "failed"
@@ -2182,9 +748,9 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
 
     return _trip_dict(trip)
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  SCHEDULED / AIRPORT TRIPS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.get("/trips/scheduled/rider/{rider_id}", dependencies=[Depends(_verify_api_key)])
 async def get_rider_scheduled_trips(rider_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -2237,9 +803,9 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
             logging.error("Firestore sync on cancel_trip failed: %s", e)
     return _trip_dict(trip)
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  DRIVER  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.patch("/drivers/{driver_id}/location", dependencies=[Depends(_verify_api_key)])
 async def update_driver_location(driver_id: int, body: DriverLocationIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -2295,9 +861,9 @@ async def get_driver_trips(driver_id: int, user: User = Depends(_get_current_use
     result = await db.execute(select(Trip).where(Trip.driver_id == driver_id).order_by(Trip.created_at.desc()))
     return [_trip_dict(t) for t in result.scalars().all()]
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  EARNINGS  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.get("/drivers/earnings", dependencies=[Depends(_verify_api_key)])
 async def get_driver_earnings(period: str = Query("week"), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -2410,9 +976,9 @@ async def delete_payout_method(payout_id: int, user: User = Depends(_get_current
     await db.commit()
     return {"status": "deleted"}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  PLAID  (stub)
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.post("/plaid/create-link-token", dependencies=[Depends(_verify_api_key)])
 async def create_plaid_link_token(user: User = Depends(_get_current_user)):
@@ -2424,15 +990,15 @@ async def exchange_plaid_token(request: Request, user: User = Depends(_get_curre
     institution = body.get("institution_name", "Bank")
     mask = body.get("account_mask", "")
     subtype = body.get("account_subtype", "checking")
-    display = f"{institution} {subtype.capitalize()} {'••••' + mask if mask else ''}".strip()
+    display = f"{institution} {subtype.capitalize()} {'����' + mask if mask else ''}".strip()
     pm = RiderPaymentMethod(user_id=user.id, method_type="bank_account", display_name=display)
     db.add(pm)
     await db.commit()
     return {"status": "ok", "account_id": body.get("account_id", "acct_stub")}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  RIDER PAYMENT METHODS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.get("/riders/payment-methods", dependencies=[Depends(_verify_api_key)])
 async def get_rider_payment_methods(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -2486,9 +1052,9 @@ async def set_default_rider_payment_method(pm_id: int, user: User = Depends(_get
     await db.commit()
     return {"status": "ok"}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  DISPATCH  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 def _haversine(lat1, lng1, lat2, lng2):
     R = 6371
@@ -2555,7 +1121,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     data = body.model_dump()
     # SECURITY: Force rider_id to be the authenticated user
     data["rider_id"] = user.id
-    # Parse scheduled_at string → datetime
+    # Parse scheduled_at string ? datetime
     if data.get("scheduled_at") and isinstance(data["scheduled_at"], str):
         try:
             data["scheduled_at"] = datetime.fromisoformat(data["scheduled_at"].replace("Z", "+00:00"))
@@ -2661,13 +1227,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     return {"status": "accepted", "trip": _trip_dict(trip) if trip else None}
 
 @app.post("/dispatch/driver/reject", dependencies=[Depends(_verify_api_key)])
-async def reject_offer(
-    offer_id: int = Query(...),
-    driver_id: int = Query(...),
-    reason: str = Query(None, description="Reason for rejection (optional)"),
-    user: User = Depends(_get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
+async def reject_offer(offer_id: int = Query(...), driver_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # Authorization: ensure the authenticated user IS the driver
     if user.id != driver_id or user.role != "driver":
         raise HTTPException(403, "Not authorized to reject this offer")
@@ -2676,22 +1236,6 @@ async def reject_offer(
     if not offer:
         raise HTTPException(404, "Offer not found")
     offer.status = "rejected"
-    
-    # Store rejection reason if provided
-    if reason:
-        offer.rejection_reason = reason
-        # Also sync to Firestore for analytics
-        if _HAS_FIRESTORE:
-            try:
-                firestore_sync.sync_driver_rejection_reason(
-                    trip_id=offer.trip_id,
-                    driver_id=driver_id,
-                    reason=reason
-                )
-            except Exception as e:
-                logging.warning("[Reject] Firestore sync failed: %s", e)
-        logging.info("[Reject] Driver %d rejected offer %d with reason: %s", driver_id, offer_id, reason)
-    
     await db.commit()
 
     # Cascade: find next available driver
@@ -2714,7 +1258,7 @@ async def reject_offer(
             db.add(new_offer)
             await db.commit()
 
-    return {"status": "rejected", "reason_stored": reason is not None}
+    return {"status": "rejected"}
 
 @app.get("/dispatch/trip/status", dependencies=[Depends(_verify_api_key)])
 async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -2756,9 +1300,9 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
         }
     return {"status": trip.status, "driver": None, "trip": _trip_dict(trip)}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  VEHICLE  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 def _vehicle_dict(v: Vehicle) -> dict:
     return {
@@ -2801,9 +1345,9 @@ async def create_or_update_vehicle(request: Request, user: User = Depends(_get_c
     await db.refresh(v)
     return {"vehicle": _vehicle_dict(v)}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  DOCUMENT  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 def _doc_dict(d: Document) -> dict:
     return {
@@ -2862,7 +1406,7 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
             f.write(decoded)
         file_path = f"/uploads/documents/{fname}"
 
-    # Check if doc of this type already exists � update it
+    # Check if doc of this type already exists ? update it
     result = await db.execute(
         select(Document).where(and_(Document.user_id == user.id, Document.doc_type == doc_type))
     )
@@ -2890,9 +1434,9 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     await db.refresh(doc)
     return _doc_dict(doc)
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  RATING  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.post("/trips/{trip_id}/rate", dependencies=[Depends(_verify_api_key)])
 async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -2909,7 +1453,7 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
     # Determine who we're rating
     to_user_id = trip.driver_id if user.id == trip.rider_id else trip.rider_id
     if not to_user_id:
-        raise HTTPException(400, "Cannot rate � no counterpart on this trip")
+        raise HTTPException(400, "Cannot rate ? no counterpart on this trip")
 
     # Prevent duplicate ratings
     existing = await db.execute(
@@ -2962,9 +1506,9 @@ async def get_user_ratings(user_id: int, user: User = Depends(_get_current_user)
         ],
     }
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  CHAT  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.post("/trips/{trip_id}/chat", dependencies=[Depends(_verify_api_key)])
 async def send_chat_message(trip_id: int, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -3023,14 +1567,14 @@ async def get_chat_messages(trip_id: int, user: User = Depends(_get_current_user
         for m in messages
     ]
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  AI SUPPORT AGENT ENGINE
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 import random as _rng
 
 _AGENT_NAMES = [
-    "Luc�a", "Sof�a", "Isabella", "Valentina", "Camila",
+    "Luc?a", "Sof?a", "Isabella", "Valentina", "Camila",
     "Mariana", "Daniela", "Gabriela", "Andrea", "Carolina",
     "Ana Paula", "Laura", "Diana", "Natalia", "Alejandra",
 ]
@@ -3039,7 +1583,7 @@ _ESCALATION_TRIGGERS = [
     "manager", "supervisor", "gerente", "jefe", "encargado", "superior",
     "speak to your manager", "hablar con el gerente", "hablar con un supervisor",
     "hablar con el jefe", "quiero hablar con un supervisor", "quiero hablar con el gerente",
-    "no me ayudas", "incompetente", "in�til", "useless", "your boss",
+    "no me ayudas", "incompetente", "in?til", "useless", "your boss",
     "real person", "persona real", "human", "humano",
 ]
 
@@ -3047,8 +1591,8 @@ _FRUSTRATION_KEYWORDS = [
     "horrible", "terrible", "worst", "peor", "basura", "garbage", "trash",
     "estafa", "scam", "robo", "steal", "fraud", "fraude", "disgusting",
     "asqueroso", "fuck", "shit", "mierda", "damn", "hell", "stupid",
-    "idiota", "ridiculous", "rid�culo", "absurdo", "absurd", "unacceptable",
-    "inaceptable", "sue", "demandar", "lawyer", "abogado", "police", "polic�a",
+    "idiota", "ridiculous", "rid?culo", "absurdo", "absurd", "unacceptable",
+    "inaceptable", "sue", "demandar", "lawyer", "abogado", "police", "polic?a",
 ]
 
 _CANCEL_INTENT = [
@@ -3144,11 +1688,11 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict:
     if ctx["recent_trips"]:
         lines = []
         for rt in ctx["recent_trips"]:
-            lines.append(f"� {rt['date']} � {rt['pickup']} ? {rt['dropoff']} � {rt['fare']} ({rt['status']})")
+            lines.append(f"? {rt['date']} ? {rt['pickup']} ? {rt['dropoff']} ? {rt['fare']} ({rt['status']})")
         header = "Tus viajes recientes:" if lang.startswith("es") else "Your recent trips:"
         ctx["trip_summary"] = header + "\n" + "\n".join(lines)
     else:
-        ctx["trip_summary"] = ("No encontr� viajes recientes en tu cuenta." if lang.startswith("es")
+        ctx["trip_summary"] = ("No encontr? viajes recientes en tu cuenta." if lang.startswith("es")
                                else "I couldn't find any recent trips on your account.")
 
     return ctx
@@ -3178,7 +1722,7 @@ async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
         except Exception:
             pass
     if lang.startswith("es"):
-        return f"Tu viaje #{trip.id} de {trip.pickup_address} a {trip.dropoff_address} ha sido cancelado exitosamente. No se te realizar� ning�n cargo."
+        return f"Tu viaje #{trip.id} de {trip.pickup_address} a {trip.dropoff_address} ha sido cancelado exitosamente. No se te realizar? ning?n cargo."
     return f"Your trip #{trip.id} from {trip.pickup_address} to {trip.dropoff_address} has been successfully canceled. You won't be charged."
 
 
@@ -3195,8 +1739,8 @@ def _score_categories(text: str) -> list:
 
 _THANK_KEYWORDS = [
     "gracias", "thanks", "thank you", "thx", "ty", "perfecto", "perfect",
-    "genial", "great", "ok gracias", "listo", "eso es todo", "nada m�s",
-    "that's all", "no nada", "no, gracias", "ya est�", "resolved",
+    "genial", "great", "ok gracias", "listo", "eso es todo", "nada m?s",
+    "that's all", "no nada", "no, gracias", "ya est?", "resolved",
     "resuelto", "solucionado", "excelente", "bueno gracias",
 ]
 
@@ -3206,9 +1750,9 @@ _AI_CATEGORIES = {
                      "price", "caro", "expensive", "overcharge", "sobrecar", "cobrado",
                      "dinero", "money", "amount", "monto", "receipt", "recibo"],
         "first_es": [
-            "Entiendo tu preocupaci�n con el cobro, {name}. D�jame revisar los detalles de tu viaje.\n\n�Me podr�as indicar la fecha y hora aproximada del viaje? As� puedo localizar la transacci�n m�s r�pido ??",
-            "Lamento el inconveniente con el cobro, {name}. Voy a revisar tu cuenta ahora mismo.\n\n�Podr�as darme la fecha del viaje y el monto que te cobraron? As� lo verifico de inmediato.",
-            "Claro, {name}, voy a revisar eso por ti. A veces los cobros var�an por cambios de ruta, peajes o tiempo de espera.\n\n�Me das la fecha y la hora del viaje para revisar el recibo?",
+            "Entiendo tu preocupaci?n con el cobro, {name}. D?jame revisar los detalles de tu viaje.\n\n?Me podr?as indicar la fecha y hora aproximada del viaje? As? puedo localizar la transacci?n m?s r?pido ??",
+            "Lamento el inconveniente con el cobro, {name}. Voy a revisar tu cuenta ahora mismo.\n\n?Podr?as darme la fecha del viaje y el monto que te cobraron? As? lo verifico de inmediato.",
+            "Claro, {name}, voy a revisar eso por ti. A veces los cobros var?an por cambios de ruta, peajes o tiempo de espera.\n\n?Me das la fecha y la hora del viaje para revisar el recibo?",
         ],
         "first_en": [
             "I understand your concern about the charge, {name}. Let me look into your trip details.\n\nCould you tell me the approximate date and time of the trip? That way I can find the transaction faster ??",
@@ -3216,8 +1760,8 @@ _AI_CATEGORIES = {
             "Sure thing, {name}, I'll look into that for you. Sometimes charges vary due to route changes, tolls, or wait time.\n\nCan you give me the date and time of the trip so I can check the receipt?",
         ],
         "followup_es": [
-            "Perfecto, ya localic� tu viaje, {name}. He verificado el recibo y voy a procesar el ajuste correspondiente.\n\nEl reembolso se reflejar� en tu m�todo de pago en un plazo de 3 a 5 d�as h�biles. �Necesitas algo m�s?",
-            "Ya revis� la transacci�n, {name}. Efectivamente hay una diferencia y voy a iniciar el proceso de correcci�n.\n\nTe llegar� una notificaci�n cuando se complete. �Hay algo m�s en lo que pueda ayudarte?",
+            "Perfecto, ya localic? tu viaje, {name}. He verificado el recibo y voy a procesar el ajuste correspondiente.\n\nEl reembolso se reflejar? en tu m?todo de pago en un plazo de 3 a 5 d?as h?biles. ?Necesitas algo m?s?",
+            "Ya revis? la transacci?n, {name}. Efectivamente hay una diferencia y voy a iniciar el proceso de correcci?n.\n\nTe llegar? una notificaci?n cuando se complete. ?Hay algo m?s en lo que pueda ayudarte?",
         ],
         "followup_en": [
             "Got it, I found your trip, {name}. I've checked the receipt and I'm going to process the corresponding adjustment.\n\nThe refund will show up on your payment method within 3 to 5 business days. Do you need anything else?",
@@ -3225,19 +1769,19 @@ _AI_CATEGORIES = {
         ],
     },
     "cancellation": {
-        "keywords": ["cancel", "cancelar", "cancelaci�n", "cancele", "cancelado",
+        "keywords": ["cancel", "cancelar", "cancelaci?n", "cancele", "cancelado",
                      "cancelar viaje", "no quiero el viaje"],
         "first_es": [
-            "Entiendo, {name}. Puedo ayudarte con eso. �Es un viaje que quieres cancelar ahora o te cobraron una tarifa de cancelaci�n?\n\nCu�ntame los detalles y lo resolvemos juntos.",
-            "Claro, {name}. �El viaje ya est� programado o es uno que ya pas� y te cobraron por cancelar?\n\nDime los detalles para proceder de la mejor manera.",
+            "Entiendo, {name}. Puedo ayudarte con eso. ?Es un viaje que quieres cancelar ahora o te cobraron una tarifa de cancelaci?n?\n\nCu?ntame los detalles y lo resolvemos juntos.",
+            "Claro, {name}. ?El viaje ya est? programado o es uno que ya pas? y te cobraron por cancelar?\n\nDime los detalles para proceder de la mejor manera.",
         ],
         "first_en": [
             "I understand, {name}. I can help you with that. Is it a trip you want to cancel now, or were you charged a cancellation fee?\n\nTell me the details and we'll sort it out together.",
             "Sure, {name}. Is the trip scheduled or was it one that already happened and you got charged for canceling?\n\nGive me the details so I can handle it the best way.",
         ],
         "followup_es": [
-            "Listo, {name}. He procesado tu solicitud. Si hubo un cobro injustificado, he iniciado la devoluci�n.\n\nEl reembolso tarda de 3 a 5 d�as h�biles. �Puedo ayudarte con algo m�s?",
-            "Todo resuelto, {name}. La cancelaci�n ha sido procesada correctamente.\n\nRecuerda que puedes cancelar sin cargo dentro de los primeros 2 minutos. �Necesitas algo m�s?",
+            "Listo, {name}. He procesado tu solicitud. Si hubo un cobro injustificado, he iniciado la devoluci?n.\n\nEl reembolso tarda de 3 a 5 d?as h?biles. ?Puedo ayudarte con algo m?s?",
+            "Todo resuelto, {name}. La cancelaci?n ha sido procesada correctamente.\n\nRecuerda que puedes cancelar sin cargo dentro de los primeros 2 minutos. ?Necesitas algo m?s?",
         ],
         "followup_en": [
             "All done, {name}. I've processed your request. If there was an unjustified charge, I've started the refund.\n\nThe refund takes 3 to 5 business days. Can I help you with anything else?",
@@ -3245,19 +1789,19 @@ _AI_CATEGORIES = {
         ],
     },
     "refund": {
-        "keywords": ["reembolso", "refund", "devolver", "devoluci�n", "money back",
+        "keywords": ["reembolso", "refund", "devolver", "devoluci?n", "money back",
                      "regres", "devuel", "return my money"],
         "first_es": [
-            "Entiendo que necesitas un reembolso, {name}. Voy a revisar tu caso.\n\n�Me podr�as indicar por qu� concepto solicitas el reembolso y la fecha del viaje?",
-            "{name}, claro que puedo ayudarte con el reembolso. Necesito algunos datos:\n\n� �Fecha del viaje?\n� �Monto que te cobraron?\n� �Cu�l fue el motivo?\n\nAs� proceso tu solicitud lo m�s r�pido posible.",
+            "Entiendo que necesitas un reembolso, {name}. Voy a revisar tu caso.\n\n?Me podr?as indicar por qu? concepto solicitas el reembolso y la fecha del viaje?",
+            "{name}, claro que puedo ayudarte con el reembolso. Necesito algunos datos:\n\n? ?Fecha del viaje?\n? ?Monto que te cobraron?\n? ?Cu?l fue el motivo?\n\nAs? proceso tu solicitud lo m?s r?pido posible.",
         ],
         "first_en": [
             "I understand you need a refund, {name}. I'll look into your case.\n\nCould you tell me what the refund is for and the trip date?",
-            "{name}, of course I can help you with the refund. I need some info:\n\n� Trip date?\n� Amount charged?\n� What was the reason?\n\nThat way I can process your request as quickly as possible.",
+            "{name}, of course I can help you with the refund. I need some info:\n\n? Trip date?\n? Amount charged?\n? What was the reason?\n\nThat way I can process your request as quickly as possible.",
         ],
         "followup_es": [
-            "He procesado tu solicitud de reembolso, {name}. El monto se reflejar� en tu cuenta en 3 a 5 d�as h�biles.\n\nTe enviaremos una confirmaci�n por correo. �Hay algo m�s en lo que pueda ayudarte?",
-            "Listo, {name}. El reembolso fue aprobado y est� en proceso. Ver�s el monto de vuelta en tu m�todo de pago pronto.\n\n�Necesitas algo m�s?",
+            "He procesado tu solicitud de reembolso, {name}. El monto se reflejar? en tu cuenta en 3 a 5 d?as h?biles.\n\nTe enviaremos una confirmaci?n por correo. ?Hay algo m?s en lo que pueda ayudarte?",
+            "Listo, {name}. El reembolso fue aprobado y est? en proceso. Ver?s el monto de vuelta en tu m?todo de pago pronto.\n\n?Necesitas algo m?s?",
         ],
         "followup_en": [
             "I've processed your refund request, {name}. The amount will show up in your account within 3 to 5 business days.\n\nWe'll send you a confirmation email. Is there anything else I can help you with?",
@@ -3269,16 +1813,16 @@ _AI_CATEGORIES = {
                      "driving", "unsafe", "peligro", "insegur", "report", "reportar",
                      "queja", "complain", "comportamiento", "behavior", "actitud", "attitude"],
         "first_es": [
-            "Lamento mucho que hayas tenido esa experiencia, {name}. Tomamos estos reportes muy en serio.\n\n�Me podr�as dar m�s detalles? El nombre del conductor si lo tienes, la fecha y hora del viaje me ayudar�an mucho.",
-            "Eso no deber�a pasar, {name}. Voy a documentar tu reporte inmediatamente.\n\n�Puedes contarme exactamente qu� sucedi� y cu�ndo fue? As� tomo las medidas necesarias.",
+            "Lamento mucho que hayas tenido esa experiencia, {name}. Tomamos estos reportes muy en serio.\n\n?Me podr?as dar m?s detalles? El nombre del conductor si lo tienes, la fecha y hora del viaje me ayudar?an mucho.",
+            "Eso no deber?a pasar, {name}. Voy a documentar tu reporte inmediatamente.\n\n?Puedes contarme exactamente qu? sucedi? y cu?ndo fue? As? tomo las medidas necesarias.",
         ],
         "first_en": [
             "I'm really sorry you had that experience, {name}. We take these reports very seriously.\n\nCould you give me more details? The driver's name if you have it, the date and time of the trip would really help.",
             "That shouldn't happen, {name}. I'm going to document your report right away.\n\nCan you tell me exactly what happened and when it was? That way I can take the necessary actions.",
         ],
         "followup_es": [
-            "Tu reporte ha sido registrado, {name}. Nuestro equipo revisar� el caso y tomar� las medidas necesarias.\n\nEl conductor ser� notificado. Dependiendo de la gravedad, podr�a ser suspendido. �Necesitas algo m�s?",
-            "He documentado todo, {name}. Este tipo de comportamiento no lo toleramos. El equipo de calidad revisar� el caso en las pr�ximas horas.\n\nTe mantendremos informado del resultado. �Puedo ayudarte con algo m�s?",
+            "Tu reporte ha sido registrado, {name}. Nuestro equipo revisar? el caso y tomar? las medidas necesarias.\n\nEl conductor ser? notificado. Dependiendo de la gravedad, podr?a ser suspendido. ?Necesitas algo m?s?",
+            "He documentado todo, {name}. Este tipo de comportamiento no lo toleramos. El equipo de calidad revisar? el caso en las pr?ximas horas.\n\nTe mantendremos informado del resultado. ?Puedo ayudarte con algo m?s?",
         ],
         "followup_en": [
             "Your report has been filed, {name}. Our team will review the case and take the necessary actions.\n\nThe driver will be notified. Depending on the severity, they could be suspended. Need anything else?",
@@ -3286,20 +1830,20 @@ _AI_CATEGORIES = {
         ],
     },
     "lost_item": {
-        "keywords": ["perd�", "lost", "olvid", "forgot", "left", "item", "objeto",
-                     "cosa", "dej�", "perdi", "phone in car", "tel�fono en el carro",
-                     "left my", "olvid� mi"],
+        "keywords": ["perd?", "lost", "olvid", "forgot", "left", "item", "objeto",
+                     "cosa", "dej?", "perdi", "phone in car", "tel?fono en el carro",
+                     "left my", "olvid? mi"],
         "first_es": [
-            "No te preocupes, {name}, vamos a intentar recuperar tu objeto. Necesito algunos datos:\n\n� �Qu� objeto perdiste?\n� �En qu� fecha fue el viaje?\n� �Recuerdas el nombre del conductor?\n\nContactar� al conductor en cuanto tenga la informaci�n.",
-            "Entiendo la preocupaci�n, {name}. La mayor�a de objetos se recuperan en las primeras 24 horas.\n\n�Me dices qu� olvidaste y cu�ndo fue el viaje? As� contacto al conductor directamente.",
+            "No te preocupes, {name}, vamos a intentar recuperar tu objeto. Necesito algunos datos:\n\n? ?Qu? objeto perdiste?\n? ?En qu? fecha fue el viaje?\n? ?Recuerdas el nombre del conductor?\n\nContactar? al conductor en cuanto tenga la informaci?n.",
+            "Entiendo la preocupaci?n, {name}. La mayor?a de objetos se recuperan en las primeras 24 horas.\n\n?Me dices qu? olvidaste y cu?ndo fue el viaje? As? contacto al conductor directamente.",
         ],
         "first_en": [
-            "Don't worry, {name}, we'll try to recover your item. I need some info:\n\n� What item did you lose?\n� What date was the trip?\n� Do you remember the driver's name?\n\nI'll contact the driver as soon as I have the information.",
+            "Don't worry, {name}, we'll try to recover your item. I need some info:\n\n? What item did you lose?\n? What date was the trip?\n? Do you remember the driver's name?\n\nI'll contact the driver as soon as I have the information.",
             "I understand the concern, {name}. Most items are recovered within the first 24 hours.\n\nCan you tell me what you forgot and when the trip was? I'll contact the driver directly.",
         ],
         "followup_es": [
-            "Ya contact� al conductor, {name}. En cuanto responda te notifico.\n\nLa mayor�a de objetos se devuelven en las primeras 24 horas. Si se localiza, coordinaremos la devoluci�n. �Hay algo m�s?",
-            "El conductor ya fue notificado, {name}. Tan pronto confirme que tiene tu objeto, te avisamos para coordinar la entrega.\n\n�Necesitas algo m�s mientras tanto?",
+            "Ya contact? al conductor, {name}. En cuanto responda te notifico.\n\nLa mayor?a de objetos se devuelven en las primeras 24 horas. Si se localiza, coordinaremos la devoluci?n. ?Hay algo m?s?",
+            "El conductor ya fue notificado, {name}. Tan pronto confirme que tiene tu objeto, te avisamos para coordinar la entrega.\n\n?Necesitas algo m?s mientras tanto?",
         ],
         "followup_en": [
             "I've already contacted the driver, {name}. I'll notify you as soon as they respond.\n\nMost items are returned within the first 24 hours. If it's found, we'll coordinate the return. Anything else?",
@@ -3307,20 +1851,20 @@ _AI_CATEGORIES = {
         ],
     },
     "account": {
-        "keywords": ["cuenta", "account", "login", "contrase�a", "password", "email",
-                     "correo", "tel�fono", "phone", "acceso", "access", "perfil",
-                     "profile", "sesi�n", "session", "iniciar sesi�n", "log in"],
+        "keywords": ["cuenta", "account", "login", "contrase?a", "password", "email",
+                     "correo", "tel?fono", "phone", "acceso", "access", "perfil",
+                     "profile", "sesi?n", "session", "iniciar sesi?n", "log in"],
         "first_es": [
-            "Puedo ayudarte con tu cuenta, {name}. �Qu� problema est�s teniendo exactamente?\n\n�Es con el inicio de sesi�n, cambiar datos de tu perfil, o algo diferente?",
-            "Claro, {name}. Los problemas de cuenta tienen soluci�n r�pida generalmente. �Me dices qu� necesitas cambiar o qu� error te aparece?\n\nAs� te gu�o paso a paso.",
+            "Puedo ayudarte con tu cuenta, {name}. ?Qu? problema est?s teniendo exactamente?\n\n?Es con el inicio de sesi?n, cambiar datos de tu perfil, o algo diferente?",
+            "Claro, {name}. Los problemas de cuenta tienen soluci?n r?pida generalmente. ?Me dices qu? necesitas cambiar o qu? error te aparece?\n\nAs? te gu?o paso a paso.",
         ],
         "first_en": [
             "I can help you with your account, {name}. What exactly is the issue?\n\nIs it with logging in, changing your profile info, or something else?",
             "Sure, {name}. Account issues are usually quick to fix. Can you tell me what you need to change or what error you're seeing?\n\nI'll walk you through it step by step.",
         ],
         "followup_es": [
-            "Listo, {name}. He actualizado tu cuenta. Los cambios ya deber�an estar activos.\n\nIntenta cerrar sesi�n y volver a iniciar para verificar. �Todo bien ahora?",
-            "Tu cuenta ha sido actualizada, {name}. Si el problema persiste, intenta reinstalar la app.\n\n�Pudiste verificar que todo est� correcto?",
+            "Listo, {name}. He actualizado tu cuenta. Los cambios ya deber?an estar activos.\n\nIntenta cerrar sesi?n y volver a iniciar para verificar. ?Todo bien ahora?",
+            "Tu cuenta ha sido actualizada, {name}. Si el problema persiste, intenta reinstalar la app.\n\n?Pudiste verificar que todo est? correcto?",
         ],
         "followup_en": [
             "All done, {name}. I've updated your account. The changes should be active now.\n\nTry logging out and back in to verify. Everything good now?",
@@ -3328,20 +1872,20 @@ _AI_CATEGORIES = {
         ],
     },
     "app_problem": {
-        "keywords": ["app", "aplicaci�n", "crash", "error", "bug", "funciona", "work",
+        "keywords": ["app", "aplicaci?n", "crash", "error", "bug", "funciona", "work",
                      "mapa", "map", "gps", "carga", "load", "lenta", "slow",
                      "actualiz", "update", "pantalla", "screen", "no abre", "cierra"],
         "first_es": [
-            "Entiendo que tienes problemas con la app, {name}. Vamos a resolverlo.\n\n�Podr�as decirme qu� error ves o qu� parte de la app no funciona?",
-            "Lamento el inconveniente, {name}. �Me describes qu� pasa exactamente? Por ejemplo: �se cierra sola, no carga, o hay alg�n error espec�fico?\n\nAs� puedo darte la soluci�n correcta.",
+            "Entiendo que tienes problemas con la app, {name}. Vamos a resolverlo.\n\n?Podr?as decirme qu? error ves o qu? parte de la app no funciona?",
+            "Lamento el inconveniente, {name}. ?Me describes qu? pasa exactamente? Por ejemplo: ?se cierra sola, no carga, o hay alg?n error espec?fico?\n\nAs? puedo darte la soluci?n correcta.",
         ],
         "first_en": [
             "I understand you're having app issues, {name}. Let's fix it.\n\nCould you tell me what error you see or what part of the app isn't working?",
             "Sorry about the inconvenience, {name}. Can you describe what's happening exactly? For example: does it crash, not load, or is there a specific error?\n\nThat way I can give you the right solution.",
         ],
         "followup_es": [
-            "Gracias, {name}. Te recomiendo estos pasos:\n\n1. Cierra la app completamente\n2. Verifica que tengas la �ltima versi�n\n3. Reinicia tu dispositivo\n4. Abre la app de nuevo\n\nSi persiste, me avisas y lo escalamos al equipo t�cnico. �De acuerdo?",
-            "Entendido, {name}. He reportado el problema al equipo t�cnico. Mientras tanto, prueba reinstalando la app desde la tienda.\n\nEso suele resolver la mayor�a de problemas. �Necesitas algo m�s?",
+            "Gracias, {name}. Te recomiendo estos pasos:\n\n1. Cierra la app completamente\n2. Verifica que tengas la ?ltima versi?n\n3. Reinicia tu dispositivo\n4. Abre la app de nuevo\n\nSi persiste, me avisas y lo escalamos al equipo t?cnico. ?De acuerdo?",
+            "Entendido, {name}. He reportado el problema al equipo t?cnico. Mientras tanto, prueba reinstalando la app desde la tienda.\n\nEso suele resolver la mayor?a de problemas. ?Necesitas algo m?s?",
         ],
         "followup_en": [
             "Thanks, {name}. I'd recommend these steps:\n\n1. Close the app completely\n2. Make sure you have the latest version\n3. Restart your device\n4. Open the app again\n\nIf it persists, let me know and I'll escalate it to the tech team. Sound good?",
@@ -3353,16 +1897,16 @@ _AI_CATEGORIES = {
                      "emergency", "peligro", "danger", "acoso", "harass", "amenaz",
                      "threat", "miedo", "scared", "fear"],
         "first_es": [
-            "{name}, tu seguridad es nuestra prioridad. Voy a tomar acci�n inmediata.\n\n�Puedes contarme exactamente qu� sucedi�? Es importante para las medidas necesarias.",
-            "Tomo esto muy en serio, {name}. �Te encuentras bien en este momento?\n\nCu�ntame con detalle qu� pas� para que pueda actuar de inmediato.",
+            "{name}, tu seguridad es nuestra prioridad. Voy a tomar acci?n inmediata.\n\n?Puedes contarme exactamente qu? sucedi?? Es importante para las medidas necesarias.",
+            "Tomo esto muy en serio, {name}. ?Te encuentras bien en este momento?\n\nCu?ntame con detalle qu? pas? para que pueda actuar de inmediato.",
         ],
         "first_en": [
             "{name}, your safety is our priority. I'm going to take immediate action.\n\nCan you tell me exactly what happened? It's important so we can take the necessary steps.",
             "I take this very seriously, {name}. Are you okay right now?\n\nTell me in detail what happened so I can act immediately.",
         ],
         "followup_es": [
-            "Tu caso ha sido marcado como prioritario, {name}. Nuestro equipo de seguridad ya est� revis�ndolo.\n\nTe contactar�n directamente para dar seguimiento. �Hay algo inmediato que necesites?",
-            "He escalado tu caso al equipo de seguridad, {name}. Este tipo de situaciones las tratamos con m�xima urgencia.\n\nTe mantendremos informado. �Necesitas algo m�s ahora?",
+            "Tu caso ha sido marcado como prioritario, {name}. Nuestro equipo de seguridad ya est? revis?ndolo.\n\nTe contactar?n directamente para dar seguimiento. ?Hay algo inmediato que necesites?",
+            "He escalado tu caso al equipo de seguridad, {name}. Este tipo de situaciones las tratamos con m?xima urgencia.\n\nTe mantendremos informado. ?Necesitas algo m?s ahora?",
         ],
         "followup_en": [
             "Your case has been marked as a priority, {name}. Our safety team is already reviewing it.\n\nThey'll reach out to you directly for follow-up. Is there anything you need right now?",
@@ -3370,20 +1914,20 @@ _AI_CATEGORIES = {
         ],
     },
     "payment": {
-        "keywords": ["pago", "payment", "tarjeta", "card", "wallet", "m�todo", "method",
-                     "a�adir", "add", "rechaz", "decline", "declined", "visa",
-                     "mastercard", "d�bito", "cr�dito"],
+        "keywords": ["pago", "payment", "tarjeta", "card", "wallet", "m?todo", "method",
+                     "a?adir", "add", "rechaz", "decline", "declined", "visa",
+                     "mastercard", "d?bito", "cr?dito"],
         "first_es": [
-            "Puedo ayudarte con el m�todo de pago, {name}. �Qu� problema tienes exactamente?\n\n�Tu tarjeta fue rechazada, necesitas agregar una nueva, o hay otro problema?",
-            "Claro, {name}. �Me dices qu� sucede con tu pago? �Error al agregar tarjeta, cargo rechazado, o necesitas cambiar el m�todo?\n\nTe ayudo con eso.",
+            "Puedo ayudarte con el m?todo de pago, {name}. ?Qu? problema tienes exactamente?\n\n?Tu tarjeta fue rechazada, necesitas agregar una nueva, o hay otro problema?",
+            "Claro, {name}. ?Me dices qu? sucede con tu pago? ?Error al agregar tarjeta, cargo rechazado, o necesitas cambiar el m?todo?\n\nTe ayudo con eso.",
         ],
         "first_en": [
             "I can help you with your payment method, {name}. What exactly is the problem?\n\nWas your card declined, do you need to add a new one, or is there another issue?",
             "Sure, {name}. Can you tell me what's going on with your payment? Error adding a card, charge declined, or need to change the method?\n\nI'll help you with that.",
         ],
         "followup_es": [
-            "He revisado tu m�todo de pago, {name}. Te sugiero:\n\n1. Verifica que los datos de tu tarjeta est�n correctos\n2. Aseg�rate de tener fondos\n3. Si contin�a, intenta agregar otra tarjeta\n\n�Pudiste resolver el problema?",
-            "Entendido, {name}. He actualizado la configuraci�n de pago en tu cuenta. Intenta de nuevo.\n\nSi sigue sin funcionar, puede ser un bloqueo temporal de tu banco. �Necesitas algo m�s?",
+            "He revisado tu m?todo de pago, {name}. Te sugiero:\n\n1. Verifica que los datos de tu tarjeta est?n correctos\n2. Aseg?rate de tener fondos\n3. Si contin?a, intenta agregar otra tarjeta\n\n?Pudiste resolver el problema?",
+            "Entendido, {name}. He actualizado la configuraci?n de pago en tu cuenta. Intenta de nuevo.\n\nSi sigue sin funcionar, puede ser un bloqueo temporal de tu banco. ?Necesitas algo m?s?",
         ],
         "followup_en": [
             "I've checked your payment method, {name}. I'd suggest:\n\n1. Make sure your card details are correct\n2. Ensure you have sufficient funds\n3. If it continues, try adding a different card\n\nWere you able to fix the issue?",
@@ -3391,19 +1935,19 @@ _AI_CATEGORIES = {
         ],
     },
     "waiting": {
-        "keywords": ["espera", "wait", "tard�", "late", "demor", "delay", "tiempo",
-                     "lleg�", "arrive", "no lleg", "demorad", "long time", "mucho tiempo"],
+        "keywords": ["espera", "wait", "tard?", "late", "demor", "delay", "tiempo",
+                     "lleg?", "arrive", "no lleg", "demorad", "long time", "mucho tiempo"],
         "first_es": [
-            "Entiendo tu frustraci�n con la espera, {name}. �Me cuentas cu�nto tiempo esperaste y si el conductor finalmente lleg�?\n\nAs� eval�o si aplica una compensaci�n.",
-            "Lamento la demora, {name}. Los tiempos pueden variar por demanda en tu zona.\n\n�Me cuentas los detalles: cu�nto esperaste, fecha y hora? Para ver qu� puedo hacer.",
+            "Entiendo tu frustraci?n con la espera, {name}. ?Me cuentas cu?nto tiempo esperaste y si el conductor finalmente lleg??\n\nAs? eval?o si aplica una compensaci?n.",
+            "Lamento la demora, {name}. Los tiempos pueden variar por demanda en tu zona.\n\n?Me cuentas los detalles: cu?nto esperaste, fecha y hora? Para ver qu? puedo hacer.",
         ],
         "first_en": [
             "I understand your frustration with the wait, {name}. Can you tell me how long you waited and if the driver finally arrived?\n\nThat way I can evaluate if compensation applies.",
             "Sorry about the delay, {name}. Wait times can vary depending on demand in your area.\n\nCan you tell me the details: how long you waited, date and time? So I can see what I can do.",
         ],
         "followup_es": [
-            "He revisado tu caso, {name}. Entiendo la molestia. He aplicado un cr�dito a tu cuenta como compensaci�n.\n\nLo ver�s reflejado en tu pr�ximo viaje. �Necesitas algo m�s?",
-            "Entendido, {name}. Voy a aplicar un ajuste en tu cuenta por la mala experiencia.\n\nLamentamos los inconvenientes. �Hay algo m�s en lo que pueda ayudarte?",
+            "He revisado tu caso, {name}. Entiendo la molestia. He aplicado un cr?dito a tu cuenta como compensaci?n.\n\nLo ver?s reflejado en tu pr?ximo viaje. ?Necesitas algo m?s?",
+            "Entendido, {name}. Voy a aplicar un ajuste en tu cuenta por la mala experiencia.\n\nLamentamos los inconvenientes. ?Hay algo m?s en lo que pueda ayudarte?",
         ],
         "followup_en": [
             "I've reviewed your case, {name}. I understand the frustration. I've applied a credit to your account as compensation.\n\nYou'll see it reflected on your next trip. Anything else you need?",
@@ -3413,9 +1957,9 @@ _AI_CATEGORIES = {
 }
 
 _FALLBACK_FIRST_ES = [
-    "Gracias por contarme, {name}. Voy a revisar tu caso con atenci�n.\n\n�Me podr�as dar un poco m�s de detalle para entender mejor la situaci�n?",
-    "Entiendo, {name}. D�jame ayudarte con eso.\n\n�Puedes darme m�s informaci�n? Cualquier detalle me ayuda a resolver tu caso m�s r�pido.",
-    "Claro, {name}. Estoy revisando lo que me comentas. �Podr�as ampliar un poco m�s para darte una soluci�n precisa?",
+    "Gracias por contarme, {name}. Voy a revisar tu caso con atenci?n.\n\n?Me podr?as dar un poco m?s de detalle para entender mejor la situaci?n?",
+    "Entiendo, {name}. D?jame ayudarte con eso.\n\n?Puedes darme m?s informaci?n? Cualquier detalle me ayuda a resolver tu caso m?s r?pido.",
+    "Claro, {name}. Estoy revisando lo que me comentas. ?Podr?as ampliar un poco m?s para darte una soluci?n precisa?",
 ]
 _FALLBACK_FIRST_EN = [
     "Thanks for letting me know, {name}. I'll review your case carefully.\n\nCould you give me a bit more detail so I can better understand the situation?",
@@ -3424,9 +1968,9 @@ _FALLBACK_FIRST_EN = [
 ]
 
 _FALLBACK_FOLLOWUP_ES = [
-    "Gracias por la informaci�n, {name}. Ya estoy trabajando en tu caso.\n\nVoy a asegurarme de que se resuelva lo antes posible. �Hay algo m�s que necesites?",
-    "Perfecto, {name}. He registrado todo. Nuestro equipo ya est� al tanto y daremos seguimiento.\n\n�Puedo ayudarte con algo m�s?",
-    "Todo anotado, {name}. Voy a dar seguimiento a tu caso personalmente.\n\nSi surge algo m�s, aqu� estoy. �Necesitas algo adicional?",
+    "Gracias por la informaci?n, {name}. Ya estoy trabajando en tu caso.\n\nVoy a asegurarme de que se resuelva lo antes posible. ?Hay algo m?s que necesites?",
+    "Perfecto, {name}. He registrado todo. Nuestro equipo ya est? al tanto y daremos seguimiento.\n\n?Puedo ayudarte con algo m?s?",
+    "Todo anotado, {name}. Voy a dar seguimiento a tu caso personalmente.\n\nSi surge algo m?s, aqu? estoy. ?Necesitas algo adicional?",
 ]
 _FALLBACK_FOLLOWUP_EN = [
     "Thanks for the info, {name}. I'm already working on your case.\n\nI'll make sure it gets resolved as soon as possible. Is there anything else you need?",
@@ -3435,9 +1979,9 @@ _FALLBACK_FOLLOWUP_EN = [
 ]
 
 _CLOSING_RESPONSES_ES = [
-    "Me alegra poder ayudarte, {name} ?? No dudes en escribirnos si necesitas algo. �Que tengas un excelente d�a!",
-    "�Con gusto, {name}! Estamos aqu� para lo que necesites. �Que tengas un gran d�a! ??",
-    "Ha sido un placer atenderte, {name}. Si necesitas algo en el futuro, aqu� estaremos. �Cu�date mucho! ??",
+    "Me alegra poder ayudarte, {name} ?? No dudes en escribirnos si necesitas algo. ?Que tengas un excelente d?a!",
+    "?Con gusto, {name}! Estamos aqu? para lo que necesites. ?Que tengas un gran d?a! ??",
+    "Ha sido un placer atenderte, {name}. Si necesitas algo en el futuro, aqu? estaremos. ?Cu?date mucho! ??",
 ]
 _CLOSING_RESPONSES_EN = [
     "Happy to help, {name} ?? Don't hesitate to reach out if you need anything. Have a great day!",
@@ -3462,11 +2006,11 @@ def _detect_category(text: str):
 # -- Human-like general conversation responses ---------
 _GENERAL_CHAT_RESPONSES = {
     "greeting": {
-        "keywords": ["hola", "hello", "hi", "hey", "buenos", "buenas", "qu� tal", "como estas", "c�mo est�s", "que tal", "buenas tardes", "buenas noches", "buen d�a", "good morning", "good afternoon"],
+        "keywords": ["hola", "hello", "hi", "hey", "buenos", "buenas", "qu? tal", "como estas", "c?mo est?s", "que tal", "buenas tardes", "buenas noches", "buen d?a", "good morning", "good afternoon"],
         "responses_es": [
-            "�Hola {name}! ?? �C�mo est�s? Que gusto saludarte. Cu�ntame, �en qu� puedo ayudarte hoy?",
-            "�Hey {name}! ?? Me da gusto verte por aqu�. �En qu� te puedo ayudar?",
-            "�Hola {name}! Espero que est�s teniendo un buen d�a ?? �Qu� necesitas? Estoy aqu� para ayudarte.",
+            "?Hola {name}! ?? ?C?mo est?s? Que gusto saludarte. Cu?ntame, ?en qu? puedo ayudarte hoy?",
+            "?Hey {name}! ?? Me da gusto verte por aqu?. ?En qu? te puedo ayudar?",
+            "?Hola {name}! Espero que est?s teniendo un buen d?a ?? ?Qu? necesitas? Estoy aqu? para ayudarte.",
         ],
         "responses_en": [
             "Hey {name}! ?? How are you? Great to hear from you. Tell me, how can I help you today?",
@@ -3475,11 +2019,11 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "how_are_you": {
-        "keywords": ["c�mo est�s", "como estas", "qu� tal est�s", "how are you", "how you doing", "que tal estas"],
+        "keywords": ["c?mo est?s", "como estas", "qu? tal est?s", "how are you", "how you doing", "que tal estas"],
         "responses_es": [
-            "�Muy bien, {name}, gracias por preguntar! ?? Aqu� trabajando para ayudar a nuestros usuarios. �Y t� c�mo est�s? �En qu� te puedo ayudar?",
-            "�Todo bien por ac�, {name}! ?? Gracias por preguntar. Cu�ntame, �necesitas ayuda con algo?",
-            "�Excelente, {name}! Siempre con energ�a para ayudar ???? �C�mo te va a ti? �Hay algo en lo que pueda asistirte?",
+            "?Muy bien, {name}, gracias por preguntar! ?? Aqu? trabajando para ayudar a nuestros usuarios. ?Y t? c?mo est?s? ?En qu? te puedo ayudar?",
+            "?Todo bien por ac?, {name}! ?? Gracias por preguntar. Cu?ntame, ?necesitas ayuda con algo?",
+            "?Excelente, {name}! Siempre con energ?a para ayudar ???? ?C?mo te va a ti? ?Hay algo en lo que pueda asistirte?",
         ],
         "responses_en": [
             "I'm doing great, {name}, thanks for asking! ?? Just here working to help our users. How about you? What can I help you with?",
@@ -3488,11 +2032,11 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "joke": {
-        "keywords": ["chiste", "joke", "broma", "hazme re�r", "cu�ntame algo", "dime algo gracioso", "something funny"],
+        "keywords": ["chiste", "joke", "broma", "hazme re?r", "cu?ntame algo", "dime algo gracioso", "something funny"],
         "responses_es": [
-            "Jaja {name}, a ver... �Por qu� el conductor de Cruise nunca se pierde? �Porque siempre sigue el camino dorado! ???? �Necesitas ayuda con algo m�s?",
-            "�Uno r�pido, {name}! �Qu� le dijo un taxi a Cruise? 'Oye, �por qu� todos te prefieren?' ?? Jaja, bueno volviendo al trabajo... �en qu� te ayudo?",
-            "Jaja ok {name}, ah� va: Un pasajero le pregunta al conductor '�Cu�nto falta?' y el conductor responde: 'Solo 5 estrellas se�or, solo 5 estrellas' ??? �Puedo ayudarte con algo?",
+            "Jaja {name}, a ver... ?Por qu? el conductor de Cruise nunca se pierde? ?Porque siempre sigue el camino dorado! ???? ?Necesitas ayuda con algo m?s?",
+            "?Uno r?pido, {name}! ?Qu? le dijo un taxi a Cruise? 'Oye, ?por qu? todos te prefieren?' ?? Jaja, bueno volviendo al trabajo... ?en qu? te ayudo?",
+            "Jaja ok {name}, ah? va: Un pasajero le pregunta al conductor '?Cu?nto falta?' y el conductor responde: 'Solo 5 estrellas se?or, solo 5 estrellas' ??? ?Puedo ayudarte con algo?",
         ],
         "responses_en": [
             "Haha {name}, okay... Why does the Cruise driver never get lost? Because they always follow the golden road! ???? Need help with anything else?",
@@ -3501,10 +2045,10 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "weather": {
-        "keywords": ["clima", "weather", "llueve", "hace calor", "fr�o", "sol", "temperatura", "rain"],
+        "keywords": ["clima", "weather", "llueve", "hace calor", "fr?o", "sol", "temperatura", "rain"],
         "responses_es": [
-            "Mmm {name}, yo no puedo ver el clima desde aqu� ?? pero espero que est� bonito por all�. Lo que s� puedo hacer es ayudarte con cualquier cosa de Cruise. �Necesitas algo?",
-            "Jaja {name}, no soy la mejor para pron�sticos del clima ??? Pero soy experta en resolver problemas de viajes y soporte de Cruise. �Te ayudo con algo?",
+            "Mmm {name}, yo no puedo ver el clima desde aqu? ?? pero espero que est? bonito por all?. Lo que s? puedo hacer es ayudarte con cualquier cosa de Cruise. ?Necesitas algo?",
+            "Jaja {name}, no soy la mejor para pron?sticos del clima ??? Pero soy experta en resolver problemas de viajes y soporte de Cruise. ?Te ayudo con algo?",
         ],
         "responses_en": [
             "Hmm {name}, I can't really see the weather from here ?? but I hope it's nice where you are. What I can do is help you with anything Cruise-related. Need something?",
@@ -3512,11 +2056,11 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "compliment": {
-        "keywords": ["eres genial", "muy buena", "excelente servicio", "buen trabajo", "great job", "you're great", "amazing", "incre�ble", "la mejor", "eres la mejor"],
+        "keywords": ["eres genial", "muy buena", "excelente servicio", "buen trabajo", "great job", "you're great", "amazing", "incre?ble", "la mejor", "eres la mejor"],
         "responses_es": [
-            "�Aww {name}, muchas gracias! ???? Eso me motiva mucho a seguir dando mi mejor esfuerzo. Estoy aqu� siempre que me necesites.",
-            "�Qu� lindo, {name}! ?? Me alegra mucho poder ayudarte. Es lo que m�s me gusta de mi trabajo. �Hay algo m�s en lo que te pueda servir?",
-            "�Gracias {name}! ?? Comentarios as� hacen que valga la pena cada momento. �Necesitas algo m�s?",
+            "?Aww {name}, muchas gracias! ???? Eso me motiva mucho a seguir dando mi mejor esfuerzo. Estoy aqu? siempre que me necesites.",
+            "?Qu? lindo, {name}! ?? Me alegra mucho poder ayudarte. Es lo que m?s me gusta de mi trabajo. ?Hay algo m?s en lo que te pueda servir?",
+            "?Gracias {name}! ?? Comentarios as? hacen que valga la pena cada momento. ?Necesitas algo m?s?",
         ],
         "responses_en": [
             "Aww {name}, thank you so much! ???? That really motivates me to keep giving my best. I'm always here whenever you need me.",
@@ -3525,10 +2069,10 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "who_are_you": {
-        "keywords": ["qui�n eres", "eres real", "eres un bot", "eres robot", "eres humana", "are you real", "are you a bot", "who are you", "eres una persona"],
+        "keywords": ["qui?n eres", "eres real", "eres un bot", "eres robot", "eres humana", "are you real", "are you a bot", "who are you", "eres una persona"],
         "responses_es": [
-            "�Soy {agent}, {name}! ?? Tu agente de soporte aqu� en Cruise. Estoy para ayudarte con lo que necesites. �Tienes alguna pregunta o inconveniente?",
-            "�{agent} al servicio! ?? Soy parte del equipo de soporte de Cruise, {name}. Mi trabajo es asegurarme de que tengas la mejor experiencia. �En qu� te ayudo?",
+            "?Soy {agent}, {name}! ?? Tu agente de soporte aqu? en Cruise. Estoy para ayudarte con lo que necesites. ?Tienes alguna pregunta o inconveniente?",
+            "?{agent} al servicio! ?? Soy parte del equipo de soporte de Cruise, {name}. Mi trabajo es asegurarme de que tengas la mejor experiencia. ?En qu? te ayudo?",
         ],
         "responses_en": [
             "I'm {agent}, {name}! ?? Your support agent here at Cruise. I'm here to help you with whatever you need. Got any questions or issues?",
@@ -3536,10 +2080,10 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "about_cruise": {
-        "keywords": ["qu� es cruise", "que es cruise", "c�mo funciona", "como funciona", "what is cruise", "how does cruise work", "para qu� sirve", "servicios"],
+        "keywords": ["qu? es cruise", "que es cruise", "c?mo funciona", "como funciona", "what is cruise", "how does cruise work", "para qu? sirve", "servicios"],
         "responses_es": [
-            "�Claro, {name}! ?? Cruise es una plataforma de transporte que te conecta con conductores confiables para llevarte a donde necesites.\n\nPuedes solicitar viajes, programar recorridos, y mucho m�s desde la app. �Te gustar�a saber algo espec�fico?",
-            "Cruise es tu servicio de transporte de confianza, {name} ?? Conectamos pasajeros con conductores verificados para viajes seguros y c�modos.\n\nPuedes pedir viajes en tiempo real o programarlos con anticipaci�n. �Hay algo espec�fico que quieras saber?",
+            "?Claro, {name}! ?? Cruise es una plataforma de transporte que te conecta con conductores confiables para llevarte a donde necesites.\n\nPuedes solicitar viajes, programar recorridos, y mucho m?s desde la app. ?Te gustar?a saber algo espec?fico?",
+            "Cruise es tu servicio de transporte de confianza, {name} ?? Conectamos pasajeros con conductores verificados para viajes seguros y c?modos.\n\nPuedes pedir viajes en tiempo real o programarlos con anticipaci?n. ?Hay algo espec?fico que quieras saber?",
         ],
         "responses_en": [
             "Of course, {name}! ?? Cruise is a ride-sharing platform that connects you with reliable drivers to take you wherever you need to go.\n\nYou can request rides, schedule trips, and much more from the app. Would you like to know anything specific?",
@@ -3561,14 +2105,14 @@ def _generate_human_chat(user_msg: str, user_name: str, agent_name: str, lang: s
             resp = _rng.choice(topic[f"responses{suffix}"])
             return resp.format(name=user_name, agent=agent_name)
 
-    # General fallback � still human, warm and helpful
+    # General fallback ? still human, warm and helpful
     if lang.startswith("es"):
         general = [
-            f"Entiendo lo que me dices, {user_name} ?? Aunque ese tema no es mi especialidad, estoy aqu� para lo que necesites relacionado con tu cuenta o viajes en Cruise. �Hay algo con lo que pueda ayudarte?",
-            f"Jaja, interesante lo que me cuentas, {user_name} ?? Oye, si necesitas algo relacionado con Cruise estar� encantada de ayudarte. �Hay algo que pueda hacer por ti?",
-            f"Me encanta platicar contigo, {user_name} ?? Pero no quiero que se me pase... �tienes alg�n tema pendiente con tus viajes o tu cuenta? Si no, aqu� estoy disponible para cuando lo necesites.",
-            f"Qu� buena onda, {user_name} ?? Oye, si necesitas ayuda con algo de la app, un viaje, pagos, o cualquier duda, no dudes en decirme. �Para eso estoy aqu�!",
-            f"Claro que s�, {user_name} ?? Mira, si en alg�n momento necesitas ayuda con un viaje, un cobro, tu cuenta, o lo que sea de Cruise, aqu� me tienes. �Todo bien por ahora?",
+            f"Entiendo lo que me dices, {user_name} ?? Aunque ese tema no es mi especialidad, estoy aqu? para lo que necesites relacionado con tu cuenta o viajes en Cruise. ?Hay algo con lo que pueda ayudarte?",
+            f"Jaja, interesante lo que me cuentas, {user_name} ?? Oye, si necesitas algo relacionado con Cruise estar? encantada de ayudarte. ?Hay algo que pueda hacer por ti?",
+            f"Me encanta platicar contigo, {user_name} ?? Pero no quiero que se me pase... ?tienes alg?n tema pendiente con tus viajes o tu cuenta? Si no, aqu? estoy disponible para cuando lo necesites.",
+            f"Qu? buena onda, {user_name} ?? Oye, si necesitas ayuda con algo de la app, un viaje, pagos, o cualquier duda, no dudes en decirme. ?Para eso estoy aqu?!",
+            f"Claro que s?, {user_name} ?? Mira, si en alg?n momento necesitas ayuda con un viaje, un cobro, tu cuenta, o lo que sea de Cruise, aqu? me tienes. ?Todo bien por ahora?",
         ]
     else:
         general = [
@@ -3595,7 +2139,7 @@ async def _build_trip_summary(user_id: int, db: AsyncSession, lang: str):
     trips = await _lookup_user_trips(user_id, db)
     if not trips:
         if lang.startswith("es"):
-            return "No encontr� viajes recientes en tu cuenta."
+            return "No encontr? viajes recientes en tu cuenta."
         return "I couldn't find any recent trips on your account."
     lines = []
     for t in trips:
@@ -3604,7 +2148,7 @@ async def _build_trip_summary(user_id: int, db: AsyncSession, lang: str):
         status_str = t.status or "unknown"
         pickup = t.pickup_address or "N/A"
         dropoff = t.dropoff_address or "N/A"
-        lines.append(f"� {date_str} � {pickup} ? {dropoff} � {fare_str} ({status_str})")
+        lines.append(f"? {date_str} ? {pickup} ? {dropoff} ? {fare_str} ({status_str})")
     if lang.startswith("es"):
         header = "Tus viajes recientes:"
     else:
@@ -3637,9 +2181,9 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
         await asyncio.sleep(_rng.randint(5, 12))
         if lang.startswith("es"):
             reply = _rng.choice([
-                f"Entendido, {user_name}. Para poder ayudarte de la mejor manera, �podr�as darme m�s detalles sobre tu problema o situaci�n?",
-                f"Gracias por contactarnos, {user_name}. �Podr�as describir tu problema con un poco m�s de detalle? As� te asigno al mejor agente disponible.",
-                f"Claro, {user_name}. Cu�ntame un poco m�s sobre lo que necesitas para poder conectarte con el agente indicado.",
+                f"Entendido, {user_name}. Para poder ayudarte de la mejor manera, ?podr?as darme m?s detalles sobre tu problema o situaci?n?",
+                f"Gracias por contactarnos, {user_name}. ?Podr?as describir tu problema con un poco m?s de detalle? As? te asigno al mejor agente disponible.",
+                f"Claro, {user_name}. Cu?ntame un poco m?s sobre lo que necesitas para poder conectarte con el agente indicado.",
             ])
         else:
             reply = _rng.choice([
@@ -3658,9 +2202,9 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
 
         if lang.startswith("es"):
             transfer = _rng.choice([
-                f"Gracias por la informaci�n, {user_name}. Te estoy transfiriendo con un agente de soporte. En breve se conectar� y te ayudar�.",
-                f"Perfecto, {user_name}. Voy a conectarte con un agente especializado. Un momento por favor, enseguida te atender�.",
-                f"Entendido, {user_name}. Estoy transfiriendo tu caso a un agente. Se conectar� contigo en un momento.",
+                f"Gracias por la informaci?n, {user_name}. Te estoy transfiriendo con un agente de soporte. En breve se conectar? y te ayudar?.",
+                f"Perfecto, {user_name}. Voy a conectarte con un agente especializado. Un momento por favor, enseguida te atender?.",
+                f"Entendido, {user_name}. Estoy transfiriendo tu caso a un agente. Se conectar? contigo en un momento.",
             ])
         else:
             transfer = _rng.choice([
@@ -3678,9 +2222,9 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
 
         if lang.startswith("es"):
             intro = _rng.choice([
-                f"�Hola! ?? Mi nombre es {agent}.\n\nEspero que est�s bien, {user_name}. Voy a ayudarte a resolver lo que necesites y har� mi mejor esfuerzo. �Me puedes dar m�s detalles del problema para as� ayudarte mejor?",
-                f"�Hola, {user_name}! Soy {agent} ??\n\nEstoy aqu� para ayudarte. He revisado tu caso y quiero darte la mejor atenci�n posible. �Me podr�as ampliar un poco m�s la informaci�n?",
-                f"�Hola {user_name}! ?? Mi nombre es {agent} y voy a atender tu caso personalmente.\n\nHe le�do tu consulta y quiero ayudarte de la mejor manera. Cu�ntame todo con confianza.",
+                f"?Hola! ?? Mi nombre es {agent}.\n\nEspero que est?s bien, {user_name}. Voy a ayudarte a resolver lo que necesites y har? mi mejor esfuerzo. ?Me puedes dar m?s detalles del problema para as? ayudarte mejor?",
+                f"?Hola, {user_name}! Soy {agent} ??\n\nEstoy aqu? para ayudarte. He revisado tu caso y quiero darte la mejor atenci?n posible. ?Me podr?as ampliar un poco m?s la informaci?n?",
+                f"?Hola {user_name}! ?? Mi nombre es {agent} y voy a atender tu caso personalmente.\n\nHe le?do tu consulta y quiero ayudarte de la mejor manera. Cu?ntame todo con confianza.",
             ])
         else:
             intro = _rng.choice([
@@ -3700,13 +2244,13 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
         # Gather user context for smarter responses
         ctx = await _get_user_context(chat.user_id, db, lang)
 
-        # 1) Frustration auto-escalation � angry user gets supervisor fast
+        # 1) Frustration auto-escalation ? angry user gets supervisor fast
         if _detect_frustration(user_msg) and not _match_keywords(user_msg, _THANK_KEYWORDS):
             chat.needs_escalation = True
             chat.bot_phase = "escalated"
             if lang.startswith("es"):
-                esc = f"Lamento mucho esta experiencia, {user_name}. Entiendo tu frustraci�n y quiero que recibas la mejor atenci�n posible. Voy a conectarte de inmediato con un supervisor que podr� resolver tu caso directamente."
-                sys_msg = "?? Caso escalado autom�ticamente por urgencia. Un supervisor conectar� en breve."
+                esc = f"Lamento mucho esta experiencia, {user_name}. Entiendo tu frustraci?n y quiero que recibas la mejor atenci?n posible. Voy a conectarte de inmediato con un supervisor que podr? resolver tu caso directamente."
+                sys_msg = "?? Caso escalado autom?ticamente por urgencia. Un supervisor conectar? en breve."
             else:
                 esc = f"I'm truly sorry about this experience, {user_name}. I completely understand your frustration and I want you to get the best possible attention. I'm connecting you right away with a supervisor who can resolve your case directly."
                 sys_msg = "?? Case automatically escalated due to urgency. A supervisor will connect shortly."
@@ -3716,7 +2260,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                 try:
                     firestore_sync.sync_dispatch_notification(
                         chat.id, user_name, "escalation",
-                        f"?? Chat de {user_name} escalado autom�ticamente � usuario frustrado"
+                        f"?? Chat de {user_name} escalado autom?ticamente ? usuario frustrado"
                     )
                     firestore_sync.sync_support_chat(
                         chat.id, chat.user_id, user_name, "",
@@ -3731,11 +2275,11 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             chat.bot_phase = "escalated"
             if lang.startswith("es"):
                 esc = _rng.choice([
-                    f"Entiendo tu solicitud, {user_name}. Voy a transferir tu caso a un supervisor. En aproximadamente 5 a 10 minutos un supervisor estar� conect�ndose a este chat para atenderte personalmente.",
-                    f"Entendido, {user_name}. Voy a escalar tu caso. Un supervisor se conectar� a este chat en unos 5 a 10 minutos para ayudarte directamente.",
-                    f"Comprendo, {user_name}. He solicitado la atenci�n de un supervisor. En 5 a 10 minutos estar� conect�ndose a este chat para asistirte.",
+                    f"Entiendo tu solicitud, {user_name}. Voy a transferir tu caso a un supervisor. En aproximadamente 5 a 10 minutos un supervisor estar? conect?ndose a este chat para atenderte personalmente.",
+                    f"Entendido, {user_name}. Voy a escalar tu caso. Un supervisor se conectar? a este chat en unos 5 a 10 minutos para ayudarte directamente.",
+                    f"Comprendo, {user_name}. He solicitado la atenci?n de un supervisor. En 5 a 10 minutos estar? conect?ndose a este chat para asistirte.",
                 ])
-                sys_msg = "?? Se ha solicitado un supervisor. Conectar� en 5-10 minutos."
+                sys_msg = "?? Se ha solicitado un supervisor. Conectar? en 5-10 minutos."
             else:
                 esc = _rng.choice([
                     f"I understand your request, {user_name}. I'm going to transfer your case to a supervisor. A supervisor will be connecting to this chat in approximately 5 to 10 minutes to assist you personally.",
@@ -3758,11 +2302,11 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                 except Exception:
                     pass
 
-        # 3) Cancel trip intent � actually cancel the trip
+        # 3) Cancel trip intent ? actually cancel the trip
         elif _has_cancel_intent(user_msg):
             cancel_result = await _bot_cancel_trip(chat.user_id, db, lang)
             if lang.startswith("es"):
-                resp = f"? {cancel_result}\n\nSi necesitas algo m�s, aqu� estoy para ayudarte, {user_name}."
+                resp = f"? {cancel_result}\n\nSi necesitas algo m?s, aqu? estoy para ayudarte, {user_name}."
             else:
                 resp = f"? {cancel_result}\n\nIf you need anything else, I'm here to help, {user_name}."
             replies.append({"role": "bot", "message": resp, "sender_name": agent})
@@ -3770,7 +2314,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                 try:
                     firestore_sync.sync_dispatch_notification(
                         chat.id, user_name, "trip_canceled",
-                        f"?? {user_name} cancel� viaje via chat de soporte"
+                        f"?? {user_name} cancel? viaje via chat de soporte"
                     )
                 except Exception:
                     pass
@@ -3822,14 +2366,14 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                             db
                         )
                         if lang.startswith("es"):
-                            resp += f"\n\n?? Se ha creado la solicitud de reembolso #{req_id}. Nuestro equipo la revisar�."
+                            resp += f"\n\n?? Se ha creado la solicitud de reembolso #{req_id}. Nuestro equipo la revisar?."
                         else:
                             resp += f"\n\n?? Refund request #{req_id} has been created. Our team will review it."
                     if _HAS_FIRESTORE:
                         try:
                             firestore_sync.sync_dispatch_notification(
                                 chat.id, user_name, "refund_request",
-                                f"?? {user_name} solicit� reembolso via chat de soporte"
+                                f"?? {user_name} solicit? reembolso via chat de soporte"
                             )
                         except Exception:
                             pass
@@ -3846,7 +2390,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                         try:
                             firestore_sync.sync_dispatch_notification(
                                 chat.id, user_name, "driver_report",
-                                f"?? {user_name} report� un conductor via chat"
+                                f"?? {user_name} report? un conductor via chat"
                             )
                         except Exception:
                             pass
@@ -3858,7 +2402,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                         try:
                             firestore_sync.sync_dispatch_notification(
                                 chat.id, user_name, "safety_report",
-                                f"?? SEGURIDAD: {user_name} report� un problema de seguridad"
+                                f"?? SEGURIDAD: {user_name} report? un problema de seguridad"
                             )
                             firestore_sync.sync_support_chat(
                                 chat.id, chat.user_id, user_name, "",
@@ -3873,7 +2417,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                 if ctx["has_active_trip"]:
                     at = ctx["active_trip"]
                     if lang.startswith("es"):
-                        resp += f"\n\n?? Por cierto, veo que tienes un viaje activo ({at['status']}): {at['pickup']} ? {at['dropoff']}. �Tu consulta es sobre este viaje?"
+                        resp += f"\n\n?? Por cierto, veo que tienes un viaje activo ({at['status']}): {at['pickup']} ? {at['dropoff']}. ?Tu consulta es sobre este viaje?"
                     else:
                         resp += f"\n\n?? By the way, I can see you have an active trip ({at['status']}): {at['pickup']} ? {at['dropoff']}. Is your inquiry about this trip?"
             else:
@@ -3899,9 +2443,9 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
     return replies
 
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  SUPPORT CHAT ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 def _support_msg_dict(m, sender_name=""):
     return {
@@ -3973,7 +2517,7 @@ async def _check_chat_inactivity(chat_id: int):
             agent = chat.agent_name or "Agente"
             lang = getattr(chat, "locale", "en") or "en"
             # Send "still online?" message
-            still_text = "�A�n sigues en l�nea conmigo?" if lang.startswith("es") else "Are you still there with me?"
+            still_text = "?A?n sigues en l?nea conmigo?" if lang.startswith("es") else "Are you still there with me?"
             still_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot",
                                         message=still_text)
             db.add(still_msg)
@@ -4000,7 +2544,7 @@ async def _check_chat_inactivity(chat_id: int):
             agent = chat.agent_name or "Agente"
             # Send closing warning
             lang = getattr(chat, "locale", "en") or "en"
-            close_text = "Por motivos de que ya no est�s activo/a conmigo en el chat, cerrar� este chat. �Gracias por contactarnos!" if lang.startswith("es") else "Since you're no longer active in the chat, I'll be closing this session. Thanks for reaching out!"
+            close_text = "Por motivos de que ya no est?s activo/a conmigo en el chat, cerrar? este chat. ?Gracias por contactarnos!" if lang.startswith("es") else "Since you're no longer active in the chat, I'll be closing this session. Thanks for reaching out!"
             close_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot",
                                         message=close_text)
             db.add(close_msg)
@@ -4064,25 +2608,25 @@ async def create_or_get_support_chat(request: Request, user: User = Depends(_get
     # Send welcome message
     if locale.startswith("es"):
         welcome_text = (
-            "Sistema de soporte Cruise � Sesi�n iniciada.\n\n"
+            "Sistema de soporte Cruise ? Sesi?n iniciada.\n\n"
             "Bienvenido al centro de ayuda automatizado. "
             "Seleccione o describa su problema para que podamos asistirlo.\n\n"
-            "� Viajes y tarifas\n"
-            "� Pagos y reembolsos\n"
-            "� Cuenta y perfil\n"
-            "� Seguridad\n"
-            "� Problemas con la app"
+            "? Viajes y tarifas\n"
+            "? Pagos y reembolsos\n"
+            "? Cuenta y perfil\n"
+            "? Seguridad\n"
+            "? Problemas con la app"
         )
     else:
         welcome_text = (
-            "Cruise Support System � Session started.\n\n"
+            "Cruise Support System ? Session started.\n\n"
             "Welcome to our automated help center. "
             "Please select or describe your issue so we can assist you.\n\n"
-            "� Trips & fares\n"
-            "� Payments & refunds\n"
-            "� Account & profile\n"
-            "� Safety\n"
-            "� App issues"
+            "? Trips & fares\n"
+            "? Payments & refunds\n"
+            "? Account & profile\n"
+            "? Safety\n"
+            "? App issues"
         )
     welcome_msg = SupportMessage(chat_id=chat.id, sender_id=0, sender_role="system", message=welcome_text)
     db.add(welcome_msg)
@@ -4203,7 +2747,7 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
 
 @app.get("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_require_dispatch_auth)])
 async def get_support_messages_dispatch(chat_id: int, db: AsyncSession = Depends(get_db)):
-    """Get messages for a support chat (dispatch version � marks dispatch-received as read)."""
+    """Get messages for a support chat (dispatch version ? marks dispatch-received as read)."""
     # Load chat for agent_name
     chat_result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
     chat = chat_result.scalar_one_or_none()
@@ -4403,7 +2947,7 @@ async def close_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):
 
 @app.patch("/support/chats/{chat_id}/close-user", dependencies=[Depends(_verify_api_key)])
 async def close_support_chat_user(chat_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Close a support chat (user-facing � only the chat owner can close)."""
+    """Close a support chat (user-facing ? only the chat owner can close)."""
     result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
     chat = result.scalar_one_or_none()
     if not chat:
@@ -4430,9 +2974,9 @@ async def close_support_chat_user(chat_id: int, user: User = Depends(_get_curren
 
     return {"status": "closed"}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  TWILIO AI VOICE CALL ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 # In-memory voice session store: call_sid -> {agent_name, phase, category, msg_count, lang}
 _voice_sessions: dict = {}
@@ -4458,131 +3002,131 @@ _VOICE_CONFIG = {
 # -- Spanish responses ---------------------------------
 _VOICE_ES = {
     "welcome": [
-        "Hola, bienvenido al centro de soporte de Cruise. Mi nombre es {agent}, y voy a ser tu agente personal el d�a de hoy. Cu�ntame, �en qu� puedo ayudarte?",
-        "Hola, gracias por llamar a Cruise. Soy {agent}, tu agente de soporte. Estoy aqu� para ayudarte con lo que necesites. �C�mo puedo asistirte?",
-        "Bienvenido a Cruise. Mi nombre es {agent} y estoy encantada de atenderte. Dime, �qu� puedo hacer por ti hoy?",
+        "Hola, bienvenido al centro de soporte de Cruise. Mi nombre es {agent}, y voy a ser tu agente personal el d?a de hoy. Cu?ntame, ?en qu? puedo ayudarte?",
+        "Hola, gracias por llamar a Cruise. Soy {agent}, tu agente de soporte. Estoy aqu? para ayudarte con lo que necesites. ?C?mo puedo asistirte?",
+        "Bienvenido a Cruise. Mi nombre es {agent} y estoy encantada de atenderte. Dime, ?qu? puedo hacer por ti hoy?",
     ],
     "fallback_first": [
-        "Entiendo lo que me dices. Para poder ayudarte de la mejor manera, �me podr�as dar un poco m�s de detalle sobre tu situaci�n?",
-        "Gracias por contarme. Necesito un poco m�s de informaci�n para darte una soluci�n precisa. �Puedes ampliar los detalles?",
-        "De acuerdo. Quiero asegurarme de resolver esto correctamente. �Me puedes dar m�s informaci�n sobre lo que sucedi�?",
+        "Entiendo lo que me dices. Para poder ayudarte de la mejor manera, ?me podr?as dar un poco m?s de detalle sobre tu situaci?n?",
+        "Gracias por contarme. Necesito un poco m?s de informaci?n para darte una soluci?n precisa. ?Puedes ampliar los detalles?",
+        "De acuerdo. Quiero asegurarme de resolver esto correctamente. ?Me puedes dar m?s informaci?n sobre lo que sucedi??",
     ],
     "fallback_followup": [
-        "Ya tengo toda la informaci�n. Nuestro equipo le dar� seguimiento a tu caso de inmediato. �Hay algo m�s en lo que pueda ayudarte?",
-        "Perfecto, he registrado todos los detalles. Tu caso ya est� en proceso. �Puedo ayudarte con algo m�s?",
-        "Todo ha quedado anotado. Me asegurar� personalmente de que se d� seguimiento. �Necesitas algo adicional?",
+        "Ya tengo toda la informaci?n. Nuestro equipo le dar? seguimiento a tu caso de inmediato. ?Hay algo m?s en lo que pueda ayudarte?",
+        "Perfecto, he registrado todos los detalles. Tu caso ya est? en proceso. ?Puedo ayudarte con algo m?s?",
+        "Todo ha quedado anotado. Me asegurar? personalmente de que se d? seguimiento. ?Necesitas algo adicional?",
     ],
     "closing": [
-        "Me alegra mucho haber podido ayudarte. No dudes en llamarnos cuando lo necesites. Que tengas un excelente d�a, cu�date mucho.",
-        "Ha sido un placer atenderte. Recuerda que estamos aqu� siempre que nos necesites. Que tengas un maravilloso d�a.",
-        "Con mucho gusto. Espero que todo se resuelva perfectamente. Si necesitas algo m�s en el futuro, aqu� estaremos. Que te vaya muy bien.",
+        "Me alegra mucho haber podido ayudarte. No dudes en llamarnos cuando lo necesites. Que tengas un excelente d?a, cu?date mucho.",
+        "Ha sido un placer atenderte. Recuerda que estamos aqu? siempre que nos necesites. Que tengas un maravilloso d?a.",
+        "Con mucho gusto. Espero que todo se resuelva perfectamente. Si necesitas algo m?s en el futuro, aqu? estaremos. Que te vaya muy bien.",
     ],
     "escalation": [
-        "Entiendo perfectamente tu solicitud. Voy a transferir tu caso a un supervisor especializado que podr� darte una mejor atenci�n. Te contactar� lo m�s pronto posible.",
-        "Comprendo tu situaci�n. Estoy escalando tu caso ahora mismo a un supervisor. Se pondr� en contacto contigo en breve para resolverlo personalmente.",
+        "Entiendo perfectamente tu solicitud. Voy a transferir tu caso a un supervisor especializado que podr? darte una mejor atenci?n. Te contactar? lo m?s pronto posible.",
+        "Comprendo tu situaci?n. Estoy escalando tu caso ahora mismo a un supervisor. Se pondr? en contacto contigo en breve para resolverlo personalmente.",
     ],
-    "escalated_reply": "Tu caso ya fue escalado a un supervisor y se encuentra en proceso. Se comunicar� contigo muy pronto. �Hay algo urgente que necesites mientras tanto?",
-    "no_input": "Parece que no alcanc� a escucharte. �Podr�as repetir tu consulta por favor?",
-    "no_input_bye": "No logr� escuchar nada. Si necesitas ayuda, no dudes en llamarnos nuevamente. Hasta pronto.",
+    "escalated_reply": "Tu caso ya fue escalado a un supervisor y se encuentra en proceso. Se comunicar? contigo muy pronto. ?Hay algo urgente que necesites mientras tanto?",
+    "no_input": "Parece que no alcanc? a escucharte. ?Podr?as repetir tu consulta por favor?",
+    "no_input_bye": "No logr? escuchar nada. Si necesitas ayuda, no dudes en llamarnos nuevamente. Hasta pronto.",
     "categories": {
         "trip_charge": {
             "first": [
-                "Entiendo tu preocupaci�n con el cobro. D�jame revisar los detalles de tu viaje. �Me podr�as indicar la fecha y la hora aproximada del viaje?",
-                "Lamento el inconveniente con el cobro. Voy a revisar tu cuenta ahora mismo. �Podr�as darme la fecha del viaje y el monto que te cobraron?",
+                "Entiendo tu preocupaci?n con el cobro. D?jame revisar los detalles de tu viaje. ?Me podr?as indicar la fecha y la hora aproximada del viaje?",
+                "Lamento el inconveniente con el cobro. Voy a revisar tu cuenta ahora mismo. ?Podr?as darme la fecha del viaje y el monto que te cobraron?",
             ],
             "followup": [
-                "Ya localic� tu viaje y he verificado el recibo. He procesado el ajuste correspondiente. El reembolso se reflejar� en tu m�todo de pago en un plazo de tres a cinco d�as h�biles. �Necesitas algo m�s?",
-                "Ya revis� la transacci�n. Efectivamente hay una diferencia y voy a iniciar el proceso de correcci�n. Te llegar� una notificaci�n cuando se complete. �Hay algo m�s en lo que pueda ayudarte?",
+                "Ya localic? tu viaje y he verificado el recibo. He procesado el ajuste correspondiente. El reembolso se reflejar? en tu m?todo de pago en un plazo de tres a cinco d?as h?biles. ?Necesitas algo m?s?",
+                "Ya revis? la transacci?n. Efectivamente hay una diferencia y voy a iniciar el proceso de correcci?n. Te llegar? una notificaci?n cuando se complete. ?Hay algo m?s en lo que pueda ayudarte?",
             ],
         },
         "cancellation": {
             "first": [
-                "Puedo ayudarte con eso. �Es un viaje que quieres cancelar ahora, o te cobraron una tarifa de cancelaci�n que quieres disputar?",
-                "Claro que s�. �El viaje est� programado todav�a, o ya pas� y te cobraron por la cancelaci�n? Cu�ntame los detalles.",
+                "Puedo ayudarte con eso. ?Es un viaje que quieres cancelar ahora, o te cobraron una tarifa de cancelaci?n que quieres disputar?",
+                "Claro que s?. ?El viaje est? programado todav?a, o ya pas? y te cobraron por la cancelaci?n? Cu?ntame los detalles.",
             ],
             "followup": [
-                "He procesado tu solicitud correctamente. Si hubo un cobro injustificado, ya inici� el proceso de devoluci�n. El reembolso tardar� de tres a cinco d�as h�biles. �Puedo ayudarte con algo m�s?",
-                "La cancelaci�n ha sido procesada sin ning�n problema. Recuerda que puedes cancelar sin cargo dentro de los primeros dos minutos despu�s de solicitar el viaje. �Necesitas algo m�s?",
+                "He procesado tu solicitud correctamente. Si hubo un cobro injustificado, ya inici? el proceso de devoluci?n. El reembolso tardar? de tres a cinco d?as h?biles. ?Puedo ayudarte con algo m?s?",
+                "La cancelaci?n ha sido procesada sin ning?n problema. Recuerda que puedes cancelar sin cargo dentro de los primeros dos minutos despu?s de solicitar el viaje. ?Necesitas algo m?s?",
             ],
         },
         "refund": {
             "first": [
-                "Entiendo que necesitas un reembolso. Para procesarlo r�pidamente, �me podr�as indicar la fecha del viaje y el motivo de tu solicitud?",
-                "Claro que puedo ayudarte con el reembolso. �Cu�l fue la fecha del viaje y el monto que te cobraron? As� lo proceso lo m�s r�pido posible.",
+                "Entiendo que necesitas un reembolso. Para procesarlo r?pidamente, ?me podr?as indicar la fecha del viaje y el motivo de tu solicitud?",
+                "Claro que puedo ayudarte con el reembolso. ?Cu?l fue la fecha del viaje y el monto que te cobraron? As? lo proceso lo m?s r?pido posible.",
             ],
             "followup": [
-                "He procesado tu solicitud de reembolso exitosamente. El monto se reflejar� en tu cuenta en un plazo de tres a cinco d�as h�biles. Te enviaremos una confirmaci�n. �Hay algo m�s que necesites?",
-                "El reembolso ha sido aprobado y ya est� en proceso. Lo ver�s de vuelta en tu m�todo de pago muy pronto. �Puedo ayudarte con algo m�s?",
+                "He procesado tu solicitud de reembolso exitosamente. El monto se reflejar? en tu cuenta en un plazo de tres a cinco d?as h?biles. Te enviaremos una confirmaci?n. ?Hay algo m?s que necesites?",
+                "El reembolso ha sido aprobado y ya est? en proceso. Lo ver?s de vuelta en tu m?todo de pago muy pronto. ?Puedo ayudarte con algo m?s?",
             ],
         },
         "driver": {
             "first": [
-                "Lamento mucho que hayas tenido esa experiencia. Tomamos estos reportes con la mayor seriedad. �Me podr�as dar m�s detalles? El nombre del conductor y la fecha del viaje me ayudar�an mucho.",
-                "Eso no deber�a pasar bajo ninguna circunstancia. Voy a documentar tu reporte de inmediato. �Puedes contarme exactamente qu� sucedi� y cu�ndo fue?",
+                "Lamento mucho que hayas tenido esa experiencia. Tomamos estos reportes con la mayor seriedad. ?Me podr?as dar m?s detalles? El nombre del conductor y la fecha del viaje me ayudar?an mucho.",
+                "Eso no deber?a pasar bajo ninguna circunstancia. Voy a documentar tu reporte de inmediato. ?Puedes contarme exactamente qu? sucedi? y cu?ndo fue?",
             ],
             "followup": [
-                "Tu reporte ha sido registrado oficialmente. Nuestro equipo de calidad revisar� el caso y tomar� las medidas disciplinarias necesarias. �Hay algo m�s que necesites?",
-                "He documentado todo detalladamente. Este tipo de comportamiento no lo toleramos en Cruise. El equipo de calidad revisar� el caso en las pr�ximas horas. �Algo m�s?",
+                "Tu reporte ha sido registrado oficialmente. Nuestro equipo de calidad revisar? el caso y tomar? las medidas disciplinarias necesarias. ?Hay algo m?s que necesites?",
+                "He documentado todo detalladamente. Este tipo de comportamiento no lo toleramos en Cruise. El equipo de calidad revisar? el caso en las pr?ximas horas. ?Algo m?s?",
             ],
         },
         "lost_item": {
             "first": [
-                "No te preocupes, vamos a hacer todo lo posible por recuperar tu objeto. �Qu� fue lo que perdiste y en qu� fecha fue el viaje?",
-                "Entiendo tu preocupaci�n. La buena noticia es que la mayor�a de objetos se recuperan en las primeras veinticuatro horas. �Me dices qu� olvidaste y cu�ndo fue el viaje?",
+                "No te preocupes, vamos a hacer todo lo posible por recuperar tu objeto. ?Qu? fue lo que perdiste y en qu? fecha fue el viaje?",
+                "Entiendo tu preocupaci?n. La buena noticia es que la mayor?a de objetos se recuperan en las primeras veinticuatro horas. ?Me dices qu? olvidaste y cu?ndo fue el viaje?",
             ],
             "followup": [
-                "Ya me comuniqu� con el conductor. En cuanto nos confirme que tiene tu objeto, te notificaremos para coordinar la entrega. �Hay algo m�s que necesites?",
-                "El conductor ya fue notificado de tu caso. Tan pronto confirme que tiene tu objeto, nos pondremos en contacto contigo para acordar la devoluci�n. �Necesitas algo m�s?",
+                "Ya me comuniqu? con el conductor. En cuanto nos confirme que tiene tu objeto, te notificaremos para coordinar la entrega. ?Hay algo m?s que necesites?",
+                "El conductor ya fue notificado de tu caso. Tan pronto confirme que tiene tu objeto, nos pondremos en contacto contigo para acordar la devoluci?n. ?Necesitas algo m?s?",
             ],
         },
         "account": {
             "first": [
-                "Con gusto puedo ayudarte con tu cuenta. �Qu� problema est�s teniendo exactamente? �Es con el inicio de sesi�n, con tus datos de perfil, o algo diferente?",
-                "Los problemas de cuenta generalmente tienen una soluci�n r�pida. �Me dices qu� necesitas cambiar o qu� error te est� apareciendo?",
+                "Con gusto puedo ayudarte con tu cuenta. ?Qu? problema est?s teniendo exactamente? ?Es con el inicio de sesi?n, con tus datos de perfil, o algo diferente?",
+                "Los problemas de cuenta generalmente tienen una soluci?n r?pida. ?Me dices qu? necesitas cambiar o qu? error te est? apareciendo?",
             ],
             "followup": [
-                "He actualizado la informaci�n de tu cuenta. Los cambios ya deber�an estar activos. Te recomiendo cerrar sesi�n y volver a iniciar para verificar. �Todo bien ahora?",
-                "Tu cuenta ha sido actualizada correctamente. Si el problema persiste, te sugiero reinstalar la aplicaci�n. �Puedo ayudarte con algo m�s?",
+                "He actualizado la informaci?n de tu cuenta. Los cambios ya deber?an estar activos. Te recomiendo cerrar sesi?n y volver a iniciar para verificar. ?Todo bien ahora?",
+                "Tu cuenta ha sido actualizada correctamente. Si el problema persiste, te sugiero reinstalar la aplicaci?n. ?Puedo ayudarte con algo m?s?",
             ],
         },
         "app_problem": {
             "first": [
-                "Entiendo que est�s teniendo problemas con la aplicaci�n. �Me podr�as describir qu� error ves o qu� parte de la app no est� funcionando?",
-                "Lamento el inconveniente con la app. �Se cierra por s� sola, no carga correctamente, o hay alg�n mensaje de error espec�fico que te aparece?",
+                "Entiendo que est?s teniendo problemas con la aplicaci?n. ?Me podr?as describir qu? error ves o qu? parte de la app no est? funcionando?",
+                "Lamento el inconveniente con la app. ?Se cierra por s? sola, no carga correctamente, o hay alg?n mensaje de error espec?fico que te aparece?",
             ],
             "followup": [
-                "Te recomiendo seguir estos pasos: primero, cierra la aplicaci�n completamente. Luego, verifica que tengas la �ltima versi�n disponible. Reinicia tu dispositivo y abre la app de nuevo. Si el problema contin�a, me avisas y lo escalamos al equipo t�cnico.",
-                "He reportado el problema directamente al equipo t�cnico. Mientras tanto, te sugiero reinstalar la aplicaci�n desde la tienda. Eso suele resolver la mayor�a de los problemas. �Necesitas algo m�s?",
+                "Te recomiendo seguir estos pasos: primero, cierra la aplicaci?n completamente. Luego, verifica que tengas la ?ltima versi?n disponible. Reinicia tu dispositivo y abre la app de nuevo. Si el problema contin?a, me avisas y lo escalamos al equipo t?cnico.",
+                "He reportado el problema directamente al equipo t?cnico. Mientras tanto, te sugiero reinstalar la aplicaci?n desde la tienda. Eso suele resolver la mayor?a de los problemas. ?Necesitas algo m?s?",
             ],
         },
         "safety": {
             "first": [
-                "Tu seguridad es nuestra m�xima prioridad. Voy a tomar acci�n de inmediato sobre tu caso. �Puedes contarme exactamente qu� sucedi�?",
-                "Tomo esto con la mayor seriedad. Antes que nada, �te encuentras bien en este momento? Cu�ntame con todo detalle lo que pas� para poder actuar de inmediato.",
+                "Tu seguridad es nuestra m?xima prioridad. Voy a tomar acci?n de inmediato sobre tu caso. ?Puedes contarme exactamente qu? sucedi??",
+                "Tomo esto con la mayor seriedad. Antes que nada, ?te encuentras bien en este momento? Cu?ntame con todo detalle lo que pas? para poder actuar de inmediato.",
             ],
             "followup": [
-                "Tu caso ha sido marcado como prioridad m�xima. Nuestro equipo de seguridad ya est� revis�ndolo y te contactar�n directamente. �Hay algo inmediato que necesites ahora?",
-                "He escalado tu caso directamente al equipo de seguridad. Este tipo de situaciones las tratamos con la mayor urgencia posible. Te mantendremos informado. �Necesitas algo m�s en este momento?",
+                "Tu caso ha sido marcado como prioridad m?xima. Nuestro equipo de seguridad ya est? revis?ndolo y te contactar?n directamente. ?Hay algo inmediato que necesites ahora?",
+                "He escalado tu caso directamente al equipo de seguridad. Este tipo de situaciones las tratamos con la mayor urgencia posible. Te mantendremos informado. ?Necesitas algo m?s en este momento?",
             ],
         },
         "payment": {
             "first": [
-                "Con gusto te ayudo con el m�todo de pago. �Qu� problema est�s teniendo? �Tu tarjeta fue rechazada, necesitas agregar una nueva, o hay alg�n otro inconveniente?",
-                "Entiendo. �Qu� sucede exactamente con tu pago? �Es un error al agregar la tarjeta, un cargo rechazado, o necesitas cambiar tu m�todo de pago?",
+                "Con gusto te ayudo con el m?todo de pago. ?Qu? problema est?s teniendo? ?Tu tarjeta fue rechazada, necesitas agregar una nueva, o hay alg?n otro inconveniente?",
+                "Entiendo. ?Qu? sucede exactamente con tu pago? ?Es un error al agregar la tarjeta, un cargo rechazado, o necesitas cambiar tu m?todo de pago?",
             ],
             "followup": [
-                "Te sugiero verificar que los datos de tu tarjeta est�n correctos y que tengas fondos disponibles. Si el problema contin�a, intenta agregar una tarjeta diferente. �Pudiste resolverlo?",
-                "He actualizado la configuraci�n de pago en tu cuenta. Intenta realizar el pago nuevamente. Si sigue sin funcionar, podr�a ser un bloqueo temporal de tu banco. �Necesitas algo m�s?",
+                "Te sugiero verificar que los datos de tu tarjeta est?n correctos y que tengas fondos disponibles. Si el problema contin?a, intenta agregar una tarjeta diferente. ?Pudiste resolverlo?",
+                "He actualizado la configuraci?n de pago en tu cuenta. Intenta realizar el pago nuevamente. Si sigue sin funcionar, podr?a ser un bloqueo temporal de tu banco. ?Necesitas algo m?s?",
             ],
         },
         "waiting": {
             "first": [
-                "Entiendo tu frustraci�n con el tiempo de espera. �Me puedes contar cu�nto tiempo tuviste que esperar y si el conductor finalmente lleg�?",
-                "Lamento mucho la demora que experimentaste. Los tiempos pueden variar dependiendo de la demanda en tu zona. �Me cuentas los detalles de cu�nto esperaste y cu�ndo fue?",
+                "Entiendo tu frustraci?n con el tiempo de espera. ?Me puedes contar cu?nto tiempo tuviste que esperar y si el conductor finalmente lleg??",
+                "Lamento mucho la demora que experimentaste. Los tiempos pueden variar dependiendo de la demanda en tu zona. ?Me cuentas los detalles de cu?nto esperaste y cu?ndo fue?",
             ],
             "followup": [
-                "He revisado tu caso detenidamente. Entiendo la molestia y he aplicado un cr�dito especial a tu cuenta como compensaci�n. Lo ver�s reflejado en tu pr�ximo viaje. �Hay algo m�s que necesites?",
-                "Voy a aplicar un ajuste en tu cuenta por la mala experiencia que tuviste. Lamentamos sinceramente los inconvenientes. �Puedo ayudarte con algo m�s?",
+                "He revisado tu caso detenidamente. Entiendo la molestia y he aplicado un cr?dito especial a tu cuenta como compensaci?n. Lo ver?s reflejado en tu pr?ximo viaje. ?Hay algo m?s que necesites?",
+                "Voy a aplicar un ajuste en tu cuenta por la mala experiencia que tuviste. Lamentamos sinceramente los inconvenientes. ?Puedo ayudarte con algo m?s?",
             ],
         },
     },
@@ -4845,7 +3389,7 @@ def _twiml_hangup(text: str, lang: str) -> str:
 
 @app.post("/voice/incoming")
 async def voice_incoming(request: Request):
-    """Twilio webhook: incoming call � language selection menu (1=ES, 2=EN)."""
+    """Twilio webhook: incoming call ? language selection menu (1=ES, 2=EN)."""
     form = await request.form()
     call_sid = form.get("CallSid", "unknown")
 
@@ -4860,7 +3404,7 @@ async def voice_incoming(request: Request):
         '<prosody rate="95%" pitch="-2%">'
         "Gracias por llamar a Cruise."
         '<break time="400ms"/>'
-        " Para espa�ol,<break time=\"200ms\"/> presiona uno."
+        " Para espa?ol,<break time=\"200ms\"/> presiona uno."
         "</prosody>"
         "</Say>"
         "<Pause length=\"1\"/>"
@@ -4953,9 +3497,9 @@ async def voice_status(request: Request):
     return Response(content="<Response/>", media_type="application/xml")
 
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  PROMO CODE  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.post("/promo/validate", dependencies=[Depends(_verify_api_key)])
 async def validate_promo_code(body: dict = Body(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -4992,9 +3536,9 @@ async def create_promo_code(body: dict = Body(...), user: User = Depends(_get_cu
     await db.commit()
     return {"code": promo.code, "discount_percent": promo.discount_percent}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  NOTIFICATION  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.get("/notifications", dependencies=[Depends(_verify_api_key)])
 async def get_notifications(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -5030,9 +3574,9 @@ async def mark_all_notifications_read(user: User = Depends(_get_current_user), d
     await db.commit()
     return {"status": "all_read"}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  FORGOT PASSWORD
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.post("/auth/forgot-password", dependencies=[Depends(_verify_api_key)])
 async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
@@ -5092,7 +3636,7 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
       </p>
     </div>
     """
-    _send_email(user.email, "Cruise � Reset Your Password", html)
+    _send_email(user.email, "Cruise ? Reset Your Password", html)
 
     return {"status": "reset_sent", "method": "email"}
 
@@ -5104,7 +3648,7 @@ async def reset_page(token: str = Query(...)):
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Reset Password � Cruise</title>
+<title>Reset Password ? Cruise</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}}
@@ -5168,7 +3712,7 @@ async function doReset(e){{
       btn.disabled=false;btn.textContent='Reset Password';
     }}
   }}catch(ex){{
-    msg.textContent='Network error � please try again';msg.className='msg err';
+    msg.textContent='Network error ? please try again';msg.className='msg err';
     btn.disabled=false;btn.textContent='Reset Password';
   }}
   return false
@@ -5247,9 +3791,9 @@ async def tunnel_url():
             return {"tunnel_url": url}
     return {"tunnel_url": None}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  ADMIN / DISPATCH ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.get("/admin/users", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_users(
@@ -5543,9 +4087,9 @@ async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_d
     }
 
 
-# ═══════════════════════════════════════════════════════════
-#  ADMIN � Verification Review
-# ═══════════════════════════════════════════════════════════
+# -----------------------------------------------------------
+#  ADMIN ? Verification Review
+# -----------------------------------------------------------
 
 @app.get("/admin/verifications", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_verifications(
@@ -5638,9 +4182,9 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
     }
 
 
-# ═══════════════════════════════════════════════════════════
-#  ADMIN � User Detail, Edit, Delete, Documents, Photos
-# ═══════════════════════════════════════════════════════════
+# -----------------------------------------------------------
+#  ADMIN ? User Detail, Edit, Delete, Documents, Photos
+# -----------------------------------------------------------
 
 @app.get("/admin/users/{user_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
@@ -5828,7 +4372,7 @@ os.makedirs(os.path.join(UPLOADS_DIR, "documents"), exist_ok=True)
 @app.get("/uploads/documents/{filename}")
 async def serve_document(filename: str):
     """Serve an uploaded document file (verification photos).
-    Public like /photos � filenames include user-id + timestamp so they
+    Public like /photos ? filenames include user-id + timestamp so they
     are effectively unguessable.  Real access control is at upload time."""
     # Prevent path traversal
     safe_name = os.path.basename(filename)
@@ -5854,9 +4398,9 @@ async def admin_get_rider_payment_methods(user_id: int, db: AsyncSession = Depen
              "created_at": p.created_at.isoformat() if p.created_at else None}
             for p in result.scalars().all()]
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  STRIPE PAYMENT ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 STRIPE_SECRET = os.getenv("STRIPE_SECRET_KEY", "")
 _HAS_STRIPE = False
 try:
@@ -5866,9 +4410,9 @@ try:
         _HAS_STRIPE = True
         logging.info("[Stripe] Initialized with secret key")
     else:
-        logging.warning("[Stripe] No STRIPE_SECRET_KEY in .env � payment endpoints will return mock data")
+        logging.warning("[Stripe] No STRIPE_SECRET_KEY in .env ? payment endpoints will return mock data")
 except ImportError:
-    logging.warning("[Stripe] stripe package not installed � pip install stripe")
+    logging.warning("[Stripe] stripe package not installed ? pip install stripe")
 
 
 class PaymentIntentIn(BaseModel):
@@ -5948,7 +4492,7 @@ async def get_payment_intent(intent_id: str, user: User = Depends(_get_current_u
         raise HTTPException(400, str(e.user_message or e))
 
 
-# -- PayPal token exchange (proxied through backend � never expose secret to client) --
+# -- PayPal token exchange (proxied through backend ? never expose secret to client) --
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
 PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "")
 PAYPAL_SANDBOX = os.getenv("PAYPAL_SANDBOX", "true").lower() == "true"
@@ -5961,7 +4505,7 @@ class PayPalOrderIn(BaseModel):
 
 @app.post("/payments/paypal/create-order", dependencies=[Depends(_verify_api_key)])
 async def paypal_create_order(body: PayPalOrderIn, user: User = Depends(_get_current_user)):
-    """Create a PayPal order � client secret stays on the server."""
+    """Create a PayPal order ? client secret stays on the server."""
     if not PAYPAL_CLIENT_ID or not PAYPAL_SECRET:
         return {"order_id": f"mock_paypal_{int(time.time())}", "approval_url": "", "status": "mock"}
 
@@ -6046,7 +4590,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     sig_header = request.headers.get("stripe-signature", "")
 
     if not _HAS_STRIPE or not STRIPE_WEBHOOK_SECRET:
-        logging.warning("[Stripe Webhook] Not configured � ignoring event")
+        logging.warning("[Stripe Webhook] Not configured ? ignoring event")
         return {"status": "ignored"}
 
     try:
@@ -6076,9 +4620,9 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     return {"status": "ok"}
 
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  STRIPE CONNECT - Driver Payouts
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.post("/drivers/stripe-connect/onboard", dependencies=[Depends(_verify_api_key)])
 async def stripe_connect_onboard(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -6137,9 +4681,9 @@ async def driver_payout_transfer(user: User = Depends(_get_current_user), db: As
     await db.commit()
     return {"amount": payout_amount, "transfer_id": transfer.id, "status": "paid", "estimated_arrival": "2-3 business days"}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  SURGE PRICING
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.get("/surge/current", dependencies=[Depends(_verify_api_key)])
 async def get_current_surge(lat: float = Query(...), lng: float = Query(...), db: AsyncSession = Depends(get_db)):
@@ -6170,9 +4714,9 @@ async def update_surge_zone(zone_name: str = Body(...), center_lat: float = Body
     await db.commit()
     return {"status": "ok", "zone": zone_name, "multiplier": surge_multiplier}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  CANCELLATION FEES
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.post("/trips/{trip_id}/cancel", dependencies=[Depends(_verify_api_key)])
 async def cancel_trip_with_fee(trip_id: int, reason: str = Body(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -6206,9 +4750,9 @@ async def cancel_trip_with_fee(trip_id: int, reason: str = Body(...), user: User
     
     return {"status": "canceled", "cancellation_fee": cancellation_fee, "message": f"${cancellation_fee:.2f} cancellation fee applied" if cancellation_fee > 0 else "No fee"}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  TIPPING
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.post("/trips/{trip_id}/tip", dependencies=[Depends(_verify_api_key)])
 async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -6232,9 +4776,9 @@ async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), use
     await db.commit()
     return {"status": "ok", "tip_amount": tip_amount, "message": "Tip added successfully"}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  REFERRAL SYSTEM
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.get("/referral/code", dependencies=[Depends(_verify_api_key)])
 async def get_referral_code(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -6265,9 +4809,9 @@ async def apply_referral_code(referral_code: str = Body(...), user: User = Depen
     await db.commit()
     return {"status": "ok", "message": "Referral code applied! Complete your first trip to unlock $10 credit."}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  FAVORITE LOCATIONS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.get("/favorites", dependencies=[Depends(_verify_api_key)])
 async def get_favorite_locations(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -6296,9 +4840,9 @@ async def delete_favorite_location(favorite_id: int, user: User = Depends(_get_c
     await db.commit()
     return {"status": "deleted"}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  DRIVER INCENTIVES & QUESTS
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.get("/drivers/incentives", dependencies=[Depends(_verify_api_key)])
 async def get_driver_incentives(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -6324,9 +4868,9 @@ async def claim_incentive_bonus(incentive_id: int, user: User = Depends(_get_cur
     await db.commit()
     return {"status": "claimed", "bonus_amount": incentive.bonus_amount, "new_balance": user.pending_balance}
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  GEOFENCING & SERVICE AREA VALIDATION
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 
 @app.get("/service-area/check", dependencies=[Depends(_verify_api_key)])
 async def check_service_area(lat: float = Query(...), lng: float = Query(...), db: AsyncSession = Depends(get_db)):
@@ -6405,472 +4949,6 @@ async def _scheduled_ride_dispatcher():
                                      trip.id, best.id, best_dist)
         except Exception as e:
             logging.error("[Scheduler] Error in scheduled ride dispatcher: %s", e)
-
-# ═══════════════════════════════════════════════════════
-#  ADMIN DASHBOARD ENDPOINTS
-# ═══════════════════════════════════════════════════════
-
-class AdminStatsResponse(BaseModel):
-    total_trips_today: int
-    active_trips: int
-    pending_trips: int
-    active_drivers: int
-    total_revenue_today: float
-    avg_trip_time: float
-    completion_rate: float
-
-@app.get("/admin/stats", dependencies=[Depends(_verify_api_key)])
-async def get_admin_stats(db: AsyncSession = Depends(get_db)):
-    """Get real-time statistics for admin dashboard."""
-    try:
-        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # Total trips today
-        trips_result = await db.execute(
-            select(func.count(Trip.id)).where(Trip.created_at >= today)
-        )
-        total_trips = trips_result.scalar() or 0
-        
-        # Active trips (driver_en_route, arrived, in_trip)
-        active_result = await db.execute(
-            select(func.count(Trip.id)).where(
-                Trip.status.in_(["driver_en_route", "arrived", "in_trip"])
-            )
-        )
-        active_trips = active_result.scalar() or 0
-        
-        # Pending trips (requested, no driver assigned)
-        pending_result = await db.execute(
-            select(func.count(Trip.id)).where(
-                and_(Trip.status == "requested", Trip.driver_id.is_(None))
-            )
-        )
-        pending_trips = pending_result.scalar() or 0
-        
-        # Active drivers (online and not on trip)
-        active_drivers_result = await db.execute(
-            select(func.count(User.id)).where(
-                and_(User.role == "driver", User.is_online == True)
-            )
-        )
-        active_drivers = active_drivers_result.scalar() or 0
-        
-        # Total revenue today
-        revenue_result = await db.execute(
-            select(func.sum(Trip.fare)).where(
-                and_(Trip.created_at >= today, Trip.payment_status == "paid")
-            )
-        )
-        total_revenue = revenue_result.scalar() or 0.0
-        
-        # Average trip time (completed trips today)
-        avg_time_result = await db.execute(
-            select(func.avg(Trip.duration)).where(
-                and_(Trip.created_at >= today, Trip.status == "completed")
-            )
-        )
-        avg_trip_time = avg_time_result.scalar() or 0.0
-        
-        # Completion rate
-        completed_result = await db.execute(
-            select(func.count(Trip.id)).where(
-                and_(Trip.created_at >= today, Trip.status == "completed")
-            )
-        )
-        completed = completed_result.scalar() or 0
-        total_today_result = await db.execute(
-            select(func.count(Trip.id)).where(Trip.created_at >= today)
-        )
-        total_today = total_today_result.scalar() or 0
-        completion_rate = (completed / total_today * 100) if total_today > 0 else 0
-        
-        return {
-            "total_trips_today": total_trips,
-            "active_trips": active_trips,
-            "pending_trips": pending_trips,
-            "active_drivers": active_drivers,
-            "total_revenue_today": round(total_revenue, 2),
-            "avg_trip_time": round(avg_trip_time, 1),
-            "completion_rate": round(completion_rate, 1),
-        }
-    except Exception as e:
-        logging.error("[Admin] Error getting stats: %s", e)
-        raise HTTPException(500, f"Error getting stats: {str(e)}")
-
-@app.get("/admin/drivers/online", dependencies=[Depends(_verify_api_key)])
-async def get_online_drivers(db: AsyncSession = Depends(get_db)):
-    """Get all online drivers with their current location and status."""
-    try:
-        result = await db.execute(
-            select(User, Vehicle).outerjoin(
-                Vehicle, Vehicle.user_id == User.id
-            ).where(
-                and_(User.role == "driver", User.is_online == True)
-            )
-        )
-        
-        drivers = []
-        for user, vehicle in result.all():
-            # Check if driver is on a trip
-            trip_result = await db.execute(
-                select(Trip).where(
-                    and_(
-                        Trip.driver_id == user.id,
-                        Trip.status.in_(["driver_en_route", "arrived", "in_trip"])
-                    )
-                )
-            )
-            active_trip = trip_result.scalar_one_or_none()
-            
-            drivers.append({
-                "id": user.id,
-                "name": f"{user.first_name} {user.last_name}",
-                "phone": user.phone,
-                "lat": user.lat,
-                "lng": user.lng,
-                "rating": 4.9,  # TODO: Calculate from reviews
-                "vehicle": {
-                    "make": vehicle.make if vehicle else None,
-                    "model": vehicle.model if vehicle else None,
-                    "color": vehicle.color if vehicle else None,
-                    "plate": vehicle.plate if vehicle else None,
-                } if vehicle else None,
-                "on_trip": active_trip is not None,
-                "trip_id": active_trip.id if active_trip else None,
-                "last_updated": user.updated_at.isoformat() if user.updated_at else None,
-            })
-        
-        return {"drivers": drivers}
-    except Exception as e:
-        logging.error("[Admin] Error getting online drivers: %s", e)
-        raise HTTPException(500, f"Error getting drivers: {str(e)}")
-
-@app.get("/admin/trips/active", dependencies=[Depends(_verify_api_key)])
-async def get_active_trips(db: AsyncSession = Depends(get_db)):
-    """Get all active trips with driver and rider info."""
-    try:
-        result = await db.execute(
-            select(Trip, User).join(
-                User, User.id == Trip.rider_id
-            ).where(
-                Trip.status.in_(["requested", "driver_en_route", "arrived", "in_trip"])
-            ).order_by(Trip.created_at.desc())
-        )
-        
-        trips = []
-        for trip, rider in result.all():
-            # Get driver info if assigned
-            driver_info = None
-            if trip.driver_id:
-                driver_result = await db.execute(
-                    select(User).where(User.id == trip.driver_id)
-                )
-                driver = driver_result.scalar_one_or_none()
-                if driver:
-                    driver_info = {
-                        "id": driver.id,
-                        "name": f"{driver.first_name} {driver.last_name}",
-                        "phone": driver.phone,
-                        "lat": driver.lat,
-                        "lng": driver.lng,
-                    }
-            
-            trips.append({
-                "id": trip.id,
-                "status": trip.status,
-                "pickup": {
-                    "address": trip.pickup_address,
-                    "lat": trip.pickup_lat,
-                    "lng": trip.pickup_lng,
-                },
-                "dropoff": {
-                    "address": trip.dropoff_address,
-                    "lat": trip.dropoff_lat,
-                    "lng": trip.dropoff_lng,
-                },
-                "rider": {
-                    "id": rider.id,
-                    "name": f"{rider.first_name} {rider.last_name}",
-                    "phone": rider.phone,
-                },
-                "driver": driver_info,
-                "fare": trip.fare,
-                "created_at": trip.created_at.isoformat() if trip.created_at else None,
-                "vehicle_type": trip.vehicle_type,
-            })
-        
-        return {"trips": trips}
-    except Exception as e:
-        logging.error("[Admin] Error getting active trips: %s", e)
-        raise HTTPException(500, f"Error getting trips: {str(e)}")
-
-@app.get("/admin/heatmap", dependencies=[Depends(_verify_api_key)])
-async def get_heatmap_data(
-    hours: int = Query(2, description="Hours of data to include"),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get heatmap data for pickup locations."""
-    try:
-        since = datetime.now(timezone.utc) - timedelta(hours=hours)
-        
-        result = await db.execute(
-            select(Trip.pickup_lat, Trip.pickup_lng, func.count(Trip.id))
-            .where(Trip.created_at >= since)
-            .group_by(Trip.pickup_lat, Trip.pickup_lng)
-        )
-        
-        heatmap_points = [
-            {"lat": lat, "lng": lng, "weight": count}
-            for lat, lng, count in result.all()
-        ]
-        
-        return {
-            "points": heatmap_points,
-            "hours": hours,
-            "total": len(heatmap_points),
-        }
-    except Exception as e:
-        logging.error("[Admin] Error getting heatmap data: %s", e)
-        raise HTTPException(500, f"Error getting heatmap: {str(e)}")
-
-@app.post("/admin/trips/assign", dependencies=[Depends(_verify_api_key)])
-async def admin_assign_driver(
-    trip_id: int = Query(...),
-    driver_id: int = Query(...),
-    db: AsyncSession = Depends(get_db)
-):
-    """Manually assign a driver to a trip (admin override)."""
-    try:
-        # Get trip
-        trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
-        trip = trip_result.scalar_one_or_none()
-        if not trip:
-            raise HTTPException(404, "Trip not found")
-        
-        # Get driver
-        driver_result = await db.execute(
-            select(User).where(and_(User.id == driver_id, User.role == "driver"))
-        )
-        driver = driver_result.scalar_one_or_none()
-        if not driver:
-            raise HTTPException(404, "Driver not found")
-        
-        # Check if driver is online
-        if not driver.is_online:
-            raise HTTPException(400, "Driver is offline")
-        
-        # Create or update dispatch offer
-        existing = await db.execute(
-            select(DispatchOffer).where(
-                and_(DispatchOffer.trip_id == trip_id, DispatchOffer.status == "pending")
-            )
-        )
-        for offer in existing.scalars().all():
-            offer.status = "expired"
-        
-        # Create new offer
-        new_offer = DispatchOffer(
-            trip_id=trip_id,
-            driver_id=driver_id,
-            status="pending"
-        )
-        db.add(new_offer)
-        
-        trip.driver_id = driver_id
-        trip.status = "requested"
-        await db.commit()
-        
-        logging.info("[Admin] Manually assigned trip %d to driver %d", trip_id, driver_id)
-        
-        return {
-            "status": "assigned",
-            "trip_id": trip_id,
-            "driver_id": driver_id,
-            "offer_id": new_offer.id,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error("[Admin] Error assigning driver: %s", e)
-        raise HTTPException(500, f"Error assigning driver: {str(e)}")
-
-@app.post("/admin/drivers/message", dependencies=[Depends(_verify_api_key)])
-async def message_driver(
-    driver_id: int = Query(...),
-    message: str = Query(...),
-    db: AsyncSession = Depends(get_db)
-):
-    """Send a message to a driver (stored in Firestore for real-time delivery)."""
-    try:
-        driver_result = await db.execute(select(User).where(User.id == driver_id))
-        driver = driver_result.scalar_one_or_none()
-        if not driver:
-            raise HTTPException(404, "Driver not found")
-        
-        # Store message in Firestore for real-time sync
-        if _HAS_FIRESTORE:
-            try:
-                firestore_sync.send_driver_message(driver_id, message)
-            except Exception as e:
-                logging.warning("[Admin] Firestore message failed: %s", e)
-        
-        logging.info("[Admin] Message sent to driver %d", driver_id)
-        
-        return {"status": "sent", "driver_id": driver_id, "message": message}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error("[Admin] Error messaging driver: %s", e)
-        raise HTTPException(500, f"Error sending message: {str(e)}")
-
-# ═══════════════════════════════════════════════════════
-#  NAVIGATION INSTRUCTIONS (Google Directions API)
-# ═══════════════════════════════════════════════════════
-
-@app.get("/navigation/instructions", dependencies=[Depends(_verify_api_key)])
-async def get_navigation_instructions(
-    origin_lat: float = Query(..., description="Origin latitude"),
-    origin_lng: float = Query(..., description="Origin longitude"),
-    dest_lat: float = Query(..., description="Destination latitude"),
-    dest_lng: float = Query(..., description="Destination longitude"),
-):
-    """
-    Get turn-by-turn navigation instructions from Google Directions API.
-    Returns parsed steps with distance, duration, and maneuver icons.
-    """
-    if not GOOGLE_MAPS_API_KEY:
-        raise HTTPException(503, "Navigation service not configured")
-    
-    try:
-        import urllib.request
-        import urllib.parse
-        
-        # Build Google Directions API URL
-        base_url = "https://maps.googleapis.com/maps/api/directions/json"
-        params = {
-            "origin": f"{origin_lat},{origin_lng}",
-            "destination": f"{dest_lat},{dest_lng}",
-            "mode": "driving",
-            "key": GOOGLE_MAPS_API_KEY,
-            "language": "es",  # Spanish instructions
-            "units": "imperial",  # Miles
-        }
-        
-        url = f"{base_url}?{urllib.parse.urlencode(params)}"
-        
-        # Make request to Google Directions API
-        req = urllib.request.Request(url, method="GET")
-        
-        loop = asyncio.get_event_loop()
-        def _fetch():
-            try:
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    return json.loads(resp.read().decode())
-            except urllib.error.HTTPError as e:
-                raise HTTPException(e.code, f"Directions API error: {e.read().decode()}")
-        
-        data = await loop.run_in_executor(None, _fetch)
-        
-        if data.get("status") != "OK":
-            logging.warning("[NAV] Google Directions API error: %s", data.get("status"))
-            raise HTTPException(502, f"Directions API error: {data.get('status')}")
-        
-        if not data.get("routes"):
-            raise HTTPException(404, "No route found")
-        
-        # Parse route steps
-        route = data["routes"][0]
-        leg = route["legs"][0]
-        
-        instructions = []
-        total_distance_meters = leg.get("distance", {}).get("value", 0)
-        total_duration_seconds = leg.get("duration", {}).get("value", 0)
-        
-        for step in leg.get("steps", []):
-            # Parse maneuver
-            maneuver = step.get("maneuver", "")
-            nav_type = _parse_maneuver_to_type(maneuver)
-            
-            # Parse HTML instructions (clean up)
-            html_text = step.get("html_instructions", "")
-            clean_text = _clean_html_instructions(html_text)
-            
-            # Parse distance
-            step_distance_meters = step.get("distance", {}).get("value", 0)
-            step_distance_miles = step_distance_meters / 1609.344  # Convert to miles
-            
-            # Check for exit number
-            exit_number = None
-            if "exit" in maneuver:
-                # Try to extract exit number from instructions
-                import re
-                exit_match = re.search(r'exit\s+(\d+)', html_text, re.IGNORECASE)
-                if exit_match:
-                    exit_number = exit_match.group(1)
-            
-            instructions.append({
-                "type": nav_type,
-                "text": clean_text,
-                "distance_miles": round(step_distance_miles, 2),
-                "distance_meters": step_distance_meters,
-                "exit_number": exit_number,
-            })
-        
-        return {
-            "status": "OK",
-            "origin": {"lat": origin_lat, "lng": origin_lng},
-            "destination": {"lat": dest_lat, "lng": dest_lng},
-            "total_distance_miles": round(total_distance_meters / 1609.344, 2),
-            "total_duration_minutes": round(total_duration_seconds / 60),
-            "polyline": route.get("overview_polyline", {}).get("points", ""),
-            "instructions": instructions,
-            "warnings": route.get("warnings", []),
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error("[NAV] Error fetching directions: %s", e)
-        logging.error("[NAV] traceback: %s", traceback.format_exc())
-        raise HTTPException(502, f"Navigation service error: {str(e)}")
-
-def _parse_maneuver_to_type(maneuver: str) -> str:
-    """Convert Google Directions maneuver to our navigation type."""
-    if not maneuver:
-        return "straight"
-    
-    maneuver = maneuver.lower()
-    
-    if "turn-left" in maneuver:
-        return "turn_left"
-    elif "turn-right" in maneuver:
-        return "turn_right"
-    elif "uturn" in maneuver:
-        return "uturn"
-    elif "roundabout" in maneuver or "rotary" in maneuver:
-        return "roundabout"
-    elif "merge" in maneuver:
-        return "merge"
-    elif "ramp" in maneuver or "exit" in maneuver:
-        return "exit"
-    elif "fork" in maneuver:
-        return "fork"
-    else:
-        return "straight"
-
-def _clean_html_instructions(html_text: str) -> str:
-    """Remove HTML tags from instructions."""
-    import re
-    # Remove HTML tags
-    text = re.sub(r'<[^>]+>', '', html_text)
-    # Replace common entities
-    text = text.replace("&nbsp;", " ")
-    text = text.replace("&amp;", "&")
-    text = text.replace("&lt;", "<")
-    text = text.replace("&gt;", ">")
-    # Clean up extra spaces
-    text = " ".join(text.split())
-    return text
 
 
 @app.on_event("startup")

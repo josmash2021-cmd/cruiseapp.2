@@ -183,7 +183,68 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
 
   void _onReject(RideOffer offer) {
     HapticFeedback.mediumImpact();
-    _ctrl.rejectOffer(offer.offerId);
+    _showRejectReasonDialog(offer);
+  }
+
+  void _showRejectReasonDialog(RideOffer offer) {
+    final reasons = [
+      'Too far away',
+      'Traffic/construction',
+      'Personal break',
+      'Vehicle issue',
+      'Other',
+    ];
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Why are you declining?',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'This helps us improve dispatching',
+                  style: TextStyle(color: Colors.grey, fontSize: 14),
+                ),
+                const SizedBox(height: 20),
+                ...reasons.map((reason) => ListTile(
+                  title: Text(reason, style: const TextStyle(color: Colors.white)),
+                  trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _ctrl.rejectOffer(offer.offerId, reason: reason);
+                  },
+                )),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _goOffline() {

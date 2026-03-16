@@ -1264,13 +1264,16 @@ class ApiService {
   static Future<Map<String, dynamic>> rejectRideOffer({
     required int offerId,
     required int driverId,
+    String? reason,
   }) async {
     final h = await _authHeaders();
+    var uri = '$_baseUrl/dispatch/driver/reject?offer_id=$offerId&driver_id=$driverId';
+    if (reason != null && reason.isNotEmpty) {
+      uri += '&reason=${Uri.encodeComponent(reason)}';
+    }
     final res = await _client
         .post(
-          Uri.parse(
-            '$_baseUrl/dispatch/driver/reject?offer_id=$offerId&driver_id=$driverId',
-          ),
+          Uri.parse(uri),
           headers: h,
         )
         .timeout(const Duration(seconds: 8));

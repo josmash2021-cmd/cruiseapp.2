@@ -94,20 +94,21 @@ class OffersController {
     }
   }
 
-  /// Reject an offer — removes it locally and notifies the backend.
-  void rejectOffer(String offerId) {
+  /// Reject an offer — removes it locally and notifies the backend with reason.
+  void rejectOffer(String offerId, {String? reason}) {
     offersNotifier.value =
         offersNotifier.value.where((o) => o.offerId != offerId).toList();
-    _rejectOnBackend(offerId);
+    _rejectOnBackend(offerId, reason: reason);
   }
 
-  Future<void> _rejectOnBackend(String offerId) async {
+  Future<void> _rejectOnBackend(String offerId, {String? reason}) async {
     try {
       final id = _driverId ?? await _resolveDriverId();
       if (id == null) return;
       await ApiService.rejectRideOffer(
         offerId: int.parse(offerId),
         driverId: id,
+        reason: reason,
       );
     } catch (e) {
       debugPrint('OffersController reject error: $e');

@@ -595,3 +595,57 @@ async def bulk_sync_all(session_maker):
 
     log.info("✅ Bulk sync complete: %d clients, %d drivers, %d trips",
              len(riders), len(drivers), len(trips))
+
+
+# ═══════════════════════════════════════════════════════════
+#  MESSAGING — Admin to Driver real-time messages
+# ═══════════════════════════════════════════════════════════
+
+def send_driver_message(driver_id: int, message: str, sender: str = "admin"):
+    """Send a message from admin to driver via Firestore (real-time)."""
+    _ensure_init()
+    if _db is None:
+        return
+    
+    doc_id = f"sql_{driver_id}"
+    message_data = {
+        "type": "admin_message",
+        "message": message,
+        "sender": sender,
+        "timestamp": _ts(),
+        "read": False,
+        "driverId": driver_id,
+    }
+    
+    try:
+        # Store in driver's messages subcollection
+        _db.collection("drivers").document(doc_id).collection("messages").add(message_data)
+        # Also store in a global messages collection for admin tracking
+        _db.collection("admin_messages").add({
+            **message_data,
+            "driverDocId": doc_id,
+        })
+        log.info("✅ Message sent to driver %d", driver_id)
+    except Exception as e:
+        log.error("❌ Failed to send message to driver %d: %s", driver_id, e)
+
+
+def sync_driver_rejection_reason(trip_id: int, driver_id: int, reason: str):
+    """Store driver rejection reason in Firestore for analytics."""
+    _ensure_init()
+    if _db is None:
+        return
+    
+    rejection_data = {
+        "tripId": trip_id,
+        "driverId": driver_id,
+        "reason": reason,
+        "timestamp": _ts(),
+        "type": "rejection",
+    }
+    
+    try:
+        _db.collection("rejections").add(rejection_data)
+        log.info("✅ Rejection reason stored for trip %d by driver %d", trip_id, driver_id)
+    except Exception as e:
+        log.error("❌ Failed to store rejection reason: %s", e)

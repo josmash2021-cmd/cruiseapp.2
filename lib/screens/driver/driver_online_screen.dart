@@ -2012,6 +2012,73 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
   }
 
+  /// Pause availability temporarily — driver stays online but won't receive offers.
+  bool _isPaused = false;
+  Timer? _pauseTimer;
+  
+  void _pauseAvailability() {
+    HapticFeedback.mediumImpact();
+    setState(() => _isPaused = true);
+    
+    // Stop polling for offers while paused
+    _offerPollTimer?.cancel();
+    
+    // Show pause dialog with timer options
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('⏸️ Paused'),
+          content: const Text(
+            'You are paused and won\'t receive new trip requests.\n\nHow long do you want to pause?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _resumeFromPause();
+              },
+              child: const Text('Resume Now'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _scheduleResume(minutes: 15);
+                _snack('⏸️ Paused for 15 minutes');
+              },
+              child: const Text('15 min'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _scheduleResume(minutes: 30);
+                _snack('⏸️ Paused for 30 minutes');
+              },
+              child: const Text('30 min'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  void _resumeFromPause() {
+    setState(() => _isPaused = false);
+    _pauseTimer?.cancel();
+    _startOfferPolling(); // Resume polling
+    _snack('▶️ Back online - receiving trip requests');
+  }
+  
+  void _scheduleResume({required int minutes}) {
+    _pauseTimer?.cancel();
+    _pauseTimer = Timer(Duration(minutes: minutes), () {
+      if (mounted && _isPaused) {
+        _resumeFromPause();
+      }
+    });
+  }
+
   /// Go back to home without going offline — driver stays connected.
   void _goBack() {
     HapticFeedback.lightImpact();
@@ -4022,48 +4089,89 @@ Widget _navHeader() {
                   ),
                 ),
               const SizedBox(height: 20),
-              // GO OFFLINE button
-              Center(
-                child: GestureDetector(
-                  onTap: () {
-                    Navigator.pop(context);
-                    _goOffline();
-                  },
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 62,
-                        height: 62,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(
-                            0xFFCC3333,
-                          ).withValues(alpha: 0.15),
-                          border: Border.all(
-                            color: const Color(
-                              0xFFCC3333,
-                            ).withValues(alpha: 0.3),
-                            width: 2,
+              // PAUSE and GO OFFLINE buttons row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // PAUSE button
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pauseAvailability();
+                    },
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 62,
+                          height: 62,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFFFFA500).withValues(alpha: 0.15),
+                            border: Border.all(
+                              color: const Color(0xFFFFA500).withValues(alpha: 0.3),
+                              width: 2,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.pause_circle_filled_rounded,
+                            color: Color(0xFFFFA500),
+                            size: 26,
                           ),
                         ),
-                        child: const Icon(
-                          Icons.pan_tool_rounded,
-                          color: Color(0xFFCC3333),
-                          size: 26,
+                        const SizedBox(height: 6),
+                        Text(
+                          'PAUSE'.toUpperCase(),
+                          style: const TextStyle(
+                            color: Color(0xFFFFA500),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        S.of(context).goOffline.toUpperCase(),
-                        style: const TextStyle(
-                          color: Color(0xFFCC3333),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  // GO OFFLINE button
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      _goOffline();
+                    },
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 62,
+                          height: 62,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(
+                              0xFFCC3333,
+                            ).withValues(alpha: 0.15),
+                            border: Border.all(
+                              color: const Color(
+                                0xFFCC3333,
+                              ).withValues(alpha: 0.3),
+                              width: 2,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.pan_tool_rounded,
+                            color: Color(0xFFCC3333),
+                            size: 26,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          S.of(context).goOffline.toUpperCase(),
+                          style: const TextStyle(
+                            color: Color(0xFFCC3333),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
                   ],

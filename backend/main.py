@@ -693,7 +693,51 @@ def _send_email(to_email: str, subject: str, html_body: str):
 # -- Health check (public, no auth) --------------------
 @app.get("/health")
 async def health():
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    # Check database connectivity
+    db_status = "ok"
+    try:
+        async with SessionLocal() as db:
+            await db.execute(select(func.count()).select_from(text("users")))
+    except Exception as e:
+        db_status = f"error: {str(e)[:50]}"
+    
+    return {
+        "status": "ok",
+        "database": db_status,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+@app.get("/debug/twilio", dependencies=[Depends(_verify_api_key)])
+async def debug_twilio():
+    """Debug endpoint to check Twilio configuration (diagnostic only)."""
+    # Mask credentials for security
+    sid_preview = TWILIO_ACCOUNT_SID[:10] + "..." if len(TWILIO_ACCOUNT_SID) > 10 else "NOT_SET"
+    token_preview = TWILIO_AUTH_TOKEN[:5] + "..." if len(TWILIO_AUTH_TOKEN) > 5 else "NOT_SET"
+    phone_preview = TWILIO_PHONE_NUMBER if TWILIO_PHONE_NUMBER else "NOT_SET"
+    service_preview = TWILIO_SERVICE_SID if TWILIO_SERVICE_SID else "NOT_SET"
+    
+    # Test Twilio authentication
+    test_result = "not_tested"
+    try:
+        import urllib.request
+        test_url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}.json"
+        creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+        req = urllib.request.Request(test_url, headers={"Authorization": f"Basic {creds}"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            test_result = f"success ({resp.status})"
+    except Exception as e:
+        test_result = f"failed: {str(e)[:100]}"
+    
+    return {
+        "twilio_config": {
+            "account_sid": sid_preview,
+            "auth_token": token_preview,
+            "phone_number": phone_preview,
+            "service_sid": service_preview,
+        },
+        "test_result": test_result,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 # -- Dispatch Web Interface (owner-only, multi-layer protection) ---------
 class OwnerLogin(BaseModel):

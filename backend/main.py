@@ -704,6 +704,15 @@ def _send_email(to_email: str, subject: str, html_body: str):
 async def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
+@app.get("/debug-db")
+async def debug_db(db: AsyncSession = Depends(get_db)):
+    try:
+        result = await db.execute(text("SELECT 1"))
+        return {"db": "ok", "result": str(result.fetchone())}
+    except Exception as e:
+        import traceback
+        return {"db": "error", "error": str(e), "trace": traceback.format_exc()}
+
 @app.options("/health")
 async def health_options():
     return Response(status_code=200, headers={

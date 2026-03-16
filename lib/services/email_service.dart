@@ -48,9 +48,15 @@ class EmailService {
     required String code,
     String toName = 'Cruise User',
   }) async {
+    debugPrint('📧 EmailService.sendVerificationCode called for: $toEmail');
+    debugPrint('🔧 isConfigured: $isConfigured');
+    debugPrint('🔧 serviceId: ${_serviceId.substring(0, _serviceId.length > 8 ? 8 : _serviceId.length)}...');
+    debugPrint('🔧 templateId: ${_templateId.substring(0, _templateId.length > 8 ? 8 : _templateId.length)}...');
+    debugPrint('🔧 publicKey: ${_publicKey.substring(0, _publicKey.length > 8 ? 8 : _publicKey.length)}...');
+
     // If not configured, fall back to debug-only mode
     if (!isConfigured) {
-      debugPrint('⚠️  EmailJS NOT configured — code only in console.');
+      debugPrint('⚠️ EmailJS NOT configured — code only in console.');
       debugPrint('🔑 Verification code for $toEmail: $code');
       return false;
     }
@@ -81,11 +87,13 @@ class EmailService {
         return true;
       } else {
         debugPrint('❌ EmailJS error ${response.statusCode}: ${response.body}');
+        debugPrint('❌ EmailJS request: service=$_serviceId, template=$_templateId');
         debugPrint('🔑 Fallback — code for $toEmail: $code');
         return false;
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('❌ Email send failed: $e');
+      debugPrint('❌ Stack trace: $stackTrace');
       debugPrint('🔑 Fallback — code for $toEmail: $code');
       return false;
     }

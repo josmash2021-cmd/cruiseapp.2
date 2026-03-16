@@ -71,6 +71,7 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "")  # e.g. "Cruise App <noreply@cruiseapp.com>"
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")  # For Directions API
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window
@@ -6371,6 +6372,155 @@ async def _scheduled_ride_dispatcher():
                                      trip.id, best.id, best_dist)
         except Exception as e:
             logging.error("[Scheduler] Error in scheduled ride dispatcher: %s", e)
+
+# ═══════════════════════════════════════════════════════
+#  NAVIGATION INSTRUCTIONS (Google Directions API)
+# ═══════════════════════════════════════════════════════
+
+@app.get("/navigation/instructions", dependencies=[Depends(_verify_api_key)])
+async def get_navigation_instructions(
+    origin_lat: float = Query(..., description="Origin latitude"),
+    origin_lng: float = Query(..., description="Origin longitude"),
+    dest_lat: float = Query(..., description="Destination latitude"),
+    dest_lng: float = Query(..., description="Destination longitude"),
+):
+    """
+    Get turn-by-turn navigation instructions from Google Directions API.
+    Returns parsed steps with distance, duration, and maneuver icons.
+    """
+    if not GOOGLE_MAPS_API_KEY:
+        raise HTTPException(503, "Navigation service not configured")
+    
+    try:
+        import urllib.request
+        import urllib.parse
+        
+        # Build Google Directions API URL
+        base_url = "https://maps.googleapis.com/maps/api/directions/json"
+        params = {
+            "origin": f"{origin_lat},{origin_lng}",
+            "destination": f"{dest_lat},{dest_lng}",
+            "mode": "driving",
+            "key": GOOGLE_MAPS_API_KEY,
+            "language": "es",  # Spanish instructions
+            "units": "imperial",  # Miles
+        }
+        
+        url = f"{base_url}?{urllib.parse.urlencode(params)}"
+        
+        # Make request to Google Directions API
+        req = urllib.request.Request(url, method="GET")
+        
+        loop = asyncio.get_event_loop()
+        def _fetch():
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    return json.loads(resp.read().decode())
+            except urllib.error.HTTPError as e:
+                raise HTTPException(e.code, f"Directions API error: {e.read().decode()}")
+        
+        data = await loop.run_in_executor(None, _fetch)
+        
+        if data.get("status") != "OK":
+            logging.warning("[NAV] Google Directions API error: %s", data.get("status"))
+            raise HTTPException(502, f"Directions API error: {data.get('status')}")
+        
+        if not data.get("routes"):
+            raise HTTPException(404, "No route found")
+        
+        # Parse route steps
+        route = data["routes"][0]
+        leg = route["legs"][0]
+        
+        instructions = []
+        total_distance_meters = leg.get("distance", {}).get("value", 0)
+        total_duration_seconds = leg.get("duration", {}).get("value", 0)
+        
+        for step in leg.get("steps", []):
+            # Parse maneuver
+            maneuver = step.get("maneuver", "")
+            nav_type = _parse_maneuver_to_type(maneuver)
+            
+            # Parse HTML instructions (clean up)
+            html_text = step.get("html_instructions", "")
+            clean_text = _clean_html_instructions(html_text)
+            
+            # Parse distance
+            step_distance_meters = step.get("distance", {}).get("value", 0)
+            step_distance_miles = step_distance_meters / 1609.344  # Convert to miles
+            
+            # Check for exit number
+            exit_number = None
+            if "exit" in maneuver:
+                # Try to extract exit number from instructions
+                import re
+                exit_match = re.search(r'exit\s+(\d+)', html_text, re.IGNORECASE)
+                if exit_match:
+                    exit_number = exit_match.group(1)
+            
+            instructions.append({
+                "type": nav_type,
+                "text": clean_text,
+                "distance_miles": round(step_distance_miles, 2),
+                "distance_meters": step_distance_meters,
+                "exit_number": exit_number,
+            })
+        
+        return {
+            "status": "OK",
+            "origin": {"lat": origin_lat, "lng": origin_lng},
+            "destination": {"lat": dest_lat, "lng": dest_lng},
+            "total_distance_miles": round(total_distance_meters / 1609.344, 2),
+            "total_duration_minutes": round(total_duration_seconds / 60),
+            "polyline": route.get("overview_polyline", {}).get("points", ""),
+            "instructions": instructions,
+            "warnings": route.get("warnings", []),
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("[NAV] Error fetching directions: %s", e)
+        logging.error("[NAV] traceback: %s", traceback.format_exc())
+        raise HTTPException(502, f"Navigation service error: {str(e)}")
+
+def _parse_maneuver_to_type(maneuver: str) -> str:
+    """Convert Google Directions maneuver to our navigation type."""
+    if not maneuver:
+        return "straight"
+    
+    maneuver = maneuver.lower()
+    
+    if "turn-left" in maneuver:
+        return "turn_left"
+    elif "turn-right" in maneuver:
+        return "turn_right"
+    elif "uturn" in maneuver:
+        return "uturn"
+    elif "roundabout" in maneuver or "rotary" in maneuver:
+        return "roundabout"
+    elif "merge" in maneuver:
+        return "merge"
+    elif "ramp" in maneuver or "exit" in maneuver:
+        return "exit"
+    elif "fork" in maneuver:
+        return "fork"
+    else:
+        return "straight"
+
+def _clean_html_instructions(html_text: str) -> str:
+    """Remove HTML tags from instructions."""
+    import re
+    # Remove HTML tags
+    text = re.sub(r'<[^>]+>', '', html_text)
+    # Replace common entities
+    text = text.replace("&nbsp;", " ")
+    text = text.replace("&amp;", "&")
+    text = text.replace("&lt;", "<")
+    text = text.replace("&gt;", ">")
+    # Clean up extra spaces
+    text = " ".join(text.split())
+    return text
 
 
 @app.on_event("startup")

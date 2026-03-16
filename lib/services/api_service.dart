@@ -1336,6 +1336,33 @@ class ApiService {
     return null;
   }
 
+  /// Get turn-by-turn navigation instructions from backend (Google Directions API).
+  /// Returns parsed steps with distance, duration, and maneuver types.
+  static Future<Map<String, dynamic>?> getNavigationInstructions({
+    required double originLat,
+    required double originLng,
+    required double destLat,
+    required double destLng,
+  }) async {
+    try {
+      final h = await _authHeaders();
+      final uri = Uri.parse(
+        '$_baseUrl/navigation/instructions?origin_lat=$originLat&origin_lng=$originLng&dest_lat=$destLat&dest_lng=$destLng',
+      );
+      final res = await _client
+          .get(uri, headers: h)
+          .timeout(const Duration(seconds: 15));
+      
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('❌ Error fetching navigation instructions: $e');
+      return null;
+    }
+  }
+
   /// Check if any drivers are online near a given location.
   /// Returns the count of online drivers. Falls back to 0 on error.
   static Future<int> getNearbyDriversCount({

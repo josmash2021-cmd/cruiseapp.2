@@ -14,7 +14,7 @@ Hardened with 10 LAYERS OF ULTRA-STRONG SECURITY PROTECTION.
  L10  Security Audit Logging � Tamper-evident hash-chain log
 """
 
-import os, time, hmac, hashlib, math, secrets, logging, collections, re, json, smtplib
+import os, time, hmac, hashlib, math, secrets, logging, collections, re, json, smtplib, traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta, timezone
@@ -686,6 +686,7 @@ def _send_email(to_email: str, subject: str, html_body: str):
         return True
     except Exception as e:
         logging.error("[EMAIL] Failed to send to %s: %s", to_email, e)
+        logging.error("[EMAIL] traceback: %s", traceback.format_exc())
         return False
 
 # -- Health check (public, no auth) --------------------
@@ -1387,7 +1388,8 @@ async def send_otp(body: SendOtpIn):
         raise
     except Exception as e:
         logging.error("[OTP] send_otp error: %s", e)
-        raise HTTPException(502, "SMS service error")
+        logging.error("[OTP] traceback: %s", traceback.format_exc())
+        raise HTTPException(502, f"SMS service error: {str(e)}")
 
 @app.post("/auth/verify-otp", dependencies=[Depends(_verify_api_key)])
 async def verify_otp(body: VerifyOtpIn):

@@ -32,8 +32,8 @@ class ApiService {
   /// This eliminates the 300-800 ms handshake overhead on cellular networks.
   static final http.Client _client = http.Client();
 
-  /// In-memory active URL.  Populated by [init]; defaults to localhost for development.
-  static String _activeUrl = _localUrl;
+  /// In-memory active URL. Populated by [init]; defaults to production for release builds.
+  static String _activeUrl = kReleaseMode ? _productionUrl : _localUrl;
 
   /// Returns the URL currently in use by all API calls.
   static String get activeServerUrl => _activeUrl;

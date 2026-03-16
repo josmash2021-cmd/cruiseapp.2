@@ -1,0 +1,9 @@
+[build]
+  base = "."
+  publish = "."
+  command = "echo 'No build command'"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/backend/:splat"
+  status = 200

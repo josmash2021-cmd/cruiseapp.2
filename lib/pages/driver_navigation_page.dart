@@ -671,17 +671,17 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
 
   Set<Marker> get _allMarkers {
     final m = <Marker>{};
-    // Calculate corrected bearing for marker rotation
-    // The car icon points UP (toward negative Y), so we add 90° to align with bearing
-    final correctedBearing = (_bearing + 90) % 360;
+    // The modern car icon points UP (front of car is at top of image)
+    // Bearing 0° = North = Up, so rotation matches bearing directly
+    // No correction needed since car faces upward in the rendered image
     m.add(
       Marker(
         markerId: const MarkerId('driver'),
         position: _pos,
         icon: _arrowIcon ?? BitmapDescriptor.defaultMarker,
-        rotation: correctedBearing,
+        rotation: _bearing,  // Car faces up, bearing 0 = North = Up
         flat: true,
-        anchor: const Offset(0.5, 0.5),
+        anchor: const Offset(0.5, 0.6),  // Anchor slightly below center so car sits ON the route line
         zIndexInt: 100,
       ),
     );

@@ -103,12 +103,12 @@ class CarIconLoader {
   static Future<BitmapDescriptor> load() => loadUber();
 
   static Future<BitmapDescriptor> loadUber() async {
-    if (_cache.containsKey('white')) return _cache['white']!;
-    // Use the Google Maps–style nav car for the driver marker on both platforms.
-    final bytes = await loadUberBytes();
+    if (_cache.containsKey('modern')) return _cache['modern']!;
+    // Use the NEW modern nav car renderer for the driver marker
+    final bytes = await _renderModernNavCarBytes();
     // ignore: deprecated_member_use
-    final descriptor = BitmapDescriptor.fromBytes(bytes!);
-    _cache['white'] = descriptor;
+    final descriptor = BitmapDescriptor.fromBytes(bytes);
+    _cache['modern'] = descriptor;
     return descriptor;
   }
 
@@ -462,11 +462,427 @@ class CarIconLoader {
   //  GOOGLE-MAPS-STYLE NAVIGATION CAR — used for the live driver marker
   // =================================================================
 
-  /// Renders a realistic 3D dark sedan marker (BMW/Audi style).
-  ///
-  /// Dark navy body, blue-tinted glass, visible 3D wheels, bright red
-  /// taillights, white headlights. Designed for 55° map tilt — the image
-  /// is intentionally tall so it looks proportional after tilt compression.
+  // ═══════════════════════════════════════════════════════════════════
+  //  MODERN NAVIGATION CAR — Improved 3D design with realistic wheels
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// Renders a modern, aerodynamic sedan with realistic wheels and proper orientation.
+  /// The car faces UP (forward) in the image, which corresponds to north/heading 0°.
+  /// With proper anchor point, the car will appear to drive forward on the map.
+  static Future<Uint8List> _renderModernNavCarBytes() async {
+    // Canvas size — taller than wide since car faces up
+    const double w = 140.0;
+    const double h = 220.0;
+    final int pw = w.toInt();
+    final int ph = h.toInt();
+
+    final rec = ui.PictureRecorder();
+    final c = Canvas(rec, Rect.fromLTWH(0, 0, w, h));
+    final cx = w / 2;
+    final cy = h / 2;
+
+    // Car dimensions (proportions for modern sedan)
+    final carW = w * 0.55;  // Car width
+    final carH = h * 0.75;  // Car height (length in 3D perspective)
+    final frontY = cy - carH * 0.45;  // Front of car (top of image)
+    final rearY = cy + carH * 0.45;   // Rear of car (bottom of image)
+
+    // ── PALETTE: Modern luxury sedan colors ──
+    const bodyColor = Color(0xFF1E3A5F);      // Deep metallic blue
+    const bodyHighlight = Color(0xFF2E5A8F);   // Lighter blue highlight
+    const bodyShadow = Color(0xFF0F1F3A);     // Dark shadow
+    const glassColor = Color(0xFF1A2535);     // Dark tinted glass
+    const glassReflect = Color(0xFF3A5065);    // Glass reflection
+    const wheelColor = Color(0xFF0D0D0D);     // Black rubber
+    const rimColor = Color(0xFFC0C0C0);       // Silver chrome rims
+    const headlightColor = Color(0xFFE0F0FF); // Bright white-blue LED
+    const taillightColor = Color(0xFFFF1A1A); // Bright red LED
+    const chromeColor = Color(0xFFE8E8E8);    // Chrome accents
+
+    // ── 1. DROP SHADOW (ground shadow) ──
+    c.drawOval(
+      Rect.fromCenter(center: Offset(cx, rearY + 15), width: carW * 1.3, height: carH * 0.25),
+      Paint()
+        ..color = const Color(0x60000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
+    );
+
+    // ── 2. WHEELS (Realistic 3D wheels with rims) ──
+    // Front wheels (near top)
+    final fWheelY = frontY + carH * 0.22;
+    final wheelW = carW * 0.28;
+    final wheelH = carW * 0.16;
+
+    for (final side in [-1.0, 1.0]) {
+      final wx = cx + side * carW * 0.55;
+      
+      // Tire (black rubber with oval shape for 3D perspective)
+      c.drawOval(
+        Rect.fromCenter(center: Offset(wx, fWheelY), width: wheelW, height: wheelH),
+        Paint()
+          ..color = wheelColor
+          ..isAntiAlias = true,
+      );
+      
+      // Tire shine/curve
+      c.drawOval(
+        Rect.fromCenter(center: Offset(wx - side * 3, fWheelY - 2), width: wheelW * 0.7, height: wheelH * 0.6),
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(wx - side * 8, fWheelY - 8),
+            Offset(wx + side * 4, fWheelY + 6),
+            [const Color(0xFF252525), const Color(0xFF0A0A0A)],
+          )
+          ..isAntiAlias = true,
+      );
+      
+      // Chrome rim
+      c.drawOval(
+        Rect.fromCenter(center: Offset(wx, fWheelY), width: wheelW * 0.55, height: wheelH * 0.55),
+        Paint()
+          ..shader = ui.Gradient.radial(
+            Offset(wx - side * 2, fWheelY - 2),
+            wheelW * 0.3,
+            [chromeColor, const Color(0xFF808080), const Color(0xFF404040)],
+          )
+          ..isAntiAlias = true,
+      );
+      
+      // Rim center/hub
+      c.drawOval(
+        Rect.fromCenter(center: Offset(wx, fWheelY), width: wheelW * 0.25, height: wheelH * 0.25),
+        Paint()
+          ..shader = ui.Gradient.radial(
+            Offset(wx, fWheelY),
+            wheelW * 0.15,
+            [const Color(0xFFF0F0F0), const Color(0xFF909090)],
+          )
+          ..isAntiAlias = true,
+      );
+    }
+
+    // Rear wheels (near bottom)
+    final rWheelY = rearY - carH * 0.18;
+    
+    for (final side in [-1.0, 1.0]) {
+      final wx = cx + side * carW * 0.55;
+      
+      // Tire
+      c.drawOval(
+        Rect.fromCenter(center: Offset(wx, rWheelY), width: wheelW * 1.05, height: wheelH * 1.05),
+        Paint()
+          ..color = wheelColor
+          ..isAntiAlias = true,
+      );
+      
+      // Tire shine
+      c.drawOval(
+        Rect.fromCenter(center: Offset(wx - side * 3, rWheelY - 2), width: wheelW * 0.75, height: wheelH * 0.65),
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(wx - side * 8, rWheelY - 8),
+            Offset(wx + side * 4, rWheelY + 6),
+            [const Color(0xFF252525), const Color(0xFF0A0A0A)],
+          )
+          ..isAntiAlias = true,
+      );
+      
+      // Chrome rim (slightly larger for rear wheels)
+      c.drawOval(
+        Rect.fromCenter(center: Offset(wx, rWheelY), width: wheelW * 0.6, height: wheelH * 0.6),
+        Paint()
+          ..shader = ui.Gradient.radial(
+            Offset(wx - side * 2, rWheelY - 2),
+            wheelW * 0.32,
+            [chromeColor, const Color(0xFF808080), const Color(0xFF404040)],
+          )
+          ..isAntiAlias = true,
+      );
+      
+      // Rim center
+      c.drawOval(
+        Rect.fromCenter(center: Offset(wx, rWheelY), width: wheelW * 0.28, height: wheelH * 0.28),
+        Paint()
+          ..shader = ui.Gradient.radial(
+            Offset(wx, rWheelY),
+            wheelW * 0.16,
+            [const Color(0xFFF0F0F0), const Color(0xFF909090)],
+          )
+          ..isAntiAlias = true,
+      );
+    }
+
+    // ── 3. CAR BODY (Modern aerodynamic shape) ──
+    // Main body path — sleek, curved, non-boxy
+    final body = Path();
+    
+    // Front nose (hood) — rounded and aerodynamic
+    body.moveTo(cx, frontY - 5);
+    body.cubicTo(
+      cx + carW * 0.35, frontY - 2,
+      cx + carW * 0.65, frontY + carH * 0.08,
+      cx + carW * 0.52, frontY + carH * 0.15,
+    );
+    
+    // Front fenders to windshield
+    body.cubicTo(
+      cx + carW * 0.48, frontY + carH * 0.18,
+      cx + carW * 0.45, frontY + carH * 0.22,
+      cx + carW * 0.42, frontY + carH * 0.28,
+    );
+    
+    // Roof line — sleek coupe style
+    body.lineTo(cx + carW * 0.38, cy - carH * 0.05);
+    body.cubicTo(
+      cx + carW * 0.32, cy + carH * 0.05,
+      cx + carW * 0.28, cy + carH * 0.15,
+      cx + carW * 0.25, rearY - carH * 0.25,
+    );
+    
+    // Rear pillar curve
+    body.cubicTo(
+      cx + carW * 0.22, rearY - carH * 0.12,
+      cx + carW * 0.18, rearY - 5,
+      cx, rearY + 3,
+    );
+    
+    // Mirror for left side
+    body.cubicTo(
+      cx - carW * 0.18, rearY - 5,
+      cx - carW * 0.22, rearY - carH * 0.12,
+      cx - carW * 0.25, rearY - carH * 0.25,
+    );
+    body.cubicTo(
+      cx - carW * 0.28, cy + carH * 0.15,
+      cx - carW * 0.32, cy + carH * 0.05,
+      cx - carW * 0.38, cy - carH * 0.05,
+    );
+    body.lineTo(cx - carW * 0.42, frontY + carH * 0.28);
+    body.cubicTo(
+      cx - carW * 0.45, frontY + carH * 0.22,
+      cx - carW * 0.48, frontY + carH * 0.18,
+      cx - carW * 0.52, frontY + carH * 0.15,
+    );
+    body.cubicTo(
+      cx - carW * 0.65, frontY + carH * 0.08,
+      cx - carW * 0.35, frontY - 2,
+      cx, frontY - 5,
+    );
+    body.close();
+
+    // Body fill — metallic gradient
+    c.drawPath(
+      body,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx - carW * 0.5, cy),
+          Offset(cx + carW * 0.5, cy),
+          [
+            bodyShadow,
+            bodyColor.withOpacity(0.9),
+            bodyHighlight,
+            bodyColor.withOpacity(0.9),
+            bodyShadow,
+          ],
+          [0.0, 0.25, 0.5, 0.75, 1.0],
+        )
+        ..isAntiAlias = true,
+    );
+
+    // Body top-to-bottom depth gradient
+    c.drawPath(
+      body,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, frontY),
+          Offset(cx, rearY),
+          [
+            bodyHighlight.withOpacity(0.3),
+            Colors.transparent,
+            bodyShadow.withOpacity(0.2),
+            bodyShadow.withOpacity(0.4),
+          ],
+          [0.0, 0.4, 0.7, 1.0],
+        )
+        ..isAntiAlias = true,
+    );
+
+    // Body outline
+    c.drawPath(
+      body,
+      Paint()
+        ..color = const Color(0x40000000)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..isAntiAlias = true,
+    );
+
+    // ── 4. WINDSHIELD (Front glass) ──
+    final windshield = Path();
+    windshield.moveTo(cx - carW * 0.35, frontY + carH * 0.26);
+    windshield.lineTo(cx + carW * 0.35, frontY + carH * 0.26);
+    windshield.lineTo(cx + carW * 0.30, frontY + carH * 0.35);
+    windshield.lineTo(cx - carW * 0.30, frontY + carH * 0.35);
+    windshield.close();
+
+    c.drawPath(
+      windshield,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, frontY + carH * 0.26),
+          Offset(cx, frontY + carH * 0.35),
+          [glassColor, glassReflect],
+        )
+        ..isAntiAlias = true,
+    );
+
+    // Windshield reflection line
+    c.drawLine(
+      Offset(cx - carW * 0.20, frontY + carH * 0.28),
+      Offset(cx + carW * 0.15, frontY + carH * 0.28),
+      Paint()
+        ..color = Colors.white.withOpacity(0.3)
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // ── 5. ROOF (Panoramic glass roof) ──
+    final roof = Path();
+    roof.moveTo(cx - carW * 0.30, frontY + carH * 0.36);
+    roof.lineTo(cx + carW * 0.30, frontY + carH * 0.36);
+    roof.lineTo(cx + carW * 0.26, cy + carH * 0.08);
+    roof.lineTo(cx - carW * 0.26, cy + carH * 0.08);
+    roof.close();
+
+    c.drawPath(
+      roof,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx - carW * 0.2, cy - carH * 0.05),
+          Offset(cx + carW * 0.2, cy - carH * 0.05),
+          [
+            glassColor.withOpacity(0.9),
+            glassReflect.withOpacity(0.6),
+            glassColor.withOpacity(0.9),
+          ],
+          [0.0, 0.5, 1.0],
+        )
+        ..isAntiAlias = true,
+    );
+
+    // ── 6. REAR WINDOW ──
+    final rearWindow = Path();
+    rearWindow.moveTo(cx - carW * 0.26, cy + carH * 0.10);
+    rearWindow.lineTo(cx + carW * 0.26, cy + carH * 0.10);
+    rearWindow.lineTo(cx + carW * 0.20, rearY - carH * 0.20);
+    rearWindow.lineTo(cx - carW * 0.20, rearY - carH * 0.20);
+    rearWindow.close();
+
+    c.drawPath(
+      rearWindow,
+      Paint()
+        ..color = glassColor
+        ..isAntiAlias = true,
+    );
+
+    // ── 7. HEADLIGHTS (Modern LED strips) ──
+    final hlY = frontY + carH * 0.12;
+    for (final side in [-1.0, 1.0]) {
+      final hlX = cx + side * carW * 0.40;
+      
+      // Outer glow
+      c.drawOval(
+        Rect.fromCenter(center: Offset(hlX, hlY), width: carW * 0.22, height: 8),
+        Paint()
+          ..color = headlightColor.withOpacity(0.4)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      );
+      
+      // Main light
+      c.drawOval(
+        Rect.fromCenter(center: Offset(hlX, hlY), width: carW * 0.18, height: 6),
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(hlX - 10, hlY - 3),
+            Offset(hlX + 10, hlY + 3),
+            [Colors.white, headlightColor, headlightColor.withOpacity(0.8)],
+          )
+          ..isAntiAlias = true,
+      );
+    }
+
+    // ── 8. TAILLIGHTS (Modern LED strips) ──
+    final tlY = rearY - carH * 0.05;
+    for (final side in [-1.0, 1.0]) {
+      final tlX = cx + side * carW * 0.35;
+      
+      // Outer glow
+      c.drawOval(
+        Rect.fromCenter(center: Offset(tlX, tlY), width: carW * 0.20, height: 8),
+        Paint()
+          ..color = taillightColor.withOpacity(0.5)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+      );
+      
+      // Main light
+      c.drawOval(
+        Rect.fromCenter(center: Offset(tlX, tlY), width: carW * 0.16, height: 6),
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(tlX - 8, tlY - 3),
+            Offset(tlX + 8, tlY + 3),
+            [Colors.white.withOpacity(0.9), taillightColor, taillightColor.withOpacity(0.8)],
+          )
+          ..isAntiAlias = true,
+      );
+    }
+
+    // ── 9. SIDE MIRRORS ──
+    final mirrorY = frontY + carH * 0.30;
+    for (final side in [-1.0, 1.0]) {
+      final mx = cx + side * carW * 0.48;
+      
+      c.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(mx, mirrorY), width: carW * 0.12, height: carW * 0.08),
+          Radius.circular(4),
+        ),
+        Paint()
+          ..color = bodyColor.withOpacity(0.9)
+          ..isAntiAlias = true,
+      );
+    }
+
+    // ── 10. CHROME ACCENTS ──
+    // Front grille
+    c.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(cx, frontY + 8), width: carW * 0.35, height: 6),
+        Radius.circular(3),
+      ),
+      Paint()
+        ..color = chromeColor.withOpacity(0.8)
+        ..isAntiAlias = true,
+    );
+
+    // Side body line (character line)
+    c.drawLine(
+      Offset(cx - carW * 0.35, cy - carH * 0.05),
+      Offset(cx + carW * 0.35, cy - carH * 0.05),
+      Paint()
+        ..color = bodyHighlight.withOpacity(0.5)
+        ..strokeWidth = 1
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // ── ENCODE ──
+    final pic = rec.endRecording();
+    final img = await pic.toImage(pw, ph);
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
+  }
+
+  /// Legacy renderer kept for compatibility — use _renderModernNavCarBytes for new code.
   static Future<Uint8List> _renderGmapsNavCarBytes() async {
     const double lw = 30.0, lh = 82.0;
     const double scale = 5.0;

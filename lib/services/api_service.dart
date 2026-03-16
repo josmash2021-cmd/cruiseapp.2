@@ -161,12 +161,10 @@ class ApiService {
       }
     }
 
-    // Last resort: prefer Firestore tunnel URL or hardcoded tunnel over
-    // dead production, so cellular users still have a working endpoint.
-    final fallback = _dynamicTunnelUrl ?? _tunnelUrl;
-    await setServerUrl(fallback);
-    debugPrint('[ApiService] probe → fallback to $fallback');
-    return fallback;
+    // Last resort: use production URL
+    await setServerUrl(_productionUrl);
+    debugPrint('[ApiService] probe → fallback to $_productionUrl');
+    return _productionUrl;
   }
 
   // ── Internal helper ────────────────────────────────────────────────────────

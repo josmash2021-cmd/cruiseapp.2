@@ -84,11 +84,15 @@ if IS_SQLITE:
         "check_same_thread": False,
     }
 else:
+    # PostgreSQL/Railway optimized settings
     _engine_kwargs["pool_size"] = 5
     _engine_kwargs["max_overflow"] = 10
+    _engine_kwargs["pool_pre_ping"] = True  # Check connection before using
+    _engine_kwargs["pool_recycle"] = 300    # Recycle connections after 5 minutes
+    _engine_kwargs["pool_timeout"] = 30     # Wait up to 30s for connection
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
 _TUNNEL_URL_FILE = os.path.join(os.path.dirname(__file__), "tunnel_url.txt")
 class _Pwd:
     """Direct bcrypt wrapper (passlib 1.7.4 is incompatible with bcrypt 5.0)."""

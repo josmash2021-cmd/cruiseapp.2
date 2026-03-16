@@ -57,8 +57,13 @@ class ApiService {
     if (saved != null && _isLocalUrl(saved)) {
       await prefs.remove(_serverUrlPrefKey);
     }
-    // Always use Railway (production) so Chrome and phone share the same database
-    _activeUrl = _productionUrl;
+    // On web (Chrome): always force Railway — clear any stale cached URL
+    if (kIsWeb) {
+      await prefs.setString(_serverUrlPrefKey, _productionUrl);
+      _activeUrl = _productionUrl;
+    } else {
+      _activeUrl = _productionUrl;
+    }
 
     // Try to read the latest tunnel URL from Firestore (written by startup
     // script).  This is the key to working from ANY network — the tunnel
@@ -111,6 +116,15 @@ class ApiService {
       'Accept': 'application/json',
       'ngrok-skip-browser-warning': 'true',
     };
+
+    // On web (Chrome), only use production Railway — never localhost.
+    // This ensures Chrome and phone share the same database.
+    if (kIsWeb) {
+      final url = _dynamicTunnelUrl ?? _productionUrl;
+      await setServerUrl(url);
+      debugPrint('[ApiService] web probe → $url');
+      return url;
+    }
 
     // Build the full list of URLs to try — all at once, in parallel.
     // Order doesn't matter since we fire them all simultaneously.

@@ -82,7 +82,7 @@ JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window
 
 # Database engine – SQLite uses special connect_args; PostgreSQL does not
-# FORCE REDEPLOY v5 - 2026-03-16 PostgreSQL column migration fix
+# FORCE REDEPLOY v6 - 2026-03-17 OTP email fix + model_validator import
 _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {

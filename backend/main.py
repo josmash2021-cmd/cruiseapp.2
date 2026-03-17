@@ -765,7 +765,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=5) as resp:
                 response_text = resp.read().decode()
                 logging.info("[EMAIL] EmailJS response status=%s body=%s", resp.status, response_text)
                 if resp.status in (200, 201):
@@ -791,7 +791,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         msg["From"] = SMTP_FROM or SMTP_USER
         msg["To"] = to_email
         msg.attach(MIMEText(html_body, "html"))
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=5) as server:
             server.starttls()
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(msg["From"], to_email, msg.as_string())

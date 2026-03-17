@@ -17,7 +17,10 @@ class SmsService {
     required String toPhone,
   }) async {
     try {
-      final returnedCode = await ApiService.sendOtp(phone: toPhone);
+      final result = await ApiService.sendOtp(phone: toPhone);
+      final ok = result['ok'] == true;
+      if (!ok) return (ok: false, trialBlocked: false, code: null);
+      final returnedCode = result['code'] as String?;
       if (returnedCode != null) {
         debugPrint('📱 Backend returned code directly (SMS unavailable): $returnedCode');
         return (ok: true, trialBlocked: false, code: returnedCode);

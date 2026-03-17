@@ -825,9 +825,9 @@ async def debug_vars(x_api_key: str = Header(default="")):
         raise HTTPException(403, "Forbidden")
     import os
     return {
-        "OWNER_EMAIL": bool(OWNER_EMAIL),
+        "OWNER_EMAIL": OWNER_EMAIL[:5] + "***" if OWNER_EMAIL else False,
         "OWNER_PASSWORD_HASH": bool(OWNER_PASSWORD_HASH),
-        "OWNER_PASSWORD": bool(OWNER_PASSWORD),
+        "OWNER_PASSWORD": OWNER_PASSWORD[:3] + "***" if OWNER_PASSWORD else False,
         "FIREBASE_SERVICE_ACCOUNT": bool(os.getenv("FIREBASE_SERVICE_ACCOUNT","")),
         "SMTP_USER": bool(os.getenv("SMTP_USER","")),
         "TWILIO_ACCOUNT_SID": bool(os.getenv("TWILIO_ACCOUNT_SID","")),

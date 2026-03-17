@@ -1582,52 +1582,62 @@ async def send_otp(body: SendOtpIn, request: Request):
     # ── ALWAYS log code for development/troubleshooting ──
     logging.info("[OTP] Generated code for %s: %s (expires in %d seconds)", otp_key, code, _OTP_TTL)
     
-    # ── Try Email first if email is provided ──
+    # ── Try Email if email is provided ──
     if email:
-        # 1. Try Twilio Verify email channel (uses same creds as SMS - already works on Railway)
-        twilio_ok = (TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and
-                     TWILIO_AUTH_TOKEN and TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA"))
-        if twilio_ok:
-            try:
-                import urllib.parse as _up
-                _creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
-                _url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/Verifications"
-                _data = _up.urlencode({"To": email, "Channel": "email"}).encode()
-                _req = urllib.request.Request(_url, data=_data,
-                    headers={"Authorization": f"Basic {_creds}"}, method="POST")
-                with urllib.request.urlopen(_req, timeout=10) as _r:
-                    _resp = json.loads(_r.read().decode())
+        html_body = (
+            f"<div style='font-family:sans-serif;max-width:400px;margin:auto;padding:24px'>"
+            f"<h2 style='color:#1a1a2e'>Cruise Verification Code</h2>"
+            f"<p>Your verification code is:</p>"
+            f"<h1 style='font-size:40px;letter-spacing:10px;font-family:monospace;"
+            f"color:#E8C547;background:#1a1a2e;padding:16px;border-radius:8px;"
+            f"text-align:center'>{code}</h1>"
+            f"<p style='color:#666'>Expires in 5 minutes. Do not share this code.</p>"
+            f"</div>"
+        )
+
+        async def _try_send_email_bg():
+            """Try all email providers in background — does not block response."""
+            import urllib.parse as _up
+            # Twilio Verify email channel
+            twilio_ok = (TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and
+                         TWILIO_AUTH_TOKEN and TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA"))
+            if twilio_ok:
+                try:
+                    _creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+                    _url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/Verifications"
+                    _data = _up.urlencode({"To": email, "Channel": "email"}).encode()
+                    _req = urllib.request.Request(_url, data=_data,
+                        headers={"Authorization": f"Basic {_creds}"}, method="POST")
+                    loop = asyncio.get_event_loop()
+                    status, body = await loop.run_in_executor(None,
+                        lambda: (lambda r: (r.status, r.read().decode()))(urllib.request.urlopen(_req, timeout=10)))
+                    _resp = json.loads(body)
                     if _resp.get("status") in ("pending", "approved"):
-                        logging.info("[OTP] Twilio Verify email sent to %s", email)
-                        # Store a sentinel so verify-otp uses Twilio check
                         _otp_store[otp_key]["twilio_email"] = True
-                        return {"ok": True, "method": "email", "message": "Code sent to your email"}
-            except Exception as _e:
-                logging.warning("[OTP] Twilio Verify email failed: %s — trying other providers", _e)
+                        logging.info("[OTP-BG] Twilio Verify email sent to %s", email)
+                        return
+                except Exception as _e:
+                    logging.warning("[OTP-BG] Twilio Verify email failed: %s", _e)
+            # Other providers (Mailgun, SendGrid, Brevo, SMTP)
+            try:
+                loop = asyncio.get_event_loop()
+                sent = await loop.run_in_executor(None, lambda: _send_email(email,
+                    "Your Cruise Verification Code", html_body))
+                if sent:
+                    logging.info("[OTP-BG] Email sent via provider to %s", email)
+            except Exception as e:
+                logging.warning("[OTP-BG] All email providers failed for %s: %s", email, e)
 
-        # 2. Try other email providers (Mailgun, SendGrid, Brevo, SMTP)
-        try:
-            email_sent = _send_email(
-                email,
-                "Your Cruise Verification Code",
-                f"<h1>Cruise Verification</h1><p>Your verification code is:</p>"
-                f"<h2 style='font-size:32px;letter-spacing:8px;font-family:monospace;color:#1a1a2e'>{code}</h2>"
-                f"<p>This code expires in 5 minutes.</p>",
-            )
-            if email_sent:
-                logging.info("[OTP] Code sent via email provider to %s", email)
-                return {"ok": True, "method": "email", "message": "Code sent to your email"}
-        except Exception as e:
-            logging.warning("[OTP] All email providers failed: %s", e)
+        # Fire-and-forget email sending — respond immediately to avoid client timeout
+        asyncio.create_task(_try_send_email_bg())
 
-        # 3. Return code directly as last resort
-        logging.warning("[OTP] Email failed for %s, returning code directly", email)
+        # Always return the code so user can verify even if email is delayed/fails
         return {
             "ok": True,
             "method": "display",
             "message": "Use this verification code",
             "code": code,
-            "note": "Email service temporarily unavailable. Please use the code shown above."
+            "note": "Code also being sent to your email."
         }
     
     # ── Try Twilio SMS if configured and phone provided ──

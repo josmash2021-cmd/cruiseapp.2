@@ -55,6 +55,7 @@ DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")  # Separate key for admin/d
 # -- Owner-only access configuration -------------------
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "")  # Your email for dispatch access
 OWNER_PASSWORD_HASH = os.getenv("OWNER_PASSWORD_HASH", "")  # bcrypt hash of your password
+OWNER_PASSWORD = os.getenv("OWNER_PASSWORD", "")  # Plain password fallback (Railway $ issue workaround)
 DISPATCH_ALLOWED_IPS = os.getenv("DISPATCH_ALLOWED_IPS", "")  # Comma-separated IPs (empty = any IP)
 _dispatch_sessions: set[str] = set()  # Active owner sessions
 
@@ -867,7 +868,7 @@ async def dispatch_owner_login(request: Request, credentials: OwnerLogin):
             raise HTTPException(403, "Access denied from this IP address")
     
     # LAYER 2: Owner credentials verification
-    if not OWNER_EMAIL or not OWNER_PASSWORD_HASH:
+    if not OWNER_EMAIL or (not OWNER_PASSWORD_HASH and not OWNER_PASSWORD):
         _security_audit_log("dispatch_not_configured", client_ip, "owner credentials missing")
         raise HTTPException(503, "Dispatch authentication not configured")
     
@@ -875,7 +876,13 @@ async def dispatch_owner_login(request: Request, credentials: OwnerLogin):
         _security_audit_log("dispatch_wrong_email", client_ip, f"tried={credentials.email}")
         raise HTTPException(401, "Invalid credentials")
     
-    if not pwd.verify(credentials.password, OWNER_PASSWORD_HASH):
+    # Verify password: try bcrypt hash first, fall back to plain comparison
+    password_ok = False
+    if OWNER_PASSWORD_HASH:
+        password_ok = pwd.verify(credentials.password, OWNER_PASSWORD_HASH)
+    elif OWNER_PASSWORD:
+        password_ok = (credentials.password == OWNER_PASSWORD)
+    if not password_ok:
         _security_audit_log("dispatch_wrong_password", client_ip, f"email={credentials.email}")
         raise HTTPException(401, "Invalid credentials")
     

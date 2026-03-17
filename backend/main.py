@@ -783,29 +783,35 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         logging.error("[EMAIL] SMTP failed to %s: %s", to_email, e)
         return False
 
-# -- Temporary SMTP debug (remove after fix) -----------
+# -- Temporary email debug (remove after fix) ----------
 @app.get("/admin/smtp-debug")
 async def smtp_debug(x_api_key: str = Header(default="")):
     if x_api_key != API_KEY:
         raise HTTPException(403, "Forbidden")
-    import smtplib, traceback as tb
+    import urllib.request as _ur, json as _j, urllib.error as _ue
+    resend_key = os.getenv("RESEND_API_KEY", "")
     result = {
+        "RESEND_API_KEY": resend_key[:8]+"***" if resend_key else "(empty)",
         "SMTP_USER": SMTP_USER[:6]+"***" if SMTP_USER else "(empty)",
         "SMTP_PASS_len": len(SMTP_PASS),
-        "SMTP_PASS_first4": SMTP_PASS[:4] if SMTP_PASS else "(empty)",
-        "SMTP_FROM": SMTP_FROM[:20] if SMTP_FROM else "(empty)",
-        "SMTP_HOST": SMTP_HOST,
-        "SMTP_PORT": SMTP_PORT,
     }
-    try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=8) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            result["login"] = "OK"
-    except Exception as e:
-        result["login"] = "FAILED"
-        result["error"] = str(e)
-        result["traceback"] = tb.format_exc()[-400:]
+    if resend_key:
+        try:
+            payload = _j.dumps({
+                "from": "Cruise App <onboarding@resend.dev>",
+                "to": ["royalpurplecorp@gmail.com"],
+                "subject": "Cruise OTP Test",
+                "html": "<p>Test from Railway - code: 999999</p>"
+            }).encode()
+            req = _ur.Request("https://api.resend.com/emails", data=payload,
+                headers={"Content-Type":"application/json","Authorization":f"Bearer {resend_key}"},
+                method="POST")
+            with _ur.urlopen(req, timeout=8) as resp:
+                result["resend_test"] = f"OK {resp.status}: {resp.read().decode()[:80]}"
+        except _ue.HTTPError as e:
+            result["resend_test"] = f"HTTP {e.code}: {e.read().decode()[:200]}"
+        except Exception as e:
+            result["resend_test"] = f"ERROR: {str(e)[:100]}"
     return result
 
 # -- Health check (public, no auth) --------------------

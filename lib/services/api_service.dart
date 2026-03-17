@@ -506,43 +506,6 @@ class ApiService {
     return data;
   }
 
-  /// Send an OTP via the backend (which calls Twilio Verify server-side).
-  /// Returns the code if backend sends it (for debugging when SMS fails).
-  /// Throws [ApiException] on failure.
-  static Future<String?> sendOtp({required String phone}) async {
-    final res = await _client
-        .post(
-          Uri.parse('$_baseUrl/auth/send-otp'),
-          headers: _jsonHeaders(),
-          body: jsonEncode({'phone': phone}),
-        )
-        .timeout(const Duration(seconds: 15));
-    final data = _parse(res);
-    // Return code if provided (fallback when SMS unavailable)
-    return data['code'] as String?;
-  }
-
-  /// Verify an OTP code via the backend.
-  /// Returns `true` if the code is correct.
-  static Future<bool> verifyOtp({
-    required String phone,
-    required String code,
-  }) async {
-    try {
-      final res = await _client
-          .post(
-            Uri.parse('$_baseUrl/auth/verify-otp'),
-            headers: _jsonHeaders(),
-            body: jsonEncode({'phone': phone, 'code': code}),
-          )
-          .timeout(const Duration(seconds: 15));
-      final data = _parse(res);
-      return data['valid'] == true;
-    } catch (_) {
-      return false;
-    }
-  }
-
   /// Get the current user's profile (requires valid JWT).
   /// Returns user map or `null` if the token is invalid/expired.
   static Future<Map<String, dynamic>?> getMe() async {

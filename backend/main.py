@@ -71,6 +71,11 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "")  # e.g. "Cruise App <noreply@cruiseapp.com>"
+# ── EmailJS configuration (preferred over SMTP) ──
+EMAILJS_SERVICE_ID = os.getenv("EMAILJS_SERVICE_ID", "")
+EMAILJS_TEMPLATE_ID = os.getenv("EMAILJS_TEMPLATE_ID", "")
+EMAILJS_PUBLIC_KEY = os.getenv("EMAILJS_PUBLIC_KEY", "")
+EMAILJS_PRIVATE_KEY = os.getenv("EMAILJS_PRIVATE_KEY", "")  # Optional, for server-side
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")  # For Directions API
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
@@ -727,10 +732,46 @@ def _security_audit_log(event: str, ip: str, details: str = ""):
     logging.info("[AUDIT] %s | %s | %s | %s", event, ip, details, _audit_last_hash[:12])
 
 # -- Email Helper --------------------------------------
-def _send_email(to_email: str, subject: str, html_body: str):
-    """Send an email via SMTP. Returns True on success."""
+def _send_email(to_email: str, subject: str, html_body: str, template_params: dict = None):
+    """Send an email via EmailJS (preferred) or SMTP fallback. Returns True on success."""
+    # Try EmailJS first (more reliable, no SMTP setup needed)
+    if EMAILJS_SERVICE_ID and EMAILJS_TEMPLATE_ID and (EMAILJS_PUBLIC_KEY or EMAILJS_PRIVATE_KEY):
+        try:
+            import urllib.request, json
+            # Use private key for server-side if available, otherwise public key
+            api_key = EMAILJS_PRIVATE_KEY or EMAILJS_PUBLIC_KEY
+            url = "https://api.emailjs.com/api/v1.0/email/send"
+            data = {
+                "service_id": EMAILJS_SERVICE_ID,
+                "template_id": EMAILJS_TEMPLATE_ID,
+                "user_id": EMAILJS_PUBLIC_KEY or api_key,
+                "accessToken": EMAILJS_PRIVATE_KEY if EMAILJS_PRIVATE_KEY else None,
+                "template_params": template_params or {
+                    "to_email": to_email,
+                    "subject": subject,
+                    "message": html_body,
+                    "from_name": "Cruise App",
+                    "reply_to": SMTP_FROM or "noreply@cruiseapp.com"
+                }
+            }
+            # Remove None values
+            data = {k: v for k, v in data.items() if v is not None}
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(data).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                if resp.status in (200, 201):
+                    logging.info("[EMAIL] Sent via EmailJS to %s: %s", to_email, subject)
+                    return True
+        except Exception as e:
+            logging.warning("[EMAIL] EmailJS failed: %s, trying SMTP fallback", e)
+    
+    # Fallback to SMTP
     if not SMTP_USER or not SMTP_PASS:
-        logging.warning("[EMAIL] SMTP not configured � skipping email to %s", to_email)
+        logging.warning("[EMAIL] SMTP not configured — skipping email to %s", to_email)
         return False
     try:
         msg = MIMEMultipart("alternative")
@@ -742,7 +783,7 @@ def _send_email(to_email: str, subject: str, html_body: str):
             server.starttls()
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(msg["From"], to_email, msg.as_string())
-        logging.info("[EMAIL] Sent to %s: %s", to_email, subject)
+        logging.info("[EMAIL] Sent via SMTP to %s: %s", to_email, subject)
         return True
     except Exception as e:
         logging.error("[EMAIL] Failed to send to %s: %s", to_email, e)

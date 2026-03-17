@@ -821,6 +821,21 @@ async def health():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
+# -- One-time migration endpoint (protected by API key) ------------------
+@app.post("/admin/run-migrations", dependencies=[Depends(_verify_api_key)])
+async def run_migrations():
+    """Run PostgreSQL column migrations manually. Call once to fix missing columns."""
+    if IS_SQLITE:
+        return {"ok": False, "message": "Only needed for PostgreSQL"}
+    results = []
+    try:
+        async with engine.begin() as conn:
+            await _migrate_postgres(conn)
+        results.append("migrations completed")
+    except Exception as e:
+        results.append(f"error: {e}")
+    return {"ok": True, "results": results}
+
 # -- Dispatch Web Interface (owner-only, multi-layer protection) ---------
 class OwnerLogin(BaseModel):
     email: str

@@ -383,6 +383,59 @@ class ApiService {
     return data;
   }
 
+  /// Send OTP verification code via backend (supports both email and phone).
+  /// Returns `{ ok, method, code? }` — `code` is present when email/SMS fails
+  /// and the backend returns the code directly for display.
+  static Future<Map<String, dynamic>> sendOtp({
+    String? email,
+    String? phone,
+  }) async {
+    final body = <String, dynamic>{};
+    if (email != null && email.isNotEmpty) body['email'] = email;
+    if (phone != null && phone.isNotEmpty) body['phone'] = phone;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/auth/send-otp'),
+            headers: _jsonHeaders(),
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+      return {'ok': false};
+    } catch (e) {
+      debugPrint('⚠️  sendOtp failed: $e');
+      return {'ok': false};
+    }
+  }
+
+  /// Verify OTP code submitted by user.
+  /// Returns `{ valid: true/false }`.
+  static Future<bool> verifyOtp({String? email, String? phone, required String code}) async {
+    final body = <String, dynamic>{'code': code};
+    if (email != null && email.isNotEmpty) body['email'] = email;
+    if (phone != null && phone.isNotEmpty) body['phone'] = phone;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/auth/verify-otp'),
+            headers: _jsonHeaders(),
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        return data['valid'] == true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('⚠️  verifyOtp failed: $e');
+      return false;
+    }
+  }
+
   /// Check whether an email or phone is already registered.
   /// Returns `true` if the account exists.
   static Future<bool> checkExists(String identifier, {String? role}) async {

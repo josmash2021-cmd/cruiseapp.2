@@ -110,36 +110,43 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    final code = _generateCode();
-
-    final sent = await EmailService.sendVerificationCode(
-      toEmail: email,
-      code: code,
-    );
+    // Use backend to send OTP (handles EmailJS server-side + fallback)
+    final otpResult = await ApiService.sendOtp(email: email);
 
     if (!mounted) return;
     setState(() => _sending = false);
 
-    if (sent) {
-      _showSnack('Code sent to $email', const Color(0xFFE8C547));
-      Navigator.of(context).push(
-        slideFromRightRoute(VerifyCodeScreen(email: email, expectedCode: code)),
-      );
-    } else if (!EmailService.isConfigured) {
-      // Dev mode — let them through even without email
-      _showSnack(
-        'EmailJS not configured — check console for code',
-        const Color(0xFFE8C547),
-      );
-      Navigator.of(context).push(
-        slideFromRightRoute(VerifyCodeScreen(email: email, expectedCode: code)),
-      );
-    } else {
+    final ok = otpResult['ok'] == true;
+    final method = otpResult['method'] as String? ?? '';
+    final backendCode = otpResult['code'] as String?;
+
+    if (!ok) {
       _showSnack(
         'Failed to send code. Try again.',
         Colors.white.withValues(alpha: 0.6),
       );
+      return;
     }
+
+    if (method == 'email') {
+      _showSnack('Code sent to $email', const Color(0xFFE8C547));
+    } else if (backendCode != null) {
+      // Backend returned code directly — show it to user
+      _showSnack('Your code: $backendCode', const Color(0xFFE8C547));
+    } else {
+      _showSnack('Code sent', const Color(0xFFE8C547));
+    }
+
+    // Navigate to verify screen — use backend code if available, else dummy (backend verifies)
+    Navigator.of(context).push(
+      slideFromRightRoute(
+        VerifyCodeScreen(
+          email: email,
+          expectedCode: backendCode ?? '000000',
+          useBackendVerify: backendCode == null,
+        ),
+      ),
+    );
   }
 
   void _continueWithPhone(String phone) async {

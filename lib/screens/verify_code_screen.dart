@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
+import '../services/api_service.dart';
 import '../services/sms_service.dart';
 import 'create_password_screen.dart';
 
@@ -11,12 +12,14 @@ class VerifyCodeScreen extends StatefulWidget {
   final String email;
   final String expectedCode;
   final bool useVerifyApi;
+  final bool useBackendVerify;
 
   const VerifyCodeScreen({
     super.key,
     required this.email,
     required this.expectedCode,
     this.useVerifyApi = false,
+    this.useBackendVerify = false,
   });
 
   @override
@@ -93,6 +96,9 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
         toPhone: widget.email,
         code: code,
       );
+    } else if (widget.useBackendVerify) {
+      // Email — verify via backend OTP store
+      isValid = await ApiService.verifyOtp(email: widget.email, code: code);
     } else {
       // Email — local code comparison
       await Future.delayed(const Duration(milliseconds: 800));

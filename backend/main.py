@@ -737,7 +737,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
     # Try EmailJS first (more reliable, no SMTP setup needed)
     if EMAILJS_SERVICE_ID and EMAILJS_TEMPLATE_ID and (EMAILJS_PUBLIC_KEY or EMAILJS_PRIVATE_KEY):
         try:
-            import urllib.request, json
+            import urllib.request, json, urllib.error
             # Use private key for server-side if available, otherwise public key
             api_key = EMAILJS_PRIVATE_KEY or EMAILJS_PUBLIC_KEY
             url = "https://api.emailjs.com/api/v1.0/email/send"
@@ -756,6 +756,8 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
             }
             # Remove None values
             data = {k: v for k, v in data.items() if v is not None}
+            logging.info("[EMAIL] EmailJS request to %s with service=%s template=%s", 
+                         to_email, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID)
             req = urllib.request.Request(
                 url,
                 data=json.dumps(data).encode(),
@@ -763,11 +765,20 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
                 method="POST"
             )
             with urllib.request.urlopen(req, timeout=15) as resp:
+                response_text = resp.read().decode()
+                logging.info("[EMAIL] EmailJS response status=%s body=%s", resp.status, response_text)
                 if resp.status in (200, 201):
                     logging.info("[EMAIL] Sent via EmailJS to %s: %s", to_email, subject)
                     return True
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode() if hasattr(e, 'read') else str(e)
+            logging.error("[EMAIL] EmailJS HTTP error %s: %s", e.code, error_body)
         except Exception as e:
-            logging.warning("[EMAIL] EmailJS failed: %s, trying SMTP fallback", e)
+            logging.error("[EMAIL] EmailJS failed: %s", e)
+            logging.error("[EMAIL] EmailJS traceback: %s", traceback.format_exc())
+    else:
+        logging.warning("[EMAIL] EmailJS not configured: SERVICE_ID=%s TEMPLATE_ID=%s PUBLIC_KEY=%s", 
+                       bool(EMAILJS_SERVICE_ID), bool(EMAILJS_TEMPLATE_ID), bool(EMAILJS_PUBLIC_KEY))
     
     # Fallback to SMTP
     if not SMTP_USER or not SMTP_PASS:
@@ -1490,8 +1501,26 @@ async def send_otp(body: SendOtpIn, request: Request):
             if email_sent:
                 logging.info("[OTP] Code sent via email to %s", email)
                 return {"ok": True, "method": "email", "message": "Code sent to your email"}
+            else:
+                # Email failed but we have the code - return it to user for manual entry
+                logging.warning("[OTP] Email failed for %s, returning code directly", email)
+                return {
+                    "ok": True, 
+                    "method": "display", 
+                    "message": "Use this verification code",
+                    "code": code,
+                    "note": "Email service temporarily unavailable. Please use the code shown above."
+                }
         except Exception as e:
             logging.warning("[OTP] Email sending failed: %s", e)
+            # Return code directly on exception too
+            return {
+                "ok": True, 
+                "method": "display", 
+                "message": "Use this verification code", 
+                "code": code,
+                "note": "Email service temporarily unavailable. Please use the code shown above."
+            }
     
     # ── Try Twilio SMS if configured and phone provided ──
     if phone:

@@ -400,9 +400,9 @@ class ServiceArea(Base):
 try:
     import firestore_sync
     _HAS_FIRESTORE = True
-except ImportError:
+except Exception as _fs_err:
     _HAS_FIRESTORE = False
-    logging.warning("firestore_sync module not available � dispatch sync disabled")
+    logging.warning("firestore_sync not available: %s", _fs_err)
 
 async def _column_missing(conn, table: str, column: str) -> bool:
     """Check if a column is missing from a SQLite table."""

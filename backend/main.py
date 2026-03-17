@@ -77,7 +77,7 @@ JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window
 
 # Database engine – SQLite uses special connect_args; PostgreSQL does not
-# FORCE REDEPLOY v3 - 2026-03-16 OTP fallback + URL fix
+# FORCE REDEPLOY v4 - 2026-03-16 fix startup crash + DB retry
 _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {
@@ -439,26 +439,30 @@ async def _migrate_add_columns(conn):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
-        if IS_SQLITE:
-            # Enable WAL mode for better concurrency and prevent DB locks
-            await conn.execute(text("PRAGMA journal_mode=WAL"))
-            await conn.execute(text("PRAGMA synchronous=NORMAL"))
-            await conn.execute(text("PRAGMA busy_timeout=30000"))  # 30 second timeout
-            await conn.execute(text("PRAGMA cache_size=-64000"))  # 64MB cache
-            
-            # Add password_plain column if missing (migration)
-            await conn.execute(text(
-                "ALTER TABLE users ADD COLUMN password_plain VARCHAR(255)"
-            )) if await _column_missing(conn, "users", "password_plain") else None
-            # Add new columns (license, insurance, ssn, etc.) if missing
-            await _migrate_add_columns(conn)
-    
-    logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
-    
+    # Create tables — retry up to 5 times so Railway deploy survives transient DB unavailability
+    _db_ready = False
+    for _attempt in range(5):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                if IS_SQLITE:
+                    await conn.execute(text("PRAGMA journal_mode=WAL"))
+                    await conn.execute(text("PRAGMA synchronous=NORMAL"))
+                    await conn.execute(text("PRAGMA busy_timeout=30000"))
+                    await conn.execute(text("PRAGMA cache_size=-64000"))
+                    await conn.execute(text(
+                        "ALTER TABLE users ADD COLUMN password_plain VARCHAR(255)"
+                    )) if await _column_missing(conn, "users", "password_plain") else None
+                    await _migrate_add_columns(conn)
+            _db_ready = True
+            logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
+            break
+        except Exception as _e:
+            logging.warning("DB init attempt %d/5 failed: %s", _attempt + 1, _e)
+            await asyncio.sleep(3)
+    if not _db_ready:
+        logging.error("Database unavailable after 5 attempts — server starting without DB init")
+
     # Bulk-sync existing data to Firestore on startup
     if _HAS_FIRESTORE:
         try:

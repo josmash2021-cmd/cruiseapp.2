@@ -802,6 +802,31 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         logging.error("[EMAIL] traceback: %s", traceback.format_exc())
         return False
 
+# -- Temporary SMTP debug (remove after fix) -----------
+@app.get("/admin/smtp-debug")
+async def smtp_debug(x_api_key: str = Header(default="")):
+    if x_api_key != API_KEY:
+        raise HTTPException(403, "Forbidden")
+    import smtplib, traceback as tb
+    result = {
+        "SMTP_USER": SMTP_USER[:6]+"***" if SMTP_USER else "(empty)",
+        "SMTP_PASS_len": len(SMTP_PASS),
+        "SMTP_PASS_first4": SMTP_PASS[:4] if SMTP_PASS else "(empty)",
+        "SMTP_FROM": SMTP_FROM[:20] if SMTP_FROM else "(empty)",
+        "SMTP_HOST": SMTP_HOST,
+        "SMTP_PORT": SMTP_PORT,
+    }
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=8) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            result["login"] = "OK"
+    except Exception as e:
+        result["login"] = "FAILED"
+        result["error"] = str(e)
+        result["traceback"] = tb.format_exc()[-400:]
+    return result
+
 # -- Health check (public, no auth) --------------------
 @app.get("/health")
 async def health():

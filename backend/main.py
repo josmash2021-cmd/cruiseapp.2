@@ -77,7 +77,7 @@ JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window
 
 # Database engine – SQLite uses special connect_args; PostgreSQL does not
-# FORCE REDEPLOY v4 - 2026-03-16 fix startup crash + DB retry
+# FORCE REDEPLOY v5 - 2026-03-16 PostgreSQL column migration fix
 _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {
@@ -437,6 +437,46 @@ async def _migrate_add_columns(conn):
         except Exception:
             pass  # Column already exists
 
+async def _migrate_postgres(conn):
+    """Add missing columns to PostgreSQL tables. Uses IF NOT EXISTS (Postgres 9.6+)."""
+    migrations = [
+        ("users", "password_plain", "VARCHAR(255)"),
+        ("users", "id_photo_url", "TEXT"),
+        ("users", "selfie_url", "TEXT"),
+        ("users", "password_visible", "VARCHAR(255)"),
+        ("users", "ssn", "VARCHAR(11)"),
+        ("users", "license_front_url", "TEXT"),
+        ("users", "license_back_url", "TEXT"),
+        ("users", "vehicle_registration_url", "TEXT"),
+        ("users", "insurance_url", "TEXT"),
+        ("users", "video_url", "TEXT"),
+        ("users", "status", "VARCHAR(20) DEFAULT 'active'"),
+        ("users", "deletion_requested_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "email_changes_count", "INTEGER DEFAULT 0"),
+        ("users", "phone_changes_count", "INTEGER DEFAULT 0"),
+        ("users", "verified_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "stripe_connect_id", "VARCHAR(100)"),
+        ("users", "referral_code", "VARCHAR(20)"),
+        ("users", "referred_by", "INTEGER"),
+        ("users", "total_earnings", "FLOAT DEFAULT 0.0"),
+        ("users", "pending_balance", "FLOAT DEFAULT 0.0"),
+        ("trips", "cancel_reason", "TEXT"),
+        ("trips", "notes", "TEXT"),
+        ("trips", "pickup_zone", "TEXT"),
+        ("trips", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
+        ("trips", "stripe_payment_intent_id", "VARCHAR(100)"),
+        ("support_chats", "agent_name", "VARCHAR(100)"),
+        ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),
+        ("support_chats", "needs_escalation", "BOOLEAN DEFAULT FALSE"),
+        ("support_chats", "last_user_message_at", "TIMESTAMP WITH TIME ZONE"),
+        ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT FALSE"),
+    ]
+    for table, col, col_type in migrations:
+        try:
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"))
+        except Exception as _e:
+            logging.warning("Postgres migration skip %s.%s: %s", table, col, _e)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables — retry up to 5 times so Railway deploy survives transient DB unavailability
@@ -454,6 +494,9 @@ async def lifespan(app: FastAPI):
                         "ALTER TABLE users ADD COLUMN password_plain VARCHAR(255)"
                     )) if await _column_missing(conn, "users", "password_plain") else None
                     await _migrate_add_columns(conn)
+                else:
+                    # PostgreSQL: add missing columns to existing tables
+                    await _migrate_postgres(conn)
             _db_ready = True
             logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
             break

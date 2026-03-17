@@ -818,9 +818,11 @@ async def health():
     }
 
 # -- One-time migration endpoint (protected by API key) ------------------
-@app.post("/admin/run-migrations", dependencies=[Depends(_verify_api_key)])
-async def run_migrations():
+@app.post("/admin/run-migrations")
+async def run_migrations(x_api_key: str = Header(default="")):
     """Run PostgreSQL column migrations manually. Call once to fix missing columns."""
+    if x_api_key != API_KEY:
+        raise HTTPException(403, "Forbidden")
     if IS_SQLITE:
         return {"ok": False, "message": "Only needed for PostgreSQL"}
     results = []

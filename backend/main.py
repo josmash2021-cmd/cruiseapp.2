@@ -56,6 +56,7 @@ DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")  # Separate key for admin/d
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "")  # Your email for dispatch access
 OWNER_PASSWORD_HASH = os.getenv("OWNER_PASSWORD_HASH", "")  # bcrypt hash of your password
 OWNER_PASSWORD = os.getenv("OWNER_PASSWORD", "")  # Plain password fallback (Railway $ issue workaround)
+PUBLIC_URL = os.getenv("PUBLIC_URL", "https://cruiseapp2-production.up.railway.app")  # Base URL for absolute file links
 DISPATCH_ALLOWED_IPS = os.getenv("DISPATCH_ALLOWED_IPS", "")  # Comma-separated IPs (empty = any IP)
 _dispatch_sessions: set[str] = set()  # Active owner sessions
 
@@ -817,6 +818,48 @@ async def health():
         "database": db_status,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+# -- Sync pending verifications to Firestore --------------------------------
+@app.post("/admin/sync-verifications")
+async def sync_verifications_to_firestore(x_api_key: str = Header(default=""), db: AsyncSession = Depends(get_db)):
+    """Re-sync all pending verifications from PostgreSQL to Firestore. Call once to recover lost requests."""
+    if x_api_key != API_KEY:
+        raise HTTPException(403, "Forbidden")
+    if not _HAS_FIRESTORE:
+        return {"ok": False, "message": "Firestore not available"}
+    result = await db.execute(
+        select(User).where(User.verification_status.in_(["pending", "rejected"]))
+    )
+    users = result.scalars().all()
+    synced = []
+    for u in users:
+        veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == u.id))
+        veh = veh_result.scalar_one_or_none()
+        vehicle_data = None
+        if veh:
+            vehicle_data = {"make": veh.make, "model": veh.model, "year": veh.year,
+                            "color": veh.color, "plate": veh.plate}
+        try:
+            firestore_sync.sync_verification(
+                user_id=u.id,
+                first_name=u.first_name, last_name=u.last_name,
+                email=u.email, phone=u.phone or "",
+                id_document_type=u.id_document_type or "id_card",
+                role=u.role,
+                id_photo_url=u.id_photo_url,
+                selfie_url=u.selfie_url,
+                license_front_url=u.license_front_url,
+                license_back_url=u.license_back_url,
+                insurance_url=u.insurance_url,
+                video_url=u.video_url,
+                profile_photo_url=u.photo_url,
+                ssn=u.ssn,
+                vehicle=vehicle_data,
+            )
+            synced.append({"id": u.id, "name": f"{u.first_name} {u.last_name}", "status": u.verification_status})
+        except Exception as e:
+            synced.append({"id": u.id, "error": str(e)})
+    return {"ok": True, "synced": len(synced), "details": synced}
 
 # -- One-time migration endpoint (protected by API key) ------------------
 @app.post("/admin/run-migrations")
@@ -1981,7 +2024,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         fpath = os.path.join(docs_dir, fname)
         with open(fpath, "wb") as f:
             f.write(decoded)
-        saved_urls[label] = f"/uploads/documents/{fname}"
+        saved_urls[label] = f"{PUBLIC_URL}/uploads/documents/{fname}"
 
     # Handle verification video (MP4)
     video_b64 = body.get("verification_video")
@@ -1995,7 +2038,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
                     vpath = os.path.join(docs_dir, vname)
                     with open(vpath, "wb") as f:
                         f.write(video_decoded)
-                    video_url = f"/uploads/documents/{vname}"
+                    video_url = f"{PUBLIC_URL}/uploads/documents/{vname}"
                     saved_urls["video"] = video_url
             except Exception:
                 pass  # skip invalid video

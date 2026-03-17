@@ -491,42 +491,38 @@ async def _migrate_postgres(conn):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables — retry up to 3 times (fast) so Railway healthcheck passes quickly
-    _db_ready = False
-    for _attempt in range(3):
-        try:
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-                if IS_SQLITE:
-                    await conn.execute(text("PRAGMA journal_mode=WAL"))
-                    await conn.execute(text("PRAGMA synchronous=NORMAL"))
-                    await conn.execute(text("PRAGMA busy_timeout=30000"))
-                    await conn.execute(text("PRAGMA cache_size=-64000"))
-                    await conn.execute(text(
-                        "ALTER TABLE users ADD COLUMN password_plain VARCHAR(255)"
-                    )) if await _column_missing(conn, "users", "password_plain") else None
-                    await _migrate_add_columns(conn)
-                else:
-                    # PostgreSQL: add missing columns to existing tables
-                    await _migrate_postgres(conn)
-            _db_ready = True
-            logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
-            break
-        except Exception as _e:
-            logging.warning("DB init attempt %d/3 failed: %s", _attempt + 1, _e)
-            await asyncio.sleep(2)
-    if not _db_ready:
-        logging.error("Database unavailable after 3 attempts — server starting without DB init")
-
-    # Bulk-sync existing data to Firestore in background (non-blocking so healthcheck passes fast)
-    if _HAS_FIRESTORE:
-        async def _bg_sync():
+    # Run ALL initialization in background so Railway healthcheck passes immediately
+    async def _bg_init():
+        await asyncio.sleep(1)  # Let uvicorn bind the port first
+        # DB init — retry up to 5 times
+        for _attempt in range(5):
             try:
-                await asyncio.sleep(5)  # Let server fully start first
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                    if IS_SQLITE:
+                        await conn.execute(text("PRAGMA journal_mode=WAL"))
+                        await conn.execute(text("PRAGMA synchronous=NORMAL"))
+                        await conn.execute(text("PRAGMA busy_timeout=30000"))
+                        await conn.execute(text("PRAGMA cache_size=-64000"))
+                        await conn.execute(text(
+                            "ALTER TABLE users ADD COLUMN password_plain VARCHAR(255)"
+                        )) if await _column_missing(conn, "users", "password_plain") else None
+                        await _migrate_add_columns(conn)
+                    else:
+                        await _migrate_postgres(conn)
+                logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
+                break
+            except Exception as _e:
+                logging.warning("DB init attempt %d/5 failed: %s", _attempt + 1, _e)
+                await asyncio.sleep(3)
+        # Firestore bulk sync after DB is ready
+        if _HAS_FIRESTORE:
+            try:
                 await firestore_sync.bulk_sync_all(SessionLocal)
             except Exception as e:
                 logging.error("Bulk Firestore sync failed: %s", e)
-        asyncio.create_task(_bg_sync())
+
+    asyncio.create_task(_bg_init())
     yield
 
 app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None)

@@ -1318,10 +1318,13 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         email=body.email,
         phone=body.phone,
         password_hash=pwd.hash(body.password),
-        password_plain=body.password,
         photo_url=body.photo_url,
         role=role,
     )
+    try:
+        user.password_plain = body.password
+    except Exception:
+        pass
     db.add(user)
     await db.commit()
     await db.refresh(user)

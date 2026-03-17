@@ -953,6 +953,34 @@ async def get_db():
     async with SessionLocal() as session:
         yield session
 
+@app.get("/admin/firestore-status")
+async def firestore_status(x_api_key: str = Header(default="")):
+    """Diagnose why Firestore may not be available."""
+    if x_api_key != API_KEY:
+        raise HTTPException(403, "Forbidden")
+    result = {"has_firestore": _HAS_FIRESTORE}
+    if not _HAS_FIRESTORE:
+        try:
+            import importlib, traceback
+            spec = importlib.util.find_spec("firestore_sync")
+            result["module_found"] = spec is not None
+            try:
+                import firebase_admin
+                result["firebase_admin"] = True
+            except Exception as e:
+                result["firebase_admin"] = False
+                result["firebase_admin_error"] = str(e)
+            try:
+                import firestore_sync as _fs_test
+                result["import_ok"] = True
+            except Exception as e:
+                result["import_ok"] = False
+                result["import_error"] = str(e)
+                result["traceback"] = traceback.format_exc()[-500:]
+        except Exception as e:
+            result["diag_error"] = str(e)
+    return result
+
 @app.post("/admin/sync-verifications")
 async def sync_verifications_to_firestore(x_api_key: str = Header(default=""), db: AsyncSession = Depends(get_db)):
     """Re-sync all pending verifications from PostgreSQL to Firestore."""

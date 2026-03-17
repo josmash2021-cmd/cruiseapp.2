@@ -156,7 +156,7 @@ class User(Base):
     referred_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Who referred this user
     total_earnings = Column(Float, default=0.0)  # Driver total lifetime earnings
     pending_balance = Column(Float, default=0.0)  # Driver pending payout balance
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class Trip(Base):
     __tablename__ = "trips"
@@ -191,8 +191,8 @@ class Trip(Base):
     duration = Column(Integer, nullable=True)  # Trip duration in minutes
     driver_earnings = Column(Float, nullable=True)  # Driver's cut after platform fee
     platform_fee = Column(Float, nullable=True)  # Platform commission
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class DispatchOffer(Base):
     __tablename__ = "dispatch_offers"
@@ -200,7 +200,7 @@ class DispatchOffer(Base):
     trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     status = Column(String(20), default="pending")  # pending, accepted, rejected, expired
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class PayoutMethod(Base):
     __tablename__ = "payout_methods"
@@ -218,7 +218,7 @@ class RiderPaymentMethod(Base):
     display_name = Column(String(255), nullable=False)  # e.g. "Visa •••• 4242", "Chase Checking •••• 1234"
     stripe_pm_id = Column(String(100), nullable=True)  # Stripe PaymentMethod ID for cards
     is_default = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class Cashout(Base):
     __tablename__ = "cashouts"
@@ -226,7 +226,7 @@ class Cashout(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     amount = Column(Float, nullable=False)
     status = Column(String(20), default="pending")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class Vehicle(Base):
     __tablename__ = "vehicles"
@@ -241,7 +241,7 @@ class Vehicle(Base):
     vehicle_type = Column(String(30), default="comfort")  # economy, comfort, premium, vip
     inspection_valid = Column(Boolean, default=False)
     inspection_expiry = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class Document(Base):
     __tablename__ = "documents"
@@ -253,8 +253,8 @@ class Document(Base):
     doc_number = Column(String(100), nullable=True)
     expiry_date = Column(DateTime, nullable=True)
     rejection_reason = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Rating(Base):
     __tablename__ = "ratings"
@@ -265,7 +265,7 @@ class Rating(Base):
     stars = Column(Integer, nullable=False)  # 1-5
     comment = Column(Text, nullable=True)
     tip_amount = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -275,7 +275,7 @@ class ChatMessage(Base):
     receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     message = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class SupportChat(Base):
     __tablename__ = "support_chats"
@@ -289,8 +289,8 @@ class SupportChat(Base):
     supervisor_connected = Column(Boolean, default=False)
     last_user_message_at = Column(DateTime, nullable=True)  # for inactivity tracking
     locale = Column(String(5), default="en")  # en, es
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class SupportMessage(Base):
     __tablename__ = "support_messages"
@@ -300,7 +300,7 @@ class SupportMessage(Base):
     sender_role = Column(String(20), nullable=False)  # rider, driver, dispatch
     message = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -311,7 +311,7 @@ class Notification(Base):
     notif_type = Column(String(50), default="general")  # general, trip, earnings, promo, safety, document
     is_read = Column(Boolean, default=False)
     data = Column(Text, nullable=True)  # JSON extra data
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class PromoCode(Base):
     __tablename__ = "promo_codes"
@@ -322,7 +322,7 @@ class PromoCode(Base):
     current_uses = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     expires_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"
@@ -330,7 +330,7 @@ class PasswordResetToken(Base):
     code = Column(String(10), unique=True, nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     expires_at = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class Referral(Base):
     __tablename__ = "referrals"
@@ -342,7 +342,7 @@ class Referral(Base):
     referrer_bonus = Column(Float, default=10.0)
     referee_bonus = Column(Float, default=10.0)
     completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class FavoriteLocation(Base):
     __tablename__ = "favorite_locations"
@@ -353,7 +353,7 @@ class FavoriteLocation(Base):
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
     icon = Column(String(20), default="home")  # home, work, star, heart
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class DriverIncentive(Base):
     __tablename__ = "driver_incentives"
@@ -381,8 +381,8 @@ class SurgeZone(Base):
     active_riders = Column(Integer, default=0)  # Demand
     active_drivers = Column(Integer, default=0)  # Supply
     is_active = Column(Boolean, default=True)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class ServiceArea(Base):
     __tablename__ = "service_areas"
@@ -392,7 +392,7 @@ class ServiceArea(Base):
     center_lng = Column(Float, nullable=False)
     radius_km = Column(Float, default=50.0)  # Service radius
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 # -- Firestore Sync -------------------------------------
 try:

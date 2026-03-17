@@ -788,24 +788,61 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         except Exception as e:
             logging.error("[EMAIL] SendGrid failed: %s", e)
 
-    # ── 3. SMTP fallback ────────────────────────────────────────────────────
+    # ── 3. Brevo (Sendinblue) API ────────────────────────────────────────────
+    BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+    if BREVO_API_KEY:
+        try:
+            payload = _json.dumps({
+                "sender": {"name": "Cruise App", "email": "royalpurplecorp@gmail.com"},
+                "to": [{"email": to_email}],
+                "subject": subject,
+                "htmlContent": html_body,
+            }).encode()
+            req = _ureq.Request(
+                "https://api.brevo.com/v3/smtp/email",
+                data=payload,
+                headers={"Content-Type": "application/json", "api-key": BREVO_API_KEY},
+                method="POST"
+            )
+            with _ureq.urlopen(req, timeout=8) as resp:
+                logging.info("[EMAIL] Brevo OK to %s", to_email)
+                return True
+        except _uerr.HTTPError as e:
+            logging.error("[EMAIL] Brevo HTTP %s: %s", e.code, e.read().decode()[:200])
+        except Exception as e:
+            logging.error("[EMAIL] Brevo failed: %s", e)
+
+    # ── 4. SMTP fallback (tries port 587 STARTTLS then 465 SSL) ─────────────
     if not SMTP_USER or not SMTP_PASS:
         logging.warning("[EMAIL] No email provider configured for %s", to_email)
         return False
+    _from = SMTP_FROM.strip() if SMTP_FROM else SMTP_USER
+    def _build_msg():
+        m = MIMEMultipart("alternative")
+        m["Subject"] = subject
+        m["From"] = _from
+        m["To"] = to_email
+        m.attach(MIMEText(html_body, "html"))
+        return m
+    # Try STARTTLS (port 587)
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = SMTP_FROM.strip() if SMTP_FROM else SMTP_USER
-        msg["To"] = to_email
-        msg.attach(MIMEText(html_body, "html"))
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=8) as server:
             server.starttls()
             server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(msg["From"], to_email, msg.as_string())
-        logging.info("[EMAIL] Sent via SMTP to %s", to_email)
+            server.sendmail(_from, to_email, _build_msg().as_string())
+        logging.info("[EMAIL] Sent via SMTP STARTTLS to %s", to_email)
         return True
     except Exception as e:
-        logging.error("[EMAIL] SMTP failed to %s: %s", to_email, e)
+        logging.warning("[EMAIL] SMTP port %s failed: %s — trying SSL 465", SMTP_PORT, e)
+    # Try SSL (port 465)
+    try:
+        with smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=8) as server:
+            server.login(SMTP_USER, SMTP_PASS)
+            server.sendmail(_from, to_email, _build_msg().as_string())
+        logging.info("[EMAIL] Sent via SMTP SSL to %s", to_email)
+        return True
+    except Exception as e:
+        logging.error("[EMAIL] SMTP SSL also failed to %s: %s", to_email, e)
         return False
 
 # -- Health check (public, no auth) --------------------
@@ -1547,42 +1584,51 @@ async def send_otp(body: SendOtpIn, request: Request):
     
     # ── Try Email first if email is provided ──
     if email:
+        # 1. Try Twilio Verify email channel (uses same creds as SMS - already works on Railway)
+        twilio_ok = (TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and
+                     TWILIO_AUTH_TOKEN and TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA"))
+        if twilio_ok:
+            try:
+                import urllib.parse as _up
+                _creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+                _url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/Verifications"
+                _data = _up.urlencode({"To": email, "Channel": "email"}).encode()
+                _req = urllib.request.Request(_url, data=_data,
+                    headers={"Authorization": f"Basic {_creds}"}, method="POST")
+                with urllib.request.urlopen(_req, timeout=10) as _r:
+                    _resp = json.loads(_r.read().decode())
+                    if _resp.get("status") in ("pending", "approved"):
+                        logging.info("[OTP] Twilio Verify email sent to %s", email)
+                        # Store a sentinel so verify-otp uses Twilio check
+                        _otp_store[otp_key]["twilio_email"] = True
+                        return {"ok": True, "method": "email", "message": "Code sent to your email"}
+            except Exception as _e:
+                logging.warning("[OTP] Twilio Verify email failed: %s — trying other providers", _e)
+
+        # 2. Try other email providers (Mailgun, SendGrid, Brevo, SMTP)
         try:
             email_sent = _send_email(
                 email,
                 "Your Cruise Verification Code",
-                f"<h1>Cruise Verification</h1><p>Your verification code is:</p><h2 style='font-size: 24px; letter-spacing: 4px;'>{code}</h2><p>This code expires in 5 minutes.</p><p>If you didn't request this code, please ignore this email.</p>",
-                template_params={
-                    "to_email": email,
-                    "subject": "Your Cruise Verification Code",
-                    "message": f"Your verification code is: {code}",
-                    "code": code,
-                    "from_name": "Cruise App"
-                }
+                f"<h1>Cruise Verification</h1><p>Your verification code is:</p>"
+                f"<h2 style='font-size:32px;letter-spacing:8px;font-family:monospace;color:#1a1a2e'>{code}</h2>"
+                f"<p>This code expires in 5 minutes.</p>",
             )
             if email_sent:
-                logging.info("[OTP] Code sent via email to %s", email)
+                logging.info("[OTP] Code sent via email provider to %s", email)
                 return {"ok": True, "method": "email", "message": "Code sent to your email"}
-            else:
-                # Email failed but we have the code - return it to user for manual entry
-                logging.warning("[OTP] Email failed for %s, returning code directly", email)
-                return {
-                    "ok": True, 
-                    "method": "display", 
-                    "message": "Use this verification code",
-                    "code": code,
-                    "note": "Email service temporarily unavailable. Please use the code shown above."
-                }
         except Exception as e:
-            logging.warning("[OTP] Email sending failed: %s", e)
-            # Return code directly on exception too
-            return {
-                "ok": True, 
-                "method": "display", 
-                "message": "Use this verification code", 
-                "code": code,
-                "note": "Email service temporarily unavailable. Please use the code shown above."
-            }
+            logging.warning("[OTP] All email providers failed: %s", e)
+
+        # 3. Return code directly as last resort
+        logging.warning("[OTP] Email failed for %s, returning code directly", email)
+        return {
+            "ok": True,
+            "method": "display",
+            "message": "Use this verification code",
+            "code": code,
+            "note": "Email service temporarily unavailable. Please use the code shown above."
+        }
     
     # ── Try Twilio SMS if configured and phone provided ──
     if phone:
@@ -1659,42 +1705,52 @@ async def send_otp(body: SendOtpIn, request: Request):
 
 @app.post("/auth/verify-otp", dependencies=[Depends(_verify_api_key)])
 async def verify_otp(body: VerifyOtpIn):
-    """Check a verification code. Tries Verify API first, then local store."""
+    """Check a verification code. Tries Twilio Verify API first, then local store."""
     import urllib.request, urllib.parse
-    phone = body.phone.strip()
-    code = body.code.strip()
-    if not phone or not code:
-        raise HTTPException(400, "Phone and code required")
+    phone = (body.phone or "").strip()
+    email = (body.email or "").strip().lower()
+    code  = body.code.strip()
+    otp_key = phone if phone else email
+    if not otp_key or not code:
+        raise HTTPException(400, "Phone or email, and code required")
 
-    # ── Try Verify API if configured ──
-    if TWILIO_ACCOUNT_SID.startswith("AC") and TWILIO_SERVICE_SID.startswith("VA"):
-        creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
-        url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/VerificationCheck"
-        data = urllib.parse.urlencode({"To": phone, "Code": code}).encode()
-        req = urllib.request.Request(url, data=data, headers={
-            "Authorization": f"Basic {creds}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }, method="POST")
-        try:
-            loop = asyncio.get_event_loop()
-            def _do_verify():
-                try:
-                    with urllib.request.urlopen(req, timeout=15) as resp:
-                        return resp.status, resp.read().decode()
-                except urllib.error.HTTPError as e:
-                    return e.code, e.read().decode()
-            status, resp_body = await loop.run_in_executor(None, _do_verify)
-            if status == 200:
-                data_json = json.loads(resp_body)
-                if data_json.get("status") == "approved":
-                    return {"valid": True}
-        except Exception as e:
-            logging.warning("[OTP] Verify API check error: %s", e)
+    twilio_verify_ok = (TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and
+                        TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA"))
 
-    # ── Check local OTP store (for codes sent via Messages API) ──
-    entry = _otp_store.get(phone)
+    # ── 1. Twilio Verify API (phone SMS or email channel) ──
+    if twilio_verify_ok:
+        to = phone if phone else email
+        # Only call Twilio Verify if we sent via Twilio (sentinel flag or it's a phone)
+        entry = _otp_store.get(otp_key, {})
+        use_twilio = bool(phone) or entry.get("twilio_email", False)
+        if use_twilio:
+            creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+            url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/VerificationCheck"
+            data = urllib.parse.urlencode({"To": to, "Code": code}).encode()
+            req = urllib.request.Request(url, data=data, headers={
+                "Authorization": f"Basic {creds}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            }, method="POST")
+            try:
+                loop = asyncio.get_event_loop()
+                def _do_verify():
+                    try:
+                        with urllib.request.urlopen(req, timeout=15) as resp:
+                            return resp.status, resp.read().decode()
+                    except urllib.error.HTTPError as e:
+                        return e.code, e.read().decode()
+                status, resp_body = await loop.run_in_executor(None, _do_verify)
+                if status == 200:
+                    if json.loads(resp_body).get("status") == "approved":
+                        _otp_store.pop(otp_key, None)
+                        return {"valid": True}
+            except Exception as e:
+                logging.warning("[OTP] Twilio Verify check error: %s", e)
+
+    # ── 2. Local OTP store (for codes sent directly) ──
+    entry = _otp_store.get(otp_key)
     if entry and entry["code"] == code and entry["expires"] > time.time():
-        del _otp_store[phone]  # one-time use
+        _otp_store.pop(otp_key, None)
         return {"valid": True}
 
     return {"valid": False}

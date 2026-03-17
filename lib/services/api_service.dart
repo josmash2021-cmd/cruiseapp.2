@@ -24,7 +24,7 @@ class ApiService {
   static const String _localUrl = 'http://localhost:8000';
 
   /// Production Railway URL — works from any network (cellular, WiFi, etc.)
-  static const String _productionUrl = 'https://www.cruiseinride.com';
+  static const String _productionUrl = 'https://cruiseapp2-production.up.railway.app';
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 

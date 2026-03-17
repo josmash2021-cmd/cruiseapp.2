@@ -212,12 +212,22 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       );
-    } else if (!SmsService.isConfigured) {
-      _showSnack('Twilio not configured', const Color(0xFFE8C547));
     } else {
+      // Backend OTP failed — generate local code and show it to user
+      final fallbackCode = _generateCode();
+      debugPrint('📱 FALLBACK CODE for $normalizedPhone: $fallbackCode');
       _showSnack(
-        'Failed to send code. Try again.',
-        Colors.white.withValues(alpha: 0.6),
+        'SMS unavailable. Use code: $fallbackCode',
+        const Color(0xFFE8C547),
+      );
+      Navigator.of(context).push(
+        slideFromRightRoute(
+          VerifyCodeScreen(
+            email: normalizedPhone,
+            expectedCode: fallbackCode,
+            useVerifyApi: false,
+          ),
+        ),
       );
     }
   }

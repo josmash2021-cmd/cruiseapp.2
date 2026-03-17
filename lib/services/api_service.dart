@@ -119,13 +119,11 @@ class ApiService {
     };
 
     // Build the full list of URLs to try — all at once, in parallel.
-    // Order doesn't matter since we fire them all simultaneously.
-    final allCandidates = candidates ?? [
-      _productionUrl,
-      if (_dynamicTunnelUrl != null) _dynamicTunnelUrl!,
-      _localUrl,
-      _activeUrl,
-    ];
+    // When Firestore has a dynamic URL, skip Railway so the configured
+    // backend always wins (Railway health returns 200 even when broken).
+    final allCandidates = candidates ?? (_dynamicTunnelUrl != null
+        ? [_dynamicTunnelUrl!, _localUrl]
+        : [_productionUrl, _localUrl, _activeUrl]);
     final urls = allCandidates
         .where((u) => u.isNotEmpty)
         .toSet()

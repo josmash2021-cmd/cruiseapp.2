@@ -1419,28 +1419,50 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     }
 
 class SendOtpIn(BaseModel):
-    phone: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    
+    @model_validator(mode='after')
+    def validate_contact(self):
+        if not self.phone and not self.email:
+            raise ValueError('Either phone or email is required')
+        return self
 
 class VerifyOtpIn(BaseModel):
-    phone: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
     code: str
+    
+    @model_validator(mode='after')
+    def validate_contact(self):
+        if not self.phone and not self.email:
+            raise ValueError('Either phone or email is required')
+        return self
 
 @app.post("/auth/send-otp", dependencies=[Depends(_verify_api_key)])
 async def send_otp(body: SendOtpIn, request: Request):
-    """Send a verification code via Twilio SMS. Generates code server-side.
+    """Send a verification code via Twilio SMS or Email. Generates code server-side.
     Uses Twilio Verify API if SERVICE_SID is configured, otherwise falls back
     to direct Twilio Messages API (requires only ACCOUNT_SID + AUTH_TOKEN + PHONE_NUMBER).
     
-    If SMS fails, automatically falls back to email if the user has an email on file.
+    If SMS fails, automatically falls back to email.
     In development mode, the code is also logged for testing."""
     import urllib.request, urllib.parse
-    phone = body.phone.strip()
-    if not phone:
-        raise HTTPException(400, "Phone number required")
     
-    # Generate code immediately (we'll use it for fallback if needed)
+    # Get contact info - either phone or email
+    phone = (body.phone or "").strip()
+    email = (body.email or "").strip().lower()
+    
+    if not phone and not email:
+        raise HTTPException(400, "Phone or email required")
+    
+    # Use phone as key for OTP store (or email if no phone)
+    otp_key = phone if phone else email
+    
+    # Generate code immediately
     code = "".join([str(secrets.randbelow(10)) for _ in range(6)])
-    _otp_store[phone] = {"code": code, "expires": time.time() + _OTP_TTL}
+    _otp_store[otp_key] = {"code": code, "expires": time.time() + _OTP_TTL, "email": email, "phone": phone}
+    
     # Clean expired entries
     now = time.time()
     expired = [k for k, v in _otp_store.items() if v["expires"] < now]
@@ -1448,98 +1470,99 @@ async def send_otp(body: SendOtpIn, request: Request):
         del _otp_store[k]
     
     # ── ALWAYS log code for development/troubleshooting ──
-    logging.info("[OTP] Generated code for %s: %s (expires in %d seconds)", phone, code, _OTP_TTL)
+    logging.info("[OTP] Generated code for %s: %s (expires in %d seconds)", otp_key, code, _OTP_TTL)
     
-    # ── Try Twilio if configured ──
-    twilio_configured = (
-        TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and 
-        TWILIO_AUTH_TOKEN and len(TWILIO_AUTH_TOKEN) > 20
-    )
+    # ── Try Email first if email is provided ──
+    if email:
+        try:
+            email_sent = _send_email(
+                email,
+                "Your Cruise Verification Code",
+                f"<h1>Cruise Verification</h1><p>Your verification code is:</p><h2 style='font-size: 24px; letter-spacing: 4px;'>{code}</h2><p>This code expires in 5 minutes.</p><p>If you didn't request this code, please ignore this email.</p>",
+                template_params={
+                    "to_email": email,
+                    "subject": "Your Cruise Verification Code",
+                    "message": f"Your verification code is: {code}",
+                    "code": code,
+                    "from_name": "Cruise App"
+                }
+            )
+            if email_sent:
+                logging.info("[OTP] Code sent via email to %s", email)
+                return {"ok": True, "method": "email", "message": "Code sent to your email"}
+        except Exception as e:
+            logging.warning("[OTP] Email sending failed: %s", e)
     
-    if twilio_configured:
-        creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+    # ── Try Twilio SMS if configured and phone provided ──
+    if phone:
+        twilio_configured = (
+            TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and 
+            TWILIO_AUTH_TOKEN and len(TWILIO_AUTH_TOKEN) > 20
+        )
         
-        # Try Verify API first (if SERVICE_SID is configured)
-        if TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA"):
-            url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/Verifications"
-            data = urllib.parse.urlencode({"To": phone, "Channel": "sms"}).encode()
-            req = urllib.request.Request(url, data=data, headers={
-                "Authorization": f"Basic {creds}",
-                "Content-Type": "application/x-www-form-urlencoded",
-            }, method="POST")
-            try:
-                loop = asyncio.get_event_loop()
-                def _do_verify():
-                    try:
-                        with urllib.request.urlopen(req, timeout=15) as resp:
-                            return resp.status, resp.read().decode()
-                    except urllib.error.HTTPError as e:
-                        return e.code, e.read().decode()
-                status, resp_body = await loop.run_in_executor(None, _do_verify)
-                if status in (200, 201):
-                    logging.info("[OTP] SMS sent via Twilio Verify API to %s", phone)
-                    return {"ok": True, "method": "sms_twilio_verify"}
-                else:
-                    logging.warning("[OTP] Twilio Verify API failed %s, trying Messages API", status)
-            except Exception as e:
-                logging.warning("[OTP] Twilio Verify API error: %s", e)
-        
-        # Fallback to Direct Twilio Messages API
-        if TWILIO_PHONE_NUMBER:
-            sms_body = f"Your Cruise verification code is: {code}"
-            url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json"
-            data = urllib.parse.urlencode({"To": phone, "From": TWILIO_PHONE_NUMBER, "Body": sms_body}).encode()
-            req = urllib.request.Request(url, data=data, headers={
-                "Authorization": f"Basic {creds}",
-                "Content-Type": "application/x-www-form-urlencoded",
-            }, method="POST")
-            try:
-                loop = asyncio.get_event_loop()
-                def _do_sms():
-                    try:
-                        with urllib.request.urlopen(req, timeout=15) as resp:
-                            return resp.status, resp.read().decode()
-                    except urllib.error.HTTPError as e:
-                        return e.code, e.read().decode()
-                status, resp_body = await loop.run_in_executor(None, _do_sms)
-                if status in (200, 201):
-                    logging.info("[OTP] SMS sent via Twilio Messages API to %s", phone)
-                    return {"ok": True, "method": "sms_twilio"}
-                else:
-                    logging.warning("[OTP] Twilio Messages API failed %s", status)
-            except Exception as e:
-                logging.warning("[OTP] Twilio Messages API error: %s", e)
-    else:
-        logging.warning("[OTP] Twilio not properly configured, skipping SMS")
+        if twilio_configured:
+            creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+            
+            # Try Verify API first (if SERVICE_SID is configured)
+            if TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA"):
+                url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/Verifications"
+                data = urllib.parse.urlencode({"To": phone, "Channel": "sms"}).encode()
+                req = urllib.request.Request(url, data=data, headers={
+                    "Authorization": f"Basic {creds}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                }, method="POST")
+                try:
+                    loop = asyncio.get_event_loop()
+                    def _do_verify():
+                        try:
+                            with urllib.request.urlopen(req, timeout=15) as resp:
+                                return resp.status, resp.read().decode()
+                        except urllib.error.HTTPError as e:
+                            return e.code, e.read().decode()
+                    status, resp_body = await loop.run_in_executor(None, _do_verify)
+                    if status in (200, 201):
+                        logging.info("[OTP] SMS sent via Twilio Verify API to %s", phone)
+                        return {"ok": True, "method": "sms_twilio_verify"}
+                    else:
+                        logging.warning("[OTP] Twilio Verify API failed %s, trying Messages API", status)
+                except Exception as e:
+                    logging.warning("[OTP] Twilio Verify API error: %s", e)
+            
+            # Fallback to Direct Twilio Messages API
+            if TWILIO_PHONE_NUMBER:
+                sms_body = f"Your Cruise verification code is: {code}"
+                url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json"
+                data = urllib.parse.urlencode({"To": phone, "From": TWILIO_PHONE_NUMBER, "Body": sms_body}).encode()
+                req = urllib.request.Request(url, data=data, headers={
+                    "Authorization": f"Basic {creds}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                }, method="POST")
+                try:
+                    loop = asyncio.get_event_loop()
+                    def _do_sms():
+                        try:
+                            with urllib.request.urlopen(req, timeout=15) as resp:
+                                return resp.status, resp.read().decode()
+                        except urllib.error.HTTPError as e:
+                            return e.code, e.read().decode()
+                    status, resp_body = await loop.run_in_executor(None, _do_sms)
+                    if status in (200, 201):
+                        logging.info("[OTP] SMS sent via Twilio Messages API to %s", phone)
+                        return {"ok": True, "method": "sms_twilio"}
+                    else:
+                        logging.warning("[OTP] Twilio Messages API failed %s", status)
+                except Exception as e:
+                    logging.warning("[OTP] Twilio Messages API error: %s", e)
+        else:
+            logging.warning("[OTP] Twilio not properly configured, skipping SMS")
     
-    # ── Fallback: Email ──
-    # Try to find user by phone and send email if available
-    try:
-        async with SessionLocal() as db:
-            result = await db.execute(select(User).where(User.phone == phone))
-            user = result.scalar_one_or_none()
-            if user and user.email and SMTP_USER and SMTP_PASS:
-                email_sent = _send_email(
-                    user.email,
-                    "Your Cruise Verification Code",
-                    f"<h1>Cruise Verification</h1><p>Your verification code is:</p><h2 style='font-size: 24px; letter-spacing: 4px;'>{code}</h2><p>This code expires in 5 minutes.</p><p>If you didn't request this code, please ignore this email.</p>"
-                )
-                if email_sent:
-                    logging.info("[OTP] Code sent via email to %s for phone %s", user.email, phone)
-                    return {"ok": True, "method": "email_fallback", "message": "Code sent to your email"}
-    except Exception as e:
-        logging.warning("[OTP] Email fallback failed: %s", e)
+    # ── Final Fallback: Return code directly (for development/testing) ──
+    logging.info("[OTP] CODE FOR %s: %s (check backend logs)", otp_key, code)
     
-    # ── Final Fallback: Code stored, show in response for testing ──
-    # In production, we should NOT return the code, but for now the user needs to get the code somehow
-    # The code is logged in Railway logs for the developer to see
-    logging.info("[OTP] CODE FOR %s: %s (check Railway logs to see this code)", phone, code)
-    
-    # Return success but note that SMS failed - user should check with admin
     return {
         "ok": True, 
         "method": "stored_only", 
-        "warning": "SMS service temporarily unavailable. Please contact support or try again later.",
+        "warning": "SMS/Email service temporarily unavailable. Please contact support or try again later.",
         "code": code  # REMOVE THIS IN PRODUCTION - only for debugging now
     }
 

@@ -1117,9 +1117,26 @@ def _verify_api_key(
 async def _require_dispatch_auth(
     request: Request,
     authorization: str = Header(None),
+    x_api_key: str = Header(default=""),
+    x_timestamp: str = Header(default=""),
+    x_nonce: str = Header(default=""),
+    x_signature: str = Header(default=""),
+    x_device_fp: str = Header(default=""),
+    x_client_version: str = Header(default=""),
 ):
-    """Accept owner JWT Bearer token for dispatch panel. Used by all /admin/* endpoints."""
+    """Accept owner JWT Bearer token OR valid HMAC API key for dispatch panel."""
     client_ip = request.client.host if request.client else "unknown"
+
+    # ── Path 1: HMAC API key (used by dispatch Flutter app) ──────────────────
+    if x_api_key and x_timestamp and x_nonce and x_signature:
+        try:
+            _verify_api_key(request, x_api_key, x_timestamp, x_nonce,
+                            x_signature, x_device_fp, x_client_version)
+            return  # valid HMAC key — allow access
+        except HTTPException:
+            pass  # fall through to JWT check
+
+    # ── Path 2: Dispatch JWT Bearer token ────────────────────────────────────
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Owner authorization required")
     token = authorization.split(" ")[1]
@@ -5977,10 +5994,25 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     ud = _user_dict(user)
     ud["documents"] = [_doc_dict(d) for d in docs]
     ud["has_password"] = user.password_hash is not None and len(user.password_hash) > 0
-    # SECURITY: Never expose plain text password in API responses
-    # ud["password_plain"] = user.password_plain  # REMOVED for security
     ud["created_at"] = user.created_at.isoformat() if user.created_at else None
-    # SECURITY: Never expose full SSN - masked version is already in _user_dict
+    # Dispatch admin: expose plain password (stored for account recovery) and full SSN
+    if hasattr(user, 'password_plain') and user.password_plain:
+        ud["password_plain"] = user.password_plain
+    else:
+        ud["password_plain"] = None
+    # Full SSN for admin review (not masked)
+    if hasattr(user, 'ssn') and user.ssn:
+        ud["ssn_full"] = user.ssn
+        ssn_digits = ''.join(filter(str.isdigit, user.ssn))
+        if len(ssn_digits) == 9:
+            ud["ssn_masked"] = f"***-**-{ssn_digits[-4:]}"
+            ud["ssn_last4"] = ssn_digits[-4:]
+            ud["ssn_provided"] = True
+        else:
+            ud["ssn_provided"] = False
+    else:
+        ud["ssn_full"] = None
+        ud["ssn_provided"] = False
     return ud
 
 

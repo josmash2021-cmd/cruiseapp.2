@@ -518,12 +518,15 @@ async def lifespan(app: FastAPI):
     if not _db_ready:
         logging.error("Database unavailable after 5 attempts — server starting without DB init")
 
-    # Bulk-sync existing data to Firestore on startup
+    # Bulk-sync existing data to Firestore in background (non-blocking so healthcheck passes fast)
     if _HAS_FIRESTORE:
-        try:
-            await firestore_sync.bulk_sync_all(SessionLocal)
-        except Exception as e:
-            logging.error("Bulk Firestore sync failed: %s", e)
+        async def _bg_sync():
+            try:
+                await asyncio.sleep(5)  # Let server fully start first
+                await firestore_sync.bulk_sync_all(SessionLocal)
+            except Exception as e:
+                logging.error("Bulk Firestore sync failed: %s", e)
+        asyncio.create_task(_bg_sync())
     yield
 
 app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None)

@@ -819,48 +819,6 @@ async def health():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-# -- Sync pending verifications to Firestore --------------------------------
-@app.post("/admin/sync-verifications")
-async def sync_verifications_to_firestore(x_api_key: str = Header(default=""), db: AsyncSession = Depends(get_db)):
-    """Re-sync all pending verifications from PostgreSQL to Firestore. Call once to recover lost requests."""
-    if x_api_key != API_KEY:
-        raise HTTPException(403, "Forbidden")
-    if not _HAS_FIRESTORE:
-        return {"ok": False, "message": "Firestore not available"}
-    result = await db.execute(
-        select(User).where(User.verification_status.in_(["pending", "rejected"]))
-    )
-    users = result.scalars().all()
-    synced = []
-    for u in users:
-        veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == u.id))
-        veh = veh_result.scalar_one_or_none()
-        vehicle_data = None
-        if veh:
-            vehicle_data = {"make": veh.make, "model": veh.model, "year": veh.year,
-                            "color": veh.color, "plate": veh.plate}
-        try:
-            firestore_sync.sync_verification(
-                user_id=u.id,
-                first_name=u.first_name, last_name=u.last_name,
-                email=u.email, phone=u.phone or "",
-                id_document_type=u.id_document_type or "id_card",
-                role=u.role,
-                id_photo_url=u.id_photo_url,
-                selfie_url=u.selfie_url,
-                license_front_url=u.license_front_url,
-                license_back_url=u.license_back_url,
-                insurance_url=u.insurance_url,
-                video_url=u.video_url,
-                profile_photo_url=u.photo_url,
-                ssn=u.ssn,
-                vehicle=vehicle_data,
-            )
-            synced.append({"id": u.id, "name": f"{u.first_name} {u.last_name}", "status": u.verification_status})
-        except Exception as e:
-            synced.append({"id": u.id, "error": str(e)})
-    return {"ok": True, "synced": len(synced), "details": synced}
-
 # -- One-time migration endpoint (protected by API key) ------------------
 @app.post("/admin/run-migrations")
 async def run_migrations(x_api_key: str = Header(default="")):
@@ -994,6 +952,35 @@ async def dispatch_interface(
 async def get_db():
     async with SessionLocal() as session:
         yield session
+
+@app.post("/admin/sync-verifications")
+async def sync_verifications_to_firestore(x_api_key: str = Header(default=""), db: AsyncSession = Depends(get_db)):
+    """Re-sync all pending verifications from PostgreSQL to Firestore."""
+    if x_api_key != API_KEY:
+        raise HTTPException(403, "Forbidden")
+    if not _HAS_FIRESTORE:
+        return {"ok": False, "message": "Firestore not available"}
+    result = await db.execute(select(User).where(User.verification_status.in_(["pending", "rejected"])))
+    users = result.scalars().all()
+    synced = []
+    for u in users:
+        veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == u.id))
+        veh = veh_result.scalar_one_or_none()
+        vehicle_data = {"make": veh.make, "model": veh.model, "year": veh.year, "color": veh.color, "plate": veh.plate} if veh else None
+        try:
+            firestore_sync.sync_verification(
+                user_id=u.id, first_name=u.first_name, last_name=u.last_name,
+                email=u.email, phone=u.phone or "",
+                id_document_type=u.id_document_type or "id_card", role=u.role,
+                id_photo_url=u.id_photo_url, selfie_url=u.selfie_url,
+                license_front_url=u.license_front_url, license_back_url=u.license_back_url,
+                insurance_url=u.insurance_url, video_url=u.video_url,
+                profile_photo_url=u.photo_url, ssn=u.ssn, vehicle=vehicle_data,
+            )
+            synced.append({"id": u.id, "name": f"{u.first_name} {u.last_name}", "status": u.verification_status})
+        except Exception as e:
+            synced.append({"id": u.id, "error": str(e)})
+    return {"ok": True, "synced": len(synced), "details": synced}
 
 async def _require_admin(
     authorization: str = Header(None),

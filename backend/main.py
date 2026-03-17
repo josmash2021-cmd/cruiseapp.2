@@ -734,72 +734,53 @@ def _security_audit_log(event: str, ip: str, details: str = ""):
 
 # -- Email Helper --------------------------------------
 def _send_email(to_email: str, subject: str, html_body: str, template_params: dict = None):
-    """Send an email via EmailJS (preferred) or SMTP fallback. Returns True on success."""
-    # Try EmailJS first (more reliable, no SMTP setup needed)
-    if EMAILJS_SERVICE_ID and EMAILJS_TEMPLATE_ID and (EMAILJS_PUBLIC_KEY or EMAILJS_PRIVATE_KEY):
+    """Send email via Resend API (preferred - works on Railway) or SMTP fallback."""
+    import urllib.request as _ureq, json as _json, urllib.error as _uerr
+
+    # ── 1. Resend API (HTTP, no socket blocks) ──────────────────────────────
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+    if RESEND_API_KEY:
         try:
-            import urllib.request, json, urllib.error
-            # Use private key for server-side if available, otherwise public key
-            api_key = EMAILJS_PRIVATE_KEY or EMAILJS_PUBLIC_KEY
-            url = "https://api.emailjs.com/api/v1.0/email/send"
-            data = {
-                "service_id": EMAILJS_SERVICE_ID,
-                "template_id": EMAILJS_TEMPLATE_ID,
-                "user_id": EMAILJS_PUBLIC_KEY or api_key,
-                "accessToken": EMAILJS_PRIVATE_KEY if EMAILJS_PRIVATE_KEY else None,
-                "template_params": template_params or {
-                    "to_email": to_email,
-                    "subject": subject,
-                    "message": html_body,
-                    "from_name": "Cruise App",
-                    "reply_to": SMTP_FROM or "noreply@cruiseapp.com"
-                }
-            }
-            # Remove None values
-            data = {k: v for k, v in data.items() if v is not None}
-            logging.info("[EMAIL] EmailJS request to %s with service=%s template=%s", 
-                         to_email, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID)
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(data).encode(),
-                headers={"Content-Type": "application/json"},
+            from_addr = "Cruise App <onboarding@resend.dev>"
+            payload = _json.dumps({
+                "from": from_addr,
+                "to": [to_email],
+                "subject": subject,
+                "html": html_body,
+            }).encode()
+            req = _ureq.Request(
+                "https://api.resend.com/emails",
+                data=payload,
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {RESEND_API_KEY}"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                response_text = resp.read().decode()
-                logging.info("[EMAIL] EmailJS response status=%s body=%s", resp.status, response_text)
-                if resp.status in (200, 201):
-                    logging.info("[EMAIL] Sent via EmailJS to %s: %s", to_email, subject)
-                    return True
-        except urllib.error.HTTPError as e:
-            error_body = e.read().decode() if hasattr(e, 'read') else str(e)
-            logging.error("[EMAIL] EmailJS HTTP error %s: %s", e.code, error_body)
+            with _ureq.urlopen(req, timeout=8) as resp:
+                body = resp.read().decode()
+                logging.info("[EMAIL] Resend OK to %s: %s", to_email, body[:80])
+                return True
+        except _uerr.HTTPError as e:
+            logging.error("[EMAIL] Resend HTTP %s: %s", e.code, e.read().decode()[:200])
         except Exception as e:
-            logging.error("[EMAIL] EmailJS failed: %s", e)
-            logging.error("[EMAIL] EmailJS traceback: %s", traceback.format_exc())
-    else:
-        logging.warning("[EMAIL] EmailJS not configured: SERVICE_ID=%s TEMPLATE_ID=%s PUBLIC_KEY=%s", 
-                       bool(EMAILJS_SERVICE_ID), bool(EMAILJS_TEMPLATE_ID), bool(EMAILJS_PUBLIC_KEY))
-    
-    # Fallback to SMTP
+            logging.error("[EMAIL] Resend failed: %s", e)
+
+    # ── 2. SMTP fallback ────────────────────────────────────────────────────
     if not SMTP_USER or not SMTP_PASS:
-        logging.warning("[EMAIL] SMTP not configured — skipping email to %s", to_email)
+        logging.warning("[EMAIL] No email provider configured for %s", to_email)
         return False
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = SMTP_FROM or SMTP_USER
+        msg["From"] = SMTP_FROM.strip() if SMTP_FROM else SMTP_USER
         msg["To"] = to_email
         msg.attach(MIMEText(html_body, "html"))
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=5) as server:
             server.starttls()
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(msg["From"], to_email, msg.as_string())
-        logging.info("[EMAIL] Sent via SMTP to %s: %s", to_email, subject)
+        logging.info("[EMAIL] Sent via SMTP to %s", to_email)
         return True
     except Exception as e:
-        logging.error("[EMAIL] Failed to send to %s: %s", to_email, e)
-        logging.error("[EMAIL] traceback: %s", traceback.format_exc())
+        logging.error("[EMAIL] SMTP failed to %s: %s", to_email, e)
         return False
 
 # -- Temporary SMTP debug (remove after fix) -----------

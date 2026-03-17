@@ -430,6 +430,13 @@ async def _migrate_add_columns(conn):
         ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT 0"),
         ("trips", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
         ("trips", "stripe_payment_intent_id", "VARCHAR(100)"),
+        ("users", "status", "VARCHAR(20) DEFAULT 'active'"),
+        ("users", "stripe_connect_id", "VARCHAR(100)"),
+        ("users", "referral_code", "VARCHAR(20)"),
+        ("users", "referred_by", "INTEGER"),
+        ("users", "total_earnings", "FLOAT DEFAULT 0.0"),
+        ("users", "pending_balance", "FLOAT DEFAULT 0.0"),
+        ("users", "verified_at", "DATETIME"),
     ]
     for table, col, col_type in new_columns:
         try:

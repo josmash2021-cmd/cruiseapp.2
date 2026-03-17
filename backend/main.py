@@ -491,9 +491,9 @@ async def _migrate_postgres(conn):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables — retry up to 5 times so Railway deploy survives transient DB unavailability
+    # Create tables — retry up to 3 times (fast) so Railway healthcheck passes quickly
     _db_ready = False
-    for _attempt in range(5):
+    for _attempt in range(3):
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
@@ -513,10 +513,10 @@ async def lifespan(app: FastAPI):
             logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
             break
         except Exception as _e:
-            logging.warning("DB init attempt %d/5 failed: %s", _attempt + 1, _e)
-            await asyncio.sleep(3)
+            logging.warning("DB init attempt %d/3 failed: %s", _attempt + 1, _e)
+            await asyncio.sleep(2)
     if not _db_ready:
-        logging.error("Database unavailable after 5 attempts — server starting without DB init")
+        logging.error("Database unavailable after 3 attempts — server starting without DB init")
 
     # Bulk-sync existing data to Firestore in background (non-blocking so healthcheck passes fast)
     if _HAS_FIRESTORE:

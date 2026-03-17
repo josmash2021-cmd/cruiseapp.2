@@ -1,7 +1,5 @@
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
-rootDirectory = "backend"
+builder = "NIXPACKS"
 
 [deploy]
 healthcheckPath = "/health"

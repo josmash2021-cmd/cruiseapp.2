@@ -49,12 +49,17 @@ def _ensure_init():
         except Exception as e:
             log.error("❌ Failed to load serviceAccountKey.json: %s", e)
 
-    # 2. Try environment variable (Railway)
+    # 2. Try environment variable (Railway) — supports raw JSON or base64-encoded JSON
     if cred is None:
-        sa_json = os.getenv("FIREBASE_SERVICE_ACCOUNT", "")
-        if sa_json:
+        sa_raw = os.getenv("FIREBASE_SERVICE_ACCOUNT", "")
+        if sa_raw:
             try:
-                import json
+                import json, base64
+                # Try base64 decode first, fall back to raw JSON
+                try:
+                    sa_json = base64.b64decode(sa_raw).decode("utf-8")
+                except Exception:
+                    sa_json = sa_raw
                 sa_dict = json.loads(sa_json)
                 cred = credentials.Certificate(sa_dict)
             except Exception as e:

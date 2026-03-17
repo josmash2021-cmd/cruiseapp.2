@@ -817,6 +817,21 @@ async def health():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
+# -- Temp debug endpoint --------------------------------------------------
+@app.get("/admin/debug-vars")
+async def debug_vars(x_api_key: str = Header(default="")):
+    if x_api_key != API_KEY:
+        raise HTTPException(403, "Forbidden")
+    import os
+    return {
+        "OWNER_EMAIL": bool(OWNER_EMAIL),
+        "OWNER_PASSWORD_HASH": bool(OWNER_PASSWORD_HASH),
+        "FIREBASE_SERVICE_ACCOUNT": bool(os.getenv("FIREBASE_SERVICE_ACCOUNT","")),
+        "SMTP_USER": bool(os.getenv("SMTP_USER","")),
+        "TWILIO_ACCOUNT_SID": bool(os.getenv("TWILIO_ACCOUNT_SID","")),
+        "JWT_SECRET": bool(os.getenv("JWT_SECRET","")),
+    }
+
 # -- One-time migration endpoint (protected by API key) ------------------
 @app.post("/admin/run-migrations")
 async def run_migrations(x_api_key: str = Header(default="")):

@@ -30,7 +30,7 @@ from fastapi import FastAPI, Depends, HTTPException, Header, Request, Query, Bod
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from jose import jwt, JWTError
 import bcrypt as _bcrypt
 from sqlalchemy import (

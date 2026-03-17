@@ -1,4 +1,4 @@
-﻿"""Cruise Ride � FastAPI Backend
+"""Cruise Ride � FastAPI Backend
 Complete implementation matching the Flutter client's ApiService endpoints.
 Hardened with 10 LAYERS OF ULTRA-STRONG SECURITY PROTECTION.
 

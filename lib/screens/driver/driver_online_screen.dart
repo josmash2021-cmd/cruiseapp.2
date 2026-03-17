@@ -2021,7 +2021,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     setState(() => _isPaused = true);
     
     // Stop polling for offers while paused
-    _offerPollTimer?.cancel();
+    _pollT?.cancel();
     
     // Show pause dialog with timer options
     showDialog(
@@ -2066,7 +2066,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void _resumeFromPause() {
     setState(() => _isPaused = false);
     _pauseTimer?.cancel();
-    _startOfferPolling(); // Resume polling
+    _startPolling(); // Resume polling
     _snack('▶️ Back online - receiving trip requests');
   }
   

@@ -74,10 +74,12 @@ class ApiService {
           .get()
           .timeout(const Duration(seconds: 4));
       if (doc.exists) {
-        final url = doc.data()?['tunnel_url'] as String?;
-        if (url != null && url.isNotEmpty && url.startsWith('https://')) {
-          _dynamicTunnelUrl = url;
-          debugPrint('[ApiService] Firestore tunnel URL: $url');
+        final raw = doc.data()?['tunnel_url'] as String? ??
+                    doc.data()?['url'] as String?;
+        if (raw != null && raw.isNotEmpty && raw.startsWith('http')) {
+          _dynamicTunnelUrl = raw;
+          _activeUrl = raw.trimRight().replaceAll(RegExp(r'/+$'), '');
+          debugPrint('[ApiService] Firestore active URL: $_activeUrl');
         }
       }
     } catch (e) {

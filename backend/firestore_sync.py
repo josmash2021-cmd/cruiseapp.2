@@ -24,15 +24,47 @@ _db = None  # Firestore client (lazy)
 _KEY_PATH = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
 
 def _ensure_init():
-    """Initialise Firebase Admin SDK once using the service account key."""
+    """Initialise Firebase Admin SDK once.
+    
+    Tries (in order):
+    1. serviceAccountKey.json file (local dev)
+    2. FIREBASE_SERVICE_ACCOUNT env var (Railway/production) — JSON string
+    """
     global _db
     if _db is not None:
         return
-    if not os.path.exists(_KEY_PATH):
-        log.warning("⚠️  serviceAccountKey.json not found — Firestore sync disabled")
-        return
     try:
-        cred = credentials.Certificate(_KEY_PATH)
+        # Already initialized by another module?
+        firebase_admin.get_app()
+        _db = firestore.client()
+        return
+    except ValueError:
+        pass  # Not yet initialized
+
+    cred = None
+    # 1. Try local file
+    if os.path.exists(_KEY_PATH):
+        try:
+            cred = credentials.Certificate(_KEY_PATH)
+        except Exception as e:
+            log.error("❌ Failed to load serviceAccountKey.json: %s", e)
+
+    # 2. Try environment variable (Railway)
+    if cred is None:
+        sa_json = os.getenv("FIREBASE_SERVICE_ACCOUNT", "")
+        if sa_json:
+            try:
+                import json
+                sa_dict = json.loads(sa_json)
+                cred = credentials.Certificate(sa_dict)
+            except Exception as e:
+                log.error("❌ Failed to load FIREBASE_SERVICE_ACCOUNT env var: %s", e)
+
+    if cred is None:
+        log.warning("⚠️  No Firebase credentials found — Firestore sync disabled")
+        return
+
+    try:
         firebase_admin.initialize_app(cred)
         _db = firestore.client()
         log.info("✅ Firestore sync initialised (project: %s)", cred.project_id)

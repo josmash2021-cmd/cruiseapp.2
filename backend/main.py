@@ -788,30 +788,38 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
 async def smtp_debug(x_api_key: str = Header(default="")):
     if x_api_key != API_KEY:
         raise HTTPException(403, "Forbidden")
+    import smtplib as _sl
+    result = {}
+    # Test Gmail SMTP
+    try:
+        with _sl.SMTP("smtp.gmail.com", 587, timeout=5) as s:
+            s.ehlo(); s.starttls()
+            result["gmail_smtp"] = "reachable"
+    except Exception as e:
+        result["gmail_smtp"] = f"blocked: {str(e)[:60]}"
+    # Test SendGrid SMTP
+    try:
+        with _sl.SMTP("smtp.sendgrid.net", 587, timeout=5) as s:
+            s.ehlo(); s.starttls()
+            result["sendgrid_smtp"] = "reachable"
+    except Exception as e:
+        result["sendgrid_smtp"] = f"blocked: {str(e)[:60]}"
+    # Test SendGrid API (no Cloudflare)
     import urllib.request as _ur, json as _j, urllib.error as _ue
-    resend_key = os.getenv("RESEND_API_KEY", "")
-    result = {
-        "RESEND_API_KEY": resend_key[:8]+"***" if resend_key else "(empty)",
-        "SMTP_USER": SMTP_USER[:6]+"***" if SMTP_USER else "(empty)",
-        "SMTP_PASS_len": len(SMTP_PASS),
-    }
-    if resend_key:
+    sendgrid_key = os.getenv("SENDGRID_API_KEY", "")
+    result["SENDGRID_API_KEY"] = sendgrid_key[:8]+"***" if sendgrid_key else "(empty)"
+    if sendgrid_key:
         try:
-            payload = _j.dumps({
-                "from": "Cruise App <onboarding@resend.dev>",
-                "to": ["royalpurplecorp@gmail.com"],
-                "subject": "Cruise OTP Test",
-                "html": "<p>Test from Railway - code: 999999</p>"
-            }).encode()
-            req = _ur.Request("https://api.resend.com/emails", data=payload,
-                headers={"Content-Type":"application/json","Authorization":f"Bearer {resend_key}"},
-                method="POST")
+            payload = _j.dumps({"personalizations":[{"to":[{"email":"royalpurplecorp@gmail.com"}]}],
+                "from":{"email":"noreply@cruiseapp.com"},"subject":"test","content":[{"type":"text/plain","value":"test"}]}).encode()
+            req = _ur.Request("https://api.sendgrid.com/v3/mail/send", data=payload,
+                headers={"Content-Type":"application/json","Authorization":f"Bearer {sendgrid_key}"},method="POST")
             with _ur.urlopen(req, timeout=8) as resp:
-                result["resend_test"] = f"OK {resp.status}: {resp.read().decode()[:80]}"
+                result["sendgrid_api"] = f"OK {resp.status}"
         except _ue.HTTPError as e:
-            result["resend_test"] = f"HTTP {e.code}: {e.read().decode()[:200]}"
+            result["sendgrid_api"] = f"HTTP {e.code}: {e.read().decode()[:100]}"
         except Exception as e:
-            result["resend_test"] = f"ERROR: {str(e)[:100]}"
+            result["sendgrid_api"] = f"ERROR: {str(e)[:80]}"
     return result
 
 # -- Health check (public, no auth) --------------------

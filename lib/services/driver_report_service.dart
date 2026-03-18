@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 
 /// Service for drivers to submit bug reports, crashes, and other issues.
@@ -16,16 +15,13 @@ class DriverReportService {
     required String message,
     String? tripId,
   }) async {
-    // Get device info
-    String deviceInfo = 'Unknown device';
+    // Simple device info without external dependencies
+    String deviceInfo = 'Unknown';
     try {
-      final deviceInfoPlugin = DeviceInfoPlugin();
       if (Platform.isIOS) {
-        final iosInfo = await deviceInfoPlugin.iosInfo;
-        deviceInfo = 'iPhone ${iosInfo.model} / iOS ${iosInfo.systemVersion}';
+        deviceInfo = 'iOS Device';
       } else if (Platform.isAndroid) {
-        final androidInfo = await deviceInfoPlugin.androidInfo;
-        deviceInfo = '${androidInfo.manufacturer} ${androidInfo.model} / Android ${androidInfo.version.release}';
+        deviceInfo = 'Android Device';
       }
     } catch (e) {
       debugPrint('[DriverReport] Could not get device info: $e');

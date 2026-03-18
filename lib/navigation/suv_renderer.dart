@@ -48,7 +48,7 @@ class SuvRenderer {
     canvas.drawOval(
       Rect.fromCenter(center: const Offset(cx, cy + 8), width: hw * 2 + 10, height: hl * 2 - 10),
       Paint()
-        ..color = Colors.black.withOpacity(0.38)
+        ..color = Colors.black.withValues(alpha: 0.38)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
     );
 
@@ -95,9 +95,9 @@ class SuvRenderer {
           begin: const Alignment(-1, 0),
           end: const Alignment(1, 0),
           colors: [
-            Colors.white.withOpacity(0.12),
+            Colors.white.withValues(alpha: 0.12),
             Colors.transparent,
-            Colors.black.withOpacity(0.10),
+            Colors.black.withValues(alpha: 0.10),
           ],
         ).createShader(Rect.fromCenter(center: const Offset(cx, cy), width: hw * 2, height: hl * 2)),
     );
@@ -131,7 +131,7 @@ class SuvRenderer {
           ..shader = LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [_goldGlow.withOpacity(0.7), _goldTrim, _goldTrim.withOpacity(0.6)],
+            colors: [_goldGlow.withValues(alpha: 0.7), _goldTrim, _goldTrim.withValues(alpha: 0.6)],
           ).createShader(stripRect.outerRect),
       );
     }
@@ -154,7 +154,7 @@ class SuvRenderer {
         ..shader = LinearGradient(
           begin: const Alignment(-0.7, -0.7),
           end: const Alignment(0.5, 0.5),
-          colors: [_glassHi.withOpacity(0.6), _glassColor, _glassColor.withOpacity(0.9)],
+          colors: [_glassHi.withValues(alpha: 0.6), _glassColor, _glassColor.withValues(alpha: 0.9)],
         ).createShader(roofRect.outerRect),
     );
     // Roof rail lines (gold)
@@ -163,7 +163,7 @@ class SuvRenderer {
         Offset(cx + side * (hw - roofInset - 2), cy - hl * 0.18),
         Offset(cx + side * (hw - roofInset - 2), cy + hl * 0.46),
         Paint()
-          ..color = _goldTrim.withOpacity(0.6)
+          ..color = _goldTrim.withValues(alpha: 0.6)
           ..strokeWidth = 2,
       );
     }
@@ -182,7 +182,7 @@ class SuvRenderer {
         ..shader = LinearGradient(
           begin: const Alignment(-0.8, -0.8),
           end: const Alignment(0.5, 0.5),
-          colors: [_glassHi.withOpacity(0.5), _glassColor],
+          colors: [_glassHi.withValues(alpha: 0.5), _glassColor],
         ).createShader(windPath.getBounds()),
     );
 
@@ -208,7 +208,7 @@ class SuvRenderer {
       canvas.drawRRect(
         RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(hx, hy), width: 30, height: 10), const Radius.circular(5)),
         Paint()
-          ..color = Colors.white.withOpacity(0.25)
+          ..color = Colors.white.withValues(alpha: 0.25)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
       );
       // Amber turn signal dot
@@ -230,7 +230,7 @@ class SuvRenderer {
     // Grille center accent (gold chevron)
     canvas.drawRect(
       Rect.fromCenter(center: Offset(cx, cy - hl + 18), width: hw * 0.5, height: 3),
-      Paint()..color = _goldTrim.withOpacity(0.7),
+      Paint()..color = _goldTrim.withValues(alpha: 0.7),
     );
 
     // ── 11. TAILLIGHT STRIP (continuous LED bar) ──────────────────────────────
@@ -247,7 +247,7 @@ class SuvRenderer {
         const Radius.circular(4),
       ),
       Paint()
-        ..color = Colors.red.withOpacity(0.3)
+        ..color = Colors.red.withValues(alpha: 0.3)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
 

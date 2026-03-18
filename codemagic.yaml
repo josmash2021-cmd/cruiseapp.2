@@ -80,29 +80,23 @@ workflows:
       - name: Install CocoaPods dependencies
         script: |
           cd ios
-          # Limpiar cache de CocoaPods
-          rm -rf ~/Library/Caches/CocoaPods
+          # Only clear project Pods (keep ~/Library/Caches/CocoaPods to reuse downloads)
           rm -rf Pods Podfile.lock
-          
-          # Configurar timeouts más largos
           export COCOAPODS_DISABLE_STATS=true
           
-          # Reintentar hasta 5 veces con esperas progresivas
-          for i in 1 2 3 4 5; do
-            echo "=== pod install attempt $i/5 ==="
-            
-            # Usar --verbose para ver exactamente dónde falla
-            if pod install --repo-update --verbose; then
+          # Reintentar hasta 3 veces con esperas progresivas
+          for i in 1 2 3; do
+            echo "=== pod install attempt $i/3 ==="
+            if pod install --repo-update; then
               echo "✅ CocoaPods installed successfully on attempt $i"
               break
             fi
-            
-            if [ $i -lt 5 ]; then
-              WAIT_TIME=$((i * 30))
+            if [ $i -lt 3 ]; then
+              WAIT_TIME=$((i * 45))
               echo "⚠️ Attempt $i failed, waiting ${WAIT_TIME}s before retry..."
               sleep $WAIT_TIME
             else
-              echo "❌ ERROR: All 5 pod install attempts failed"
+              echo "❌ ERROR: All 3 pod install attempts failed"
               exit 1
             fi
           done

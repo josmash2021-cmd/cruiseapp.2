@@ -59,6 +59,13 @@ post_install do |installer|
       config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
       config.build_settings['CODE_SIGN_IDENTITY'] = ''
       config.build_settings['EXPANDED_CODE_SIGN_IDENTITY'] = ''
+
+      # Fix GoogleMLKit / MLImage arm64 simulator linking errors.
+      # For real-device release builds this has no effect (simulator archs are excluded).
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
+
+      # Suppress "no such module" warnings from MLKit on Xcode 15+
+      config.build_settings['SWIFT_SUPPRESS_WARNINGS'] = 'YES'
     end
   end
 end

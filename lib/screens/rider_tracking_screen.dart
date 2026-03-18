@@ -885,7 +885,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     if (!mounted || _segDist.isEmpty) return;
 
     // ── Smoothly advance _traveledM toward _tgtTraveledM along the route ──
-    const chase = 0.25;
+    // 0.10 at 60fps = very smooth, no jumps (~600ms lag)
+    const chase = 0.10;
     _traveledM += (_tgtTraveledM - _traveledM) * chase;
     // Clamp small residuals
     if ((_tgtTraveledM - _traveledM).abs() < 0.05) _traveledM = _tgtTraveledM;
@@ -893,13 +894,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // Get exact position & bearing ON the route polyline (no shortcuts)
     final (pos, brg) = _posAtDist(_traveledM);
 
-    // Smooth bearing interpolation — snappy so the car turns at the
-    // actual curve, not 30 m before it.  0.55 reacts quickly yet stays
-    // visually smooth at 60 fps.
+    // Smooth bearing interpolation — 0.18 gives fluid turns at 60fps
+    // without overshooting on sharp corners.
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final nb = (_animBearing + db * 0.55) % 360;
+    final nb = (_animBearing + db * 0.18) % 360;
 
     // Only rebuild if something changed visually
     final dLat = (pos.latitude - _animPos.latitude).abs();
@@ -1359,8 +1359,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           icon: icon,
           rotation: rotation,
           anchor: const Offset(0.5, 0.5),
-          flat: false,
-          zIndexInt: 10,
+          flat: true,
+          zIndexInt: 20,
         ),
       );
     }

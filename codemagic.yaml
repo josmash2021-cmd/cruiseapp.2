@@ -226,6 +226,7 @@ workflows:
     scripts:
       - name: Generate env.dart
         script: |
+          mkdir -p lib/config
           cat > lib/config/env.dart << ENVEOF
           class Env {
             static const String apiKey = '${ENV_API_KEY}';
@@ -254,7 +255,7 @@ workflows:
           flutter pub get
       - name: Generate iOS config files
         script: |
-          flutter build ios --config-only --no-codesign
+          flutter build ios --config-only --no-pub
       - name: Install CocoaPods dependencies
         script: |
           cd ios

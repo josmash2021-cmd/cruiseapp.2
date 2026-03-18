@@ -303,7 +303,7 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.cruiseinride.app
       android_signing:
-        - keystore_path: keystore.jks
+        - keystore: keystore.jks
           keystore_password: ${KEYSTORE_PASSWORD}
           key_alias: ${KEY_ALIAS}
           key_password: ${KEY_PASSWORD}

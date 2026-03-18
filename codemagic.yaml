@@ -278,9 +278,9 @@ workflows:
           done
       - name: Flutter build IPA (Ad Hoc)
         script: |
+          xcode-project use-profiles
           flutter build ipa --release \
-            --no-tree-shake-icons \
-            --export-options-plist=/Users/builder/export_options.plist
+            --no-tree-shake-icons
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

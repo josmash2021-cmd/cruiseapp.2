@@ -5738,7 +5738,7 @@ async def admin_delete_trip(trip_id: int, db: AsyncSession = Depends(get_db)):
 @app.get("/admin/stats", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_dashboard_stats(db: AsyncSession = Depends(get_db)):
     """Dashboard statistics for the dispatch panel."""
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -6775,7 +6775,7 @@ class AdminStatsResponse(BaseModel):
 async def get_admin_stats(db: AsyncSession = Depends(get_db)):
     """Get real-time statistics for admin dashboard."""
     try:
-        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         
         # Total trips today
         trips_result = await db.execute(

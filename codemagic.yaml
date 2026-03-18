@@ -24,6 +24,7 @@ workflows:
           class Env {
             static const String apiKey = '${ENV_API_KEY}';
             static const String hmacSecret = '${ENV_HMAC_SECRET}';
+            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
             static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
             static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
             static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
@@ -220,6 +221,7 @@ workflows:
         ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
         ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
         ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
         ENV_PAYPAL_SANDBOX: "false"
         ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
         ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
@@ -231,6 +233,7 @@ workflows:
           class Env {
             static const String apiKey = '${ENV_API_KEY}';
             static const String hmacSecret = '${ENV_HMAC_SECRET}';
+            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
             static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
             static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
             static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
@@ -321,16 +324,19 @@ workflows:
         ENV_TWILIO_SID: ${ENV_TWILIO_SID}
         ENV_TWILIO_TOKEN: ${ENV_TWILIO_TOKEN}
         ENV_TWILIO_SERVICE: ${ENV_TWILIO_SERVICE}
+        ENV_GOOGLE_MAPS_KEY: ${ENV_GOOGLE_MAPS_KEY}
         ENV_PAYPAL_SANDBOX: "false"
         ENV_PAYPAL_CLIENT_ID: ${ENV_PAYPAL_CLIENT_ID}
         ENV_PAYPAL_SECRET: ${ENV_PAYPAL_SECRET}
     scripts:
       - name: Generate env.dart
         script: |
+          mkdir -p lib/config
           cat > lib/config/env.dart << ENVEOF
           class Env {
             static const String apiKey = '${ENV_API_KEY}';
             static const String hmacSecret = '${ENV_HMAC_SECRET}';
+            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
             static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
             static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
             static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
@@ -455,6 +461,7 @@ workflows:
         ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
         ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
         ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
         ENV_PAYPAL_SANDBOX: "false"
         ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
         ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
@@ -466,6 +473,7 @@ workflows:
           class Env {
             static const String apiKey = '${ENV_API_KEY}';
             static const String hmacSecret = '${ENV_HMAC_SECRET}';
+            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
             static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
             static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
             static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
@@ -523,6 +531,7 @@ workflows:
         ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
         ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
         ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
         ENV_PAYPAL_SANDBOX: "false"
         ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
         ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
@@ -534,6 +543,7 @@ workflows:
           class Env {
             static const String apiKey = '${ENV_API_KEY}';
             static const String hmacSecret = '${ENV_HMAC_SECRET}';
+            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
             static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
             static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
             static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';

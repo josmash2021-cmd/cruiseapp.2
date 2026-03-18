@@ -8,6 +8,7 @@ import '../../main.dart' show themeNotifier;
 import '../privacy_screen.dart';
 import 'driver_manage_account_screen.dart';
 import 'driver_settings_pages.dart';
+import '../../navigation/suv_preview_page.dart';
 
 /// Driver settings: Uber Driver–style layout with Account & General sections.
 class DriverSettingsScreen extends StatefulWidget {
@@ -189,6 +190,20 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                   () => Navigator.push(
                     context,
                     slideFromRightRoute(const DriverSoundsVoiceScreen()),
+                  ),
+                ),
+
+                const SizedBox(height: 28),
+
+                // ═══ VEHICLE PREVIEW ═══
+                _sectionHeader('Vehicle'),
+                _navItem(
+                  Icons.directions_car_rounded,
+                  'SUV Preview',
+                  'See your vehicle as it appears on the map',
+                  () => Navigator.push(
+                    context,
+                    slideFromRightRoute(const SuvPreviewPage()),
                   ),
                 ),
               ],

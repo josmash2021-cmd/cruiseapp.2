@@ -2373,11 +2373,13 @@ async def account_status(user: User = Depends(_get_current_user), db: AsyncSessi
 # ═══════════════════════════════════════════════════════
 
 def _trip_dict(t: Trip) -> dict:
-    # Compute approximate distance (km → mi) from pickup/dropoff coords
-    dist_km = _haversine(t.pickup_lat, t.pickup_lng, t.dropoff_lat, t.dropoff_lng)
+    try:
+        dist_km = _haversine(t.pickup_lat, t.pickup_lng, t.dropoff_lat, t.dropoff_lng)
+    except Exception:
+        dist_km = 0.0
     dist_mi = dist_km * 0.621371
-    # Estimate duration: ~2 min per mile (city driving average)
     est_duration = max(1, int(dist_mi * 2))
+    _upd = getattr(t, "updated_at", None)
     return {
         "id": t.id, "rider_id": t.rider_id, "driver_id": t.driver_id,
         "pickup_address": t.pickup_address, "dropoff_address": t.dropoff_address,
@@ -2387,16 +2389,21 @@ def _trip_dict(t: Trip) -> dict:
         "distance": round(dist_mi, 1),
         "duration": est_duration,
         "scheduled_at": t.scheduled_at.isoformat() if t.scheduled_at else None,
-        "is_airport": t.is_airport or False,
-        "airport_code": t.airport_code,
-        "terminal": t.terminal,
-        "pickup_zone": t.pickup_zone,
-        "notes": t.notes,
-        "cancel_reason": t.cancel_reason,
+        "is_airport": getattr(t, "is_airport", False) or False,
+        "airport_code": getattr(t, "airport_code", None),
+        "terminal": getattr(t, "terminal", None),
+        "pickup_zone": getattr(t, "pickup_zone", None),
+        "notes": getattr(t, "notes", None),
+        "cancel_reason": getattr(t, "cancel_reason", None),
         "payment_status": getattr(t, "payment_status", "unpaid") or "unpaid",
         "stripe_payment_intent_id": getattr(t, "stripe_payment_intent_id", None),
+        "surge_multiplier": getattr(t, "surge_multiplier", 1.0) or 1.0,
+        "tip_amount": getattr(t, "tip_amount", 0.0) or 0.0,
+        "cancellation_fee": getattr(t, "cancellation_fee", 0.0) or 0.0,
+        "driver_earnings": getattr(t, "driver_earnings", None),
+        "platform_fee": getattr(t, "platform_fee", None),
         "created_at": t.created_at.isoformat() if t.created_at else None,
-        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+        "updated_at": _upd.isoformat() if _upd else None,
     }
 
 @app.post("/trips", dependencies=[Depends(_verify_api_key)])

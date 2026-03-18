@@ -1358,13 +1358,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       if (carBytes != null) {
         if (_carAnnot != null) {
           try {
-            await pointMgr.update(_carAnnot!..geometry = mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)));
+            _carAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude));
+            _carAnnot!.iconRotate = _heading;
+            await pointMgr.update(_carAnnot!);
           } catch (_) { _carAnnot = null; }
         }
         _carAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
           image: carBytes,
           iconSize: 0.5,
+          iconRotate: _heading,
+          iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
         ));
       }
     }
@@ -2824,8 +2828,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         onMapCreated: (ctrl) async {
           _map = ctrl;
           _lastStyleDark = isDark;
-          _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+          // Polyline FIRST → route renders BELOW pins and car marker
           _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+          _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           _updateDriverAnnotation();
         },
         onScrollListener: (_) {

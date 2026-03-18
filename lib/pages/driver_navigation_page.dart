@@ -12,7 +12,7 @@ import '../models/lat_lng.dart';
 
 import '../config/map_styles.dart';
 import '../navigation/nav_state_machine.dart';
-import '../navigation/suv_renderer.dart';
+import '../navigation/car_icon_loader.dart';
 import '../navigation/route_snapper.dart';
 import '../navigation/route_service.dart';
 import '../navigation/smooth_motion.dart';
@@ -255,12 +255,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   }
 
   // =========================================================================
-  //  NAVIGATION ARROW ICON — Suburban-inspired SUV
+  //  NAVIGATION CAR ICON — compact Google-Maps style car
   // =========================================================================
 
   Future<void> _buildArrowIcon() async {
-    final raw = await SuvRenderer.render();
-    if (!mounted) return;
+    final raw = await CarIconLoader.loadUberBytes();
+    if (!mounted || raw == null) return;
     setState(() { _arrowIconBytes = raw; });
     _updateDriverAnnotation();
   }
@@ -699,14 +699,15 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
     final bytes = _arrowIconBytes;
-    final opts = mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
-      image: bytes,
-      iconRotate: _bearing,
-      iconSize: 0.38,
-    );
+    if (bytes == null) return;
     if (_driverAnnot == null) {
-      _driverAnnot = await mgr.create(opts);
+      _driverAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+        image: bytes,
+        iconRotate: _bearing,
+        iconSize: 0.5,
+        iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
+      ));
     } else {
       _driverAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude));
       _driverAnnot!.iconRotate = _bearing;
@@ -816,11 +817,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
               onMapCreated: (ctrl) async {
                 _map = ctrl;
                 _mapReady = true;
-                _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                // Polyline FIRST so route renders BELOW pins and car
                 _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
-                _updateDriverAnnotation();
-                _updateDestAnnotation();
+                _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                 _updateRouteAnnotation();
+                _updateDestAnnotation();
+                _updateDriverAnnotation();
               },
               onScrollListener: (_) => _onCameraMoveStarted(),
             ),

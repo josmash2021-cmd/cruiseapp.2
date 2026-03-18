@@ -1335,7 +1335,7 @@ class ApiService {
           Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
             'origin': '$originLat,$originLng',
             'destination': '$destLat,$destLng',
-            'key': Env.googleMapsKey,
+            'key': Env.mapsServicesKey,
             'mode': 'driving',
           });
       final res = await _client.get(uri).timeout(const Duration(seconds: 10));

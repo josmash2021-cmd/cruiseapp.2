@@ -829,6 +829,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                                 _dropoffAddress = '';
                                 _dropoffLatLng = null;
                                 _routeLoaded = false;
+                                _polylines = {};
+                                _markers = {};
                                 _airportSelection = null;
                               });
                             },

@@ -10,11 +10,14 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == docId;
     }
 
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'royalpurplecorp@gmail.com';
+    }
+
     // Config collection — read-only for all authenticated users
-    // (Cruise app reads serviceZones, pricing, etc.)
     match /config/{docId} {
       allow read: if isAuthenticated();
-      allow write: if false; // only dispatch admin writes via its own rules
+      allow write: if isAdmin();
     }
 
     match /verifications/{docId} {
@@ -22,32 +25,36 @@ service cloud.firestore {
       allow write: if isAuthenticated();
     }
     match /clients/{docId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read: if isAuthenticated() || isAdmin();
+      allow write: if isAuthenticated() || isAdmin();
     }
     match /drivers/{docId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isOwnDoc(docId);
+      allow read: if isAuthenticated() || isAdmin();
+      allow write: if isAuthenticated() && isOwnDoc(docId) || isAdmin();
     }
     match /trips/{docId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if false;
+      allow read: if isAuthenticated() || isAdmin();
+      allow create: if isAuthenticated() || isAdmin();
+      allow update: if isAuthenticated() || isAdmin();
+      allow delete: if isAdmin();
     }
     match /users/{docId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isOwnDoc(docId);
-      allow update: if isAuthenticated() && isOwnDoc(docId);
-      allow delete: if false;
+      allow read: if isAuthenticated() || isAdmin();
+      allow create: if isAuthenticated() && isOwnDoc(docId) || isAdmin();
+      allow update: if isAuthenticated() && isOwnDoc(docId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+    match /riders/{docId} {
+      allow read: if isAuthenticated() || isAdmin();
+      allow write: if isAdmin();
     }
     match /admins/{docId} {
-      allow read: if false;
-      allow write: if false;
+      allow read: if isAdmin();
+      allow write: if isAdmin();
     }
-    // Deny all else
+    // Allow all for admin during development
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if isAdmin();
     }
   }
 }

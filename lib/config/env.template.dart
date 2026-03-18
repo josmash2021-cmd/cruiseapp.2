@@ -9,8 +9,8 @@ class Env {
   static const String apiKey = 'YOUR_API_KEY';
   static const String hmacSecret = 'YOUR_HMAC_SECRET';
 
-  // ── Google Maps & Services ──
-  static const String googleMapsKey = 'YOUR_GOOGLE_MAPS_KEY';
+  // ── Google Services (Places Autocomplete, Geocoding, Directions API) ──
+  static const String mapsServicesKey = 'YOUR_GOOGLE_SERVICES_KEY';
 
   // ── EmailJS ──
   static const String emailjsServiceId = 'YOUR_EMAILJS_SERVICE_ID';

@@ -84,7 +84,7 @@ JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
 JWT_REFRESH_HOURS = 168  # 7-day refresh window
 
 # Database engine - SQLite uses special connect_args; PostgreSQL does not
-# FORCE REDEPLOY v8 - 2026-03-17 22:25 UTC - Railway server fix
+# FORCE REDEPLOY v9 - 2026-03-18 - fix missing trip columns → 500 internal server error
 _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {
@@ -437,6 +437,24 @@ async def _migrate_add_columns(conn):
         ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT 0"),
         ("trips", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
         ("trips", "stripe_payment_intent_id", "VARCHAR(100)"),
+        ("trips", "is_airport", "BOOLEAN DEFAULT 0"),
+        ("trips", "airport_code", "VARCHAR(10)"),
+        ("trips", "terminal", "VARCHAR(50)"),
+        ("trips", "surge_multiplier", "FLOAT DEFAULT 1.0"),
+        ("trips", "base_fare", "FLOAT"),
+        ("trips", "cancellation_fee", "FLOAT DEFAULT 0.0"),
+        ("trips", "tip_amount", "FLOAT DEFAULT 0.0"),
+        ("trips", "wait_time_minutes", "INTEGER DEFAULT 0"),
+        ("trips", "wait_time_charge", "FLOAT DEFAULT 0.0"),
+        ("trips", "distance", "FLOAT"),
+        ("trips", "duration", "INTEGER"),
+        ("trips", "driver_earnings", "FLOAT"),
+        ("trips", "platform_fee", "FLOAT"),
+        ("trips", "updated_at", "DATETIME"),
+        ("ratings", "tip_amount", "FLOAT DEFAULT 0.0"),
+        ("vehicles", "vin", "VARCHAR(50)"),
+        ("vehicles", "inspection_valid", "BOOLEAN DEFAULT 0"),
+        ("vehicles", "inspection_expiry", "DATETIME"),
         ("users", "status", "VARCHAR(20) DEFAULT 'active'"),
         ("users", "stripe_connect_id", "VARCHAR(100)"),
         ("users", "referral_code", "VARCHAR(20)"),
@@ -479,6 +497,24 @@ async def _migrate_postgres(conn):
         ("trips", "pickup_zone", "TEXT"),
         ("trips", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
         ("trips", "stripe_payment_intent_id", "VARCHAR(100)"),
+        ("trips", "is_airport", "BOOLEAN DEFAULT FALSE"),
+        ("trips", "airport_code", "VARCHAR(10)"),
+        ("trips", "terminal", "VARCHAR(50)"),
+        ("trips", "surge_multiplier", "FLOAT DEFAULT 1.0"),
+        ("trips", "base_fare", "FLOAT"),
+        ("trips", "cancellation_fee", "FLOAT DEFAULT 0.0"),
+        ("trips", "tip_amount", "FLOAT DEFAULT 0.0"),
+        ("trips", "wait_time_minutes", "INTEGER DEFAULT 0"),
+        ("trips", "wait_time_charge", "FLOAT DEFAULT 0.0"),
+        ("trips", "distance", "FLOAT"),
+        ("trips", "duration", "INTEGER"),
+        ("trips", "driver_earnings", "FLOAT"),
+        ("trips", "platform_fee", "FLOAT"),
+        ("trips", "updated_at", "TIMESTAMP WITH TIME ZONE DEFAULT NOW()"),
+        ("ratings", "tip_amount", "FLOAT DEFAULT 0.0"),
+        ("vehicles", "vin", "VARCHAR(50)"),
+        ("vehicles", "inspection_valid", "BOOLEAN DEFAULT FALSE"),
+        ("vehicles", "inspection_expiry", "TIMESTAMP WITH TIME ZONE"),
         ("support_chats", "agent_name", "VARCHAR(100)"),
         ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),
         ("support_chats", "needs_escalation", "BOOLEAN DEFAULT FALSE"),

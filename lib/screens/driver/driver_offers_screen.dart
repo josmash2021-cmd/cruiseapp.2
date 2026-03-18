@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import '../../models/lat_lng.dart';
+import '../../config/mapbox_config.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -39,7 +41,9 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   static const _red = Color(0xFFEA4335);
 
   final OffersController _ctrl = OffersController();
-  GoogleMapController? _map;
+  mapbox.MapboxMap? _map;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PointAnnotation? _driverAnnot;
   LatLng _driverPos = const LatLng(25.7617, -80.1918);
   bool _loading = true;
   bool _accepting = false;
@@ -69,8 +73,28 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     _goldDot.dispose();
     _pulseCtrl.dispose();
     _ctrl.dispose();
-    _map?.dispose();
     super.dispose();
+  }
+
+  Future<void> _onMapCreated(mapbox.MapboxMap controller) async {
+    _map = controller;
+    _pointAnnotMgr = await controller.annotations.createPointAnnotationManager();
+    _updateDriverAnnotation();
+  }
+
+  Future<void> _updateDriverAnnotation() async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    final bytes = _goldDot.currentBytes;
+    if (bytes == null) return;
+    if (_driverAnnot != null) {
+      try { await mgr.delete(_driverAnnot!); } catch (_) {}
+    }
+    _driverAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(_driverPos.longitude, _driverPos.latitude)),
+      image: bytes,
+      iconSize: 0.5,
+    ));
   }
 
   Future<void> _initLocation() async {
@@ -262,25 +286,13 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
         children: [
           // ── Background map ──
           Positioned.fill(
-            child: GoogleMap(
-              style: Theme.of(context).brightness == Brightness.dark
-                  ? MapStyles.darkIOS
-                  : MapStyles.lightIOS,
-              initialCameraPosition: CameraPosition(
-                target: _driverPos,
-                zoom: 14,
+            child: mapbox.MapWidget(
+              styleUri: MapboxConfig.styleDark,
+              cameraOptions: mapbox.CameraOptions(
+                center: mapbox.Point(coordinates: mapbox.Position(_driverPos.longitude, _driverPos.latitude)),
+                zoom: 14.0,
               ),
-              onMapCreated: (c) => _map = c,
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              compassEnabled: false,
-              liteModeEnabled: false,
-              markers: {
-                if (_goldDot.isReady)
-                  _goldDot.marker(_driverPos)!,
-              },
+              onMapCreated: _onMapCreated,
             ),
           ),
 

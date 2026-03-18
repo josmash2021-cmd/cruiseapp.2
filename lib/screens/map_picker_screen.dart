@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
-import '../config/map_styles.dart';
+import '../config/mapbox_config.dart';
 import '../l10n/app_localizations.dart';
+import '../models/lat_lng.dart';
 import '../services/places_service.dart';
 
 /// Full-screen map picker. User drags the map under a fixed center pin.
@@ -22,7 +23,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   static const _gold = Color(0xFFE8C547);
   final _places = PlacesService(ApiKeys.webServices);
 
-  GoogleMapController? _mapCtrl;
+  mapbox.MapboxMap? _mapCtrl;
   String _address = '';
   bool _addressIsPlaceholder = true;
   bool _loading = false;
@@ -88,8 +89,19 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     });
   }
 
-  void _onCameraMove(CameraPosition pos) {
-    _center = pos.target;
+  void _onMapIdle(mapbox.MapIdleEventData event) {
+    // Mapbox fires onMapIdle — schedule geocode
+    _scheduleGeocode();
+  }
+
+  void _onCameraChanged(mapbox.CameraChangedEventData event) {
+    // Update center on every camera change
+    final map = _mapCtrl;
+    if (map == null) return;
+    map.getCameraState().then((state) {
+      final coords = state.center.coordinates;
+      _center = LatLng(coords.lat.toDouble(), coords.lng.toDouble());
+    });
   }
 
   void _confirm() {
@@ -111,27 +123,23 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Map — Google Maps on both iOS and Android
-          GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: _center,
-                    zoom: 15,
-                  ),
-                  onMapCreated: (ctrl) {
-                    _mapCtrl = ctrl;
-                    Future.delayed(
-                      const Duration(milliseconds: 800),
-                      _onCameraIdle,
-                    );
-                  },
-                  onCameraMove: _onCameraMove,
-                  onCameraIdle: _scheduleGeocode,
-                  myLocationEnabled: false,
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                  mapToolbarEnabled: false,
-                  style: MapStyles.dark,
-                ),
+          // Map — Mapbox on both iOS and Android
+          mapbox.MapWidget(
+            styleUri: MapboxConfig.styleDark,
+            cameraOptions: mapbox.CameraOptions(
+              center: mapbox.Point(coordinates: mapbox.Position(_center.longitude, _center.latitude)),
+              zoom: 15.0,
+            ),
+            onMapCreated: (ctrl) {
+              _mapCtrl = ctrl;
+              Future.delayed(
+                const Duration(milliseconds: 800),
+                _onCameraIdle,
+              );
+            },
+            onCameraChangeListener: _onCameraChanged,
+            onMapIdleListener: _onMapIdle,
+          ),
 
           // Center pin
           Center(

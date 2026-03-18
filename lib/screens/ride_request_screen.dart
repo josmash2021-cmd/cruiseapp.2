@@ -4,7 +4,9 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import '../models/lat_lng.dart';
+import '../config/mapbox_config.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -63,7 +65,13 @@ class RideRequestScreen extends StatefulWidget {
 class _RideRequestScreenState extends State<RideRequestScreen>
     with TickerProviderStateMixin {
   // ── Map ──
-  GoogleMapController? _mapCtrl;
+  mapbox.MapboxMap? _mapCtrl;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
+  mapbox.PointAnnotation? _pickupAnnot;
+  mapbox.PointAnnotation? _dropoffAnnot;
+  mapbox.PointAnnotation? _goldDotAnnot;
+  mapbox.PolylineAnnotation? _routeAnnot;
   LatLng _center = const LatLng(25.7617, -80.1918); // Miami default
   LatLng? _userLocation;
   bool _mapReady = false;
@@ -71,10 +79,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // ── Trip controller ──
   final RiderTripController _ctrl = RiderTripController();
 
-  // ── Map elements ──
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
-  BitmapDescriptor? _goldPinIcon;
+  // ── Map elements (raw bytes) ──
+  Uint8List? _goldPinIcon;
 
   // ── Searching animation ──
   late AnimationController _pulseCtrl;
@@ -118,15 +124,15 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _driverFoundVisible = false;
   Timer? _driverFoundTimer;
 
-  // Combined pin+label bitmaps (pin and label in one image, always aligned)
+  // Combined pin+label bitmaps (raw bytes + anchor offset)
   bool _showPinLabels = true;
-  (BitmapDescriptor, Uint8List)? _pickupPinOnly;
-  (BitmapDescriptor, Uint8List)? _dropoffPinOnly;
-  // Pin+label combined: (bitmap, anchor, rawBytes) — anchor places pin tip at the LatLng
-  (BitmapDescriptor, Offset, Uint8List)? _pickupPinWithLabel;
-  (BitmapDescriptor, Offset, Uint8List)? _dropoffPinWithLabel;
+  (Uint8List, Uint8List)? _pickupPinOnly;
+  (Uint8List, Uint8List)? _dropoffPinOnly;
+  // Pin+label combined: (rawBytes, anchor, rawBytes) — anchor places pin tip at the LatLng
+  (Uint8List, Offset, Uint8List)? _pickupPinWithLabel;
+  (Uint8List, Offset, Uint8List)? _dropoffPinWithLabel;
 
-  // Raw PNG bytes + anchor for each marker (used by Apple Maps on iOS)
+  // Raw PNG bytes + anchor for each marker
   final Map<String, (Uint8List bytes, Offset anchor)> _markerBitmapData = {};
 
   @override
@@ -175,8 +181,19 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   }
 
   Future<void> _loadPinIcon() async {
-    _goldPinIcon = await _buildGoldPin();
+    _goldPinIcon = await _buildGoldPinBytes();
     if (mounted) setState(() {});
+  }
+
+  Future<Uint8List?> _buildGoldPinBytes() async {
+    const double size = 120;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
+    _drawGoldPinAt(canvas, 0, 0, size, icon: _PinIcon.person, isPickup: true);
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData?.buffer.asUint8List();
   }
 
   /// Geocode the airport name + terminal + zone into real coordinates,
@@ -203,10 +220,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           _ctrl.setPickup(details, label);
           // Animate map camera to airport
           final target = LatLng(details.lat, details.lng);
-          _mapCtrl?.animateCamera(
-            CameraUpdate.newCameraPosition(
-              CameraPosition(target: target, zoom: 17),
-            ),
+          _mapCtrl?.flyTo(
+            mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(target.longitude, target.latitude)), zoom: 17.0),
+            mapbox.MapAnimationOptions(duration: 800),
           );
           return;
         }
@@ -319,7 +335,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     return _PinIcon.house;
   }
 
-  Future<BitmapDescriptor> _buildGoldPin({
+  Future<Uint8List> _buildGoldPin({
     _PinIcon icon = _PinIcon.none,
     bool isPickup = true,
   }) async {
@@ -330,14 +346,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final picture = recorder.endRecording();
     final img = await picture.toImage(size.toInt(), size.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    // ignore: deprecated_member_use
-    return BitmapDescriptor.fromBytes(byteData!.buffer.asUint8List());
+    return byteData!.buffer.asUint8List();
   }
 
   /// Render a combined pin + label bitmap as a single image.
   /// The pin appears on the left and the label box on the right, vertically centered.
   /// [labelOnLeft] places the label to the left of the pin instead.
-  Future<(BitmapDescriptor, Offset, Uint8List)> _buildPinWithLabel({
+  Future<(Uint8List, Offset, Uint8List)> _buildPinWithLabel({
     required String text,
     bool isPickup = true,
     String? etaText,
@@ -466,13 +481,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     const anchorY = 1.0;
 
     final rawBytes = bytes!.buffer.asUint8List();
-    // ignore: deprecated_member_use
-    final bitmap = BitmapDescriptor.fromBytes(rawBytes);
-    return (bitmap, Offset(anchorX, anchorY), rawBytes);
+    return (rawBytes, Offset(anchorX, anchorY), rawBytes);
   }
 
-  /// Render a standalone gold pin (no label) as BitmapDescriptor + raw bytes.
-  Future<(BitmapDescriptor, Uint8List)> _buildStandalonePin({
+  /// Render a standalone gold pin (no label) as raw bytes.
+  Future<(Uint8List, Uint8List)> _buildStandalonePin({
     _PinIcon icon = _PinIcon.none,
     bool isPickup = true,
   }) async {
@@ -484,8 +497,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final img = await picture.toImage(size.toInt(), size.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
     final bytes = byteData!.buffer.asUint8List();
-    // ignore: deprecated_member_use
-    return (BitmapDescriptor.fromBytes(bytes), bytes);
+    return (bytes, bytes);
   }
 
   /// Draw a gold pin at a specific position on a canvas.
@@ -805,7 +817,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _center = ll;
         _fetchingLocation = false;
       });
-      _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(ll, 15.5));
+      _mapCtrl?.flyTo(
+      mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)), zoom: 15.5),
+      mapbox.MapAnimationOptions(duration: 800),
+    );
 
       // Reverse geocode for address
       final places = PlacesService(ApiKeys.webServices);
@@ -934,24 +949,22 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   void _drawRoute() {
     final s = _ctrl.state;
     if (s.route == null) return;
-
-    // Set polyline immediately
-    _polylines = {
-      Polyline(
-        polylineId: const PolylineId('route'),
-        points: s.route!.points,
-        color: const Color(0xFF5BA3F5),
-        width: 4,
-        geodesic: true,
-      ),
-    };
     _showPinLabels = true;
-
-    // Build bitmap labels asynchronously, then set markers
+    _updateRouteAnnotation(s.route!.points);
     _buildRouteMarkers();
-
-    // Fit the route
     _fitRoute(s.route!.points);
+  }
+
+  Future<void> _updateRouteAnnotation(List<LatLng> points) async {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null) return;
+    if (_routeAnnot != null) { try { await mgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+    if (points.isEmpty) return;
+    _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
+      lineColor: const Color(0xFF5BA3F5).value,
+      lineWidth: 4.0,
+    ));
   }
 
   Future<void> _buildRouteMarkers() async {
@@ -988,75 +1001,52 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _rebuildMarkers();
   }
 
-  void _rebuildMarkers() {
+  Future<void> _rebuildMarkers() async {
     final s = _ctrl.state;
     if (s.route == null) return;
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
 
-    final fallback = _goldPinIcon ?? BitmapDescriptor.defaultMarker;
-    final markers = <Marker>{};
-    _markerBitmapData.clear();
-
-    // Pickup: one single marker, swaps between pin-only and pin+label
+    // Pickup marker
+    if (_pickupAnnot != null) { try { await mgr.delete(_pickupAnnot!); } catch (_) {} _pickupAnnot = null; }
     if (s.pickup != null) {
-      final showLabel = _showPinLabels && _pickupPinWithLabel != null;
-      final BitmapDescriptor icon;
-      final Offset anchor;
-      if (showLabel) {
-        final (bmp, anc, raw) = _pickupPinWithLabel!;
-        icon = bmp;
-        anchor = anc;
-        _markerBitmapData['pickup'] = (raw, anc);
+      Uint8List? bytes;
+      if (_showPinLabels && _pickupPinWithLabel != null) {
+        bytes = _pickupPinWithLabel!.$1;
+      } else if (_pickupPinOnly != null) {
+        bytes = _pickupPinOnly!.$1;
       } else {
-        icon = _pickupPinOnly?.$1 ?? fallback;
-        anchor = const Offset(0.5, 1.0);
-        if (_pickupPinOnly != null) {
-          _markerBitmapData['pickup'] = (_pickupPinOnly!.$2, anchor);
-        }
+        bytes = _goldPinIcon;
       }
-      markers.add(
-        Marker(
-          markerId: const MarkerId('pickup'),
-          position: LatLng(s.pickup!.lat, s.pickup!.lng),
-          icon: icon,
-          anchor: anchor,
-          zIndexInt: 2,
-          onTap: _togglePinLabels,
-        ),
-      );
+      if (bytes != null) {
+        _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
+          image: bytes,
+          iconSize: 0.5,
+        ));
+      }
     }
 
-    // Dropoff: one single marker, swaps between pin-only and pin+label
+    // Dropoff marker
+    if (_dropoffAnnot != null) { try { await mgr.delete(_dropoffAnnot!); } catch (_) {} _dropoffAnnot = null; }
     if (s.dropoff != null) {
-      final showLabel = _showPinLabels && _dropoffPinWithLabel != null;
-      final BitmapDescriptor icon;
-      final Offset anchor;
-      if (showLabel) {
-        final (bmp, anc, raw) = _dropoffPinWithLabel!;
-        icon = bmp;
-        anchor = anc;
-        _markerBitmapData['dropoff'] = (raw, anc);
+      Uint8List? bytes;
+      if (_showPinLabels && _dropoffPinWithLabel != null) {
+        bytes = _dropoffPinWithLabel!.$1;
+      } else if (_dropoffPinOnly != null) {
+        bytes = _dropoffPinOnly!.$1;
       } else {
-        icon = _dropoffPinOnly?.$1 ?? fallback;
-        anchor = const Offset(0.5, 1.0);
-        if (_dropoffPinOnly != null) {
-          _markerBitmapData['dropoff'] = (_dropoffPinOnly!.$2, anchor);
-        }
+        bytes = _goldPinIcon;
       }
-      markers.add(
-        Marker(
-          markerId: const MarkerId('dropoff'),
-          position: LatLng(s.dropoff!.lat, s.dropoff!.lng),
-          icon: icon,
-          anchor: anchor,
-          zIndexInt: 2,
-          onTap: _togglePinLabels,
-        ),
-      );
+      if (bytes != null) {
+        _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
+          image: bytes,
+          iconSize: 0.5,
+        ));
+      }
     }
-
-    setState(() {
-      _markers = markers;
-    });
+    if (mounted) setState(() {});
   }
 
   // Labels always visible — no toggle behavior
@@ -1071,15 +1061,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (p.longitude < minLng) minLng = p.longitude;
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
-    _mapCtrl!.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng),
-        ),
-        80,
-      ),
-    );
+    _mapCtrl!.cameraForCoordinates(
+      [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+       mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
+      mapbox.MbxEdgeInsets(top: 100, left: 80, bottom: 300, right: 80),
+      null, null,
+    ).then((cam) {
+      if (cam != null) _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));
+    });
   }
 
   void _goToTracking() {
@@ -1247,48 +1236,28 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           children: [
             // ── Map ──
             RepaintBoundary(
-              child: GoogleMap(
-                style: MapStyles.darkIOS,
-                initialCameraPosition: CameraPosition(
-                  target: _center,
+              child: mapbox.MapWidget(
+                styleUri: MapboxConfig.styleDark,
+                cameraOptions: mapbox.CameraOptions(
+                  center: mapbox.Point(coordinates: mapbox.Position(_center.longitude, _center.latitude)),
                   zoom: 15.5,
-                  tilt: 45,
+                  pitch: 45.0,
                 ),
-                onMapCreated: (ctrl) {
+                onMapCreated: (ctrl) async {
                   _mapCtrl = ctrl;
+                  _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                  _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
                   setState(() => _mapReady = true);
                   if (_userLocation != null) {
-                    ctrl.animateCamera(
-                      CameraUpdate.newLatLngZoom(_userLocation!, 15.5),
+                    ctrl.flyTo(
+                      mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_userLocation!.longitude, _userLocation!.latitude)), zoom: 15.5),
+                      mapbox.MapAnimationOptions(duration: 800),
                     );
                   }
                 },
-                onCameraMoveStarted: () {
-                  if (!_programmaticCam) {
-                    setState(() => _userMovedMap = true);
-                  }
+                onScrollListener: (_) {
+                  if (!_programmaticCam) setState(() => _userMovedMap = true);
                 },
-                onCameraMove: (_) {},
-                onCameraIdle: () => _programmaticCam = false,
-                markers: {
-                  ..._markers,
-                  if (_goldDot.isReady && _userLocation != null)
-                    _goldDot.marker(_userLocation!)!,
-                },
-                polylines: _polylines,
-                myLocationEnabled: false,
-                myLocationButtonEnabled: false,
-                zoomControlsEnabled: false,
-                zoomGesturesEnabled: true,
-                scrollGesturesEnabled: true,
-                compassEnabled: false,
-                mapToolbarEnabled: false,
-                buildingsEnabled: false,
-                trafficEnabled: false,
-                liteModeEnabled: false,
-                padding: EdgeInsets.only(
-                  bottom: _bottomSheetHeight(phase, bottomPad) + 30,
-                ),
               ),
             ),
 
@@ -1310,10 +1279,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       onTap: () {
                         _ctrl.reset();
                         _navigatingToTracking = false;
-                        setState(() {
-                          _markers = {};
-                          _polylines = {};
-                        });
                         _sheetCtrl.reverse();
                       },
                       c: c,
@@ -3329,10 +3294,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _ctrl.cancelRide();
     _ctrl.reset();
     _navigatingToTracking = false;
-    setState(() {
-      _markers = {};
-      _polylines = {};
-    });
   }
 
   /// Shows a confirmation dialog before canceling the ride search.
@@ -3504,7 +3465,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     );
   }
 
-  void _recenterMap() {
+  Future<void> _recenterMap() async {
     _programmaticCam = true;
     setState(() => _userMovedMap = false);
     final s = _ctrl.state;
@@ -3520,9 +3481,20 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           math.max(s.pickup!.lng, s.dropoff!.lng),
         ),
       );
-      _mapCtrl?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
+      final coords = [
+        mapbox.Point(coordinates: mapbox.Position(bounds.southwest.longitude, bounds.southwest.latitude)),
+        mapbox.Point(coordinates: mapbox.Position(bounds.northeast.longitude, bounds.northeast.latitude)),
+      ];
+      final cam = await _mapCtrl?.cameraForCoordinatesPadding(
+        coords, mapbox.CameraOptions(),
+        mapbox.MbxEdgeInsets(top: 80, left: 80, bottom: 80, right: 80), null, null,
+      );
+      if (cam != null) _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
     } else if (_userLocation != null) {
-      _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(_userLocation!, 15.5));
+      _mapCtrl?.flyTo(
+        mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_userLocation!.longitude, _userLocation!.latitude)), zoom: 15.5),
+        mapbox.MapAnimationOptions(duration: 500),
+      );
     }
   }
 

@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../models/lat_lng.dart';
 
 /// A single turn-by-turn navigation step parsed from Google Directions API.
 class NavStep {

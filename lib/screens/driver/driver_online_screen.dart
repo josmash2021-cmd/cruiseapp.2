@@ -6,7 +6,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import '../../models/lat_lng.dart';
+import '../../config/mapbox_config.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -68,34 +70,44 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   static const _navyRoute = Color(0xFF5BA3F5);
   static const _navyGlow  = Color(0x405BA3F5);
 
-  // —— Map ——
-  GoogleMapController? _map;
+  // ── Map ──
+  mapbox.MapboxMap? _map;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
+  // Active annotations
+  mapbox.PointAnnotation? _carAnnot;
+  mapbox.PointAnnotation? _goldDotAnnot;
+  mapbox.PointAnnotation? _pickupAnnot;
+  mapbox.PointAnnotation? _dropoffAnnot;
+  mapbox.PointAnnotation? _prevDriverAnnot;
+  mapbox.PointAnnotation? _prevPickupAnnot;
+  mapbox.PointAnnotation? _prevDropoffAnnot;
+  mapbox.PolylineAnnotation? _routeAnnot;
+  mapbox.PolylineAnnotation? _previewPickupAnnot;
+  mapbox.PolylineAnnotation? _previewDropoffAnnot;
   LatLng _pos = const LatLng(25.7617, -80.1918);
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
   StreamSubscription<Position>? _posStream;
   bool _lastStyleDark = true;
 
-  /// Animate camera (Google Maps on both platforms).
   void _animateToPosition(
     LatLng pos, {
     double zoom = 15.5,
     double bearing = 0,
     double tilt = 45,
   }) {
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: pos, zoom: zoom, bearing: bearing, tilt: tilt),
+    _map?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+        zoom: zoom,
+        bearing: bearing,
+        pitch: tilt,
       ),
+      mapbox.MapAnimationOptions(duration: 600),
     );
   }
 
   void _moveToLatLng(LatLng pos) {
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: pos, zoom: 15.5, tilt: 45),
-      ),
-    );
+    _animateToPosition(pos);
   }
 
   // â”€â”€ Trip â”€â”€
@@ -114,10 +126,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   double _simulationSpeed = 1.0; // 1.0 = normal (40 mph), 2.0 = 2x faster, 0.5 = half speed
   bool _isSimulationRunning = false;
 
-  // â”€â”€ Route preview for a tapped offer â”€â”€
+  // ── Route preview for a tapped offer ──
   Map<String, dynamic>? _previewingOffer;
-  Set<Polyline> _savedPolylines = {};
-  Set<Marker> _savedMarkers = {};
 
   // â”€â”€ Request data (for active trip after acceptance) â”€â”€
   Timer? _pollT;
@@ -150,29 +160,29 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Duration _online = Duration.zero;
   Timer? _clock;
 
-  // â”€â”€ Driver smooth animation â”€â”€
+  // -- Driver smooth animation --
   late AnimationController _driverAnim;
   LatLng _animFrom = const LatLng(0, 0);
   LatLng _animTo = const LatLng(0, 0);
   double _heading = 0;
   double _smoothedBearing = 0;
-  BitmapDescriptor? _arrowIcon;
+  Uint8List? _arrowIconBytes;
 
-  // -- Google Maps–style 3D nav car (used during navigation) --
-  BitmapDescriptor? _navCarIcon;
+  // -- 3D nav car bytes --
+  Uint8List? _navCarIconBytes;
 
-  // -- Multi-angle 3D car sprites (8 directions, like a real 3D model) --
-  List<BitmapDescriptor>? _navCarSprites;
-  double _cameraBearing = 0; // current camera bearing for sprite selection
-  int _lastSpriteIdx = -1; // avoid rebuilds when sprite hasn't changed
+  // -- Multi-angle 3D car sprites (8 directions) --
+  List<Uint8List>? _navCarSprites;
+  double _cameraBearing = 0;
+  int _lastSpriteIdx = -1;
 
   // -- Vehicle-based markers (asset images) --
-  BitmapDescriptor? _suvIcon; // Suburban
-  BitmapDescriptor? _sedanIcon; // Fusion / Camry
-  final String _activeVehicleAsset = 'suburban'; // which asset to use
+  Uint8List? _suvIconBytes;
+  Uint8List? _sedanIconBytes;
+  final String _activeVehicleAsset = 'suburban';
 
-  // -- Golden animated dot (Apple Maps-style, gold) --
-  List<BitmapDescriptor> _goldenDotFrames = [];
+  // -- Golden animated dot --
+  List<Uint8List> _goldenDotFrames = [];
   int _goldenDotFrame = 0;
   Timer? _goldenDotTimer;
 
@@ -405,12 +415,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   ui.Image? _driverPhotoImage; // decoded driver photo for marker
 
   Future<void> _buildVehicleIcons() async {
-    _suvIcon = await CarIconLoader.loadForRide('Suburban');
-    _sedanIcon = await CarIconLoader.loadForRide('Camry');
-    _arrowIcon = _suvIcon;
+    _suvIconBytes = await CarIconLoader.loadForRideBytes('Suburban');
+    _sedanIconBytes = await CarIconLoader.loadForRideBytes('Camry');
+    _arrowIconBytes = _suvIconBytes;
     // Skip PNG navatar sprites (contain blue circle overlay); use single rotated canvas car
     _navCarSprites = null;
-    _navCarIcon = await CarIconLoader.loadUber();
+    _navCarIconBytes = await CarIconLoader.loadUberBytes();
     await _loadDriverPhoto();
     await _buildGoldenDotFrames();
     _startGoldenDotAnimation();
@@ -437,7 +447,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Future<void> _buildGoldenDotFrames() async {
     const int frameCount = 24;
     const double canvasSize = 140.0;
-    final frames = <BitmapDescriptor>[];
+    final frames = <Uint8List>[];
 
     for (int i = 0; i < frameCount; i++) {
       final t = i / frameCount;
@@ -507,13 +517,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       );
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData != null) {
-        frames.add(
-          BitmapDescriptor.bytes(
-            byteData.buffer.asUint8List(),
-            width: 56,
-            height: 56,
-          ),
-        );
+        frames.add(byteData.buffer.asUint8List());
       }
     }
     _goldenDotFrames = frames;
@@ -533,7 +537,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   ///  - Car points UP (north) so `rotation = bearing` works correctly.
   ///  - Shaped like a real car: rounded nose, wide body, tapered trunk.
   ///  - 3D depth panels visible at 55° tilt.
-  Future<BitmapDescriptor> _paintCarSprite({
+  Future<Uint8List> _paintCarSprite({
     required Color bodyColor,
     required Color bodyHighlight,
     required Color windowColor,
@@ -768,12 +772,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final picture = recorder.endRecording();
     final image = await picture.toImage(cW.toInt(), cH.toInt());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    if (byteData == null) return BitmapDescriptor.defaultMarker;
-    return BitmapDescriptor.bytes(
-      byteData.buffer.asUint8List(),
-      width: 38,
-      height: 64,
-    );
+    if (byteData == null) return Uint8List(0);
+    return byteData.buffer.asUint8List();
   }
 
   /// Car body silhouette path — rounded nose, wide at cabin, tapered trunk.
@@ -801,24 +801,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       ..close();
   }
 
-  /// Get the correct vehicle icon based on the vehicle type of the active trip.
-  /// Robust mapping: trim + toLowerCase, handles "CruiseX" and unknown types.
-  BitmapDescriptor? get _vehicleIcon {
+  /// Get the correct vehicle icon bytes based on the vehicle type.
+  Uint8List? get _vehicleIconBytes {
     final vt = _vehicleType.trim().toLowerCase();
-    // Suburban / SUV → black SUV sprite
-    if (vt.contains('suburban') || vt.contains('suv')) {
-      return _suvIcon;
-    }
-    // Fusion / Camry / sedan → white sedan sprite
-    if (vt.contains('fusion') || vt.contains('camry') || vt.contains('sedan')) {
-      return _sedanIcon;
-    }
-    // Explicit mapping for known brand names
-    if (vt.contains('cruisex') || vt.contains('cruise')) {
-      return _sedanIcon; // CruiseX = sedan class
-    }
-    // Default: use SUV icon when searching (no active trip) or unknown type
-    return _suvIcon;
+    if (vt.contains('suburban') || vt.contains('suv')) return _suvIconBytes;
+    if (vt.contains('fusion') || vt.contains('camry') || vt.contains('sedan')) return _sedanIconBytes;
+    if (vt.contains('cruisex') || vt.contains('cruise')) return _sedanIconBytes;
+    return _suvIconBytes;
   }
 
   void _goOnlineBackend() {
@@ -878,15 +867,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           // â”€â”€ Phase-aware camera following â”€â”€
           if (_phase == _Phase.searching) {
             // IDLE: stable top-down view, no tilt, no bearing follow (Uber style)
-            _map?.animateCamera(
-              CameraUpdate.newCameraPosition(
-                CameraPosition(
-                  target: newLL,
-                  zoom: 15.5,
-                  bearing: 0,
-                  tilt: 0,
-                ),
+            _map?.flyTo(
+              mapbox.CameraOptions(
+                center: mapbox.Point(coordinates: mapbox.Position(newLL.longitude, newLL.latitude)),
+                zoom: 15.5, bearing: 0, pitch: 0,
               ),
+              mapbox.MapAnimationOptions(duration: 400),
             );
           } else if (_phase == _Phase.routeSummary) {
             // Route summary: keep overview, don't follow driver
@@ -1204,11 +1190,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             now.difference(_simLastCamera!).inMilliseconds > 33)) {
       _simLastCamera = now;
       _cameraBearing = bearing; // sync for sprite selection
-      _map?.moveCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: pt, zoom: 17.5, bearing: bearing, tilt: 55),
-        ),
-      );
+      _map?.setCamera(mapbox.CameraOptions(
+        center: mapbox.Point(coordinates: mapbox.Position(pt.longitude, pt.latitude)),
+        zoom: 17.5, bearing: bearing, pitch: 55,
+      ));
     }
 
     // Nav stats + proximity checks
@@ -1292,28 +1277,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _routePts[0] = driverPos;
     }
 
-    // Rebuild polylines with trimmed route
-    final routeId = _phase == _Phase.enRouteToPickup ? 'pickup' : 'trip';
-    setState(() {
-      _polylines = {
-        Polyline(
-          polylineId: PolylineId('${routeId}_g'),
-          points: List.from(_routePts),
-          color: _navyGlow,
-          width: 14,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-        Polyline(
-          polylineId: PolylineId(routeId),
-          points: List.from(_routePts),
-          color: _navyRoute,
-          width: 7,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      };
-    });
+    // Rebuild route annotation with trimmed route
+    _setRouteAnnotation(List.from(_routePts), _navyRoute);
   }
 
   void _onDriverAnimTick() {
@@ -1337,69 +1302,72 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
     if (isNav && _cameraFollowing) {
       _cameraBearing = _heading;
-      // Chase camera: follow car from behind with smooth tilt
-      _map?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: _pos,
-            zoom: 18.0,
-            bearing: _heading,
-            tilt: 60,
-          ),
+      _map?.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+          zoom: 18.0,
+          bearing: _heading,
+          pitch: 60,
         ),
+        mapbox.MapAnimationOptions(duration: 400),
       );
     }
 
-    // Only rebuild marker set — minimal setState for performance
+    _updateDriverAnnotation();
     setState(() {});
   }
 
-  Set<Marker> get _allMarkers {
-    final m = {..._markers};
-    // During navigation phases, show 3D car marker
+  /// Update the driver car / golden dot annotation on the Mapbox map.
+  Future<void> _updateDriverAnnotation() async {
+    final pointMgr = _pointAnnotMgr;
+    if (pointMgr == null) return;
+
     final isNav = _phase == _Phase.enRouteToPickup ||
         _phase == _Phase.inTrip ||
         _phase == _Phase.routeSummary;
-    // Non-nav phases: show gold animated location dot instead of native blue dot
+
     if (!isNav && _goldenDotFrames.isNotEmpty) {
-      m.add(
-        Marker(
-          markerId: const MarkerId('my_location_gold'),
-          position: _pos,
-          icon: _goldenDotFrames[_goldenDotFrame % _goldenDotFrames.length],
-          anchor: const Offset(0.5, 0.5),
-          flat: true,
-          zIndex: 1,
-        ),
-      );
-    }
-    if (isNav) {
-      // Try multi-angle sprites first (8-direction 3D car)
-      BitmapDescriptor? icon;
+      // Remove car annotation if switching to dot
+      if (_carAnnot != null) {
+        try { await pointMgr.delete(_carAnnot!); } catch (_) {}
+        _carAnnot = null;
+      }
+      final dotBytes = _goldenDotFrames[_goldenDotFrame % _goldenDotFrames.length];
+      if (_goldDotAnnot != null) {
+        try {
+          await pointMgr.update(_goldDotAnnot!..geometry = mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)));
+        } catch (_) { _goldDotAnnot = null; }
+      }
+      _goldDotAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+        image: dotBytes,
+        iconSize: 0.4,
+      ));
+    } else if (isNav) {
+      // Remove dot annotation if switching to car
+      if (_goldDotAnnot != null) {
+        try { await pointMgr.delete(_goldDotAnnot!); } catch (_) {}
+        _goldDotAnnot = null;
+      }
+      Uint8List? carBytes;
       if (_navCarSprites != null && _navCarSprites!.length == 8) {
         final viewAngle = _heading - _cameraBearing;
-        icon = CarIconLoader.spriteForViewAngle(viewAngle);
+        carBytes = CarIconLoader.spriteForViewAngle(viewAngle);
       }
-      // Fallback: single PNG or Canvas icon
-      icon ??= _navCarIcon ?? _vehicleIcon ?? _arrowIcon;
-      if (icon != null) {
-        m.add(
-          Marker(
-            markerId: const MarkerId('driver_car'),
-            position: _pos,
-            icon: icon,
-            // With multi-angle sprites, the sprite image already shows the
-            // correct orientation — no extra rotation needed.
-            // With single icon fallback, rotate to heading.
-            rotation: (_navCarSprites != null) ? 0 : _heading,
-            flat: false, // billboard mode — always faces camera, no tilt squish
-            anchor: const Offset(0.5, 0.5),
-            zIndex: 100,
-          ),
-        );
+      carBytes ??= _navCarIconBytes ?? _vehicleIconBytes ?? _arrowIconBytes;
+      if (carBytes != null) {
+        if (_carAnnot != null) {
+          try {
+            await pointMgr.update(_carAnnot!..geometry = mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)));
+          } catch (_) { _carAnnot = null; }
+        }
+        _carAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+          image: carBytes,
+          iconSize: 0.5,
+        ));
       }
     }
-    return m;
   }
 
   /// Snap a raw GPS coordinate to the nearest point on the active route polyline.
@@ -1693,29 +1661,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _navProgress = 0;
       _slideVal = 0;
       _slid = false;
-      _markers = {
-        Marker(
-          markerId: const MarkerId('pickup'),
-          position: _pickupLL,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueGreen,
-          ),
-          infoWindow: InfoWindow(
-            title: S.of(context).pickupLabel,
-            snippet: _pickupAddr,
-          ),
-        ),
-        Marker(
-          markerId: const MarkerId('drop'),
-          position: _dropoffLL,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: InfoWindow(
-            title: S.of(context).dropOffLabel,
-            snippet: _dropoffAddr,
-          ),
-        ),
-      };
     });
+    _setPickupDropoffAnnotations();
     await _drawRoute(_pos, _pickupLL, 'pickup', _navyRoute);
     await Future.delayed(const Duration(milliseconds: 150));
     _fitBounds(_pos, _pickupLL);
@@ -1740,29 +1687,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _navProgress = 0;
       _slideVal = 0;
       _slid = false;
-      _markers = {
-        Marker(
-          markerId: const MarkerId('pickup'),
-          position: _pickupLL,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueGreen,
-          ),
-          infoWindow: InfoWindow(
-            title: S.of(context).pickupLabel,
-            snippet: _pickupAddr,
-          ),
-        ),
-      };
     });
+    _setPickupAnnotation();
     await _drawRoute(_pos, _pickupLL, 'pickup', _navyRoute);
     // Wait for frame with updated map padding, then center on both points
     await Future.delayed(const Duration(milliseconds: 150));
     _fitBounds(_pos, _pickupLL);
-    // Auto-drive to pickup in simulation mode - DISABLED, driver drives manually
-    // if (_isSimulationMode && _routePts.length >= 2) {
-    //   await Future.delayed(const Duration(milliseconds: 800));
-    //   _startSimulation();
-    // }
   }
 
   Future<void> _arrivePickup() async {
@@ -1777,20 +1707,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _phase = _Phase.arrivedAtPickup;
       _slideVal = 0;
       _slid = false;
-      _polylines = {};
-      _markers = {
-        Marker(
-          markerId: const MarkerId('drop'),
-          position: _dropoffLL,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-        ),
-      };
     });
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: _pickupLL, zoom: 17),
-      ),
-    );
+    _clearRouteAnnotation();
+    _setDropoffAnnotation();
+    _animateToPosition(_pickupLL, zoom: 17);
   }
 
   Future<void> _startTrip() async {
@@ -1812,18 +1732,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _navProgress = 0;
       _slideVal = 0;
       _slid = false;
-      _markers = {
-        Marker(
-          markerId: const MarkerId('drop'),
-          position: _dropoffLL,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: InfoWindow(
-            title: S.of(context).dropOffLabel,
-            snippet: _dropoffAddr,
-          ),
-        ),
-      };
     });
+    _setDropoffAnnotation();
     await _drawRoute(_pos, _dropoffLL, 'trip', _navyRoute);
     await Future.delayed(const Duration(milliseconds: 150));
     _nearDropoffNotified = false;
@@ -1845,26 +1755,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _reFollowTimer?.cancel();
         _slideVal = 0;
         _slid = false;
-        _markers = {
-          Marker(
-            markerId: const MarkerId('pickup'),
-            position: _pickupLL,
-            icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueGreen,
-            ),
-            infoWindow: InfoWindow(
-              title: S.of(context).pickupLabel,
-              snippet: _pickupAddr,
-            ),
-          ),
-        };
       });
+      _setPickupAnnotation();
       _cameraBearing = _heading;
-      _map?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: _pos, zoom: 17.5, bearing: _heading, tilt: 55),
-        ),
-      );
+      _animateToPosition(_pos, zoom: 17.5, bearing: _heading, tilt: 55);
       if (!_isSimulationMode) {
         MapLauncherService.prefersInApp().then((inApp) {
           if (!inApp) {
@@ -1883,20 +1777,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _reFollowTimer?.cancel();
         _slideVal = 0;
         _slid = false;
-        _markers = {
-          Marker(
-            markerId: const MarkerId('drop'),
-            position: _dropoffLL,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          ),
-        };
       });
+      _setDropoffAnnotation();
       _cameraBearing = _heading;
-      _map?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: _pos, zoom: 17.5, bearing: _heading, tilt: 55),
-        ),
-      );
+      _animateToPosition(_pos, zoom: 17.5, bearing: _heading, tilt: 55);
       if (!_isSimulationMode) {
         MapLauncherService.prefersInApp().then((inApp) {
           if (!inApp) {
@@ -1935,15 +1819,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _phase = _Phase.searching;
       _tripId = null;
       _currentOfferId = null;
-      _markers = {};
-      _polylines = {};
       _pendingOffers = [];
     });
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: _pos, zoom: 15.5, bearing: 0, tilt: 0),
-      ),
-    );
+    _clearAllAnnotations();
+    _animateToPosition(_pos, zoom: 15.5, bearing: 0, tilt: 0);
     _startPolling();
   }
 
@@ -1987,16 +1866,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _phase = _Phase.searching;
         _tripId = null;
         _currentOfferId = null;
-        _markers = {};
-        _polylines = {};
         _routePts = [];
         _pendingOffers = [];
       });
-      _map?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: _pos, zoom: 15.5, bearing: 0, tilt: 0),
-        ),
-      );
+      _clearAllAnnotations();
+      _animateToPosition(_pos, zoom: 15.5, bearing: 0, tilt: 0);
       _startPolling();
     });
   }
@@ -2105,16 +1979,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _phase = _Phase.searching;
       _tripId = null;
       _currentOfferId = null;
-      _markers = {};
-      _polylines = {};
       _routePts = [];
       _pendingOffers = [];
     });
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: _pos, zoom: 15.5, bearing: 0, tilt: 0),
-      ),
-    );
+    _clearAllAnnotations();
+    _animateToPosition(_pos, zoom: 15.5, bearing: 0, tilt: 0);
     _startPolling();
   }
 
@@ -2193,25 +2062,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               _navDist = (leg['distance']['value'] as int) / 1609.34;
               _navEta = ((leg['duration']['value'] as int) / 60).ceil();
               _navInstruct = instr;
-              _polylines = {
-                Polyline(
-                  polylineId: PolylineId('${id}_g'),
-                  points: pts,
-                  color: c.withValues(alpha: 0.1),
-                  width: 14,
-                  startCap: Cap.roundCap,
-                  endCap: Cap.roundCap,
-                ),
-                Polyline(
-                  polylineId: PolylineId(id),
-                  points: pts,
-                  color: c,
-                  width: 4,
-                  startCap: Cap.roundCap,
-                  endCap: Cap.roundCap,
-                ),
-              };
             });
+            _setRouteAnnotation(pts, c);
             return;
           }
         }
@@ -2254,24 +2106,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             _navDist = distM / 1609.34;
             _navEta = (durS / 60).ceil().clamp(1, 999);
             _navInstruct = instr;
-            _polylines = {
-              Polyline(
-                polylineId: PolylineId('${id}_g'),
-                points: pts,
-                color: c.withValues(alpha: 0.1),
-                width: 14,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-              ),
-              Polyline(
-                polylineId: PolylineId(id),
-                points: pts,
-                color: c,
-                width: 4,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-              ),
-            };
+            _setRouteAnnotation(pts, c);
           });
           return;
         }
@@ -2319,18 +2154,107 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
     setState(() {
       _routePts = pts;
-      _polylines = {
-        Polyline(
-          polylineId: PolylineId(id),
-          points: pts,
-          color: c,
-          width: 3,
-          patterns: [PatternItem.dot, PatternItem.gap(10)],
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      };
     });
+    _setRouteAnnotation(pts, c);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  MAPBOX ANNOTATION HELPERS
+  // ═══════════════════════════════════════════════════════════
+
+  Future<void> _setRouteAnnotation(List<LatLng> pts, Color c) async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null || pts.length < 2) return;
+    if (_routeAnnot != null) {
+      try { await polyMgr.delete(_routeAnnot!); } catch (_) {}
+      _routeAnnot = null;
+    }
+    final coords = pts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: coords),
+      lineColor: c.value,
+      lineWidth: 4.0,
+    ));
+  }
+
+  Future<void> _clearRouteAnnotation() async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null) return;
+    if (_routeAnnot != null) {
+      try { await polyMgr.delete(_routeAnnot!); } catch (_) {}
+      _routeAnnot = null;
+    }
+    if (_previewPickupAnnot != null) {
+      try { await polyMgr.delete(_previewPickupAnnot!); } catch (_) {}
+      _previewPickupAnnot = null;
+    }
+    if (_previewDropoffAnnot != null) {
+      try { await polyMgr.delete(_previewDropoffAnnot!); } catch (_) {}
+      _previewDropoffAnnot = null;
+    }
+  }
+
+  Future<void> _setPickupAnnotation() async {
+    final pointMgr = _pointAnnotMgr;
+    if (pointMgr == null) return;
+    await _clearPickupDropoffAnnotations();
+    _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
+      iconColor: const Color(0xFF4CAF50).value,
+      iconSize: 1.2,
+    ));
+  }
+
+  Future<void> _setDropoffAnnotation() async {
+    final pointMgr = _pointAnnotMgr;
+    if (pointMgr == null) return;
+    await _clearPickupDropoffAnnotations();
+    _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
+      iconColor: const Color(0xFFEA4335).value,
+      iconSize: 1.2,
+    ));
+  }
+
+  Future<void> _setPickupDropoffAnnotations() async {
+    final pointMgr = _pointAnnotMgr;
+    if (pointMgr == null) return;
+    await _clearPickupDropoffAnnotations();
+    _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
+      iconColor: const Color(0xFF4CAF50).value,
+      iconSize: 1.2,
+    ));
+    _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
+      iconColor: const Color(0xFFEA4335).value,
+      iconSize: 1.2,
+    ));
+  }
+
+  Future<void> _clearPickupDropoffAnnotations() async {
+    final pointMgr = _pointAnnotMgr;
+    if (pointMgr == null) return;
+    for (final annot in [_pickupAnnot, _dropoffAnnot, _prevDriverAnnot, _prevPickupAnnot, _prevDropoffAnnot]) {
+      if (annot != null) try { await pointMgr.delete(annot); } catch (_) {}
+    }
+    _pickupAnnot = null;
+    _dropoffAnnot = null;
+    _prevDriverAnnot = null;
+    _prevPickupAnnot = null;
+    _prevDropoffAnnot = null;
+  }
+
+  Future<void> _clearAllAnnotations() async {
+    await _clearRouteAnnotation();
+    await _clearPickupDropoffAnnotations();
+    final pointMgr = _pointAnnotMgr;
+    if (pointMgr == null) return;
+    for (final annot in [_carAnnot, _goldDotAnnot]) {
+      if (annot != null) try { await pointMgr.delete(annot); } catch (_) {}
+    }
+    _carAnnot = null;
+    _goldDotAnnot = null;
   }
 
   static String _mapRideType(String raw) {
@@ -2369,64 +2293,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   void _fitBounds(LatLng a, LatLng b) {
-    double minLat = math.min(a.latitude, b.latitude);
-    double maxLat = math.max(a.latitude, b.latitude);
-    double minLng = math.min(a.longitude, b.longitude);
-    double maxLng = math.max(a.longitude, b.longitude);
-    // Ensure minimum span so the map doesn't over-zoom for nearby points
-    const minSpan = 0.004;
-    if ((maxLat - minLat) < minSpan) {
-      final adj = (minSpan - (maxLat - minLat)) / 2;
-      minLat -= adj;
-      maxLat += adj;
-    }
-    if ((maxLng - minLng) < minSpan) {
-      final adj = (minSpan - (maxLng - minLng)) / 2;
-      minLng -= adj;
-      maxLng += adj;
-    }
-    _map?.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat - 0.004, minLng - 0.004),
-          northeast: LatLng(maxLat + 0.004, maxLng + 0.004),
-        ),
-        70,
-      ),
-    );
+    _fitBoundsMulti([a, b]);
   }
 
   void _fitBoundsMulti(List<LatLng> points) {
-    if (points.isEmpty) return;
-    double minLat = points.first.latitude, maxLat = minLat;
-    double minLng = points.first.longitude, maxLng = minLng;
-    for (final p in points) {
-      if (p.latitude < minLat) minLat = p.latitude;
-      if (p.latitude > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLng) minLng = p.longitude;
-      if (p.longitude > maxLng) maxLng = p.longitude;
-    }
-    // Ensure minimum span so the map doesn't over-zoom
-    const minSpan = 0.004;
-    if ((maxLat - minLat) < minSpan) {
-      final adj = (minSpan - (maxLat - minLat)) / 2;
-      minLat -= adj;
-      maxLat += adj;
-    }
-    if ((maxLng - minLng) < minSpan) {
-      final adj = (minSpan - (maxLng - minLng)) / 2;
-      minLng -= adj;
-      maxLng += adj;
-    }
-    _map?.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat - 0.004, minLng - 0.004),
-          northeast: LatLng(maxLat + 0.004, maxLng + 0.004),
-        ),
-        70,
-      ),
-    );
+    if (points.isEmpty || _map == null) return;
+    final coords = points
+        .map((p) => mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
+        .toList();
+    _map!.cameraForCoordinates(
+      coords,
+      mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: _mapBottomPadding + 60, right: 60),
+      null, null,
+    ).then((cam) {
+      if (cam != null && mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
+    });
   }
 
   // â"€â"€ Preview offer route on map â"€â"€
@@ -2438,42 +2319,28 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
 
-    // Save current state
-    _savedPolylines = Set.from(_polylines);
-    _savedMarkers = Set.from(_markers);
-
     setState(() {
       _previewingOffer = offer;
-      _markers = {
-        Marker(
-          markerId: const MarkerId('prev_driver'),
-          position: _pos,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-          infoWindow: InfoWindow(title: S.of(context).yourLocation),
-        ),
-        Marker(
-          markerId: const MarkerId('prev_pickup'),
-          position: pickupLL,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueGreen,
-          ),
-          infoWindow: InfoWindow(
-            title: S.of(context).pickupLabel,
-            snippet: offer['pickup_address'] as String?,
-          ),
-        ),
-        Marker(
-          markerId: const MarkerId('prev_dropoff'),
-          position: dropoffLL,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: InfoWindow(
-            title: S.of(context).dropOffLabel,
-            snippet: offer['dropoff_address'] as String?,
-          ),
-        ),
-      };
-      _polylines = {};
     });
+    await _clearAllAnnotations();
+    final pointMgr = _pointAnnotMgr;
+    if (pointMgr != null) {
+      _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+        iconColor: const Color(0xFF2196F3).value,
+        iconSize: 1.2,
+      ));
+      _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
+        iconColor: const Color(0xFF4CAF50).value,
+        iconSize: 1.2,
+      ));
+      _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
+        iconColor: const Color(0xFFEA4335).value,
+        iconSize: 1.2,
+      ));
+    }
 
     // Draw driver → pickup route (navy blue)
     await _drawPreviewRoute(
@@ -2514,27 +2381,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           final pts = _decodePoly(
             data['routes'][0]['overview_polyline']['points'] as String,
           );
-          setState(() {
-            _polylines = {
-              ..._polylines,
-              Polyline(
-                polylineId: PolylineId('${id}_g'),
-                points: pts,
-                color: c.withValues(alpha: 0.12),
-                width: 12,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-              ),
-              Polyline(
-                polylineId: PolylineId(id),
-                points: pts,
-                color: c,
-                width: 4,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-              ),
-            };
-          });
+          await _addPreviewPolyline(pts, c);
           return;
         }
       }
@@ -2555,27 +2402,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         final routes = data['routes'] as List?;
         if (routes != null && routes.isNotEmpty) {
           final pts = _decodePoly(routes[0]['geometry'] as String);
-          setState(() {
-            _polylines = {
-              ..._polylines,
-              Polyline(
-                polylineId: PolylineId('${id}_g'),
-                points: pts,
-                color: c.withValues(alpha: 0.12),
-                width: 12,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-              ),
-              Polyline(
-                polylineId: PolylineId(id),
-                points: pts,
-                color: c,
-                width: 4,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-              ),
-            };
-          });
+          await _addPreviewPolyline(pts, c);
           return;
         }
       }
@@ -2589,35 +2416,32 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         o.longitude + (d.longitude - o.longitude) * t,
       );
     });
-    setState(() {
-      _polylines = {
-        ..._polylines,
-        Polyline(
-          polylineId: PolylineId(id),
-          points: pts,
-          color: c,
-          width: 3,
-          patterns: [PatternItem.dot, PatternItem.gap(10)],
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      };
-    });
+    await _addPreviewPolyline(pts, c);
+  }
+
+  Future<void> _addPreviewPolyline(List<LatLng> pts, Color c) async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null || pts.length < 2) return;
+    final coords = pts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final annot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: coords),
+      lineColor: c.value,
+      lineWidth: 4.0,
+    ));
+    // Store in preview pickup slot first, then dropoff slot
+    if (_previewPickupAnnot == null) {
+      _previewPickupAnnot = annot;
+    } else {
+      _previewDropoffAnnot = annot;
+    }
   }
 
   void _closePreview() {
     setState(() {
       _previewingOffer = null;
-      _polylines = _savedPolylines;
-      _markers = _savedMarkers;
-      _savedPolylines = {};
-      _savedMarkers = {};
     });
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: _pos, zoom: 15.5, bearing: 0, tilt: 0),
-      ),
-    );
+    _clearAllAnnotations();
+    _animateToPosition(_pos, zoom: 15.5, bearing: 0, tilt: 0);
   }
 
   void _snack(String s) {
@@ -2956,12 +2780,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void _applyMapStyle(bool isDark) {
     if (isDark == _lastStyleDark) return;
     _lastStyleDark = isDark;
-    setState(() {}); // rebuild GoogleMap with new style: param
+    setState(() {}); // rebuild map with new style
   }
 
-  /// Called by GoogleMap when a camera movement is initiated.
-  /// User gestures (pan/pinch) pause the auto-follow so the driver can
-  /// freely explore the map.  A recenter FAB appears to resume following.
+  /// Called when a camera movement is initiated by user gesture.
+  /// Pauses auto-follow so the driver can freely explore the map.
   void _onCameraMoveStarted() {
     // Only pause follow during active navigation phases
     final isNav =
@@ -2983,73 +2806,31 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     setState(() => _cameraFollowing = true);
     final bearing = _smoothedBearing;
     _cameraBearing = bearing; // sync for sprite selection
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: _pos, zoom: 17.5, bearing: bearing, tilt: 55),
-      ),
-    );
+    _animateToPosition(_pos, zoom: 17.5, bearing: bearing, tilt: 55);
   }
 
   Widget _mapW(bool isDark) {
     final bool isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
-    final mapStyle = isNav ? MapStyles.navigation : MapStyles.dark;
-    final double mapTilt = isNav ? 55.0 : 45.0;
+    final styleUri = isNav ? MapboxConfig.styleNavigation : MapboxConfig.styleDark;
     return RepaintBoundary(
-      child: GoogleMap(
-        style: mapStyle,
-        initialCameraPosition: CameraPosition(
-          target: _pos,
+      child: mapbox.MapWidget(
+        styleUri: styleUri,
+        cameraOptions: mapbox.CameraOptions(
+          center: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
           zoom: 15.5,
           bearing: _heading,
-          tilt: mapTilt,
+          pitch: isNav ? 55.0 : 0.0,
         ),
-        onMapCreated: (c) {
-          _map = c;
+        onMapCreated: (ctrl) async {
+          _map = ctrl;
           _lastStyleDark = isDark;
-          c.moveCamera(
-            CameraUpdate.newCameraPosition(
-              CameraPosition(
-                target: _pos,
-                zoom: 15.5,
-                bearing: _heading,
-                tilt: mapTilt,
-              ),
-            ),
-          );
+          _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+          _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+          _updateDriverAnnotation();
         },
-        markers: _allMarkers,
-        polylines: _polylines,
-        onCameraMove: (pos) {
-          // Track camera bearing for multi-angle sprite selection
-          _cameraBearing = pos.bearing;
-          if (_navCarSprites != null) {
-            final viewAngle = _heading - _cameraBearing;
-            final idx = CarIconLoader.spriteIndexForAngle(viewAngle);
-            if (idx != _lastSpriteIdx) {
-              _lastSpriteIdx = idx;
-              setState(() {}); // only rebuild when sprite actually changes
-            }
-          }
+        onScrollListener: (_) {
+          _onCameraMoveStarted();
         },
-        onCameraMoveStarted: _onCameraMoveStarted,
-        myLocationEnabled: false,
-        myLocationButtonEnabled: false,
-        zoomControlsEnabled: false,
-        mapToolbarEnabled: false,
-        compassEnabled: false,
-        buildingsEnabled: true,
-        trafficEnabled: false,
-        indoorViewEnabled: false,
-        liteModeEnabled: false,
-        padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top +
-              ((_phase == _Phase.enRouteToPickup ||
-                      _phase == _Phase.inTrip ||
-                      _phase == _Phase.routeSummary)
-                  ? 165
-                  : 70),
-          bottom: _mapBottomPadding,
-        ),
       ),
     );
   }

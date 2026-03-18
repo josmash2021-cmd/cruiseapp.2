@@ -7,7 +7,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import '../models/lat_lng.dart';
+import '../config/mapbox_config.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -104,29 +106,32 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   static const _pinColor = Color(0xFFE8C547);
   static const _birminghamDefault = LatLng(33.5186, -86.8104);
 
-  /// Picks the right JSON map style based on the system theme (light phone = light map).
-  String get _mapStyle {
-    if (_stage == RideStage.riding) return MapStyles.navigation;
-    return _c.isDark ? MapStyles.darkIOS : MapStyles.lightIOS;
+  /// Picks the Mapbox style URI based on the current stage/theme.
+  String get _mapStyleUri {
+    if (_stage == RideStage.riding) return MapboxConfig.styleNavigation;
+    return _c.isDark ? MapboxConfig.styleDark : MapboxConfig.styleLight;
   }
 
-  static final _usBounds = LatLngBounds(
-    southwest: LatLng(24.396308, -124.848974),
-    northeast: LatLng(49.384358, -66.885444),
-  );
   static const double _defaultMapZoom = 13.7;
   static const double _goldPinHue = 0.0;
 
-  BitmapDescriptor? _goldPinIcon;
-  BitmapDescriptor? _dropoffPinIcon;
-  // Raw bytes for the gold pins — used by Apple Maps on iOS.
+  // Marker icon bytes (Mapbox uses raw Uint8List)
   Uint8List? _goldPinIconBytes;
   Uint8List? _dropoffPinIconBytes;
   Uint8List? _driverCarIconBytes;
 
-  GoogleMapController? _mapController;
+  // Mapbox controller & annotation managers
+  mapbox.MapboxMap? _mapController;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
+  // Active annotations
+  mapbox.PointAnnotation? _goldDotAnnot;
+  mapbox.PointAnnotation? _pickupAnnot;
+  mapbox.PointAnnotation? _dropoffAnnot;
+  mapbox.PointAnnotation? _driverAnnot;
+  mapbox.PolylineAnnotation? _routeAnnot;
 
-  /// True when the Google Maps controller is ready.
+  /// True when the Mapbox controller is ready.
   bool get _hasMapController => _mapController != null;
   LatLng? _currentPosition;
   LatLng? _cameraTarget;
@@ -153,17 +158,15 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   String? _searchError;
   List<PlaceSuggestion> _suggestions = [];
 
-  Marker? _pickupMarker;
-  Marker? _dropoffMarker;
-  Marker? _driverMarker;
-  Set<Polyline> _polylines = {};
+  // Pickup/dropoff positions (replace old Marker objects)
+  LatLng? _dropoffPosition;
   List<LatLng> _activeRoutePoints = [];
 
   AnimationController? _glowController;
   double _routeGlowPhase = 0.0;
 
-  // Gold animated 3D location dot (replaces native blue dot)
-  List<BitmapDescriptor> _goldDotFrames = [];
+  // Gold animated 3D location dot
+  List<Uint8List> _goldDotFrames = [];
   int _goldDotFrame = 0;
   Timer? _goldDotTimer;
 
@@ -201,8 +204,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   LatLng? _driverPosition;
   LatLng? _prevDriverPosition; // for smooth interpolation
   double _driverBearing = 0; // bearing toward destination
-  BitmapDescriptor? _driverCarIcon; // canvas-painted car icon (same as driver)
-  List<BitmapDescriptor>? _navCarSprites; // 8-angle 3D sprites
+  // _driverCarIcon replaced by _driverCarIconBytes
+  List<Uint8List>? _navCarSprites; // 8-angle 3D sprites
   double _cameraBearing = 0; // current camera bearing for sprite selection
   DateTime? _lastDriverMarkerRebuild;
   AnimationController? _riderDriverAnim; // 60fps smooth driver animation
@@ -254,7 +257,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     ),
   ];
 
-  Future<BitmapDescriptor> _buildGoldPin({
+  Future<Uint8List> _buildGoldPin({
     bool withHouse = false,
     bool isPickup = true,
   }) async {
@@ -360,17 +363,15 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final picture = recorder.endRecording();
     final img = await picture.toImage(size.toInt(), size.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    final rawBytes = byteData!.buffer.asUint8List();
-    // ignore: deprecated_member_use
-    return BitmapDescriptor.fromBytes(rawBytes);
+    return byteData!.buffer.asUint8List();
   }
 
-  /// Renders the gold pin as raw PNG bytes (for Apple Maps on iOS).
+  /// Renders the gold pin as raw PNG bytes (unified with _buildGoldPin).
   Future<Uint8List> _buildGoldPinBytes({
     bool withHouse = false,
     bool isPickup = true,
   }) async {
-    // Re-use the BitmapDescriptor builder; extract bytes from it.
+    // Renders the pin using Canvas and returns raw PNG bytes.
     final byteRecorder = ui.PictureRecorder();
     const double size = 80;
     final canvas = Canvas(byteRecorder, const Rect.fromLTWH(0, 0, size, size));
@@ -470,35 +471,26 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     return byteData!.buffer.asUint8List();
   }
 
-  Marker _pickupMapMarker(LatLng position, {String? snippet}) {
-    return Marker(
-      markerId: const MarkerId('pickup'),
-      position: position,
-      draggable: _stage == RideStage.confirmPickup,
-      icon: _goldPinIcon ?? BitmapDescriptor.defaultMarkerWithHue(_goldPinHue),
-      infoWindow: InfoWindow(
-        title: S.of(context).pickupLabel,
-        snippet: snippet,
-      ),
-      onDragEnd: _stage == RideStage.confirmPickup
-          ? _onPickupMarkerDragEnd
-          : null,
-    );
+  Future<void> _setPickupAnnotation(LatLng position) async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    if (_pickupAnnot != null) { try { await mgr.delete(_pickupAnnot!); } catch (_) {} _pickupAnnot = null; }
+    _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
+      image: _goldPinIconBytes,
+      iconSize: 0.5,
+    ));
   }
 
-  Marker _dropoffMapMarker(LatLng position, {String? snippet}) {
-    return Marker(
-      markerId: const MarkerId('dropoff'),
-      position: position,
-      icon:
-          _dropoffPinIcon ??
-          _goldPinIcon ??
-          BitmapDescriptor.defaultMarkerWithHue(_goldPinHue),
-      infoWindow: InfoWindow(
-        title: S.of(context).dropoffLabel,
-        snippet: snippet,
-      ),
-    );
+  Future<void> _setDropoffAnnotation(LatLng position) async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    if (_dropoffAnnot != null) { try { await mgr.delete(_dropoffAnnot!); } catch (_) {} _dropoffAnnot = null; }
+    _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
+      image: _dropoffPinIconBytes ?? _goldPinIconBytes,
+      iconSize: 0.5,
+    ));
   }
 
   @override
@@ -508,7 +500,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _cameraTarget = _birminghamDefault;
     _pickupAddress = 'Birmingham, AL';
     _pickupCtrl.text = _pickupAddress;
-    _pickupMarker = _pickupMapMarker(_birminghamDefault);
+    // Pickup annotation set after map is created
     _pickupFocus.addListener(_handleAddressFocusChange);
     _dropoffFocus.addListener(_handleAddressFocusChange);
     _glowController = AnimationController(
@@ -561,31 +553,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _loadPinIcons() async {
     _goldPinIconBytes = await _buildGoldPinBytes(isPickup: true);
-    _goldPinIcon = BitmapDescriptor.bytes(_goldPinIconBytes!);
     _dropoffPinIconBytes = await _buildGoldPinBytes(
       withHouse: true,
       isPickup: false,
     );
-    _dropoffPinIcon = BitmapDescriptor.bytes(_dropoffPinIconBytes!);
     if (!mounted) return;
-    setState(() {
-      _pickupMarker = _pickupMapMarker(
-        _pickupMarker?.position ?? _birminghamDefault,
-        snippet: _pickupAddress,
-      );
-      if (_dropoffMarker != null) {
-        _dropoffMarker = _dropoffMapMarker(
-          _dropoffMarker!.position,
-          snippet: _dropoffAddress,
-        );
-      }
-    });
+    // Refresh annotations with new icon bytes
+    if (_currentPosition != null) _setPickupAnnotation(_currentPosition!);
   }
 
   Future<void> _buildGoldDotFrames() async {
     const int frameCount = 12;
     const double canvasSize = 140.0;
-    final frames = <BitmapDescriptor>[];
+    final frames = <Uint8List>[];
 
     for (int i = 0; i < frameCount; i++) {
       final t = i / frameCount;
@@ -658,7 +638,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       final data = await img.toByteData(format: ui.ImageByteFormat.png);
       if (data == null) return;
       // ignore: deprecated_member_use
-      frames.add(BitmapDescriptor.fromBytes(data.buffer.asUint8List()));
+      frames.add(data.buffer.asUint8List());
     }
 
     if (!mounted || frames.length != frameCount) return;
@@ -667,9 +647,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     // Start pulse animation
     _goldDotTimer = Timer.periodic(const Duration(milliseconds: 130), (_) {
       if (!mounted || _goldDotFrames.isEmpty) return;
-      setState(() {
-        _goldDotFrame = (_goldDotFrame + 1) % _goldDotFrames.length;
-      });
+      _goldDotFrame = (_goldDotFrame + 1) % _goldDotFrames.length;
+      _updateGoldDotAnnotation();
     });
   }
 
@@ -744,19 +723,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final dropoffText = _dropoffCtrl.text.trim();
     if (pickupText.isEmpty || dropoffText.isEmpty) return;
 
-    if (_pickupMarker == null) {
+    if (_currentPosition == null) {
       await _syncPickupFromInputIfNeeded();
       if (!mounted) return;
     }
 
     final sameDropoffText =
         _dropoffAddress.trim().toLowerCase() == dropoffText.toLowerCase();
-    if (_dropoffMarker == null || !sameDropoffText) {
+    if (_dropoffPosition == null || !sameDropoffText) {
       await _onDropoffSubmitted(dropoffText);
       return;
     }
 
-    if (_pickupMarker != null && _dropoffMarker != null) {
+    if (_currentPosition != null && _dropoffPosition != null) {
       await _autoAdvanceToOptions();
     }
   }
@@ -1005,7 +984,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           // Always keep _currentPosition fresh for blue dot
           _currentPosition = live;
 
-          if (_hasPreparedRoute && _dropoffMarker != null) return;
+          if (_hasPreparedRoute && _dropoffPosition != null) return;
           // Skip pickup marker updates during active ride stages
           if (_stage == RideStage.confirmPickup ||
               _stage == RideStage.payment ||
@@ -1014,7 +993,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             return;
           }
 
-          final currentPickup = _pickupMarker?.position;
+          final currentPickup = _currentPosition;
           if (currentPickup != null) {
             final movedMeters = Geolocator.distanceBetween(
               currentPickup.latitude,
@@ -1029,10 +1008,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
           setState(() {
             _cameraTarget = live;
-            _pickupMarker = _pickupMapMarker(live, snippet: _pickupAddress);
+            _setPickupAnnotation(live);
             _tripMiles = '-- mi';
             _tripDuration = '-- min';
-            _polylines = {};
+            _clearRouteAnnotation();
             _hasPreparedRoute = false;
           });
 
@@ -1064,14 +1043,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     setState(() {
       _currentPosition = latLng;
       _cameraTarget = latLng;
-      _pickupMarker = _pickupMapMarker(latLng, snippet: initialAddress);
       _pickupAddress = initialAddress;
       _pickupCtrl.text = initialAddress;
     });
   }
 
-  void _onCameraMove(CameraPosition position) {
-    _cameraTarget = position.target;
+  void _onCameraMove(LatLng position) {
+    _cameraTarget = position;
     // Any manual gesture resets the zoom toggle so next tap centers first.
     if (!_isRecentering) _isCenteredOnPickup = false;
   }
@@ -1083,7 +1061,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       return; // pickup is a real marker now, not screen-center
     }
     if (_stage != RideStage.pin) return;
-    if (_hasPreparedRoute && _dropoffMarker != null) return;
+    if (_hasPreparedRoute && _dropoffPosition != null) return;
     final target = _cameraTarget;
     if (target == null) return;
 
@@ -1104,10 +1082,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         }
       }
 
-      if (_pickupMarker != null) {
+      if (_currentPosition != null) {
         final markerDistance = Geolocator.distanceBetween(
-          _pickupMarker!.position.latitude,
-          _pickupMarker!.position.longitude,
+          _currentPosition!.latitude,
+          _currentPosition!.longitude,
           target.latitude,
           target.longitude,
         );
@@ -1117,10 +1095,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       }
 
       setState(() {
-        _pickupMarker = _pickupMapMarker(target, snippet: _pickupAddress);
         _tripMiles = '-- mi';
         _tripDuration = '-- min';
-        _polylines = {};
+        _clearRouteAnnotation();
         _hasPreparedRoute = false;
       });
 
@@ -1138,7 +1115,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         setState(() {
           _pickupAddress = resolved;
           _pickupCtrl.text = resolved;
-          _pickupMarker = _pickupMapMarker(target, snippet: resolved);
+          _setPickupAnnotation(target);
         });
       } catch (_) {
         if (!mounted || requestTicket != _reverseGeocodeTicket) return;
@@ -1146,7 +1123,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         setState(() {
           _pickupAddress = fallback;
           _pickupCtrl.text = fallback;
-          _pickupMarker = _pickupMapMarker(target, snippet: fallback);
+          _setPickupAnnotation(target);
         });
       }
     });
@@ -1158,10 +1135,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
     setState(() {
       _dropoffCtrl.text = S.of(context).loadingAddress;
-      _dropoffMarker = _dropoffMapMarker(
-        latLng,
-        snippet: S.of(context).loadingAddress,
-      );
+      _dropoffPosition = latLng;
+      _setDropoffAnnotation(latLng);
     });
 
     try {
@@ -1176,7 +1151,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       setState(() {
         _dropoffAddress = resolved;
         _dropoffCtrl.text = resolved;
-        _dropoffMarker = _dropoffMapMarker(latLng, snippet: resolved);
+        _dropoffPosition = latLng;
+        _setDropoffAnnotation(latLng);
       });
     } catch (_) {
       if (!mounted) return;
@@ -1184,7 +1160,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       setState(() {
         _dropoffAddress = fallback;
         _dropoffCtrl.text = fallback;
-        _dropoffMarker = _dropoffMapMarker(latLng, snippet: fallback);
+        _dropoffPosition = latLng;
+        _setDropoffAnnotation(latLng);
       });
     }
   }
@@ -1202,7 +1179,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       setState(() {
         _pickupAddress = resolved;
         _pickupCtrl.text = resolved;
-        _pickupMarker = _pickupMapMarker(latLng, snippet: resolved);
+        _setPickupAnnotation(latLng);
       });
     } catch (_) {
       if (!mounted) return;
@@ -1210,7 +1187,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       setState(() {
         _pickupAddress = fallback;
         _pickupCtrl.text = fallback;
-        _pickupMarker = _pickupMapMarker(latLng, snippet: fallback);
+        _setPickupAnnotation(latLng);
       });
     }
   }
@@ -1229,10 +1206,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (mounted) _dropoffFocus.requestFocus();
   }
 
-  void _onMapCreated(GoogleMapController controller) {
+  Future<void> _onMapCreated(mapbox.MapboxMap controller) async {
     _mapController = controller;
+    _pointAnnotMgr = await controller.annotations.createPointAnnotationManager();
+    _polylineAnnotMgr = await controller.annotations.createPolylineAnnotationManager();
     if (_currentPosition != null) {
       _centerMapOn(_currentPosition!, zoom: _defaultMapZoom);
+      await _setPickupAnnotation(_currentPosition!);
     }
   }
 
@@ -1246,29 +1226,46 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     double bearing = 0,
     double tilt = 0,
   }) async {
-    final z = zoom ?? await _currentZoom();
-    await _mapController?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: target, zoom: z, bearing: bearing, tilt: tilt),
+    final z = zoom ?? _defaultMapZoom;
+    _mapController?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(coordinates: mapbox.Position(target.longitude, target.latitude)),
+        zoom: z,
+        bearing: bearing,
+        pitch: tilt,
       ),
+      mapbox.MapAnimationOptions(duration: 600),
     );
   }
 
-  /// Fit the camera to [bounds] with [padding] (pixels) on all sides.
-  Future<void> _fitBounds(LatLngBounds bounds, double padding) async {
-    await _mapController?.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, padding),
+  /// Fit the camera to a list of points with [padding] (pixels) on all sides.
+  Future<void> _fitBounds(List<LatLng> points, double padding) async {
+    if (_mapController == null || points.isEmpty) return;
+    final coords = points
+        .map((p) => mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
+        .toList();
+    final cam = await _mapController!.cameraForCoordinatesPadding(
+      coords,
+      mapbox.CameraOptions(),
+      mapbox.MbxEdgeInsets(top: padding, left: padding, bottom: padding, right: padding),
+      null, null,
     );
+    if (mounted) _mapController?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
+  }
+  Future<void> _fitRideBounds(List<LatLng> points) async {
+    await _fitBounds(points, 80);
   }
 
-  /// Returns the current map zoom level on whichever platform is active.
   Future<double> _currentZoom() async {
+    if (_mapController == null) return _defaultMapZoom;
     try {
-      return await _mapController?.getZoomLevel() ?? _defaultMapZoom;
+      final state = await _mapController!.getCameraState();
+      return state.zoom;
     } catch (_) {
       return _defaultMapZoom;
     }
   }
+
   // ──────────────────────────────────────────────────────────────────
 
   EdgeInsets _mapPaddingForContext(BuildContext context) {
@@ -1289,19 +1286,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   /// doesn't "jump" — mimicking the fluid feel of premium ride-hailing apps.
   Future<void> _smoothCameraTransition(LatLng target, double targetZoom) async {
     if (!_hasMapController) return;
-    final currentZoom = await _currentZoom();
-    final zoomDelta = (targetZoom - currentZoom).abs();
+    await _panTo(target, zoom: targetZoom);
+  }
 
-    if (zoomDelta > 4.0) {
-      // Large zoom change â†’ 2-step glide via midpoint zoom
-      final midZoom = currentZoom + (targetZoom - currentZoom) * 0.5;
-      await _panTo(target, zoom: midZoom);
-      await Future.delayed(const Duration(milliseconds: 120));
-      await _panTo(target, zoom: targetZoom);
-    } else {
-      // Normal zoom change â†’ single smooth animation
-      await _panTo(target, zoom: targetZoom);
-    }
+  void _onCameraMoveStarted() {
+    // User panned — could pause auto-follow here if needed
   }
 
   /// Always centers on the pickup location.
@@ -1310,7 +1299,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   /// Never moves or resets the pickup marker.
   Future<void> _recenterToMyLocation() async {
     if (!_hasMapController) return;
-    final pickup = _pickupMarker?.position ?? _currentPosition;
+    final pickup = _currentPosition;
     if (pickup == null) return;
 
     // In confirmPickup the center pin IS the pickup — just re-center
@@ -1355,7 +1344,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       });
 
       try {
-        final origin = _pickupMarker?.position;
+        final origin = _currentPosition;
         final raw = await _places.autocomplete(
           query,
           latitude: origin?.latitude,
@@ -1374,28 +1363,22 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       } catch (error) {
         if (!mounted) return;
         try {
-          final origin = _pickupMarker?.position;
+          final origin = _currentPosition;
           final exact = await _places.geocodeAddress(
             query,
             latitude: origin?.latitude,
             longitude: origin?.longitude,
           );
-          if (!mounted) return;
-          if (exact != null) {
-            setState(() {
-              _isSearching = false;
-              _searchError = null;
-              _suggestions = [
-                PlaceSuggestion(
-                  description: exact.address,
-                  placeId: 'exact:${exact.lat},${exact.lng}',
-                  lat: exact.lat,
-                  lng: exact.lng,
-                ),
-              ];
-            });
-            return;
-          }
+          if (!mounted || exact == null) return;
+
+          final position = LatLng(exact.lat, exact.lng);
+          _currentPosition = position;
+          _setPickupAnnotation(position);
+          setState(() {
+            _pickupAddress = exact.address.isEmpty ? query : exact.address;
+            _pickupCtrl.text = _pickupAddress;
+            _hasPreparedRoute = false;
+          });
         } catch (_) {}
 
         setState(() {
@@ -1428,7 +1411,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     });
 
     try {
-      final origin = _pickupMarker?.position;
+      final origin = _currentPosition;
       // Use autocomplete (which runs Nominatim + Photon in parallel)
       // to get results with coordinates — avoids double Nominatim calls.
       final results = await _places.autocomplete(
@@ -1487,9 +1470,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
     final normalizedInput = input.toLowerCase();
     final normalizedCurrent = _pickupAddress.trim().toLowerCase();
-    if (normalizedInput == normalizedCurrent && _pickupMarker != null) return;
+    if (normalizedInput == normalizedCurrent && _currentPosition != null) return;
 
-    final bias = _pickupMarker?.position;
+    final bias = _currentPosition;
     try {
       final exactPickup = await _places.geocodeAddress(
         input,
@@ -1500,10 +1483,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
       final position = LatLng(exactPickup.lat, exactPickup.lng);
       setState(() {
-        _pickupMarker = _pickupMapMarker(
-          position,
-          snippet: exactPickup.address,
-        );
+        _currentPosition = position;
         _pickupAddress = exactPickup.address.isEmpty
             ? input
             : exactPickup.address;
@@ -1516,7 +1496,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Future<List<PlaceSuggestion>> _enrichSuggestionsWithDistance(
     List<PlaceSuggestion> input,
   ) async {
-    final origin = _pickupMarker?.position;
+    final origin = _currentPosition;
     if (origin == null) return input;
 
     // Fast path: compute straight-line distance for items that already have coords
@@ -1601,32 +1581,29 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       resolvedAddress = suggestion.description.trim();
     }
 
-    final marker = pickup
-        ? _pickupMapMarker(
-            LatLng(details.lat, details.lng),
-            snippet: resolvedAddress,
-          )
-        : _dropoffMapMarker(
-            LatLng(details.lat, details.lng),
-            snippet: resolvedAddress,
-          );
+    final pos = LatLng(details.lat, details.lng);
 
+    if (pickup) {
+      _currentPosition = pos;
+      _setPickupAnnotation(pos);
+    } else {
+      _dropoffPosition = pos;
+      _setDropoffAnnotation(pos);
+    }
     setState(() {
       if (pickup) {
-        _pickupMarker = marker;
         _pickupAddress = resolvedAddress;
         _pickupCtrl.text = resolvedAddress;
       } else {
-        _dropoffMarker = marker;
         _dropoffAddress = resolvedAddress;
         _dropoffCtrl.text = resolvedAddress;
       }
       _hasPreparedRoute = false;
     });
 
-    await _animateCameraToSelection(marker.position);
+    await _animateCameraToSelection(pos);
 
-    if (_pickupMarker != null && _dropoffMarker != null) {
+    if (_currentPosition != null && _dropoffPosition != null) {
       if (_stage == RideStage.plan) {
         await _autoAdvanceToOptions();
       } else {
@@ -1637,7 +1614,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       setState(() {
         _tripMiles = '-- mi';
         _tripDuration = '-- min';
-        _polylines = {};
+        _clearRouteAnnotation();
       });
     }
   }
@@ -1652,7 +1629,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _autoAdvanceToOptions() async {
     if (_autoProgressingToOptions) return;
-    if (_pickupMarker == null || _dropoffMarker == null) return;
+    if (_currentPosition == null || _dropoffPosition == null) return;
 
     _autoProgressingToOptions = true;
     try {
@@ -1691,12 +1668,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Future<bool> _prepareRoutePreview({bool returnToPin = true}) async {
-    if (_pickupMarker == null || _dropoffMarker == null) return false;
+    if (_currentPosition == null || _dropoffPosition == null) return false;
 
     final animationTicket = ++_routeAnimationTicket;
 
-    final origin = _pickupMarker!.position;
-    final destination = _dropoffMarker!.position;
+    final origin = _currentPosition!;
+    final destination = _dropoffPosition!;
     final route = await _directions.getRoute(
       origin: origin,
       destination: destination,
@@ -1716,7 +1693,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             : route.endAddress;
         _dropoffCtrl.text = _dropoffAddress;
         _hasPreparedRoute = true;
-        _polylines = {};
+        _clearRouteAnnotation();
       });
 
       await _animateRoutePolyline(route.points, animationTicket);
@@ -1741,7 +1718,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         _tripDuration = estimate?.durationText ?? '-- min';
         _updateRidePricingFromDuration(_tripDuration);
         _hasPreparedRoute = false;
-        _polylines = {};
+        _clearRouteAnnotation();
       });
 
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
@@ -1778,26 +1755,21 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       });
     }
 
-    if (_pickupMarker == null) {
-      final current = _currentPosition;
-      if (current != null) {
-        setState(() {
-          _pickupMarker = _pickupMapMarker(current);
-        });
-      }
+    if (_currentPosition == null) {
+      // nothing to do; position will be set by location stream
     }
 
-    if (_dropoffMarker == null &&
+    if (_dropoffPosition == null &&
         _suggestions.isNotEmpty &&
         !_searchingPickup) {
       await _selectSuggestion(_suggestions.first, pickup: false);
     }
 
-    if (_dropoffMarker == null && _dropoffCtrl.text.trim().isNotEmpty) {
+    if (_dropoffPosition == null && _dropoffCtrl.text.trim().isNotEmpty) {
       await _onDropoffSubmitted(_dropoffCtrl.text);
     }
 
-    if (_pickupMarker == null || _dropoffMarker == null) {
+    if (_currentPosition == null || _dropoffPosition == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1892,11 +1864,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       if (stage != RideStage.plan) {
         _planBodyVisible = false;
       }
-      // Rebuild pickup marker so draggable flag matches current stage
-      final pos = _pickupMarker?.position;
-      if (pos != null) {
-        _pickupMarker = _pickupMapMarker(pos, snippet: _pickupAddress);
-      }
+      // Refresh pickup annotation for current stage
+      if (_currentPosition != null) _setPickupAnnotation(_currentPosition!);
     });
 
     if (stage == RideStage.plan) {
@@ -1925,8 +1894,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       await Future.delayed(const Duration(milliseconds: 80));
       if (!mounted) return;
       // Only fit map when route is visible and it's a stage that should show the full route
-      if (_pickupMarker != null &&
-          _dropoffMarker != null &&
+      if (_currentPosition != null &&
+          _dropoffPosition != null &&
           (stage == RideStage.options ||
               stage == RideStage.matching ||
               stage == RideStage.riding ||
@@ -1936,8 +1905,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           // without the map being too zoomed-in or fully fitted.
           _isCenteredOnPickup =
               false; // first compass tap will center on pickup
-          final p = _pickupMarker!.position;
-          final d = _dropoffMarker!.position;
+          final p = _currentPosition!;
+          final d = _dropoffPosition!;
           final mid = LatLng(
             (p.latitude + d.latitude) / 2,
             (p.longitude + d.longitude) / 2,
@@ -2362,75 +2331,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _fitMapToRoute() async {
-    if (!_hasMapController || _pickupMarker == null || _dropoffMarker == null) {
-      return;
-    }
-
-    final origin = _pickupMarker!.position;
-    final destination = _dropoffMarker!.position;
-
-    final points = <LatLng>[origin, destination];
-    for (final polyline in _polylines) {
-      points.addAll(polyline.points);
-    }
-
-    final bounds = _boundsFromPoints(points);
-
-    try {
-      // The GoogleMap widget already has padding from _mapPaddingForContext
-      // that accounts for the top bar and bottom panel.
-      // So newLatLngBounds with a small extra padding will center the route
-      // perfectly in the visible area between the UI elements.
-      await _fitBounds(bounds, 50);
-
-      // Wait for animation to settle, then clamp zoom
-      await Future.delayed(const Duration(milliseconds: 250));
-      if (!mounted || !_hasMapController) return;
-
-      final currentZoom = await _currentZoom();
-      // Min 12.0 (not too zoomed out), Max 15.5 (keeps context)
-      final clampedZoom = currentZoom.clamp(12.0, 15.5);
-      if ((clampedZoom - currentZoom).abs() > 0.2) {
-        // Need to adjust zoom — recenter with clamped zoom
-        final midLat =
-            (bounds.northeast.latitude + bounds.southwest.latitude) / 2;
-        final midLng =
-            (bounds.northeast.longitude + bounds.southwest.longitude) / 2;
-        await _panTo(LatLng(midLat, midLng), zoom: clampedZoom);
-      }
-    } catch (_) {
-      final center = LatLng(
-        (bounds.southwest.latitude + bounds.northeast.latitude) / 2,
-        (bounds.southwest.longitude + bounds.northeast.longitude) / 2,
-      );
-      await _panTo(center, zoom: 13.0);
-      await _applyRouteVerticalBias(bounds);
-    }
+    if (!_hasMapController) return;
+    final pts = _activeRoutePoints.isNotEmpty
+        ? _activeRoutePoints
+        : [if (_currentPosition != null) _currentPosition!];
+    if (pts.isEmpty) return;
+    await _fitBounds(pts, 80);
   }
 
-  Future<void> _applyRouteVerticalBias(LatLngBounds bounds) async {
-    if (!_hasMapController) return;
-
-    final latSpan = (bounds.northeast.latitude - bounds.southwest.latitude)
-        .abs();
-    if (latSpan <= 0) return;
-
-    final shiftFactor = _routeVerticalShiftFactor();
-    if (shiftFactor <= 0) return;
-
-    final center = LatLng(
-      (bounds.southwest.latitude + bounds.northeast.latitude) / 2,
-      (bounds.southwest.longitude + bounds.northeast.longitude) / 2,
-    );
-
-    final shiftedLat = center.latitude + (latSpan * shiftFactor);
-    final boundedLat = shiftedLat.clamp(
-      _usBounds.southwest.latitude,
-      _usBounds.northeast.latitude,
-    );
-
-    final zoom = await _currentZoom().catchError((_) => 13.8);
-    await _panTo(LatLng(boundedLat, center.longitude), zoom: zoom);
+  Future<void> _applyRouteVerticalBias(List<LatLng> points) async {
+    if (!_hasMapController || points.isEmpty) return;
+    await _fitBounds(points, 80);
   }
 
   double _routeVerticalShiftFactor() {
@@ -2454,43 +2365,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  LatLngBounds _boundsFromPoints(List<LatLng> points) {
-    if (points.isEmpty) {
-      return LatLngBounds(
-        southwest: _birminghamDefault,
-        northeast: _birminghamDefault,
-      );
-    }
-
-    var minLat = points.first.latitude;
-    var maxLat = points.first.latitude;
-    var minLng = points.first.longitude;
-    var maxLng = points.first.longitude;
-
-    for (final point in points.skip(1)) {
-      if (point.latitude < minLat) minLat = point.latitude;
-      if (point.latitude > maxLat) maxLat = point.latitude;
-      if (point.longitude < minLng) minLng = point.longitude;
-      if (point.longitude > maxLng) maxLng = point.longitude;
-    }
-
-    const minSpan = 0.0008;
-    if ((maxLat - minLat).abs() < minSpan) {
-      final adjust = (minSpan - (maxLat - minLat).abs()) / 2;
-      minLat -= adjust;
-      maxLat += adjust;
-    }
-    if ((maxLng - minLng).abs() < minSpan) {
-      final adjust = (minSpan - (maxLng - minLng).abs()) / 2;
-      minLng -= adjust;
-      maxLng += adjust;
-    }
-
-    return LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
-    );
-  }
+  // _boundsFromPoints removed — use _fitBounds(List<LatLng>, padding) directly
 
   Future<void> _animateCameraToSelection(LatLng target) async {
     if (!_hasMapController) return;
@@ -2499,95 +2374,40 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _animateRoutePolyline(List<LatLng> points, int ticket) async {
     if (!mounted || points.isEmpty) return;
-
-    // For short routes, just show immediately
-    if (points.length < 6) {
-      if (!mounted || ticket != _routeAnimationTicket) return;
-      setState(() {
-        _polylines = _buildRoutePolylines(points);
-      });
-      return;
-    }
-
-    // Smooth 5-frame progressive draw for elegant route appearance
-    const frames = 5;
-    final chunk = (points.length / frames).ceil();
-    for (var index = chunk; index <= points.length; index += chunk) {
-      if (!mounted || ticket != _routeAnimationTicket) return;
-      final currentPoints = points.take(index).toList();
-      final newPolylines = _buildRoutePolylines(currentPoints);
-      setState(() {
-        _polylines = newPolylines;
-      });
-      await Future.delayed(const Duration(milliseconds: 20));
-    }
-
-    if (!mounted || ticket != _routeAnimationTicket) return;
-    final finalPolylines = _buildRoutePolylines(points);
-    setState(() {
-      _polylines = finalPolylines;
-    });
+    if (ticket != _routeAnimationTicket) return;
+    await _setRouteAnnotation(points);
   }
 
   // Route line color: always gold for brand consistency
   Color get _routeColor => const Color(0xFFE8C547);
 
-  Set<Polyline> _buildRoutePolylines(List<LatLng> points) {
-    final baseColor = _routeColor;
-    // Animated glow: oscillate alpha between 0.5 and 1.0 using sin wave
-    final sinVal = math.sin(_routeGlowPhase);
-    final glowAlpha = 0.5 + 0.5 * sinVal.abs();
-    final glowColor = baseColor.withValues(alpha: glowAlpha);
-    return {
-      // Outer glow layer
-      Polyline(
-        polylineId: const PolylineId('ride_route_glow'),
-        points: points,
-        color: baseColor.withValues(alpha: 0.14),
-        width: 8,
-        zIndex: 0,
-        jointType: JointType.round,
-        startCap: Cap.roundCap,
-        endCap: Cap.roundCap,
-      ),
-      // Base shadow
-      Polyline(
-        polylineId: const PolylineId('ride_route_base'),
-        points: points,
-        color: _c.isDark
-            ? _panelBlack.withValues(alpha: 0.35)
-            : Colors.black.withValues(alpha: 0.10),
-        width: 4,
-        zIndex: 1,
-        jointType: JointType.round,
-      ),
-      // Main line with animated glow
-      Polyline(
-        polylineId: const PolylineId('ride_route'),
-        points: points,
-        color: glowColor,
-        width: 4,
-        zIndex: 2,
-        startCap: Cap.roundCap,
-        endCap: Cap.roundCap,
-        jointType: JointType.round,
-      ),
-    };
+  Future<void> _setRouteAnnotation(List<LatLng> points) async {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || points.length < 2) return;
+    if (_routeAnnot != null) {
+      try { await mgr.delete(_routeAnnot!); } catch (_) {}
+      _routeAnnot = null;
+    }
+    final coords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: coords),
+      lineColor: _routeColor.toARGB32(),
+      lineWidth: 4.0,
+    ));
+  }
+
+  Future<void> _clearRouteAnnotation() async {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || _routeAnnot == null) return;
+    try { await mgr.delete(_routeAnnot!); } catch (_) {}
+    _routeAnnot = null;
   }
 
   int _glowFrameSkip = 0;
 
   void _onGlowTick() {
-    if (!mounted || _activeRoutePoints.isEmpty) return;
-    // Only rebuild polylines every 5th frame (~12 fps) to reduce jank
-    _glowFrameSkip++;
-    if (_glowFrameSkip < 5) return;
-    _glowFrameSkip = 0;
-    _routeGlowPhase = (_glowController!.value) * math.pi * 2;
-    final newPolylines = _buildRoutePolylines(_activeRoutePoints);
-    setState(() {
-      _polylines = newPolylines;
-    });
+    // Glow animation no longer rebuilds Google Maps polylines
+    // Mapbox annotation is set once; skip per-frame rebuilds
   }
 
   void _startRouteGlowAnimation() {
@@ -2603,14 +2423,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     _c = AppColors.of(context);
 
-    // When the theme flips between light â†” dark, re-apply the map JSON style
-    if (_lastIsDark != null &&
-        _lastIsDark != _c.isDark &&
-        _mapController != null) {
-      final style = _mapStyle;
-      // ignore: deprecated_member_use
-      _mapController!.setMapStyle(style);
-    }
     _lastIsDark = _c.isDark;
 
     return Scaffold(
@@ -2619,47 +2431,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       body: Stack(
         children: [
           RepaintBoundary(
-            child: GoogleMap(
-              style: _mapStyle,
-              onMapCreated: _onMapCreated,
-              onCameraMove: _onCameraMove,
-              onCameraIdle: _onCameraIdle,
-              onTap: _onMapTap,
-              initialCameraPosition: CameraPosition(
-                target: _currentPosition!,
+            child: mapbox.MapWidget(
+              styleUri: _mapStyleUri,
+              cameraOptions: mapbox.CameraOptions(
+                center: mapbox.Point(coordinates: mapbox.Position(
+                  _currentPosition!.longitude,
+                  _currentPosition!.latitude,
+                )),
                 zoom: 14,
-                tilt: 45,
               ),
-              cameraTargetBounds: CameraTargetBounds(_usBounds),
-              padding: _mapPaddingForContext(context),
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              zoomGesturesEnabled: true,
-              rotateGesturesEnabled: true,
-              scrollGesturesEnabled: true,
-              tiltGesturesEnabled: false,
-              compassEnabled: true,
-              mapToolbarEnabled: false,
-              buildingsEnabled: false,
-              liteModeEnabled: false,
-              markers: {
-                // Gold animated 3D location dot
-                if (_goldDotFrames.isNotEmpty && _currentPosition != null)
-                  Marker(
-                    markerId: const MarkerId('my_location_gold'),
-                    position: _currentPosition!,
-                    icon: _goldDotFrames[_goldDotFrame],
-                    anchor: const Offset(0.5, 0.5),
-                    flat: true,
-                    zIndexInt: 1,
-                  ),
-                if (_pickupMarker != null && _tripStatus != 'in_trip')
-                  _pickupMarker!,
-                if (_dropoffMarker != null) _dropoffMarker!,
-                if (_driverMarker != null) _driverMarker!,
+              onMapCreated: _onMapCreated,
+              onScrollListener: (_) => _onCameraMoveStarted(),
+              onTapListener: (mapbox.MapContentGestureContext ctx) {
+                _onMapTap(LatLng(ctx.point.coordinates.lat.toDouble(), ctx.point.coordinates.lng.toDouble()));
               },
-              polylines: _polylines,
             ),
           ),
           if (_stage == RideStage.pin && !_hasPreparedRoute)
@@ -3156,10 +2941,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       } else {
         _dropoffCtrl.clear();
         _dropoffAddress = '';
-        _dropoffMarker = null;
+        _dropoffPosition = null;
         _tripMiles = '-- mi';
         _tripDuration = '-- min';
-        _polylines = {};
+        _clearRouteAnnotation();
       }
 
       _suggestions = [];
@@ -3218,7 +3003,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         // Build subtitle
         String? subtitle;
         if (!_searchingPickup &&
-            _pickupMarker != null &&
+            _currentPosition != null &&
             s.distanceMiles != null) {
           final miles = '${s.distanceMiles!.toStringAsFixed(1)} mi';
           final eta = s.etaText ?? _etaFromMiles(s.distanceMiles);
@@ -3670,7 +3455,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           _rideLifecycleTimer?.cancel();
           _tripPollTimer?.cancel();
           setState(() {
-            _driverMarker = null;
+            // driver annotation cleared via manager
             _rideProgress = 0;
           });
           Navigator.of(context).maybePop();
@@ -3749,24 +3534,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       _driverPlate = '';
       _driverEta = '...';
       _rideProgress = 0;
-      _driverMarker = null;
+      // driver annotation cleared via manager
       _driverNote = '';
       _currentTripId = null;
     });
 
     _setStage(RideStage.confirmPickup);
 
-    // Rebuild pickup marker as draggable for this stage
-    final pos = _pickupMarker?.position ?? _currentPosition;
-    if (pos != null) {
-      setState(() {
-        _pickupMarker = _pickupMapMarker(pos, snippet: _pickupAddress);
-      });
-    }
+    // Refresh pickup annotation for confirmPickup stage
+    if (_currentPosition != null) _setPickupAnnotation(_currentPosition!);
 
     // Zoom into current location for precise pickup selection
     _isRecentering = true;
-    final myPos = _currentPosition ?? _pickupMarker?.position;
+    final myPos = _currentPosition;
     if (myPos != null && _hasMapController) {
       await _panTo(myPos, zoom: 17.5);
     }
@@ -3797,8 +3577,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (isScheduled) {
       try {
         final riderId = await ApiService.getCurrentUserId();
-        final pickupPos = _pickupMarker?.position ?? _currentPosition;
-        final dropoffPos = _dropoffMarker?.position;
+        final pickupPos = _currentPosition;
+        final dropoffPos = _dropoffPosition;
 
         // Guard: require both addresses before saving
         if (riderId == null) throw Exception('Not logged in');
@@ -3955,8 +3735,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     // â”€â”€ Write to Firestore so Dispatch Admin sees the trip in real time â”€â”€
     try {
       final session = await UserSession.getUser();
-      final pickupPos = _pickupMarker?.position ?? _currentPosition;
-      final dropoffPos = _dropoffMarker?.position;
+      final pickupPos = _currentPosition;
+      final dropoffPos = _dropoffPosition;
       if (pickupPos != null && dropoffPos != null) {
         final fareStr = _rides[_selectedRide].price.replaceAll(
           RegExp(r'[^\d.]'),
@@ -3994,8 +3774,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     // â”€â”€ Create ride request via dispatch system â”€â”€
     try {
       final riderId = await ApiService.getCurrentUserId();
-      final pickupPos = _pickupMarker?.position ?? _currentPosition;
-      final dropoffPos = _dropoffMarker?.position;
+      final pickupPos = _currentPosition;
+      final dropoffPos = _dropoffPosition;
 
       if (riderId != null && pickupPos != null && dropoffPos != null) {
         // Parse fare from price string like "\$25.50"
@@ -4072,7 +3852,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   (dispatch['driver_rating'] as num?)?.toDouble() ?? 4.9;
               // Calculate real initial ETA from driver distance
               if (_driverPosition != null) {
-                final pickupPos = _pickupMarker?.position ?? _currentPosition;
+                final pickupPos = _currentPosition;
                 if (pickupPos != null) {
                   final distKm =
                       Geolocator.distanceBetween(
@@ -4122,11 +3902,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             _rideLifecycleTimer?.cancel();
             setState(() {
               _rideProgress = 0;
-              _polylines = {};
+              _clearRouteAnnotation();
               _activeRoutePoints = [];
               _driverRoutePoints = [];
-              _driverMarker = null;
-              _dropoffMarker = null;
+              // driver annotation cleared via manager
+              _dropoffPosition = null;
             });
             // Only show cancelled dialog if a human (dispatch/admin) cancelled.
             // If auto-cancelled due to no drivers, go back silently.
@@ -4267,12 +4047,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 type: 'ride',
               );
             }
-            final dropoffPos = _dropoffMarker?.position;
+            final dropoffPos = _dropoffPosition;
             if (mounted) {
               // Calculate progress based on driver distance to dropoff
               double progress = 0;
               if (dropoffPos != null && _driverPosition != null) {
-                final pickupPos = _pickupMarker?.position;
+                final pickupPos = _currentPosition;
                 if (pickupPos != null) {
                   final totalDist = Geolocator.distanceBetween(
                     pickupPos.latitude,
@@ -4361,7 +4141,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             await _updateDriverRoute(status);
           } else if (status == 'driver_en_route' ||
               status == 'driver_assigned') {
-            final pickupPos = _pickupMarker?.position;
+            final pickupPos = _currentPosition;
             if (mounted) {
               // Calculate ETA to pickup
               if (pickupPos != null && _driverPosition != null) {
@@ -4437,11 +4217,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             if (mounted) {
               setState(() {
                 _rideProgress = 0;
-                _polylines = {};
+                _clearRouteAnnotation();
                 _activeRoutePoints = [];
                 _driverRoutePoints = [];
-                _driverMarker = null;
-                _dropoffMarker = null;
+                // driver annotation cleared via manager
+                _dropoffPosition = null;
               });
               if (isNoDrivers) {
                 _setStage(RideStage.options);
@@ -4483,34 +4263,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (_driverRoutePoints.isNotEmpty) {
       _driverRoutePoints[0] = driverPos;
     }
-    // Rebuild polylines with trimmed points
-    final isInTrip = _lastDriverRoutePhase == 'in_trip';
-    final color = isInTrip ? const Color(0xFFE8C547) : Colors.greenAccent;
-    final id = isInTrip ? 'driver_to_dropoff' : 'driver_to_pickup';
-    setState(() {
-      // Keep existing pickupâ†’dropoff polyline if en_route, just update driver polyline
-      _polylines.removeWhere(
-        (p) => p.polylineId.value.startsWith('driver_to_'),
-      );
-      _polylines.addAll({
-        Polyline(
-          polylineId: PolylineId('${id}_glow'),
-          points: List.from(_driverRoutePoints),
-          color: color.withValues(alpha: 0.15),
-          width: 12,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-        Polyline(
-          polylineId: PolylineId(id),
-          points: List.from(_driverRoutePoints),
-          color: color,
-          width: 5,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      });
-    });
+    // Rebuild annotation with trimmed points
+    if (_driverRoutePoints.length >= 2) {
+      _setRouteAnnotation(List.from(_driverRoutePoints));
+    }
   }
 
   /// Draw the real driving route from driver to destination on the rider's map.
@@ -4519,8 +4275,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Future<void> _updateDriverRoute(String status) async {
     if (!mounted || _driverPosition == null) return;
 
-    final pickupPos = _pickupMarker?.position ?? _currentPosition;
-    final dropoffPos = _dropoffMarker?.position;
+    final pickupPos = _currentPosition;
+    final dropoffPos = _activeRoutePoints.isNotEmpty ? _activeRoutePoints.last : null;
     if (pickupPos == null || dropoffPos == null) return;
 
     // Determine route phase
@@ -4553,50 +4309,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
       if (!mounted) return;
 
-      final Set<Polyline> polys = {};
       if (driverToPickup.isNotEmpty) {
         _driverRoutePoints = driverToPickup;
-        polys.addAll({
-          Polyline(
-            polylineId: const PolylineId('driver_to_pickup_glow'),
-            points: driverToPickup,
-            color: Colors.greenAccent.withValues(alpha: 0.15),
-            width: 12,
-            startCap: Cap.roundCap,
-            endCap: Cap.roundCap,
-          ),
-          Polyline(
-            polylineId: const PolylineId('driver_to_pickup'),
-            points: driverToPickup,
-            color: Colors.greenAccent,
-            width: 4,
-            startCap: Cap.roundCap,
-            endCap: Cap.roundCap,
-          ),
-        });
+        await _setRouteAnnotation(driverToPickup);
       }
       if (pickupToDropoff.isNotEmpty) {
-        polys.addAll({
-          Polyline(
-            polylineId: const PolylineId('pickup_to_dropoff_glow'),
-            points: pickupToDropoff,
-            color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-            width: 12,
-            startCap: Cap.roundCap,
-            endCap: Cap.roundCap,
-          ),
-          Polyline(
-            polylineId: const PolylineId('pickup_to_dropoff'),
-            points: pickupToDropoff,
-            color: const Color(0xFFE8C547),
-            width: 4,
-            startCap: Cap.roundCap,
-            endCap: Cap.roundCap,
-          ),
-        });
+        await _setRouteAnnotation(pickupToDropoff);
       }
-      setState(() => _polylines = polys);
-
       // Fit bounds to show driver + pickup + dropoff
       _fitRideBounds([_driverPosition!, pickupPos, dropoffPos]);
     } else {
@@ -4609,26 +4328,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
       if (driverToDropoff.isNotEmpty) {
         _driverRoutePoints = driverToDropoff;
-        setState(() {
-          _polylines = {
-            Polyline(
-              polylineId: const PolylineId('driver_to_dropoff_glow'),
-              points: driverToDropoff,
-              color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-              width: 12,
-              startCap: Cap.roundCap,
-              endCap: Cap.roundCap,
-            ),
-            Polyline(
-              polylineId: const PolylineId('driver_to_dropoff'),
-              points: driverToDropoff,
-              color: const Color(0xFFE8C547),
-              width: 4,
-              startCap: Cap.roundCap,
-              endCap: Cap.roundCap,
-            ),
-          };
-        });
+        await _setRouteAnnotation(driverToDropoff);
       }
 
       // Fit bounds to show driver + dropoff
@@ -4713,36 +4413,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     return pts;
   }
 
-  /// Fit the map to show all the given points with padding.
-  void _fitRideBounds(List<LatLng> points) {
-    if (points.isEmpty || !_hasMapController) return;
-    double minLat = points.first.latitude, maxLat = minLat;
-    double minLng = points.first.longitude, maxLng = minLng;
-    for (final p in points) {
-      if (p.latitude < minLat) minLat = p.latitude;
-      if (p.latitude > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLng) minLng = p.longitude;
-      if (p.longitude > maxLng) maxLng = p.longitude;
-    }
-    const minSpan = 0.004;
-    if ((maxLat - minLat) < minSpan) {
-      final adj = (minSpan - (maxLat - minLat)) / 2;
-      minLat -= adj;
-      maxLat += adj;
-    }
-    if ((maxLng - minLng) < minSpan) {
-      final adj = (minSpan - (maxLng - minLng)) / 2;
-      minLng -= adj;
-      maxLng += adj;
-    }
-    _fitBounds(
-      LatLngBounds(
-        southwest: LatLng(minLat - 0.003, minLng - 0.003),
-        northeast: LatLng(maxLat + 0.003, maxLng + 0.003),
-      ),
-      80,
-    );
-  }
+  // _fitRideBounds is defined earlier — see above
 
   Future<void> _completeRide() async {
     if (!mounted) return;
@@ -4782,14 +4453,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     setState(() {
       _rideProgress = 0;
       _tripDuration = '-- min';
-      _polylines = {};
+      _clearRouteAnnotation();
       _activeRoutePoints = [];
       _driverRoutePoints = [];
       _driverPosition = null;
       _currentDriverId = null;
       _lastDriverRoutePhase = '';
-      _driverMarker = null;
-      _dropoffMarker = null;
+      // driver annotation cleared via manager
+      _dropoffPosition = null;
       _dropoffAddress = '';
       _dropoffCtrl.clear();
       _hasPreparedRoute = false;
@@ -4833,28 +4504,53 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _lastDriverMarkerRebuild = now;
 
     // Pick the right 3D sprite for the current viewing angle
-    BitmapDescriptor? icon;
+    Uint8List? iconBytes;
     double markerRotation = _driverBearing;
     if (_navCarSprites != null && _navCarSprites!.length == 8) {
       final viewAngle = _driverBearing - _cameraBearing;
       final idx = NavatarLoader.indexForAngle(viewAngle);
-      icon = _navCarSprites![idx];
+      iconBytes = _navCarSprites![idx];
       markerRotation = 0; // sprite already shows the correct angle
     }
-    icon ??= _driverCarIcon ??
-        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
-
-    _driverMarker = Marker(
-      markerId: const MarkerId('driver'),
-      position: _driverPosition!,
-      icon: icon,
-      rotation: markerRotation,
-      anchor: const Offset(0.5, 0.5),
-      flat: false,
-      zIndexInt: 100,
-      infoWindow: InfoWindow(title: _driverName, snippet: _driverCar),
-    );
+    iconBytes ??= _driverCarIconBytes;
+    _updateDriverAnnotation(iconBytes, markerRotation);
     setState(() {});
+  }
+
+  Future<void> _updateDriverAnnotation(Uint8List? iconBytes, double rotation) async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null || _driverPosition == null) return;
+    if (_driverAnnot != null) {
+      try {
+        await mgr.update(_driverAnnot!..geometry = mapbox.Point(
+          coordinates: mapbox.Position(_driverPosition!.longitude, _driverPosition!.latitude)));
+        return;
+      } catch (_) { _driverAnnot = null; }
+    }
+    _driverAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(_driverPosition!.longitude, _driverPosition!.latitude)),
+      image: iconBytes,
+      iconSize: 0.5,
+      iconRotate: rotation,
+    ));
+  }
+
+  Future<void> _updateGoldDotAnnotation() async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null || _currentPosition == null || _goldDotFrames.isEmpty) return;
+    final bytes = _goldDotFrames[_goldDotFrame % _goldDotFrames.length];
+    if (_goldDotAnnot != null) {
+      try {
+        await mgr.update(_goldDotAnnot!..geometry = mapbox.Point(
+          coordinates: mapbox.Position(_currentPosition!.longitude, _currentPosition!.latitude)));
+        return;
+      } catch (_) { _goldDotAnnot = null; }
+    }
+    _goldDotAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(_currentPosition!.longitude, _currentPosition!.latitude)),
+      image: bytes,
+      iconSize: 0.4,
+    ));
   }
 
   double _calcBearing(LatLng a, LatLng b) {
@@ -4927,16 +4623,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _buildDriverCarIcon() async {
-    // Use the Google Maps–style nav car (tall proportions optimised for 55° tilt)
     _driverCarIconBytes = await CarIconLoader.loadUberBytes();
-    final icon = _driverCarIconBytes != null
-        ? BitmapDescriptor.bytes(_driverCarIconBytes!)
-        : await CarIconLoader.loadUber();
-    if (mounted) setState(() => _driverCarIcon = icon);
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadNavCarSprites() async {
-    final sprites = await NavatarLoader.loadCurrentSprites();
+    final sprites = await NavatarLoader.loadCurrentSpriteBytes();
     if (mounted && sprites != null && sprites.length == 8) {
       setState(() => _navCarSprites = sprites);
     }
@@ -4952,10 +4644,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   /// Shows the new line instantly (no animation) to stay snappy while
   /// the user is panning to adjust the pickup spot.
   Future<void> _silentRouteRecalculate() async {
-    if (_pickupMarker == null || _dropoffMarker == null) return;
+    if (_currentPosition == null || _dropoffPosition == null) return;
     final ticket = ++_routeAnimationTicket;
-    final origin = _pickupMarker!.position;
-    final destination = _dropoffMarker!.position;
+    final origin = _currentPosition!;
+    final destination = _dropoffPosition!;
     final route = await _directions.getRoute(
       origin: origin,
       destination: destination,
@@ -4963,13 +4655,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (!mounted || ticket != _routeAnimationTicket) return;
     if (route != null) {
       _activeRoutePoints = route.points;
-      final newPolylines = _buildRoutePolylines(route.points);
       setState(() {
         _tripMiles = _formatMiles(route.distanceMeters);
         _tripDuration = route.durationText;
         _updateRidePricingFromDuration(_tripDuration);
-        _polylines = newPolylines;
       });
+      await _setRouteAnnotation(route.points);
     }
   }
 
@@ -4995,9 +4686,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         if (movedMeters < 15) return;
       }
 
-      setState(() {
-        _pickupMarker = _pickupMapMarker(target, snippet: _pickupAddress);
-      });
+      _setPickupAnnotation(target);
 
       final requestTicket = ++_reverseGeocodeTicket;
       try {
@@ -5017,7 +4706,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         setState(() {
           _pickupAddress = resolved;
           _pickupCtrl.text = resolved;
-          _pickupMarker = _pickupMapMarker(target, snippet: resolved);
+          _setPickupAnnotation(target);
           _currentPosition = target;
         });
         // Silently recalculate route without moving camera
@@ -5028,7 +4717,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         setState(() {
           _pickupAddress = fallback;
           _pickupCtrl.text = fallback;
-          _pickupMarker = _pickupMapMarker(target, snippet: fallback);
+          _setPickupAnnotation(target);
           _currentPosition = target;
         });
         // Silently recalculate route without moving camera
@@ -5039,9 +4728,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   /// Called when user drags the pickup marker to a new position in confirmPickup stage.
   void _onPickupMarkerDragEnd(LatLng newPosition) {
-    setState(() {
-      _pickupMarker = _pickupMapMarker(newPosition, snippet: _pickupAddress);
-    });
+    _currentPosition = newPosition;
+    _setPickupAnnotation(newPosition);
 
     final requestTicket = ++_reverseGeocodeTicket;
     _places
@@ -5059,8 +4747,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           setState(() {
             _pickupAddress = resolved;
             _pickupCtrl.text = resolved;
-            _pickupMarker = _pickupMapMarker(newPosition, snippet: resolved);
             _currentPosition = newPosition;
+            _setPickupAnnotation(newPosition);
           });
           _silentRouteRecalculate();
         })
@@ -5070,8 +4758,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           setState(() {
             _pickupAddress = fallback;
             _pickupCtrl.text = fallback;
-            _pickupMarker = _pickupMapMarker(newPosition, snippet: fallback);
             _currentPosition = newPosition;
+            _setPickupAnnotation(newPosition);
           });
           _silentRouteRecalculate();
         });
@@ -7184,7 +6872,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       _rideLifecycleTimer?.cancel();
                       _tripPollTimer?.cancel();
                       setState(() {
-                        _driverMarker = null;
+                        // driver annotation cleared via manager
                         _rideProgress = 0;
                       });
                       Navigator.of(context).maybePop();

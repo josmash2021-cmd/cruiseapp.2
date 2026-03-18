@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import '../models/lat_lng.dart';
+import '../config/mapbox_config.dart';
 import 'package:intl/intl.dart';
 
 import '../config/api_keys.dart';
@@ -55,9 +57,11 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
   bool _showSuggestions = false;
 
   // Map
-  GoogleMapController? _mapCtrl;
-  Set<Polyline> _polylines = {};
-  Set<Marker> _markers = {};
+  mapbox.MapboxMap? _mapCtrl;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
+  List<mapbox.PointAnnotation> _markerAnnots = [];
+  mapbox.PolylineAnnotation? _routeAnnot;
   bool _mapReady = false;
 
   // Route
@@ -215,38 +219,49 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
           _tripMiles = '${miles.toStringAsFixed(1)} mi';
           _tripDuration = dur;
           _routeLoaded = true;
-          _polylines = {
-            Polyline(
-              polylineId: const PolylineId('route'),
-              points: route.points,
-              color: _gold,
-              width: 5,
-            ),
-          };
-          _markers = {
-            Marker(
-              markerId: const MarkerId('pickup'),
-              position: _pickupLatLng!,
-              icon: BitmapDescriptor.defaultMarkerWithHue(
-                BitmapDescriptor.hueYellow,
-              ),
-              infoWindow: InfoWindow(title: S.of(context).pickupLabel),
-            ),
-            Marker(
-              markerId: const MarkerId('dropoff'),
-              position: _dropoffLatLng!,
-              icon: BitmapDescriptor.defaultMarkerWithHue(
-                BitmapDescriptor.hueRed,
-              ),
-              infoWindow: InfoWindow(title: S.of(context).destinationLabel),
-            ),
-          };
           _updateRidePricing(dur);
         });
+        _updateMapAnnotations(route.points);
         _fitMap();
       }
     } catch (_) {}
     if (mounted) setState(() => _isLoadingRoute = false);
+  }
+
+  Future<void> _updateMapAnnotations(List<LatLng> routePoints) async {
+    final pointMgr = _pointAnnotMgr;
+    final polyMgr = _polylineAnnotMgr;
+    if (pointMgr == null || polyMgr == null) return;
+    // Clear previous
+    for (final a in _markerAnnots) { try { await pointMgr.delete(a); } catch (_) {} }
+    _markerAnnots = [];
+    if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+    // Draw route
+    if (routePoints.isNotEmpty) {
+      _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
+        lineColor: const Color(0xFFE8C547).value,
+        lineWidth: 5.0,
+      ));
+    }
+    // Pickup marker
+    if (_pickupLatLng != null) {
+      final a = await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLatLng!.longitude, _pickupLatLng!.latitude)),
+        iconColor: const Color(0xFFE8C547).value,
+        iconSize: 1.2,
+      ));
+      _markerAnnots.add(a);
+    }
+    // Dropoff marker
+    if (_dropoffLatLng != null) {
+      final a = await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLatLng!.longitude, _dropoffLatLng!.latitude)),
+        iconColor: const Color(0xFFEA4335).value,
+        iconSize: 1.2,
+      ));
+      _markerAnnots.add(a);
+    }
   }
 
   void _updateRidePricing(String durationText) {
@@ -302,25 +317,18 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
 
   void _fitMap() {
     if (!_mapReady || _pickupLatLng == null || _dropoffLatLng == null) return;
-    final bounds = LatLngBounds(
-      southwest: LatLng(
-        _pickupLatLng!.latitude < _dropoffLatLng!.latitude
-            ? _pickupLatLng!.latitude
-            : _dropoffLatLng!.latitude,
-        _pickupLatLng!.longitude < _dropoffLatLng!.longitude
-            ? _pickupLatLng!.longitude
-            : _dropoffLatLng!.longitude,
-      ),
-      northeast: LatLng(
-        _pickupLatLng!.latitude > _dropoffLatLng!.latitude
-            ? _pickupLatLng!.latitude
-            : _dropoffLatLng!.latitude,
-        _pickupLatLng!.longitude > _dropoffLatLng!.longitude
-            ? _pickupLatLng!.longitude
-            : _dropoffLatLng!.longitude,
-      ),
-    );
-    _mapCtrl?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 64));
+    final minLat = _pickupLatLng!.latitude < _dropoffLatLng!.latitude ? _pickupLatLng!.latitude : _dropoffLatLng!.latitude;
+    final maxLat = _pickupLatLng!.latitude > _dropoffLatLng!.latitude ? _pickupLatLng!.latitude : _dropoffLatLng!.latitude;
+    final minLng = _pickupLatLng!.longitude < _dropoffLatLng!.longitude ? _pickupLatLng!.longitude : _dropoffLatLng!.longitude;
+    final maxLng = _pickupLatLng!.longitude > _dropoffLatLng!.longitude ? _pickupLatLng!.longitude : _dropoffLatLng!.longitude;
+    _mapCtrl?.cameraForCoordinates(
+      [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+       mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
+      mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: 80, right: 60),
+      null, null,
+    ).then((cam) {
+      if (cam != null) _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 800));
+    });
   }
 
   // ── Booking ──────────────────────────────────────────────────────────
@@ -801,8 +809,6 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                                 _pickupAddress = '';
                                 _pickupLatLng = null;
                                 _routeLoaded = false;
-                                _polylines = {};
-                                _markers = {};
                               });
                             },
                           ),
@@ -823,8 +829,6 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                                 _dropoffAddress = '';
                                 _dropoffLatLng = null;
                                 _routeLoaded = false;
-                                _polylines = {};
-                                _markers = {};
                                 _airportSelection = null;
                               });
                             },
@@ -895,24 +899,21 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
               Expanded(
                 child: Stack(
                   children: [
-                    GoogleMap(
-                      style: MapStyles.dark,
-                      initialCameraPosition: CameraPosition(
-                        target: _birminghamDefault,
-                        zoom: 12,
+                    mapbox.MapWidget(
+                      styleUri: MapboxConfig.styleDark,
+                      cameraOptions: mapbox.CameraOptions(
+                        center: mapbox.Point(coordinates: mapbox.Position(_birminghamDefault.longitude, _birminghamDefault.latitude)),
+                        zoom: 12.0,
                       ),
-                      onMapCreated: (ctrl) {
+                      onMapCreated: (ctrl) async {
                         _mapCtrl = ctrl;
+                        _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                        _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
                         setState(() => _mapReady = true);
                         if (_pickupLatLng != null && _dropoffLatLng != null) {
                           _fitMap();
                         }
                       },
-                      polylines: _polylines,
-                      markers: _markers,
-                      myLocationButtonEnabled: false,
-                      zoomControlsEnabled: false,
-                      mapToolbarEnabled: false,
                     ),
                     if (_isLoadingRoute)
                       const Center(

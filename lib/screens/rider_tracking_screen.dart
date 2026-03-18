@@ -4,7 +4,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import '../models/lat_lng.dart';
+import '../config/mapbox_config.dart';
 
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
@@ -73,10 +75,16 @@ enum _PinIcon { house, store, airplane, person }
 
 class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     with TickerProviderStateMixin {
-  GoogleMapController? _map;
-  BitmapDescriptor? _carIcon;
+  mapbox.MapboxMap? _map;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
+  mapbox.PointAnnotation? _carAnnot;
+  mapbox.PointAnnotation? _pickupAnnot;
+  mapbox.PointAnnotation? _dropoffAnnot;
+  mapbox.PolylineAnnotation? _fullRouteAnnot;
+  mapbox.PolylineAnnotation? _remainingRouteAnnot;
   Uint8List? _carIconBytes;
-  List<BitmapDescriptor>? _navCarSprites;
+  List<Uint8List>? _navCarSprites;
   double _cameraBearing = 0;
   Uint8List? _pickupPinBytes;
   Uint8List? _dropoffPinBytes;
@@ -481,19 +489,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Future<void> _loadCarIcon() async {
-    // Use Google Maps-style 3D nav car (same as driver navigation)
     final bytes = await CarIconLoader.loadUberBytes();
     if (bytes != null) {
       _carIconBytes = bytes;
-      // ignore: deprecated_member_use
-      final icon = BitmapDescriptor.fromBytes(bytes);
-      if (mounted) setState(() => _carIcon = icon);
+      if (mounted) setState(() {});
     }
     await _loadPins();
   }
 
   Future<void> _loadNavSprites() async {
-    final sprites = await NavatarLoader.loadCurrentSprites();
+    final sprites = await NavatarLoader.loadCurrentSpriteBytes();
     if (mounted && sprites != null && sprites.length == 8) {
       setState(() => _navCarSprites = sprites);
     }
@@ -922,16 +927,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _camNELat += (_tgtNELat - _camNELat) * lerpSpeed;
       _camNELng += (_tgtNELng - _camNELng) * lerpSpeed;
       _programmaticCam = true;
-      _map!.moveCamera(
-        CameraUpdate.newLatLngBounds(
-          LatLngBounds(
-            southwest: LatLng(_camSWLat, _camSWLng),
-            northeast: LatLng(_camNELat, _camNELng),
-          ),
-          50,
-        ),
-      );
+      _map!.cameraForCoordinates(
+        [mapbox.Point(coordinates: mapbox.Position(_camSWLng, _camSWLat)),
+         mapbox.Point(coordinates: mapbox.Position(_camNELng, _camNELat))],
+        mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: 420, right: 50),
+        null, null,
+      ).then((cam) {
+        if (cam != null && mounted) _map?.setCamera(cam);
+      });
     }
+    _updateAnnotations();
   }
 
   // ── Update camera target bounds (called from sim tick) ──
@@ -982,15 +987,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _camNELng = _tgtNELng;
       _camInitialized = true;
       _programmaticCam = true;
-      _map!.moveCamera(
-        CameraUpdate.newLatLngBounds(
-          LatLngBounds(
-            southwest: LatLng(_camSWLat, _camSWLng),
-            northeast: LatLng(_camNELat, _camNELng),
-          ),
-          50,
-        ),
-      );
+      _map!.cameraForCoordinates(
+        [mapbox.Point(coordinates: mapbox.Position(_camSWLng, _camSWLat)),
+         mapbox.Point(coordinates: mapbox.Position(_camNELng, _camNELat))],
+        mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: 420, right: 50),
+        null, null,
+      ).then((cam) {
+        if (cam != null && mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 500));
+      });
     }
   }
 
@@ -1122,37 +1126,21 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         body: Stack(
           children: [
             RepaintBoundary(
-              child: GoogleMap(
-                style: MapStyles.darkIOS,
-                initialCameraPosition: CameraPosition(
-                  target: widget.pickupLatLng,
-                  zoom: 14,
+              child: mapbox.MapWidget(
+                styleUri: MapboxConfig.styleDark,
+                cameraOptions: mapbox.CameraOptions(
+                  center: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
+                  zoom: 14.0,
                 ),
-                onMapCreated: (ctrl) {
+                onMapCreated: (ctrl) async {
                   _map = ctrl;
+                  _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                  _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+                  _updateAnnotations();
                 },
-                onCameraMoveStarted: () {
-                  if (!_programmaticCam) {
-                    setState(() => _userMovedMap = true);
-                  }
+                onScrollListener: (_) {
+                  if (!_programmaticCam) setState(() => _userMovedMap = true);
                 },
-                onCameraMove: (pos) {},
-
-                onCameraIdle: () => _programmaticCam = false,
-                markers: _markers(),
-                polylines: _polylines(),
-                myLocationEnabled: false,
-                myLocationButtonEnabled: false,
-                zoomControlsEnabled: false,
-                compassEnabled: false,
-                mapToolbarEnabled: false,
-                tiltGesturesEnabled: false,
-                padding: EdgeInsets.only(
-                  bottom: 380 + botPad + 40,
-                  top: topPad + 16,
-                  left: 8,
-                  right: 8,
-                ),
               ),
             ),
             // ── Back button — go home but keep ride tracking alive ──
@@ -1332,94 +1320,77 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     );
   }
 
-  Set<Marker> _markers() {
-    final m = <Marker>{};
-    final pickupPin = _pickupPinBytes != null
-        // ignore: deprecated_member_use
-        ? BitmapDescriptor.fromBytes(_pickupPinBytes!)
-        : BitmapDescriptor.defaultMarker;
-    final dropoffPin = _dropoffPinBytes != null
-        // ignore: deprecated_member_use
-        ? BitmapDescriptor.fromBytes(_dropoffPinBytes!)
-        : BitmapDescriptor.defaultMarker;
-    if (_carIcon != null || (_navCarSprites != null && _navCarSprites!.length == 8)) {
-      BitmapDescriptor? icon;
-      double rotation = _animBearing;
-      if (_navCarSprites != null && _navCarSprites!.length == 8) {
-        final viewAngle = _animBearing - _cameraBearing;
-        final idx = NavatarLoader.indexForAngle(viewAngle);
-        icon = _navCarSprites![idx];
-        rotation = 0;
-      }
-      icon ??= _carIcon!;
-      m.add(
-        Marker(
-          markerId: const MarkerId('car'),
-          position: _animPos,
-          icon: icon,
-          rotation: rotation,
-          anchor: const Offset(0.5, 0.5),
-          flat: true,
-          zIndexInt: 20,
-        ),
-      );
-    }
-    m.add(
-      Marker(
-        markerId: const MarkerId('pickup'),
-        position: widget.pickupLatLng,
-        icon: pickupPin,
-        zIndexInt: 5,
-        infoWindow: const InfoWindow(title: 'Pickup spot'),
-      ),
-    );
-    // Always show dropoff marker so rider sees full route
-    m.add(
-      Marker(
-        markerId: const MarkerId('drop'),
-        position: widget.dropoffLatLng,
-        icon: dropoffPin,
-        zIndexInt: 5,
-      ),
-    );
-    return m;
-  }
+  Future<void> _updateAnnotations() async {
+    final pointMgr = _pointAnnotMgr;
+    final polyMgr = _polylineAnnotMgr;
+    if (pointMgr == null || polyMgr == null) return;
 
-  Set<Polyline> _polylines() {
-    if (_routePts.isEmpty) return {};
-    final s = <Polyline>{};
-    // Full route outline (dim) so rider always sees the complete path
-    if (_routePts.length >= 2) {
-      s.add(
-        Polyline(
-          polylineId: const PolylineId('full'),
-          points: _routePts,
-          color: const Color(0xFF2A3A5A),
-          width: 4,
-          geodesic: true,
-        ),
-      );
+    // ── Car marker ──
+    Uint8List? carBytes = _carIconBytes;
+    if (_navCarSprites != null && _navCarSprites!.length == 8) {
+      final viewAngle = _animBearing - _cameraBearing;
+      final idx = NavatarLoader.indexForAngle(viewAngle);
+      carBytes = _navCarSprites![idx];
     }
-    // Remaining route (blue) from driver position
+    if (carBytes != null) {
+      if (_carAnnot != null) {
+        try {
+          await pointMgr.update(_carAnnot!..geometry = mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude)));
+        } catch (_) {
+          _carAnnot = null;
+        }
+      }
+      _carAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude)),
+        image: carBytes,
+        iconSize: 0.5,
+      ));
+    }
+
+    // ── Pickup / dropoff pins (create once) ──
+    if (_pickupAnnot == null && _pickupPinBytes != null) {
+      _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
+        image: _pickupPinBytes!,
+        iconSize: 0.5,
+      ));
+    }
+    if (_dropoffAnnot == null && _dropoffPinBytes != null) {
+      _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
+        image: _dropoffPinBytes!,
+        iconSize: 0.5,
+      ));
+    }
+
+    // ── Full route polyline (create once) ──
+    if (_fullRouteAnnot == null && _routePts.length >= 2) {
+      _fullRouteAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
+        lineColor: const Color(0xFF2A3A5A).value,
+        lineWidth: 4.0,
+      ));
+    }
+
+    // ── Remaining route polyline (update every frame) ──
     int idx = 0;
     if (_segDist.isNotEmpty) {
-      while (idx < _segDist.length - 1 && _segDist[idx + 1] < _traveledM) {
-        idx++;
-      }
+      while (idx < _segDist.length - 1 && _segDist[idx + 1] < _traveledM) idx++;
     }
     final remaining = [_animPos, ..._routePts.sublist(idx + 1)];
     if (remaining.length >= 2) {
-      s.add(
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: remaining,
-          color: const Color(0xFF5BA3F5),
-          width: 5,
-          geodesic: true,
-        ),
-      );
+      final coords = remaining.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+      if (_remainingRouteAnnot != null) {
+        try {
+          await polyMgr.update(_remainingRouteAnnot!..geometry = mapbox.LineString(coordinates: coords));
+        } catch (_) { _remainingRouteAnnot = null; }
+      }
+      _remainingRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: coords),
+        lineColor: const Color(0xFF5BA3F5).value,
+        lineWidth: 5.0,
+      ));
     }
-    return s;
   }
 
   Widget _bottomCard(AppColors c, double botPad) {

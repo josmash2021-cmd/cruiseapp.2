@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io' show File;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import '../../models/lat_lng.dart';
+import '../../config/mapbox_config.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -44,7 +46,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   static const _card = Color(0xFF1C1C1E);
 
   // ── Map ──
-  GoogleMapController? _mapController;
+  mapbox.MapboxMap? _mapController;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PointAnnotation? _myLocAnnot;
   LatLng? _currentLatLng;
   // ignore: unused_field
   bool _mapReady = false;
@@ -158,11 +162,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _statsCtrl.dispose();
     _fabCtrl.dispose();
     _goldDot.dispose();
-    _mapController?.dispose();
     _accountStatusTimer?.cancel();
     _tripPollTimer?.cancel();
     UserSession.photoNotifier.removeListener(_onPhotoUpdated);
     super.dispose();
+  }
+
+  Future<void> _updateMyLocAnnotation() async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null || _currentLatLng == null) return;
+    final bytes = _goldDot.currentBytes;
+    if (bytes == null) return;
+    if (_myLocAnnot != null) {
+      try { await mgr.delete(_myLocAnnot!); } catch (_) {}
+    }
+    _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
+      image: bytes,
+      iconSize: 0.5,
+    ));
   }
 
   // ═══════════════════════════════════════════════════
@@ -268,10 +286,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
       if (!mounted) return;
       setState(() => _currentLatLng = LatLng(pos.latitude, pos.longitude));
-      _mapController?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: _currentLatLng!, zoom: 16, tilt: 45),
+      _mapController?.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
+          zoom: 16, pitch: 45,
         ),
+        mapbox.MapAnimationOptions(duration: 600),
       );
     } catch (_) {}
   }
@@ -540,28 +560,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
 
     return RepaintBoundary(
-      child: GoogleMap(
-        style: MapStyles.dark,
-        initialCameraPosition: CameraPosition(
-          target: _currentLatLng!,
-          zoom: 16,
-          tilt: 45,
+      child: mapbox.MapWidget(
+        styleUri: MapboxConfig.styleDark,
+        cameraOptions: mapbox.CameraOptions(
+          center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
+          zoom: 16.0,
+          pitch: 45.0,
         ),
-        onMapCreated: (ctrl) {
+        onMapCreated: (ctrl) async {
           _mapController = ctrl;
+          _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           setState(() => _mapReady = true);
-        },
-        myLocationEnabled: false,
-        myLocationButtonEnabled: false,
-        zoomControlsEnabled: false,
-        mapToolbarEnabled: false,
-        compassEnabled: false,
-        buildingsEnabled: true,
-        tiltGesturesEnabled: true,
-        liteModeEnabled: false,
-        markers: {
-          if (_goldDot.isReady && _currentLatLng != null)
-            _goldDot.marker(_currentLatLng!)!,
+          _updateMyLocAnnotation();
         },
       ),
     );
@@ -784,10 +794,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     return GestureDetector(
       onTap: () {
         if (_currentLatLng != null) {
-          _mapController?.animateCamera(
-            CameraUpdate.newCameraPosition(
-              CameraPosition(target: _currentLatLng!, zoom: 16, tilt: 45),
+          _mapController?.flyTo(
+            mapbox.CameraOptions(
+              center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
+              zoom: 16, pitch: 45,
             ),
+            mapbox.MapAnimationOptions(duration: 600),
           );
         }
       },

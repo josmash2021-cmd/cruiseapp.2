@@ -6,7 +6,9 @@ import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import '../models/lat_lng.dart';
+import '../config/mapbox_config.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -81,13 +83,29 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   String? _photoPath;
 
   // Mini-map state
-  GoogleMapController? _miniMapController;
+  mapbox.MapboxMap? _miniMapController;
+  mapbox.PointAnnotationManager? _miniMapAnnotMgr;
+  mapbox.PointAnnotation? _miniMapAnnot;
   LatLng? _currentLatLng;
   String? _locationError;
   bool _imagesPrecached = false;
   StreamSubscription<Position>? _locationSub;
-  BitmapDescriptor? _locationDotGoogle;
   Uint8List? _locationDotBytes;
+
+  Future<void> _updateMiniMapAnnotation() async {
+    final mgr = _miniMapAnnotMgr;
+    if (mgr == null || _currentLatLng == null) return;
+    if (_miniMapAnnot != null) {
+      try { await mgr.delete(_miniMapAnnot!); } catch (_) {}
+    }
+    final bytes = _locationDotBytes;
+    if (bytes == null) return;
+    _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
+      image: bytes,
+      iconSize: 0.5,
+    ));
+  }
 
   @override
   void initState() {
@@ -300,9 +318,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _currentLatLng = LatLng(pos.latitude, pos.longitude);
         _locationError = null;
       });
-      _miniMapController?.animateCamera(
-        CameraUpdate.newLatLng(_currentLatLng!),
+      _miniMapController?.flyTo(
+        mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude))),
+        mapbox.MapAnimationOptions(duration: 800),
       );
+      _updateMiniMapAnnotation();
 
       // Check service zone for this position (once)
       if (!_stateCheckDone) {
@@ -322,7 +342,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             if (!mounted) return;
             final ll = LatLng(p.latitude, p.longitude);
             setState(() => _currentLatLng = ll);
-            _miniMapController?.animateCamera(CameraUpdate.newLatLng(ll));
+            _miniMapController?.flyTo(
+              mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude))),
+              mapbox.MapAnimationOptions(duration: 800),
+            );
+            _updateMiniMapAnnotation();
           });
     } catch (e) {
       if (mounted && _currentLatLng == null) {
@@ -359,8 +383,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final bytes = data.buffer.asUint8List();
     setState(() {
       _locationDotBytes = bytes;
-      // ignore: deprecated_member_use
-      _locationDotGoogle = BitmapDescriptor.fromBytes(bytes);
     });
   }
 
@@ -2504,32 +2526,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               )
             else
-              GoogleMap(
-                style: MapStyles.darkIOS,
-                initialCameraPosition: CameraPosition(
-                  target: _currentLatLng!,
-                  zoom: 15,
+              mapbox.MapWidget(
+                styleUri: MapboxConfig.styleDark,
+                cameraOptions: mapbox.CameraOptions(
+                  center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
+                  zoom: 15.0,
                 ),
-                onMapCreated: (controller) {
-                  _miniMapController = controller;
+                onMapCreated: (ctrl) async {
+                  _miniMapController = ctrl;
+                  _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                  _updateMiniMapAnnotation();
                 },
-                markers: {
-                  Marker(
-                    markerId: const MarkerId('current'),
-                    position: _currentLatLng!,
-                    icon: _locationDotGoogle ?? BitmapDescriptor.defaultMarker,
-                  ),
-                },
-                myLocationEnabled: false,
-                myLocationButtonEnabled: false,
-                zoomControlsEnabled: false,
-                mapToolbarEnabled: false,
-                scrollGesturesEnabled: false,
-                zoomGesturesEnabled: false,
-                rotateGesturesEnabled: false,
-                tiltGesturesEnabled: false,
-                liteModeEnabled: false,
-                padding: const EdgeInsets.only(bottom: 70),
+                gestureRecognizers: const {},
               ),
             // Badge
             Positioned(

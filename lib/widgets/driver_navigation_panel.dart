@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../models/lat_lng.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_theme.dart';
@@ -75,7 +75,7 @@ class DriverNavigationPanel extends StatefulWidget {
 }
 
 class _DriverNavigationPanelState extends State<DriverNavigationPanel> {
-  BitmapDescriptor? _carIcon;
+  Uint8List? _carIconBytes;
   bool _carIconLoading = false;
 
   @override
@@ -85,12 +85,12 @@ class _DriverNavigationPanelState extends State<DriverNavigationPanel> {
   }
 
   Future<void> _loadCarIcon() async {
-    if (_carIconLoading || _carIcon != null) return;
+    if (_carIconLoading || _carIconBytes != null) return;
     _carIconLoading = true;
     try {
-      final icon = await CarIconLoader.loadUber();
-      if (mounted) {
-        setState(() => _carIcon = icon);
+      final bytes = await CarIconLoader.loadUberBytes();
+      if (mounted && bytes != null) {
+        setState(() => _carIconBytes = bytes);
       }
     } catch (_) {}
     _carIconLoading = false;

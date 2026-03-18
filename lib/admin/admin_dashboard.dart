@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import '../models/lat_lng.dart';
+import '../config/mapbox_config.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'dart:async';
 import 'dart:math' show max, min;
 
@@ -27,7 +28,7 @@ class AdminDashboardApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
         useMaterial3: true,
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           elevation: 2,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
@@ -240,49 +241,128 @@ class LiveMapScreen extends StatefulWidget {
 }
 
 class _LiveMapScreenState extends State<LiveMapScreen> {
-  GoogleMapController? _mapController;
-  final Set<Marker> _markers = {};
-  final Set<Heatmap> _heatmaps = {};
+  mapbox.MapboxMap? _mapController;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  List<mapbox.PointAnnotation> _markerAnnots = [];
   bool _showHeatmap = false;
   bool _showDrivers = true;
   bool _showTrips = true;
+  StreamSubscription<QuerySnapshot>? _tripsSubscription;
+  StreamSubscription<QuerySnapshot>? _driversSubscription;
 
-  // Sample initial position (Birmingham, AL)
-  static const CameraPosition _initialPosition = CameraPosition(
-    target: LatLng(33.5186, -86.8104),
-    zoom: 12,
-  );
+  static const _initialLat = 33.5186;
+  static const _initialLng = -86.8104;
 
   @override
   void initState() {
     super.initState();
-    _loadMarkers();
+    _subscribeToFirestore();
   }
 
-  void _loadMarkers() {
-    // TODO: Load from Firestore
-    setState(() {
-      _markers.addAll([
-        Marker(
-          markerId: const MarkerId('driver_1'),
-          position: const LatLng(33.5200, -86.8000),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-          infoWindow: const InfoWindow(title: 'Driver: John D.', snippet: 'Available'),
-        ),
-        Marker(
-          markerId: const MarkerId('driver_2'),
-          position: const LatLng(33.5100, -86.8200),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-          infoWindow: const InfoWindow(title: 'Driver: Sarah M.', snippet: 'On Trip'),
-        ),
-        Marker(
-          markerId: const MarkerId('trip_1'),
-          position: const LatLng(33.5300, -86.8100),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-          infoWindow: const InfoWindow(title: 'Pickup: 123 Main St', snippet: 'Waiting for driver'),
-        ),
-      ]);
-    });
+  @override
+  void dispose() {
+    _tripsSubscription?.cancel();
+    _driversSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _subscribeToFirestore() {
+    // Subscribe to trips with status requested, accepted, in_progress
+    _tripsSubscription = FirebaseFirestore.instance
+        .collection('trips')
+        .where('status', whereIn: ['requested', 'accepted', 'in_progress'])
+        .snapshots()
+        .listen(_onTripsUpdate);
+
+    // Subscribe to online drivers (we need a drivers collection for this)
+    _driversSubscription = FirebaseFirestore.instance
+        .collection('drivers')
+        .where('isOnline', isEqualTo: true)
+        .snapshots()
+        .listen(_onDriversUpdate);
+  }
+
+  void _onTripsUpdate(QuerySnapshot snapshot) async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null || !_showTrips) return;
+
+    // Clear existing trip markers
+    await _clearTripMarkers();
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data == null) continue;
+
+      final lat = (data['pickupLat'] as num?)?.toDouble();
+      final lng = (data['pickupLng'] as num?)?.toDouble();
+      final status = data['status'] as String? ?? 'requested';
+
+      if (lat == null || lng == null) continue;
+
+      // Color based on status
+      final color = status == 'requested'
+          ? Colors.orange
+          : status == 'accepted'
+              ? Colors.blue
+              : Colors.green;
+
+      final marker = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
+        iconColor: color.toARGB32(),
+        iconSize: 1.2,
+        textField: '#${doc.id.substring(0, 6)}',
+        textSize: 12,
+        textColor: Colors.black.toARGB32(),
+      ));
+      _markerAnnots.add(marker);
+    }
+  }
+
+  void _onDriversUpdate(QuerySnapshot snapshot) async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null || !_showDrivers) return;
+
+    // Clear existing driver markers
+    await _clearDriverMarkers();
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data == null) continue;
+
+      final lat = (data['currentLat'] as num?)?.toDouble();
+      final lng = (data['currentLng'] as num?)?.toDouble();
+      final isOnline = data['isOnline'] as bool? ?? false;
+
+      if (lat == null || lng == null || !isOnline) continue;
+
+      final marker = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
+        iconColor: const Color(0xFF4285F4).toARGB32(),
+        iconSize: 1.2,
+        textField: data['name']?.toString() ?? 'Driver',
+        textSize: 12,
+        textColor: Colors.black.toARGB32(),
+      ));
+      _markerAnnots.add(marker);
+    }
+  }
+
+  Future<void> _clearTripMarkers() async {
+    // In a real implementation, track trip markers separately
+    // For now, clear all and reload
+  }
+
+  Future<void> _clearDriverMarkers() async {
+    // In a real implementation, track driver markers separately
+    // For now, clear all and reload
+  }
+
+  Future<void> _loadMarkers() async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    for (final a in _markerAnnots) { try { await mgr.delete(a); } catch (_) {} }
+    _markerAnnots = [];
+    // Markers now loaded via Firestore subscriptions
   }
 
   @override
@@ -341,16 +421,17 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         ),
         // Map
         Expanded(
-          child: GoogleMap(
-            mapType: MapType.normal,
-            initialCameraPosition: _initialPosition,
-            markers: _showDrivers || _showTrips ? _markers : {},
-            onMapCreated: (controller) {
-              _mapController = controller;
+          child: mapbox.MapWidget(
+            styleUri: MapboxConfig.styleLight,
+            cameraOptions: mapbox.CameraOptions(
+              center: mapbox.Point(coordinates: mapbox.Position(_initialLng, _initialLat)),
+              zoom: 12.0,
+            ),
+            onMapCreated: (ctrl) async {
+              _mapController = ctrl;
+              _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+              if (_showDrivers || _showTrips) _loadMarkers();
             },
-            myLocationEnabled: false,
-            zoomControlsEnabled: true,
-            mapToolbarEnabled: true,
           ),
         ),
       ],
@@ -362,21 +443,59 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-              Text(
-                title,
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              ),
-            ],
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('trips').snapshots(),
+            builder: (context, snapshot) {
+              String displayValue = value;
+              if (snapshot.hasData) {
+                final docs = snapshot.data!.docs;
+                switch (title) {
+                  case 'Active Drivers':
+                    displayValue = docs.where((d) => 
+                      (d.data() as Map<String, dynamic>)['status'] == 'accepted').length.toString();
+                    break;
+                  case 'Active Trips':
+                    displayValue = docs.where((d) {
+                      final status = (d.data() as Map<String, dynamic>)['status'];
+                      return status == 'requested' || status == 'accepted' || status == 'in_progress';
+                    }).length.toString();
+                    break;
+                  case 'Pending':
+                    displayValue = docs.where((d) => 
+                      (d.data() as Map<String, dynamic>)['status'] == 'requested').length.toString();
+                    break;
+                  case 'Completed Today':
+                    displayValue = docs.where((d) {
+                      final data = d.data() as Map<String, dynamic>;
+                      final status = data['status'];
+                      final completedAt = data['completedAt'] as Timestamp?;
+                      if (status != 'completed' || completedAt == null) return false;
+                      final now = DateTime.now();
+                      final completed = completedAt.toDate();
+                      return completed.year == now.year && 
+                             completed.month == now.month && 
+                             completed.day == now.day;
+                    }).length.toString();
+                    break;
+                }
+              }
+              return Column(
+                children: [
+                  Text(
+                    displayValue,
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                  Text(
+                    title,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -422,62 +541,216 @@ class _TripsList extends StatelessWidget {
   final String status;
   const _TripsList({required this.status});
 
+  Query<Map<String, dynamic>> _getQuery() {
+    switch (status) {
+      case 'pending':
+        return FirebaseFirestore.instance
+            .collection('trips')
+            .where('status', isEqualTo: 'requested')
+            .orderBy('createdAt', descending: true);
+      case 'active':
+        return FirebaseFirestore.instance
+            .collection('trips')
+            .where('status', whereIn: ['accepted', 'in_progress'])
+            .orderBy('createdAt', descending: true);
+      case 'scheduled':
+        return FirebaseFirestore.instance
+            .collection('trips')
+            .where('status', isEqualTo: 'scheduled')
+            .orderBy('scheduledAt', descending: true);
+      case 'completed':
+        return FirebaseFirestore.instance
+            .collection('trips')
+            .where('status', isEqualTo: 'completed')
+            .orderBy('completedAt', descending: true)
+            .limit(50);
+      default:
+        return FirebaseFirestore.instance
+            .collection('trips')
+            .orderBy('createdAt', descending: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: 5,
-      itemBuilder: (context, index) {
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: _getStatusColor(status),
-              child: const Icon(Icons.local_taxi, color: Colors.white),
-            ),
-            title: Text('Trip #${1000 + index}'),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _getQuery().snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('Pickup: 123 Main St, Birmingham'),
-                Text('Dropoff: 456 Oak Ave, Birmingham'),
-                Text('Rider: John Doe • \$24.50'),
+                Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+                const SizedBox(height: 16),
+                Text('Error loading trips: ${snapshot.error}'),
               ],
             ),
-            isThreeLine: true,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
+          );
+        }
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (status == 'pending')
-                  IconButton(
-                    icon: const Icon(Icons.person_add, color: Colors.blue),
-                    onPressed: () {
-                      // TODO: Assign driver manually
-                    },
-                    tooltip: 'Assign Driver',
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.more_vert),
-                  onPressed: () {},
+                Icon(Icons.local_taxi_outlined, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'No ${status} trips',
+                  style: TextStyle(fontSize: 18, color: Colors.grey[600]),
                 ),
               ],
             ),
-          ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final trip = docs[index].data();
+            final tripId = docs[index].id;
+            final tripStatus = trip['status'] as String? ?? 'unknown';
+            final pickup = trip['pickupAddress']?.toString() ?? 'Unknown pickup';
+            final dropoff = trip['dropoffAddress']?.toString() ?? 'Unknown dropoff';
+            final riderName = trip['passengerName']?.toString() ?? 'Unknown rider';
+            final fare = (trip['fare'] as num?)?.toDouble() ?? 0.0;
+            final driverName = trip['driverName']?.toString();
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: _getStatusColor(tripStatus),
+                  child: const Icon(Icons.local_taxi, color: Colors.white),
+                ),
+                title: Text('Trip #${tripId.substring(0, 8).toUpperCase()}'),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Pickup: $pickup'),
+                    Text('Dropoff: $dropoff'),
+                    Text('Rider: $riderName • \$${fare.toStringAsFixed(2)}'),
+                    if (driverName != null)
+                      Text('Driver: $driverName', style: TextStyle(color: Colors.blue[700])),
+                  ],
+                ),
+                isThreeLine: driverName != null,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (tripStatus == 'requested')
+                      IconButton(
+                        icon: const Icon(Icons.person_add, color: Colors.blue),
+                        onPressed: () => _showAssignDriverDialog(context, tripId),
+                        tooltip: 'Assign Driver',
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.more_vert),
+                      onPressed: () => _showTripOptions(context, tripId, trip),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
   }
 
+  void _showAssignDriverDialog(BuildContext context, String tripId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Assign Driver'),
+        content: const Text('Select a driver to assign to this trip'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // TODO: Implement driver assignment
+              Navigator.pop(context);
+            },
+            child: const Text('Assign'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTripOptions(BuildContext context, String tripId, Map<String, dynamic> trip) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('View Details'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Navigate to trip details
+              },
+            ),
+            if (trip['status'] == 'requested')
+              ListTile(
+                leading: const Icon(Icons.cancel, color: Colors.red),
+                title: const Text('Cancel Trip'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _cancelTrip(context, tripId);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.close),
+              title: const Text('Close'),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _cancelTrip(BuildContext context, String tripId) async {
+    try {
+      await FirebaseFirestore.instance.collection('trips').doc(tripId).update({
+        'status': 'cancelled',
+        'cancelReason': 'Cancelled by dispatch',
+        'cancelledAt': FieldValue.serverTimestamp(),
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Trip cancelled successfully')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to cancel trip: $e')),
+      );
+    }
+  }
+
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'pending':
+      case 'requested':
         return Colors.orange;
-      case 'active':
+      case 'accepted':
+        return Colors.blue;
+      case 'in_progress':
         return Colors.green;
       case 'scheduled':
-        return Colors.blue;
+        return Colors.purple;
       case 'completed':
         return Colors.grey;
+      case 'cancelled':
+        return Colors.red;
       default:
         return Colors.grey;
     }
@@ -509,7 +782,9 @@ class DriversScreen extends StatelessWidget {
               ),
               const SizedBox(width: 16),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: () {
+                  // TODO: Add driver dialog
+                },
                 icon: const Icon(Icons.add),
                 label: const Text('Add Driver'),
               ),
@@ -517,62 +792,182 @@ class DriversScreen extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: 10,
-            itemBuilder: (context, index) {
-              final isOnline = index % 3 == 0;
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  leading: Stack(
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('drivers')
+                .orderBy('lastName')
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const CircleAvatar(
-                        child: Icon(Icons.person),
+                      Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+                      const SizedBox(height: 16),
+                      Text('Error loading drivers: ${snapshot.error}'),
+                    ],
+                  ),
+                );
+              }
+              final docs = snapshot.data?.docs ?? [];
+              if (docs.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.people_outline, size: 64, color: Colors.grey[400]),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No drivers registered',
+                        style: TextStyle(fontSize: 18, color: Colors.grey[600]),
                       ),
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: isOnline ? Colors.green : Colors.grey,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
+                    ],
+                  ),
+                );
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: docs.length,
+                itemBuilder: (context, index) {
+                  final driver = docs[index].data();
+                  final driverId = docs[index].id;
+                  final firstName = driver['firstName']?.toString() ?? 'Unknown';
+                  final lastName = driver['lastName']?.toString() ?? '';
+                  final isOnline = driver['isOnline'] as bool? ?? false;
+                  final rating = (driver['rating'] as num?)?.toDouble() ?? 0.0;
+                  final vehicle = driver['vehicle']?.toString() ?? 'No vehicle';
+                  final phone = driver['phone']?.toString();
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: ListTile(
+                      leading: Stack(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: isOnline ? Colors.green[100] : Colors.grey[200],
+                            child: Icon(Icons.person, color: isOnline ? Colors.green : Colors.grey),
                           ),
-                        ),
+                          Positioned(
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: isOnline ? Colors.green : Colors.grey,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  title: Text('Driver ${index + 1}: John Smith'),
-                  subtitle: Text(
-                    isOnline ? '🟢 Online • Toyota Camry • 4.92★' : '⚫ Offline • Honda Accord • 4.85★',
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.phone),
-                        onPressed: () {},
+                      title: Text('$firstName $lastName'),
+                      subtitle: Text(
+                        isOnline
+                            ? '🟢 Online • $vehicle • ${rating.toStringAsFixed(2)}★'
+                            : '⚫ Offline • $vehicle • ${rating.toStringAsFixed(2)}★',
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.message),
-                        onPressed: () {},
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (phone != null)
+                            IconButton(
+                              icon: const Icon(Icons.phone),
+                              onPressed: () => _callDriver(phone),
+                              tooltip: 'Call',
+                            ),
+                          IconButton(
+                            icon: const Icon(Icons.message),
+                            onPressed: () => _messageDriver(context, driverId),
+                            tooltip: 'Message',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.more_vert),
+                            onPressed: () => _showDriverOptions(context, driverId, driver),
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.more_vert),
-                        onPressed: () {},
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               );
             },
           ),
         ),
       ],
     );
+  }
+
+  void _callDriver(String phone) {
+    // TODO: Implement phone call
+  }
+
+  void _messageDriver(BuildContext context, String driverId) {
+    // TODO: Implement messaging
+  }
+
+  void _showDriverOptions(BuildContext context, String driverId, Map<String, dynamic> driver) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('View Profile'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Navigate to driver profile
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.assignment),
+              title: const Text('View Trips'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Show driver trips
+              },
+            ),
+            if (driver['isOnline'] == true)
+              ListTile(
+                leading: const Icon(Icons.block, color: Colors.orange),
+                title: const Text('Go Offline'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _setDriverOnlineStatus(context, driverId, false);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.close),
+              title: const Text('Close'),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _setDriverOnlineStatus(BuildContext context, String driverId, bool online) async {
+    try {
+      await FirebaseFirestore.instance.collection('drivers').doc(driverId).update({
+        'isOnline': online,
+        'lastStatusChange': FieldValue.serverTimestamp(),
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Driver set ${online ? 'online' : 'offline'}')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update status: $e')),
+      );
+    }
   }
 }
 

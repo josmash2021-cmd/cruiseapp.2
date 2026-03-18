@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'navatar_sprite_generator.dart';
 
@@ -101,9 +100,6 @@ class NavatarLoader {
   static const double _spriteScale = 3.0;
 
   // ── Caches ─────────────────────────────────────────────────────────
-  /// {modelName: [8 BitmapDescriptors]}
-  static final Map<String, List<BitmapDescriptor>> _spriteCache = {};
-
   /// {modelName: [8 Uint8List PNG bytes]}
   static final Map<String, List<Uint8List>> _bytesCache = {};
 
@@ -121,21 +117,19 @@ class NavatarLoader {
 
   /// Clear all caches (call on memory warning or model change).
   static void invalidate() {
-    _spriteCache.clear();
     _bytesCache.clear();
     _rotatedCache.clear();
   }
 
   // ── Loading ────────────────────────────────────────────────────────
 
-  /// Loads 8 directional sprites for [model] from assets.
+  /// Loads 8 directional sprites (as Uint8List bytes) for [model] from assets.
   /// Falls back to Canvas-generated 3D sprites if PNGs are missing.
-  static Future<List<BitmapDescriptor>?> loadSprites(NavatarModel model) async {
+  static Future<List<Uint8List>?> loadSprites(NavatarModel model) async {
     final key = model.assetName;
-    if (_spriteCache.containsKey(key)) return _spriteCache[key];
+    if (_bytesCache.containsKey(key)) return _bytesCache[key];
 
     // Try loading PNG assets first
-    final sprites = <BitmapDescriptor>[];
     final bytesList = <Uint8List>[];
     final int targetPx = (_spriteTargetWidth * _spriteScale).round();
     bool pngOk = true;
@@ -156,21 +150,16 @@ class NavatarLoader {
         final byteData =
             await resized.toByteData(format: ui.ImageByteFormat.png);
         if (byteData == null) { pngOk = false; break; }
-        final resizedBytes = byteData.buffer.asUint8List();
-
-        // ignore: deprecated_member_use
-        sprites.add(BitmapDescriptor.fromBytes(resizedBytes));
-        bytesList.add(resizedBytes);
+        bytesList.add(byteData.buffer.asUint8List());
       } catch (_) {
         pngOk = false;
         break;
       }
     }
 
-    if (pngOk && sprites.length == 8) {
-      _spriteCache[key] = sprites;
+    if (pngOk && bytesList.length == 8) {
       _bytesCache[key] = bytesList;
-      return sprites;
+      return bytesList;
     }
 
     // Fallback: generate 3D sprites with Canvas
@@ -178,35 +167,33 @@ class NavatarLoader {
   }
 
   /// Generate 3D sprites via Canvas when PNG assets are unavailable.
-  /// Resizes from the large canvas (480px) down to map-marker size (120px).
-  static Future<List<BitmapDescriptor>?> _generateAndCache(String key) async {
+  static Future<List<Uint8List>?> _generateAndCache(String key) async {
     try {
       final genBytes = await NavatarSpriteGenerator.generateAll();
       if (genBytes.length != 8) return null;
-      final genSprites = <BitmapDescriptor>[];
       final resizedBytes = <Uint8List>[];
-      const int targetPx = 120; // 40 logical px × 3.0 scale
+      const int targetPx = 120;
       for (final b in genBytes) {
         final codec = await ui.instantiateImageCodec(b, targetWidth: targetPx);
         final frame = await codec.getNextFrame();
         final byteData =
             await frame.image.toByteData(format: ui.ImageByteFormat.png);
         if (byteData == null) return null;
-        final small = byteData.buffer.asUint8List();
-        resizedBytes.add(small);
-        // ignore: deprecated_member_use
-        genSprites.add(BitmapDescriptor.fromBytes(small));
+        resizedBytes.add(byteData.buffer.asUint8List());
       }
-      _spriteCache[key] = genSprites;
       _bytesCache[key] = resizedBytes;
-      return genSprites;
+      return resizedBytes;
     } catch (_) {
       return null;
     }
   }
 
   /// Loads sprites for the currently selected navatar.
-  static Future<List<BitmapDescriptor>?> loadCurrentSprites() =>
+  static Future<List<Uint8List>?> loadCurrentSprites() =>
+      loadSprites(_current);
+
+  /// Loads raw bytes for the currently selected navatar (alias).
+  static Future<List<Uint8List>?> loadCurrentSpriteBytes() =>
       loadSprites(_current);
 
   /// Preloads all navatar models so switching is instant.
@@ -225,19 +212,19 @@ class NavatarLoader {
     return ((a + 22.5) / 45).floor() % 8;
   }
 
-  /// Returns the BitmapDescriptor for [model] at [viewAngleDeg].
+  /// Returns the sprite bytes for [model] at [viewAngleDeg].
   /// Returns null if sprites haven't been loaded.
-  static BitmapDescriptor? spriteForAngle(
+  static Uint8List? spriteForAngle(
     NavatarModel model,
     double viewAngleDeg,
   ) {
-    final sprites = _spriteCache[model.assetName];
-    if (sprites == null || sprites.length < 8) return null;
-    return sprites[indexForAngle(viewAngleDeg)];
+    final bytes = _bytesCache[model.assetName];
+    if (bytes == null || bytes.length < 8) return null;
+    return bytes[indexForAngle(viewAngleDeg)];
   }
 
-  /// Returns sprite for the currently selected model.
-  static BitmapDescriptor? currentSpriteForAngle(double viewAngleDeg) =>
+  /// Returns sprite bytes for the currently selected model.
+  static Uint8List? currentSpriteForAngle(double viewAngleDeg) =>
       spriteForAngle(_current, viewAngleDeg);
 
   // ── Raw Bytes (for Apple Maps / custom rendering) ──────────────────

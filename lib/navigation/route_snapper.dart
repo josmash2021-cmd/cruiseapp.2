@@ -1,5 +1,5 @@
 import 'dart:math' as math;
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../models/lat_lng.dart';
 
 /// Result of snapping a raw GPS position to the nearest point on a route.
 class SnapResult {

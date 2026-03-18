@@ -1,35 +1,36 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-/// Shared animated gold location dot that replaces the default blue dot
-/// on all map screens (rider + driver).
+/// Shared animated gold location dot for Mapbox map screens.
 ///
 /// Usage:
-///   1. Create an instance in your State's initState:
+///   1. Create and build in initState:
 ///        _goldDot = GoldLocationDot();
 ///        _goldDot.build(() { if (mounted) setState(() {}); });
 ///   2. Dispose in dispose():
 ///        _goldDot.dispose();
-///   3. Add marker in GoogleMap markers set:
-///        if (_goldDot.marker(position) != null) _goldDot.marker(position)!
-///   4. Set myLocationEnabled: false on GoogleMap.
+///   3. Use currentBytes to get the current animation frame PNG bytes
+///      and update a PointAnnotation on the Mapbox map.
 class GoldLocationDot {
   static const Color _gold = Color(0xFFE8C547);
   static const int _frameCount = 24;
   static const double _canvasSize = 140.0;
 
-  List<BitmapDescriptor> _frames = [];
+  List<Uint8List> _frames = [];
   int _frame = 0;
   Timer? _timer;
 
   bool get isReady => _frames.isNotEmpty;
 
+  /// Current animation frame as PNG bytes, or null if not ready.
+  Uint8List? get currentBytes => _frames.isEmpty ? null : _frames[_frame];
+
   /// Pre-render all animation frames then start the pulse timer.
   Future<void> build(VoidCallback onTick) async {
-    final frames = <BitmapDescriptor>[];
+    final frames = <Uint8List>[];
 
     for (int i = 0; i < _frameCount; i++) {
       final t = i / _frameCount;
@@ -97,8 +98,7 @@ class GoldLocationDot {
           .toImage(_canvasSize.toInt(), _canvasSize.toInt());
       final data = await img.toByteData(format: ui.ImageByteFormat.png);
       if (data == null) return;
-      // ignore: deprecated_member_use
-      frames.add(BitmapDescriptor.fromBytes(data.buffer.asUint8List()));
+      frames.add(data.buffer.asUint8List());
     }
 
     if (frames.length != _frameCount) return;
@@ -108,19 +108,6 @@ class GoldLocationDot {
       _frame = (_frame + 1) % _frames.length;
       onTick();
     });
-  }
-
-  /// Returns a Marker for the gold dot at [position], or null if not ready.
-  Marker? marker(LatLng position) {
-    if (_frames.isEmpty) return null;
-    return Marker(
-      markerId: const MarkerId('my_location_gold'),
-      position: position,
-      icon: _frames[_frame],
-      anchor: const Offset(0.5, 0.5),
-      flat: true,
-      zIndexInt: 1,
-    );
   }
 
   void dispose() {

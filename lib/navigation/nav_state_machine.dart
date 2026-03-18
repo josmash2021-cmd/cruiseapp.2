@@ -1,4 +1,4 @@
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../models/lat_lng.dart';
 import 'dart:math' as math;
 
 /// Phases of a driver's trip lifecycle.

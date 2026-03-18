@@ -1,4 +1,4 @@
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'lat_lng.dart';
 
 /// A ride offer shown to the driver in the offers screen.
 class RideOffer {

@@ -28,8 +28,9 @@ class ApiService {
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 
-  /// Persistent HTTP client — reuses TCP/TLS connections across requests.
-  /// This eliminates the 300-800 ms handshake overhead on cellular networks.
+  /// Persistent HTTP client with optimized settings — reuses TCP/TLS connections
+  /// across requests and enables compression. This eliminates the 300-800 ms
+  /// handshake overhead on cellular networks.
   static final http.Client _client = http.Client();
 
   /// In-memory active URL. Populated by [init]; defaults to production for release builds.
@@ -285,8 +286,13 @@ class ApiService {
         .toString();
     final nonce = _generateNonce();
     final signature = _computeSignature(timestamp, nonce);
-    return {
+    // Enable compression and keep-alive for all requests
+    final requestHeaders = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate',
+      'Connection': 'keep-alive',
+      if (token != null) 'Authorization': 'Bearer $token',
       'X-API-Key': _apiKey,
       'X-Timestamp': timestamp,
       'X-Nonce': nonce,
@@ -298,6 +304,7 @@ class ApiService {
       'ngrok-skip-browser-warning': 'true',
       if (token != null) 'Authorization': 'Bearer $token',
     };
+    return requestHeaders;
   }
 
   /// Headers with the current JWT attached (for authenticated endpoints).

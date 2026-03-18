@@ -6,7 +6,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import '../config/mapbox_config.dart';
+import '../models/lat_lng.dart';
 
 import '../config/map_styles.dart';
 import '../navigation/nav_state_machine.dart';
@@ -54,7 +56,7 @@ class DriverNavigationPage extends StatefulWidget {
 
 class _DriverNavigationPageState extends State<DriverNavigationPage>
     with TickerProviderStateMixin {
-  GoogleMapController? _map;
+  mapbox.MapboxMap? _map;
   bool _mapReady = false;
   late final NavStateMachine _sm;
   late final SmoothMotion _motion;
@@ -77,8 +79,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
 
   StreamSubscription? _gpsSub;
   bool _muted = false;
-  BitmapDescriptor? _arrowIcon;
   Uint8List? _arrowIconBytes;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
+  mapbox.PointAnnotation? _driverAnnot;
+  mapbox.PointAnnotation? _destAnnot;
+  mapbox.PolylineAnnotation? _routeAnnot;
   double _currentSpeedMph = 0;
 
   static const _navy = Color(0xFF0A2463);
@@ -645,11 +651,11 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
     if (!mounted) return;
     final raw = bytes!.buffer.asUint8List();
+    if (!mounted) return;
     setState(() {
-      // ignore: deprecated_member_use
-      _arrowIcon = BitmapDescriptor.fromBytes(raw);
       _arrowIconBytes = raw;
     });
+    _updateDriverAnnotation();
   }
 
   void _onCameraMoveStarted() {
@@ -669,62 +675,55 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     _animateCameraNav(_pos, zoom: 16.5, bearing: _bearing);
   }
 
-  Set<Marker> get _allMarkers {
-    final m = <Marker>{};
-    // The modern car icon points UP (front of car is at top of image)
-    // Bearing 0° = North = Up, so rotation matches bearing directly
-    // No correction needed since car faces upward in the rendered image
-    m.add(
-      Marker(
-        markerId: const MarkerId('driver'),
-        position: _pos,
-        icon: _arrowIcon ?? BitmapDescriptor.defaultMarker,
-        rotation: _bearing,  // Car faces up, bearing 0 = North = Up
-        flat: true,
-        anchor: const Offset(0.5, 0.6),  // Anchor slightly below center so car sits ON the route line
-        zIndexInt: 100,
-      ),
+  Future<void> _updateDriverAnnotation() async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    final bytes = _arrowIconBytes;
+    final opts = mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+      image: bytes,
+      iconRotate: _bearing,
+      iconSize: 0.5,
     );
-    final dest =
-        _sm.phase == TripPhase.onTrip || _sm.phase == TripPhase.arrivedDropoff
-        ? widget.dropoffLatLng
-        : widget.pickupLatLng;
-    m.add(
-      Marker(
-        markerId: const MarkerId('destination'),
-        position: dest,
-        icon: BitmapDescriptor.defaultMarkerWithHue(45.0),
-        zIndexInt: 90,
-      ),
-    );
-    return m;
+    if (_driverAnnot == null) {
+      _driverAnnot = await mgr.create(opts);
+    } else {
+      _driverAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude));
+      _driverAnnot!.iconRotate = _bearing;
+      await mgr.update(_driverAnnot!);
+    }
   }
 
-  Set<Polyline> get _polylines {
-    final s = <Polyline>{};
-    if (_displayRoutePts.length >= 2) {
-      s.add(
-        Polyline(
-          polylineId: const PolylineId('shadow'),
-          points: _displayRoutePts,
-          color: const Color(0x405BA3F5),
-          width: 14,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      );
-      s.add(
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: _displayRoutePts,
-          color: const Color(0xFF5BA3F5),
-          width: 7,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      );
+  Future<void> _updateDestAnnotation() async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    final dest = _sm.phase == TripPhase.onTrip || _sm.phase == TripPhase.arrivedDropoff
+        ? widget.dropoffLatLng
+        : widget.pickupLatLng;
+    if (_destAnnot == null) {
+      _destAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(dest.longitude, dest.latitude)),
+        iconSize: 1.0,
+      ));
+    } else {
+      _destAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(dest.longitude, dest.latitude));
+      await mgr.update(_destAnnot!);
     }
-    return s;
+  }
+
+  Future<void> _updateRouteAnnotation() async {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || _displayRoutePts.length < 2) return;
+    final coords = _displayRoutePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    if (_routeAnnot != null) {
+      try { await mgr.delete(_routeAnnot!); } catch (_) {}
+      _routeAnnot = null;
+    }
+    _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: coords),
+      lineColor: const Color(0xFF5BA3F5).toARGB32(),
+      lineWidth: 7.0,
+    ));
   }
 
   void _animateCameraNav(
@@ -733,11 +732,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     double bearing = 0,
     double tilt = 55,
   }) {
-    _map?.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: pos, zoom: zoom, bearing: bearing, tilt: tilt),
-      ),
-    );
+    _map?.setCamera(mapbox.CameraOptions(
+      center: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+      zoom: zoom,
+      bearing: bearing,
+      pitch: tilt,
+    ));
   }
 
   // =========================================================================
@@ -763,40 +763,24 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         children: [
           // ── FULLSCREEN MAP ────────────────────────────────────────────────
           Positioned.fill(
-            child: GoogleMap(
-              style: MapStyles.navigation,
-              mapType: MapType.normal,
-              initialCameraPosition: CameraPosition(
-                target: _pos,
+            child: mapbox.MapWidget(
+              styleUri: MapboxConfig.styleNavigation,
+              cameraOptions: mapbox.CameraOptions(
+                center: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
                 zoom: 17,
-                tilt: 55,
+                pitch: 55,
                 bearing: _bearing,
               ),
-              onMapCreated: (c) {
-                _map = c;
+              onMapCreated: (ctrl) async {
+                _map = ctrl;
                 _mapReady = true;
-                _map!.moveCamera(
-                  CameraUpdate.newCameraPosition(
-                    CameraPosition(target: _pos, zoom: 17, tilt: 55, bearing: _bearing),
-                  ),
-                );
+                _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+                _updateDriverAnnotation();
+                _updateDestAnnotation();
+                _updateRouteAnnotation();
               },
-              onCameraMoveStarted: _onCameraMoveStarted,
-              markers: _allMarkers,
-              polylines: _polylines,
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              compassEnabled: false,
-              buildingsEnabled: true,
-              trafficEnabled: false,
-              tiltGesturesEnabled: true,
-              rotateGesturesEnabled: true,
-              scrollGesturesEnabled: true,
-              zoomGesturesEnabled: true,
-              fortyFiveDegreeImageryEnabled: true,
-              padding: EdgeInsets.only(top: top + 140, bottom: 220 + bot),
+              onScrollListener: (_) => _onCameraMoveStarted(),
             ),
           ),
 

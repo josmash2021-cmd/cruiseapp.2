@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 // 3D vector
 class _V3 {
@@ -54,10 +53,8 @@ class NavatarSpriteGenerator {
   static final _V3 _vd = _norm(_V3(0, -_ce, _se));
   static final _V3 _ld = _norm(const _V3(-0.35, 0.75, 0.45));
 
-  static Future<List<BitmapDescriptor>> generateDescriptors() async {
-    final bytes = await generateAll();
-    // ignore: deprecated_member_use
-    return bytes.map((b) => BitmapDescriptor.fromBytes(b)).toList();
+  static Future<List<Uint8List>> generateDescriptors() async {
+    return generateAll();
   }
 
   static Future<List<Uint8List>> generateAll() async {

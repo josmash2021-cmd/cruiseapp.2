@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'navatar_loader.dart';
 
@@ -96,43 +95,14 @@ class _CarPalette {
 class CarIconLoader {
   CarIconLoader._();
 
-  static final Map<String, BitmapDescriptor> _cache = {};
-  // Raw PNG bytes cache — used by Apple Maps on iOS (BitmapDescriptor is opaque).
   static final Map<String, Uint8List> _bytesCache = {};
 
-  static Future<BitmapDescriptor> load() => loadUber();
+  static Future<Uint8List?> load() => loadUberBytes();
 
-  static Future<BitmapDescriptor> loadUber() async {
-    if (_cache.containsKey('modern')) return _cache['modern']!;
-    // Use the NEW modern nav car renderer for the driver marker
-    final bytes = await _renderModernNavCarBytes();
-    // ignore: deprecated_member_use
-    final descriptor = BitmapDescriptor.fromBytes(bytes);
-    _cache['modern'] = descriptor;
-    return descriptor;
-  }
+  static Future<Uint8List?> loadForVehicle(String rideName) =>
+      loadForRideBytes(rideName);
 
-  static Future<BitmapDescriptor> loadForVehicle(String rideName) =>
-      loadForRide(rideName);
-
-  static Future<BitmapDescriptor> loadForRide(String rideName) async {
-    final key = rideName.trim().toLowerCase();
-    if (key.contains('suburba')) {
-      const cacheKey = 'suv_black';
-      if (_cache.containsKey(cacheKey)) return _cache[cacheKey]!;
-      _cache[cacheKey] = await _renderSuv(_CarPalette.black);
-      return _cache[cacheKey]!;
-    }
-    final palette = key.contains('fusion')
-        ? _CarPalette.black
-        : _CarPalette.whitePearl;
-    final cacheKey = key.contains('fusion') ? 'black' : 'white';
-    if (_cache.containsKey(cacheKey)) return _cache[cacheKey]!;
-    _cache[cacheKey] = await _render(palette);
-    return _cache[cacheKey]!;
-  }
-
-  static Future<BitmapDescriptor> loadDriverIcon() => loadUber();
+  static Future<Uint8List?> loadDriverIcon() => loadUberBytes();
 
   // ═══════════════════════════════════════════════════════════════════
   //  MULTI-ANGLE SPRITE SYSTEM (8 directional sprites)
@@ -146,8 +116,8 @@ class CarIconLoader {
   /// 270°  → right side
   static const List<int> _spriteAngles = [0, 45, 90, 135, 180, 225, 270, 315];
 
-  /// Cached multi-angle sprites (8 BitmapDescriptors, index 0-7).
-  static List<BitmapDescriptor>? _navSprites;
+  /// Cached multi-angle sprites as raw bytes (index 0-7).
+  static List<Uint8List>? _navSprites;
 
   /// Target marker size in logical pixels. Sprites are resized to this
   /// width (height scales proportionally) so they aren't oversized on the map.
@@ -157,18 +127,18 @@ class CarIconLoader {
   ///
   /// Tries Navatar sprites first (assets/images/navatars/{model}/),
   /// then falls back to legacy car_sprites/ folder.
-  static Future<List<BitmapDescriptor>?> loadNavCarSprites() async {
+  static Future<List<Uint8List>?> loadNavCarSprites() async {
     if (_navSprites != null) return _navSprites;
 
-    // Try Navatar system first (6 models × 8 angles)
-    final navatarSprites = await NavatarLoader.loadCurrentSprites();
-    if (navatarSprites != null && navatarSprites.length == 8) {
-      _navSprites = navatarSprites;
+    // Try Navatar bytes first
+    final navatarBytes = await NavatarLoader.loadCurrentSpriteBytes();
+    if (navatarBytes != null && navatarBytes.length == 8) {
+      _navSprites = navatarBytes;
       return _navSprites;
     }
 
     // Fallback: legacy car_sprites/ folder
-    final sprites = <BitmapDescriptor>[];
+    final sprites = <Uint8List>[];
     const double scale = 3.0;
     final int targetPx = (_spriteTargetWidth * scale).round();
 
@@ -189,10 +159,7 @@ class CarIconLoader {
         final byteData =
             await resized.toByteData(format: ui.ImageByteFormat.png);
         if (byteData == null) return null;
-        final resizedBytes = byteData.buffer.asUint8List();
-
-        // ignore: deprecated_member_use
-        sprites.add(BitmapDescriptor.fromBytes(resizedBytes));
+        sprites.add(byteData.buffer.asUint8List());
       } catch (_) {
         return null;
       }
@@ -209,9 +176,9 @@ class CarIconLoader {
     return idx;
   }
 
-  /// Convenience: returns the BitmapDescriptor for a given view angle.
+  /// Returns the sprite bytes for a given view angle.
   /// Returns null if sprites haven't been loaded.
-  static BitmapDescriptor? spriteForViewAngle(double viewAngleDeg) {
+  static Uint8List? spriteForViewAngle(double viewAngleDeg) {
     if (_navSprites == null || _navSprites!.length < 8) return null;
     return _navSprites![spriteIndexForAngle(viewAngleDeg)];
   }
@@ -257,7 +224,6 @@ class CarIconLoader {
   }
 
   static void invalidate() {
-    _cache.clear();
     _bytesCache.clear();
     _cardCache.clear();
     _rotatedCache.clear();
@@ -1309,19 +1275,18 @@ class CarIconLoader {
     return bytes!.buffer.asUint8List();
   }
 
-  static Future<BitmapDescriptor> _render(_CarPalette p) async {
+  static Future<Uint8List> _render(_CarPalette p) async {
     final pixelBytes = await _renderDetailedBytes(p);
     final cacheKey = p == _CarPalette.whitePearl ? 'white' : 'black';
     _bytesCache[cacheKey] = pixelBytes;
-    // ignore: deprecated_member_use
-    return BitmapDescriptor.fromBytes(pixelBytes);
+    return pixelBytes;
   }
 
   // =================================================================
   //  SUV RENDERER — wider, boxier, with roof rails
   // =================================================================
 
-  static Future<BitmapDescriptor> _renderSuv(_CarPalette p) async {
+  static Future<Uint8List> _renderSuv(_CarPalette p) async {
     // SUV is wider and slightly taller than sedan
     const double lw = 24, lh = 40;
     const double scale = 3.0; // smaller for Android 9 fromBytes
@@ -1361,12 +1326,11 @@ class CarIconLoader {
     final pic = rec.endRecording();
     final img = await pic.toImage(pw, ph);
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    if (bytes == null) return BitmapDescriptor.defaultMarker;
+    if (bytes == null) return Uint8List(0);
 
     final pixelBytes = bytes.buffer.asUint8List();
     _bytesCache['suv_black'] = pixelBytes; // SUV marker is always black
-    // ignore: deprecated_member_use
-    return BitmapDescriptor.fromBytes(pixelBytes);
+    return pixelBytes;
   }
 
   /// Renders the SUV as raw PNG bytes (used by iOS rotation and loadForRideBytes).

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'config/mapbox_config.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
-import 'firebase_options.dart';
+import 'config/smooth_transitions.dart';
+import 'config/page_transitions.dart';
 import 'config/api_keys.dart';
 import 'config/app_theme.dart';
 import 'config/theme_notifier.dart';
@@ -17,6 +20,7 @@ import 'services/user_session.dart';
 import 'services/local_data_service.dart';
 import 'services/keep_alive_service.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 
 /// Global theme notifier so any screen can toggle night mode.
@@ -48,6 +52,7 @@ void main() async {
       }
       await ApiService.init();
 
+      MapboxOptions.setAccessToken(MapboxConfig.accessToken);
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       SystemChrome.setSystemUIOverlayStyle(
         const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
@@ -206,6 +211,13 @@ class _UberCloneAppState extends State<UberCloneApp>
             theme: lightTheme,
             darkTheme: darkTheme,
             scrollBehavior: const SmoothScrollBehavior(),
+            // Smooth page transitions for all routes
+            onGenerateRoute: (settings) {
+              return SmoothTransitions.fadeSlide(
+                page: _getPageForRoute(settings),
+                fromRight: true,
+              );
+            },
             localizationsDelegates: const [
               S.delegate,
               GlobalMaterialLocalizations.delegate,
@@ -221,9 +233,25 @@ class _UberCloneAppState extends State<UberCloneApp>
               return const Locale('en');
             },
             home: const SplashScreen(),
+            builder: (context, child) {
+              // Apply smooth scroll behavior globally
+              return ScrollConfiguration(
+                behavior: const SmoothScrollBehavior(),
+                child: child!,
+              );
+            },
           ),
         );
       },
     );
+  }
+}
+
+/// Route generator for smooth transitions
+Widget _getPageForRoute(RouteSettings settings) {
+  // Add your route cases here
+  switch (settings.name) {
+    default:
+      return const SplashScreen();
   }
 }

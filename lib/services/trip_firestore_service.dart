@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../models/lat_lng.dart';
 
 /// Writes ride requests directly to the shared Firestore `trips` collection
 /// so Dispatch Admin sees them in real time.

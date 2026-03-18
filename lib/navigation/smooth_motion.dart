@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/scheduler.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../models/lat_lng.dart';
 
 /// Smoothly interpolates between raw GPS positions so the driver marker
 /// doesn't jump. Uses **time-based** exponential decay so the animation is

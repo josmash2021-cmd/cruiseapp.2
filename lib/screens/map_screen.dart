@@ -33,6 +33,8 @@ import 'scheduled_rides_screen.dart';
 import 'trip_receipt_screen.dart';
 import '../navigation/car_icon_loader.dart';
 import '../navigation/navatar_loader.dart';
+import '../navigation/smooth_motion.dart';
+import '../navigation/route_snapper.dart';
 import '../services/api_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
@@ -208,10 +210,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   List<Uint8List>? _navCarSprites; // 8-angle 3D sprites
   double _cameraBearing = 0; // current camera bearing for sprite selection
   DateTime? _lastDriverMarkerRebuild;
-  AnimationController? _riderDriverAnim; // 60fps smooth driver animation
-  LatLng _riderAnimFrom = _birminghamDefault;
-  LatLng _riderAnimTo = _birminghamDefault;
-  double _riderTargetBearing = 0;
+  // SmoothMotion replaces the old AnimationController approach
+  SmoothMotion? _driverMotion;
+  int _driverSnapIdx = 0;
   List<LatLng> _driverRoutePoints = [];
   String _lastDriverRoutePhase = ''; // 'driver_en_route' or 'in_trip'
   String _driverName = 'Searching...';
@@ -507,10 +508,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 2000),
     )..addListener(_onGlowTick);
-    _riderDriverAnim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..addListener(_onRiderDriverAnimTick);
+    _driverMotion = SmoothMotion(
+      onTick: _onDriverMotionTick,
+      lerpFactor: 0.10,
+      enablePrediction: false,
+    );
+    _driverMotion!.start(this);
     _loadPinIcons();
     _buildDriverCarIcon();
     _loadNavCarSprites();
@@ -681,8 +684,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _cameraIdleDebounce?.cancel();
     _rideLifecycleTimer?.cancel();
     _tripPollTimer?.cancel();
-    _riderDriverAnim?.removeListener(_onRiderDriverAnimTick);
-    _riderDriverAnim?.dispose();
+    _driverMotion?.dispose();
     _glowController?.removeListener(_onGlowTick);
     _glowController?.dispose();
     _pickupFocus.removeListener(_handleAddressFocusChange);
@@ -1208,8 +1210,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _onMapCreated(mapbox.MapboxMap controller) async {
     _mapController = controller;
-    _pointAnnotMgr = await controller.annotations.createPointAnnotationManager();
+    // Polyline FIRST → route renders BELOW pins and car marker
     _polylineAnnotMgr = await controller.annotations.createPolylineAnnotationManager();
+    _pointAnnotMgr = await controller.annotations.createPointAnnotationManager();
     if (_currentPosition != null) {
       _centerMapOn(_currentPosition!, zoom: _defaultMapZoom);
       await _setPickupAnnotation(_currentPosition!);
@@ -4296,6 +4299,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
 
     _lastDriverRoutePhase = routePhase;
+    _driverSnapIdx = 0; // reset snap cursor for the new route segment
 
     if (isEnRoute) {
       // Draw: driver â†’ pickup (green) + pickup â†’ dropoff (gold)
@@ -4522,8 +4526,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (mgr == null || _driverPosition == null) return;
     if (_driverAnnot != null) {
       try {
-        await mgr.update(_driverAnnot!..geometry = mapbox.Point(
-          coordinates: mapbox.Position(_driverPosition!.longitude, _driverPosition!.latitude)));
+        _driverAnnot!.geometry = mapbox.Point(
+          coordinates: mapbox.Position(_driverPosition!.longitude, _driverPosition!.latitude));
+        _driverAnnot!.iconRotate = rotation;
+        await mgr.update(_driverAnnot!);
         return;
       } catch (_) { _driverAnnot = null; }
     }
@@ -4532,6 +4538,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       image: iconBytes,
       iconSize: 0.5,
       iconRotate: rotation,
+      iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
     ));
   }
 
@@ -4572,51 +4579,57 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     return (from + diff * t) % 360;
   }
 
-  /// Smoothly animate driver position using AnimationController (60fps)
+  /// Push a new raw GPS position from the backend poll into SmoothMotion.
+  /// SmoothMotion lerps continuously at 60fps — no restarts, no jumps.
   void _animateDriverTo(LatLng newPos) {
-    final from = _driverPosition ?? newPos;
-    _riderAnimFrom = from;
-    _riderAnimTo = newPos;
-    _prevDriverPosition = from;
+    _prevDriverPosition = _driverPosition;
 
-    // Calculate smooth bearing toward new position
-    final rawBearing = _calcBearing(from, newPos);
-    _riderTargetBearing = rawBearing;
+    // Snap to route so the car follows the road, not a straight line
+    LatLng snapped = newPos;
+    double bearing = _driverBearing;
+    if (_driverRoutePoints.length >= 2) {
+      final snap = RouteSnapper.snap(
+        newPos,
+        _driverRoutePoints,
+        lastIndex: _driverSnapIdx,
+      );
+      _driverSnapIdx = snap.segmentIndex;
+      snapped = snap.snapped;
+      bearing = snap.bearingDeg;
+    } else if (_prevDriverPosition != null) {
+      final moved = Geolocator.distanceBetween(
+        _prevDriverPosition!.latitude, _prevDriverPosition!.longitude,
+        newPos.latitude, newPos.longitude,
+      );
+      if (moved > 2) bearing = _calcBearing(_prevDriverPosition!, newPos);
+    }
 
-    // Start 60fps animation
-    _riderDriverAnim?.forward(from: 0.0);
+    if (_driverMotion == null) return;
+    // Teleport on first fix so the car appears immediately
+    if (_driverPosition == null) {
+      _driverMotion!.teleport(snapped, bearing);
+      _driverPosition = snapped;
+      _driverBearing = bearing;
+    } else {
+      _driverMotion!.pushTarget(snapped, bearing);
+    }
   }
 
-  /// Called on every vsync frame during driver animation (60fps)
-  void _onRiderDriverAnimTick() {
+  /// Called every vsync frame by SmoothMotion — 60fps, butter smooth.
+  void _onDriverMotionTick(LatLng pos, double bearing) {
     if (!mounted) return;
-    final raw = _riderDriverAnim?.value ?? 1.0;
-    final t = Curves.easeOutCubic.transform(raw);
-
-    final lat =
-        _riderAnimFrom.latitude +
-        (_riderAnimTo.latitude - _riderAnimFrom.latitude) * t;
-    final lng =
-        _riderAnimFrom.longitude +
-        (_riderAnimTo.longitude - _riderAnimFrom.longitude) * t;
-    _driverPosition = LatLng(lat, lng);
-
-    // Smooth bearing interpolation — follows the same eased curve as position
-    _driverBearing = _lerpAngle(
-      _driverBearing,
-      _riderTargetBearing,
-      (t * 0.15).clamp(0.0, 1.0),
-    );
+    _driverPosition = pos;
+    _driverBearing = bearing;
 
     _updateDriverMarkerFromPosition();
 
-    // ── 3D Chase-Cam: follow driver every frame for game-like feel ──
+    // Chase-cam: follow driver every frame
     if (_stage == RideStage.riding && _driverPosition != null) {
-      _cameraBearing = _driverBearing; // track for 3D sprite angle selection
-      _panTo(_driverPosition!, zoom: 18.5, bearing: _driverBearing, tilt: 55);
+      _cameraBearing = bearing;
+      _panTo(_driverPosition!, zoom: 18.5, bearing: bearing, tilt: 55);
     }
 
-    // Trim route behind driver on every frame for seamless visual
+    // Trim route behind driver on every frame
     if (_driverRoutePoints.length > 2) {
       _trimRiderRoute(_driverPosition!);
     }

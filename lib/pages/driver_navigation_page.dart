@@ -12,6 +12,7 @@ import '../models/lat_lng.dart';
 
 import '../config/map_styles.dart';
 import '../navigation/nav_state_machine.dart';
+import '../navigation/suv_renderer.dart';
 import '../navigation/route_snapper.dart';
 import '../navigation/route_service.dart';
 import '../navigation/smooth_motion.dart';
@@ -222,7 +223,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         (_lastCameraUpdate == null ||
             now.difference(_lastCameraUpdate!).inMilliseconds > 16)) {
       _lastCameraUpdate = now;
-      _animateCameraNav(pos, zoom: 17.5, bearing: bearing, tilt: 65);
+      _animateCameraNav(pos, bearing: bearing);
     }
   }
 
@@ -254,38 +255,43 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   }
 
   // =========================================================================
-  //  NAVIGATION ARROW ICON — painted on Canvas, rotated via Marker.rotation
+  //  NAVIGATION ARROW ICON — Suburban-inspired SUV
   // =========================================================================
 
   Future<void> _buildArrowIcon() async {
-    // Render at 2x for crisp retina display
+    final raw = await SuvRenderer.render();
+    if (!mounted) return;
+    setState(() { _arrowIconBytes = raw; });
+    _updateDriverAnnotation();
+  }
+
+  // ignore: unused_element
+  Future<void> _buildArrowIconLegacy() async {
     const double w = 120;
     const double h = 220;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w, h));
 
     const double cx = w / 2;
-    const double cy = h / 2 + 5;  // Slightly lower for longer hood
+    const double cy = h / 2 + 5;
 
-    // ── MODERN SPORTY CAR COLORS ──
-    const bodyMain = Color(0xFF2E4A5E);      // Modern metallic blue-gray
-    const bodyLight = Color(0xFF4A6B82);     // Lighter metallic
-    const bodyDark = Color(0xFF1A2E3D);      // Darker edges
-    const bodyHi = Color(0xFF6B8FA3);        // Highlight
-    const underBody = Color(0xFF0F1A22);     // Shadow underneath
-    const glass = Color(0xFF2A3A4A);         // Dark tinted glass
-    const glassHi = Color(0xFF5A7A8A);       // Glass reflection
-    const wheelColor = Color(0xFF0A0A0A);    // Deep black wheels
-    const rimColor = Color(0xFF4A4A4A);      // Silver rims
-    const headlightCol = Color(0xFFFFFFFF);  // Bright LED white
-    const taillightCol = Color(0xFFFF2222);  // Bright red LED
-    const outlineColor = Color(0xFF000000);  // Black outline
-    const spoilerColor = Color(0xFF1A2E3D);  // Dark spoiler
+    const bodyMain = Color(0xFF2E4A5E);
+    const bodyLight = Color(0xFF4A6B82);
+    const bodyDark = Color(0xFF1A2E3D);
+    const bodyHi = Color(0xFF6B8FA3);
+    const underBody = Color(0xFF0F1A22);
+    const glass = Color(0xFF2A3A4A);
+    const glassHi = Color(0xFF5A7A8A);
+    const wheelColor = Color(0xFF0A0A0A);
+    const rimColor = Color(0xFF4A4A4A);
+    const headlightCol = Color(0xFFFFFFFF);
+    const taillightCol = Color(0xFFFF2222);
+    const outlineColor = Color(0xFF000000);
+    const spoilerColor = Color(0xFF1A2E3D);
 
-    // Proportions - Modern sporty sedan (lower, wider)
-    const double bW = 28.0;   // half-width (wider)
-    const double bH = 52.0;   // half-height (lower profile)
-    const double depth = 5.0; // 3D depth
+    const double bW = 28.0;
+    const double bH = 52.0;
+    const double depth = 5.0;
 
     // ── MODERN AERODYNAMIC BODY SHAPE ──
     Path modernCarBody(double ox, double oy, double hw, double hh) {
@@ -686,7 +692,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       _cameraFollowing = true;
       _hasResumedOnce = true;
     });
-    _animateCameraNav(_pos, zoom: 16.5, bearing: _bearing);
+    _animateCameraNav(_pos, bearing: _bearing);
   }
 
   Future<void> _updateDriverAnnotation() async {
@@ -697,7 +703,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
       image: bytes,
       iconRotate: _bearing,
-      iconSize: 0.5,
+      iconSize: 0.38,
     );
     if (_driverAnnot == null) {
       _driverAnnot = await mgr.create(opts);
@@ -742,16 +748,38 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
 
   void _animateCameraNav(
     LatLng pos, {
-    double zoom = 17,
+    double? zoom,
     double bearing = 0,
-    double tilt = 55,
+    double tilt = 60,
   }) {
+    // Dynamic zoom: parked=17.5 (closer), highway=15.0 (wider view)
+    final speedZoom = 17.5 - (_currentSpeedMph / 80.0).clamp(0.0, 1.0) * 2.5;
+    final effectiveZoom = zoom ?? speedZoom;
+    // Lookahead: shift camera center forward so more road is visible ahead
+    final lookaheadM = (20.0 + _currentSpeedMph * 0.7).clamp(20.0, 80.0);
+    final ahead = _lookaheadPoint(pos, bearing, lookaheadM);
     _map?.setCamera(mapbox.CameraOptions(
-      center: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-      zoom: zoom,
+      center: mapbox.Point(coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
+      zoom: effectiveZoom,
       bearing: bearing,
       pitch: tilt,
     ));
+  }
+
+  LatLng _lookaheadPoint(LatLng origin, double bearingDeg, double distM) {
+    const r = 6371000.0;
+    final lat1 = origin.latitude * math.pi / 180;
+    final lng1 = origin.longitude * math.pi / 180;
+    final b = bearingDeg * math.pi / 180;
+    final lat2 = math.asin(
+      math.sin(lat1) * math.cos(distM / r) +
+      math.cos(lat1) * math.sin(distM / r) * math.cos(b),
+    );
+    final lng2 = lng1 + math.atan2(
+      math.sin(b) * math.sin(distM / r) * math.cos(lat1),
+      math.cos(distM / r) - math.sin(lat1) * math.sin(lat2),
+    );
+    return LatLng(lat2 * 180 / math.pi, lng2 * 180 / math.pi);
   }
 
   // =========================================================================
@@ -781,8 +809,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
               styleUri: MapboxConfig.styleNavigation,
               cameraOptions: mapbox.CameraOptions(
                 center: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
-                zoom: 17,
-                pitch: 55,
+                zoom: 17.5,
+                pitch: 60,
                 bearing: _bearing,
               ),
               onMapCreated: (ctrl) async {

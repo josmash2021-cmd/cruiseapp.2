@@ -290,19 +290,17 @@ workflows:
       - name: Install CocoaPods dependencies
         script: |
           cd ios
-          rm -rf ~/Library/Caches/CocoaPods
           rm -rf Pods Podfile.lock
           export COCOAPODS_DISABLE_STATS=true
-          
-          for i in 1 2 3 4 5; do
-            echo "=== pod install attempt $i/5 ==="
-            if pod install --repo-update --verbose; then
+          for i in 1 2 3; do
+            echo "=== pod install attempt $i/3 ==="
+            if pod install --repo-update; then
               echo "✅ Pods installed on attempt $i"
               break
             fi
-            if [ $i -lt 5 ]; then
-              echo "⚠️ Attempt $i failed, waiting $((i * 30))s..."
-              sleep $((i * 30))
+            if [ $i -lt 3 ]; then
+              echo "⚠️ Attempt $i failed, waiting $((i * 45))s..."
+              sleep $((i * 45))
             else
               echo "❌ All attempts failed"
               exit 1
@@ -341,21 +339,21 @@ workflows:
       cocoapods: default
       vars:
         BUNDLE_ID: "com.cruiseinride.app"
-        ENV_API_KEY: ${ENV_API_KEY}
-        ENV_HMAC_SECRET: ${ENV_HMAC_SECRET}
-        ENV_EMAILJS_SERVICE_ID: ${ENV_EMAILJS_SERVICE_ID}
-        ENV_EMAILJS_TEMPLATE_ID: ${ENV_EMAILJS_TEMPLATE_ID}
-        ENV_EMAILJS_PUBLIC_KEY: ${ENV_EMAILJS_PUBLIC_KEY}
-        ENV_EMAILJS_PRIVATE_KEY: ${ENV_EMAILJS_PRIVATE_KEY}
-        ENV_STRIPE_PK: ${ENV_STRIPE_PK}
-        ENV_STRIPE_MERCHANT: ${ENV_STRIPE_MERCHANT}
-        ENV_TWILIO_SID: ${ENV_TWILIO_SID}
-        ENV_TWILIO_TOKEN: ${ENV_TWILIO_TOKEN}
-        ENV_TWILIO_SERVICE: ${ENV_TWILIO_SERVICE}
-        ENV_MAPS_SERVICES_KEY: ${ENV_MAPS_SERVICES_KEY}
+        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
+        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
+        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
+        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
+        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
+        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
+        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
+        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
+        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
+        ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
+        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+        ENV_MAPS_SERVICES_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
         ENV_PAYPAL_SANDBOX: "false"
-        ENV_PAYPAL_CLIENT_ID: ${ENV_PAYPAL_CLIENT_ID}
-        ENV_PAYPAL_SECRET: ${ENV_PAYPAL_SECRET}
+        ENV_PAYPAL_CLIENT_ID: "YOUR_PAYPAL_CLIENT_ID"
+        ENV_PAYPAL_SECRET: "YOUR_PAYPAL_SECRET"
     scripts:
       - name: Generate env.dart
         script: |
@@ -403,18 +401,17 @@ workflows:
       - name: Install CocoaPods dependencies
         script: |
           cd ios
-          rm -rf ~/Library/Caches/CocoaPods
           rm -rf Pods Podfile.lock
           export COCOAPODS_DISABLE_STATS=true
-          for i in 1 2 3 4 5; do
-            echo "=== pod install attempt $i/5 ==="
-            if pod install --repo-update --verbose; then
+          for i in 1 2 3; do
+            echo "=== pod install attempt $i/3 ==="
+            if pod install --repo-update; then
               echo "✅ Pods installed on attempt $i"
               break
             fi
-            if [ $i -lt 5 ]; then
-              echo "⚠️ Attempt $i failed, waiting $((i * 30))s..."
-              sleep $((i * 30))
+            if [ $i -lt 3 ]; then
+              echo "⚠️ Attempt $i failed, waiting $((i * 45))s..."
+              sleep $((i * 45))
             else
               echo "❌ All attempts failed"
               exit 1

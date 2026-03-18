@@ -4092,11 +4092,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 setState(() => _tripStatus = 'in_trip');
               }
             }
-            // 3D Chase-cam follows driver every frame via _onRiderDriverAnimTick
-            // Only set fallback camera here if animation is not running
+            // 3D Chase-cam follows driver every frame via _onDriverMotionTick
+            // Only set fallback camera here if SmoothMotion is not active
             if (_driverPosition != null &&
                 mounted &&
-                !(_riderDriverAnim?.isAnimating ?? false)) {
+                _driverMotion == null) {
               // Calculate bearing from driver to dropoff
               double tripBearing = _driverBearing;
               if (tripBearing == 0 && dropoffPos != null) {
@@ -4168,7 +4168,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             // 3D Chase-cam follows driver on map during en route
             if (_driverPosition != null &&
                 mounted &&
-                !(_riderDriverAnim?.isAnimating ?? false)) {
+                _driverMotion == null) {
               // Calculate bearing from driver to pickup
               double pickupBearing = _driverBearing;
               if (pickupBearing == 0 && pickupPos != null) {
@@ -4421,7 +4421,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _completeRide() async {
     if (!mounted) return;
-    _riderDriverAnim?.reset();
+    _driverSnapIdx = 0; // reset snap cursor on ride complete
 
     final completedRide = _rides[_selectedRide];
     final completedTrip = TripHistoryItem(
@@ -4538,7 +4538,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       image: iconBytes,
       iconSize: 0.5,
       iconRotate: rotation,
-      iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
     ));
   }
 

@@ -1368,7 +1368,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           image: carBytes,
           iconSize: 0.5,
           iconRotate: _heading,
-          iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
         ));
       }
     }

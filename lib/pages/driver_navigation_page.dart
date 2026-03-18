@@ -706,7 +706,6 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         image: bytes,
         iconRotate: _bearing,
         iconSize: 0.5,
-        iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
       ));
     } else {
       _driverAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude));

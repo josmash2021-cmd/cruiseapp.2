@@ -13,7 +13,6 @@ import 'config/api_keys.dart';
 import 'config/app_theme.dart';
 import 'config/theme_notifier.dart';
 import 'screens/splash_screen.dart';
-import 'navigation/suv_preview_page.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
 import 'services/security_service.dart';
@@ -252,8 +251,6 @@ class _UberCloneAppState extends State<UberCloneApp>
 Widget _getPageForRoute(RouteSettings settings) {
   // Add your route cases here
   switch (settings.name) {
-    case '/suv-preview':
-      return const SuvPreviewPage();
     default:
       return const SplashScreen();
   }

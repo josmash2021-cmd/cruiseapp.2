@@ -86,6 +86,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   mapbox.PointAnnotation? _destAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
   double _currentSpeedMph = 0;
+  DateTime? _lastAnnotUpdate;
 
   static const _navy = Color(0xFF0A2463);
   static const _green = Color(0xFF34A853);
@@ -200,13 +201,26 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     _bearing = bearing;
     setState(() {});
 
-    // Throttle camera to ~60 Hz for super fluid real-time tracking
     final now = DateTime.now();
+
+    // Update car annotation at ~30 fps (every 33 ms).
+    // This is the imperative Mapbox annotation update — without this call
+    // the car marker stays frozen at its initial position.
+    if (_map != null &&
+        _mapReady &&
+        _arrowIconBytes != null &&
+        (_lastAnnotUpdate == null ||
+            now.difference(_lastAnnotUpdate!).inMilliseconds > 33)) {
+      _lastAnnotUpdate = now;
+      _updateDriverAnnotation();
+    }
+
+    // Throttle camera to ~60 Hz for super fluid real-time tracking
     if (_cameraFollowing &&
         _map != null &&
         _mapReady &&
         (_lastCameraUpdate == null ||
-            now.difference(_lastCameraUpdate!).inMilliseconds > 16)) {  // 60fps
+            now.difference(_lastCameraUpdate!).inMilliseconds > 16)) {
       _lastCameraUpdate = now;
       _animateCameraNav(pos, zoom: 17.5, bearing: bearing, tilt: 65);
     }

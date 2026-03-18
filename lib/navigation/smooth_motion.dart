@@ -28,6 +28,11 @@ class SmoothMotion {
   double _targetBearing = 0;
   Duration _lastElapsed = Duration.zero;
 
+  /// Minimum movement in degrees (lat or lng) before we accept a new bearing.
+  /// ~2e-5° ≈ 2.2 metres. Prevents bearing flips from GPS noise when stopped.
+  static const double _minMoveDeg = 2e-5;
+
+
   Ticker? _ticker;
 
   /// Start the animation loop. Requires a [TickerProvider] (e.g. from a State
@@ -47,10 +52,23 @@ class SmoothMotion {
     _targetBearing = bearing;
   }
 
-  /// Push a new target position + bearing from a raw GPS reading.
+  /// Push a new target position + bearing from a route-snapped GPS reading.
+  ///
+  /// Bearing is only accepted when the vehicle has moved at least [_minMoveDeg]
+  /// degrees (≈ 2 m). Below that threshold the vehicle is considered at rest
+  /// and we keep the last known heading to prevent jitter flips.
+  ///
+  /// Because [bearing] always comes from the route polyline segment (not raw
+  /// GPS heading), it is always trusted — no large-jump clamping is needed.
   void pushTarget(LatLng pos, double bearing) {
+    final dLat = (pos.latitude - _target.latitude).abs();
+    final dLng = (pos.longitude - _target.longitude).abs();
     _target = pos;
-    _targetBearing = bearing;
+    if (dLat > _minMoveDeg || dLng > _minMoveDeg) {
+      _targetBearing = bearing;
+    }
+    // Below threshold: position updated but bearing held → car keeps its
+    // last direction while creeping / stopped at a light.
   }
 
   void _onFrame(Duration elapsed) {

@@ -228,23 +228,58 @@ class NavigationService {
 
   static double _toRad(double deg) => deg * math.pi / 180;
 
+  /// Find the closest point on the polyline to [point] using segment
+  /// projection (not just vertex search). This correctly handles the case
+  /// where the vehicle is in the middle of a long segment — a vertex-only
+  /// search would overestimate the off-route distance and trigger false alerts.
   static _ClosestPointResult _findClosestPointOnPolyline(
     LatLng point,
     List<LatLng> polyline,
   ) {
+    if (polyline.isEmpty) {
+      return _ClosestPointResult(index: 0, distanceMeters: 0, point: point);
+    }
+    if (polyline.length == 1) {
+      return _ClosestPointResult(
+        index: 0,
+        distanceMeters: _haversineMeters(point, polyline[0]),
+        point: polyline[0],
+      );
+    }
+
     double minDist = double.infinity;
     int closestIdx = 0;
-    for (int i = 0; i < polyline.length; i++) {
-      final d = _haversineMeters(point, polyline[i]);
+    LatLng closestPt = polyline[0];
+
+    for (int i = 0; i < polyline.length - 1; i++) {
+      final proj = _projectOnSegment(point, polyline[i], polyline[i + 1]);
+      final d = _haversineMeters(point, proj);
       if (d < minDist) {
         minDist = d;
         closestIdx = i;
+        closestPt = proj;
       }
     }
     return _ClosestPointResult(
       index: closestIdx,
       distanceMeters: minDist,
-      point: polyline[closestIdx],
+      point: closestPt,
+    );
+  }
+
+  /// Project [p] onto segment [a]-[b] with cosine-latitude correction.
+  static LatLng _projectOnSegment(LatLng p, LatLng a, LatLng b) {
+    final cosLat = math.cos(_toRad((a.latitude + b.latitude) / 2.0));
+    final dLat = b.latitude - a.latitude;
+    final dLng = (b.longitude - a.longitude) * cosLat;
+    if (dLat.abs() < 1e-10 && dLng.abs() < 1e-10) return a;
+    final pLat = p.latitude - a.latitude;
+    final pLng = (p.longitude - a.longitude) * cosLat;
+    final t = (pLat * dLat + pLng * dLng) / (dLat * dLat + dLng * dLng);
+    final clamped = t.clamp(0.0, 1.0);
+    return LatLng(
+      a.latitude + clamped * (b.latitude - a.latitude),
+      a.longitude + clamped * (b.longitude - a.longitude),
     );
   }
 

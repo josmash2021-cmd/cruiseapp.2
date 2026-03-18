@@ -51,15 +51,16 @@ class RouteSnapper {
       );
     }
 
-    // Search window: start a few segments back from lastIndex
-    // If last offset was large, search all segments to find the true closest
+    // Search window: start a few segments back from lastIndex.
+    // Look ahead generously (80 segments) to handle tunnels/GPS jumps.
     final searchStart = (lastIndex - 5).clamp(0, route.length - 2);
+    final searchEnd = math.min(searchStart + 80, route.length - 1);
 
     double bestDist = double.infinity;
     LatLng bestPoint = route[searchStart];
     int bestSeg = searchStart;
 
-    for (int i = searchStart; i < route.length - 1; i++) {
+    for (int i = searchStart; i < searchEnd; i++) {
       final proj = _projectOnSegment(raw, route[i], route[i + 1]);
       final d = _haversineM(raw, proj);
       if (d < bestDist) {
@@ -67,14 +68,11 @@ class RouteSnapper {
         bestPoint = proj;
         bestSeg = i;
       }
-      // If we're past lastIndex by a lot and distance is increasing, stop early
-      if (i > lastIndex + 30 && d > bestDist * 3) break;
     }
 
-    final bearing = _computeBearing(
-      route[bestSeg],
-      route[(bestSeg + 1).clamp(0, route.length - 1)],
-    );
+    // Smooth heading: blend current segment bearing with look-ahead.
+    // This prevents abrupt 90° bearing snaps at corners.
+    final bearing = _smoothBearing(route, bestSeg);
 
     return SnapResult(
       snapped: bestPoint,
@@ -84,20 +82,49 @@ class RouteSnapper {
     );
   }
 
-  /// Project point [p] onto the line segment [a]-[b], returning the closest
-  /// point on the segment.
-  static LatLng _projectOnSegment(LatLng p, LatLng a, LatLng b) {
-    final dx = b.latitude - a.latitude;
-    final dy = b.longitude - a.longitude;
-    if (dx == 0 && dy == 0) return a;
+  /// Compute a smoothed heading by averaging the current segment bearing
+  /// with the next segment bearing, weighted by segment length.
+  static double _smoothBearing(List<LatLng> route, int segIdx) {
+    final next = (segIdx + 1).clamp(0, route.length - 1);
+    final b0 = _computeBearing(route[segIdx], route[next]);
+    if (segIdx + 2 >= route.length) return b0;
 
-    final t = ((p.latitude - a.latitude) * dx + (p.longitude - a.longitude) * dy) /
-        (dx * dx + dy * dy);
+    final b1 = _computeBearing(route[next], route[segIdx + 2]);
+    // Only blend if the two bearings are within 45° — prevents blending
+    // through a sharp turn and pointing diagonally.
+    double diff = (b1 - b0).abs();
+    if (diff > 180) diff = 360 - diff;
+    if (diff > 45) return b0; // sharp turn: use current segment only
+
+    // Weight current segment more (70/30 blend)
+    final blended = b0 * 0.7 + b1 * 0.3;
+    return blended % 360;
+  }
+
+  /// Project [p] onto segment [a]-[b], returning the closest point on
+  /// the segment.
+  ///
+  /// Uses cosine-latitude correction so that 1° longitude and 1° latitude
+  /// map to the same metric distance. Without this correction the projection
+  /// is skewed on East-West roads, causing the vehicle to appear to drift
+  /// sideways or snap to the wrong segment.
+  static LatLng _projectOnSegment(LatLng p, LatLng a, LatLng b) {
+    // Scale longitude by cos(midLat) to make the space isotropic
+    final cosLat = math.cos(_r((a.latitude + b.latitude) / 2.0));
+
+    final dLat = b.latitude - a.latitude;
+    final dLng = (b.longitude - a.longitude) * cosLat;
+    if (dLat.abs() < 1e-10 && dLng.abs() < 1e-10) return a;
+
+    final pLat = p.latitude - a.latitude;
+    final pLng = (p.longitude - a.longitude) * cosLat;
+
+    final t = (pLat * dLat + pLng * dLng) / (dLat * dLat + dLng * dLng);
     final clamped = t.clamp(0.0, 1.0);
 
     return LatLng(
-      a.latitude + clamped * dx,
-      a.longitude + clamped * dy,
+      a.latitude + clamped * (b.latitude - a.latitude),
+      a.longitude + clamped * (b.longitude - a.longitude),
     );
   }
 

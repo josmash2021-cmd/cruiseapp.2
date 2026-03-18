@@ -17,21 +17,6 @@ workflows:
       vars:
         FLUTTER_XCODE_CODE_SIGNING_ALLOWED: "NO"
         FLUTTER_XCODE_CODE_SIGNING_REQUIRED: "NO"
-        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
-        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
-        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
-        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
-        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
-        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
-        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
-        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
-        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
-        ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
-        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
-        ENV_PAYPAL_SANDBOX: "false"
-        ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
-        ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
     scripts:
       - name: Generate env.dart
         script: |
@@ -39,7 +24,6 @@ workflows:
           class Env {
             static const String apiKey = '${ENV_API_KEY}';
             static const String hmacSecret = '${ENV_HMAC_SECRET}';
-            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
             static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
             static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
             static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
@@ -227,7 +211,6 @@ workflows:
       vars:
         ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
         ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
         ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
         ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
         ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
@@ -247,7 +230,6 @@ workflows:
           class Env {
             static const String apiKey = '${ENV_API_KEY}';
             static const String hmacSecret = '${ENV_HMAC_SECRET}';
-            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
             static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
             static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
             static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
@@ -325,23 +307,27 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      android_signing:
+        - keystore_path: keystore.jks
+          keystore_password: ${KEYSTORE_PASSWORD}
+          key_alias: ${KEY_ALIAS}
+          key_password: ${KEY_PASSWORD}
       vars:
         BUNDLE_ID: "com.cruiseinride.app"
-        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
-        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
-        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
-        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
-        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
-        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
-        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
-        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
-        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
-        ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
-        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+        ENV_API_KEY: ${ENV_API_KEY}
+        ENV_HMAC_SECRET: ${ENV_HMAC_SECRET}
+        ENV_EMAILJS_SERVICE_ID: ${ENV_EMAILJS_SERVICE_ID}
+        ENV_EMAILJS_TEMPLATE_ID: ${ENV_EMAILJS_TEMPLATE_ID}
+        ENV_EMAILJS_PUBLIC_KEY: ${ENV_EMAILJS_PUBLIC_KEY}
+        ENV_EMAILJS_PRIVATE_KEY: ${ENV_EMAILJS_PRIVATE_KEY}
+        ENV_STRIPE_PK: ${ENV_STRIPE_PK}
+        ENV_STRIPE_MERCHANT: ${ENV_STRIPE_MERCHANT}
+        ENV_TWILIO_SID: ${ENV_TWILIO_SID}
+        ENV_TWILIO_TOKEN: ${ENV_TWILIO_TOKEN}
+        ENV_TWILIO_SERVICE: ${ENV_TWILIO_SERVICE}
         ENV_PAYPAL_SANDBOX: "false"
-        ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
-        ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
+        ENV_PAYPAL_CLIENT_ID: ${ENV_PAYPAL_CLIENT_ID}
+        ENV_PAYPAL_SECRET: ${ENV_PAYPAL_SECRET}
     scripts:
       - name: Generate env.dart
         script: |
@@ -349,7 +335,6 @@ workflows:
           class Env {
             static const String apiKey = '${ENV_API_KEY}';
             static const String hmacSecret = '${ENV_HMAC_SECRET}';
-            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
             static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
             static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
             static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
@@ -465,7 +450,6 @@ workflows:
       vars:
         ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
         ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
         ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
         ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
         ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
@@ -486,7 +470,6 @@ workflows:
           class Env {
             static const String apiKey = '${ENV_API_KEY}';
             static const String hmacSecret = '${ENV_HMAC_SECRET}';
-            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
             static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
             static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
             static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
@@ -501,9 +484,6 @@ workflows:
             static const String paypalSecret = '${ENV_PAYPAL_SECRET}';
           }
           ENVEOF
-      - name: Inject Google Maps key in AndroidManifest
-        script: |
-          sed -i "s/\${MAPS_API_KEY}/${ENV_GOOGLE_MAPS_KEY}/g" android/app/src/main/AndroidManifest.xml
       - name: Flutter pub get
         script: flutter pub get
       - name: Build APK
@@ -538,7 +518,6 @@ workflows:
       vars:
         ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
         ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_GOOGLE_MAPS_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
         ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
         ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
         ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
@@ -559,7 +538,6 @@ workflows:
           class Env {
             static const String apiKey = '${ENV_API_KEY}';
             static const String hmacSecret = '${ENV_HMAC_SECRET}';
-            static const String googleMapsKey = '${ENV_GOOGLE_MAPS_KEY}';
             static const String emailjsServiceId = '${ENV_EMAILJS_SERVICE_ID}';
             static const String emailjsTemplateId = '${ENV_EMAILJS_TEMPLATE_ID}';
             static const String emailjsPublicKey = '${ENV_EMAILJS_PUBLIC_KEY}';
@@ -574,9 +552,6 @@ workflows:
             static const String paypalSecret = '${ENV_PAYPAL_SECRET}';
           }
           ENVEOF
-      - name: Inject Google Maps key in AndroidManifest
-        script: |
-          sed -i "s/\${MAPS_API_KEY}/${ENV_GOOGLE_MAPS_KEY}/g" android/app/src/main/AndroidManifest.xml
       - name: Flutter pub get
         script: flutter pub get
       - name: Build AAB

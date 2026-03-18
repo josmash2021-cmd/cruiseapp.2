@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../navigation/nav_state_machine.dart';
 import '../l10n/app_localizations.dart';
+import 'driver_report_dialog.dart';
 
 /// Indicación de navegación turn-by-turn
 class NavInstruction {
@@ -296,6 +297,8 @@ class DriverActionPanel extends StatelessWidget {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    _buildReportButton(context),
                   ],
                 ),
               ),
@@ -444,6 +447,8 @@ class DriverActionPanel extends StatelessWidget {
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                _buildReportButton(context),
               ],
             ),
           ),
@@ -547,6 +552,8 @@ class DriverActionPanel extends StatelessWidget {
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                _buildReportButton(context),
               ],
             ),
           ),
@@ -644,10 +651,31 @@ class DriverActionPanel extends StatelessWidget {
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                _buildReportButton(context),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildReportButton(BuildContext context) {
+    return TextButton.icon(
+      onPressed: () => DriverReportDialog.show(context),
+      icon: const Icon(Icons.report_problem_outlined, size: 18),
+      label: const Text(
+        'Reportar Problema',
+        style: TextStyle(fontSize: 13),
+      ),
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.white70,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: const BorderSide(color: Colors.white24),
+        ),
       ),
     );
   }

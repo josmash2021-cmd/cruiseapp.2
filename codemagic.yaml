@@ -302,16 +302,16 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.cruiseinride.app
-      groups:
-        - ios_signing
-      flutter: stable
-      xcode: latest
-      cocoapods: default
       android_signing:
         - keystore_path: keystore.jks
           keystore_password: ${KEYSTORE_PASSWORD}
           key_alias: ${KEY_ALIAS}
           key_password: ${KEY_PASSWORD}
+      groups:
+        - ios_signing
+      flutter: stable
+      xcode: latest
+      cocoapods: default
       vars:
         BUNDLE_ID: "com.cruiseinride.app"
         ENV_API_KEY: ${ENV_API_KEY}

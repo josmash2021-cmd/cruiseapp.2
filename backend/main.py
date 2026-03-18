@@ -2082,29 +2082,42 @@ async def delete_account(user: User = Depends(_get_current_user), db: AsyncSessi
 @app.post("/auth/verify-request", dependencies=[Depends(_verify_api_key)])
 async def submit_verification(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Submit identity verification for dispatch review, with optional ID photo and selfie."""
-    body = await request.json()
-    result = await db.execute(select(User).where(User.id == user.id))
-    db_user = result.scalar_one_or_none()
-    if not db_user:
-        raise HTTPException(404, "User not found")
-    db_user.id_document_type = body.get("id_document_type", "id_card")
-    db_user.verification_status = "pending"
-    db_user.verification_reason = None
-    db_user.is_verified = False
-    # Store SSN if provided (validate format, store as XXX-XX-XXXX)
-    raw_ssn = body.get("ssn", "")
-    if raw_ssn:
-        import re as _re
-        ssn_digits = _re.sub(r'\D', '', str(raw_ssn))
-        if len(ssn_digits) == 9:
-            db_user.ssn = f"{ssn_digits[:3]}-{ssn_digits[3:5]}-{ssn_digits[5:]}"
-    await db.commit()
-    await db.refresh(db_user)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+    try:
+        result = await db.execute(select(User).where(User.id == user.id))
+        db_user = result.scalar_one_or_none()
+        if not db_user:
+            raise HTTPException(404, "User not found")
+        db_user.id_document_type = body.get("id_document_type", "id_card")
+        db_user.verification_status = "pending"
+        db_user.verification_reason = None
+        db_user.is_verified = False
+        # Store SSN if provided (validate format, store as XXX-XX-XXXX)
+        raw_ssn = body.get("ssn", "")
+        if raw_ssn:
+            import re as _re
+            ssn_digits = _re.sub(r'\D', '', str(raw_ssn))
+            if len(ssn_digits) == 9:
+                db_user.ssn = f"{ssn_digits[:3]}-{ssn_digits[3:5]}-{ssn_digits[5:]}"
+        await db.commit()
+        await db.refresh(db_user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("[Verify] DB error saving verification for user %s: %s", user.id, e)
+        raise HTTPException(500, f"Error saving verification: {str(e)}")
 
-    # Save verification photos if provided
+    # Save verification photos if provided (non-fatal — disk may be unavailable on Railway)
     saved_urls = {}
-    docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "documents")
-    os.makedirs(docs_dir, exist_ok=True)
+    try:
+        docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "documents")
+        os.makedirs(docs_dir, exist_ok=True)
+    except Exception as e:
+        logging.warning("[Verify] Cannot create uploads dir: %s", e)
+        docs_dir = None
 
     photo_fields = [
         ("license_front", "license_front"),
@@ -2114,34 +2127,38 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         ("selfie_photo", "selfie"),
         ("id_photo", "id_doc"),
     ]
-    for field, label in photo_fields:
-        b64 = body.get(field)
-        if not b64 or not isinstance(b64, str):
-            continue
-        if len(b64) > 6 * 1024 * 1024:
-            continue  # skip oversized
-        try:
-            decoded = base64.b64decode(b64, validate=True)
-        except Exception:
-            continue
-        if len(decoded) > 4 * 1024 * 1024:
-            continue
-        if decoded[:2] == b'\xff\xd8':
-            ext = "jpg"
-        elif decoded[:8] == b'\x89PNG\r\n\x1a\n':
-            ext = "png"
-        else:
-            continue
-        fname = f"verify_{db_user.id}_{label}_{int(time.time())}.{ext}"
-        fpath = os.path.join(docs_dir, fname)
-        with open(fpath, "wb") as f:
-            f.write(decoded)
-        saved_urls[label] = f"{PUBLIC_URL}/uploads/documents/{fname}"
+    if docs_dir:
+        for field, label in photo_fields:
+            b64 = body.get(field)
+            if not b64 or not isinstance(b64, str):
+                continue
+            if len(b64) > 6 * 1024 * 1024:
+                continue  # skip oversized
+            try:
+                decoded = base64.b64decode(b64, validate=True)
+            except Exception:
+                continue
+            if len(decoded) > 4 * 1024 * 1024:
+                continue
+            if decoded[:2] == b'\xff\xd8':
+                ext = "jpg"
+            elif decoded[:8] == b'\x89PNG\r\n\x1a\n':
+                ext = "png"
+            else:
+                continue
+            try:
+                fname = f"verify_{db_user.id}_{label}_{int(time.time())}.{ext}"
+                fpath = os.path.join(docs_dir, fname)
+                with open(fpath, "wb") as f:
+                    f.write(decoded)
+                saved_urls[label] = f"{PUBLIC_URL}/uploads/documents/{fname}"
+            except Exception as e:
+                logging.warning("[Verify] Could not save photo %s: %s", label, e)
 
     # Handle verification video (MP4)
     video_b64 = body.get("verification_video")
     video_url = None
-    if video_b64 and isinstance(video_b64, str):
+    if docs_dir and video_b64 and isinstance(video_b64, str):
         if len(video_b64) <= 20 * 1024 * 1024:  # 20MB limit for video
             try:
                 video_decoded = base64.b64decode(video_b64, validate=True)
@@ -2158,35 +2175,42 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
     # Store photo URLs in the database
     id_photo_url = saved_urls.get("license_front") or saved_urls.get("id_doc")
     selfie_url = saved_urls.get("selfie")
-    if id_photo_url:
-        db_user.id_photo_url = id_photo_url
-    if selfie_url:
-        db_user.selfie_url = selfie_url
-    if saved_urls.get("license_front"):
-        db_user.license_front_url = saved_urls["license_front"]
-    if saved_urls.get("license_back"):
-        db_user.license_back_url = saved_urls["license_back"]
-    if saved_urls.get("vehicle_registration"):
-        db_user.vehicle_registration_url = saved_urls["vehicle_registration"]
-    if saved_urls.get("insurance"):
-        db_user.insurance_url = saved_urls["insurance"]
-    if video_url:
-        db_user.video_url = video_url
-    await db.commit()
-    await db.refresh(db_user)
+    try:
+        if id_photo_url:
+            db_user.id_photo_url = id_photo_url
+        if selfie_url:
+            db_user.selfie_url = selfie_url
+        if saved_urls.get("license_front"):
+            db_user.license_front_url = saved_urls["license_front"]
+        if saved_urls.get("license_back"):
+            db_user.license_back_url = saved_urls["license_back"]
+        if saved_urls.get("vehicle_registration"):
+            db_user.vehicle_registration_url = saved_urls["vehicle_registration"]
+        if saved_urls.get("insurance"):
+            db_user.insurance_url = saved_urls["insurance"]
+        if video_url:
+            db_user.video_url = video_url
+        await db.commit()
+        await db.refresh(db_user)
+    except Exception as e:
+        logging.error("[Verify] Error saving photo URLs to DB: %s", e)
+        # Non-fatal: verification status already saved above
 
     # Also detect existing profile photo
     profile_photo_url = db_user.photo_url
 
     # Fetch vehicle data for this driver
     vehicle_data = None
-    veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == db_user.id))
-    veh = veh_result.scalar_one_or_none()
-    if veh:
-        vehicle_data = {
-            "make": veh.make, "model": veh.model, "year": veh.year,
-            "color": veh.color, "plate": veh.plate,
-        }
+    try:
+        veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == db_user.id))
+        veh = veh_result.scalar_one_or_none()
+        if veh:
+            vehicle_data = {
+                "make": veh.make, "model": veh.model, "year": veh.year,
+                "color": veh.color, "plate": veh.plate,
+            }
+    except Exception as e:
+        logging.warning("[Verify] Could not fetch vehicle data: %s", e)
 
     # Sync to Firestore so dispatch can review
     if _HAS_FIRESTORE:
@@ -2211,7 +2235,11 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
             )
         except Exception as e:
             logging.error("Firestore verification sync failed: %s", e)
-    return _user_dict(db_user)
+    try:
+        return _user_dict(db_user)
+    except Exception as e:
+        logging.error("[Verify] Error building user dict: %s", e)
+        return {"ok": True, "verification_status": "pending"}
 
 @app.get("/auth/verification-status", dependencies=[Depends(_verify_api_key)])
 async def verification_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

@@ -2179,7 +2179,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
       lineColor: c.value,
-      lineWidth: 4.0,
+      lineWidth: 5.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+      lineCap: mapbox.LineCap.ROUND,
     ));
   }
 
@@ -2432,7 +2434,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final annot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
       lineColor: c.value,
-      lineWidth: 4.0,
+      lineWidth: 5.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+      lineCap: mapbox.LineCap.ROUND,
     ));
     // Store in preview pickup slot first, then dropoff slot
     if (_previewPickupAnnot == null) {

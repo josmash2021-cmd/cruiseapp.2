@@ -38,6 +38,7 @@ import '../navigation/route_snapper.dart';
 import '../services/api_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
+import '../widgets/bouncing_button.dart';
 import 'pickup_dropoff_search_screen.dart';
 
 enum RideStage {
@@ -2403,7 +2404,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
       lineColor: _routeColor.toARGB32(),
-      lineWidth: 4.0,
+      lineWidth: 5.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+      lineCap: mapbox.LineCap.ROUND,
     ));
   }
 
@@ -3128,35 +3131,38 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           mainAxisSize: MainAxisSize.max,
           children: [
             _handle(),
-            GestureDetector(
-              onTap: () => setState(() {
+            BouncingButton(
+              onPressed: () => setState(() {
                 _optionsExpanded = !_optionsExpanded;
                 _panelDragHeight = null;
               }),
-              child: AnimatedRotation(
-                turns: _optionsExpanded ? 0.0 : 0.5,
-                duration: const Duration(milliseconds: 250),
-                child: Icon(
-                  Icons.keyboard_arrow_up,
-                  color: _c.textTertiary,
-                  size: 20,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: AnimatedRotation(
+                  turns: _optionsExpanded ? 0.0 : 0.5,
+                  duration: const Duration(milliseconds: 250),
+                  child: Icon(
+                    Icons.keyboard_arrow_up,
+                    color: _c.textTertiary,
+                    size: 24,
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.local_offer, color: _gold, size: 15),
-                SizedBox(width: 6),
+                Icon(Icons.local_offer, color: _gold, size: 16),
+                const SizedBox(width: 8),
                 Text(
                   _promoActive
                       ? S.of(context).discountApplied(_promoDiscountPercent)
                       : S.of(context).selectYourRide,
                   style: TextStyle(
-                    color: _promoActive ? _gold : _c.textSecondary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
+                    color: _promoActive ? _gold : _c.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
                   ),
                 ),
               ],
@@ -3187,37 +3193,43 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   itemBuilder: (context, i) {
                     final ride = _rides[i];
                     final selected = i == _selectedRide;
-                    return InkWell(
-                      onTap: () => setState(() => _selectedRide = i),
-                      borderRadius: BorderRadius.circular(14),
+                    return BouncingButton(
+                      scaleFactor: 0.96,
+                      onPressed: () => setState(() => _selectedRide = i),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 250),
                         curve: Curves.easeOutCubic,
-                        margin: const EdgeInsets.only(bottom: 7),
-                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: selected ? _c.surface : Colors.transparent,
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: selected ? _gold : _c.border,
+                            color: selected ? _gold : _c.border.withValues(alpha: 0.5),
+                            width: selected ? 1.5 : 1.0,
                           ),
+                          boxShadow: selected
+                              ? [
+                                  BoxShadow(
+                                    color: _gold.withValues(alpha: 0.08),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
+                                  )
+                                ]
+                              : null,
                         ),
                         child: Row(
                           children: [
                             SizedBox(
-                              width: 80,
-                              height: 48,
+                              width: 84,
+                              height: 52,
                               child: DecoratedBox(
                                 decoration: BoxDecoration(
                                   gradient: _c.isDark
                                       ? RadialGradient(
                                           colors: [
-                                            Colors.white.withValues(
-                                              alpha: 0.12,
-                                            ),
-                                            Colors.white.withValues(
-                                              alpha: 0.04,
-                                            ),
+                                            Colors.white.withValues(alpha: selected ? 0.18 : 0.10),
+                                            Colors.white.withValues(alpha: selected ? 0.06 : 0.02),
                                             Colors.transparent,
                                           ],
                                           stops: const [0.0, 0.55, 1.0],
@@ -3511,8 +3523,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   BoxDecoration get _panelDecoration => BoxDecoration(
     color: _c.mapSurface,
-    borderRadius: const BorderRadius.all(Radius.circular(26)),
+    borderRadius: const BorderRadius.all(Radius.circular(28)),
     border: Border.fromBorderSide(BorderSide(color: _c.border, width: 1)),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withValues(alpha: 0.35),
+        blurRadius: 30,
+        offset: const Offset(0, -2),
+      ),
+      BoxShadow(
+        color: Colors.black.withValues(alpha: 0.15),
+        blurRadius: 8,
+        offset: const Offset(0, -1),
+      )
+    ],
   );
 
   BoxDecoration get _skeleton => BoxDecoration(
@@ -6273,26 +6297,26 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               child: Row(
                 children: [
                   // Cancel button
-                  SizedBox(
-                    height: 52,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: _c.border, width: 1.5),
-                        foregroundColor: _c.textSecondary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                  BouncingButton(
+                    onPressed: () {
+                      _rideLifecycleTimer?.cancel();
+                      _tripPollTimer?.cancel();
+                      _setStage(RideStage.options);
+                    },
+                    child: Container(
+                      height: 52,
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      decoration: BoxDecoration(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: _c.border, width: 1.5),
                       ),
-                      onPressed: () {
-                        _rideLifecycleTimer?.cancel();
-                        _tripPollTimer?.cancel();
-                        _setStage(RideStage.options);
-                      },
+                      alignment: Alignment.center,
                       child: Text(
                         S.of(context).cancelRide,
-                        style: const TextStyle(
-                          fontSize: 14,
+                        style: TextStyle(
+                          color: _c.textSecondary,
+                          fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -6301,36 +6325,40 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   const SizedBox(width: 12),
                   // Contact/Call button
                   Expanded(
-                    child: SizedBox(
-                      height: 52,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _gold,
-                          foregroundColor: Colors.black,
-                          elevation: 0,
-                          shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                    child: BouncingButton(
+                      onPressed: () {
+                        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                          SnackBar(
+                            content: Text(S.of(context).driverContacted),
                           ),
-                        ),
-                        onPressed: () {
-                          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                            SnackBar(
-                              content: Text(S.of(context).driverContacted),
+                        );
+                      },
+                      child: Container(
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: _gold,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _gold.withValues(alpha: 0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
                             ),
-                          );
-                        },
+                          ],
+                        ),
+                        alignment: Alignment.center,
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.phone_rounded, size: 18),
+                            const Icon(Icons.phone_rounded, size: 18, color: Colors.black),
                             const SizedBox(width: 8),
                             Text(
                               isSearching
                                   ? S.of(context).contactSupport
                                   : S.of(context).callDriver,
                               style: const TextStyle(
-                                fontSize: 15,
+                                color: Colors.black,
+                                fontSize: 16,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.2,
                               ),

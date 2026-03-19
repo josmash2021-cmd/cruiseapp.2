@@ -489,7 +489,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Future<void> _loadCarIcon() async {
-    final bytes = await CarIconLoader.loadUberBytes();
+    // Load car icon based on ride type: SUV (black), Comfort (white), Sedan (black)
+    final bytes = await CarIconLoader.loadForRideBytes(widget.rideName);
     if (bytes != null) {
       _carIconBytes = bytes;
       if (mounted) setState(() {});
@@ -917,22 +918,17 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       setState(() {});
     }
 
-    // ── Smooth camera bounds interpolation (60fps) ──
-    if (_map != null && !_userMovedMap && _camInitialized) {
-      const lerpSpeed = 0.14;
-      _camSWLat += (_tgtSWLat - _camSWLat) * lerpSpeed;
-      _camSWLng += (_tgtSWLng - _camSWLng) * lerpSpeed;
-      _camNELat += (_tgtNELat - _camNELat) * lerpSpeed;
-      _camNELng += (_tgtNELng - _camNELng) * lerpSpeed;
+    // ── Camera follows car centered during navigation ──
+    if (_map != null && !_userMovedMap) {
       _programmaticCam = true;
-      _map!.cameraForCoordinates(
-        [mapbox.Point(coordinates: mapbox.Position(_camSWLng, _camSWLat)),
-         mapbox.Point(coordinates: mapbox.Position(_camNELng, _camNELat))],
-        mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: 420, right: 50),
-        null, null,
-      ).then((cam) {
-        if (cam != null && mounted) _map?.setCamera(cam);
-      });
+      // Calculate camera position centered on car with bearing following route
+      final cameraOptions = mapbox.CameraOptions(
+        center: mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude)),
+        bearing: _animBearing,
+        pitch: 45.0, // 3D perspective view
+        zoom: 18.0, // Close zoom to follow car
+      );
+      _map!.setCamera(cameraOptions);
     }
     _updateAnnotations();
   }
@@ -1333,7 +1329,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final polyMgr = _polylineAnnotMgr;
     if (pointMgr == null || polyMgr == null) return;
 
-    // ── Car marker ──
+    // ── Car marker with rotation ──
     Uint8List? carBytes = _carIconBytes;
     if (_navCarSprites != null && _navCarSprites!.length == 8) {
       final viewAngle = _animBearing - _cameraBearing;
@@ -1344,6 +1340,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       if (_carAnnot != null) {
         try {
           await pointMgr.update(_carAnnot!..geometry = mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude)));
+          // Update rotation to match bearing (iconRotate in degrees)
+          await pointMgr.update(_carAnnot!..iconRotate = _animBearing);
         } catch (_) {
           _carAnnot = null;
         }
@@ -1352,8 +1350,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         geometry: mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude)),
         image: carBytes,
         iconSize: 1.2,
+        iconRotate: _animBearing,
       ));
-      // Force car icon to rotate with map, not camera
+      // Force car icon to rotate with map alignment
       try {
         await _map?.style.setStyleLayerProperty(
           pointMgr.id, 'icon-rotation-alignment', 'map');

@@ -4646,20 +4646,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   /// Called every vsync frame by SmoothMotion — 60fps, butter smooth.
-  void _onDriverMotionTick(LatLng pos, double bearing) {
+  void _onDriverMotionTick(LatLng pos, double bearing, double curveTilt) {
     if (!mounted) return;
     _driverPosition = pos;
     _driverBearing = bearing;
-
     _updateDriverMarkerFromPosition();
 
-    // Chase-cam: follow driver every frame
     if (_stage == RideStage.riding && _driverPosition != null) {
       _cameraBearing = bearing;
-      _panTo(_driverPosition!, zoom: 18.5, bearing: bearing, tilt: 55);
+      // Añadir inercia a la cámara: tilt dinámico basado en velocidad angular
+      final dynamicTilt = (55.0 + (curveTilt.abs() * 10.0)).clamp(55.0, 70.0);
+      _panTo(_driverPosition!, zoom: 18.5, bearing: bearing, tilt: dynamicTilt);
     }
 
-    // Trim route behind driver on every frame
     if (_driverRoutePoints.length > 2) {
       _trimRiderRoute(_driverPosition!);
     }
@@ -6694,7 +6693,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     onPressed: () async {
                       final result = await Navigator.of(context)
                           .push<Map<String, dynamic>>(
-                            slideFromRightRoute(PickupDropoffSearchScreen(
+                            sharedAxisZRoute(PickupDropoffSearchScreen(
                               initialPickupText: _pickupAddress,
                             )),
                           );

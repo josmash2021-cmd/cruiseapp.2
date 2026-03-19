@@ -66,6 +66,7 @@ dependencies:
   google_mlkit_text_recognition: ^0.15.1
   pay: ^2.0.0
   webview_flutter: ^4.7.0
+  animations: ^2.1.1
 
 dev_dependencies:
   flutter_test:

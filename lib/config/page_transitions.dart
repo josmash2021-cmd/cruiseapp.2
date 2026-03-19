@@ -1,8 +1,44 @@
 import 'package:flutter/material.dart';
+import 'package:animations/animations.dart';
 
 /// Collection of premium page transitions for the app.
 /// Each transition is a [PageRouteBuilder] factory with unique animations.
 /// Tuned for 60fps buttery-smooth feel.
+
+// ─── Shared Axis (Z) (Search bar tap → Search screen) ───
+// A profound depth transition used by modern Google/Android apps
+Route<T> sharedAxisZRoute<T>(Widget page, {int durationMs = 400}) {
+  return PageRouteBuilder<T>(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionDuration: Duration(milliseconds: durationMs),
+    reverseTransitionDuration: Duration(milliseconds: (durationMs * 0.8).round()),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return SharedAxisTransition(
+        animation: animation,
+        secondaryAnimation: secondaryAnimation,
+        transitionType: SharedAxisTransitionType.scaled,
+        fillColor: Colors.transparent,
+        child: child,
+      );
+    },
+  );
+}
+
+// ─── Fade Through (Tab switching / Step changes) ───
+Route<T> fadeThroughRoute<T>(Widget page, {int durationMs = 350}) {
+  return PageRouteBuilder<T>(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionDuration: Duration(milliseconds: durationMs),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return FadeThroughTransition(
+        animation: animation,
+        secondaryAnimation: secondaryAnimation,
+        fillColor: Colors.transparent,
+        child: child,
+      );
+    },
+  );
+}
 
 // ─── Slide + Fade (Home → Map) ───
 // A smooth slide from right with fade and subtle scale

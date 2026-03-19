@@ -8,12 +8,13 @@ import '../models/lat_lng.dart';
 class SmoothMotion {
   SmoothMotion({
     required this.onTick,
-    this.lerpFactor = 0.15,
+    this.lerpFactor = 0.12,
     this.enablePrediction = true,
   });
 
-  /// Called each frame with the interpolated position and bearing.
-  final void Function(LatLng pos, double bearing) onTick;
+  /// Called each frame with the interpolated position, bearing, and curve tilt.
+  /// [curveTilt] ranges from -1.0 (hard left) to 1.0 (hard right).
+  final void Function(LatLng pos, double bearing, double curveTilt) onTick;
 
   /// Base lerp speed (used as reference at 60 fps). Actual per-frame factor
   /// is adjusted by delta-time so the animation looks the same at any fps.
@@ -26,6 +27,11 @@ class SmoothMotion {
   double _currentBearing = 0;
   LatLng _target = const LatLng(0, 0);
   double _targetBearing = 0;
+  
+  // -- Physics state for tilt --
+  double _currentCurveTilt = 0;
+  double _lastBearingVelocity = 0;
+
   Duration _lastElapsed = Duration.zero;
 
   /// Minimum movement in degrees (lat or lng) before we accept a new bearing.
@@ -91,9 +97,26 @@ class SmoothMotion {
     );
 
     // Lerp bearing (shortest-arc)
+    final prevBearing = _currentBearing;
     _currentBearing = _lerpAngle(_currentBearing, _targetBearing, brgF);
 
-    onTick(_current, _currentBearing);
+    // Compute angular velocity (degrees per second)
+    double bDiff = (_currentBearing - prevBearing) % 360;
+    if (bDiff > 180) bDiff -= 360;
+    if (bDiff < -180) bDiff += 360;
+    
+    final bearingVel = bDiff / dt; // deg/sec
+    // Smooth the velocity to prevent twitching
+    _lastBearingVelocity = _lerpD(_lastBearingVelocity, bearingVel, 0.15);
+
+    // Convert to a tilt factor (-1.0 to 1.0)
+    // 45 degrees per second is considered a "hard turn"
+    double targetTilt = (_lastBearingVelocity / 45.0).clamp(-1.0, 1.0);
+    
+    // Smooth the physical tilt
+    _currentCurveTilt = _lerpD(_currentCurveTilt, targetTilt, 0.1);
+
+    onTick(_current, _currentBearing, _currentCurveTilt);
   }
 
   void dispose() {

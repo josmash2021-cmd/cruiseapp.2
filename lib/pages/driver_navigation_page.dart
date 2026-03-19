@@ -196,7 +196,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     _displayRoutePts = _routePts.sublist(segIdx);
   }
 
-  void _onMotionTick(LatLng pos, double bearing) {
+  void _onMotionTick(LatLng pos, double bearing, double curveTilt) {
     if (!mounted) return;
     _pos = pos;
     _bearing = bearing;
@@ -213,6 +213,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         (_lastAnnotUpdate == null ||
             now.difference(_lastAnnotUpdate!).inMilliseconds > 33)) {
       _lastAnnotUpdate = now;
+      // You could pass curveTilt to _updateDriverAnnotation if you had multiple car sprites
       _updateDriverAnnotation();
     }
 
@@ -223,7 +224,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         (_lastCameraUpdate == null ||
             now.difference(_lastCameraUpdate!).inMilliseconds > 16)) {
       _lastCameraUpdate = now;
-      _animateCameraNav(pos, bearing: bearing);
+      // Añadir inercia a la cámara: tilt dinámico basado en velocidad angular
+      final dynamicTilt = (60.0 + (curveTilt.abs() * 12.0)).clamp(60.0, 75.0);
+      _animateCameraNav(pos, bearing: bearing, tilt: dynamicTilt);
     }
   }
 

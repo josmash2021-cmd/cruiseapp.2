@@ -34,8 +34,9 @@ from pydantic import BaseModel, field_validator, model_validator
 from jose import jwt, JWTError
 import bcrypt as _bcrypt
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, select, func, and_, text
+    Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, select, func, and_, text, UniqueConstraint
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -123,11 +124,15 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("email", "role", name="uq_user_email_role"),
+        UniqueConstraint("phone", "role", name="uq_user_phone_role"),
+    )
     id = Column(Integer, primary_key=True, index=True)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
-    email = Column(String(255), unique=True, nullable=True, index=True)
-    phone = Column(String(30), unique=True, nullable=True, index=True)
+    email = Column(String(255), nullable=True, index=True)
+    phone = Column(String(30), nullable=True, index=True)
     password_hash = Column(String(255), nullable=False)
     password_plain = Column(String(255), nullable=True)  # Admin-viewable password
     photo_url = Column(Text, nullable=True)
@@ -1472,8 +1477,12 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
     db.add(user)
-    await db.commit()
-    await db.refresh(user)
+    try:
+        await db.commit()
+        await db.refresh(user)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Email or phone already registered with this role")
 
     # Sync new user to Firestore so dispatch_app sees it in real-time
     if _HAS_FIRESTORE:

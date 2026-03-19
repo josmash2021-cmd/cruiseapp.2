@@ -151,48 +151,45 @@ class CarIconLoader {
     return _navSprites![spriteIndexForAngle(viewAngleDeg)];
   }
 
-  /// Returns raw PNG bytes for the navigation car icon based on ride type.
-  /// SUV -> suburban.png (black)
-  /// Comfort -> sedan_white_top.png (white)
-  /// Sedan -> sedan_top.png (black)
+  /// Returns raw PNG bytes for a 3D animated vehicle marker.
+  /// Uses Canvas renderer with 3D shading and depth effects.
+  /// SUV -> 3D black SUV, Comfort -> 3D white sedan, Sedan -> 3D black sedan
   static Future<Uint8List?> loadUberBytes({String rideType = 'sedan'}) async {
     final key = rideType.toLowerCase().trim();
-    String assetPath;
     String cacheKey;
+    _CarPalette palette;
+    bool isSuv = false;
     
     if (key.contains('suv') || key.contains('suburban')) {
-      assetPath = 'assets/images/suburban.png';
       cacheKey = 'suv_black';
+      palette = _CarPalette.black;
+      isSuv = true;
     } else if (key.contains('comfort') || key.contains('white')) {
-      assetPath = 'assets/images/sedan_white_top.png';
       cacheKey = 'white';
+      palette = _CarPalette.whitePearl;
     } else {
       // sedan, fusion, default
-      assetPath = 'assets/images/sedan_top.png';
       cacheKey = 'black';
+      palette = _CarPalette.black;
     }
     
     if (_bytesCache.containsKey(cacheKey)) return _bytesCache[cacheKey];
     
-    try {
-      final data = await rootBundle.load(assetPath);
-      final bytes = data.buffer.asUint8List();
-      if (bytes.isNotEmpty) {
-        _bytesCache[cacheKey] = bytes;
-        return bytes;
-      }
-    } catch (_) {
-      // Asset not found — fall back to renderer
+    // Use 3D Canvas renderer instead of static PNG
+    Uint8List bytes;
+    if (isSuv) {
+      bytes = await _renderSuvBytes(palette);
+    } else {
+      bytes = await _renderDetailedBytes(palette);
     }
-    final bytes = await _renderGmapsNavCarBytes();
     _bytesCache[cacheKey] = bytes;
     return bytes;
   }
 
   /// Returns raw PNG bytes for a ride-specific icon.
-  /// SUV -> suburban.png (black)
-  /// Comfort -> sedan_white_top.png (white)  
-  /// Sedan -> sedan_top.png (black)
+  /// SUV -> 3D black SUV render
+  /// Comfort -> 3D white sedan render  
+  /// Sedan -> 3D black sedan render
   static Future<Uint8List?> loadForRideBytes(String rideName) async {
     final key = rideName.trim().toLowerCase();
     if (key.contains('suv') || key.contains('suburban')) {

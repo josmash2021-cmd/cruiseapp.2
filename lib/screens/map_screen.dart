@@ -479,7 +479,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _goldPinIconBytes,
-      iconSize: 0.85,
+      iconSize: 1.05,
     ));
   }
 
@@ -490,7 +490,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _dropoffPinIconBytes ?? _goldPinIconBytes,
-      iconSize: 0.85,
+      iconSize: 1.05,
     ));
   }
 
@@ -1210,6 +1210,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _onMapCreated(mapbox.MapboxMap controller) async {
     _mapController = controller;
+    // Hide scale bar, compass and Mapbox logo ornaments
+    controller.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+    controller.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+    controller.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+    controller.logo.updateSettings(mapbox.LogoSettings(enabled: false));
     // Route polyline goes below all symbols/labels
     _polylineAnnotMgr = await controller.annotations.createPolylineAnnotationManager(
       below: "road-label",
@@ -6057,151 +6062,86 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     return Container(
       key: const ValueKey('matching'),
       height: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: _panelDecoration,
       child: SafeArea(
         top: false,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _handle(),
-            const SizedBox(height: 16),
-
-            // â”€â”€ Pulsing radar animation â”€â”€
-            SizedBox(
-              height: 100,
-              width: 100,
-              child: _MatchingRadar(color: _gold, isSearching: isSearching),
-            ),
-            const SizedBox(height: 16),
-
-            // â”€â”€ Title with animated dots â”€â”€
-            isSearching
-                ? _AnimatedSearchText(
-                    text: S.of(context).lookingForDriver,
-                    style: TextStyle(
-                      color: _c.textPrimary,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                    ),
-                  )
-                : Text(
-                    S.of(context).driverFound,
-                    style: TextStyle(
-                      color: _gold,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-            const SizedBox(height: 6),
-
-            // â”€â”€ Subtitle: vehicle + ETA â”€â”€
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: Text(
-                isSearching
-                    ? S.of(context).findingBestNearby(ride.name)
-                    : S.of(context).arrivingIn(ride.name, _driverEta),
-                key: ValueKey(isSearching),
-                style: TextStyle(color: _c.textSecondary, fontSize: 14),
-              ),
-            ),
-            const SizedBox(height: 18),
-
-            // â”€â”€ Progress bar â”€â”€
-            ClipRRect(
-              borderRadius: BorderRadius.circular(99),
-              child: isSearching
-                  ? SizedBox(
-                      height: 3,
-                      child: LinearProgressIndicator(
-                        color: _gold,
-                        backgroundColor: _c.border,
-                      ),
-                    )
-                  : SizedBox(
-                      height: 3,
-                      child: LinearProgressIndicator(
-                        value: 1.0,
-                        color: _gold,
-                        backgroundColor: _c.border,
-                      ),
-                    ),
-            ),
-            const SizedBox(height: 18),
-
-            // â”€â”€ Driver info card â”€â”€
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              switchInCurve: Curves.easeOutCubic,
-              child: isSearching
-                  ? _matchingSkeletonCard()
-                  : _matchingDriverCard(),
+            // ── Handle ──
+            Padding(
+              padding: const EdgeInsets.only(top: 10, bottom: 4),
+              child: Center(child: _handle()),
             ),
 
-            const Spacer(),
-
-            // â”€â”€ Route summary row â”€â”€
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _c.border),
-              ),
+            // ── Header: status + radar ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
               child: Row(
                 children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.greenAccent,
-                    ),
+                  // Radar animation
+                  SizedBox(
+                    width: 56,
+                    height: 56,
+                    child: _MatchingRadar(color: _gold, isSearching: isSearching),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 16),
                   Expanded(
-                    child: Text(
-                      _pickupAddress.isNotEmpty
-                          ? _pickupAddress
-                          : S.of(context).pickupLabel,
-                      style: TextStyle(
-                        color: _c.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        isSearching
+                            ? _AnimatedSearchText(
+                                text: S.of(context).lookingForDriver,
+                                style: TextStyle(
+                                  color: _c.textPrimary,
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.3,
+                                ),
+                              )
+                            : Text(
+                                S.of(context).driverFound,
+                                style: const TextStyle(
+                                  color: _gold,
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                        const SizedBox(height: 3),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          child: Text(
+                            isSearching
+                                ? S.of(context).findingBestNearby(ride.name)
+                                : S.of(context).arrivingIn(ride.name, _driverEta),
+                            key: ValueKey(isSearching),
+                            style: TextStyle(
+                              color: _c.textSecondary,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  Icon(
-                    Icons.arrow_forward_rounded,
-                    color: _c.textTertiary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 6),
+                  // Ride type badge
                   Container(
-                    width: 8,
-                    height: 8,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _c.textTertiary,
+                      color: _gold.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: _gold.withValues(alpha: 0.25)),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
                     child: Text(
-                      _dropoffAddress.isNotEmpty
-                          ? _dropoffAddress
-                          : S.of(context).dropoffLabel,
-                      style: TextStyle(
-                        color: _c.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                      ride.name,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.3,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
@@ -6209,19 +6149,140 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 14),
 
-            // â”€â”€ Action buttons â”€â”€
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 50,
+            // ── Progress bar ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: SizedBox(
+                  height: 3,
+                  child: LinearProgressIndicator(
+                    value: isSearching ? null : 1.0,
+                    color: _gold,
+                    backgroundColor: _c.border,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // ── Driver info card ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                switchInCurve: Curves.easeOutCubic,
+                child: isSearching
+                    ? _matchingSkeletonCard()
+                    : _matchingDriverCard(),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // ── Route summary ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _c.border),
+                ),
+                child: IntrinsicHeight(
+                  child: Row(
+                    children: [
+                      // Pickup
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8, height: 8,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Color(0xFF4CAF50),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _pickupAddress.isNotEmpty
+                                    ? _pickupAddress
+                                    : S.of(context).pickupLabel,
+                                style: TextStyle(
+                                  color: _c.textPrimary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Divider
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Icon(
+                          Icons.chevron_right_rounded,
+                          color: _c.textTertiary,
+                          size: 16,
+                        ),
+                      ),
+                      // Dropoff
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8, height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _gold,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _dropoffAddress.isNotEmpty
+                                    ? _dropoffAddress
+                                    : S.of(context).dropoffLabel,
+                                style: TextStyle(
+                                  color: _c.textPrimary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            const Spacer(),
+
+            // ── Action buttons ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Row(
+                children: [
+                  // Cancel button
+                  SizedBox(
+                    height: 52,
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: _c.border),
-                        foregroundColor: _c.textPrimary,
+                        side: BorderSide(color: _c.border, width: 1.5),
+                        foregroundColor: _c.textSecondary,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(16),
                         ),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
                       ),
                       onPressed: () {
                         _rideLifecycleTimer?.cancel();
@@ -6231,52 +6292,56 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       child: Text(
                         S.of(context).cancelRide,
                         style: const TextStyle(
-                          fontSize: 15,
+                          fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: SizedBox(
-                    height: 50,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _gold,
-                        foregroundColor: _panelBlack,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                  const SizedBox(width: 12),
+                  // Contact/Call button
+                  Expanded(
+                    child: SizedBox(
+                      height: 52,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _gold,
+                          foregroundColor: Colors.black,
+                          elevation: 0,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                         ),
-                      ),
-                      onPressed: () {
-                        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                          SnackBar(
-                            content: Text(S.of(context).driverContacted),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.phone_rounded, size: 18),
-                      label: Flexible(
-                        child: Text(
-                          isSearching
-                              ? S.of(context).contactSupport
-                              : S.of(context).callDriver,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                          ),
+                        onPressed: () {
+                          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                            SnackBar(
+                              content: Text(S.of(context).driverContacted),
+                            ),
+                          );
+                        },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.phone_rounded, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              isSearching
+                                  ? S.of(context).contactSupport
+                                  : S.of(context).callDriver,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),

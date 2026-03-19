@@ -498,10 +498,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Future<void> _loadNavSprites() async {
-    final sprites = await NavatarLoader.loadCurrentSpriteBytes();
-    if (mounted && sprites != null && sprites.length == 8) {
-      setState(() => _navCarSprites = sprites);
-    }
+    // Sprites disabled to avoid duplicate ghost cars (use single canvas icon instead)
+    _navCarSprites = null;
   }
 
   Future<void> _loadPins() async {
@@ -1134,8 +1132,18 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 ),
                 onMapCreated: (ctrl) async {
                   _map = ctrl;
+                  // Hide scale bar, compass and Mapbox logo ornaments
+                  ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+                  ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+                  ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+                  ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                  
+                  // Route polyline below road labels
+                  _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+                    below: "road-label",
+                  );
+                  // Points (car + pins) always above the route polyline
                   _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                  _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
                   _updateAnnotations();
                 },
                 onScrollListener: (_) {
@@ -1343,8 +1351,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _carAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude)),
         image: carBytes,
-        iconSize: 0.5,
+        iconSize: 1.2,
       ));
+      // Force car icon to rotate with map, not camera
+      try {
+        await _map?.style.setStyleLayerProperty(
+          pointMgr.id, 'icon-rotation-alignment', 'map');
+      } catch (_) {}
     }
 
     // ── Pickup / dropoff pins (create once) ──
@@ -1352,14 +1365,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
         image: _pickupPinBytes!,
-        iconSize: 0.5,
+        iconSize: 1.05,
       ));
     }
     if (_dropoffAnnot == null && _dropoffPinBytes != null) {
       _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
         image: _dropoffPinBytes!,
-        iconSize: 0.5,
+        iconSize: 1.05,
       ));
     }
 

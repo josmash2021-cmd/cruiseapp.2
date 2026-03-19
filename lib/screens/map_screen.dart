@@ -2406,7 +2406,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       lineColor: _routeColor.toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
-      lineCap: mapbox.LineCap.ROUND,
     ));
   }
 

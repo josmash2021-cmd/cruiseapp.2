@@ -124,48 +124,16 @@ class CarIconLoader {
   static const double _spriteTargetWidth = 40.0;
 
   /// Loads 8 directional PNG sprites for the navigation car marker.
-  ///
-  /// Tries Navatar sprites first (assets/images/navatars/{model}/),
-  /// then falls back to legacy car_sprites/ folder.
+  /// Now uses the same white sedan for all angles.
   static Future<List<Uint8List>?> loadNavCarSprites() async {
     if (_navSprites != null) return _navSprites;
 
-    // Try Navatar bytes first
-    final navatarBytes = await NavatarLoader.loadCurrentSpriteBytes();
-    if (navatarBytes != null && navatarBytes.length == 8) {
-      _navSprites = navatarBytes;
-      return _navSprites;
-    }
+    final bytes = await loadUberBytes();
+    if (bytes == null) return null;
 
-    // Fallback: legacy car_sprites/ folder
-    final sprites = <Uint8List>[];
-    const double scale = 3.0;
-    final int targetPx = (_spriteTargetWidth * scale).round();
-
-    for (final angle in _spriteAngles) {
-      try {
-        final data = await rootBundle.load(
-          'assets/images/car_sprites/nav_car_$angle.png',
-        );
-        final raw = data.buffer.asUint8List();
-        if (raw.isEmpty) return null;
-
-        final codec = await ui.instantiateImageCodec(
-          raw,
-          targetWidth: targetPx,
-        );
-        final frame = await codec.getNextFrame();
-        final resized = frame.image;
-        final byteData =
-            await resized.toByteData(format: ui.ImageByteFormat.png);
-        if (byteData == null) return null;
-        sprites.add(byteData.buffer.asUint8List());
-      } catch (_) {
-        return null;
-      }
-    }
-    _navSprites = sprites;
-    return sprites;
+    // Use the same image for all 8 angles
+    _navSprites = List.generate(8, (_) => bytes);
+    return _navSprites;
   }
 
   /// Given the view angle (carHeading − cameraBearing), returns the
@@ -183,21 +151,20 @@ class CarIconLoader {
     return _navSprites![spriteIndexForAngle(viewAngleDeg)];
   }
 
-  /// Returns raw PNG bytes for the navigation car icon.
-  /// Loads from assets/images/car_sprites/nav_car.png if available,
-  /// otherwise falls back to the Canvas renderer.
+  /// Returns raw PNG bytes for the white sedan car icon.
+  /// Uses assets/images/sedan_white_top.png for all car markers.
   static Future<Uint8List?> loadUberBytes() async {
     if (_bytesCache.containsKey('white')) return _bytesCache['white'];
-    // Try loading the hand-crafted PNG asset first
+    // Load the white sedan PNG asset
     try {
-      final data = await rootBundle.load('assets/images/car_sprites/nav_car.png');
+      final data = await rootBundle.load('assets/images/sedan_white_top.png');
       final bytes = data.buffer.asUint8List();
       if (bytes.isNotEmpty) {
         _bytesCache['white'] = bytes;
         return bytes;
       }
     } catch (_) {
-      // Asset not found — fall back to Canvas renderer
+      // Asset not found — fall back to renderer
     }
     final bytes = await _renderGmapsNavCarBytes();
     _bytesCache['white'] = bytes;
@@ -205,22 +172,10 @@ class CarIconLoader {
   }
 
   /// Returns raw PNG bytes for a ride-specific icon.
+  /// All rides now use the white sedan car icon.
   static Future<Uint8List?> loadForRideBytes(String rideName) async {
-    final key = rideName.trim().toLowerCase();
-    if (key.contains('suburba')) {
-      if (_bytesCache.containsKey('suv_black')) return _bytesCache['suv_black'];
-      final bytes = await _renderSuvBytes(_CarPalette.black);
-      _bytesCache['suv_black'] = bytes;
-      return bytes;
-    }
-    final cacheKey = key.contains('fusion') ? 'black' : 'white';
-    if (_bytesCache.containsKey(cacheKey)) return _bytesCache[cacheKey];
-    final palette = key.contains('fusion')
-        ? _CarPalette.black
-        : _CarPalette.whitePearl;
-    final bytes = await _renderDetailedBytes(palette);
-    _bytesCache[cacheKey] = bytes;
-    return bytes;
+    // Always use the white sedan for all ride types
+    return loadUberBytes();
   }
 
   static void invalidate() {
@@ -245,37 +200,20 @@ class CarIconLoader {
       rotateBytesForRide(degrees, rideName: 'Camry');
 
   /// Returns ride-specific car icon PNG bytes rotated by [degrees].
-  /// Supports Suburban (SUV), Fusion (black sedan), Camry (white sedan).
+  /// All rides now use the white sedan car icon.
   static Future<Uint8List> rotateBytesForRide(
     double degrees, {
     String rideName = 'Camry',
   }) async {
-    final key = rideName.trim().toLowerCase();
-    final String typeKey;
-    if (key.contains('suburba')) {
-      typeKey = 'suv_black';
-    } else if (key.contains('fusion')) {
-      typeKey = 'black';
-    } else {
-      typeKey = 'white';
-    }
-
     final q = ((degrees % 360) / 5).round() * 5;
-    final cache = _rotatedCacheByType.putIfAbsent(typeKey, () => {});
+    final cache = _rotatedCacheByType.putIfAbsent('white', () => {});
     if (cache.containsKey(q)) return cache[q]!;
 
-    // Get or generate base bytes for this car type
-    final Uint8List base;
-    if (typeKey == 'suv_black') {
-      base =
-          _bytesCache['suv_black'] ?? await _renderSuvBytes(_CarPalette.black);
-    } else if (typeKey == 'black') {
-      base =
-          _bytesCache['black'] ?? await _renderDetailedBytes(_CarPalette.black);
-    } else {
-      base =
-          _bytesCache['white'] ??
-          await _renderDetailedBytes(_CarPalette.whitePearl);
+    // Get base bytes for the white sedan
+    Uint8List? base = _bytesCache['white'];
+    if (base == null) {
+      base = await loadUberBytes();
+      if (base == null) throw Exception('Failed to load car icon');
     }
 
     if (q == 0) {
@@ -318,28 +256,18 @@ class CarIconLoader {
   static final Map<String, ui.Image> _cardCache = {};
 
   /// Returns a high-res ui.Image of the car for use in card thumbnails.
-  /// No ground shadow / under-car shadow — clean for dark card backgrounds.
+  /// All cards now use the white sedan car icon.
   static Future<ui.Image> renderCardImage(String rideName) async {
-    final key = rideName.trim().toLowerCase();
-    final String cacheKey;
-    if (key.contains('suburba')) {
-      cacheKey = 'card_suv';
-    } else if (key.contains('fusion')) {
-      cacheKey = 'card_fusion';
-    } else {
-      cacheKey = 'card_camry';
-    }
-    if (_cardCache.containsKey(cacheKey)) return _cardCache[cacheKey]!;
+    if (_cardCache.containsKey('card_white')) return _cardCache['card_white']!;
 
-    final ui.Image img;
-    if (key.contains('suburba')) {
-      img = await _renderSuvCard(_CarPalette.black);
-    } else if (key.contains('fusion')) {
-      img = await _renderSedanCard(_CarPalette.black);
-    } else {
-      img = await _renderSedanCard(_CarPalette.whitePearl);
-    }
-    _cardCache[cacheKey] = img;
+    // Load the white sedan PNG and decode to ui.Image
+    final bytes = await loadUberBytes();
+    if (bytes == null) throw Exception('Failed to load car image');
+
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    final img = frame.image;
+    _cardCache['card_white'] = img;
     return img;
   }
 

@@ -175,7 +175,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      // ── Stripe secure card field ──
+                      // ── Stripe secure card field with brand logo ──
                       Container(
                         decoration: BoxDecoration(
                           color: c.surface,
@@ -186,22 +186,31 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                           horizontal: 12,
                           vertical: 4,
                         ),
-                        child: CardField(
-                          enablePostalCode: false,
-                          style: TextStyle(color: c.textPrimary, fontSize: 16),
-                          decoration: InputDecoration(
-                            border: InputBorder.none,
-                            hintStyle: TextStyle(
-                              color: c.textTertiary,
-                              fontSize: 16,
+                        child: Row(
+                          children: [
+                            // Card brand logo
+                            _CardBrandLogo(brand: _cardDetails?.brand),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: CardField(
+                                enablePostalCode: false,
+                                style: TextStyle(color: c.textPrimary, fontSize: 16),
+                                decoration: InputDecoration(
+                                  border: InputBorder.none,
+                                  hintStyle: TextStyle(
+                                    color: c.textTertiary,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                onCardChanged: (details) {
+                                  setState(() {
+                                    _cardDetails = details;
+                                    _cardComplete = details?.complete ?? false;
+                                  });
+                                },
+                              ),
                             ),
-                          ),
-                          onCardChanged: (details) {
-                            setState(() {
-                              _cardDetails = details;
-                              _cardComplete = details?.complete ?? false;
-                            });
-                          },
+                          ],
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -345,3 +354,258 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  Card Brand Logo Widget - Displays appropriate card brand icon
+// ═══════════════════════════════════════════════════════════════════
+
+class _CardBrandLogo extends StatelessWidget {
+  final String? brand;
+
+  const _CardBrandLogo({this.brand});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    // If no brand detected yet, show generic card icon
+    if (brand == null || brand!.isEmpty) {
+      return Container(
+        width: 44,
+        height: 28,
+        decoration: BoxDecoration(
+          color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: isDark ? Colors.white.withValues(alpha: 0.2) : Colors.black.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Icon(
+          Icons.credit_card,
+          size: 16,
+          color: isDark ? Colors.white.withValues(alpha: 0.5) : Colors.black.withValues(alpha: 0.4),
+        ),
+      );
+    }
+
+    final brandLower = brand!.toLowerCase();
+    
+    // Return appropriate logo based on brand
+    switch (brandLower) {
+      case 'visa':
+        return _buildVisaLogo();
+      case 'mastercard':
+        return _buildMastercardLogo();
+      case 'amex':
+      case 'american_express':
+        return _buildAmexLogo();
+      case 'discover':
+        return _buildDiscoverLogo();
+      case 'diners':
+      case 'diners_club':
+        return _buildDinersLogo();
+      case 'jcb':
+        return _buildJCBLogo();
+      case 'unionpay':
+        return _buildUnionPayLogo();
+      default:
+        return _buildGenericLogo(brand!);
+    }
+  }
+
+  Widget _buildVisaLogo() {
+    return Container(
+      width: 44,
+      height: 28,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1F71),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Center(
+        child: Text(
+          'VISA',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMastercardLogo() {
+    return Container(
+      width: 44,
+      height: 28,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.1)),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Left circle (red)
+          Positioned(
+            left: 6,
+            child: Container(
+              width: 16,
+              height: 16,
+              decoration: const BoxDecoration(
+                color: Color(0xFFEB001B),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          // Right circle (orange/yellow)
+          Positioned(
+            right: 6,
+            child: Container(
+              width: 16,
+              height: 16,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF79E1B),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAmexLogo() {
+    return Container(
+      width: 44,
+      height: 28,
+      decoration: BoxDecoration(
+        color: const Color(0xFF016FD0),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Center(
+        child: Text(
+          'AMEX',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.3,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiscoverLogo() {
+    return Container(
+      width: 44,
+      height: 28,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF6000),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Center(
+        child: Text(
+          'DISC',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDinersLogo() {
+    return Container(
+      width: 44,
+      height: 28,
+      decoration: BoxDecoration(
+        color: const Color(0xFF004E94),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Center(
+        child: Text(
+          'DINERS',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 8,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildJCBLogo() {
+    return Container(
+      width: 44,
+      height: 28,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0066B3),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Center(
+        child: Text(
+          'JCB',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUnionPayLogo() {
+    return Container(
+      width: 44,
+      height: 28,
+      decoration: BoxDecoration(
+        color: const Color(0xFFDE2910),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Center(
+        child: Text(
+          'UNION',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 8,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGenericLogo(String brandName) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      width: 44,
+      height: 28,
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: isDark ? Colors.white.withValues(alpha: 0.2) : Colors.black.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Center(
+        child: Text(
+          brandName.substring(0, min(4, brandName.length)).toUpperCase(),
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.white.withValues(alpha: 0.7) : Colors.black.withValues(alpha: 0.6),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+int min(int a, int b) => a < b ? a : b;

@@ -173,6 +173,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                         width: 70,
                                         height: 70,
                                         gaplessPlayback: true,
+                                        key: ValueKey(photoPath), // Force rebuild
                                       )
                                     : Image.file(
                                         File(photoPath),
@@ -182,6 +183,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                         filterQuality: FilterQuality.high,
                                         cacheWidth: 280,
                                         gaplessPlayback: true,
+                                        key: ValueKey(photoPath), // Force rebuild
                                         frameBuilder:
                                             (
                                               context,
@@ -197,7 +199,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                                     ? 0.0
                                                     : 1.0,
                                                 duration: const Duration(
-                                                  milliseconds: 300,
+                                                  milliseconds: 150,
                                                 ),
                                                 curve: Curves.easeOutCubic,
                                                 child: child,
@@ -682,95 +684,6 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                   ).push(slideFromRightRoute(const AboutScreen()));
                 },
               ),
-              if (_password != null && _password!.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: c.isDark
-                        ? null
-                        : Border.all(
-                            color: Colors.black.withValues(alpha: 0.06),
-                          ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.key_rounded,
-                        color: c.textPrimary,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Password',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: c.textPrimary,
-                              ),
-                            ),
-                            Text(
-                              _showPassword ? _password! : '••••••••',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFFE8C547),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _showPassword = !_showPassword;
-                          });
-                          HapticFeedback.lightImpact();
-                        },
-                        child: Icon(
-                          _showPassword
-                              ? Icons.visibility_off_rounded
-                              : Icons.visibility_rounded,
-                          color: c.textSecondary,
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () {
-                          Clipboard.setData(
-                            ClipboardData(text: _password!),
-                          );
-                          HapticFeedback.lightImpact();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text(
-                                'Password copied',
-                                style: TextStyle(color: Colors.white),
-                              ),
-                              backgroundColor: Colors.black,
-                            ),
-                          );
-                        },
-                        child: Icon(
-                          Icons.copy_rounded,
-                          color: c.textSecondary,
-                          size: 20,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
               const Spacer(),
 
               // ── Sign Out button ──
@@ -781,9 +694,9 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                   height: 56,
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFE8C547),
+                      foregroundColor: const Color(0xFFFF5252),
                       side: const BorderSide(
-                        color: Color(0xFFE8C547),
+                        color: Color(0xFFFF5252),
                         width: 1.5,
                       ),
                       shape: RoundedRectangleBorder(
@@ -791,12 +704,13 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                       ),
                     ),
                     onPressed: () => _signOut(context),
-                    icon: const Icon(Icons.logout_rounded, size: 22),
+                    icon: const Icon(Icons.logout_rounded, size: 22, color: Color(0xFFFF5252)),
                     label: Text(
                       S.of(context).logOut,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
+                        color: Color(0xFFFF5252),
                       ),
                     ),
                   ),

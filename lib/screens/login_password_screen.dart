@@ -3,9 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:local_auth/local_auth.dart';
 import '../config/app_theme.dart';
-import '../widgets/animated_biometric_icon.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/email_service.dart';
@@ -35,93 +33,12 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
   bool _canLogin = false;
   bool _loading = false;
   String? _errorText;
-  bool _biometricAvailable = false;
-  BiometricIconType _biometricType = BiometricIconType.faceId;
 
   @override
   void initState() {
     super.initState();
     _emailCtrl.addListener(_validate);
     _passCtrl.addListener(_validate);
-    _checkBiometric();
-  }
-
-  Future<void> _checkBiometric() async {
-    final enabled = await LocalDataService.isBiometricLoginEnabled();
-    if (!enabled) return;
-    final auth = LocalAuthentication();
-    final canCheck =
-        await auth.canCheckBiometrics || await auth.isDeviceSupported();
-    if (mounted && canCheck) {
-      final types = await auth.getAvailableBiometrics();
-      // Face ID on iOS only, Fingerprint on Android only
-      if (Platform.isIOS && types.contains(BiometricType.face)) {
-        setState(() {
-          _biometricAvailable = true;
-          _biometricType = BiometricIconType.faceId;
-        });
-      } else if (Platform.isAndroid &&
-          types.contains(BiometricType.fingerprint)) {
-        setState(() {
-          _biometricAvailable = true;
-          _biometricType = BiometricIconType.fingerprint;
-        });
-      }
-    }
-  }
-
-  Future<void> _loginWithBiometric() async {
-    if (_loading) return;
-    setState(() {
-      _loading = true;
-      _errorText = null;
-    });
-
-    try {
-      final auth = LocalAuthentication();
-      final ok = await auth.authenticate(
-        localizedReason: 'Sign in to Cruise',
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: true,
-        ),
-      );
-      if (!ok) {
-        if (mounted) {
-          setState(() {
-            _loading = false;
-            _errorText = 'Biometric authentication failed';
-          });
-        }
-        return;
-      }
-      // Biometric passed — check if user session still exists
-      final loggedIn = await UserSession.isLoggedIn();
-      if (loggedIn) {
-        await UserSession.initPhotoNotifier();
-        if (!mounted) return;
-        setState(() => _loading = false);
-        Navigator.of(context).pushAndRemoveUntil(
-          slideFromRightRoute(const MapScreen()),
-          (_) => false,
-        );
-        return;
-      }
-      // Session expired — need password
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _errorText = 'Session expired. Please sign in with your password.';
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _errorText = 'Biometric error: $e';
-        });
-      }
-    }
   }
 
   @override
@@ -714,40 +631,6 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               ),
 
               const SizedBox(height: 16),
-
-              // ── Face ID / Biometric Sign-In ──
-              if (_biometricAvailable)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _gold,
-                        side: const BorderSide(color: _gold, width: 1.5),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(28),
-                        ),
-                      ),
-                      onPressed: _loading ? null : _loginWithBiometric,
-                      icon: AnimatedBiometricIcon(
-                        size: 24,
-                        color: _gold,
-                        type: _biometricType,
-                      ),
-                      label: Text(
-                        _biometricType == BiometricIconType.faceId
-                            ? 'Sign in with Face ID'
-                            : 'Sign in with Fingerprint',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
 
               // ── Quick Access removed (production) ──
               const Spacer(),

@@ -815,6 +815,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
               SliverToBoxAdapter(child: const SizedBox(height: 28)),
 
+              // ━━━ RIDE IN PROGRESS (when active) ━━━
+              if (_activeRide != null)
+                SliverToBoxAdapter(
+                  child: RepaintBoundary(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _buildRideInProgressCard(),
+                    ),
+                  ),
+                ),
+              if (_activeRide != null)
+                SliverToBoxAdapter(child: const SizedBox(height: 16)),
+
               // ━━━ HERO: "Where to?" large CTA card ━━━
               SliverToBoxAdapter(
                 child: RepaintBoundary(
@@ -941,83 +954,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               SliverToBoxAdapter(child: SizedBox(height: 90 + bottomPad)),
             ],
           ),
-
-          // ── Resume active ride banner ──
-          if (_activeRide != null)
-            Positioned(
-              bottom: bottomPad + 88,
-              left: 24,
-              right: 24,
-              child: GestureDetector(
-                onTap: _resumeActiveRide,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 14,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1A1D24), Color(0xFF141720)],
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: _gold.withValues(alpha: 0.3)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _gold.withValues(alpha: 0.15),
-                        blurRadius: 20,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: _gold.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Icon(
-                          Icons.directions_car_rounded,
-                          color: _gold,
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Ride in progress',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Tap to resume your current ride',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        color: _gold,
-                        size: 16,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
 
           // ── Dock-style bottom navigation ──
           Positioned(
@@ -1153,6 +1089,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           width: 44,
                           height: 44,
                           gaplessPlayback: true,
+                          key: ValueKey(_photoPath), // Force rebuild on path change
                         )
                       : Image.file(
                           File(_photoPath!),
@@ -1161,12 +1098,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           height: 44,
                           cacheWidth: 200,
                           gaplessPlayback: true,
+                          key: ValueKey(_photoPath), // Force rebuild on path change
                           frameBuilder:
                               (context, child, frame, wasSynchronouslyLoaded) {
                                 if (wasSynchronouslyLoaded) return child;
                                 return AnimatedOpacity(
                                   opacity: frame == null ? 0.0 : 1.0,
-                                  duration: const Duration(milliseconds: 300),
+                                  duration: const Duration(milliseconds: 150),
                                   curve: Curves.easeOutCubic,
                                   child: child,
                                 );
@@ -1497,6 +1435,108 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  // ─── Ride in Progress Card ───
+  Widget _buildRideInProgressCard() {
+    return GestureDetector(
+      onTap: _resumeActiveRide,
+      child: ListenableBuilder(
+        listenable: _shimmerController,
+        builder: (context, child) {
+          final v = _shimmerController.value;
+          return Container(
+            height: 80,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: CustomPaint(
+              painter: _GlowBorderPainter(
+                progress: v,
+                gold: _gold,
+                goldLight: _goldLight,
+                isDark: true,
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF1A1D24), Color(0xFF141720)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: _gold.withValues(alpha: 0.3)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _gold.withValues(
+                        alpha: 0.15 + 0.1 * ((v * 3.14).clamp(0, 1)),
+                      ),
+                      blurRadius: 20 + 10 * v,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: _gold.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.asset(
+                          'assets/images/logoapp.png',
+                          fit: BoxFit.cover,
+                          errorBuilder: (ctx, err, st) => Icon(
+                            Icons.directions_car_rounded,
+                            color: _gold,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            S.of(context).rideInProgressTitle,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            S.of(context).rideInProgressSubtitle,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: _gold,
+                      size: 16,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   // ─── Circular action buttons ───
   Widget _buildCircularActions() {
     return Row(
@@ -1630,7 +1670,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     );
                   },
                 ),
-          label: _promoUsed ? '${3 - _promoTripsLeft}/3 rides' : '10% off',
+          label: _promoUsed ? '${3 - _promoTripsLeft}/3 ${S.of(context).promoTrips}' : S.of(context).promoOff,
           disabled: _promoUsed,
           onTap: _promoUsed ? _showPromoLockedDialog : _showPromoWelcomeDialog,
         ),
@@ -1821,7 +1861,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           const SizedBox(width: 12),
           Text(
-            'Choose a ride',
+            S.of(context).chooseRide,
             style: TextStyle(
               color: isDark ? Colors.white : const Color(0xFF1C1C1E),
               fontSize: 20,
@@ -1845,36 +1885,42 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─── Fleet: Full-width stacked cards ───
+  // ─── Fleet: Redesigned professional vehicle cards ───
   Widget _buildFleetStack(double screenW) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final vehicles = [
       {
         'tier': 'VIP',
-        'name': 'Suburban',
-        'desc': 'Premium luxury SUV',
+        'tierShort': 'VIP',
+        'desc': 'Luxury SUV with premium amenities',
+        'features': 'Spacious • Leather • Wi-Fi',
         'idx': 0,
         'accent': _gold,
-        'icon': Icons.airport_shuttle_rounded,
-        'scale': 1.35,
+        'image': 'cruise_3.png',
+        'scale': 1.25,
+        'gradient': const [Color(0xFFE8C547), Color(0xFFD4A574)],
       },
       {
         'tier': 'PREMIUM',
-        'name': 'Camry',
-        'desc': 'Comfortable sedan',
+        'tierShort': 'PREMIUM',
+        'desc': 'Elegant sedan for any occasion',
+        'features': 'Comfort • Climate • Charger',
         'idx': 1,
         'accent': _goldLight,
-        'icon': Icons.directions_car_filled_rounded,
-        'scale': 1.55,
+        'image': 'cruise_7.png',
+        'scale': 1.45,
+        'gradient': const [Color(0xFFFBE47A), Color(0xFFE8C547)],
       },
       {
         'tier': 'COMFORT',
-        'name': 'Fusion',
-        'desc': 'Affordable & reliable',
+        'tierShort': 'COMFORT',
+        'desc': 'Reliable ride at great value',
+        'features': 'Clean • Safe • Efficient',
         'idx': 2,
         'accent': Colors.white,
-        'icon': Icons.local_taxi_rounded,
-        'scale': 1.55,
+        'image': 'cruise_6.png',
+        'scale': 1.45,
+        'gradient': const [Color(0xFFFFFFFF), Color(0xFFE0E0E0)],
       },
     ];
 
@@ -1883,9 +1929,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         final accent = v['accent'] as Color;
         final idx = v['idx'] as int;
         final carScale = v['scale'] as double;
+        final tier = v['tier'] as String;
+        final gradient = v['gradient'] as List<Color>;
+        final isVIP = tier == 'VIP';
+        final isPremium = tier == 'PREMIUM';
+        
         return Padding(
           padding: EdgeInsets.only(
-            bottom: idx < 2 ? 14 : 0,
+            bottom: idx < 2 ? 16 : 0,
             left: 24,
             right: 24,
           ),
@@ -1898,108 +1949,198 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ).push(slideFromRightRoute(const RideRequestScreen()));
             },
             child: Container(
-              height: 120,
-              clipBehavior: Clip.hardEdge,
-              padding: const EdgeInsets.fromLTRB(20, 14, 0, 14),
+              height: 130,
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [const Color(0xFF1A1D24), const Color(0xFF141820)],
+                  colors: isVIP 
+                    ? [const Color(0xFF1A1D24), const Color(0xFF252A35)]
+                    : [const Color(0xFF161820), const Color(0xFF1E2128)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  width: 1,
+                  color: isVIP 
+                    ? accent.withValues(alpha: 0.3)
+                    : Colors.white.withValues(alpha: 0.08),
+                  width: isVIP ? 1.5 : 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
+                    color: Colors.black.withValues(alpha: 0.4),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
                   ),
-                  BoxShadow(
-                    color: accent.withValues(alpha: 0.05),
-                    blurRadius: 30,
-                    offset: const Offset(0, 4),
-                  ),
+                  if (isVIP)
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.15),
+                      blurRadius: 40,
+                      offset: const Offset(0, 8),
+                    ),
                 ],
               ),
-              child: Row(
+              child: Stack(
                 children: [
-                  // Text info
-                  Expanded(
-                    flex: 3,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [accent, accent.withValues(alpha: 0.6)],
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            v['tier'] as String,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.8,
-                            ),
+                  // Background accent glow for VIP
+                  if (isVIP)
+                    Positioned(
+                      right: -50,
+                      top: -30,
+                      child: Container(
+                        width: 200,
+                        height: 200,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: [
+                              accent.withValues(alpha: 0.2),
+                              Colors.transparent,
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          v['name'] as String,
-                          style: TextStyle(
-                            color: isDark
-                                ? Colors.white
-                                : const Color(0xFF1C1C1E),
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          v['desc'] as String,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.45),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                  // Car image — large with overflow
-                  SizedBox(
-                    width: screenW * 0.38,
-                    child: Transform.scale(
-                      scale: carScale,
-                      alignment: Alignment.centerRight,
-                      child: Image.asset(
-                        'assets/images/${(v['name'] as String).toLowerCase()}.png',
-                        fit: BoxFit.contain,
-                        filterQuality: FilterQuality.high,
-                        isAntiAlias: true,
-                        cacheWidth:
-                            (screenW *
-                                    0.38 *
-                                    carScale *
-                                    MediaQuery.of(context).devicePixelRatio)
-                                .toInt(),
-                        errorBuilder: (ctx, err, st) => Icon(
-                          v['icon'] as IconData,
-                          color: accent,
-                          size: 40,
+                  
+                  Row(
+                    children: [
+                      // Left side - Info
+                      Expanded(
+                        flex: 5,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 0, 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              // Tier badge with icon
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: gradient,
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: isVIP ? [
+                                    BoxShadow(
+                                      color: accent.withValues(alpha: 0.4),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ] : null,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isVIP 
+                                        ? Icons.star_rounded 
+                                        : isPremium 
+                                          ? Icons.diamond_rounded 
+                                          : Icons.local_taxi_rounded,
+                                      color: isVIP ? Colors.white : Colors.black87,
+                                      size: 12,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      v['tierShort'] as String,
+                                      style: TextStyle(
+                                        color: isVIP ? Colors.white : Colors.black87,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 1.2,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              // Description
+                              Text(
+                                v['desc'] as String,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                  height: 1.2,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              // Features
+                              Text(
+                                v['features'] as String,
+                                style: TextStyle(
+                                  color: isVIP 
+                                    ? accent.withValues(alpha: 0.8)
+                                    : Colors.white.withValues(alpha: 0.5),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                      ),
+                      
+                      // Right side - Car image
+                      Expanded(
+                        flex: 4,
+                        child: ClipRRect(
+                          borderRadius: const BorderRadius.horizontal(
+                            right: Radius.circular(24),
+                          ),
+                          child: Transform.scale(
+                            scale: carScale,
+                            alignment: Alignment.centerLeft,
+                            child: Image.asset(
+                              'assets/images/${v['image']}',
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.high,
+                              alignment: Alignment.centerRight,
+                              cacheWidth: (screenW * 0.45 * carScale * MediaQuery.of(context).devicePixelRatio).toInt(),
+                              errorBuilder: (ctx, err, st) => Container(
+                                color: Colors.transparent,
+                                child: Icon(
+                                  Icons.directions_car_rounded,
+                                  color: accent.withValues(alpha: 0.5),
+                                  size: 50,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  // Arrow indicator
+                  Positioned(
+                    right: 16,
+                    bottom: 16,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: isVIP 
+                          ? accent.withValues(alpha: 0.2)
+                          : Colors.white.withValues(alpha: 0.08),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isVIP 
+                            ? accent.withValues(alpha: 0.4)
+                            : Colors.white.withValues(alpha: 0.15),
+                          width: 1,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.arrow_forward_rounded,
+                        color: isVIP ? accent : Colors.white.withValues(alpha: 0.6),
+                        size: 18,
                       ),
                     ),
                   ),
@@ -2022,8 +2163,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: _quickAccessTile(
                 Icons.home_rounded,
-                'Home',
-                _homeFavorite?.address ?? 'Add',
+                S.of(context).homeLabel,
+                _homeFavorite?.address ?? S.of(context).addLabel,
                 _gold,
                 _openOrSaveHomeShortcut,
                 onEdit: _editHomeAddress,
@@ -2033,8 +2174,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: _quickAccessTile(
                 Icons.work_rounded,
-                'Work',
-                _workFavorite?.address ?? 'Add',
+                S.of(context).workLabel,
+                _workFavorite?.address ?? S.of(context).addLabel,
                 _goldLight,
                 _openOrSaveWorkShortcut,
                 onEdit: _editWorkAddress,
@@ -2048,8 +2189,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: _quickAccessTile(
                 Icons.star_rounded,
-                _place1Favorite?.label ?? 'Place 1',
-                _place1Favorite?.address ?? 'Add',
+                _place1Favorite?.label ?? S.of(context).place1Label,
+                _place1Favorite?.address ?? S.of(context).addLabel,
                 _gold,
                 _openOrSavePlace1Shortcut,
                 onEdit: _editPlace1Address,
@@ -2059,8 +2200,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: _quickAccessTile(
                 Icons.star_rounded,
-                _place2Favorite?.label ?? 'Place 2',
-                _place2Favorite?.address ?? 'Add',
+                _place2Favorite?.label ?? S.of(context).place2Label,
+                _place2Favorite?.address ?? S.of(context).addLabel,
                 _goldLight,
                 _openOrSavePlace2Shortcut,
                 onEdit: _editPlace2Address,
@@ -2130,7 +2271,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               ),
                             ),
                             Text(
-                              '${d.count} trips',
+                              '${d.count} ${S.of(context).tripsLabel}',
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.45),
                                 fontSize: 11,
@@ -2250,13 +2391,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 20),
             // Edit Address
-            _placeOptionBtn(Icons.edit_rounded, 'Edit Address', () {
+            _placeOptionBtn(Icons.edit_rounded, S.of(context).editAddressLabel, () {
               Navigator.pop(ctx);
               editTap();
             }),
             const SizedBox(height: 8),
             // Request a Ride
-            _placeOptionBtn(Icons.directions_car_rounded, 'Request a Ride', () {
+            _placeOptionBtn(Icons.directions_car_rounded, S.of(context).requestRideLabel, () {
               Navigator.pop(ctx);
               _requestRideToAddress(address);
             }, highlight: true),

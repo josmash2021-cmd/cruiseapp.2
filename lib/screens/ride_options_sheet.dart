@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
@@ -266,19 +268,32 @@ class RideOptionsSheet extends StatelessWidget {
   Widget _buildCard(AppColors c, bool isDark, RideOption opt, bool isSelected) {
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
+    final isCamry = opt.id == 'camry';
 
-    // Per-ride tier colors
+    // Per-ride tier colors and labels (updated per user request)
     final Color tierColor;
     final String tierLabel;
+    final String displayName;
+    final bool hasShimmer;
+    
     if (isSuv) {
+      // SUV → VIP with gold shimmer
       tierColor = const Color(0xFFE8C547);
-      tierLabel = 'PREMIUM';
-    } else if (isFusion) {
-      tierColor = const Color(0xFF4A9EFF);
-      tierLabel = 'ECONOMY';
+      tierLabel = 'VIP';
+      displayName = 'VIP';
+      hasShimmer = true;
+    } else if (isCamry) {
+      // Camry → Sedan with silver spark
+      tierColor = const Color(0xFFC0C0C0);
+      tierLabel = 'SILVER';
+      displayName = 'Sedan';
+      hasShimmer = true;
     } else {
-      tierColor = const Color(0xFF6FCF97);
-      tierLabel = 'COMFORT';
+      // Fusion → Economy with green savings
+      tierColor = const Color(0xFF4CAF50);
+      tierLabel = 'SAVE';
+      displayName = 'Economy';
+      hasShimmer = true;
     }
 
     final cardBg = isSelected
@@ -327,25 +342,16 @@ class RideOptionsSheet extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Car silhouette
+              // Car image
               Container(
-                width: 64,
-                height: 64,
+                width: 72,
+                height: 56,
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.04)
-                      : Colors.black.withValues(alpha: 0.03),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: CustomPaint(
-                  painter: _CarSilhouettePainter(
-                    type: opt.id,
-                    color: isSelected
-                        ? _gold
-                        : (isDark
-                              ? Colors.white.withValues(alpha: 0.5)
-                              : Colors.black.withValues(alpha: 0.45)),
-                  ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: _buildCarImage(opt.id, isSelected),
                 ),
               ),
               const SizedBox(width: 14),
@@ -355,11 +361,11 @@ class RideOptionsSheet extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Name + tier badge
+                    // Name + tier badge with shimmer
                     Row(
                       children: [
                         Text(
-                          opt.name,
+                          displayName,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
@@ -368,24 +374,12 @@ class RideOptionsSheet extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: tierColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(5),
-                          ),
-                          child: Text(
-                            tierLabel,
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: tierColor,
-                              letterSpacing: 0.8,
-                            ),
-                          ),
+                        _ShimmerBadge(
+                          label: tierLabel,
+                          baseColor: tierColor,
+                          isGold: isSuv,
+                          isSilver: isCamry,
+                          isGreen: isFusion,
                         ),
                       ],
                     ),
@@ -498,6 +492,39 @@ class RideOptionsSheet extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Build car image widget based on vehicle type
+  Widget _buildCarImage(String type, bool isSelected) {
+    String imagePath;
+    
+    switch (type) {
+      case 'suburban':
+        imagePath = 'assets/images/cruise_3.png';
+        break;
+      case 'camry':
+        imagePath = 'assets/images/cruise_7.png';
+        break;
+      case 'fusion':
+        imagePath = 'assets/images/cruise_6.png';
+        break;
+      default:
+        imagePath = 'assets/images/cruise_7.png';
+    }
+    
+    return Image.asset(
+      imagePath,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      errorBuilder: (ctx, err, st) => Container(
+        color: Colors.white.withValues(alpha: 0.05),
+        child: Icon(
+          Icons.directions_car_rounded,
+          color: isSelected ? _gold : Colors.white.withValues(alpha: 0.4),
+          size: 32,
+        ),
       ),
     );
   }
@@ -835,4 +862,126 @@ class _CarSilhouettePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _CarSilhouettePainter old) =>
       old.type != type || old.color != color;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Animated shimmer badge with sparkle effects
+// ═══════════════════════════════════════════════════════════════════
+
+class _ShimmerBadge extends StatefulWidget {
+  final String label;
+  final Color baseColor;
+  final bool isGold;
+  final bool isSilver;
+  final bool isGreen;
+
+  const _ShimmerBadge({
+    required this.label,
+    required this.baseColor,
+    required this.isGold,
+    required this.isSilver,
+    required this.isGreen,
+  });
+
+  @override
+  State<_ShimmerBadge> createState() => _ShimmerBadgeState();
+}
+
+class _ShimmerBadgeState extends State<_ShimmerBadge>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final shimmerProgress = _controller.value;
+        
+        // Calculate shimmer position
+        final shimmerOffset = shimmerProgress * 3 - 0.5;
+        
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                _getShimmerColor(shimmerProgress, 0.0),
+                _getShimmerColor(shimmerProgress, 0.5),
+                _getShimmerColor(shimmerProgress, 1.0),
+              ],
+              stops: const [0.0, 0.5, 1.0],
+            ),
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: [
+              BoxShadow(
+                color: widget.baseColor.withValues(alpha: 0.3 + 0.2 * sin(shimmerProgress * pi * 2)),
+                blurRadius: 8 + 4 * sin(shimmerProgress * pi * 2),
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Sparkle icon
+              Transform.scale(
+                scale: 0.8 + 0.2 * sin(shimmerProgress * pi * 3),
+                child: Icon(
+                  widget.isGold ? Icons.star_rounded :
+                  widget.isSilver ? Icons.auto_awesome_rounded :
+                  Icons.eco_rounded,
+                  size: 11,
+                  color: Colors.white.withValues(alpha: 0.95),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                widget.label,
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Color _getShimmerColor(double progress, double position) {
+    final base = widget.baseColor;
+    final highlight = widget.isGold
+        ? const Color(0xFFFFD700) // Bright gold
+        : widget.isSilver
+            ? const Color(0xFFFFFFFF) // White silver
+            : const Color(0xFF81C784); // Light green
+    
+    final shimmerPos = (progress * 2 + position) % 2;
+    final intensity = shimmerPos < 0.5 
+        ? shimmerPos * 2 
+        : (1 - shimmerPos) * 2;
+    
+    return Color.lerp(base, highlight, intensity * 0.5)!;
+  }
+
+  double sin(double value) => math.sin(value);
 }

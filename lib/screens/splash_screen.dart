@@ -217,37 +217,6 @@ class _SplashScreenState extends State<SplashScreen>
 
     Widget destination;
     if (loggedIn) {
-      // ── Biometric gate ──
-      final biometricOn = await LocalDataService.isBiometricLoginEnabled();
-      if (biometricOn && mounted) {
-        final auth = LocalAuthentication();
-        final canCheck =
-            await auth.canCheckBiometrics || await auth.isDeviceSupported();
-        if (canCheck) {
-          try {
-            final ok = await auth.authenticate(
-              localizedReason: 'Sign in to Cruise',
-              options: const AuthenticationOptions(
-                stickyAuth: true,
-                biometricOnly: true,
-              ),
-            );
-            if (!ok) {
-              // Failed — sign out and go to welcome
-              await UserSession.logout();
-              if (!mounted) return;
-              destination = const WelcomeScreen();
-              Navigator.of(
-                context,
-              ).pushReplacement(smoothFadeRoute(destination, durationMs: 400));
-              return;
-            }
-          } catch (_) {
-            // Biometric error — fall through to normal login
-          }
-        }
-      }
-      if (!mounted) return;
       // ── Check if dispatch blocked/deleted/deactivated account ──
       try {
         final status = await ApiService.getAccountStatus().timeout(
@@ -307,6 +276,8 @@ class _SplashScreenState extends State<SplashScreen>
       } else {
         destination = const HomeScreen();
       }
+      // Initialize profile photo for riders (and drivers) to ensure it persists
+      await UserSession.initPhotoNotifier();
     } else {
       destination = const WelcomeScreen();
     }

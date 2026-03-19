@@ -31,8 +31,6 @@ import 'ride_rating_screen.dart';
 import 'schedule_booking_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'trip_receipt_screen.dart';
-import '../navigation/car_icon_loader.dart';
-import '../navigation/navatar_loader.dart';
 import '../navigation/smooth_motion.dart';
 import '../navigation/route_snapper.dart';
 import '../services/api_service.dart';
@@ -121,7 +119,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   // Marker icon bytes (Mapbox uses raw Uint8List)
   Uint8List? _goldPinIconBytes;
   Uint8List? _dropoffPinIconBytes;
-  Uint8List? _driverCarIconBytes;
 
   // Mapbox controller & annotation managers
   mapbox.MapboxMap? _mapController;
@@ -131,7 +128,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   mapbox.PointAnnotation? _goldDotAnnot;
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
-  mapbox.PointAnnotation? _driverAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
 
   /// True when the Mapbox controller is ready.
@@ -207,9 +203,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   LatLng? _driverPosition;
   LatLng? _prevDriverPosition; // for smooth interpolation
   double _driverBearing = 0; // bearing toward destination
-  // _driverCarIcon replaced by _driverCarIconBytes
-  List<Uint8List>? _navCarSprites; // 8-angle 3D sprites
-  double _cameraBearing = 0; // current camera bearing for sprite selection
   DateTime? _lastDriverMarkerRebuild;
   // SmoothMotion replaces the old AnimationController approach
   SmoothMotion? _driverMotion;
@@ -480,7 +473,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _goldPinIconBytes,
-      iconSize: 1.05,
+      iconSize: 1.45,  // Bigger pin size for visibility
     ));
   }
 
@@ -491,7 +484,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _dropoffPinIconBytes ?? _goldPinIconBytes,
-      iconSize: 1.05,
+      iconSize: 1.45,  // Bigger pin size for visibility
     ));
   }
 
@@ -516,8 +509,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     );
     _driverMotion!.start(this);
     _loadPinIcons();
-    _buildDriverCarIcon();
-    _loadNavCarSprites();
+    // Car icon loading removed - no car markers on rider map
     _buildGoldDotFrames();
     _initLocation();
     _applyStartupIntent();
@@ -1211,17 +1203,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _onMapCreated(mapbox.MapboxMap controller) async {
     _mapController = controller;
-    // Hide scale bar, compass and Mapbox logo ornaments
+    // Hide scale bar, compass and Mapbox logo ornaments completely
     controller.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
     controller.compass.updateSettings(mapbox.CompassSettings(enabled: false));
     controller.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
     controller.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-    // Route polyline goes below all symbols/labels
+    // Route polyline goes below all symbols/labels (at the very bottom)
     _polylineAnnotMgr = await controller.annotations.createPolylineAnnotationManager(
       below: "road-label",
     );
-    // Points (car + pins) always above the route polyline
-    _pointAnnotMgr = await controller.annotations.createPointAnnotationManager();
+    // Points (car + pins) always above the route polyline and labels
+    _pointAnnotMgr = await controller.annotations.createPointAnnotationManager(
+      below: null, // No "below" constraint means it renders above everything
+    );
     if (_currentPosition != null) {
       _centerMapOn(_currentPosition!, zoom: _defaultMapZoom);
       await _setPickupAnnotation(_currentPosition!);
@@ -2404,7 +2398,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
       lineColor: _routeColor.toARGB32(),
-      lineWidth: 5.0,
+      lineWidth: 6.0,  // Slightly thicker for better visibility
       lineJoin: mapbox.LineJoin.ROUND,
     ));
   }
@@ -4521,56 +4515,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     ).push(sharedAxisVerticalRoute(TripReceiptScreen(trip: completedTrip)));
   }
 
-  void _updateDriverMarkerFromPosition({bool force = false}) {
-    if (!mounted || _driverPosition == null) return;
-
-    // Calculate bearing from previous position
-    if (_prevDriverPosition != null) {
-      _driverBearing = _calcBearing(_prevDriverPosition!, _driverPosition!);
-    }
-
-    // Throttle marker rebuild to ~10 Hz — balances smooth motion vs flicker.
-    final now = DateTime.now();
-    if (!force &&
-        _lastDriverMarkerRebuild != null &&
-        now.difference(_lastDriverMarkerRebuild!).inMilliseconds < 100) {
-      return;
-    }
-    _lastDriverMarkerRebuild = now;
-
-    // Use single rotated canvas car — rotation handled by iconRotate + MAP alignment
-    final Uint8List? iconBytes = _driverCarIconBytes;
-    _updateDriverAnnotation(iconBytes, _driverBearing);
-    setState(() {});
-  }
-
-  Future<void> _updateDriverAnnotation(Uint8List? iconBytes, double rotation) async {
-    final mgr = _pointAnnotMgr;
-    if (mgr == null || _driverPosition == null) return;
-    if (_driverAnnot != null) {
-      try {
-        _driverAnnot!.geometry = mapbox.Point(
-          coordinates: mapbox.Position(_driverPosition!.longitude, _driverPosition!.latitude));
-        _driverAnnot!.iconRotate = rotation;
-        await mgr.update(_driverAnnot!);
-        return;
-      } catch (_) { _driverAnnot = null; }
-    }
-    _driverAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(_driverPosition!.longitude, _driverPosition!.latitude)),
-      image: iconBytes,
-      iconSize: 1.2,
-      iconRotate: rotation,
-    ));
-    // Set iconRotationAlignment=map so the car rotates relative to the map
-    // (not the viewport/camera) — car always points in its travel direction
-    try {
-      final layerId = mgr.id;
-      await _mapController?.style.setStyleLayerProperty(
-        layerId, 'icon-rotation-alignment', 'map');
-    } catch (_) {}
-  }
-
   Future<void> _updateGoldDotAnnotation() async {
     final mgr = _pointAnnotMgr;
     if (mgr == null || _currentPosition == null || _goldDotFrames.isEmpty) return;
@@ -4649,10 +4593,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (!mounted) return;
     _driverPosition = pos;
     _driverBearing = bearing;
-    _updateDriverMarkerFromPosition();
+    // Car marker removed - no car icons on rider map
 
     if (_stage == RideStage.riding && _driverPosition != null) {
-      _cameraBearing = bearing;
       // Añadir inercia a la cámara: tilt dinámico basado en velocidad angular
       final dynamicTilt = (55.0 + (curveTilt.abs() * 10.0)).clamp(55.0, 70.0);
       _panTo(_driverPosition!, zoom: 18.5, bearing: bearing, tilt: dynamicTilt);
@@ -4661,23 +4604,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (_driverRoutePoints.length > 2) {
       _trimRiderRoute(_driverPosition!);
     }
-  }
-
-  Future<void> _buildDriverCarIcon() async {
-    _driverCarIconBytes = await CarIconLoader.loadUberBytes();
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _loadNavCarSprites() async {
-    // Sprites disabled — using single rotated canvas car icon instead
-    // (sprites caused a duplicate marker: one big then one small)
-    _navCarSprites = null;
-  }
-
-  // Keep legacy method for compatibility
-  void _updateDriverMarkerByProgress() {
-    // Now delegates to real GPS position
-    _updateDriverMarkerFromPosition();
   }
 
   /// Recalculate route polyline without moving the camera.

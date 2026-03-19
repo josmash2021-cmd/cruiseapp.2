@@ -130,7 +130,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
             methodType: 'google_pay',
             displayName: 'Google Pay',
             setDefault: false,
-          ).catchError((_) {});
+          ).catchError((_) => <String, dynamic>{});
           if (!mounted) return;
           setState(() => _googlePayLinked = true);
           _showSnack(S.of(context).googlePayLinked);
@@ -175,7 +175,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
             methodType: 'apple_pay',
             displayName: 'Apple Pay',
             setDefault: false,
-          ).catchError((_) {});
+          ).catchError((_) => <String, dynamic>{});
           if (!mounted) return;
           setState(() => _applePayLinked = true);
           _showSnack(S.of(context).applePayLinked);
@@ -203,7 +203,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
         methodType: 'paypal',
         displayName: 'PayPal',
         setDefault: false,
-      ).catchError((_) {});
+      ).catchError((_) => <String, dynamic>{});
       setState(() => _paypalLinked = true);
       _showSnack(S.of(context).paypalLinked);
       await _loadServerMethods();
@@ -232,7 +232,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       displayName: '${_capitalizedBrand(brand)} •••• $last4',
       stripePmId: stripePmId,
       setDefault: true,
-    ).catchError((_) {});
+    ).catchError((_) => <String, dynamic>{});
     setState(() {
       _savedCardLast4 = last4;
       _savedCardBrand = brand;

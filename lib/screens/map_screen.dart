@@ -4510,17 +4510,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
     _lastDriverMarkerRebuild = now;
 
-    // Pick the right 3D sprite for the current viewing angle
-    Uint8List? iconBytes;
-    double markerRotation = _driverBearing;
-    if (_navCarSprites != null && _navCarSprites!.length == 8) {
-      final viewAngle = _driverBearing - _cameraBearing;
-      final idx = NavatarLoader.indexForAngle(viewAngle);
-      iconBytes = _navCarSprites![idx];
-      markerRotation = 0; // sprite already shows the correct angle
-    }
-    iconBytes ??= _driverCarIconBytes;
-    _updateDriverAnnotation(iconBytes, markerRotation);
+    // Use single rotated canvas car — rotation handled by iconRotate + MAP alignment
+    final Uint8List? iconBytes = _driverCarIconBytes;
+    _updateDriverAnnotation(iconBytes, _driverBearing);
     setState(() {});
   }
 
@@ -4542,6 +4534,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       iconSize: 1.2,
       iconRotate: rotation,
     ));
+    // Set iconRotationAlignment=map so the car rotates relative to the map
+    // (not the viewport/camera) — car always points in its travel direction
+    try {
+      final layerId = mgr.id;
+      await _mapController?.style.setStyleLayerProperty(
+        layerId, 'icon-rotation-alignment', 'map');
+    } catch (_) {}
   }
 
   Future<void> _updateGoldDotAnnotation() async {
@@ -4643,10 +4642,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _loadNavCarSprites() async {
-    final sprites = await NavatarLoader.loadCurrentSpriteBytes();
-    if (mounted && sprites != null && sprites.length == 8) {
-      setState(() => _navCarSprites = sprites);
-    }
+    // Sprites disabled — using single rotated canvas car icon instead
+    // (sprites caused a duplicate marker: one big then one small)
+    _navCarSprites = null;
   }
 
   // Keep legacy method for compatibility

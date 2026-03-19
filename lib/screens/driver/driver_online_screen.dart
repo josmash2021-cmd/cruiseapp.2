@@ -1349,12 +1349,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         try { await pointMgr.delete(_goldDotAnnot!); } catch (_) {}
         _goldDotAnnot = null;
       }
-      Uint8List? carBytes;
-      if (_navCarSprites != null && _navCarSprites!.length == 8) {
-        final viewAngle = _heading - _cameraBearing;
-        carBytes = CarIconLoader.spriteForViewAngle(viewAngle);
-      }
-      carBytes ??= _navCarIconBytes ?? _vehicleIconBytes ?? _arrowIconBytes;
+      // Use single rotated canvas car — sprites disabled (caused duplicate marker)
+      final Uint8List? carBytes = _navCarIconBytes ?? _vehicleIconBytes ?? _arrowIconBytes;
       if (carBytes != null) {
         if (_carAnnot != null) {
           try {
@@ -1363,12 +1359,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             await pointMgr.update(_carAnnot!);
           } catch (_) { _carAnnot = null; }
         }
-        _carAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
-          image: carBytes,
-          iconSize: 1.2,
-          iconRotate: _heading,
-        ));
+        if (_carAnnot == null) {
+          _carAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+            geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+            image: carBytes,
+            iconSize: 1.2,
+            iconRotate: _heading,
+          ));
+          // Car icon rotates relative to map, not camera
+          try {
+            await _map?.style.setStyleLayerProperty(
+              pointMgr.id, 'icon-rotation-alignment', 'map');
+          } catch (_) {}
+        }
       }
     }
   }

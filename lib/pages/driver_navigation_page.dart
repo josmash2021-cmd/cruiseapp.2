@@ -707,6 +707,11 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         iconRotate: _bearing,
         iconSize: 1.2,
       ));
+      // Car rotates relative to map (not viewport/camera) so it always points forward
+      try {
+        await _map?.style.setStyleLayerProperty(
+          mgr.id, 'icon-rotation-alignment', 'map');
+      } catch (_) {}
     } else {
       _driverAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude));
       _driverAnnot!.iconRotate = _bearing;

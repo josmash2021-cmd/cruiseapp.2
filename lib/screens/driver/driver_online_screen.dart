@@ -5011,57 +5011,102 @@ Widget _navHeader() {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  // ── PICKUP PANEL ──
+  Widget _pickupPanel(
+    bool isDark,
+    Color bg,
+    Color textPrimary,
+    Color textMuted,
+    Color borderC,
+    Color shadowC,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 14,
+            offset: const Offset(0, -4),
+          )
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: borderC,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
               Row(
                 children: [
-                  SizedBox(
-                    width: 50,
-                    height: 50,
-                    child: _DriverRadar(color: const Color(0xFFFFD700)),
+                  Container(
+                    width: 8, height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF34C759),
+                      shape: BoxShape.circle,
+                    ),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Finding trips...',
+                          _riderName,
                           style: TextStyle(
-                            fontSize: 18,
+                            color: textPrimary,
+                            fontSize: 17,
                             fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : Colors.black,
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'You\'re in a busy area',
+                          _pickupAddr,
                           style: TextStyle(
-                            fontSize: 14,
                             color: textMuted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[200],
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: Icon(
-                        Icons.settings_input_component,
-                        color: isDark ? Colors.white : Colors.black,
-                      ),
-                      onPressed: () {
-                        // TODO: Open preferences
-                      },
+                  IconButton(
+                    onPressed: () async {
+                      if (_riderPhone.isNotEmpty) {
+                        final uri = Uri(scheme: 'tel', path: _riderPhone);
+                        if (await canLaunchUrl(uri)) await launchUrl(uri);
+                      }
+                    },
+                    icon: Icon(Icons.phone, color: textPrimary, size: 22),
+                    style: IconButton.styleFrom(
+                      backgroundColor: isDark
+                          ? Colors.white.withValues(alpha: 0.1)
                           : Colors.black.withValues(alpha: 0.05),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              // Large ARRIVED button (Uber-style)
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -6234,4 +6279,80 @@ Widget _navHeader() {
       Text(l, style: TextStyle(color: lColor, fontSize: 10)),
     ],
   );
+}
+
+// ──────────────────────────────────────────────────
+//  Pulsing radar for driver searching panel
+// ──────────────────────────────────────────────────
+class _DriverRadar extends StatefulWidget {
+  final Color color;
+  const _DriverRadar({required this.color});
+  @override
+  State<_DriverRadar> createState() => _DriverRadarState();
+}
+
+class _DriverRadarState extends State<_DriverRadar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) => CustomPaint(
+        painter: _DriverRadarPainter(
+          progress: _ctrl.value,
+          color: widget.color,
+        ),
+      ),
+    );
+  }
+}
+
+class _DriverRadarPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  _DriverRadarPainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxR = size.width / 2;
+
+    for (int i = 0; i < 3; i++) {
+      final wave = ((progress + i / 3.0) % 1.0);
+      final radius = maxR * wave;
+      final opacity = (1.0 - wave) * 0.6;
+      final paint = Paint()
+        ..color = color.withValues(alpha: opacity)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      canvas.drawCircle(center, radius, paint);
+    }
+
+    // Center dot
+    canvas.drawCircle(
+      center,
+      6,
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_DriverRadarPainter old) => old.progress != progress;
 }

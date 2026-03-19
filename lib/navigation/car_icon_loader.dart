@@ -786,10 +786,11 @@ class CarIconLoader {
     return byteData!.buffer.asUint8List();
   }
 
-  /// Sports car renderer — aerodynamic fastback, split DRL headlights, wide stance.
-  /// FRONT = TOP of image (north = heading 0°).
+  /// Top-down car: semi-square front, long roof, headlights flush on body,
+  /// 2 side windows per side, NO wheels.  FRONT = TOP of image (north = 0°).
   static Future<Uint8List> _renderGmapsNavCarBytes() async {
-    const double lw = 34.0, lh = 80.0;
+    // Canvas size — portrait, 5× scale for crisp rendering
+    const double lw = 34.0, lh = 82.0;
     const double scale = 5.0;
     final int pw = (lw * scale).round();
     final int ph = (lh * scale).round();
@@ -799,259 +800,204 @@ class CarIconLoader {
     final rec = ui.PictureRecorder();
     final cvs = Canvas(rec, Rect.fromLTWH(0, 0, w, h));
     final cx = w * 0.5;
-    // Centre of car slightly toward front for visual balance
-    final cy = h * 0.46;
 
-    // ── Sports car proportions ────────────────────────────────────────
-    // Wider body (bw), more pointed nose, fastback silhouette
-    final double bw = w * 0.40;   // half-width — wide stance
-    final double bh = h * 0.40;   // half-height — compact & sporty
-    final double front = cy - bh; // top = front bumper
-    final double rear  = cy + bh; // bottom = rear diffuser
+    // ── CAR PROPORTIONS ──────────────────────────────────────────────
+    // front = top, rear = bottom
+    final double front = h * 0.04;   // front bumper Y
+    final double rear  = h * 0.96;   // rear bumper Y
+    final double bw    = w * 0.42;   // body half-width
 
-    // ── 0. AMBIENT GLOW (blue-white under car) ────────────────────────
+    // Vertical zones (fraction of total height)
+    final double wsTop  = front + (rear - front) * 0.17; // windshield top
+    final double wsBot  = front + (rear - front) * 0.28; // windshield bottom / roof start
+    // Rear glass pushed far back for long roof
+    final double rgTop  = front + (rear - front) * 0.70; // rear glass top (long roof)
+    final double rgBot  = front + (rear - front) * 0.84; // rear glass bottom
+
+    // ── 0. DROP SHADOW ───────────────────────────────────────────────
     cvs.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + bh * 0.15), width: bw * 3.0, height: bh * 1.6),
+      Rect.fromCenter(
+        center: Offset(cx, (front + rear) * 0.5 + (rear - front) * 0.08),
+        width: bw * 2.6, height: (rear - front) * 0.88,
+      ),
       Paint()
-        ..color = const Color(0x1A203850)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 24),
-    );
-
-    // ── 1. DROP SHADOW ────────────────────────────────────────────────
-    cvs.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + bh * 0.28), width: bw * 2.4, height: bh * 1.6),
-      Paint()
-        ..color = const Color(0x80000000)
+        ..color = const Color(0x70000000)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
     );
 
-    // ── 2. WHEELS (low-profile sport tires, wide) ─────────────────────
-    final fWheelY = front + bh * 0.30;
-    final rWheelY = rear  - bh * 0.22;
-    void _drawSportWheel(double wy, double side, double tw, double th) {
-      final wx = cx + side * (bw + tw * 0.14);
-      // Wide sport tire
-      cvs.drawOval(
-        Rect.fromCenter(center: Offset(wx, wy), width: tw, height: th),
-        Paint()..color = const Color(0xFF151518)..isAntiAlias = true,
-      );
-      // Alloy rim — multi-spoke gradient
-      cvs.drawOval(
-        Rect.fromCenter(center: Offset(wx, wy), width: tw * 0.62, height: th * 0.62),
-        Paint()
-          ..shader = ui.Gradient.radial(
-            Offset(wx - side * tw * 0.06, wy - th * 0.06),
-            tw * 0.34,
-            const [Color(0xFFD0D8E0), Color(0xFF9098A8), Color(0xFF505868)],
-            [0.0, 0.55, 1.0],
-          )
-          ..isAntiAlias = true,
-      );
-      // Centre cap
-      cvs.drawOval(
-        Rect.fromCenter(center: Offset(wx, wy), width: tw * 0.22, height: th * 0.22),
-        Paint()..color = const Color(0xFFE0E6EE)..isAntiAlias = true,
-      );
-      // Tyre sidewall glint
-      cvs.drawArc(
-        Rect.fromCenter(center: Offset(wx, wy), width: tw * 0.80, height: th * 0.80),
-        -1.0, 0.8, false,
-        Paint()
-          ..color = const Color(0x30FFFFFF)
-          ..strokeWidth = th * 0.06
-          ..style = PaintingStyle.stroke
-          ..isAntiAlias = true,
-      );
-    }
-    _drawSportWheel(fWheelY, -1.0, bw * 0.38, bh * 0.19);
-    _drawSportWheel(fWheelY,  1.0, bw * 0.38, bh * 0.19);
-    _drawSportWheel(rWheelY, -1.0, bw * 0.40, bh * 0.20);
-    _drawSportWheel(rWheelY,  1.0, bw * 0.40, bh * 0.20);
-
-    // ── 3. AERODYNAMIC BODY PATH ──────────────────────────────────────
-    // Pointed front, widest at rear axle, fastback trailing edge
+    // ── 1. BODY PATH — semi-square front, rounded rear ───────────────
+    //   Front corners: tight curve (semi-square)
+    //   Rear corners: slightly wider / more rounded
+    final double bodyMid = (front + rear) * 0.5;
     final body = Path();
-    // Start at front tip (pointed nose)
-    body.moveTo(cx, front + bh * 0.04);
-    // Right side — front to rear
+    // front-left corner
+    body.moveTo(cx - bw * 0.74, front + (rear - front) * 0.04);
+    // front edge (nearly straight)
+    body.lineTo(cx + bw * 0.74, front + (rear - front) * 0.04);
+    // front-right corner — small radius curve
     body.cubicTo(
-      cx + bw * 0.30, front,              // right front corner spread
-      cx + bw * 0.94, front + bh * 0.22,  // right fender flare
-      cx + bw * 1.00, front + bh * 0.45,  // widest point front-right
+      cx + bw * 0.92, front + (rear - front) * 0.04,
+      cx + bw * 1.00, front + (rear - front) * 0.10,
+      cx + bw * 1.00, front + (rear - front) * 0.16,
     );
+    // right side — straight down to rear quarter
+    body.lineTo(cx + bw * 1.00, front + (rear - front) * 0.82);
+    // rear-right corner — softer curve
     body.cubicTo(
-      cx + bw * 1.02, cy + bh * 0.10,    // slightly wider at centre
-      cx + bw * 1.04, rear - bh * 0.24,  // rear quarter
-      cx + bw * 0.80, rear,              // right rear corner
+      cx + bw * 1.00, front + (rear - front) * 0.90,
+      cx + bw * 0.88, rear,
+      cx + bw * 0.62, rear,
     );
-    // Rear edge (straight diffuser width)
-    body.lineTo(cx - bw * 0.80, rear);
-    // Left side — rear to front
+    // rear edge
+    body.lineTo(cx - bw * 0.62, rear);
+    // rear-left corner
     body.cubicTo(
-      cx - bw * 1.04, rear - bh * 0.24,
-      cx - bw * 1.02, cy + bh * 0.10,
-      cx - bw * 1.00, front + bh * 0.45,
+      cx - bw * 0.88, rear,
+      cx - bw * 1.00, front + (rear - front) * 0.90,
+      cx - bw * 1.00, front + (rear - front) * 0.82,
     );
+    // left side
+    body.lineTo(cx - bw * 1.00, front + (rear - front) * 0.16);
+    // front-left corner
     body.cubicTo(
-      cx - bw * 0.94, front + bh * 0.22,
-      cx - bw * 0.30, front,
-      cx, front + bh * 0.04,
+      cx - bw * 1.00, front + (rear - front) * 0.10,
+      cx - bw * 0.92, front + (rear - front) * 0.04,
+      cx - bw * 0.74, front + (rear - front) * 0.04,
     );
     body.close();
 
-    // ── 4. BODY FILL — deep dark blue metallic ───────────────────────
+    // ── 2. BODY FILL — deep dark navy metallic ───────────────────────
     cvs.drawPath(
       body,
       Paint()
         ..shader = ui.Gradient.linear(
-          Offset(cx - bw, cy),
-          Offset(cx + bw, cy),
+          Offset(cx - bw, bodyMid),
+          Offset(cx + bw, bodyMid),
           const [
-            Color(0xFF0B0D14),
-            Color(0xFF141824),
-            Color(0xFF1C2438),
-            Color(0xFF141824),
-            Color(0xFF0B0D14),
+            Color(0xFF0A0C14),
+            Color(0xFF131828),
+            Color(0xFF1C253C),
+            Color(0xFF131828),
+            Color(0xFF0A0C14),
           ],
-          [0.0, 0.20, 0.50, 0.80, 1.0],
-        ),
-    );
-
-    // ── 5. FRONT-TO-REAR DEPTH (hood highlight / diffuser shade) ──────
-    cvs.drawPath(
-      body,
-      Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(cx, front),
-          Offset(cx, rear),
-          const [
-            Color(0x30507090), // blue metallic sheen on hood
-            Color(0x18304060),
-            Color(0x08000000),
-            Color(0x20000000),
-            Color(0x40000000), // darkened diffuser area
-          ],
-          [0.0, 0.20, 0.45, 0.72, 1.0],
-        ),
-    );
-
-    // ── 6. BODY OUTLINE ───────────────────────────────────────────────
-    cvs.drawPath(
-      body,
-      Paint()
-        ..color = const Color(0x50080C18)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = w * 0.018
+          [0.0, 0.18, 0.50, 0.82, 1.0],
+        )
         ..isAntiAlias = true,
     );
 
-    // ── 7. SIDE AMBIENT OCCLUSION ─────────────────────────────────────
+    // Front-to-rear depth shading
+    cvs.drawPath(
+      body,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, front), Offset(cx, rear),
+          const [
+            Color(0x2C4A70A0),
+            Color(0x10203858),
+            Color(0x04000000),
+            Color(0x18000000),
+            Color(0x3C000000),
+          ],
+          [0.0, 0.18, 0.44, 0.72, 1.0],
+        )
+        ..isAntiAlias = true,
+    );
+
+    // ── 3. BODY OUTLINE ──────────────────────────────────────────────
+    cvs.drawPath(
+      body,
+      Paint()
+        ..color = const Color(0x60060810)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = w * 0.022
+        ..isAntiAlias = true,
+    );
+
+    // ── 4. SIDE AMBIENT OCCLUSION (edge darkening) ───────────────────
     cvs.save();
     cvs.clipPath(body);
     for (final s in [-1.0, 1.0]) {
-      final x0 = cx + s * bw * 0.55;
-      final x1 = cx + s * bw * 1.04;
+      final x0 = cx + s * bw * 0.50;
+      final x1 = cx + s * bw * 1.00;
       cvs.drawRect(
-        Rect.fromLTWH(s < 0 ? x1 : x0, front, bw * 0.50, bh * 2.0),
+        Rect.fromLTWH(s < 0 ? x1 : x0, front, bw * 0.52, rear - front),
         Paint()
           ..shader = ui.Gradient.linear(
-            Offset(x0, cy), Offset(x1, cy),
-            s < 0
-              ? const [Color(0x00000000), Color(0x50000000)]
-              : const [Color(0x00000000), Color(0x50000000)],
+            Offset(x0, bodyMid), Offset(x1, bodyMid),
+            const [Color(0x00000000), Color(0x48000000)],
           ),
       );
     }
     cvs.restore();
 
-    // ── 8. HOOD CREASE & HIGHLIGHT ────────────────────────────────────
-    final hoodEnd = cy - bh * 0.30;
+    // ── 5. HOOD HIGHLIGHT & CREASE ───────────────────────────────────
     cvs.save();
     cvs.clipPath(body);
-    // Hood metallic highlight
     cvs.drawRect(
-      Rect.fromLTWH(cx - bw * 0.52, front, bw * 1.04, hoodEnd - front),
+      Rect.fromLTRB(cx - bw * 0.60, front, cx + bw * 0.60, wsTop),
       Paint()
         ..shader = ui.Gradient.linear(
-          Offset(cx, front),
-          Offset(cx, hoodEnd),
-          const [Color(0x28607EA0), Color(0x06304050)],
+          Offset(cx, front), Offset(cx, wsTop),
+          const [Color(0x30507898), Color(0x04304058)],
         ),
     );
     cvs.restore();
-    // Central hood crease
+    // Hood centre crease
     cvs.drawLine(
-      Offset(cx, front + bh * 0.07),
-      Offset(cx, hoodEnd),
+      Offset(cx, front + (rear - front) * 0.04),
+      Offset(cx, wsTop),
       Paint()
-        ..color = const Color(0x28608090)
-        ..strokeWidth = w * 0.014
+        ..color = const Color(0x22508090)
+        ..strokeWidth = w * 0.013
         ..strokeCap = StrokeCap.round
         ..isAntiAlias = true,
     );
-    // Side hood character lines
-    for (final s in [-1.0, 1.0]) {
-      cvs.drawLine(
-        Offset(cx + s * bw * 0.36, front + bh * 0.12),
-        Offset(cx + s * bw * 0.58, hoodEnd),
-        Paint()
-          ..color = const Color(0x18A0C0E0)
-          ..strokeWidth = w * 0.010
-          ..strokeCap = StrokeCap.round
-          ..isAntiAlias = true,
-      );
-    }
 
-    // ── 9. WINDSHIELD (steeply raked, sport) ──────────────────────────
-    final wsTop = cy - bh * 0.32;
-    final wsBot = cy - bh * 0.10;
+    // ── 6. WINDSHIELD ────────────────────────────────────────────────
     final wsPath = Path()
-      ..moveTo(cx - bw * 0.46, wsTop)
-      ..lineTo(cx + bw * 0.46, wsTop)
-      ..cubicTo(cx + bw * 0.56, wsTop + bh * 0.08, cx + bw * 0.60, wsBot - bh * 0.03, cx + bw * 0.60, wsBot)
-      ..lineTo(cx - bw * 0.60, wsBot)
-      ..cubicTo(cx - bw * 0.60, wsBot - bh * 0.03, cx - bw * 0.56, wsTop + bh * 0.08, cx - bw * 0.46, wsTop)
+      ..moveTo(cx - bw * 0.52, wsTop)
+      ..lineTo(cx + bw * 0.52, wsTop)
+      ..lineTo(cx + bw * 0.56, wsBot)
+      ..lineTo(cx - bw * 0.56, wsBot)
       ..close();
     cvs.drawPath(
       wsPath,
       Paint()
         ..shader = ui.Gradient.linear(
           Offset(cx, wsTop), Offset(cx, wsBot),
-          const [Color(0xFF18243A), Color(0xFF243448)],
+          const [Color(0xFF1C2E48), Color(0xFF243858)],
         )
         ..isAntiAlias = true,
     );
-    // Windshield reflection band
+    // Windshield glare streak
     cvs.drawLine(
-      Offset(cx - bw * 0.32, wsTop + (wsBot - wsTop) * 0.30),
-      Offset(cx + bw * 0.32, wsTop + (wsBot - wsTop) * 0.30),
+      Offset(cx - bw * 0.30, wsTop + (wsBot - wsTop) * 0.28),
+      Offset(cx + bw * 0.28, wsTop + (wsBot - wsTop) * 0.28),
       Paint()
-        ..color = const Color(0x3090C0E8)
-        ..strokeWidth = h * 0.008
+        ..color = const Color(0x2890C0E8)
+        ..strokeWidth = h * 0.007
         ..strokeCap = StrokeCap.round
         ..isAntiAlias = true,
     );
 
-    // ── 10. FASTBACK ROOF ─────────────────────────────────────────────
-    final roofBot = cy + bh * 0.18;
+    // ── 7. LONG ROOF (from wsBot to rgTop) ───────────────────────────
     final roofPath = Path()
-      ..moveTo(cx - bw * 0.55, wsBot)
-      ..lineTo(cx + bw * 0.55, wsBot)
-      ..cubicTo(cx + bw * 0.58, wsBot + bh * 0.12, cx + bw * 0.56, roofBot - bh * 0.02, cx + bw * 0.50, roofBot)
-      ..lineTo(cx - bw * 0.50, roofBot)
-      ..cubicTo(cx - bw * 0.56, roofBot - bh * 0.02, cx - bw * 0.58, wsBot + bh * 0.12, cx - bw * 0.55, wsBot)
+      ..moveTo(cx - bw * 0.56, wsBot)
+      ..lineTo(cx + bw * 0.56, wsBot)
+      ..lineTo(cx + bw * 0.54, rgTop)
+      ..lineTo(cx - bw * 0.54, rgTop)
       ..close();
     cvs.drawPath(
       roofPath,
       Paint()
         ..shader = ui.Gradient.linear(
-          Offset(cx - bw * 0.5, cy), Offset(cx + bw * 0.5, cy),
+          Offset(cx - bw * 0.5, bodyMid), Offset(cx + bw * 0.5, bodyMid),
           const [
-            Color(0xFF101420),
-            Color(0xFF1A2030),
-            Color(0xFF222840),
-            Color(0xFF1A2030),
-            Color(0xFF101420),
+            Color(0xFF0E1522),
+            Color(0xFF182030),
+            Color(0xFF20283E),
+            Color(0xFF182030),
+            Color(0xFF0E1522),
           ],
           [0.0, 0.22, 0.50, 0.78, 1.0],
         )
@@ -1059,156 +1005,273 @@ class CarIconLoader {
     );
     // Roof centre gloss
     cvs.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy), width: bw * 0.38, height: bh * 0.07),
+      Rect.fromCenter(
+        center: Offset(cx, wsBot + (rgTop - wsBot) * 0.45),
+        width: bw * 0.36, height: (rgTop - wsBot) * 0.12,
+      ),
       Paint()
-        ..color = const Color(0x14608098)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+        ..color = const Color(0x10608098)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
     );
 
-    // ── 11. REAR GLASS (fastback slope) ───────────────────────────────
-    final rgTop = roofBot;
-    final rgBot = cy + bh * 0.34;
+    // ── 8. REAR GLASS ────────────────────────────────────────────────
     final rgPath = Path()
-      ..moveTo(cx - bw * 0.48, rgTop)
-      ..lineTo(cx + bw * 0.48, rgTop)
-      ..cubicTo(cx + bw * 0.52, rgTop + bh * 0.08, cx + bw * 0.50, rgBot - bh * 0.02, cx + bw * 0.42, rgBot)
-      ..lineTo(cx - bw * 0.42, rgBot)
-      ..cubicTo(cx - bw * 0.50, rgBot - bh * 0.02, cx - bw * 0.52, rgTop + bh * 0.08, cx - bw * 0.48, rgTop)
+      ..moveTo(cx - bw * 0.54, rgTop)
+      ..lineTo(cx + bw * 0.54, rgTop)
+      ..lineTo(cx + bw * 0.50, rgBot)
+      ..lineTo(cx - bw * 0.50, rgBot)
       ..close();
     cvs.drawPath(
       rgPath,
       Paint()
         ..shader = ui.Gradient.linear(
           Offset(cx, rgTop), Offset(cx, rgBot),
-          const [Color(0xCC243450), Color(0xBB1C2840)],
+          const [Color(0xCC20304E), Color(0xBB182840)],
         )
         ..isAntiAlias = true,
     );
+    // Rear glass glare
+    cvs.drawLine(
+      Offset(cx - bw * 0.30, rgTop + (rgBot - rgTop) * 0.28),
+      Offset(cx + bw * 0.28, rgTop + (rgBot - rgTop) * 0.28),
+      Paint()
+        ..color = const Color(0x1890C0E8)
+        ..strokeWidth = h * 0.005
+        ..strokeCap = StrokeCap.round
+        ..isAntiAlias = true,
+    );
 
-    // ── 12. SIDE MIRRORS (sleek, angled) ──────────────────────────────
-    final mirY = wsBot - bh * 0.01;
+    // ── 9. SIDE WINDOWS — 2 per side ─────────────────────────────────
+    // Window dimensions: between belt line (inner edge) and body edge
+    // Front window: wsBot → rgTop * 0.44 | Rear window: *0.50 → rgTop
+    final double winInnerX = bw * 0.56; // inner edge (below roof edge)
+    final double winOuterX = bw * 0.98; // outer edge (near body side)
+    final double winGap    = (rear - front) * 0.012; // gap between windows
+
+    // Front window Y range
+    final double fwinTop = wsBot + (rear - front) * 0.006;
+    final double fwinBot = wsBot + (rgTop - wsBot) * 0.46 - winGap * 0.5;
+    // Rear window Y range
+    final double rwinTop = wsBot + (rgTop - wsBot) * 0.46 + winGap * 0.5;
+    final double rwinBot = rgTop - (rear - front) * 0.006;
+
     for (final s in [-1.0, 1.0]) {
-      final mirPath = Path()
-        ..moveTo(cx + s * bw * 0.88, mirY - bh * 0.025)
-        ..lineTo(cx + s * bw * 1.06, mirY - bh * 0.01)
-        ..lineTo(cx + s * bw * 1.05, mirY + bh * 0.020)
-        ..lineTo(cx + s * bw * 0.87, mirY + bh * 0.014)
+      final double xIn  = cx + s * winInnerX;
+      final double xOut = cx + s * winOuterX;
+
+      // Front side window
+      final fwin = Path()
+        ..moveTo(xIn + s * 0, fwinTop)
+        ..lineTo(xOut - s * 0, fwinTop)
+        ..lineTo(xOut - s * 0, fwinBot)
+        ..lineTo(xIn + s * 0, fwinBot)
         ..close();
       cvs.drawPath(
-        mirPath,
-        Paint()..color = const Color(0xFF1A1E2C)..isAntiAlias = true,
-      );
-    }
-
-    // ── 13. SPLIT DRL HEADLIGHTS (modern LED style) ───────────────────
-    // Two thin DRL strips per side + inner projector lens
-    final hlBaseY = front + bh * 0.10;
-    for (final s in [-1.0, 1.0]) {
-      final hcx = cx + s * bw * 0.58;
-      // Outer DRL glow
-      cvs.drawOval(
-        Rect.fromCenter(center: Offset(hcx, hlBaseY), width: bw * 0.50, height: bh * 0.08),
+        fwin,
         Paint()
-          ..color = const Color(0x60E8F4FF)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+          ..shader = ui.Gradient.linear(
+            Offset(xIn, fwinTop), Offset(xOut, fwinTop),
+            s < 0
+              ? const [Color(0xCC1C2C44), Color(0xCC243450)]
+              : const [Color(0xCC243450), Color(0xCC1C2C44)],
+          )
+          ..isAntiAlias = true,
       );
-      // Outer DRL strip (thin horizontal bar)
-      cvs.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(hcx + s * bw * 0.06, hlBaseY - bh * 0.025),
-              width: bw * 0.38, height: bh * 0.026),
-          const Radius.circular(4),
-        ),
-        Paint()..color = const Color(0xFFE8F0FF)..isAntiAlias = true,
-      );
-      // Inner DRL strip (shorter, offset)
-      cvs.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(hcx - s * bw * 0.06, hlBaseY + bh * 0.022),
-              width: bw * 0.24, height: bh * 0.020),
-          const Radius.circular(3),
-        ),
-        Paint()..color = const Color(0xFFCCDCF8)..isAntiAlias = true,
-      );
-      // Projector lens (round, bright core)
-      cvs.drawOval(
-        Rect.fromCenter(center: Offset(hcx, hlBaseY), width: bw * 0.16, height: bh * 0.06),
-        Paint()..color = const Color(0xFFF8FBFF)..isAntiAlias = true,
-      );
-    }
-
-    // ── 14. REAR TAILLIGHTS (full-width LED bar style) ────────────────
-    final tlY = rear - bh * 0.06;
-    // Full-width connecting bar glow
-    cvs.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, tlY), width: bw * 1.40, height: bh * 0.03),
-        const Radius.circular(3),
-      ),
-      Paint()
-        ..color = const Color(0x50FF1010)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
-    );
-    // Solid LED bar
-    cvs.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, tlY), width: bw * 1.30, height: bh * 0.022),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFFCC1010)..isAntiAlias = true,
-    );
-    // Hot-spot on outer ends
-    for (final s in [-1.0, 1.0]) {
-      cvs.drawOval(
-        Rect.fromCenter(
-          center: Offset(cx + s * bw * 0.56, tlY),
-          width: bw * 0.22, height: bh * 0.04,
-        ),
-        Paint()
-          ..color = const Color(0x60FF3030)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-      );
-      cvs.drawOval(
-        Rect.fromCenter(
-          center: Offset(cx + s * bw * 0.56, tlY),
-          width: bw * 0.12, height: bh * 0.028,
-        ),
-        Paint()..color = const Color(0xFFFF3030)..isAntiAlias = true,
-      );
-    }
-
-    // ── 15. BODY CHARACTER LINES (fender highlight) ───────────────────
-    for (final s in [-1.0, 1.0]) {
-      final fx = cx + s * bw * 0.76;
+      // front window glare
       cvs.drawLine(
-        Offset(fx, front + bh * 0.22),
-        Offset(fx + s * bw * 0.10, rear - bh * 0.16),
+        Offset(xIn + s * bw * 0.04, fwinTop + (fwinBot - fwinTop) * 0.22),
+        Offset(xOut - s * bw * 0.08, fwinTop + (fwinBot - fwinTop) * 0.22),
         Paint()
-          ..color = const Color(0x18A8C8E8)
-          ..strokeWidth = w * 0.015
+          ..color = const Color(0x1890B8D8)
+          ..strokeWidth = h * 0.005
           ..strokeCap = StrokeCap.round
+          ..isAntiAlias = true,
+      );
+
+      // Rear side window
+      final rwin = Path()
+        ..moveTo(xIn + s * 0, rwinTop)
+        ..lineTo(xOut - s * 0, rwinTop)
+        ..lineTo(xOut - s * 0, rwinBot)
+        ..lineTo(xIn + s * 0, rwinBot)
+        ..close();
+      cvs.drawPath(
+        rwin,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(xIn, rwinTop), Offset(xOut, rwinTop),
+            s < 0
+              ? const [Color(0xCC1C2C44), Color(0xCC243450)]
+              : const [Color(0xCC243450), Color(0xCC1C2C44)],
+          )
+          ..isAntiAlias = true,
+      );
+      // rear window glare
+      cvs.drawLine(
+        Offset(xIn + s * bw * 0.04, rwinTop + (rwinBot - rwinTop) * 0.22),
+        Offset(xOut - s * bw * 0.08, rwinTop + (rwinBot - rwinTop) * 0.22),
+        Paint()
+          ..color = const Color(0x1890B8D8)
+          ..strokeWidth = h * 0.005
+          ..strokeCap = StrokeCap.round
+          ..isAntiAlias = true,
+      );
+
+      // Pillar between windows (B-pillar)
+      cvs.drawLine(
+        Offset(xIn + s * bw * 0.06, fwinBot + winGap * 0.1),
+        Offset(xIn + s * bw * 0.06, rwinTop - winGap * 0.1),
+        Paint()
+          ..color = const Color(0xFF0A0E18)
+          ..strokeWidth = w * 0.028
           ..isAntiAlias = true,
       );
     }
 
-    // ── 16. FRONT SPLITTER ────────────────────────────────────────────
+    // ── 10. SIDE MIRRORS (flush against body near windshield) ─────────
+    final double mirY = wsTop + (wsBot - wsTop) * 0.50;
+    for (final s in [-1.0, 1.0]) {
+      final mirPath = Path()
+        ..moveTo(cx + s * bw * 0.84, mirY - (rear - front) * 0.022)
+        ..lineTo(cx + s * bw * 1.04, mirY - (rear - front) * 0.008)
+        ..lineTo(cx + s * bw * 1.04, mirY + (rear - front) * 0.016)
+        ..lineTo(cx + s * bw * 0.84, mirY + (rear - front) * 0.016)
+        ..close();
+      cvs.drawPath(
+        mirPath,
+        Paint()..color = const Color(0xFF181C2A)..isAntiAlias = true,
+      );
+    }
+
+    // ── 11. HEADLIGHTS — FLUSH on front face of body ─────────────────
+    // Drawn INSIDE the body area at the front edge (not floating above)
+    final double hlY     = front + (rear - front) * 0.055; // sits on front face
+    final double hlInset = (rear - front) * 0.012;          // small inset from front edge
+    for (final s in [-1.0, 1.0]) {
+      final double hlCx = cx + s * bw * 0.52;
+      final double hlW  = bw * 0.38;
+      final double hlH  = (rear - front) * 0.028;
+
+      // Glow (clipped to body)
+      cvs.save();
+      cvs.clipPath(body);
+      cvs.drawOval(
+        Rect.fromCenter(center: Offset(hlCx, hlY), width: hlW * 1.6, height: hlH * 4.0),
+        Paint()
+          ..color = const Color(0x50D8EEFF)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+      );
+      cvs.restore();
+
+      // Outer DRL strip
+      cvs.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(hlCx + s * hlW * 0.06, hlY - hlInset),
+            width: hlW * 0.90, height: hlH,
+          ),
+          const Radius.circular(3),
+        ),
+        Paint()
+          ..color = const Color(0xFFE8F2FF)
+          ..isAntiAlias = true,
+      );
+      // Inner accent strip
+      cvs.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(hlCx - s * hlW * 0.10, hlY + hlInset),
+            width: hlW * 0.54, height: hlH * 0.65,
+          ),
+          const Radius.circular(2),
+        ),
+        Paint()..color = const Color(0xFFCCDCF8)..isAntiAlias = true,
+      );
+    }
+
+    // ── 12. REAR TAILLIGHTS — two square LED blocks ───────────────────
+    // Each block sits near the rear corners, semi-square shape
+    final double tlH   = (rear - front) * 0.068; // block height
+    final double tlW   = bw * 0.52;               // block width
+    final double tlCY  = rear - tlH * 0.60;       // vertical centre
+    final double tlGap = bw * 0.08;               // gap from centre
+
+    for (final s in [-1.0, 1.0]) {
+      final double tlCX = cx + s * (tlGap * 0.5 + tlW * 0.5);
+
+      // Outer glow
+      cvs.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(tlCX, tlCY), width: tlW * 1.30, height: tlH * 1.50),
+          const Radius.circular(5),
+        ),
+        Paint()
+          ..color = const Color(0x55FF1010)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      );
+
+      // Main LED block — dark red base with bright core gradient
+      cvs.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(tlCX, tlCY), width: tlW, height: tlH),
+          const Radius.circular(3),
+        ),
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(tlCX, tlCY - tlH * 0.5),
+            Offset(tlCX, tlCY + tlH * 0.5),
+            const [Color(0xFFFF2020), Color(0xFFAA0808)],
+          )
+          ..isAntiAlias = true,
+      );
+
+      // Bright inner highlight (gives LED depth)
+      cvs.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(tlCX, tlCY - tlH * 0.12), width: tlW * 0.72, height: tlH * 0.38),
+          const Radius.circular(2),
+        ),
+        Paint()
+          ..color = const Color(0x70FF5050)
+          ..isAntiAlias = true,
+      );
+
+      // Thin outline for definition
+      cvs.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(tlCX, tlCY), width: tlW, height: tlH),
+          const Radius.circular(3),
+        ),
+        Paint()
+          ..color = const Color(0xFF6A0000)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = w * 0.012
+          ..isAntiAlias = true,
+      );
+    }
+
+    // ── 13. FRONT BUMPER DETAIL ───────────────────────────────────────
     cvs.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, front + bh * 0.03),
-            width: bw * 0.72, height: bh * 0.022),
+        Rect.fromCenter(
+          center: Offset(cx, front + (rear - front) * 0.025),
+          width: bw * 0.78, height: (rear - front) * 0.016,
+        ),
         const Radius.circular(2),
       ),
-      Paint()..color = const Color(0xFF080A10)..isAntiAlias = true,
+      Paint()..color = const Color(0xFF080A12)..isAntiAlias = true,
     );
 
-    // ── 17. REAR DIFFUSER ─────────────────────────────────────────────
+    // ── 14. REAR BUMPER DETAIL ────────────────────────────────────────
     cvs.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, rear - bh * 0.01),
-            width: bw * 1.10, height: bh * 0.028),
+        Rect.fromCenter(
+          center: Offset(cx, rear - (rear - front) * 0.015),
+          width: bw * 1.10, height: (rear - front) * 0.016,
+        ),
         const Radius.circular(2),
       ),
-      Paint()..color = const Color(0xFF0A0C14)..isAntiAlias = true,
+      Paint()..color = const Color(0xFF08090F)..isAntiAlias = true,
     );
 
     // ── ENCODE ────────────────────────────────────────────────────────

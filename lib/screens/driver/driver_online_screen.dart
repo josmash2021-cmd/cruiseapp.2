@@ -5011,99 +5011,50 @@ Widget _navHeader() {
               ),
             ],
           ),
-        ],
-      ),
-    );
-  }
-
-  // ── PICKUP PANEL (Uber-style) ──
-  Widget _pickupPanel(
-    bool isDark,
-    Color bg,
-    Color textPrimary,
-    Color textMuted,
-    Color borderC,
-    Color shadowC,
-  ) {
-    return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 16,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Compact rider info
               Row(
                 children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF34C759),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF34C759).withValues(alpha: 0.4),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
+                  SizedBox(
+                    width: 50,
+                    height: 50,
+                    child: _DriverRadar(color: const Color(0xFFFFD700)),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 16),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _riderName,
+                          'Finding trips...',
                           style: TextStyle(
-                            color: textPrimary,
-                            fontSize: 17,
+                            fontSize: 18,
                             fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : Colors.black,
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          _pickupAddr,
+                          'You\'re in a busy area',
                           style: TextStyle(
+                            fontSize: 14,
                             color: textMuted,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: () async {
-                      if (_riderPhone.isNotEmpty) {
-                        final uri = Uri(scheme: 'tel', path: _riderPhone);
-                        if (await canLaunchUrl(uri)) await launchUrl(uri);
-                      }
-                    },
-                    icon: Icon(
-                      Icons.phone,
-                      color: textPrimary,
-                      size: 22,
+                  Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[200],
+                      shape: BoxShape.circle,
                     ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: isDark
-                          ? Colors.white.withValues(alpha: 0.1)
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.settings_input_component,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                      onPressed: () {
+                        // TODO: Open preferences
+                      },
                           : Colors.black.withValues(alpha: 0.05),
                     ),
                   ),

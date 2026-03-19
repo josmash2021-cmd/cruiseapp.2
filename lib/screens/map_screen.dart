@@ -479,7 +479,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _goldPinIconBytes,
-      iconSize: 0.5,
+      iconSize: 0.85,
     ));
   }
 
@@ -490,7 +490,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _dropoffPinIconBytes ?? _goldPinIconBytes,
-      iconSize: 0.5,
+      iconSize: 0.85,
     ));
   }
 
@@ -1210,8 +1210,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _onMapCreated(mapbox.MapboxMap controller) async {
     _mapController = controller;
-    // Polyline FIRST → route renders BELOW pins and car marker
-    _polylineAnnotMgr = await controller.annotations.createPolylineAnnotationManager();
+    // Route polyline goes below all symbols/labels
+    _polylineAnnotMgr = await controller.annotations.createPolylineAnnotationManager(
+      below: "road-label",
+    );
+    // Points (car + pins) always above the route polyline
     _pointAnnotMgr = await controller.annotations.createPointAnnotationManager();
     if (_currentPosition != null) {
       _centerMapOn(_currentPosition!, zoom: _defaultMapZoom);
@@ -4536,7 +4539,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _driverAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_driverPosition!.longitude, _driverPosition!.latitude)),
       image: iconBytes,
-      iconSize: 0.5,
+      iconSize: 1.2,
       iconRotate: rotation,
     ));
   }

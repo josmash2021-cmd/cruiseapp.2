@@ -705,7 +705,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
         image: bytes,
         iconRotate: _bearing,
-        iconSize: 0.5,
+        iconSize: 1.2,
       ));
     } else {
       _driverAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude));
@@ -816,8 +816,10 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
               onMapCreated: (ctrl) async {
                 _map = ctrl;
                 _mapReady = true;
-                // Polyline FIRST so route renders BELOW pins and car
-                _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+                // Route polyline below road labels; points always on top
+                _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+                  below: "road-label",
+                );
                 _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                 _updateRouteAnnotation();
                 _updateDestAnnotation();

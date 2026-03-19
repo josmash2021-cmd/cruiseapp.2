@@ -1366,7 +1366,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _carAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
           image: carBytes,
-          iconSize: 0.5,
+          iconSize: 1.2,
           iconRotate: _heading,
         ));
       }
@@ -2827,8 +2827,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         onMapCreated: (ctrl) async {
           _map = ctrl;
           _lastStyleDark = isDark;
-          // Polyline FIRST → route renders BELOW pins and car marker
-          _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+          // Route polyline below road labels, points always on top
+          _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+            below: "road-label",
+          );
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           _updateDriverAnnotation();
         },

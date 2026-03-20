@@ -849,11 +849,12 @@ class ApiService {
   }
 
   /// Download a profile photo from the server and save to local file.
-  /// [photoUrl] is the relative path like "/photos/user_1.jpg".
+  /// [photoUrl] may be a relative path like "/photos/user_1.jpg" or a full URL
+  /// like "https://firebasestorage.googleapis.com/...".
   /// Returns the local file path, or empty string on failure.
   static Future<String> downloadPhoto(String photoUrl) async {
     try {
-      final url = '$_baseUrl$photoUrl';
+      final url = photoUrl.startsWith('http') ? photoUrl : '$_baseUrl$photoUrl';
       final res = await _client
           .get(Uri.parse(url))
           .timeout(const Duration(seconds: 15));

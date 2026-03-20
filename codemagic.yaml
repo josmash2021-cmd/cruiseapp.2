@@ -501,6 +501,10 @@ workflows:
         ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
         ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
     scripts:
+      - name: Write android/local.properties
+        script: |
+          echo "MAPS_API_KEY=$ENV_MAPS_SERVICES_KEY" >> android/local.properties
+          echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
       - name: Generate env.dart
         script: |
           mkdir -p lib/config
@@ -581,6 +585,10 @@ workflows:
         ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
         ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
     scripts:
+      - name: Write android/local.properties
+        script: |
+          echo "MAPS_API_KEY=$ENV_MAPS_SERVICES_KEY" >> android/local.properties
+          echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
       - name: Generate env.dart
         script: |
           mkdir -p lib/config

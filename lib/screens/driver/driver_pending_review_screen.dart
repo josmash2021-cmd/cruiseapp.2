@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../config/page_transitions.dart';
@@ -28,6 +29,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   static const _green = Color(0xFF4CAF50);
 
   Timer? _pollTimer;
+  StreamSubscription<DocumentSnapshot>? _firestoreSubscription;
   String _status = 'pending'; // pending | approved | rejected
   String? _rejectionReason;
 
@@ -65,6 +67,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _firestoreSubscription?.cancel();
     _pulseCtrl.dispose();
     _dotCtrl.dispose();
     _approvedCtrl.dispose();
@@ -72,7 +75,11 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   }
 
   /// Check approval status right away; if already approved, show approved screen.
+  /// Also sets up a Firestore real-time listener for instant updates.
   Future<void> _checkImmediateAndPoll() async {
+    // Attach Firestore real-time listener first (instant — no polling delay)
+    _attachFirestoreListener();
+
     try {
       final result = await ApiService.getDriverApprovalStatus();
       final status =
@@ -101,6 +108,39 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
       }
     } catch (_) {}
     _startPolling();
+  }
+
+  /// Attaches a Firestore snapshots() listener to verifications/sql_{userId}.
+  /// Fires immediately when Dispatch approves or rejects — no 5-second wait.
+  void _attachFirestoreListener() {
+    UserSession.getUser().then((user) {
+      final userId = user?['userId'];
+      if (userId == null || userId.isEmpty || !mounted) return;
+      final docRef = FirebaseFirestore.instance
+          .collection('verifications')
+          .doc('sql_$userId');
+      _firestoreSubscription = docRef.snapshots().listen((snap) {
+        if (!snap.exists || !mounted) return;
+        final data = snap.data()!;
+        final status = data['status'] as String? ?? '';
+        if (status == 'approved' && _status != 'approved') {
+          _pollTimer?.cancel();
+          LocalDataService.setDriverApprovalStatus('approved');
+          setState(() => _status = 'approved');
+          _approvedCtrl.forward();
+        } else if (status == 'rejected' && _status != 'rejected') {
+          _pollTimer?.cancel();
+          final reason = data['reason'] as String? ?? S.of(context).applicationNotApproved;
+          LocalDataService.setDriverApprovalStatus('rejected');
+          setState(() {
+            _status = 'rejected';
+            _rejectionReason = reason;
+          });
+        }
+      }, onError: (_) {
+        // Firestore unavailable — polling still covers this case
+      });
+    }).catchError((_) {});
   }
 
   void _startPolling() {

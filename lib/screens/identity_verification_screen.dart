@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
@@ -39,6 +40,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   bool _verified = false;
   String? _rejectionReason;
   Timer? _pollTimer;
+  StreamSubscription<DocumentSnapshot>? _firestoreSubscription;
 
   late AnimationController _pulseCtrl;
   late AnimationController _checkCtrl;
@@ -59,6 +61,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _firestoreSubscription?.cancel();
     _pulseCtrl.dispose();
     _checkCtrl.dispose();
     super.dispose();
@@ -162,8 +165,46 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
       _step = 3; // Pending review
     });
 
-    // Start polling for dispatch decision
+    // Start polling for dispatch decision + attach Firestore real-time listener
     _startPolling();
+    _attachFirestoreListener();
+  }
+
+  /// Firestore real-time listener — fires instantly when Dispatch approves/rejects.
+  void _attachFirestoreListener() {
+    UserSession.getUser().then((user) {
+      final userId = user?['userId'];
+      if (userId == null || userId.isEmpty || !mounted) return;
+      final docRef = FirebaseFirestore.instance
+          .collection('verifications')
+          .doc('sql_$userId');
+      _firestoreSubscription = docRef.snapshots().listen((snap) {
+        if (!snap.exists || !mounted) return;
+        final data = snap.data()!;
+        final status = data['status'] as String? ?? '';
+        if (status == 'approved' && !_verified) {
+          _pollTimer?.cancel();
+          LocalDataService.setIdentityVerified('license');
+          UserSession.updateField('isVerified', 'true');
+          UserSession.updateField('verificationStatus', 'approved');
+          _checkCtrl.forward();
+          setState(() {
+            _verified = true;
+            _step = 2;
+          });
+        } else if (status == 'rejected' && _step != 4) {
+          _pollTimer?.cancel();
+          final reason = data['reason'] as String? ?? 'Verification was not approved';
+          UserSession.updateField('verificationStatus', 'rejected');
+          setState(() {
+            _rejectionReason = reason;
+            _step = 4;
+          });
+        }
+      }, onError: (_) {
+        // Firestore unavailable — polling still covers this case
+      });
+    }).catchError((_) {});
   }
 
   void _startPolling() {

@@ -219,7 +219,7 @@ workflows:
           include: true
           source: true
     integrations:
-      app_store_connect: Cruise in Ride
+      app_store_connect: CruiseinRide
     environment:
       ios_signing:
         distribution_type: ad_hoc
@@ -327,7 +327,7 @@ workflows:
     max_build_duration: 120
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: Cruise in Ride
+      app_store_connect: CruiseinRide
     environment:
       ios_signing:
         distribution_type: app_store

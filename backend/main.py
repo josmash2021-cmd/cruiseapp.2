@@ -28,6 +28,7 @@ load_dotenv()  # Load .env file (gitignored)
 import base64
 from fastapi import FastAPI, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator, model_validator
@@ -94,11 +95,11 @@ if IS_SQLITE:
     }
 else:
     # PostgreSQL/Railway optimized settings
-    _engine_kwargs["pool_size"] = 5
-    _engine_kwargs["max_overflow"] = 10
+    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs["max_overflow"] = 20
     _engine_kwargs["pool_pre_ping"] = True  # Check connection before using
-    _engine_kwargs["pool_recycle"] = 300    # Recycle connections after 5 minutes
-    _engine_kwargs["pool_timeout"] = 30     # Wait up to 30s for connection
+    _engine_kwargs["pool_recycle"] = 1800   # Recycle connections after 30 minutes
+    _engine_kwargs["pool_timeout"] = 10     # Fail fast if no connection available
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
@@ -609,6 +610,7 @@ app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_u
 # -- LAYER 1: CORS � Allow mobile-app connections from any origin ----
 # Mobile apps (Flutter) don't send browser-origin headers; CORS does not
 # protect native traffic.  Real security is in L5-L10 (API key, HMAC, JWT).
+app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -641,12 +643,13 @@ async def security_headers_middleware(request: Request, call_next):
     else:
         response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Connection"] = "keep-alive"
     return response
 
 # -- LAYER 3: Rate Limiting (per-IP, anti-DDoS) --------
 _rate_buckets: dict[str, collections.deque] = {}
-_RATE_LIMIT = 60          # max requests �
-_RATE_WINDOW = 60         # � per this many seconds
+_RATE_LIMIT = 300         # max requests per window (mobile polling needs headroom)
+_RATE_WINDOW = 60         # per this many seconds
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):

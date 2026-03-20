@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:http/io_client.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -26,10 +27,18 @@ class ApiService {
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 
-  /// Persistent HTTP client with optimized settings — reuses TCP/TLS connections
-  /// across requests and enables compression. This eliminates the 300-800 ms
-  /// handshake overhead on cellular networks.
-  static final http.Client _client = http.Client();
+  /// Persistent IOClient backed by a tuned HttpClient.
+  /// - autoUncompress: auto-decompresses gzip/deflate responses
+  /// - connectionTimeout: 10 s — fail fast instead of hanging
+  /// - idleTimeout: 90 s — keep TCP/TLS alive between calls (no re-handshake)
+  static final http.Client _client = () {
+    final inner = HttpClient()
+      ..autoUncompress = true
+      ..connectionTimeout = const Duration(seconds: 10)
+      ..idleTimeout = const Duration(seconds: 90)
+      ..maxConnectionsPerHost = 6;
+    return IOClient(inner);
+  }();
 
   /// In-memory active URL. Always Railway.
   static String _activeUrl = _productionUrl;
@@ -299,7 +308,6 @@ class ApiService {
           : SecurityService.deviceFingerprint,
       'X-Client-Version': '1.0.0',
       'ngrok-skip-browser-warning': 'true',
-      if (token != null) 'Authorization': 'Bearer $token',
     };
     return requestHeaders;
   }

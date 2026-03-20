@@ -441,12 +441,7 @@ workflows:
               <key>uploadSymbols</key>
               <true/>
               <key>signingStyle</key>
-              <string>manual</string>
-              <key>provisioningProfiles</key>
-              <dict>
-                  <key>com.cruiseinride.app</key>
-                  <string>cruise</string>
-              </dict>
+              <string>automatic</string>
           </dict>
           </plist>
           PLISTEOF

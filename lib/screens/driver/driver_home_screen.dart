@@ -488,6 +488,83 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   // ═══════════════════════════════════════════════════
+  //  BOTTOM NAVIGATION BAR
+  // ═══════════════════════════════════════════════════
+  Widget _buildBottomNav(dynamic dc) {
+    return NavigationBar(
+      backgroundColor: const Color(0xFF111111),
+      indicatorColor: const Color(0xFFE8C547).withValues(alpha: 0.15),
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      height: 64,
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      selectedIndex: 0,
+      onDestinationSelected: (i) {
+        HapticFeedback.selectionClick();
+        switch (i) {
+          case 0:
+            break; // already home
+          case 1:
+            Navigator.of(context).push(slideFromRightRoute(const DriverEarningsScreen()));
+            break;
+          case 2:
+            Navigator.of(context).push(slideFromRightRoute(const DriverTripHistoryScreen()));
+            break;
+          case 3:
+            Navigator.of(context).push(slideFromRightRoute(const DriverMenuScreen()));
+            break;
+        }
+      },
+      destinations: [
+        NavigationDestination(
+          icon: Icon(Icons.map_outlined, color: Colors.white.withValues(alpha: 0.5), size: 22),
+          selectedIcon: const Icon(Icons.map_rounded, color: Color(0xFFE8C547), size: 22),
+          label: 'Home',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.attach_money_rounded, color: Colors.white.withValues(alpha: 0.5), size: 22),
+          selectedIcon: const Icon(Icons.attach_money_rounded, color: Color(0xFFE8C547), size: 22),
+          label: 'Earnings',
+        ),
+        NavigationDestination(
+          icon: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(Icons.history_rounded, color: Colors.white.withValues(alpha: 0.5), size: 22),
+            ],
+          ),
+          selectedIcon: const Icon(Icons.history_rounded, color: Color(0xFFE8C547), size: 22),
+          label: 'Trips',
+        ),
+        NavigationDestination(
+          icon: _unreadCount > 0
+              ? Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(Icons.person_outline_rounded, color: Colors.white.withValues(alpha: 0.5), size: 22),
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFEF4444),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : Icon(Icons.person_outline_rounded, color: Colors.white.withValues(alpha: 0.5), size: 22),
+          selectedIcon: const Icon(Icons.person_rounded, color: Color(0xFFE8C547), size: 22),
+          label: 'Account',
+        ),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════
   //  BUILD
   // ═══════════════════════════════════════════════════
   @override
@@ -499,6 +576,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final dc = DriverColors.of(context);
     return Scaffold(
       backgroundColor: dc.bg,
+      bottomNavigationBar: _buildBottomNav(dc),
       body: Stack(
         children: [
           // ── Full-screen map ──

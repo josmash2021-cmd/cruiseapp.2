@@ -1177,14 +1177,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       'road-motorway-case': goldDim,
       'road-trunk': gold,
       'road-trunk-case': goldDim,
-      'road-primary': goldDim,
-      'road-primary-case': goldFaint,
-      'road-secondary-tertiary': goldFaint,
-      'road-secondary-tertiary-case': goldFaint,
-      'road-street': '#3D2E00',
-      'road-street-case': '#1E1700',
-      'road-minor': '#2A1F00',
-      'road-minor-case': '#1A1300',
+      'road-primary': '#1B5DB8',
+      'road-primary-case': '#154A99',
+      'road-secondary-tertiary': '#154A99',
+      'road-secondary-tertiary-case': '#0F3A78',
+      'road-street': '#0F3A78',
+      'road-street-case': '#0A2B5C',
+      'road-minor': '#0A2B5C',
+      'road-minor-case': '#071E42',
     };
     for (final entry in roadLayers.entries) {
       try {

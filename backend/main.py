@@ -918,17 +918,6 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         logging.error("[EMAIL] SMTP SSL also failed to %s: %s", to_email, e)
         return False
 
-# -- FCM Token (save device push token) ----------------
-@app.post("/auth/fcm-token", dependencies=[Depends(_verify_api_key)])
-async def save_fcm_token(
-    token: str = Body(..., embed=True),
-    user: User = Depends(_get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    user.fcm_token = token
-    await db.commit()
-    return {"ok": True}
-
 # -- Health check (public, no auth) --------------------
 @app.get("/health")
 async def health():
@@ -1317,6 +1306,17 @@ async def _get_current_user(
     if (user.status or "active") in ("deleted", "blocked"):
         raise HTTPException(403, f"Account {user.status}")
     return user
+
+# -- FCM Token (save device push token) ----------------
+@app.post("/auth/fcm-token", dependencies=[Depends(_verify_api_key)])
+async def save_fcm_token(
+    token: str = Body(..., embed=True),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    user.fcm_token = token
+    await db.commit()
+    return {"ok": True}
 
 def _user_dict(u: User) -> dict:
     # Build masked SSN for dispatch (last 4 only)

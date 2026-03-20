@@ -217,7 +217,7 @@ class UserSession {
     final ext = tempPath.contains('.') ? tempPath.split('.').last : 'jpg';
     // Use user ID in filename to isolate photos per account
     final user = await getUser();
-    final userId = user?['id'] ?? 'unknown';
+    final userId = user?['userId'] ?? 'unknown'; // key is 'userId' not 'id'
     final permanent = File('${dir.path}/user_$userId.$ext');
     // Delete old photo if exists
     if (await permanent.exists()) {
@@ -233,25 +233,52 @@ class UserSession {
     return permanent.path;
   }
 
+  /// Tries to recover a stale absolute path after an iOS app update.
+  /// iOS can change the sandbox container UUID on update, making stored
+  /// absolute paths invalid even though the file exists under the same
+  /// filename in the new documents directory.
+  static Future<String> _healStalePath(String stalePath) async {
+    if (stalePath.isEmpty || kIsWeb) return '';
+    final filename = stalePath.split('/').last;
+    if (filename.isEmpty) return '';
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final healed = File('${dir.path}/$filename');
+      return await healed.exists() ? healed.path : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
   /// Initialize the photo notifier from stored session (call once at startup).
-  /// Falls back to persistent key, then tries downloading from server.
+  /// Falls back to persistent key, heals stale iOS paths, then downloads from server.
   static Future<void> initPhotoNotifier() async {
-    final user = await getUser();
-    final path = user?['photoPath'] ?? '';
-    if (path.isNotEmpty && !kIsWeb && await File(path).exists()) {
-      photoNotifier.value = path;
-      return;
-    }
-    // Fallback: check persistent photo key (survives logout)
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_photoKey) ?? '';
-    if (saved.isNotEmpty && !kIsWeb && await File(saved).exists()) {
-      photoNotifier.value = saved;
-      // Also restore into session
-      await updateField('photoPath', saved);
-      return;
+
+    Future<bool> _tryPath(String p) async {
+      if (p.isEmpty || kIsWeb) return false;
+      if (await File(p).exists()) {
+        photoNotifier.value = p;
+        await updateField('photoPath', p);
+        await prefs.setString(_photoKey, p);
+        return true;
+      }
+      // File missing at stored path — try healing (iOS UUID change on update)
+      final healed = await _healStalePath(p);
+      if (healed.isNotEmpty) {
+        photoNotifier.value = healed;
+        await updateField('photoPath', healed);
+        await prefs.setString(_photoKey, healed);
+        return true;
+      }
+      return false;
     }
-    // Fallback: download from server (works across devices)
+
+    final user = await getUser();
+    if (await _tryPath(user?['photoPath'] ?? '')) return;
+    if (await _tryPath(prefs.getString(_photoKey) ?? '')) return;
+
+    // Final fallback: download from server (works after reinstall / new device)
     try {
       final me = await ApiService.getMe();
       final serverUrl = me?['photo_url'] as String?;

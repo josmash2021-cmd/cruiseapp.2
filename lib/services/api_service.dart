@@ -20,9 +20,6 @@ import '../config/env.dart';
 class ApiService {
   // ── Known endpoints ────────────────────────────────────────────────────────
 
-  /// Localhost — for development on same machine
-  static const String _localUrl = 'http://localhost:8000';
-
   /// Production Railway URL — works from any network (cellular, WiFi, etc.)
   static const String _productionUrl = 'https://cruiseapp2-production.up.railway.app';
 
@@ -33,8 +30,8 @@ class ApiService {
   /// handshake overhead on cellular networks.
   static final http.Client _client = http.Client();
 
-  /// In-memory active URL. Populated by [init]; defaults to production for release builds.
-  static String _activeUrl = kReleaseMode ? _productionUrl : _localUrl;
+  /// In-memory active URL. Always Railway.
+  static String _activeUrl = _productionUrl;
 
   /// Returns the URL currently in use by all API calls.
   static String get activeServerUrl => _activeUrl;
@@ -61,8 +58,7 @@ class ApiService {
     if (saved != null && saved.isNotEmpty && !_isLocalUrl(saved)) {
       _activeUrl = saved;
     } else {
-      // Default to localhost for development - will auto-switch to production if localhost fails
-      _activeUrl = _localUrl;
+      _activeUrl = _productionUrl;
     }
 
     // Try to read the latest tunnel URL from Firestore (written by startup
@@ -114,7 +110,7 @@ class ApiService {
     List<String>? candidates,
     Duration timeout = const Duration(seconds: 5),
   }) async {
-    const _probeHeaders = {
+    const probeHeaders = {
       'Accept': 'application/json',
       'ngrok-skip-browser-warning': 'true',
     };
@@ -123,8 +119,8 @@ class ApiService {
     // When Firestore has a dynamic URL, skip Railway so the configured
     // backend always wins (Railway health returns 200 even when broken).
     final allCandidates = candidates ?? (_dynamicTunnelUrl != null
-        ? [_dynamicTunnelUrl!, _localUrl]
-        : [_productionUrl, _localUrl, _activeUrl]);
+        ? [_dynamicTunnelUrl!]
+        : [_productionUrl, _activeUrl]);
     final urls = allCandidates
         .where((u) => u.isNotEmpty)
         .toSet()
@@ -136,7 +132,7 @@ class ApiService {
 
       for (final url in urls) {
         _client
-            .get(Uri.parse('$url/health'), headers: _probeHeaders)
+            .get(Uri.parse('$url/health'), headers: probeHeaders)
             .timeout(timeout)
             .then((res) {
               if (!completer.isCompleted && res.statusCode == 200) {

@@ -502,16 +502,14 @@ class RideOptionsSheet extends StatelessWidget {
     
     switch (type) {
       case 'suburban':
-        imagePath = 'assets/images/cruise_3.png';
-        break;
-      case 'camry':
-        imagePath = 'assets/images/cruise_7.png';
+        imagePath = 'assets/images/car_suv.png';
         break;
       case 'fusion':
-        imagePath = 'assets/images/cruise_6.png';
+        imagePath = 'assets/images/car_comfort.png';
         break;
+      case 'camry':
       default:
-        imagePath = 'assets/images/cruise_7.png';
+        imagePath = 'assets/images/car_sedan.png';
     }
     
     return Image.asset(

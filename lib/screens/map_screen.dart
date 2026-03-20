@@ -2447,6 +2447,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 )),
                 zoom: 14,
               ),
+              scaleBar: mapbox.ScaleBarSettings(enabled: false),
+              compass: mapbox.CompassSettings(enabled: false),
+              attribution: mapbox.AttributionSettings(enabled: false),
+              logo: mapbox.LogoSettings(enabled: false),
               onMapCreated: _onMapCreated,
               onScrollListener: (_) => _onCameraMoveStarted(),
               onTapListener: (mapbox.MapContentGestureContext ctx) {
@@ -6341,116 +6345,190 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   /// Driver info card shown when driver is found
   Widget _matchingDriverCard() {
+    // Pick the right top-view car image based on ride type
+    final rn = _rides[_selectedRide].name.toLowerCase();
+    final carAsset = rn.contains('suv') || rn.contains('suburban')
+        ? 'assets/images/car_suv.png'
+        : rn.contains('comfort') || rn.contains('fusion')
+            ? 'assets/images/car_comfort.png'
+            : 'assets/images/car_sedan.png';
+
     return Container(
       key: const ValueKey('driver'),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
       decoration: BoxDecoration(
-        color: _gold.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _gold.withValues(alpha: 0.15)),
-      ),
-      child: Row(
-        children: [
-          // Driver avatar
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [_gold, _gold.withValues(alpha: 0.6)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: Center(
-              child: Text(
-                _driverName.isNotEmpty ? _driverName[0].toUpperCase() : '?',
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _gold.withValues(alpha: 0.25), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: _gold.withValues(alpha: 0.08),
+            blurRadius: 20,
+            spreadRadius: 2,
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        ],
+      ),
+      child: Column(
+        children: [
+          // ── Top: checkmark + title ──
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _gold.withValues(alpha: 0.15),
+                  border: Border.all(color: _gold.withValues(alpha: 0.4)),
+                ),
+                child: Icon(Icons.check_rounded, color: _gold, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        _driverName,
-                        style: TextStyle(
-                          color: _c.textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                    Text(
+                      S.of(context).driverFound,
+                      style: TextStyle(
+                        color: _gold,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.2,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star_rounded, color: _gold, size: 14),
-                          const SizedBox(width: 2),
-                          Text(
-                            _driverRating.toStringAsFixed(1),
-                            style: TextStyle(
-                              color: _gold,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      S.of(context).driverOnTheWay(_driverName.split(' ').first),
+                      style: TextStyle(
+                        color: _c.textSecondary,
+                        fontSize: 12,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  _driverCar.isNotEmpty
-                      ? _driverCar
-                      : _rides[_selectedRide].name,
-                  style: TextStyle(
-                    color: _gold,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // ── Car image with shadow ──
+          Container(
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Shadow ellipse
+                Positioned(
+                  bottom: 8,
+                  child: Container(
+                    width: 100,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(50),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          blurRadius: 18,
+                          spreadRadius: 4,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Car image
+                Image.asset(
+                  carAsset,
+                  height: 70,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.directions_car_rounded,
+                    size: 48,
+                    color: _c.textSecondary,
                   ),
                 ),
               ],
             ),
           ),
-          if (_driverPlate.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                _driverPlate,
-                style: TextStyle(
-                  color: _c.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
+          const SizedBox(height: 12),
+          // ── Car info + plate ──
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.directions_car_rounded, size: 15, color: _c.textSecondary),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _driverCar.isNotEmpty ? _driverCar : _rides[_selectedRide].name,
+                          style: TextStyle(
+                            color: _c.textPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: 8),
+              // Rating
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _gold.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.star_rounded, color: _gold, size: 15),
+                    const SizedBox(width: 4),
+                    Text(
+                      _driverRating.toStringAsFixed(1),
+                      style: TextStyle(
+                        color: _gold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_driverPlate.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    _driverPlate,
+                    style: TextStyle(
+                      color: _c.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
       ),
     );

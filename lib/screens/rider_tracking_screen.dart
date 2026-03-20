@@ -11,8 +11,6 @@ import '../config/mapbox_config.dart';
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
-import '../navigation/car_icon_loader.dart';
-import '../navigation/navatar_loader.dart';
 import '../services/api_service.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
@@ -78,16 +76,34 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
-  mapbox.PointAnnotation? _carAnnot;
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
   mapbox.PolylineAnnotation? _fullRouteAnnot;
   mapbox.PolylineAnnotation? _remainingRouteAnnot;
-  Uint8List? _carIconBytes;
-  List<Uint8List>? _navCarSprites;
   double _cameraBearing = 0;
   Uint8List? _pickupPinBytes;
   Uint8List? _dropoffPinBytes;
+
+  // ── Car marker using GeoJSON source (correct approach for v10 SDK) ──
+  Uint8List? _carIconBytes;
+  Uint8List? _carShadowBytes; // Sombra difuminada
+  String _currentCarType = '';
+  static const String _carSourceId = 'car-source';
+  static const String _carLayerId = 'car-layer';
+  static const String _carImageId = 'car-image';
+  static const String _carShadowSourceId = 'car-shadow-source';
+  static const String _carShadowLayerId = 'car-shadow-layer';
+  static const String _carShadowImageId = 'car-shadow-image';
+  bool _carImageAdded = false;
+  bool _carShadowAdded = false;
+
+  // ── Car entrance animation (transición de formación profesional) ──
+  bool _carEntranceStarted = false;
+  bool _carEntranceComplete = false;
+  double _carEntranceProgress = 0.0; // 0.0 a 1.0
+  static const double _entranceDuration = 800.0; // ms
+  DateTime? _entranceStartTime;
+  Timer? _entranceTimer;
 
   _TrackPhase _phase = _TrackPhase.arriving;
   bool _greetingSent = false;
@@ -138,10 +154,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   late AnimationController _etaPulse;
 
   String get _vehicleAsset {
+    final rn = widget.rideName.toLowerCase();
     final m = widget.vehicleModel.toLowerCase();
-    if (m.contains('suburban')) return 'assets/images/suburban.png';
-    if (m.contains('fusion')) return 'assets/images/fusion.png';
-    return 'assets/images/camry.png';
+    if (rn.contains('suv') || rn.contains('suburban') || m.contains('suburban')) {
+      return 'assets/images/car_suv.png';
+    }
+    if (rn.contains('comfort') || rn.contains('fusion') || m.contains('fusion')) {
+      return 'assets/images/car_comfort.png';
+    }
+    return 'assets/images/car_sedan.png';
   }
 
   @override
@@ -151,9 +172,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
+    // Car icon loading removed - no car markers on rider map
+    // Load car PNG based on ride type
     _loadCarIcon();
-    _loadNavSprites();
-    _initFromPersistence(); // Restore state if resuming
+    _initFromPersistence();
     _interpTimer = Timer.periodic(
       const Duration(milliseconds: 16),
       _interpolate,
@@ -226,13 +248,32 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void _onRealDriverLocation(LatLng ll) {
     if (ll.latitude == 0 && ll.longitude == 0) return;
 
-    // Project real driver position onto the route polyline to get _tgtTraveledM
-    // so the interpolation timer smoothly animates the car along the route.
+    bool usedRouteProjection = false;
+    
+    // Try to project onto route for smooth animation
     if (_segDist.isNotEmpty && _routePts.length >= 2) {
-      _tgtTraveledM = _projectOntoRoute(ll);
+      final projectedM = _projectOntoRoute(ll);
+      final distToStart = _hav(ll, _routePts.first) * 1609.34;
+      
+      // Only use projection if it's reasonable
+      if (projectedM > 0 || distToStart < 100) {
+        _tgtTraveledM = projectedM.clamp(0.0, _segDist.last);
+        usedRouteProjection = true;
+      }
+    }
+    
+    // Fallback: if projection didn't work, move car directly
+    if (!usedRouteProjection) {
+      _animPos = ll;
+      _driverPos = ll;
+      // Calculate bearing from previous position if we have one
+      if (_driverPos.latitude != 0 && _driverPos.longitude != 0) {
+        final newBearing = _bearing(_driverPos, ll);
+        if (newBearing != 0) _animBearing = newBearing;
+      }
     }
 
-    // Update distance/ETA based on current phase
+    // Update phase and distances
     if (_phase == _TrackPhase.arriving) {
       final dist = _hav(ll, widget.pickupLatLng);
       _distanceMiles = dist;
@@ -260,33 +301,40 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// Project a lat/lng onto the nearest point on the route polyline,
   /// returning the cumulative distance in meters along the route.
   double _projectOntoRoute(LatLng p) {
+    if (_routePts.length < 2) return 0;
+    
     double bestDist = double.infinity;
     double bestM = 0;
 
     for (int i = 0; i + 1 < _routePts.length; i++) {
       final a = _routePts[i];
       final b = _routePts[i + 1];
-      final segLen = _segDist[i + 1] - _segDist[i];
-      if (segLen < 0.01) continue;
+      final segStartM = _segDist[i];
+      final segEndM = _segDist[i + 1];
+      final segLenM = segEndM - segStartM;
+      if (segLenM < 0.01) continue;
 
-      // Project p onto segment a→b using simple lat/lng linear approximation
-      final dx = b.longitude - a.longitude;
-      final dy = b.latitude - a.latitude;
+      // Convert to local coordinate system for accurate projection
+      final dy = (b.latitude - a.latitude) * 111320; // meters per degree latitude
+      final dx = (b.longitude - a.longitude) * 111320 * math.cos(a.latitude * math.pi / 180);
+      final px = (p.longitude - a.longitude) * 111320 * math.cos(a.latitude * math.pi / 180);
+      final py = (p.latitude - a.latitude) * 111320;
+      
       var t = 0.0;
       if (dx != 0 || dy != 0) {
-        t =
-            ((p.longitude - a.longitude) * dx +
-                (p.latitude - a.latitude) * dy) /
-            (dx * dx + dy * dy);
+        final segLen2 = dx * dx + dy * dy;
+        t = (px * dx + py * dy) / segLen2;
         t = t.clamp(0.0, 1.0);
       }
-      final projLat = a.latitude + dy * t;
-      final projLng = a.longitude + dx * t;
+      
+      final projLat = a.latitude + (b.latitude - a.latitude) * t;
+      final projLng = a.longitude + (b.longitude - a.longitude) * t;
+      final proj = LatLng(projLat, projLng);
 
-      final dist = _hav(p, LatLng(projLat, projLng));
+      final dist = _hav(p, proj) * 1609.34; // Convert to meters
       if (dist < bestDist) {
         bestDist = dist;
-        bestM = _segDist[i] + segLen * t;
+        bestM = segStartM + segLenM * t;
       }
     }
 
@@ -488,20 +536,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     LocalDataService.addNotification(title: title, message: body, type: 'ride');
   }
 
-  Future<void> _loadCarIcon() async {
-    // Load car icon based on ride type: SUV (black), Comfort (white), Sedan (black)
-    final bytes = await CarIconLoader.loadForRideBytes(widget.rideName);
-    if (bytes != null) {
-      _carIconBytes = bytes;
-      if (mounted) setState(() {});
-    }
-    await _loadPins();
-  }
-
-  Future<void> _loadNavSprites() async {
-    // Sprites disabled to avoid duplicate ghost cars (use single canvas icon instead)
-    _navCarSprites = null;
-  }
 
   Future<void> _loadPins() async {
     _pickupPinBytes = await _renderGoldPin(
@@ -513,6 +547,211 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       label: widget.dropoffLabel,
     );
     if (mounted) setState(() {});
+  }
+
+  /// Load car PNG based on ride type (SUV, Comfort, Sedan)
+  Future<void> _loadCarIcon() async {
+    final rideName = widget.rideName.toLowerCase();
+    String carAsset;
+    
+    if (rideName.contains('suv') || rideName.contains('suburban')) {
+      carAsset = 'assets/images/car_suv.png';
+    } else if (rideName.contains('comfort') || rideName.contains('fusion')) {
+      carAsset = 'assets/images/car_comfort.png';
+    } else {
+      carAsset = 'assets/images/car_sedan.png';
+    }
+    
+    try {
+      final bytes = await rootBundle.load(carAsset);
+      _carIconBytes = bytes.buffer.asUint8List();
+      _currentCarType = carAsset;
+    } catch (e) {
+      // Fallback to sedan if specific car not found
+      try {
+        final bytes = await rootBundle.load('assets/images/car_sedan.png');
+        _carIconBytes = bytes.buffer.asUint8List();
+        _currentCarType = 'assets/images/car_sedan.png';
+      } catch (_) {}
+    }
+    
+    if (mounted) setState(() {});
+  }
+
+  /// Update car marker using GeoJSON source - con sombra 3D fade
+  Future<void> _updateCarMarkerOnMap() async {
+    if (_map == null || _carIconBytes == null) return;
+    if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+    
+    try {
+      final style = _map!.style;
+      
+      // Generar imagen de sombra si no existe
+      if (_carShadowBytes == null) {
+        _carShadowBytes = _generateShadowImage();
+      }
+      
+      // Add car image to style
+      if (!_carImageAdded) {
+        await style.addStyleImage(
+          _carImageId,
+          1.0,
+          mapbox.MbxImage(
+            width: 64,
+            height: 64,
+            data: _carIconBytes!,
+          ),
+          false,
+          [],
+          [],
+          null,
+        );
+        _carImageAdded = true;
+      }
+      
+      // Add shadow image to style
+      if (!_carShadowAdded) {
+        await style.addStyleImage(
+          _carShadowImageId,
+          1.0,
+          mapbox.MbxImage(
+            width: 80,
+            height: 80,
+            data: _carShadowBytes!,
+          ),
+          false,
+          [],
+          [],
+          null,
+        );
+        _carShadowAdded = true;
+      }
+      
+      // SHADOW SOURCE & LAYER (se crea primero para quedar debajo)
+      final shadowSourceExists = await style.styleSourceExists(_carShadowSourceId);
+      if (!shadowSourceExists) {
+        final shadowGeoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{}}]}';
+        await style.addSource(
+          mapbox.GeoJsonSource(id: _carShadowSourceId, data: shadowGeoJson),
+        );
+        
+        final shadowLayer = mapbox.SymbolLayer(
+          id: _carShadowLayerId,
+          sourceId: _carShadowSourceId,
+          iconImage: _carShadowImageId,
+          iconSize: 1.2,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconAllowOverlap: true,
+          iconIgnorePlacement: true,
+          iconOpacity: 0.6,
+        );
+        await style.addLayer(shadowLayer);
+      } else {
+        // Update shadow position
+        final shadowGeoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{}}]}';
+        final shadowSource = await style.getSource(_carShadowSourceId);
+        if (shadowSource != null) {
+          (shadowSource as mapbox.GeoJsonSource).updateGeoJSON(shadowGeoJson);
+        }
+      }
+      
+      // CAR SOURCE & LAYER (se crea después para quedar encima)
+      final sourceExists = await style.styleSourceExists(_carSourceId);
+      if (!sourceExists) {
+        final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{"bearing":${_animBearing}}}]}';
+        await style.addSource(
+          mapbox.GeoJsonSource(id: _carSourceId, data: geoJson),
+        );
+        
+        final layer = mapbox.SymbolLayer(
+          id: _carLayerId,
+          sourceId: _carSourceId,
+          iconImage: _carImageId,
+          iconSize: 1.0 * _carEntranceProgress, // Aplicar escala de animación de entrada
+          iconOpacity: _carEntranceProgress, // Fade in simultáneo
+          iconRotate: _animBearing,
+          iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
+          iconAllowOverlap: true,
+          iconIgnorePlacement: true,
+        );
+        await style.addLayer(layer);
+        
+        // Iniciar animación de entrada inmediatamente después de crear el carro
+        _startCarEntranceAnimation();
+      } else {
+        // Update car position
+        final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{"bearing":${_animBearing}}}]}';
+        final source = await style.getSource(_carSourceId);
+        if (source != null) {
+          (source as mapbox.GeoJsonSource).updateGeoJSON(geoJson);
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Inicia la animación de entrada del carro - transición profesional estilo "formación"
+  void _startCarEntranceAnimation() {
+    if (_carEntranceStarted || _carEntranceComplete) return;
+    
+    _carEntranceStarted = true;
+    _entranceStartTime = DateTime.now();
+    
+    // Animar a 60fps durante 800ms
+    _entranceTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      if (_entranceStartTime == null) {
+        timer.cancel();
+        return;
+      }
+      
+      final elapsed = DateTime.now().difference(_entranceStartTime!).inMilliseconds;
+      final progress = (elapsed / _entranceDuration).clamp(0.0, 1.0);
+      
+      // Easing curve elástico (bounce out)
+      _carEntranceProgress = _elasticOut(progress);
+      
+      // Redibujar el carro con la nueva escala
+      _updateCarMarkerOnMap();
+      
+      if (progress >= 1.0) {
+        _carEntranceComplete = true;
+        timer.cancel();
+        _entranceTimer = null;
+      }
+    });
+  }
+
+  /// Elastic bounce easing - para efecto "formación" profesional
+  double _elasticOut(double t) {
+    const p = 0.3;
+    return math.pow(2.0, -10 * t) * math.sin((t - p / 4) * (2 * math.pi) / p) + 1.0;
+  }
+
+  /// Ease out cubic - para transición suave final
+  double _easeOutCubic(double t) {
+    return 1.0 - math.pow(1.0 - t, 3);
+  }
+
+  /// Genera imagen de sombra con efecto fade/blur
+  Uint8List _generateShadowImage() {
+    const size = 80;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
+    
+    // Dibujar círculo negro difuminado (sombra)
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15);
+    
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2 + 5), // Ligeramente desplazada hacia abajo
+      size * 0.35,
+      shadowPaint,
+    );
+    
+    final picture = recorder.endRecording();
+    final img = picture.toImageSync(size, size);
+    final byteData = img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
   }
 
   /// Detect location type from address label for contextual icon
@@ -820,7 +1059,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // Compute position from restored traveled distance so we resume
     // at the correct point on the route (not back at pickup).
     if (_segDist.isNotEmpty && _traveledM > 0) {
-      final (pos, brg) = _posAtDist(_traveledM);
+      final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
       _driverPos = pos;
       _animPos = pos;
       _animBearing = brg;
@@ -888,49 +1127,103 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void _interpolate(Timer t) {
     if (!mounted || _segDist.isEmpty) return;
 
-    // ── Smoothly advance _traveledM toward _tgtTraveledM along the route ──
-    // 0.10 at 60fps = very smooth, no jumps (~600ms lag)
-    const chase = 0.10;
-    _traveledM += (_tgtTraveledM - _traveledM) * chase;
-    // Clamp small residuals
-    if ((_tgtTraveledM - _traveledM).abs() < 0.05) _traveledM = _tgtTraveledM;
+    // ── Ultra-smooth motion with natural physics ──
+    final diff = _tgtTraveledM - _traveledM;
+    
+    // Variable chase factor: más suave cuando estamos cerca del objetivo
+    // para evitar vibraciones, más rápido cuando estamos lejos
+    final chaseFactor = diff.abs() < 2.0 
+        ? 0.05  // Ultra-suave para ajustes finos
+        : diff.abs() < 10.0 
+            ? 0.08  // Suave para distancias medias
+            : 0.12; // Más rápido para distancias grandes
+    
+    // Aplicar easing cúbico para aceleración/deceleración natural
+    final easedDiff = diff * _easeOutCubic(chaseFactor);
+    _traveledM += easedDiff;
+    
+    // Micro-clamping para precisión final
+    if (diff.abs() < 0.05) _traveledM = _tgtTraveledM;
 
-    // Get exact position & bearing ON the route polyline (no shortcuts)
-    final (pos, brg) = _posAtDist(_traveledM);
-
-    // Smooth bearing interpolation — 0.18 gives fluid turns at 60fps
-    // without overshooting on sharp corners.
-    double db = brg - _animBearing;
+    // Usar posición ultra-suave con look-ahead mejorado
+    final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
+    
+    // ── Bearing ultra-smooth con predicción de curvas ──
+    double targetBearing = brg;
+    if (_segDist.isNotEmpty && _traveledM < _segDist.last - 15) {
+      // Look-ahead múltiple para anticipar curvas suavemente
+      final (_, futureBrg1) = _posAtDistUltraSmooth(_traveledM + 10);
+      final (_, futureBrg2) = _posAtDistUltraSmooth(_traveledM + 20);
+      
+      // Blend de múltiples puntos para transición ultra-suave
+      final blendedFuture = _blendBearings(futureBrg1, futureBrg2, 0.5);
+      targetBearing = _blendBearings(brg, blendedFuture, 0.3);
+    }
+    
+    // Transición suave del bearing con velocidad variable
+    double db = targetBearing - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final nb = (_animBearing + db * 0.18) % 360;
+    
+    final rotEase = db.abs() > 30 ? 0.12 : (db.abs() > 10 ? 0.08 : 0.05);
+    final newBearing = (_animBearing + db * rotEase) % 360;
+    
+    // ── Actualización de posición con micro-interpolación ──
+    _animPos = pos;
+    _animBearing = newBearing;
+    _driverPos = pos;
+    _driverBearing = newBearing;
+    
+    setState(() {});
 
-    // Only rebuild if something changed visually
-    final dLat = (pos.latitude - _animPos.latitude).abs();
-    final dLng = (pos.longitude - _animPos.longitude).abs();
-    final dBrg = (nb - _animBearing).abs();
-    if (dLat > 0.0000001 || dLng > 0.0000001 || dBrg > 0.01) {
-      _animPos = pos;
-      _animBearing = nb;
-      _driverPos = pos;
-      _driverBearing = nb;
-
-      setState(() {});
-    }
-
-    // ── Camera follows car centered during navigation ──
-    if (_map != null && !_userMovedMap) {
-      _programmaticCam = true;
-      // Calculate camera position centered on car with bearing following route
-      final cameraOptions = mapbox.CameraOptions(
-        center: mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude)),
-        bearing: _animBearing,
-        pitch: 45.0, // 3D perspective view
-        zoom: 18.0, // Close zoom to follow car
-      );
-      _map!.setCamera(cameraOptions);
-    }
+    // ── Cámara que muestra ruta completa ──
+    _updateCameraForRoute();
     _updateAnnotations();
+  }
+
+  // ── Cámara con seguimiento ultra-fluido tipo "chase" del carro ──
+  double _camLat = 0.0;
+  double _camLng = 0.0;
+  
+  void _updateCameraForRoute() {
+    if (_map == null || _userMovedMap || _routePts.isEmpty) return;
+    
+    // Inicializar cámara en la primera posición del carro
+    if (_camLat == 0.0 && _camLng == 0.0) {
+      _camLat = _animPos.latitude;
+      _camLng = _animPos.longitude;
+    }
+    
+    // Interpolación extremadamente suave hacia el carro (factor 0.04 = ultra-fluido)
+    final targetLat = _animPos.latitude;
+    final targetLng = _animPos.longitude;
+    
+    _camLat = _camLat + (targetLat - _camLat) * 0.04;
+    _camLng = _camLng + (targetLng - _camLng) * 0.04;
+    
+    // Calcular zoom basado en distancia a destino para ver ruta completa
+    final distToDropoff = _hav(_animPos, widget.dropoffLatLng);
+    double zoom = 16.5;
+    if (distToDropoff > 2.0) zoom = 15.0;
+    if (distToDropoff > 5.0) zoom = 14.0;
+    if (distToDropoff > 10.0) zoom = 13.0;
+    
+    _programmaticCam = true;
+    // Actualización directa sin async - máxima fluidez
+    _map?.setCamera(mapbox.CameraOptions(
+      center: mapbox.Point(coordinates: mapbox.Position(_camLng, _camLat)),
+      zoom: zoom,
+      bearing: _animBearing,
+      pitch: 0.0,
+    ));
+  }
+
+  /// Blend two bearings with smooth interpolation
+  double _blendBearings(double b1, double b2, double t) {
+    double diff = b2 - b1;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    return (b1 + diff * t) % 360;
   }
 
   // ── Update camera target bounds (called from sim tick) ──
@@ -999,9 +1292,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void _recenter() {
     setState(() {
       _userMovedMap = false;
-      _camInitialized = false; // force immediate snap instead of lerp
     });
-    _fitAllPoints();
+    // Mostrar ruta completa con padding apropiado
+    _updateCameraForRoute();
   }
 
   double _hav(LatLng a, LatLng b) {
@@ -1034,6 +1327,70 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _segDist[i] =
           _segDist[i - 1] + _hav(_routePts[i - 1], _routePts[i]) * 1609.34;
     }
+  }
+
+  /// Returns (position, bearing) at a given distance along the route (meters).
+  /// Ultra-smooth version with enhanced interpolation for realistic rolling motion.
+  (LatLng, double) _posAtDistUltraSmooth(double distM) {
+    if (_routePts.isEmpty) return (const LatLng(0, 0), 0);
+    if (distM <= 0) {
+      return (
+        _routePts.first,
+        _bearing(_routePts[0], _routePts[math.min(1, _routePts.length - 1)]),
+      );
+    }
+    final totalM = _segDist.last;
+    if (distM >= totalM) return (_routePts.last, _driverBearing);
+
+    // Binary search for exact segment
+    int lo = 0, hi = _segDist.length - 1;
+    while (lo < hi - 1) {
+      final mid = (lo + hi) >> 1;
+      if (_segDist[mid] <= distM) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+
+    final segLen = _segDist[hi] - _segDist[lo];
+    // Use smooth step interpolation for natural acceleration/deceleration
+    final rawT = segLen > 0.01 ? (distM - _segDist[lo]) / segLen : 0.0;
+    // Apply smoothstep curve: 3t² - 2t³ for ease-in-out effect
+    final t = rawT * rawT * (3.0 - 2.0 * rawT);
+    
+    final a = _routePts[lo];
+    final b = _routePts[hi];
+    final lat = a.latitude + (b.latitude - a.latitude) * t;
+    final lng = a.longitude + (b.longitude - a.longitude) * t;
+    final pos = LatLng(lat, lng);
+
+    // Enhanced bearing calculation with look-ahead for smoother turning
+    // Look ahead 8 meters for more responsive but smooth turning
+    final lookAhead = math.min(distM + 8, totalM);
+    int llo = lo, lhi = hi;
+    if (lookAhead > _segDist[hi]) {
+      llo = hi;
+      lhi = math.min(hi + 1, _segDist.length - 1);
+      while (lhi < _segDist.length - 1 && _segDist[lhi] < lookAhead) {
+        lhi++;
+      }
+    }
+    final lookSegLen = _segDist[lhi] - _segDist[llo];
+    final lookRawT = lookSegLen > 0.01
+        ? (lookAhead - _segDist[llo]) / lookSegLen
+        : 0.0;
+    // Apply smoothstep to look-ahead as well
+    final lookT = lookRawT * lookRawT * (3.0 - 2.0 * lookRawT);
+    
+    final la = _routePts[llo];
+    final lb = _routePts[lhi];
+    final lookPos = LatLng(
+      la.latitude + (lb.latitude - la.latitude) * lookT,
+      la.longitude + (lb.longitude - la.longitude) * lookT,
+    );
+    final brg = _bearing(pos, lookPos);
+    return (pos, brg);
   }
 
   /// Returns (position, bearing) at a given distance along the route (meters).
@@ -1121,18 +1478,33 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           children: [
             RepaintBoundary(
               child: mapbox.MapWidget(
-                styleUri: MapboxConfig.styleDark,
+                key: const ValueKey('rider-map'),
+                styleUri: 'mapbox://styles/mapbox/navigation-night-v1',
                 cameraOptions: mapbox.CameraOptions(
                   center: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
                   zoom: 14.0,
+                  pitch: 0.0,
                 ),
+                scaleBar: mapbox.ScaleBarSettings(enabled: false),
+                compass: mapbox.CompassSettings(enabled: false),
+                attribution: mapbox.AttributionSettings(enabled: false),
+                logo: mapbox.LogoSettings(enabled: false),
+                textureView: true,
+                antialiasing: false,
                 onMapCreated: (ctrl) async {
                   _map = ctrl;
-                  // Hide scale bar, compass and Mapbox logo ornaments
+                  // Ocultar elementos UI para carga más rápida
                   ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
                   ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                   ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                   ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                  
+                  // Precargar tiles alrededor del área de navegación para fluidez instantánea
+                  await ctrl.setTileCacheBudget(
+                    mapbox.TileCacheBudgetOptions(
+                      tileCacheBudgetInTiles: 1000, // Cache grande para fluidez
+                    ),
+                  );
                   
                   // Route polyline below road labels
                   _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
@@ -1143,6 +1515,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   _updateAnnotations();
                 },
                 onScrollListener: (_) {
+                  if (!_programmaticCam) setState(() => _userMovedMap = true);
+                },
+                onScaleListener: (_) {
+                  // Detectar zoom manual del usuario para desactivar seguimiento
                   if (!_programmaticCam) setState(() => _userMovedMap = true);
                 },
               ),
@@ -1329,47 +1705,23 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final polyMgr = _polylineAnnotMgr;
     if (pointMgr == null || polyMgr == null) return;
 
-    // ── Car marker with rotation ──
-    Uint8List? carBytes = _carIconBytes;
-    if (_navCarSprites != null && _navCarSprites!.length == 8) {
-      final viewAngle = _animBearing - _cameraBearing;
-      final idx = NavatarLoader.indexForAngle(viewAngle);
-      carBytes = _navCarSprites![idx];
-    }
-    if (carBytes != null) {
-      if (_carAnnot != null) {
-        try {
-          await pointMgr.update(_carAnnot!..geometry = mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude)));
-          // Update rotation to match bearing (iconRotate in degrees)
-          await pointMgr.update(_carAnnot!..iconRotate = _animBearing);
-        } catch (_) {
-          _carAnnot = null;
-        }
-      }
-      _carAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude)),
-        image: carBytes,
-        iconSize: 1.2,
-        iconRotate: _animBearing,
-      ));
-      // Force car icon to rotate with map alignment
-      try {
-        await _map?.style.setStyleLayerProperty(
-          pointMgr.id, 'icon-rotation-alignment', 'map');
-      } catch (_) {}
-    }
+    // ── Car marker usando GeoJSON source (método correcto) ──
+    await _updateCarMarkerOnMap();
 
     // ── Pickup / dropoff pins (create once) ──
-    if (_pickupAnnot == null && _pickupPinBytes != null) {
+    // Usar los puntos exactos de la ruta para que los pines estén sobre la línea
+    if (_pickupAnnot == null && _pickupPinBytes != null && _routePts.isNotEmpty) {
+      final pickupPos = _routePts.first;
       _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
+        geometry: mapbox.Point(coordinates: mapbox.Position(pickupPos.longitude, pickupPos.latitude)),
         image: _pickupPinBytes!,
         iconSize: 1.05,
       ));
     }
-    if (_dropoffAnnot == null && _dropoffPinBytes != null) {
+    if (_dropoffAnnot == null && _dropoffPinBytes != null && _routePts.isNotEmpty) {
+      final dropoffPos = _routePts.last;
       _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
+        geometry: mapbox.Point(coordinates: mapbox.Position(dropoffPos.longitude, dropoffPos.latitude)),
         image: _dropoffPinBytes!,
         iconSize: 1.05,
       ));
@@ -1380,27 +1732,25 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _fullRouteAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
         geometry: mapbox.LineString(coordinates: _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
         lineColor: const Color(0xFF2A3A5A).value,
-        lineWidth: 4.0,
+        lineWidth: 8.0,
+        lineJoin: mapbox.LineJoin.ROUND,
       ));
     }
 
-    // ── Remaining route polyline (update every frame) ──
-    int idx = 0;
-    if (_segDist.isNotEmpty) {
-      while (idx < _segDist.length - 1 && _segDist[idx + 1] < _traveledM) idx++;
-    }
-    final remaining = [_animPos, ..._routePts.sublist(idx + 1)];
-    if (remaining.length >= 2) {
-      final coords = remaining.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    // ── Remaining route polyline - shows complete path from pickup to dropoff ──
+    // Mostrar ruta completa desde pickup hasta destino
+    final fullRouteCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    if (fullRouteCoords.length >= 2) {
       if (_remainingRouteAnnot != null) {
         try {
-          await polyMgr.update(_remainingRouteAnnot!..geometry = mapbox.LineString(coordinates: coords));
+          await polyMgr.update(_remainingRouteAnnot!..geometry = mapbox.LineString(coordinates: fullRouteCoords));
         } catch (_) { _remainingRouteAnnot = null; }
       }
       _remainingRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: coords),
+        geometry: mapbox.LineString(coordinates: fullRouteCoords),
         lineColor: const Color(0xFF5BA3F5).value,
-        lineWidth: 5.0,
+        lineWidth: 10.0,
+        lineJoin: mapbox.LineJoin.ROUND,
       ));
     }
   }
@@ -1483,7 +1833,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                     child: Row(
                       children: [
                         Text(
-                          _showDetails ? 'Show less' : 'Show more',
+                          _showDetails ? S.of(context).showLess : S.of(context).showMore,
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -1554,16 +1904,19 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   ),
                 ),
               ),
-              if (_phase == _TrackPhase.arriving) ...[
+              // ── Cancel Trip button (show during onTrip as well) ──
+              if (_phase == _TrackPhase.arriving || _phase == _TrackPhase.onTrip) ...[
                 const SizedBox(height: 4),
                 SizedBox(
                   width: double.infinity,
                   height: 40,
                   child: TextButton(
-                    onPressed: _showCancelDialog,
+                    onPressed: _phase == _TrackPhase.onTrip 
+                        ? _showCancelOnTripDialog 
+                        : _showCancelDialog,
                     child: Text(
-                      s.cancelRide,
-                      style: const TextStyle(
+                      S.of(context).cancelTrip,
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFFF3B30),
@@ -1573,6 +1926,146 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 ),
               ],
               const SizedBox(height: 4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Shows cancel confirmation dialog during onTrip phase
+  void _showCancelOnTripDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF3B30).withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.warning_rounded,
+                  color: Color(0xFFFF3B30),
+                  size: 28,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                S.of(context).cancelTripConfirm,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                S.of(context).cancelFeeWarning,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.5),
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF3B30),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    // Cancel the trip
+                    if (widget.tripId != null) {
+                      try {
+                        await ApiService.cancelTrip(widget.tripId!);
+                        LocalDataService.clearActiveRide();
+                      } catch (_) {}
+                    }
+                    if (mounted) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        PageRouteBuilder(
+                          pageBuilder: (_a, _b, _c) => const HomeScreen(),
+                          transitionsBuilder: (_a, anim, _c, child) =>
+                              FadeTransition(opacity: anim, child: child),
+                          transitionDuration: const Duration(milliseconds: 400),
+                        ),
+                        (_) => false,
+                      );
+                    }
+                  },
+                  child: Text(
+                    S.of(context).yesCancelTrip,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFD4A843),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    // Navigate to contact support
+                    Navigator.of(context).push(
+                      slideFromRightRoute(
+                        const ChatScreen(
+                          recipientName: 'Support',
+                          avatarInitial: 'S',
+                          tripId: '',
+                        ),
+                      ),
+                    );
+                  },
+                  child: Text(
+                    S.of(context).contactSupport,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  'No',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withOpacity(0.6),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -1986,7 +2479,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               // ── Percentage tip buttons ──
               Row(
                 children: tipPercents.map((pct) {
-                  final amt = (fare * pct / 100).roundToDouble();
+                  final amt = (fare * pct / 100);
                   final sel = _tipAmount == amt && !_customTip;
                   return Expanded(
                     child: Padding(

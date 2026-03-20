@@ -951,9 +951,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final s = _ctrl.state;
     if (s.route == null) return;
     _showPinLabels = true;
-    _updateRouteAnnotation(s.route!.points);
+    // Force polyline endpoints to land exactly on the pickup/dropoff pins
+    final pts = List<LatLng>.from(s.route!.points);
+    if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
+    if (pts.isNotEmpty && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
+    _updateRouteAnnotation(pts);
     _buildRouteMarkers();
-    _fitRoute(s.route!.points);
+    _fitRoute(pts);
   }
 
   Future<void> _updateRouteAnnotation(List<LatLng> points) async {

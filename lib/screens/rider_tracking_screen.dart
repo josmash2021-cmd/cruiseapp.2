@@ -966,6 +966,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     if (tripRoute.isEmpty) {
       tripRoute = [widget.pickupLatLng, widget.dropoffLatLng];
     }
+    // Force endpoints to exact pin coordinates
+    tripRoute[0] = widget.pickupLatLng;
+    tripRoute[tripRoute.length - 1] = widget.dropoffLatLng;
 
     // 2) Set up route — driver position comes from Firestore in real time
     _pickupIdx = 0;
@@ -1031,6 +1034,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       await _initRoute();
       return;
     }
+    // Force endpoints to exact pin coordinates
+    _routePts[0] = widget.pickupLatLng;
+    _routePts[_routePts.length - 1] = widget.dropoffLatLng;
 
     _buildSegDist();
 
@@ -1705,18 +1711,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
     // ── Pickup / dropoff pins (create once) ──
     // Usar los puntos exactos de la ruta para que los pines estén sobre la línea
-    if (_pickupAnnot == null && _pickupPinBytes != null && _routePts.isNotEmpty) {
-      final pickupPos = _routePts.first;
+    if (_pickupAnnot == null && _pickupPinBytes != null) {
       _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(pickupPos.longitude, pickupPos.latitude)),
+        geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
         image: _pickupPinBytes!,
         iconSize: 1.05,
       ));
     }
-    if (_dropoffAnnot == null && _dropoffPinBytes != null && _routePts.isNotEmpty) {
-      final dropoffPos = _routePts.last;
+    if (_dropoffAnnot == null && _dropoffPinBytes != null) {
       _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(dropoffPos.longitude, dropoffPos.latitude)),
+        geometry: mapbox.Point(coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
         image: _dropoffPinBytes!,
         iconSize: 1.05,
       ));

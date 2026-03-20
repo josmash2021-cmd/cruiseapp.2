@@ -131,9 +131,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// Current traveled distance in meters along the route.
   double _traveledM = 0;
 
-  Timer? _interpTimer;
+  Ticker? _interpTicker;
 
-  /// Target traveled distance (set by sim timer, approached smoothly by interp timer)
+  /// Target traveled distance (set by sim timer, approached smoothly by interp ticker)
   double _tgtTraveledM = 0;
   final double _tgtBrg = 0;
   Timer? _camTimer;
@@ -176,10 +176,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // Load car PNG based on ride type
     _loadCarIcon();
     _initFromPersistence();
-    _interpTimer = Timer.periodic(
-      const Duration(milliseconds: 16),
-      _interpolate,
-    );
+    _interpTicker = createTicker((_) => _interpolate())..start();
     _startRealTimeTracking();
     _startSimIfNeeded();
     // Send greeting notification after 3 seconds
@@ -405,7 +402,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   @override
   void dispose() {
-    _interpTimer?.cancel();
+    _interpTicker?.dispose();
     _camTimer?.cancel();
     _simTimer?.cancel();
     _driverLocSub?.cancel();
@@ -1128,7 +1125,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     await LocalDataService.setActiveRide(updatedRide);
   }
 
-  void _interpolate(Timer t) {
+  // Called every vsync frame via Ticker — GPU-synchronized, zero-jolt movement
+  void _interpolate() {
     if (!mounted || _segDist.isEmpty) return;
 
     // ── Constant-speed advance — zero jolts ──
@@ -1138,26 +1136,25 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final diff = _tgtTraveledM - _traveledM;
     const maxStep = 1.5; // metres per frame ceiling
     if (diff.abs() <= maxStep) {
-      _traveledM = _tgtTraveledM; // snap — no lag, no jolt
+      _traveledM = _tgtTraveledM;
     } else {
-      _traveledM += diff.sign * maxStep; // constant-speed catch-up
+      _traveledM += diff.sign * maxStep;
     }
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
 
-    // ── Bearing: constant-rate smooth rotation ──
+    // ── Bearing: smooth 5% rotation per frame (only car icon rotates, map stays north-up) ──
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    // Fixed 7% rotation per frame — no variable speed, no lurching
-    final newBearing = (_animBearing + db * 0.07) % 360;
+    final newBearing = (_animBearing + db * 0.05) % 360;
 
     _animPos = pos;
     _animBearing = newBearing;
     _driverPos = pos;
     _driverBearing = newBearing;
 
-    setState(() {});
+    // Update map annotations directly — no setState needed (avoids 60fps widget rebuilds)
     _updateCameraForRoute();
     _updateAnnotations();
   }
@@ -1223,11 +1220,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     if (distToDropoff > 10.0) zoom = 13.0;
     
     _programmaticCam = true;
-    // Actualización directa sin async - máxima fluidez
+    // 2D north-up: pitch=0, bearing=0 so map stays flat and readable;
+    // only the car icon sprite rotates to show direction.
     _map?.setCamera(mapbox.CameraOptions(
       center: mapbox.Point(coordinates: mapbox.Position(_camLng, _camLat)),
       zoom: zoom,
-      bearing: _animBearing,
+      bearing: 0.0,
       pitch: 0.0,
     ));
   }

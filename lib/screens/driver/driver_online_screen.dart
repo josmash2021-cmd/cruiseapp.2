@@ -5113,9 +5113,9 @@ Widget _navHeader() {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => MapLauncherService.launch(
-                        _pickupLL.latitude,
-                        _pickupLL.longitude,
+                      onPressed: () => MapLauncherService.navigate(
+                        destLat: _pickupLL.latitude,
+                        destLng: _pickupLL.longitude,
                       ),
                       icon: const Icon(Icons.navigation_rounded, size: 18),
                       label: const Text('NAVIGATE'),
@@ -5460,9 +5460,9 @@ Widget _navHeader() {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => MapLauncherService.launch(
-                        _dropoffLL.latitude,
-                        _dropoffLL.longitude,
+                      onPressed: () => MapLauncherService.navigate(
+                        destLat: _dropoffLL.latitude,
+                        destLng: _dropoffLL.longitude,
                       ),
                       icon: const Icon(Icons.navigation_rounded, size: 18),
                       label: const Text('NAVIGATE'),

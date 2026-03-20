@@ -417,15 +417,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     } else {
       _stopTripPolling();
     }
-  } catch (_) {}
+  }
 
-  // Fetch unread notification count
-  try {
-    final notifs = await ApiService.getNotifications();
-    if (mounted) {
-      setState(() {
-        _unreadCount = notifs.where((n) => n['is_read'] != true).length;
-      });
+  Future<void> _resolveDriverId() async {
+    try {
+      final id = await ApiService.getCurrentUserId();
+      if (id != null && mounted) _driverId = id;
+    } catch (_) {}
+  }
 
   void _startTripPolling() {
     _tripPollTimer?.cancel();

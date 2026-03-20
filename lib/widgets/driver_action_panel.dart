@@ -357,7 +357,7 @@ class DriverActionPanel extends StatelessWidget {
   // Abrir Google Maps con navegación
   void _launchGoogleMaps({double? lat, double? lng}) {
     if (lat != null && lng != null) {
-      MapLauncherService.launch(lat, lng);
+      MapLauncherService.navigate(destLat: lat, destLng: lng);
     }
   }
 

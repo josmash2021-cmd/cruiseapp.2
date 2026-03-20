@@ -365,10 +365,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final fsId = widget.firestoreTripId;
     if (fsId != null && fsId.isNotEmpty) return; // real trip — skip sim
 
-    // Advance ~13 m/s (~30 mph) every 500ms tick
-    const tickMs = 500;
+    // Advance ~13 m/s (~30 mph) every 16ms (60fps) for perfectly smooth motion
+    const tickMs = 16;
     const speedMps = 13.0; // meters per second
-    const advancePerTick = speedMps * (tickMs / 1000);
+    const advancePerTick = speedMps * (tickMs / 1000.0);
 
     _simTimer = Timer.periodic(const Duration(milliseconds: tickMs), (_) {
       if (!mounted || _segDist.isEmpty) return;
@@ -1127,56 +1127,32 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void _interpolate(Timer t) {
     if (!mounted || _segDist.isEmpty) return;
 
-    // ── Ultra-smooth motion with natural physics ──
+    // ── Perfectly smooth constant-speed lerp ──
+    // Since sim already advances tgtTraveledM at 60fps with tiny steps,
+    // we just snap directly — no variable easing that causes jerks.
     final diff = _tgtTraveledM - _traveledM;
-    
-    // Variable chase factor: más suave cuando estamos cerca del objetivo
-    // para evitar vibraciones, más rápido cuando estamos lejos
-    final chaseFactor = diff.abs() < 2.0 
-        ? 0.05  // Ultra-suave para ajustes finos
-        : diff.abs() < 10.0 
-            ? 0.08  // Suave para distancias medias
-            : 0.12; // Más rápido para distancias grandes
-    
-    // Aplicar easing cúbico para aceleración/deceleración natural
-    final easedDiff = diff * _easeOutCubic(chaseFactor);
-    _traveledM += easedDiff;
-    
-    // Micro-clamping para precisión final
-    if (diff.abs() < 0.05) _traveledM = _tgtTraveledM;
-
-    // Usar posición ultra-suave con look-ahead mejorado
-    final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
-    
-    // ── Bearing ultra-smooth con predicción de curvas ──
-    double targetBearing = brg;
-    if (_segDist.isNotEmpty && _traveledM < _segDist.last - 15) {
-      // Look-ahead múltiple para anticipar curvas suavemente
-      final (_, futureBrg1) = _posAtDistUltraSmooth(_traveledM + 10);
-      final (_, futureBrg2) = _posAtDistUltraSmooth(_traveledM + 20);
-      
-      // Blend de múltiples puntos para transición ultra-suave
-      final blendedFuture = _blendBearings(futureBrg1, futureBrg2, 0.5);
-      targetBearing = _blendBearings(brg, blendedFuture, 0.3);
+    if (diff.abs() < 0.001) {
+      _traveledM = _tgtTraveledM;
+    } else {
+      // Constant lerp factor: smooth follow without acceleration artifacts
+      _traveledM += diff * 0.25;
     }
-    
-    // Transición suave del bearing con velocidad variable
-    double db = targetBearing - _animBearing;
+
+    final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
+
+    // ── Bearing: constant-rate smooth rotation ──
+    double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    
-    final rotEase = db.abs() > 30 ? 0.12 : (db.abs() > 10 ? 0.08 : 0.05);
-    final newBearing = (_animBearing + db * rotEase) % 360;
-    
-    // ── Actualización de posición con micro-interpolación ──
+    // Fixed 7% rotation per frame — no variable speed, no lurching
+    final newBearing = (_animBearing + db * 0.07) % 360;
+
     _animPos = pos;
     _animBearing = newBearing;
     _driverPos = pos;
     _driverBearing = newBearing;
-    
-    setState(() {});
 
-    // ── Cámara que muestra ruta completa ──
+    setState(() {});
     _updateCameraForRoute();
     _updateAnnotations();
   }

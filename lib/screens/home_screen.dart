@@ -1332,10 +1332,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                     ],
                                   ),
                                 ),
+                                const SizedBox(width: 12),
+                                Icon(
+                                  Icons.arrow_forward_ios_rounded,
+                                  color: _gold,
+                                  size: 16,
+                                ),
                               ],
                             )
                           // ── NORMAL "Where to?" content ──
                           : Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
                                 Expanded(
                                   child: Column(
@@ -1420,6 +1427,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                         ),
                                       ],
                                     ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // Arrow button
+                                Container(
+                                  width: 52,
+                                  height: 52,
+                                  decoration: BoxDecoration(
+                                    color: _gold,
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: _gold.withValues(alpha: 0.4),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Icon(
+                                    Icons.arrow_forward_rounded,
+                                    color: Colors.black,
+                                    size: 26,
                                   ),
                                 ),
                               ],
@@ -1891,7 +1920,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         'tier': 'VIP',
         'tierShort': 'VIP',
         'desc': 'Luxury SUV with premium amenities',
-        'features': 'Spacious • Leather',
+        'features': 'Spacious • Leather • Snacks & Drinks',
         'idx': 0,
         'accent': _gold,
         'image': 'cruise_3.png',
@@ -2086,29 +2115,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                       
                       // Right side - Car image
-                      Expanded(
-                        flex: 4,
-                        child: ClipRRect(
-                          borderRadius: const BorderRadius.horizontal(
-                            right: Radius.circular(24),
-                          ),
-                          child: Transform.scale(
-                            scale: carScale,
-                            alignment: Alignment.centerLeft,
-                            child: Image.asset(
-                              'assets/images/${v['image']}',
-                              fit: BoxFit.contain,
-                              filterQuality: FilterQuality.high,
-                              alignment: Alignment.centerRight,
-                              cacheWidth: (screenW * 0.45 * carScale * MediaQuery.of(context).devicePixelRatio).toInt(),
-                              errorBuilder: (ctx, err, st) => Container(
-                                color: Colors.transparent,
-                                child: Icon(
-                                  Icons.directions_car_rounded,
-                                  color: accent.withValues(alpha: 0.5),
-                                  size: 50,
-                                ),
-                              ),
+                      SizedBox(
+                        width: screenW * 0.40,
+                        height: 130,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                          child: Image.asset(
+                            'assets/images/${v['image']}',
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                            isAntiAlias: true,
+                            alignment: Alignment.centerRight,
+                            errorBuilder: (ctx, err, st) => Icon(
+                              Icons.directions_car_rounded,
+                              color: accent.withValues(alpha: 0.5),
+                              size: 50,
                             ),
                           ),
                         ),

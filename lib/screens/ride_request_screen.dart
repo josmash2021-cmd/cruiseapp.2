@@ -1989,19 +1989,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         children: [
           // Car image — HD crisp rendering
           SizedBox(
-            width: 64,
-            height: 48,
+            width: 88,
+            height: 60,
             child: Image.asset(
               _carAssetForOption(opt.name),
-              width: 64,
-              height: 48,
               fit: BoxFit.contain,
               filterQuality: FilterQuality.high,
               isAntiAlias: true,
-              cacheWidth: 256,
+              alignment: Alignment.center,
               errorBuilder: (_, e, s) => Icon(
                 Icons.directions_car_rounded,
-                size: 32,
+                size: 36,
                 color: Colors.white.withValues(alpha: 0.5),
               ),
             ),

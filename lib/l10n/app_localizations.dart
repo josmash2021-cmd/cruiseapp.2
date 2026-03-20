@@ -791,6 +791,43 @@ class S {
   String get scheduleSubtitle =>
       _es ? 'Programa un viaje para después' : 'Schedule a ride for later';
 
+  // ── Home Screen Additional ─────────────────────────────────────────────────
+  String get rideInProgressTitle =>
+      _es ? 'Viaje en curso' : 'Ride in progress';
+  String get rideInProgressSubtitle => _es
+      ? 'Toca para continuar tu viaje actual'
+      : 'Tap to resume your current ride';
+  String get chooseRide => _es ? 'Elige un viaje' : 'Choose a ride';
+  String get homeLabel => _es ? 'Casa' : 'Home';
+  String get workLabel => _es ? 'Trabajo' : 'Work';
+  String get addLabel => _es ? 'Agregar' : 'Add';
+  String get place1Label => _es ? 'Lugar 1' : 'Place 1';
+  String get place2Label => _es ? 'Lugar 2' : 'Place 2';
+  String get promoTripsLabel => _es ? 'viajes' : 'rides';
+  String get editAddressLabel => _es ? 'Editar Dirección' : 'Edit Address';
+  String get requestRideLabel => _es ? 'Solicitar Viaje' : 'Request a Ride';
+  String get promoOff => _es ? '10% desc' : '10% off';
+  String get promoTrips => _es ? 'viajes' : 'rides';
+  String get whereTo => _es ? '¿A dónde?' : 'Where to?';
+
+  // ── Ride Request ──────────────────────────────────────────────────────────
+  String get comfortableSedan => _es ? 'Sedán cómodo' : 'Comfortable sedan';
+  String get estFare => _es ? 'tarifa est.' : 'est. fare';
+  String get currentLocation => _es ? 'Ubicación actual' : 'Current location';
+  String get destination => _es ? 'Destino' : 'Destination';
+  String get pleaseSelectDateTime => _es
+      ? 'Por favor selecciona fecha y hora para tu viaje programado'
+      : 'Please select a date and time for your scheduled ride';
+  String get cannotSchedulePast => _es
+      ? 'No se puede programar un viaje en el pasado. Selecciona una fecha y hora futuras.'
+      : 'Cannot schedule a ride in the past. Please select a future date and time.';
+  String get schedule30MinAdvance => _es
+      ? 'Los viajes programados deben ser con al menos 30 minutos de anticipación'
+      : 'Scheduled rides must be at least 30 minutes in advance';
+  String get scheduleMax30Days => _es
+      ? 'No se pueden programar viajes con más de 30 días de anticipación'
+      : 'Cannot schedule rides more than 30 days in advance';
+
   // ── Login Verify ──────────────────────────────────────────────────────────
   String get connectionError => _es ? 'Error de conexión' : 'Connection error';
   String get verifyAndSignIn =>
@@ -851,6 +888,32 @@ class S {
       _es ? 'Mensaje para $name' : 'Message $name';
   String tipFor(String name) =>
       _es ? 'Tu propina para $name' : 'Your tip for $name';
+
+  // ── Pickup Dropoff Search ──────────────────────────────────────────────────
+  String get currentLocationDefault =>
+      _es ? 'Ubicación actual' : 'Current location';
+  String get chooseOnMap => _es ? 'Elegir en mapa' : 'Choose on map';
+  String get setHomeAddress => _es ? 'Establecer dirección de casa' : 'Set home address';
+  String get setWorkAddress => _es ? 'Establecer dirección de trabajo' : 'Set work address';
+  String get pickLocationOnMap => _es ? 'Elige ubicación en el mapa' : 'Pick location on map';
+  String get setAddressFor => _es ? 'Establecer dirección para' : 'Set address for';
+  String searchAddressFor(String place) => _es ? 'Buscar dirección para $place' : 'Search address for $place';
+  String get typeToSearchAddress => _es ? 'Escribe para buscar dirección' : 'Type to search address';
+  String get noResultsFound => _es ? 'No se encontraron resultados' : 'No results found';
+  String get cancelTripConfirm => _es
+      ? '¿Estás seguro de que deseas cancelar este viaje?'
+      : 'Are you sure you want to cancel this trip?';
+  String get cancelFeeWarning => _es
+      ? 'Se te puede cobrar una tarifa de cancelación.'
+      : 'You may be charged a cancellation fee.';
+  String get yesCancelTrip => _es ? 'Sí, Cancelar Viaje' : 'Yes, Cancel Trip';
+  String get contactSupport => _es ? 'Contactar Soporte' : 'Contact Support';
+
+  // ── Chat ──────────────────────────────────────────────────────────────────
+  String get connectionIssueRetrying => _es
+      ? 'Problema de conexión - reintentando...'
+      : 'Connection issue - retrying...';
+  String get retryLabel => _es ? 'Reintentar' : 'Retry';
 
   // ── Trip Receipt ──────────────────────────────────────────────────────────
   String get couldNotSendReceipt => _es
@@ -1843,7 +1906,6 @@ class S {
       _es ? '$percent% de descuento aplicado' : '$percent% discount applied';
   String get selectYourRide => _es ? 'Selecciona tu viaje' : 'Select your ride';
   String get fasterTag => _es ? 'Más rápido' : 'Faster';
-  String chooseRide(String name) => _es ? 'Elegir $name' : 'Choose $name';
   String get pickupNow => _es ? 'Recoger ahora' : 'Pickup now';
   String get pickupLater => _es ? 'Recoger después' : 'Pickup later';
   String get whenNeedRide =>

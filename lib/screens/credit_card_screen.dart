@@ -409,7 +409,7 @@ class _CardBrandLogo extends StatelessWidget {
       case 'unionpay':
         return _buildUnionPayLogo();
       default:
-        return _buildGenericLogo(brand!);
+        return _buildGenericLogo(brand!, isDark);
     }
   }
 
@@ -582,8 +582,7 @@ class _CardBrandLogo extends StatelessWidget {
     );
   }
 
-  Widget _buildGenericLogo(String brandName) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  Widget _buildGenericLogo(String brandName, bool isDark) {
     return Container(
       width: 44,
       height: 28,

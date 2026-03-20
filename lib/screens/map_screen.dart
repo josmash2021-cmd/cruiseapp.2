@@ -3921,7 +3921,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               );
             }
 
-            _updateDriverMarkerFromPosition();
+            if (_driverPosition != null) _animateDriverTo(_driverPosition!);
             _startRideProgressTracking();
             return;
           } else if (status == 'canceled' || status == 'cancelled') {
@@ -4260,7 +4260,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             }
             return;
           }
-          _updateDriverMarkerFromPosition();
+          if (_driverPosition != null) _animateDriverTo(_driverPosition!);
         } catch (e) {
           debugPrint('âš ï¸ Ride tracking: $e');
         }

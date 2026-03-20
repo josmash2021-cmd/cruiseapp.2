@@ -930,8 +930,8 @@ class _ShimmerBadgeState extends State<_ShimmerBadge>
             borderRadius: BorderRadius.circular(6),
             boxShadow: [
               BoxShadow(
-                color: widget.baseColor.withValues(alpha: 0.3 + 0.2 * sin(shimmerProgress * pi * 2)),
-                blurRadius: 8 + 4 * sin(shimmerProgress * pi * 2),
+                color: widget.baseColor.withValues(alpha: 0.3 + 0.2 * sin(shimmerProgress * math.pi * 2)),
+                blurRadius: 8 + 4 * sin(shimmerProgress * math.pi * 2),
                 offset: const Offset(0, 2),
               ),
             ],
@@ -941,7 +941,7 @@ class _ShimmerBadgeState extends State<_ShimmerBadge>
             children: [
               // Sparkle icon
               Transform.scale(
-                scale: 0.8 + 0.2 * sin(shimmerProgress * pi * 3),
+                scale: 0.8 + 0.2 * sin(shimmerProgress * math.pi * 3),
                 child: Icon(
                   widget.isGold ? Icons.star_rounded :
                   widget.isSilver ? Icons.auto_awesome_rounded :

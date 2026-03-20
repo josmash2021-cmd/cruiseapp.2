@@ -277,21 +277,18 @@ class RideOptionsSheet extends StatelessWidget {
     final bool hasShimmer;
     
     if (isSuv) {
-      // SUV → VIP with gold shimmer
       tierColor = const Color(0xFFE8C547);
-      tierLabel = 'VIP';
-      displayName = 'VIP';
+      tierLabel = 'PREMIUM';
+      displayName = 'SUV';
       hasShimmer = true;
     } else if (isCamry) {
-      // Camry → Sedan with silver spark
-      tierColor = const Color(0xFFC0C0C0);
-      tierLabel = 'SILVER';
+      tierColor = const Color(0xFFB8BCC8);
+      tierLabel = 'COMFORT';
       displayName = 'Sedan';
       hasShimmer = true;
     } else {
-      // Fusion → Economy with green savings
-      tierColor = const Color(0xFF4CAF50);
-      tierLabel = 'SAVE';
+      tierColor = const Color(0xFF43A047);
+      tierLabel = 'ECONOMY';
       displayName = 'Economy';
       hasShimmer = true;
     }
@@ -931,11 +928,13 @@ class _ShimmerBadgeState extends State<_ShimmerBadge>
             children: [
               // Sparkle icon
               Transform.scale(
-                scale: 0.8 + 0.2 * sin(shimmerProgress * math.pi * 3),
+                scale: 0.8 + 0.2 * sin(shimmerProgress * math.pi * (widget.isGreen ? 2 : 3)),
                 child: Icon(
-                  widget.isGold ? Icons.star_rounded :
-                  widget.isSilver ? Icons.auto_awesome_rounded :
-                  Icons.eco_rounded,
+                  widget.isGold
+                      ? Icons.star_rounded
+                      : widget.isSilver
+                          ? Icons.auto_awesome_rounded
+                          : Icons.savings_rounded,
                   size: 11,
                   color: Colors.white.withValues(alpha: 0.95),
                 ),
@@ -959,18 +958,21 @@ class _ShimmerBadgeState extends State<_ShimmerBadge>
 
   Color _getShimmerColor(double progress, double position) {
     final base = widget.baseColor;
-    final highlight = widget.isGold
-        ? const Color(0xFFFFD700) // Bright gold
-        : widget.isSilver
-            ? const Color(0xFFFFFFFF) // White silver
-            : const Color(0xFF81C784); // Light green
-    
+    final Color highlight;
+    if (widget.isGold) {
+      highlight = const Color(0xFFFFF4A0); // Bright gold-white
+    } else if (widget.isSilver) {
+      highlight = const Color(0xFFFFFFFF); // Pure white for platinum shimmer
+    } else {
+      highlight = const Color(0xFFA5D6A7); // Light mint green
+    }
+
     final shimmerPos = (progress * 2 + position) % 2;
-    final intensity = shimmerPos < 0.5 
-        ? shimmerPos * 2 
+    final intensity = shimmerPos < 0.5
+        ? shimmerPos * 2
         : (1 - shimmerPos) * 2;
-    
-    return Color.lerp(base, highlight, intensity * 0.5)!;
+
+    return Color.lerp(base, highlight, intensity * 0.65)!;
   }
 
   double sin(double value) => math.sin(value);

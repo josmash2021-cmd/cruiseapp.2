@@ -217,7 +217,16 @@ class _SplashScreenState extends State<SplashScreen>
     // Destination should already be resolved — no black screen gap
     final destination = await destinationFuture;
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(smoothFadeRoute(destination, durationMs: 400));
+    // Instant replace: the splash already faded to opacity-0, so no need
+    // for an additional fade-from-black on the incoming screen.
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => destination,
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        transitionsBuilder: (_, __, ___, child) => child,
+      ),
+    );
   }
 
   /// Computes which screen to navigate to. Runs in parallel with the exit

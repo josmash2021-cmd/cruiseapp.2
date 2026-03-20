@@ -1305,8 +1305,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 ),
               ),
 
-            // ── Simulation Mode Toggle ──
-            if (phase == RiderPhase.idle)
+            // ── Simulation Mode Toggle (debug only) ──
+            if (kDebugMode && phase == RiderPhase.idle)
               Positioned(
                 top: topPad + 70,
                 right: 12,

@@ -23,6 +23,7 @@ import '../config/page_transitions.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/notification_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../services/places_service.dart';
 import 'airport_terminal_sheet.dart';
 import 'credit_card_screen.dart';
@@ -458,12 +459,23 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _applyStartupIntent();
     _loadLinkedPayments();
     _loadPromoState();
+    _registerFcmToken();
     // Start with plan body visible since we begin at plan stage
     Future.delayed(const Duration(milliseconds: 40), () {
       if (mounted && _stage == RideStage.plan) {
         setState(() => _planBodyVisible = true);
       }
     });
+  }
+
+  Future<void> _registerFcmToken() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+      await messaging.requestPermission(alert: true, badge: true, sound: true);
+      final token = await messaging.getToken();
+      if (token != null) ApiService.saveFcmToken(token);
+      messaging.onTokenRefresh.listen((t) => ApiService.saveFcmToken(t));
+    } catch (_) {}
   }
 
   Future<void> _loadLinkedPayments() async {

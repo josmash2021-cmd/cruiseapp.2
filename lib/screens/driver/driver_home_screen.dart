@@ -25,6 +25,7 @@ import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_profile_photo_screen.dart';
 import '../../l10n/app_localizations.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
 
 /// ═══════════════════════════════════════════════════════════════
@@ -138,6 +139,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // Resolve driver ID for trip polling
     _resolveDriverId();
+    _registerFcmToken();
 
     // Delay entrance animations
     Future.delayed(const Duration(milliseconds: 400), () {
@@ -154,6 +156,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _photoUrl = UserSession.photoNotifier.value;
       });
     }
+  }
+
+  Future<void> _registerFcmToken() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+      await messaging.requestPermission(alert: true, badge: true, sound: true);
+      final token = await messaging.getToken();
+      if (token != null) ApiService.saveFcmToken(token);
+      messaging.onTokenRefresh.listen((t) => ApiService.saveFcmToken(t));
+    } catch (_) {}
   }
 
   @override
@@ -405,17 +417,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     } else {
       _stopTripPolling();
     }
-  }
+  } catch (_) {}
 
-  // ═══════════════════════════════════════════════════
-  //  TRIP POLLING (when driver is still online on home screen)
-  // ═══════════════════════════════════════════════════
-  Future<void> _resolveDriverId() async {
-    try {
-      final id = await ApiService.getCurrentUserId();
-      if (id != null && mounted) _driverId = id;
-    } catch (_) {}
-  }
+  // Fetch unread notification count
+  try {
+    final notifs = await ApiService.getNotifications();
+    if (mounted) {
+      setState(() {
+        _unreadCount = notifs.where((n) => n['is_read'] != true).length;
+      });
 
   void _startTripPolling() {
     _tripPollTimer?.cancel();

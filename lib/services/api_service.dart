@@ -1142,6 +1142,51 @@ class ApiService {
     };
   }
 
+  /// Save FCM device token for push notifications.
+  static Future<void> saveFcmToken(String fcmToken) async {
+    try {
+      final token = await getToken();
+      if (token == null) return;
+      await _withRetry(() => _client
+          .post(
+            Uri.parse('$_baseUrl/auth/fcm-token'),
+            headers: _jsonHeaders(token),
+            body: jsonEncode({'token': fcmToken}),
+          )
+          .timeout(const Duration(seconds: 8)));
+    } catch (e) {
+      debugPrint('[ApiService] FCM token save failed: $e');
+    }
+  }
+
+  /// Start Stripe Connect onboarding — returns the onboarding URL.
+  static Future<String> getStripeConnectLink() async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/stripe-connect'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 15));
+    final data = _parse(res);
+    return data['url'] as String;
+  }
+
+  /// Check if driver has completed Stripe Connect onboarding.
+  static Future<Map<String, dynamic>> getStripeConnectStatus() async {
+    final token = await getToken();
+    if (token == null) return {'connected': false};
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/drivers/stripe-connect/status'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    return {'connected': false};
+  }
+
   /// Request a cashout of driver earnings.
   static Future<Map<String, dynamic>> requestCashout({
     required double amount,

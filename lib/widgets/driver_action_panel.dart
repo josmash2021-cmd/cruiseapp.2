@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../navigation/nav_state_machine.dart';
 import '../l10n/app_localizations.dart';
+import '../services/map_launcher_service.dart';
 import 'driver_report_dialog.dart';
 
 /// Indicación de navegación turn-by-turn
@@ -354,9 +355,10 @@ class DriverActionPanel extends StatelessWidget {
   }
 
   // Abrir Google Maps con navegación
-  void _launchGoogleMaps() {
-    // Esto se implementaría con url_launcher
-    // Por ahora es un placeholder
+  void _launchGoogleMaps({double? lat, double? lng}) {
+    if (lat != null && lng != null) {
+      MapLauncherService.launch(lat, lng);
+    }
   }
 
   Widget _buildArrivedAtPickupPanel(BuildContext context, S s) {

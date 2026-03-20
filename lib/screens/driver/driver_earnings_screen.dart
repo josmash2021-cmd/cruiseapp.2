@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/api_service.dart';
 import '../../l10n/app_localizations.dart';
 
@@ -313,6 +314,11 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+
+                  // ── Stripe Connect (Setup Payouts) ──
+                  _StripeConnectButton(),
+
                   const SizedBox(height: 28),
 
                   // ── Recent transactions ──
@@ -623,6 +629,99 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
           ),
         );
       },
+    );
+  }
+}
+
+// ── Stripe Connect Setup Payouts Button ──────────────────────────────────────
+class _StripeConnectButton extends StatefulWidget {
+  @override
+  State<_StripeConnectButton> createState() => _StripeConnectButtonState();
+}
+
+class _StripeConnectButtonState extends State<_StripeConnectButton> {
+  bool _loading = false;
+  bool? _connected;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkStatus();
+  }
+
+  Future<void> _checkStatus() async {
+    try {
+      final s = await ApiService.getStripeConnectStatus();
+      if (mounted) setState(() => _connected = s['connected'] == true);
+    } catch (_) {}
+  }
+
+  Future<void> _startOnboarding() async {
+    setState(() => _loading = true);
+    try {
+      final url = await ApiService.getStripeConnectLink();
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+        _checkStatus();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_connected == true) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A3A2A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF34A853).withValues(alpha: 0.4)),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.check_circle_rounded, color: Color(0xFF34A853), size: 20),
+            SizedBox(width: 10),
+            Text('Payouts Connected',
+                style: TextStyle(
+                    color: Color(0xFF34A853),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15)),
+          ],
+        ),
+      );
+    }
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: OutlinedButton.icon(
+        onPressed: _loading ? null : _startOnboarding,
+        icon: _loading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.account_balance_wallet_rounded, size: 20),
+        label: Text(_loading ? 'Opening...' : 'Setup Payouts (Stripe)',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      ),
     );
   }
 }

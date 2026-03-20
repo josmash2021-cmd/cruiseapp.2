@@ -166,6 +166,7 @@ class User(Base):
     email_changes_count = Column(Integer, default=0)  # max 3 changes allowed
     phone_changes_count = Column(Integer, default=0)  # max 3 changes allowed
     stripe_connect_id = Column(String(100), nullable=True)  # Stripe Connect account ID for driver payouts
+    fcm_token = Column(String(500), nullable=True)  # FCM device token for push notifications
     referral_code = Column(String(20), unique=True, nullable=True)  # User's unique referral code
     referred_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Who referred this user
     total_earnings = Column(Float, default=0.0)  # Driver total lifetime earnings
@@ -416,6 +417,28 @@ except Exception as _fs_err:
     _HAS_FIRESTORE = False
     logging.warning("firestore_sync not available: %s", _fs_err)
 
+
+def _send_fcm_push(token: str, title: str, body: str, data: dict = None):
+    """Send FCM push notification. Silently skips if Firebase not available."""
+    if not _HAS_FIRESTORE or not token:
+        return
+    try:
+        from firebase_admin import messaging as _fcm
+        msg = _fcm.Message(
+            notification=_fcm.Notification(title=title, body=body),
+            data={k: str(v) for k, v in (data or {}).items()},
+            token=token,
+            android=_fcm.AndroidConfig(priority="high"),
+            apns=_fcm.APNSConfig(
+                headers={"apns-priority": "10"},
+                payload=_fcm.APNSPayload(aps=_fcm.Aps(sound="default", badge=1)),
+            ),
+        )
+        _fcm.send(msg)
+        logging.info("[FCM] Push sent to ...%s", token[-8:])
+    except Exception as _e:
+        logging.warning("[FCM] Push failed: %s", _e)
+
 async def _column_missing(conn, table: str, column: str) -> bool:
     """Check if a column is missing from a SQLite table."""
     result = await conn.execute(text(f"PRAGMA table_info({table})"))
@@ -474,6 +497,7 @@ async def _migrate_add_columns(conn):
         ("users", "total_earnings", "FLOAT DEFAULT 0.0"),
         ("users", "pending_balance", "FLOAT DEFAULT 0.0"),
         ("users", "verified_at", "DATETIME"),
+        ("users", "fcm_token", "VARCHAR(500)"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -504,6 +528,7 @@ async def _migrate_postgres(conn):
         ("users", "referred_by", "INTEGER"),
         ("users", "total_earnings", "FLOAT DEFAULT 0.0"),
         ("users", "pending_balance", "FLOAT DEFAULT 0.0"),
+        ("users", "fcm_token", "VARCHAR(500)"),
         ("trips", "cancel_reason", "TEXT"),
         ("trips", "notes", "TEXT"),
         ("trips", "pickup_zone", "TEXT"),
@@ -892,6 +917,17 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
     except Exception as e:
         logging.error("[EMAIL] SMTP SSL also failed to %s: %s", to_email, e)
         return False
+
+# -- FCM Token (save device push token) ----------------
+@app.post("/auth/fcm-token", dependencies=[Depends(_verify_api_key)])
+async def save_fcm_token(
+    token: str = Body(..., embed=True),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    user.fcm_token = token
+    await db.commit()
+    return {"ok": True}
 
 # -- Health check (public, no auth) --------------------
 @app.get("/health")
@@ -2657,6 +2693,31 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         except Exception as e:
             logging.error("[AutoCharge] Failed for trip %s: %s", trip_id, e)
 
+    # ── FCM push notifications ──
+    try:
+        rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
+        rider = rider_res.scalar_one_or_none()
+        if rider and rider.fcm_token:
+            if status == "driver_en_route":
+                _send_fcm_push(rider.fcm_token, title="🚗 Driver On The Way",
+                    body="Your driver is heading to your pickup location.",
+                    data={"type": "driver_en_route", "trip_id": str(trip_id)})
+            elif status == "arrived":
+                _send_fcm_push(rider.fcm_token, title="📍 Driver Arrived",
+                    body="Your driver has arrived at the pickup point!",
+                    data={"type": "driver_arrived", "trip_id": str(trip_id)})
+            elif status == "completed":
+                fare_str = f"${trip.fare:.2f}" if trip.fare else ""
+                _send_fcm_push(rider.fcm_token, title="✅ Trip Completed",
+                    body=f"Your trip is complete. {fare_str} charged.",
+                    data={"type": "trip_completed", "trip_id": str(trip_id)})
+            elif status == "canceled":
+                _send_fcm_push(rider.fcm_token, title="⚠️ Trip Canceled",
+                    body="Your trip has been canceled.",
+                    data={"type": "trip_canceled", "trip_id": str(trip_id)})
+    except Exception as _fcm_err:
+        logging.warning("[FCM] Rider push failed: %s", _fcm_err)
+
     return _trip_dict(trip)
 
 # ═══════════════════════════════════════════════════════
@@ -2841,6 +2902,58 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
         "day_labels": day_labels,
         "transactions": transactions,
     }
+
+# ── Stripe Connect onboarding ──────────────────────────────────────────
+@app.post("/drivers/stripe-connect", dependencies=[Depends(_verify_api_key)])
+async def create_stripe_connect_link(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create or resume a Stripe Connect Express onboarding link for a driver."""
+    if user.role != "driver":
+        raise HTTPException(403, "Only drivers can set up Stripe payouts")
+    if not STRIPE_SECRET:
+        raise HTTPException(503, "Stripe not configured on this server")
+    try:
+        import stripe as _stripe
+        _stripe.api_key = STRIPE_SECRET
+        if not user.stripe_connect_id:
+            account = _stripe.Account.create(
+                type="express",
+                email=user.email or "",
+                capabilities={"transfers": {"requested": True}},
+            )
+            user.stripe_connect_id = account["id"]
+            await db.commit()
+        link = _stripe.AccountLink.create(
+            account=user.stripe_connect_id,
+            refresh_url=f"{PUBLIC_URL}/stripe-refresh",
+            return_url=f"{PUBLIC_URL}/stripe-return",
+            type="account_onboarding",
+        )
+        return {"url": link["url"], "stripe_account_id": user.stripe_connect_id}
+    except Exception as e:
+        logging.error("[StripeConnect] %s", e)
+        raise HTTPException(500, f"Stripe error: {str(e)[:120]}")
+
+@app.get("/drivers/stripe-connect/status", dependencies=[Depends(_verify_api_key)])
+async def get_stripe_connect_status(
+    user: User = Depends(_get_current_user),
+):
+    """Check if driver has completed Stripe Connect onboarding."""
+    if not user.stripe_connect_id or not STRIPE_SECRET:
+        return {"connected": False, "stripe_account_id": None}
+    try:
+        import stripe as _stripe
+        _stripe.api_key = STRIPE_SECRET
+        acct = _stripe.Account.retrieve(user.stripe_connect_id)
+        return {
+            "connected": acct.get("charges_enabled", False),
+            "stripe_account_id": user.stripe_connect_id,
+            "payouts_enabled": acct.get("payouts_enabled", False),
+        }
+    except Exception as e:
+        return {"connected": False, "error": str(e)[:100]}
 
 @app.post("/drivers/cashout", dependencies=[Depends(_verify_api_key)])
 async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -3082,11 +3195,21 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
 
     # Create offer for closest driver
     if drivers_sorted:
-        offer = DispatchOffer(trip_id=trip.id, driver_id=drivers_sorted[0].id)
+        assigned = drivers_sorted[0]
+        offer = DispatchOffer(trip_id=trip.id, driver_id=assigned.id)
         db.add(offer)
         await db.commit()
         await db.refresh(offer)
-        return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": offer.id, "dispatched_to": drivers_sorted[0].id}
+        # ── FCM push to assigned driver ──
+        if assigned.fcm_token:
+            rider_name = f"{user.first_name} {user.last_name}"
+            _send_fcm_push(
+                assigned.fcm_token,
+                title="🚗 New Ride Request",
+                body=f"{rider_name} • {(trip.pickup_address or '')[:50]}",
+                data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
+            )
+        return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": offer.id, "dispatched_to": assigned.id}
 
     return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": None, "dispatched_to": None}
 

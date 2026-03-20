@@ -1894,7 +1894,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         'tier': 'VIP',
         'tierShort': 'VIP',
         'desc': 'Luxury SUV with premium amenities',
-        'features': 'Spacious • Leather • Snacks & Drinks',
+        'features': 'Spacious • Leather • Wi-Fi',
         'idx': 0,
         'accent': _gold,
         'image': 'cruise_3.png',

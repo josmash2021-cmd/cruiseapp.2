@@ -815,20 +815,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
               SliverToBoxAdapter(child: const SizedBox(height: 28)),
 
-              // ━━━ RIDE IN PROGRESS (when active) ━━━
-              if (_activeRide != null)
-                SliverToBoxAdapter(
-                  child: RepaintBoundary(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: _buildRideInProgressCard(),
-                    ),
-                  ),
-                ),
-              if (_activeRide != null)
-                SliverToBoxAdapter(child: const SizedBox(height: 16)),
-
-              // ━━━ HERO: "Where to?" large CTA card ━━━
+              // ━━━ HERO: "Where to?" large CTA card (also shows Ride in Progress inside) ━━━
               SliverToBoxAdapter(
                 child: RepaintBoundary(
                   child: Padding(
@@ -1296,136 +1283,147 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              S.of(context).whereToQuestion,
-                              style: TextStyle(
-                                color: disabled
-                                    ? Colors.white.withValues(alpha: 0.25)
-                                    : isDark
-                                    ? Colors.white
-                                    : const Color(0xFF1C1C1E),
-                                fontSize: 28,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -1,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            if (disabled)
-                              Row(
-                                children: [
-                                  Icon(
-                                    zoneBlocked
-                                        ? Icons.location_off_rounded
-                                        : Icons.lock_rounded,
-                                    color: Colors.white.withValues(alpha: 0.35),
-                                    size: 14,
+                  child: _activeRide != null
+                          // ── RIDE IN PROGRESS inside the Where to card ──
+                          ? Row(
+                              children: [
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: _gold.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      zoneBlocked
-                                          ? S.of(context).noDriversInState
-                                          : S.of(context).verifyIdentityToRide,
-                                      style: TextStyle(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.35,
-                                        ),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(14),
+                                    child: Image.asset(
+                                      'assets/images/logoapp.png',
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (ctx, err, st) => Icon(
+                                        Icons.directions_car_rounded,
+                                        color: _gold,
+                                        size: 24,
                                       ),
-                                      maxLines: 2,
                                     ),
                                   ),
-                                ],
-                              )
-                            else ...[
-                              const SizedBox(height: 4),
-                              // ── Now / Later toggle ──
-                              GestureDetector(
-                                onTap:
-                                    () {}, // absorb tap so parent doesn't fire
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.06),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  padding: const EdgeInsets.all(3),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      _nowLaterPill(
-                                        'Now',
-                                        Icons.bolt_rounded,
-                                        _rideNow,
-                                        () {
-                                          if (!_rideNow) {
-                                            setState(() => _rideNow = true);
-                                          }
-                                        },
+                                      Text(
+                                        S.of(context).rideInProgressTitle,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w800,
+                                        ),
                                       ),
-                                      _nowLaterPill(
-                                        'Later',
-                                        Icons.schedule_rounded,
-                                        !_rideNow,
-                                        () {
-                                          if (_rideNow) {
-                                            setState(() => _rideNow = false);
-                                            _showScheduleSheet();
-                                          }
-                                        },
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        S.of(context).rideInProgressSubtitle,
+                                        style: TextStyle(
+                                          color: Colors.white.withValues(alpha: 0.5),
+                                          fontSize: 13,
+                                        ),
                                       ),
                                     ],
                                   ),
                                 ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: disabled
-                                ? [
-                                    Colors.white.withValues(alpha: 0.08),
-                                    Colors.white.withValues(alpha: 0.04),
-                                  ]
-                                : const [_gold, _goldLight],
-                          ),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: disabled
-                              ? []
-                              : [
-                                  BoxShadow(
-                                    color: _gold.withValues(alpha: 0.4),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 4),
+                              ],
+                            )
+                          // ── NORMAL "Where to?" content ──
+                          : Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        S.of(context).whereToQuestion,
+                                        style: TextStyle(
+                                          color: disabled
+                                              ? Colors.white.withValues(alpha: 0.25)
+                                              : isDark
+                                              ? Colors.white
+                                              : const Color(0xFF1C1C1E),
+                                          fontSize: 28,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -1,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      if (disabled)
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              zoneBlocked
+                                                  ? Icons.location_off_rounded
+                                                  : Icons.lock_rounded,
+                                              color: Colors.white.withValues(alpha: 0.35),
+                                              size: 14,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Expanded(
+                                              child: Text(
+                                                zoneBlocked
+                                                    ? S.of(context).noDriversInState
+                                                    : S.of(context).verifyIdentityToRide,
+                                                style: TextStyle(
+                                                  color: Colors.white.withValues(alpha: 0.35),
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                                maxLines: 2,
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      else ...[
+                                        const SizedBox(height: 4),
+                                        GestureDetector(
+                                          onTap: () {},
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withValues(alpha: 0.06),
+                                              borderRadius: BorderRadius.circular(20),
+                                            ),
+                                            padding: const EdgeInsets.all(3),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                _nowLaterPill(
+                                                  'Now',
+                                                  Icons.bolt_rounded,
+                                                  _rideNow,
+                                                  () {
+                                                    if (!_rideNow) setState(() => _rideNow = true);
+                                                  },
+                                                ),
+                                                _nowLaterPill(
+                                                  'Later',
+                                                  Icons.schedule_rounded,
+                                                  !_rideNow,
+                                                  () {
+                                                    if (_rideNow) {
+                                                      setState(() => _rideNow = false);
+                                                      _showScheduleSheet();
+                                                    }
+                                                  },
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
-                                ],
-                        ),
-                        child: Icon(
-                          disabled
-                              ? (zoneBlocked
-                                    ? Icons.location_off_rounded
-                                    : Icons.lock_rounded)
-                              : Icons.arrow_forward_rounded,
-                          color: disabled
-                              ? Colors.white.withValues(alpha: 0.25)
-                              : Colors.black87,
-                          size: 26,
-                        ),
-                      ),
-                    ],
-                  ),
+                                ),
+                              ],
+                            ),
                 ),
               ),
             ),

@@ -256,212 +256,154 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     bool withHouse = false,
     bool isPickup = true,
   }) async {
-    const double size = 80;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
-
-    const cx = size / 2;
-    const cy = size / 2;
-    const r = size * 0.38;
-
-    // Drop shadow
-    canvas.drawCircle(
-      const Offset(cx, cy + 2),
-      r + 2,
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.35)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
-
-    if (isPickup) {
-      // ── Circle shape for pickup ──
-      canvas.drawCircle(const Offset(cx, cy), r, Paint()..color = _pinColor);
-      canvas.drawCircle(
-        const Offset(cx, cy),
-        r,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..color = Colors.white.withValues(alpha: 0.25),
-      );
-    } else {
-      // ── Rounded square shape for dropoff ──
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: const Offset(cx, cy),
-          width: r * 2,
-          height: r * 2,
-        ),
-        Radius.circular(r * 0.28),
-      );
-      canvas.drawRRect(rect, Paint()..color = _pinColor);
-      canvas.drawRRect(
-        rect,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..color = Colors.white.withValues(alpha: 0.25),
-      );
-    }
-
-    // Inner highlight
-    canvas.drawCircle(
-      Offset(cx - r * 0.2, cy - r * 0.2),
-      r * 0.5,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.15)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
-
-    // White icon on gold pin
-    final iconPaint = Paint()
-      ..color = Colors.white
-      ..isAntiAlias = true;
-
-    if (withHouse) {
-      // House icon
-      final hs = size * 0.10;
-      final roof = Path()
-        ..moveTo(cx, cy - hs * 1.1)
-        ..lineTo(cx - hs * 1.0, cy - hs * 0.1)
-        ..lineTo(cx + hs * 1.0, cy - hs * 0.1)
-        ..close();
-      canvas.drawPath(roof, iconPaint);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTRB(
-            cx - hs * 0.7,
-            cy - hs * 0.1,
-            cx + hs * 0.7,
-            cy + hs * 0.8,
-          ),
-          Radius.circular(hs * 0.08),
-        ),
-        iconPaint,
-      );
-    } else {
-      // Person icon (for pickup)
-      final s = size * 0.10;
-      canvas.drawCircle(Offset(cx, cy - s * 0.6), s * 0.5, iconPaint);
-      canvas.drawRRect(
-        RRect.fromRectAndCorners(
-          Rect.fromLTRB(cx - s * 0.8, cy + s * 0.1, cx + s * 0.8, cy + s * 0.9),
-          topLeft: Radius.circular(s * 0.8),
-          topRight: Radius.circular(s * 0.8),
-          bottomLeft: Radius.circular(s * 0.15),
-          bottomRight: Radius.circular(s * 0.15),
-        ),
-        iconPaint,
-      );
-    }
-
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(size.toInt(), size.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    return byteData!.buffer.asUint8List();
+    return _buildGoldPinBytes(withHouse: withHouse, isPickup: isPickup);
   }
 
-  /// Renders the gold pin as raw PNG bytes (unified with _buildGoldPin).
+  /// Renders a 3D teardrop-style map pin as raw PNG bytes.
+  /// The TIP of the pin is at the BOTTOM CENTER of the image.
+  /// Use iconAnchor: BOTTOM so the tip aligns with the map coordinate.
   Future<Uint8List> _buildGoldPinBytes({
     bool withHouse = false,
     bool isPickup = true,
   }) async {
-    // Renders the pin using Canvas and returns raw PNG bytes.
     final byteRecorder = ui.PictureRecorder();
-    const double size = 80;
-    final canvas = Canvas(byteRecorder, const Rect.fromLTWH(0, 0, size, size));
+    // Larger canvas: 120x140 — extra height for the tail below the bulb
+    const double w = 120;
+    const double h = 140;
+    final canvas = Canvas(byteRecorder, const Rect.fromLTWH(0, 0, w, h));
 
-    const cx = size / 2;
-    const cy = size / 2;
-    const r = size * 0.38;
+    const cx = w / 2;
+    const bulbR = 42.0;       // bulb radius
+    const bulbCy = 50.0;      // center of bulb (upper portion)
+    const tipY = h - 6.0;     // tip of the tail (near bottom of canvas)
 
-    // Drop shadow
-    canvas.drawCircle(
-      const Offset(cx, cy + 2),
-      r + 2,
+    // ── 1. Drop shadow (elongated ellipse below the whole pin) ──
+    canvas.drawOval(
+      Rect.fromCenter(center: const Offset(cx, tipY + 2), width: 28, height: 8),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.35)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..color = Colors.black.withValues(alpha: 0.30)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
 
-    if (isPickup && !withHouse) {
-      canvas.drawCircle(const Offset(cx, cy), r, Paint()..color = _pinColor);
-      canvas.drawCircle(
-        const Offset(cx, cy),
-        r,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..color = Colors.white.withValues(alpha: 0.25),
-      );
-    } else {
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: const Offset(cx, cy),
-          width: r * 2,
-          height: r * 2,
-        ),
-        Radius.circular(r * 0.28),
-      );
-      canvas.drawRRect(rect, Paint()..color = _pinColor);
-      canvas.drawRRect(
-        rect,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..color = Colors.white.withValues(alpha: 0.25),
-      );
-    }
+    // ── 2. Tail (teardrop triangle pointing down) ──
+    final tail = Path()
+      ..moveTo(cx - 18, bulbCy + bulbR * 0.55)
+      ..quadraticBezierTo(cx - 6, tipY - 10, cx, tipY)
+      ..quadraticBezierTo(cx + 6, tipY - 10, cx + 18, bulbCy + bulbR * 0.55)
+      ..close();
+    canvas.drawPath(tail, Paint()..color = _pinColor);
 
+    // ── 3. Outer glow ring behind bulb ──
     canvas.drawCircle(
-      Offset(cx - r * 0.2, cy - r * 0.2),
-      r * 0.5,
+      const Offset(cx, bulbCy),
+      bulbR + 4,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.15)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..color = _pinColor.withValues(alpha: 0.25)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
 
+    // ── 4. Main bulb fill (gradient from bright gold to darker gold) ──
+    final bulbGrad = Paint()
+      ..shader = ui.Gradient.radial(
+        const Offset(cx - bulbR * 0.25, bulbCy - bulbR * 0.25),
+        bulbR * 1.2,
+        [const Color(0xFFFFF0A0), _pinColor, const Color(0xFFB8900A)],
+        [0.0, 0.5, 1.0],
+      );
+    canvas.drawCircle(const Offset(cx, bulbCy), bulbR, bulbGrad);
+
+    // ── 5. 3D highlight — bright top-left specular ──
+    canvas.drawCircle(
+      Offset(cx - bulbR * 0.28, bulbCy - bulbR * 0.28),
+      bulbR * 0.38,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.45)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+    // Small sharp specular dot
+    canvas.drawCircle(
+      Offset(cx - bulbR * 0.22, bulbCy - bulbR * 0.22),
+      bulbR * 0.12,
+      Paint()..color = Colors.white.withValues(alpha: 0.75),
+    );
+
+    // ── 6. Outer border ring ──
+    canvas.drawCircle(
+      const Offset(cx, bulbCy),
+      bulbR,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5
+        ..color = Colors.white.withValues(alpha: 0.40),
+    );
+
+    // ── 7. White icon inside bulb ──
     final iconPaint = Paint()
       ..color = Colors.white
       ..isAntiAlias = true;
+    final iconShadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.18)
+      ..isAntiAlias = true;
 
     if (withHouse) {
-      final hs = size * 0.10;
+      // House icon
+      final hs = bulbR * 0.40;
+      final iconCy = bulbCy + hs * 0.15;
+      // Shadow offset
+      final roofS = Path()
+        ..moveTo(cx + 1, iconCy - hs * 1.05 + 1)
+        ..lineTo(cx - hs + 1, iconCy - hs * 0.05 + 1)
+        ..lineTo(cx + hs + 1, iconCy - hs * 0.05 + 1)
+        ..close();
+      canvas.drawPath(roofS, iconShadowPaint);
       final roof = Path()
-        ..moveTo(cx, cy - hs * 1.1)
-        ..lineTo(cx - hs * 1.0, cy - hs * 0.1)
-        ..lineTo(cx + hs * 1.0, cy - hs * 0.1)
+        ..moveTo(cx, iconCy - hs * 1.05)
+        ..lineTo(cx - hs, iconCy - hs * 0.05)
+        ..lineTo(cx + hs, iconCy - hs * 0.05)
         ..close();
       canvas.drawPath(roof, iconPaint);
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromLTRB(
-            cx - hs * 0.7,
-            cy - hs * 0.1,
-            cx + hs * 0.7,
-            cy + hs * 0.8,
-          ),
-          Radius.circular(hs * 0.08),
+          Rect.fromLTRB(cx - hs * 0.65, iconCy - hs * 0.05, cx + hs * 0.65, iconCy + hs * 0.85),
+          Radius.circular(hs * 0.1),
+        ),
+        iconPaint,
+      );
+    } else if (!isPickup) {
+      // Destination flag / square pin icon
+      final s = bulbR * 0.35;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(cx, bulbCy), width: s * 2, height: s * 2),
+          Radius.circular(s * 0.25),
+        ),
+        iconShadowPaint..color = Colors.black.withValues(alpha: 0.18),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(cx - 1, bulbCy - 1), width: s * 2, height: s * 2),
+          Radius.circular(s * 0.25),
         ),
         iconPaint,
       );
     } else {
-      final s = size * 0.10;
-      canvas.drawCircle(Offset(cx, cy - s * 0.6), s * 0.5, iconPaint);
+      // Person icon for pickup
+      final s = bulbR * 0.38;
+      canvas.drawCircle(Offset(cx, bulbCy - s * 0.52), s * 0.42, iconPaint);
       canvas.drawRRect(
         RRect.fromRectAndCorners(
-          Rect.fromLTRB(cx - s * 0.8, cy + s * 0.1, cx + s * 0.8, cy + s * 0.9),
-          topLeft: Radius.circular(s * 0.8),
-          topRight: Radius.circular(s * 0.8),
-          bottomLeft: Radius.circular(s * 0.15),
-          bottomRight: Radius.circular(s * 0.15),
+          Rect.fromLTRB(cx - s * 0.75, bulbCy + s * 0.02, cx + s * 0.75, bulbCy + s * 0.85),
+          topLeft: Radius.circular(s * 0.75),
+          topRight: Radius.circular(s * 0.75),
+          bottomLeft: Radius.circular(s * 0.12),
+          bottomRight: Radius.circular(s * 0.12),
         ),
         iconPaint,
       );
     }
 
     final pic = byteRecorder.endRecording();
-    final img = await pic.toImage(size.toInt(), size.toInt());
+    final img = await pic.toImage(w.toInt(), h.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
     return byteData!.buffer.asUint8List();
   }
@@ -473,7 +415,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _goldPinIconBytes,
-      iconSize: 1.45,  // Bigger pin size for visibility
+      iconSize: 1.0,
+      iconAnchor: mapbox.IconAnchor.BOTTOM, // tip of teardrop sits on the coordinate
     ));
   }
 
@@ -484,17 +427,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _dropoffPinIconBytes ?? _goldPinIconBytes,
-      iconSize: 1.45,  // Bigger pin size for visibility
+      iconSize: 1.0,
+      iconAnchor: mapbox.IconAnchor.BOTTOM, // tip of teardrop sits on the coordinate
     ));
   }
 
   @override
   void initState() {
     super.initState();
-    _currentPosition = _birminghamDefault;
-    _cameraTarget = _birminghamDefault;
-    _pickupAddress = 'Birmingham, AL';
-    _pickupCtrl.text = _pickupAddress;
+    // Don't pre-set Birmingham — let GPS resolve before centering map
+    _pickupAddress = '';
+    _pickupCtrl.text = '';
     // Pickup annotation set after map is created
     _pickupFocus.addListener(_handleAddressFocusChange);
     _dropoffFocus.addListener(_handleAddressFocusChange);
@@ -2442,10 +2385,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               styleUri: _mapStyleUri,
               cameraOptions: mapbox.CameraOptions(
                 center: mapbox.Point(coordinates: mapbox.Position(
-                  _currentPosition!.longitude,
-                  _currentPosition!.latitude,
+                  _currentPosition?.longitude ?? -86.8104,
+                  _currentPosition?.latitude ?? 33.5186,
                 )),
-                zoom: 14,
+                zoom: _currentPosition != null ? 14 : 3,
               ),
               scaleBar: mapbox.ScaleBarSettings(enabled: false),
               compass: mapbox.CompassSettings(enabled: false),

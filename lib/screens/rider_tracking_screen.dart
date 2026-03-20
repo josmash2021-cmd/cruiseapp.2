@@ -156,10 +156,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   String get _vehicleAsset {
     final rn = widget.rideName.toLowerCase();
     final m = widget.vehicleModel.toLowerCase();
-    if (rn.contains('suv') || rn.contains('suburban') || m.contains('suburban')) {
+    if (rn.contains('vip') || rn.contains('suv') || rn.contains('suburban') || m.contains('suburban')) {
       return 'assets/images/car_suv.png';
     }
-    if (rn.contains('comfort') || rn.contains('fusion') || m.contains('fusion')) {
+    if (rn.contains('comfort') || rn.contains('camry') || rn.contains('fusion') || m.contains('fusion')) {
       return 'assets/images/car_comfort.png';
     }
     return 'assets/images/car_sedan.png';
@@ -554,9 +554,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final rideName = widget.rideName.toLowerCase();
     String carAsset;
     
-    if (rideName.contains('suv') || rideName.contains('suburban')) {
+    if (rideName.contains('vip') || rideName.contains('suv') || rideName.contains('suburban')) {
       carAsset = 'assets/images/car_suv.png';
-    } else if (rideName.contains('comfort') || rideName.contains('fusion')) {
+    } else if (rideName.contains('comfort') || rideName.contains('camry') || rideName.contains('fusion')) {
       carAsset = 'assets/images/car_comfort.png';
     } else {
       carAsset = 'assets/images/car_sedan.png';
@@ -1131,15 +1131,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void _interpolate(Timer t) {
     if (!mounted || _segDist.isEmpty) return;
 
-    // ── Perfectly smooth constant-speed lerp ──
-    // Since sim already advances tgtTraveledM at 60fps with tiny steps,
-    // we just snap directly — no variable easing that causes jerks.
+    // ── Constant-speed advance — zero jolts ──
+    // Sim advances tgtTraveledM ~0.208 m/frame. For tiny diffs snap directly
+    // (perfect smoothness). For large GPS jumps cap at 1.5 m/frame so the
+    // car catches up steadily instead of lurching forward.
     final diff = _tgtTraveledM - _traveledM;
-    if (diff.abs() < 0.001) {
-      _traveledM = _tgtTraveledM;
+    const maxStep = 1.5; // metres per frame ceiling
+    if (diff.abs() <= maxStep) {
+      _traveledM = _tgtTraveledM; // snap — no lag, no jolt
     } else {
-      // Constant lerp factor: smooth follow without acceleration artifacts
-      _traveledM += diff * 0.25;
+      _traveledM += diff.sign * maxStep; // constant-speed catch-up
     }
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);

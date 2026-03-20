@@ -2180,116 +2180,363 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       opacity: _searchingSplash ? 1.0 : 0.0,
       duration: const Duration(milliseconds: 500),
       child: Container(
-        color: const Color(0xFF1A1E23),
+        color: const Color(0xFF0D0D0D),
         child: Stack(
           children: [
-            // Pulsing circle + dot in center of screen
+            // Background gradient
+            Container(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0, -0.3),
+                  radius: 0.8,
+                  colors: [
+                    c.gold.withOpacity(0.08),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+            
+            // Animated radar waves
             Center(
-              child: AnimatedBuilder(
-                animation: _pulseAnim,
-                builder: (context, child) {
-                  // _pulseAnim goes 0.9→1.1, map to 0→1 for the ring
-                  final t = (_pulseAnim.value - 0.9) / 0.2; // 0..1
-                  final ringSize = 60.0 + t * 180.0; // 60→240
-                  final ringAlpha = (1.0 - t).clamp(0.0, 1.0) * 0.35;
-                  return SizedBox(
-                    width: 280,
-                    height: 280,
-                    child: Stack(
+              child: SizedBox(
+                width: 400,
+                height: 400,
+                child: AnimatedBuilder(
+                  animation: _pulseCtrl,
+                  builder: (context, child) {
+                    return Stack(
                       alignment: Alignment.center,
                       children: [
-                        // Expanding ring
+                        // Multiple expanding rings
+                        ...List.generate(4, (index) {
+                          final delay = index * 0.25;
+                          final t = ((_pulseAnim.value - 0.6) / 0.4 + delay) % 1.0;
+                          final ringSize = 80.0 + t * 280.0;
+                          final ringAlpha = (1.0 - t).clamp(0.0, 1.0) * 0.3;
+                          final ringWidth = 2.0 - t * 1.0;
+                          
+                          return Container(
+                            width: ringSize,
+                            height: ringSize,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: c.gold.withOpacity(ringAlpha),
+                                width: ringWidth,
+                              ),
+                            ),
+                          );
+                        }),
+                        
+                        // Inner glow circle
                         Container(
-                          width: ringSize,
-                          height: ringSize,
+                          width: 100,
+                          height: 100,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: ringAlpha),
-                              width: 2.0,
+                            gradient: RadialGradient(
+                              colors: [
+                                c.gold.withOpacity(0.3),
+                                c.gold.withOpacity(0.1),
+                              ],
                             ),
                           ),
                         ),
-                        // Static subtle fill circle
+                        
+                        // Center car icon
                         Container(
                           width: 60,
                           height: 60,
                           decoration: BoxDecoration(
+                            color: const Color(0xFF1A1A1A),
                             shape: BoxShape.circle,
-                            color: Colors.white.withValues(alpha: 0.05),
+                            border: Border.all(
+                              color: c.gold.withOpacity(0.6),
+                              width: 2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: c.gold.withOpacity(0.4),
+                                blurRadius: 20,
+                                spreadRadius: 5,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.local_taxi_rounded,
+                            color: c.gold,
+                            size: 28,
                           ),
                         ),
-                        // Center dot
+                        
+                        // Pulsing dot
                         Container(
-                          width: 10,
-                          height: 10,
-                          decoration: const BoxDecoration(
+                          width: 8,
+                          height: 8,
+                          margin: const EdgeInsets.only(top: 70),
+                          decoration: BoxDecoration(
+                            color: Colors.green,
                             shape: BoxShape.circle,
-                            color: Colors.white,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.green.withOpacity(0.6),
+                                blurRadius: 10,
+                                spreadRadius: 2,
+                              ),
+                            ],
                           ),
                         ),
                       ],
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
-            // Bottom info
+            
+            // Bottom content card
             Positioned(
-              left: 0,
-              right: 0,
+              left: 16,
+              right: 16,
               bottom: 0,
               child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // "Looking for ride" text + progress
-                      Text(
-                        S.of(context).lookingForRide,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white.withValues(alpha: 0.9),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Status text
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A1A1A),
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(
+                          color: c.gold.withOpacity(0.3),
+                          width: 1,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _ctrl.state.selectedOption?.name ?? '',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.white.withValues(alpha: 0.45),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: 200,
-                        child: LinearProgressIndicator(
-                          backgroundColor: Colors.white.withValues(alpha: 0.08),
-                          valueColor: AlwaysStoppedAnimation(c.gold),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextButton(
-                        onPressed: _confirmCancelSearching,
-                        child: Text(
-                          S.of(context).cancel,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white.withValues(alpha: 0.45),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(c.gold),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 10),
+                          Text(
+                            S.of(context).lookingForRide,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Ride info card
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A1A1A),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.08),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 20,
+                            offset: const Offset(0, -4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Ride type and price
+                          Row(
+                            children: [
+                              // Vehicle icon
+                              Container(
+                                width: 56,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  color: c.gold.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: c.gold.withOpacity(0.3),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.local_taxi_rounded,
+                                  color: c.gold,
+                                  size: 28,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _ctrl.state.selectedOption?.name ?? 'Fusion',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _ctrl.state.selectedOption?.description ?? S.of(context).comfortableSedan,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.white.withOpacity(0.5),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '\$${_ctrl.state.selectedOption?.priceEstimate.toStringAsFixed(2) ?? '0.00'}',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w900,
+                                      color: c.gold,
+                                    ),
+                                  ),
+                                  Text(
+                                    S.of(context).estFare,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.white.withOpacity(0.4),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          
+                          const SizedBox(height: 16),
+                          Divider(
+                            height: 1,
+                            color: Colors.white.withOpacity(0.08),
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          // Route info
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildLocationInfo(
+                                  Icons.my_location_rounded,
+                                  _ctrl.state.pickupLabel.isNotEmpty 
+                                      ? _ctrl.state.pickupLabel 
+                                      : S.of(context).currentLocation,
+                                  Colors.green,
+                                ),
+                              ),
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: c.gold.withOpacity(0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.arrow_forward_rounded,
+                                  color: c.gold.withOpacity(0.6),
+                                  size: 20,
+                                ),
+                              ),
+                              Expanded(
+                                child: _buildLocationInfo(
+                                  Icons.location_on_rounded,
+                                  _ctrl.state.dropoffLabel.isNotEmpty
+                                      ? _truncateHalf(_ctrl.state.dropoffLabel)
+                                      : S.of(context).destination,
+                                  c.gold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          
+                          const SizedBox(height: 20),
+                          
+                          // Cancel button
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: TextButton(
+                              onPressed: _confirmCancelSearching,
+                              style: TextButton.styleFrom(
+                                backgroundColor: Colors.white.withOpacity(0.08),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: Text(
+                                S.of(context).cancel,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                 ),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildLocationInfo(IconData icon, String text, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: Colors.white.withOpacity(0.8),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -2606,8 +2853,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       // Validar que scheduledAt no sea null
       if (state.scheduledAt == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please select a date and time for your scheduled ride'),
+          SnackBar(
+            content: Text(S.of(context).pleaseSelectDateTime),
             backgroundColor: Colors.red,
           ),
         );
@@ -2618,8 +2865,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       final now = DateTime.now();
       if (state.scheduledAt!.isBefore(now)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cannot schedule a ride in the past. Please select a future date and time.'),
+          SnackBar(
+            content: Text(S.of(context).cannotSchedulePast),
             backgroundColor: Colors.red,
           ),
         );
@@ -2630,8 +2877,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       final minAdvance = now.add(const Duration(minutes: 30));
       if (state.scheduledAt!.isBefore(minAdvance)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Scheduled rides must be at least 30 minutes in advance'),
+          SnackBar(
+            content: Text(S.of(context).schedule30MinAdvance),
             backgroundColor: Colors.red,
           ),
         );
@@ -2642,8 +2889,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       final maxAdvance = now.add(const Duration(days: 30));
       if (state.scheduledAt!.isAfter(maxAdvance)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cannot schedule rides more than 30 days in advance'),
+          SnackBar(
+            content: Text(S.of(context).scheduleMax30Days),
             backgroundColor: Colors.red,
           ),
         );

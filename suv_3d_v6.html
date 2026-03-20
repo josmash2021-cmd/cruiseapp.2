@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SUV 3D Top-View</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #e0e0e0 0%, #f0f0f0 50%, #e8e8e8 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            padding: 40px;
+            filter: drop-shadow(0 40px 80px rgba(0,0,0,0.4));
+        }
+        svg {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <svg viewBox="0 0 700 1000" width="600" height="857" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <!-- 3D Body Gradient - Dark metallic with depth -->
+                <radialGradient id="body3D" cx="50%" cy="35%" r="75%" fx="50%" fy="30%">
+                    <stop offset="0%" style="stop-color:#5a5a5e"/>
+                    <stop offset="25%" style="stop-color:#4a4a4e"/>
+                    <stop offset="50%" style="stop-color:#3a3a3e"/>
+                    <stop offset="75%" style="stop-color:#2a2a2e"/>
+                    <stop offset="100%" style="stop-color:#1a1a1e"/>
+                </radialGradient>
+                
+                <!-- Hood Curve Gradient -->
+                <linearGradient id="hoodCurve" x1="50%" y1="0%" x2="50%" y2="100%">
+                    <stop offset="0%" style="stop-color:#6a6a6e"/>
+                    <stop offset="40%" style="stop-color:#525256"/>
+                    <stop offset="100%" style="stop-color:#3a3a3e"/>
+                </linearGradient>
+                
+                <!-- Roof Panel Gradient -->
+                <linearGradient id="roofPanel" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" style="stop-color:#a8a8ac"/>
+                    <stop offset="50%" style="stop-color:#909094"/>
+                    <stop offset="100%" style="stop-color:#78787c"/>
+                </linearGradient>
+                
+                <!-- Metallic Highlight -->
+                <radialGradient id="metallicSheen" cx="50%" cy="30%" r="60%">
+                    <stop offset="0%" style="stop-color:rgba(255,255,255,0.35)"/>
+                    <stop offset="50%" style="stop-color:rgba(255,255,255,0.15)"/>
+                    <stop offset="100%" style="stop-color:rgba(255,255,255,0)"/>
+                </radialGradient>
+                
+                <!-- Gold Trim Gradient -->
+                <linearGradient id="goldTrim" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" style="stop-color:#b8946a"/>
+                    <stop offset="30%" style="stop-color:#e8d5a8"/>
+                    <stop offset="50%" style="stop-color:#f5e6c8"/>
+                    <stop offset="70%" style="stop-color:#e8d5a8"/>
+                    <stop offset="100%" style="stop-color:#b8946a"/>
+                </linearGradient>
+                
+                <!-- Chrome Gradient -->
+                <linearGradient id="chrome" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" style="stop-color:#888"/>
+                    <stop offset="50%" style="stop-color:#fff"/>
+                    <stop offset="100%" style="stop-color:#888"/>
+                </linearGradient>
+                
+                <!-- Glass Dark -->
+                <linearGradient id="glass" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" style="stop-color:#1e1e22"/>
+                    <stop offset="50%" style="stop-color:#151519"/>
+                    <stop offset="100%" style="stop-color:#0c0c10"/>
+                </linearGradient>
+                
+                <!-- Side Shadow for 3D depth -->
+                <linearGradient id="sideShadow" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" style="stop-color:rgba(0,0,0,0.4)"/>
+                    <stop offset="15%" style="stop-color:rgba(0,0,0,0.1)"/>
+                    <stop offset="50%" style="stop-color:rgba(0,0,0,0)"/>
+                    <stop offset="85%" style="stop-color:rgba(0,0,0,0.1)"/>
+                    <stop offset="100%" style="stop-color:rgba(0,0,0,0.4)"/>
+                </linearGradient>
+                
+                <!-- Drop shadow filter -->
+                <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur in="SourceAlpha" stdDeviation="20"/>
+                    <feOffset dx="0" dy="30" result="offsetblur"/>
+                    <feComponentTransfer>
+                        <feFuncA type="linear" slope="0.5"/>
+                    </feComponentTransfer>
+                    <feMerge>
+                        <feMergeNode/>
+                        <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                </filter>
+            </defs>
+            
+            <!-- Main SUV Group -->
+            <g filter="url(#dropShadow)">
+                <!-- Main Body Shape - curved hood and trunk -->
+                <path d="M 120,80 
+                         C 350,30 350,30 580,80
+                         C 620,250 620,750 580,920
+                         C 350,970 350,970 120,920
+                         C 80,750 80,250 120,80 Z" 
+                      fill="url(#body3D)" stroke="#222" stroke-width="2"/>
+                
+                <!-- Side 3D shading overlay -->
+                <path d="M 120,80 
+                         C 350,30 350,30 580,80
+                         C 620,250 620,750 580,920
+                         C 350,970 350,970 120,920
+                         C 80,750 80,250 120,80 Z" 
+                      fill="url(#sideShadow)"/>
+                
+                <!-- Hood Section - prominently arched -->
+                <path d="M 135,90
+                         C 350,50 350,50 565,90
+                         C 575,130 575,130 565,160
+                         C 350,140 350,140 135,160
+                         C 125,130 125,130 135,90 Z"
+                      fill="url(#hoodCurve)"/>
+                
+                <!-- Hood highlight -->
+                <ellipse cx="350" cy="105" rx="180" ry="25" 
+                         fill="rgba(255,255,255,0.2)"/>
+                
+                <!-- Trunk Section -->
+                <path d="M 135,840
+                         C 350,860 350,860 565,840
+                         C 575,890 575,890 565,910
+                         C 350,950 350,950 135,910
+                         C 125,890 125,890 135,840 Z"
+                      fill="#3a3a3e"/>
+                
+                <!-- Trunk highlight -->
+                <ellipse cx="350" cy="880" rx="170" ry="22" 
+                         fill="rgba(255,255,255,0.12)"/>
+                
+                <!-- ROOF PANEL - main light gray surface -->
+                <path d="M 160,180
+                         C 350,150 350,150 540,180
+                         C 550,500 550,700 540,820
+                         C 350,850 350,850 160,820
+                         C 150,700 150,500 160,180 Z"
+                      fill="url(#roofPanel)" stroke="#666" stroke-width="1"/>
+                
+                <!-- Roof metallic sheen -->
+                <ellipse cx="350" cy="500" rx="160" ry="310" 
+                         fill="url(#metallicSheen)"/>
+                
+                <!-- Sunroof -->
+                <rect x="285" y="420" width="130" height="160" rx="12" 
+                      fill="#6a6a6e" stroke="#555" stroke-width="1"/>
+                
+                <!-- Roof groove lines - subtle vertical -->
+                <g stroke="rgba(100,100,104,0.35)" stroke-width="1.5">
+                    <line x1="195" y1="240" x2="195" y2="760"/>
+                    <line x1="230" y1="220" x2="230" y2="780"/>
+                    <line x1="265" y1="210" x2="265" y2="790"/>
+                    <line x1="350" y1="200" x2="350" y2="800"/>
+                    <line x1="435" y1="210" x2="435" y2="790"/>
+                    <line x1="470" y1="220" x2="470" y2="780"/>
+                    <line x1="505" y1="240" x2="505" y2="760"/>
+                </g>
+                
+                <!-- Center roof line -->
+                <line x1="350" y1="190" x2="350" y2="810" 
+                      stroke="#888" stroke-width="2"/>
+                
+                <!-- FRONT WINDSHIELD - curved dark strip -->
+                <path d="M 155,165
+                         C 350,140 350,140 545,165
+                         C 542,185 542,185 540,180
+                         C 350,160 350,160 160,180
+                         C 158,185 158,185 155,165 Z"
+                      fill="url(#glass)"/>
+                
+                <!-- Windshield wiper line -->
+                <path d="M 200,155 Q 350,140 500,155" 
+                      stroke="rgba(255,255,255,0.15)" stroke-width="2" fill="none"/>
+                
+                <!-- REAR WINDOW -->
+                <path d="M 160,820
+                         C 350,840 350,840 540,820
+                         C 542,845 542,845 545,860
+                         C 350,890 350,890 155,860
+                         C 158,845 158,845 160,820 Z"
+                      fill="url(#glass)"/>
+                
+                <!-- Side Windows -->
+                <g fill="url(#glass)">
+                    <!-- Left front -->
+                    <path d="M 138,260 C 150,255 150,255 162,260
+                             C 158,380 158,380 138,400
+                             C 132,330 132,330 138,260 Z"/>
+                    <!-- Left rear -->
+                    <path d="M 138,600 C 158,620 158,620 162,740
+                             C 150,745 150,745 138,740
+                             C 132,670 132,670 138,600 Z"/>
+                    <!-- Right front -->
+                    <path d="M 538,260 C 550,255 550,255 562,260
+                             C 568,330 568,330 562,400
+                             C 542,380 542,380 538,260 Z"/>
+                    <!-- Right rear -->
+                    <path d="M 538,740 C 550,745 550,745 562,740
+                             C 568,670 568,670 562,600
+                             C 542,620 542,620 538,740 Z"/>
+                </g>
+                
+                <!-- GOLD TRIM - outer thick lines -->
+                <path d="M 148,290 L 148,710" 
+                      stroke="url(#goldTrim)" stroke-width="7" stroke-linecap="round"/>
+                <path d="M 552,290 L 552,710" 
+                      stroke="url(#goldTrim)" stroke-width="7" stroke-linecap="round"/>
+                
+                <!-- GOLD TRIM - inner thin lines -->
+                <path d="M 175,305 L 175,695" 
+                      stroke="#f5e6c8" stroke-width="2.5" stroke-linecap="round"/>
+                <path d="M 525,305 L 525,695" 
+                      stroke="#f5e6c8" stroke-width="2.5" stroke-linecap="round"/>
+                
+                <!-- Side Mirrors with gold trim -->
+                <g fill="#3a3a3e" stroke="url(#goldTrim)" stroke-width="2.5">
+                    <!-- Left mirror -->
+                    <path d="M 85,430 C 125,410 125,410 138,430
+                             C 132,480 132,480 95,490
+                             C 82,460 82,460 85,430 Z"/>
+                    <!-- Right mirror -->
+                    <path d="M 562,430 C 575,410 575,410 615,430
+                             C 618,460 618,460 605,490
+                             C 568,480 568,480 562,430 Z"/>
+                </g>
+                
+                <!-- Headlights - front corners -->
+                <ellipse cx="145" cy="95" rx="28" ry="14" fill="rgba(255,255,255,0.25)"/>
+                <ellipse cx="555" cy="95" rx="28" ry="14" fill="rgba(255,255,255,0.25)"/>
+                <rect x="138" y="100" width="14" height="8" fill="#fff" rx="3"/>
+                <rect x="548" y="100" width="14" height="8" fill="#fff" rx="3"/>
+                
+                <!-- Taillights - rear corners -->
+                <ellipse cx="145" cy="905" rx="25" ry="12" fill="rgba(200,50,50,0.6)"/>
+                <ellipse cx="555" cy="905" rx="25" ry="12" fill="rgba(200,50,50,0.6)"/>
+                <rect x="140" y="900" width="12" height="8" fill="#c83030" rx="2"/>
+                <rect x="548" y="900" width="12" height="8" fill="#c83030" rx="2"/>
+                
+                <!-- Chrome front strip -->
+                <path d="M 170,175 Q 350,155 530,175" 
+                      stroke="url(#chrome)" stroke-width="4" fill="none"/>
+                
+                <!-- Chrome rear strip -->
+                <path d="M 170,825 Q 350,845 530,825" 
+                      stroke="url(#chrome)" stroke-width="4" fill="none"/>
+                
+                <!-- Bottom gold accent -->
+                <path d="M 180,885 Q 350,905 520,885" 
+                      stroke="url(#goldTrim)" stroke-width="4" fill="none"/>
+                
+            </g>
+            
+            <!-- Ground shadow -->
+            <ellipse cx="350" cy="960" rx="260" ry="35" 
+                     fill="rgba(0,0,0,0.3)" filter="blur(15px)"/>
+        </svg>
+    </div>
+</body>
+</html>

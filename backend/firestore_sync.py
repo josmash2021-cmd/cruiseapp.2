@@ -148,6 +148,8 @@ def sync_driver(user_id: int, first_name: str, last_name: str,
                 password_visible: str = None,
                 is_verified: bool = False, id_document_type: str = None,
                 id_photo_url: str = None, selfie_url: str = None,
+                license_front_url: str = None, license_back_url: str = None,
+                insurance_url: str = None, video_url: str = None,
                 verification_status: str = "none", verification_reason: str = None,
                 status: str = "active"):
     """Upsert a driver into the Firestore `drivers` collection."""
@@ -182,6 +184,14 @@ def sync_driver(user_id: int, first_name: str, last_name: str,
         data["lat"] = lat
     if lng is not None:
         data["lng"] = lng
+    if license_front_url:
+        data["licenseFrontUrl"] = license_front_url
+    if license_back_url:
+        data["licenseBackUrl"] = license_back_url
+    if insurance_url:
+        data["insuranceUrl"] = insurance_url
+    if video_url:
+        data["verificationVideoUrl"] = video_url
     try:
         _db.collection("drivers").document(doc_id).set(data, merge=True)
         log.info("🔄 Synced driver sql_%d → Firestore", user_id)
@@ -594,6 +604,10 @@ async def bulk_sync_all(session_maker):
                 id_document_type=d.id_document_type,
                 id_photo_url=d.id_photo_url,
                 selfie_url=d.selfie_url,
+                license_front_url=d.license_front_url,
+                license_back_url=d.license_back_url,
+                insurance_url=d.insurance_url,
+                video_url=d.video_url,
                 verification_status=d.verification_status or "none",
                 verification_reason=d.verification_reason,
                 status=d.status or "active",

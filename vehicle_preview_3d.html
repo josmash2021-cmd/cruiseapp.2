@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>3D Animated Vehicle Markers</title>
+<style>
+  body { 
+    background: linear-gradient(135deg, #0a0e1a 0%, #1a1e2e 100%); 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    min-height: 100vh; 
+    margin: 0; 
+    gap: 40px; 
+    flex-wrap: wrap;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  .vehicle-card {
+    background: rgba(255,255,255,0.05);
+    border-radius: 20px;
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  canvas { 
+    background: transparent; 
+    filter: drop-shadow(0 10px 30px rgba(0,0,0,0.4));
+  }
+  .label { 
+    color: #fff; 
+    text-align: center; 
+    font-size: 18px; 
+    margin-top: 20px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .sub-label {
+    color: #8a90a0;
+    font-size: 13px;
+    margin-top: 5px;
+  }
+  .rotate-btn {
+    margin-top: 15px;
+    padding: 8px 20px;
+    background: rgba(232,197,71,0.2);
+    border: 1px solid #E8C547;
+    color: #E8C547;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.3s;
+  }
+  .rotate-btn:hover {
+    background: rgba(232,197,71,0.4);
+  }
+</style>
+</head>
+<body>
+
+<div class="vehicle-card">
+  <canvas id="suv" width="180" height="220"></canvas>
+  <div class="label">SUV</div>
+  <div class="sub-label">3D Black with Roof Rails</div>
+  <button class="rotate-btn" onclick="rotateVehicle('suv')">Rotate 45°</button>
+</div>
+
+<div class="vehicle-card">
+  <canvas id="comfort" width="180" height="220"></canvas>
+  <div class="label">Comfort</div>
+  <div class="sub-label">3D White Pearl Metallic</div>
+  <button class="rotate-btn" onclick="rotateVehicle('comfort')">Rotate 45°</button>
+</div>
+
+<div class="vehicle-card">
+  <canvas id="sedan" width="180" height="220"></canvas>
+  <div class="label">Sedan</div>
+  <div class="sub-label">3D Black Metallic</div>
+  <button class="rotate-btn" onclick="rotateVehicle('sedan')">Rotate 45°</button>
+</div>
+
+<script>
+const rotations = { suv: 0, comfort: 0, sedan: 0 };
+
+function rotateVehicle(type) {
+  rotations[type] = (rotations[type] + 45) % 360;
+  drawVehicle(type, document.getElementById(type), rotations[type]);
+}
+
+function drawVehicle(type, canvas, rotation = 0) {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Center and rotate
+  ctx.save();
+  ctx.translate(canvas.width/2, canvas.height/2);
+  ctx.rotate(rotation * Math.PI / 180);
+  ctx.translate(-canvas.width/2, -canvas.height/2);
+  
+  // Scale factor
+  const S = 2.5;
+  ctx.scale(S, S);
+  
+  const w = 72, h = 88;
+  const cx = w/2, cy = h/2;
+  
+  // Define colors based on vehicle type
+  let bodyColors, roofColors, windowColor, isSUV = false;
+  
+  if (type === 'suv') {
+    // Black SUV
+    bodyColors = ['#0E0F12', '#1A1C20', '#252830', '#2E3038', '#252830', '#1A1C20', '#0E0F12'];
+    roofColors = ['#141618', '#1E2024', '#282A30', '#1E2024', '#141618'];
+    windowColor = '#1C2840';
+    isSUV = true;
+  } else if (type === 'comfort') {
+    // White Pearl
+    bodyColors = ['#AEB4BC', '#C8CDD4', '#E2E6EC', '#F0F3F8', '#E2E6EC', '#C8CDD4', '#AEB4BC'];
+    roofColors = ['#CCD0D8', '#DEE2E8', '#F0F3F8', '#DEE2E8', '#CCD0D8'];
+    windowColor = '#243450';
+  } else {
+    // Black Sedan
+    bodyColors = ['#0B0D14', '#131828', '#1C253C', '#131828', '#0B0D14'];
+    roofColors = ['#0E1522', '#182030', '#20283E', '#182030', '#0E1522'];
+    windowColor = '#1C2C44';
+  }
+  
+  // Body dimensions
+  const front = 8, rear = 80, bw = 28;
+  const bodyMid = (front + rear) / 2;
+  
+  // Drop shadow
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(cx, bodyMid + 35, bw * 1.3, 18, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.filter = 'blur(8px)';
+  ctx.fill();
+  ctx.restore();
+  
+  // Main body path
+  ctx.beginPath();
+  ctx.moveTo(cx - bw * 0.9, front + 3);
+  // Front curve
+  ctx.quadraticCurveTo(cx - bw, front + 12, cx - bw * 0.95, front + 18);
+  // Side to rear
+  ctx.lineTo(cx - bw * 0.9, rear - 15);
+  // Rear curve
+  ctx.quadraticCurveTo(cx - bw * 0.7, rear, cx, rear);
+  ctx.quadraticCurveTo(cx + bw * 0.7, rear, cx + bw * 0.9, rear - 15);
+  ctx.lineTo(cx + bw * 0.95, front + 18);
+  ctx.quadraticCurveTo(cx + bw, front + 12, cx + bw * 0.9, front + 3);
+  ctx.closePath();
+  
+  // Body gradient (side metallic)
+  const bodyGrad = ctx.createLinearGradient(cx - bw, bodyMid, cx + bw, bodyMid);
+  bodyColors.forEach((c, i) => bodyGrad.addColorStop(i / (bodyColors.length - 1), c));
+  ctx.fillStyle = bodyGrad;
+  ctx.fill();
+  
+  // Body outline
+  ctx.strokeStyle = type === 'comfort' ? 'rgba(100,110,130,0.3)' : 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  
+  // Roof
+  const roofTop = 25, roofBot = 55;
+  ctx.beginPath();
+  ctx.moveTo(cx - bw * 0.7, roofTop);
+  ctx.lineTo(cx + bw * 0.7, roofTop);
+  ctx.lineTo(cx + bw * 0.65, roofBot);
+  ctx.lineTo(cx - bw * 0.65, roofBot);
+  ctx.closePath();
+  const roofGrad = ctx.createLinearGradient(cx - bw * 0.5, roofTop, cx + bw * 0.5, roofTop);
+  roofColors.forEach((c, i) => roofGrad.addColorStop(i / (roofColors.length - 1), c));
+  ctx.fillStyle = roofGrad;
+  ctx.fill();
+  
+  // Windshield
+  ctx.beginPath();
+  ctx.moveTo(cx - bw * 0.65, roofTop);
+  ctx.lineTo(cx + bw * 0.65, roofTop);
+  ctx.lineTo(cx + bw * 0.68, roofTop + 8);
+  ctx.lineTo(cx - bw * 0.68, roofTop + 8);
+  ctx.closePath();
+  const wsGrad = ctx.createLinearGradient(cx, roofTop, cx, roofTop + 8);
+  wsGrad.addColorStop(0, windowColor);
+  wsGrad.addColorStop(1, type === 'comfort' ? '#3a4a60' : '#243450');
+  ctx.fillStyle = wsGrad;
+  ctx.fill();
+  
+  // Windshield glare
+  ctx.beginPath();
+  ctx.moveTo(cx - bw * 0.3, roofTop + 2);
+  ctx.lineTo(cx + bw * 0.25, roofTop + 2);
+  ctx.strokeStyle = 'rgba(200,220,240,0.3)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  
+  // Rear glass
+  ctx.beginPath();
+  ctx.moveTo(cx - bw * 0.6, roofBot);
+  ctx.lineTo(cx + bw * 0.6, roofBot);
+  ctx.lineTo(cx + bw * 0.55, roofBot + 10);
+  ctx.lineTo(cx - bw * 0.55, roofBot + 10);
+  ctx.closePath();
+  const rgGrad = ctx.createLinearGradient(cx, roofBot, cx, roofBot + 10);
+  rgGrad.addColorStop(0, type === 'comfort' ? '#3a4860' : '#20304E');
+  rgGrad.addColorStop(1, windowColor);
+  ctx.fillStyle = rgGrad;
+  ctx.fill();
+  
+  // Side windows (2 per side)
+  const winY1 = roofTop + 12, winY2 = roofBot - 5;
+  const winH = (winY2 - winY1 - 3) / 2;
+  
+  [-1, 1].forEach(side => {
+    const xIn = cx + side * bw * 0.68;
+    const xOut = cx + side * bw * 0.95;
+    
+    // Front window
+    ctx.fillStyle = `rgba(${type === 'comfort' ? '60,80,110' : '28,44,68'},0.85)`;
+    ctx.fillRect(Math.min(xIn,xOut), winY1, Math.abs(xOut-xIn), winH);
+    
+    // Rear window
+    ctx.fillRect(Math.min(xIn,xOut), winY1 + winH + 3, Math.abs(xOut-xIn), winH);
+    
+    // B-pillar
+    ctx.fillStyle = type === 'comfort' ? '#C0C5CC' : '#0A0E18';
+    ctx.fillRect(xIn + side * 2, winY1 + winH, side * 3, 3);
+    
+    // Glare
+    ctx.beginPath();
+    ctx.moveTo(xIn + side * 3, winY1 + 3);
+    ctx.lineTo(xOut - side * 5, winY1 + 3);
+    ctx.strokeStyle = 'rgba(144,184,216,0.2)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+  
+  // Side mirrors
+  const mirY = roofTop + 5;
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.moveTo(cx + side * bw * 0.85, mirY - 2);
+    ctx.lineTo(cx + side * bw * 1.05, mirY - 1);
+    ctx.lineTo(cx + side * bw * 1.05, mirY + 2);
+    ctx.lineTo(cx + side * bw * 0.85, mirY + 2);
+    ctx.closePath();
+    ctx.fillStyle = type === 'comfort' ? '#DADEE4' : '#181C2A';
+    ctx.fill();
+  });
+  
+  // Headlights (flush with body)
+  const hlY = front + 6;
+  [-1, 1].forEach(side => {
+    const hlX = cx + side * bw * 0.6;
+    
+    // Glow
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(hlX, hlY, 12, 5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(200,230,255,0.25)';
+    ctx.filter = 'blur(4px)';
+    ctx.fill();
+    ctx.restore();
+    
+    // Main light
+    ctx.fillStyle = '#E8F4FF';
+    ctx.fillRect(hlX - side * 8, hlY - 2, side * 14, 3);
+    
+    // Inner accent
+    ctx.fillStyle = '#CCDCF8';
+    ctx.fillRect(hlX + side * 2, hlY + 1, side * 8, 2);
+  });
+  
+  // Taillights
+  const tlY = rear - 6;
+  const tlW = 14, tlH = 6;
+  [-1, 1].forEach(side => {
+    const tlX = cx + side * bw * 0.55;
+    
+    // Glow
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(tlX, tlY, tlW, tlH + 2, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,50,50,0.35)';
+    ctx.filter = 'blur(5px)';
+    ctx.fill();
+    ctx.restore();
+    
+    // Main block
+    const tlGrad = ctx.createLinearGradient(tlX, tlY - tlH/2, tlX, tlY + tlH/2);
+    tlGrad.addColorStop(0, '#FF3030');
+    tlGrad.addColorStop(1, '#AA1010');
+    ctx.fillStyle = tlGrad;
+    ctx.fillRect(tlX - tlW/2, tlY - tlH/2, tlW, tlH);
+    
+    // Highlight
+    ctx.fillStyle = 'rgba(255,100,100,0.5)';
+    ctx.fillRect(tlX - tlW/2 + 2, tlY - tlH/2 + 1, tlW - 4, 2);
+  });
+  
+  // Roof rails for SUV
+  if (isSUV) {
+    ctx.strokeStyle = '#404040';
+    ctx.lineWidth = 2;
+    [-1, 1].forEach(side => {
+      ctx.beginPath();
+      ctx.moveTo(cx + side * bw * 0.5, roofTop - 2);
+      ctx.lineTo(cx + side * bw * 0.5, roofBot);
+      ctx.stroke();
+    });
+  }
+  
+  // Hood highlight
+  const hoodGrad = ctx.createLinearGradient(cx, front, cx, roofTop);
+  hoodGrad.addColorStop(0, type === 'comfort' ? 'rgba(255,255,255,0.3)' : 'rgba(80,120,152,0.15)');
+  hoodGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = hoodGrad;
+  ctx.fillRect(cx - bw * 0.8, front + 5, bw * 1.6, roofTop - front - 5);
+  
+  // Restore context
+  ctx.restore();
+}
+
+// Initial render
+drawVehicle('suv', document.getElementById('suv'));
+drawVehicle('comfort', document.getElementById('comfort'));
+drawVehicle('sedan', document.getElementById('sedan'));
+</script>
+</body>
+</html>

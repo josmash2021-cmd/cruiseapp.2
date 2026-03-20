@@ -299,7 +299,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Connection issue - retrying...',
+                              S.of(context).connectionIssueRetrying,
                               style: TextStyle(
                                 color: const Color(0xFFEF4444),
                                 fontSize: 13,
@@ -319,7 +319,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
-                                'Retry',
+                                S.of(context).retryLabel,
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,

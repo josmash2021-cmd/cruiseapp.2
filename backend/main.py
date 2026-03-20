@@ -1954,6 +1954,10 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
                     id_document_type=db_user.id_document_type,
                     id_photo_url=db_user.id_photo_url,
                     selfie_url=db_user.selfie_url,
+                    license_front_url=db_user.license_front_url,
+                    license_back_url=db_user.license_back_url,
+                    insurance_url=db_user.insurance_url,
+                    video_url=db_user.video_url,
                     verification_status=db_user.verification_status or "none",
                     verification_reason=db_user.verification_reason,
                     status=db_user.status or "active",
@@ -2050,6 +2054,31 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
             except Exception as e:
                 logging.error("Firestore photo sync failed: %s", e)
     return {"photo_url": f"/photos/{filename}"}
+
+@app.post("/auth/photo-url", dependencies=[Depends(_verify_api_key)])
+async def save_photo_url(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Save a Firebase Storage photo URL to the user's profile in the backend DB.
+    Called by the Flutter app after uploading directly to Firebase Storage."""
+    body = await request.json()
+    photo_url = body.get("photo_url") or body.get("url")
+    if not photo_url or not isinstance(photo_url, str):
+        raise HTTPException(400, "Missing 'photo_url' field")
+    if not photo_url.startswith("https://"):
+        raise HTTPException(400, "photo_url must be an https:// URL")
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    db_user.photo_url = photo_url
+    await db.commit()
+    await db.refresh(db_user)
+    if _HAS_FIRESTORE:
+        try:
+            collection = "drivers" if db_user.role == "driver" else "clients"
+            firestore_sync.update_field(collection, db_user.id, "photoUrl", photo_url)
+        except Exception as e:
+            logging.error("Firestore photo-url sync failed: %s", e)
+    return {"photo_url": photo_url}
 
 @app.get("/photos/{filename}")
 async def serve_photo(filename: str):
@@ -2580,6 +2609,17 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         raise HTTPException(404, "Trip not found")
     trip.status = status
     trip.updated_at = datetime.now(timezone.utc)
+    # Auto-calculate driver earnings and platform fee (40% platform / 60% driver)
+    if status == "completed" and trip.fare and trip.fare > 0 and trip.driver_id:
+        platform_rate = 0.40
+        tip = trip.tip_amount or 0.0
+        trip.platform_fee = round(trip.fare * platform_rate, 2)
+        trip.driver_earnings = round((trip.fare * (1 - platform_rate)) + tip, 2)
+        _drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
+        _drv = _drv_res.scalar_one_or_none()
+        if _drv:
+            _drv.pending_balance = round((_drv.pending_balance or 0.0) + trip.driver_earnings, 2)
+            _drv.total_earnings = round((_drv.total_earnings or 0.0) + trip.driver_earnings, 2)
     await db.commit()
     await db.refresh(trip)
 
@@ -2642,8 +2682,15 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         reason = body.get("cancel_reason") if isinstance(body, dict) else None
     except Exception:
         pass
+    # Apply $5 cancellation fee if driver was already en route and rider waited > 2 min
+    cancellation_fee = 0.0
+    if trip.status in ("driver_en_route", "arrived"):
+        minutes_elapsed = (datetime.now(timezone.utc) - trip.updated_at.replace(tzinfo=timezone.utc) if trip.updated_at else datetime.now(timezone.utc)).total_seconds() / 60 if trip.updated_at else 0
+        if minutes_elapsed > 2:
+            cancellation_fee = 5.0
     trip.status = "canceled"
     trip.cancel_reason = reason
+    trip.cancellation_fee = cancellation_fee
     trip.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(trip)
@@ -2652,7 +2699,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
             firestore_sync.sync_trip_status(trip_id=trip.id, status="canceled", cancel_reason=reason)
         except Exception as e:
             logging.error("Firestore sync on cancel_trip failed: %s", e)
-    return _trip_dict(trip)
+    return {**_trip_dict(trip), "cancellation_fee": cancellation_fee}
 
 # ═══════════════════════════════════════════════════════
 #  DRIVER  ENDPOINTS
@@ -2952,7 +2999,9 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
     avg_rating = ratings_r.scalar()
 
     acceptance_rate = (accepted / total_offers * 100) if total_offers > 0 else 100.0
-    on_time_rate = 95.0  # TODO: implement actual on-time tracking
+    # On-time rate: trips completed without being canceled after driver_en_route
+    late_canceled = sum(1 for t in trips if t.status == "canceled" and t.cancel_reason)
+    on_time_rate = round(((completed / total_trips) * 100), 1) if total_trips > 0 else 100.0
 
     return {
         "total_offers": total_offers,
@@ -6130,6 +6179,10 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
                     is_verified=user.is_verified or False,
                     id_photo_url=user.id_photo_url,
                     selfie_url=user.selfie_url,
+                    license_front_url=user.license_front_url,
+                    license_back_url=user.license_back_url,
+                    insurance_url=user.insurance_url,
+                    video_url=user.video_url,
                     status=user.status or "active",
                 )
             else:
@@ -7308,6 +7361,179 @@ def _clean_html_instructions(html_text: str) -> str:
 @app.on_event("startup")
 async def _start_scheduler():
     asyncio.create_task(_scheduled_ride_dispatcher())
+
+# ═══════════════════════════════════════════════════════
+#  SURGE PRICING
+# ═══════════════════════════════════════════════════════
+
+@app.get("/surge/current", dependencies=[Depends(_verify_api_key)])
+async def get_current_surge(lat: float = Query(...), lng: float = Query(...), db: AsyncSession = Depends(get_db)):
+    """Get current surge multiplier for a location."""
+    result = await db.execute(select(SurgeZone).where(SurgeZone.is_active == True))
+    zones = result.scalars().all()
+    best_multiplier = 1.0
+    for zone in zones:
+        dist = _haversine(lat, lng, zone.center_lat, zone.center_lng)
+        if dist <= zone.radius_km:
+            best_multiplier = max(best_multiplier, zone.surge_multiplier)
+    return {"surge_multiplier": best_multiplier, "is_surge": best_multiplier > 1.0,
+            "message": f"{best_multiplier}x" if best_multiplier > 1.0 else "No surge"}
+
+@app.post("/admin/surge/update", dependencies=[Depends(_require_dispatch_auth)])
+async def update_surge_zone(
+    zone_name: str = Body(...), center_lat: float = Body(...), center_lng: float = Body(...),
+    surge_multiplier: float = Body(...), radius_km: float = Body(2.0), db: AsyncSession = Depends(get_db)
+):
+    """Admin: Update or create surge pricing zone."""
+    result = await db.execute(select(SurgeZone).where(SurgeZone.zone_name == zone_name))
+    zone = result.scalar_one_or_none()
+    if zone:
+        zone.surge_multiplier = surge_multiplier
+        zone.center_lat = center_lat
+        zone.center_lng = center_lng
+        zone.radius_km = radius_km
+        zone.updated_at = datetime.now(timezone.utc)
+    else:
+        zone = SurgeZone(zone_name=zone_name, center_lat=center_lat, center_lng=center_lng,
+                         surge_multiplier=surge_multiplier, radius_km=radius_km)
+        db.add(zone)
+    await db.commit()
+    return {"status": "ok", "zone": zone_name, "multiplier": surge_multiplier}
+
+# ═══════════════════════════════════════════════════════
+#  TIPPING
+# ═══════════════════════════════════════════════════════
+
+@app.post("/trips/{trip_id}/tip", dependencies=[Depends(_verify_api_key)])
+async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100),
+                  user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Add tip to a completed trip — credited directly to driver's balance."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.rider_id != user.id:
+        raise HTTPException(403, "Only the rider can tip")
+    if trip.status != "completed":
+        raise HTTPException(400, "Can only tip completed trips")
+    trip.tip_amount = (trip.tip_amount or 0.0) + tip_amount
+    if trip.driver_id:
+        drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
+        drv = drv_res.scalar_one_or_none()
+        if drv:
+            drv.pending_balance = round((drv.pending_balance or 0.0) + tip_amount, 2)
+            drv.total_earnings = round((drv.total_earnings or 0.0) + tip_amount, 2)
+        if trip.driver_earnings is not None:
+            trip.driver_earnings = round(trip.driver_earnings + tip_amount, 2)
+    await db.commit()
+    return {"status": "ok", "tip_amount": tip_amount}
+
+# ═══════════════════════════════════════════════════════
+#  WAIT TIME
+# ═══════════════════════════════════════════════════════
+
+@app.post("/trips/{trip_id}/wait-time/start", dependencies=[Depends(_verify_api_key)])
+async def start_wait_time(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Driver starts wait time clock at pickup (arrived status required)."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip or trip.driver_id != user.id:
+        raise HTTPException(403, "Not authorized")
+    if trip.status != "arrived":
+        raise HTTPException(400, "Can only start wait time when arrived at pickup")
+    trip.notes = (trip.notes or "") + f"\nWait started: {datetime.now(timezone.utc).isoformat()}"
+    await db.commit()
+    return {"status": "wait_time_started"}
+
+@app.post("/trips/{trip_id}/wait-time/end", dependencies=[Depends(_verify_api_key)])
+async def end_wait_time(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """End wait time clock — first 2 min free, then $0.50/min."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip or trip.driver_id != user.id:
+        raise HTTPException(403, "Not authorized")
+    if not trip.notes or "Wait started:" not in trip.notes:
+        return {"wait_time_minutes": 0, "wait_time_charge": 0.0}
+    wait_start_str = trip.notes.split("Wait started: ")[1].split("\n")[0]
+    wait_start = datetime.fromisoformat(wait_start_str)
+    wait_minutes = int((datetime.now(timezone.utc) - wait_start).total_seconds() / 60)
+    wait_charge = round(max(0, wait_minutes - 2) * 0.50, 2)
+    trip.wait_time_minutes = wait_minutes
+    trip.wait_time_charge = wait_charge
+    trip.fare = round((trip.fare or 0) + wait_charge, 2)
+    await db.commit()
+    return {"wait_time_minutes": wait_minutes, "wait_time_charge": wait_charge, "new_total_fare": trip.fare}
+
+# ═══════════════════════════════════════════════════════
+#  REFERRAL SYSTEM
+# ═══════════════════════════════════════════════════════
+
+@app.get("/referral/code", dependencies=[Depends(_verify_api_key)])
+async def get_referral_code(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get user's referral code, generating one if needed."""
+    if not user.referral_code:
+        import string, random
+        user.referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        await db.commit()
+    ref_result = await db.execute(
+        select(func.count(Referral.id)).where(Referral.referrer_id == user.id, Referral.status == "rewarded")
+    )
+    successful_referrals = ref_result.scalar() or 0
+    return {"referral_code": user.referral_code, "successful_referrals": successful_referrals,
+            "share_message": f"Join Cruise with my code {user.referral_code} and get $10 off your first ride!"}
+
+@app.post("/referral/apply", dependencies=[Depends(_verify_api_key)])
+async def apply_referral_code(referral_code: str = Body(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Apply a referral code — one per account."""
+    if user.referred_by:
+        raise HTTPException(400, "Referral code already applied")
+    ref_result = await db.execute(select(User).where(User.referral_code == referral_code))
+    referrer = ref_result.scalar_one_or_none()
+    if not referrer:
+        raise HTTPException(404, "Invalid referral code")
+    if referrer.id == user.id:
+        raise HTTPException(400, "Cannot refer yourself")
+    db.add(Referral(referrer_id=referrer.id, referee_id=user.id, referral_code=referral_code, status="pending"))
+    user.referred_by = referrer.id
+    await db.commit()
+    return {"status": "ok", "message": "Referral applied! Complete your first trip to unlock $10 credit."}
+
+@app.post("/referral/complete/{referral_id}", dependencies=[Depends(_verify_api_key)])
+async def complete_referral(referral_id: int, db: AsyncSession = Depends(get_db)):
+    """Mark referral rewarded when referee completes first trip."""
+    result = await db.execute(select(Referral).where(Referral.id == referral_id))
+    referral = result.scalar_one_or_none()
+    if not referral or referral.status != "pending":
+        return {"status": "already_processed"}
+    referral.status = "rewarded"
+    referral.completed_at = datetime.now(timezone.utc)
+    ref_result = await db.execute(select(User).where(User.id == referral.referrer_id))
+    referrer = ref_result.scalar_one_or_none()
+    if referrer:
+        referrer.pending_balance = round((referrer.pending_balance or 0.0) + referral.referrer_bonus, 2)
+    await db.commit()
+    return {"status": "rewarded", "referrer_bonus": referral.referrer_bonus, "referee_bonus": referral.referee_bonus}
+
+# ═══════════════════════════════════════════════════════
+#  ADMIN — INCENTIVE CREATION
+# ═══════════════════════════════════════════════════════
+
+@app.post("/admin/incentives/create", dependencies=[Depends(_require_dispatch_auth)])
+async def create_driver_incentive(
+    driver_id: int = Body(...), incentive_type: str = Body(...), title: str = Body(...),
+    target_trips: int = Body(...), bonus_amount: float = Body(...), expires_hours: int = Body(168),
+    db: AsyncSession = Depends(get_db)
+):
+    """Admin: Create a driver incentive/quest."""
+    incentive = DriverIncentive(
+        driver_id=driver_id, incentive_type=incentive_type, title=title,
+        description=f"Complete {target_trips} trips to earn ${bonus_amount:.2f}",
+        target_trips=target_trips, bonus_amount=bonus_amount,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+    )
+    db.add(incentive)
+    await db.commit()
+    return {"status": "created", "incentive_id": incentive.id}
 
 # -------------------------------------------------------
 #  SERVER STARTUP (if run directly)

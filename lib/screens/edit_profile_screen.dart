@@ -118,17 +118,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (xFile == null || !mounted) return;
 
     // Copy to permanent storage so the photo survives app restarts
+    // This also updates the photoNotifier immediately for all listening screens
     final permanentPath = await UserSession.saveProfilePhoto(xFile.path);
-    // Upload to server so it persists across devices
-    try {
-      await ApiService.uploadPhoto(permanentPath);
-    } catch (e) {
-      debugPrint('Photo upload failed (saved locally): $e');
-    }
+    
     // Clear cached image so new photo shows immediately
     imageCache.clear();
     imageCache.clearLiveImages();
+    
+    // Update UI immediately - don't wait for server upload
     setState(() => _photoPath = permanentPath);
+    
+    // Upload to server in background so it persists across devices
+    // This doesn't block the UI update
+    unawaited(ApiService.uploadPhoto(permanentPath).catchError((e) {
+      debugPrint('Photo upload failed (saved locally): $e');
+      return '';
+    }));
   }
 
   Widget _photoOption(

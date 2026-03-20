@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'security_service.dart';
+import 'firebase_storage_service.dart';
 import '../config/env.dart';
 
 /// Communicates with the Cruise Ride backend (FastAPI + PostgreSQL).
@@ -741,11 +742,31 @@ class ApiService {
   //  PHOTO  ENDPOINTS
   // ═══════════════════════════════════════════════════════
 
-  /// Upload a profile photo (base64) to the server.
-  /// Returns the server-side photo URL path (e.g. "/photos/user_1.jpg").
+  /// Upload a profile photo to Firebase Storage (permanent URL).
+  /// Falls back to base64 backend upload if Firebase Storage fails.
   static Future<String> uploadPhoto(String filePath) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
+
+    // Primary: Firebase Storage — permanent URL, survives server restarts
+    try {
+      final me = await getMe();
+      final userId = int.tryParse(me?['id']?.toString() ?? '') ?? 0;
+      final role = me?['role']?.toString() ?? 'rider';
+      final url =
+          await FirebaseStorageService.uploadProfilePhoto(filePath, userId);
+      // Update Firestore so Dispatch shows the photo immediately
+      unawaited(
+        FirebaseStorageService.updateFirestorePhotoUrl(userId, url, role),
+      );
+      // Sync URL back to backend DB so /auth/me returns the correct photo_url
+      unawaited(_syncPhotoUrlToBackend(url, token));
+      return url;
+    } catch (e) {
+      debugPrint('[ApiService] Firebase Storage upload failed, using backend: $e');
+    }
+
+    // Fallback: base64 upload to backend
     final bytes = await File(filePath).readAsBytes();
     final b64 = base64Encode(bytes);
     final res = await _client
@@ -757,6 +778,21 @@ class ApiService {
         .timeout(const Duration(seconds: 30));
     final data = _parse(res);
     return data['photo_url'] as String? ?? '';
+  }
+
+  /// Notify the backend of a Firebase Storage photo URL so the DB stays in sync.
+  static Future<void> _syncPhotoUrlToBackend(String url, String token) async {
+    try {
+      await _client
+          .post(
+            Uri.parse('$_baseUrl/auth/photo-url'),
+            headers: _jsonHeaders(token),
+            body: jsonEncode({'photo_url': url}),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('[ApiService] _syncPhotoUrlToBackend failed (non-fatal): $e');
+    }
   }
 
   /// Download a profile photo from the server and save to local file.

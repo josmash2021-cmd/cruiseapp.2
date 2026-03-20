@@ -2314,7 +2314,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: _mapBottomPadding + 60, right: 60),
       null, null,
     ).then((cam) {
-      if (cam != null && mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
+      if (mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
     });
   }
 

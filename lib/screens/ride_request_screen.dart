@@ -1068,7 +1068,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       mapbox.MbxEdgeInsets(top: 100, left: 80, bottom: 300, right: 80),
       null, null,
     ).then((cam) {
-      if (cam != null) _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));
+      _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));
     });
   }
 

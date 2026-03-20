@@ -327,7 +327,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
       mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: 80, right: 60),
       null, null,
     ).then((cam) {
-      if (cam != null) _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 800));
+      _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 800));
     });
   }
 

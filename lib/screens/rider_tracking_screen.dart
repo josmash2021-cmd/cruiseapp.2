@@ -1289,7 +1289,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: 420, right: 50),
         null, null,
       ).then((cam) {
-        if (cam != null && mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 500));
+        if (mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 500));
       });
     }
   }

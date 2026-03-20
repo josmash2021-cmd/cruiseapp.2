@@ -1,0 +1,6 @@
+# Force LF line endings for shell scripts (prevent CRLF crash on Linux/Docker)
+*.sh text eol=lf
+*.py text eol=lf
+Dockerfile text eol=lf
+railway.toml text eol=lf
+*.toml text eol=lf

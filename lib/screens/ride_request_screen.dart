@@ -340,7 +340,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _PinIcon icon = _PinIcon.none,
     bool isPickup = true,
   }) async {
-    const double size = 90;
+    const double size = 115;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
     _drawGoldPinAt(canvas, 0, 0, size, icon: icon, isPickup: isPickup);
@@ -364,14 +364,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final showEta = etaText != null && etaText.isNotEmpty;
 
     // ── Pin dimensions ──
-    const pinSize = 130.0;
+    const pinSize = 158.0;
 
     // ── Measure label text ──
     final textPainter = TextPainter(
       text: TextSpan(
         text: label,
         style: const TextStyle(
-          fontSize: 30,
+          fontSize: 34,
           fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
@@ -386,7 +386,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         text: TextSpan(
           text: etaText,
           style: const TextStyle(
-            fontSize: 24,
+            fontSize: 28,
             fontWeight: FontWeight.w800,
             color: Colors.white,
             letterSpacing: 0.3,
@@ -406,7 +406,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         ? etaPainter.width + etaBoxPad * 2 + gap
         : 0.0;
     final labelW = hPad + dotSize + gap + textPainter.width + etaW + hPad + 10;
-    const labelH = 78.0;
+    const labelH = 95.0;
     const pinLabelGap = 4.0;
 
     // ── Total canvas ──
@@ -1251,8 +1251,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                   ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                   ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                  _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+                    below: 'road-label',
+                  );
                   _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                  _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
                   setState(() => _mapReady = true);
                   if (_userLocation != null) {
                     ctrl.flyTo(

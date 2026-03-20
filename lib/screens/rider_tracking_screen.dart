@@ -798,7 +798,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     required bool isPickup,
     String label = '',
   }) async {
-    const double size = 100;
+    const double size = 125;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
     const cx = size / 2;

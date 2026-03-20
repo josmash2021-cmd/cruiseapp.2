@@ -2214,7 +2214,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
       iconColor: const Color(0xFF4CAF50).toARGB32(),
-      iconSize: 1.2,
+      iconSize: 1.7,
     ));
   }
 
@@ -2225,7 +2225,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
       iconColor: const Color(0xFFEA4335).toARGB32(),
-      iconSize: 1.2,
+      iconSize: 1.7,
     ));
   }
 
@@ -2236,12 +2236,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
       iconColor: const Color(0xFF4CAF50).toARGB32(),
-      iconSize: 1.2,
+      iconSize: 1.7,
     ));
     _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
       iconColor: const Color(0xFFEA4335).toARGB32(),
-      iconSize: 1.2,
+      iconSize: 1.7,
     ));
   }
 
@@ -2342,17 +2342,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
         iconColor: const Color(0xFF2196F3).toARGB32(),
-        iconSize: 1.2,
+        iconSize: 1.7,
       ));
       _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
         iconColor: const Color(0xFF4CAF50).toARGB32(),
-        iconSize: 1.2,
+        iconSize: 1.7,
       ));
       _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
         iconColor: const Color(0xFFEA4335).toARGB32(),
-        iconSize: 1.2,
+        iconSize: 1.7,
       ));
     }
 

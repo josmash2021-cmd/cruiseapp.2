@@ -1665,12 +1665,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               ),
             ),
           ),
-          Icon(
-            Icons.chevron_right_rounded,
-            color: Colors.white.withValues(alpha: 0.3),
-            size: 16,
-          ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 10),
         ],
       ),
     );

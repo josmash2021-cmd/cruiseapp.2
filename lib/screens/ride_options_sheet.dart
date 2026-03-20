@@ -341,8 +341,8 @@ class RideOptionsSheet extends StatelessWidget {
             children: [
               // Car image
               SizedBox(
-                width: 90,
-                height: 62,
+                width: 108,
+                height: 72,
                 child: _buildCarImage(opt.id, isSelected),
               ),
               const SizedBox(width: 14),

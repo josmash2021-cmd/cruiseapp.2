@@ -825,6 +825,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               ),
 
+              if (_activeRide == null) ...[
               SliverToBoxAdapter(child: const SizedBox(height: 28)),
 
               // ━━━ CIRCULAR ACTION BUTTONS ━━━
@@ -937,6 +938,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   child: RepaintBoundary(child: _buildLiveMapCard()),
                 ),
               ),
+              ], // end if (_activeRide == null)
 
               SliverToBoxAdapter(child: SizedBox(height: 90 + bottomPad)),
             ],
@@ -1332,12 +1334,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                     ],
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                Icon(
-                                  Icons.arrow_forward_ios_rounded,
-                                  color: _gold,
-                                  size: 16,
-                                ),
                               ],
                             )
                           // ── NORMAL "Where to?" content ──
@@ -1427,28 +1423,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                         ),
                                       ],
                                     ],
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                // Arrow button
-                                Container(
-                                  width: 52,
-                                  height: 52,
-                                  decoration: BoxDecoration(
-                                    color: _gold,
-                                    borderRadius: BorderRadius.circular(16),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: _gold.withValues(alpha: 0.4),
-                                        blurRadius: 12,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child: const Icon(
-                                    Icons.arrow_forward_rounded,
-                                    color: Colors.black,
-                                    size: 26,
                                   ),
                                 ),
                               ],
@@ -2668,6 +2642,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
                 onMapCreated: (ctrl) async {
                   _miniMapController = ctrl;
+                  ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+                  ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+                  ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+                  ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
                   _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                   _updateMiniMapAnnotation();
                 },

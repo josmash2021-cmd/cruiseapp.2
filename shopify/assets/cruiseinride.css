@@ -1,0 +1,212 @@
+/* ============================================================
+   CruiseInRide -- Link in Bio (dark / gold theme)
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+a { text-decoration: none; color: inherit; }
+img { display: block; max-width: 100%; }
+
+/* WRAPPER */
+.cir-wrap {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  background: #0a0a0a;
+}
+
+/* BACKGROUND */
+.cir-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+.cir-bg__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+.cir-bg__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+/* INNER CONTENT */
+.cir-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 500px;
+  margin: 0 auto;
+  padding: 48px 20px 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+/* BRAND */
+.cir-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.cir-brand__logo {
+  height: 48px;
+  width: auto;
+}
+.cir-brand__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #c9a84c, #f0d080);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #111;
+  flex-shrink: 0;
+}
+.cir-brand__icon svg {
+  width: 26px;
+  height: 26px;
+}
+.cir-brand__name {
+  font-size: 2rem;
+  font-weight: 900;
+  color: #ffffff;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+}
+
+/* TAGLINE */
+.cir-tagline {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 4px;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  margin-bottom: 32px;
+  text-align: center;
+}
+
+/* SECTION LABELS */
+.cir-section-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: rgba(255,255,255,0.45);
+  text-transform: uppercase;
+  text-align: center;
+  margin: 24px 0 14px;
+  width: 100%;
+}
+.cir-section-label--dot::before,
+.cir-section-label--dot::after {
+  content: ' \25C6 ';
+  color: #c9a84c;
+}
+
+/* GRID */
+.cir-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+}
+
+/* CARD */
+.cir-card {
+  background: rgba(18, 18, 18, 0.85);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 22px 16px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  cursor: pointer;
+  text-align: center;
+  backdrop-filter: blur(8px);
+}
+.cir-card:hover {
+  transform: translateY(-3px);
+  background: rgba(30, 30, 30, 0.95);
+  border-color: rgba(201, 168, 76, 0.4);
+}
+.cir-card:active {
+  transform: scale(0.97);
+}
+
+/* CARD ICON */
+.cir-card__icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c9a84c;
+  flex-shrink: 0;
+}
+.cir-card__icon svg {
+  width: 28px;
+  height: 28px;
+}
+.cir-card__icon--img {
+  background: transparent;
+  border: none;
+  overflow: hidden;
+}
+.cir-card__icon--img svg {
+  width: 44px;
+  height: 44px;
+}
+.cir-card__icon--dark {
+  background: #111;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+/* CARD TEXT */
+.cir-card__title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+.cir-card__sub {
+  font-size: 0.6rem;
+  color: rgba(255,255,255,0.4);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* FOOTER */
+.cir-footer {
+  margin-top: 40px;
+  font-size: 0.6rem;
+  color: rgba(255,255,255,0.3);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-align: center;
+}
+.cir-footer span::before,
+.cir-footer span::after {
+  color: #c9a84c;
+}
+
+/* RESPONSIVE */
+@media (max-width: 400px) {
+  .cir-brand__name { font-size: 1.6rem; letter-spacing: 3px; }
+  .cir-grid { gap: 10px; }
+  .cir-card { padding: 18px 12px 14px; }
+  .cir-card__icon { width: 44px; height: 44px; }
+  .cir-card__icon svg { width: 24px; height: 24px; }
+}

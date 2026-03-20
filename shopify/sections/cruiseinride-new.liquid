@@ -1,0 +1,182 @@
+{% comment %} CruiseInRide — Link in Bio Page {% endcomment %}
+
+{{ 'cruiseinride.css' | asset_url | stylesheet_tag }}
+
+<div class="cir-wrap">
+
+  {% comment %} BACKGROUND {% endcomment %}
+  <div class="cir-bg">
+    {% if section.settings.bg_image != blank %}
+      <img src="{{ section.settings.bg_image | img_url: '1200x' }}" alt="" class="cir-bg__img">
+    {% endif %}
+    <div class="cir-bg__overlay"></div>
+  </div>
+
+  {% comment %} INNER CONTENT {% endcomment %}
+  <div class="cir-inner">
+
+    {% comment %} LOGO + BRAND {% endcomment %}
+    <div class="cir-brand">
+      {% if section.settings.logo != blank %}
+        <img src="{{ section.settings.logo | img_url: '120x' }}" alt="{{ section.settings.brand_name }}" class="cir-brand__logo">
+      {% else %}
+        <div class="cir-brand__icon">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="3" width="15" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="5.5" cy="18.5" r="2.5" stroke="currentColor" stroke-width="1.5"/><circle cx="18.5" cy="18.5" r="2.5" stroke="currentColor" stroke-width="1.5"/></svg>
+        </div>
+      {% endif %}
+      <h1 class="cir-brand__name">{{ section.settings.brand_name }}</h1>
+    </div>
+
+    {% comment %} TAGLINE {% endcomment %}
+    {% if section.settings.tagline != blank %}
+      <p class="cir-tagline">{{ section.settings.tagline }}</p>
+    {% endif %}
+
+    {% comment %} SECTION 1: WEBSITE & RIDE {% endcomment %}
+    <div class="cir-section-label">{{ section.settings.label_services }}</div>
+    <div class="cir-grid">
+      {% if section.settings.website_url != blank %}
+        <a href="{{ section.settings.website_url }}" target="_blank" class="cir-card">
+          <div class="cir-card__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </div>
+          <span class="cir-card__title">{{ section.settings.website_label }}</span>
+          <span class="cir-card__sub">{{ section.settings.website_sub }}</span>
+        </a>
+      {% endif %}
+      {% if section.settings.ridenow_url != blank %}
+        <a href="{{ section.settings.ridenow_url }}" target="_blank" class="cir-card">
+          <div class="cir-card__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          </div>
+          <span class="cir-card__title">{{ section.settings.ridenow_label }}</span>
+          <span class="cir-card__sub">{{ section.settings.ridenow_sub }}</span>
+        </a>
+      {% endif %}
+    </div>
+
+    {% comment %} SECTION 2: APPS {% endcomment %}
+    <div class="cir-section-label cir-section-label--dot">{{ section.settings.label_apps }}</div>
+    <div class="cir-grid">
+      {% if section.settings.playstore_url != blank %}
+        <a href="{{ section.settings.playstore_url }}" target="_blank" class="cir-card">
+          <div class="cir-card__icon cir-card__icon--img">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 20.5v-17c0-.83 1-.97 1.45-.32l14 8.5c.4.25.4.89 0 1.14l-14 8.5C3.97 21.47 3 21.33 3 20.5z" fill="#4CAF50"/><path d="M3 3.5l8.5 8.5L3 20.5V3.5z" fill="#4CAF50"/><path d="M3 3.5l8.5 8.5 3-3-9-5.84A1 1 0 0 0 3 3.5z" fill="#81D4FA"/><path d="M3 20.5l8.5-8.5 3 3-9 5.84A1 1 0 0 1 3 20.5z" fill="#F48FB1"/><path d="M14.5 12l3.5-2.14-3.5-2.14L11.5 12l3 0z" fill="#FFF176"/></svg>
+          </div>
+          <span class="cir-card__title">{{ section.settings.playstore_label }}</span>
+          <span class="cir-card__sub">{{ section.settings.playstore_sub }}</span>
+        </a>
+      {% endif %}
+      {% if section.settings.appstore_url != blank %}
+        <a href="{{ section.settings.appstore_url }}" target="_blank" class="cir-card">
+          <div class="cir-card__icon cir-card__icon--dark">
+            <svg viewBox="0 0 384 512" xmlns="http://www.w3.org/2000/svg"><path fill="white" d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-16.9 75.8-16.9 31.8 0 48.3 16.9 76.4 16.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+          </div>
+          <span class="cir-card__title">{{ section.settings.appstore_label }}</span>
+          <span class="cir-card__sub">{{ section.settings.appstore_sub }}</span>
+        </a>
+      {% endif %}
+    </div>
+
+    {% comment %} SECTION 3: CONTACT & SOCIAL {% endcomment %}
+    <div class="cir-section-label cir-section-label--dot">{{ section.settings.label_social }}</div>
+    <div class="cir-grid">
+      {% if section.settings.whatsapp_url != blank %}
+        <a href="{{ section.settings.whatsapp_url }}" target="_blank" class="cir-card">
+          <div class="cir-card__icon cir-card__icon--img">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#25D366" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          </div>
+          <span class="cir-card__title">{{ section.settings.whatsapp_label }}</span>
+          <span class="cir-card__sub">{{ section.settings.whatsapp_sub }}</span>
+        </a>
+      {% endif %}
+      {% if section.settings.facebook_url != blank %}
+        <a href="{{ section.settings.facebook_url }}" target="_blank" class="cir-card">
+          <div class="cir-card__icon cir-card__icon--img">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#1877F2" d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+          </div>
+          <span class="cir-card__title">{{ section.settings.facebook_label }}</span>
+          <span class="cir-card__sub">{{ section.settings.facebook_sub }}</span>
+        </a>
+      {% endif %}
+      {% if section.settings.instagram_url != blank %}
+        <a href="{{ section.settings.instagram_url }}" target="_blank" class="cir-card">
+          <div class="cir-card__icon cir-card__icon--img">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="ig-grad" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#f09433"/><stop offset="25%" style="stop-color:#e6683c"/><stop offset="50%" style="stop-color:#dc2743"/><stop offset="75%" style="stop-color:#cc2366"/><stop offset="100%" style="stop-color:#bc1888"/></linearGradient></defs><rect width="24" height="24" rx="6" fill="url(#ig-grad)"/><path fill="white" d="M12 7a5 5 0 100 10A5 5 0 0012 7zm0 8a3 3 0 110-6 3 3 0 010 6zm5.2-8.8a1.2 1.2 0 100 2.4 1.2 1.2 0 000-2.4z"/></svg>
+          </div>
+          <span class="cir-card__title">{{ section.settings.instagram_label }}</span>
+          <span class="cir-card__sub">{{ section.settings.instagram_sub }}</span>
+        </a>
+      {% endif %}
+      {% if section.settings.tiktok_url != blank %}
+        <a href="{{ section.settings.tiktok_url }}" target="_blank" class="cir-card">
+          <div class="cir-card__icon cir-card__icon--dark">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="white" d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.18 8.18 0 004.78 1.52V6.75a4.85 4.85 0 01-1.01-.06z"/></svg>
+          </div>
+          <span class="cir-card__title">{{ section.settings.tiktok_label }}</span>
+          <span class="cir-card__sub">{{ section.settings.tiktok_sub }}</span>
+        </a>
+      {% endif %}
+    </div>
+
+    {% comment %} FOOTER {% endcomment %}
+    <div class="cir-footer">
+      <span>&#9830; {{ section.settings.footer_copy }} &#9830;</span>
+    </div>
+
+  </div>
+</div>
+
+{% schema %}
+{
+  "name": "CruiseInRide",
+  "tag": "div",
+  "class": "cir-section-wrapper",
+  "settings": [
+    { "type": "header", "content": "Marca" },
+    { "type": "image_picker", "id": "logo",       "label": "Logo" },
+    { "type": "text",         "id": "brand_name",  "label": "Nombre de la marca", "default": "CRUISE" },
+    { "type": "text",         "id": "tagline",     "label": "Tagline",            "default": "PREMIUM RIDE SERVICE" },
+    { "type": "image_picker", "id": "bg_image",    "label": "Imagen de fondo" },
+
+    { "type": "header", "content": "Servicios" },
+    { "type": "text", "id": "label_services", "label": "Etiqueta seccion", "default": "PREMIUM RIDE SERVICE" },
+    { "type": "url",  "id": "website_url",    "label": "URL Website" },
+    { "type": "text", "id": "website_label",  "label": "Website titulo",  "default": "WEBSITE" },
+    { "type": "text", "id": "website_sub",    "label": "Website subtitulo","default": "BOOK A RIDE" },
+    { "type": "url",  "id": "ridenow_url",    "label": "URL Ride Now" },
+    { "type": "text", "id": "ridenow_label",  "label": "Ride Now titulo",  "default": "RIDE NOW" },
+    { "type": "text", "id": "ridenow_sub",    "label": "Ride Now subtitulo","default": "VIP SERVICE" },
+
+    { "type": "header", "content": "Apps" },
+    { "type": "text", "id": "label_apps",       "label": "Etiqueta seccion apps", "default": "APPS" },
+    { "type": "url",  "id": "playstore_url",    "label": "URL Google Play" },
+    { "type": "text", "id": "playstore_label",  "label": "Google Play titulo",  "default": "GOOGLE PLAY" },
+    { "type": "text", "id": "playstore_sub",    "label": "Google Play subtitulo","default": "ANDROID" },
+    { "type": "url",  "id": "appstore_url",     "label": "URL App Store" },
+    { "type": "text", "id": "appstore_label",   "label": "App Store titulo",  "default": "APP STORE" },
+    { "type": "text", "id": "appstore_sub",     "label": "App Store subtitulo","default": "IPHONE" },
+
+    { "type": "header", "content": "Contacto y Redes Sociales" },
+    { "type": "text", "id": "label_social",      "label": "Etiqueta seccion social", "default": "CONTACT & SOCIAL MEDIA" },
+    { "type": "url",  "id": "whatsapp_url",      "label": "URL WhatsApp" },
+    { "type": "text", "id": "whatsapp_label",    "label": "WhatsApp titulo",   "default": "WHATSAPP" },
+    { "type": "text", "id": "whatsapp_sub",      "label": "WhatsApp numero",   "default": "+1 (555) 365-2974" },
+    { "type": "url",  "id": "facebook_url",      "label": "URL Facebook" },
+    { "type": "text", "id": "facebook_label",    "label": "Facebook titulo",   "default": "FACEBOOK" },
+    { "type": "text", "id": "facebook_sub",      "label": "Facebook usuario",  "default": "@CRUISEINRIDE" },
+    { "type": "url",  "id": "instagram_url",     "label": "URL Instagram" },
+    { "type": "text", "id": "instagram_label",   "label": "Instagram titulo",  "default": "INSTAGRAM" },
+    { "type": "text", "id": "instagram_sub",     "label": "Instagram usuario", "default": "@CRUISEINRIDE" },
+    { "type": "url",  "id": "tiktok_url",        "label": "URL TikTok" },
+    { "type": "text", "id": "tiktok_label",      "label": "TikTok titulo",     "default": "TIKTOK" },
+    { "type": "text", "id": "tiktok_sub",        "label": "TikTok usuario",    "default": "@CRUISEINRIDE" },
+
+    { "type": "header", "content": "Footer" },
+    { "type": "text", "id": "footer_copy", "label": "Texto footer", "default": "2026 CRUISE - PREMIUM RIDE SERVICE" }
+  ],
+  "presets": [
+    { "name": "CruiseInRide Link in Bio" }
+  ]
+}
+{% endschema %}

@@ -804,6 +804,22 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         return;
       }
 
+      // Fast path: use last known position immediately while waiting for fresh fix
+      try {
+        final lastPos = await Geolocator.getLastKnownPosition();
+        if (lastPos != null && mounted) {
+          final lastLl = LatLng(lastPos.latitude, lastPos.longitude);
+          setState(() {
+            _userLocation = lastLl;
+            _center = lastLl;
+          });
+          _mapCtrl?.flyTo(
+            mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(lastLl.longitude, lastLl.latitude)), zoom: 15.5),
+            mapbox.MapAnimationOptions(duration: 600),
+          );
+        }
+      } catch (_) {}
+
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
@@ -819,9 +835,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _fetchingLocation = false;
       });
       _mapCtrl?.flyTo(
-      mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)), zoom: 15.5),
-      mapbox.MapAnimationOptions(duration: 800),
-    );
+        mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)), zoom: 15.5),
+        mapbox.MapAnimationOptions(duration: 800),
+      );
 
       // Reverse geocode for address
       final places = PlacesService(ApiKeys.webServices);
@@ -1995,8 +2011,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         children: [
           // Car image — HD crisp rendering
           SizedBox(
-            width: 88,
-            height: 60,
+            width: 108,
+            height: 72,
             child: Image.asset(
               _carAssetForOption(opt.name),
               fit: BoxFit.contain,
@@ -3324,10 +3340,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           ),
         );
       case 'credit_card':
-        if (_savedCardBrand != null) {
+        if (_savedCardBrand != null && _savedCardBrand != 'visa') {
           final Map<String, ({String letter, Color color, bool italic})>
           brands = {
-            'visa': (letter: 'V', color: const Color(0xFF1A1F71), italic: true),
             'mastercard': (
               letter: 'M',
               color: const Color(0xFFEB001B),

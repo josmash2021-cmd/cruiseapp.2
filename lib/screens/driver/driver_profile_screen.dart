@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../config/page_transitions.dart';
@@ -470,12 +470,12 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                             ? Image.network(
                                 _resolvedPhotoUrl!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_a, _b, _c) => _defaultAvatar(),
+                                errorBuilder: (_, __, ___) => _defaultAvatar(),
                               )
                             : Image.file(
                                 File(_resolvedPhotoUrl!),
                                 fit: BoxFit.cover,
-                                errorBuilder: (_a, _b, _c) => _defaultAvatar(),
+                                errorBuilder: (_, __, ___) => _defaultAvatar(),
                               ))
                       : _defaultAvatar(),
                 ),
@@ -934,7 +934,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               fit: BoxFit.cover,
                               width: 80,
                               height: 80,
-                              errorBuilder: (_a, _b, _c) => const Icon(
+                              errorBuilder: (_, __, ___) => const Icon(
                                 Icons.person_rounded,
                                 color: _gold,
                                 size: 40,
@@ -945,7 +945,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               fit: BoxFit.cover,
                               width: 80,
                               height: 80,
-                              errorBuilder: (_a, _b, _c) => const Icon(
+                              errorBuilder: (_, __, ___) => const Icon(
                                 Icons.person_rounded,
                                 color: _gold,
                                 size: 40,

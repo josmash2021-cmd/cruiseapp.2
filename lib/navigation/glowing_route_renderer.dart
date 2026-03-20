@@ -1,4 +1,4 @@
-import 'dart:math' as math;
+﻿import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -75,7 +75,7 @@ class GlowingRouteRenderer {
         // Ruta ya recorrida (más opaca)
         await manager.create(mapbox.PolylineAnnotationOptions(
           geometry: mapbox.LineString(coordinates: traveledCoords),
-          lineColor: palette.core.withOpacity(0.5).toARGB32(),
+          lineColor: palette.core.withValues(alpha: 0.5).toARGB32(),
           lineWidth: 6.0,
           lineJoin: mapbox.LineJoin.ROUND,
         ));
@@ -226,7 +226,7 @@ class GlowingRouteRenderer {
 
     // Glow de fondo
     final glowPaint = Paint()
-      ..color = palette.glow.withOpacity(0.5)
+      ..color = palette.glow.withValues(alpha: 0.5)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15);
 
     canvas.drawOval(

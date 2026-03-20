@@ -18,6 +18,7 @@ class OffersController {
 
   Timer? _pollTimer;
   int? _driverId;
+  final Set<String> _acceptingOffers = {}; // Fix H6: anti-double-accept guard
 
   /// Start polling for offers.
   void start({int? driverId}) {
@@ -28,6 +29,8 @@ class OffersController {
   }
 
   Future<void> _poll() async {
+    // M4: skip poll when offline — avoids hammering backend with failed requests
+    if (!await ApiService.isOnline()) return;
     try {
       final id = _driverId ?? await _resolveDriverId();
       if (id == null) return;
@@ -50,6 +53,8 @@ class OffersController {
             estimatedMinutes:
                 offer.estimatedMinutes > 0 ? offer.estimatedMinutes : (km / 0.5).ceil().clamp(1, 99),
             vehicleType: offer.vehicleType,
+            riderPhotoUrl: offer.riderPhotoUrl,
+            riderRating: offer.riderRating,
           );
         }
         return offer;
@@ -63,6 +68,9 @@ class OffersController {
 
   /// Accept an offer. Returns an [AcceptedOffer] on success, or null.
   Future<AcceptedOffer?> acceptOffer(String offerId) async {
+    // Fix H6: prevent double-tap from sending duplicate accept requests
+    if (_acceptingOffers.contains(offerId)) return null;
+    _acceptingOffers.add(offerId);
     try {
       final id = _driverId ?? await _resolveDriverId();
       if (id == null) return null;
@@ -87,10 +95,16 @@ class OffersController {
         pickupLatLng: offer.pickupLatLng,
         dropoffLatLng: offer.dropoffLatLng,
         riderName: offer.riderName,
+        riderPhotoUrl: offer.riderPhotoUrl,
+        riderRating: offer.riderRating,
+        pickupAddress: offer.pickupAddress,
+        dropoffAddress: offer.dropoffAddress,
       );
     } catch (e) {
       debugPrint('OffersController accept error: $e');
       return null;
+    } finally {
+      _acceptingOffers.remove(offerId); // always release the guard
     }
   }
 

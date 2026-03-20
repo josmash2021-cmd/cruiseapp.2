@@ -230,6 +230,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
 
   Future<void> _openPayPal() async {
     if (!mounted) return;
+    final paypalLinkedMsg = S.of(context).paypalLinked;
     final approved = await Navigator.of(context).push<bool>(
       slideFromRightRoute(PayPalCheckoutScreen(
         amount: '1.00',
@@ -240,7 +241,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
     if (!mounted) return;
     if (approved == true) {
       await LocalDataService.linkPaymentMethod('paypal');
-      _showSetupSnack(S.of(context).paypalLinked);
+      _showSetupSnack(paypalLinkedMsg);
       await Future.delayed(const Duration(milliseconds: 400));
       if (!mounted) return;
       _goToNextScreen('paypal');

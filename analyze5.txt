@@ -1,0 +1,11 @@
+﻿Analyzing lib...                                                
+
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\pages\driver_navigation_page.dart:1617:45 - use_build_context_synchronously
+
+flutter : 1 issue found. (ran in 2.7s)
+At line:1 char:1
++ flutter analyze lib/ --no-pub 2>&1 | Out-File "analyze5.txt" -Encodin ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (1 issue found. (ran in 2.7s):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

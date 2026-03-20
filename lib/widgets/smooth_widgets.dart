@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 /// Botón ultra-smooth con feedback táctil profesional
@@ -217,7 +217,7 @@ class _SmoothCardState extends State<SmoothCard>
               child: Material(
                 elevation: _elevationAnimation.value,
                 borderRadius: widget.borderRadius,
-                shadowColor: Colors.black.withOpacity(0.15),
+                shadowColor: Colors.black.withValues(alpha: 0.15),
                 child: ClipRRect(
                   borderRadius: widget.borderRadius,
                   child: widget.child,
@@ -277,7 +277,7 @@ class _SmoothShimmerState extends State<SmoothShimmer>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final base = widget.baseColor ?? theme.colorScheme.surfaceContainerHighest;
-    final highlight = widget.highlightColor ?? base.withOpacity(0.5);
+    final highlight = widget.highlightColor ?? base.withValues(alpha: 0.5);
 
     return AnimatedBuilder(
       animation: _animation,
@@ -428,7 +428,7 @@ class SmoothBottomSheet extends StatelessWidget {
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.2),
+                color: Colors.black.withValues(alpha: 0.2),
                 blurRadius: 24,
                 offset: const Offset(0, -4),
               ),

@@ -46,6 +46,18 @@ class ApiService {
   /// Returns the URL currently in use by all API calls.
   static String get activeServerUrl => _activeUrl;
 
+  /// Lightweight connectivity check — pings DNS without adding dependencies.
+  /// Uses dart:io InternetAddress.lookup with a 3-second timeout.
+  static Future<bool> isOnline() async {
+    try {
+      final result = await InternetAddress.lookup('google.com')
+          .timeout(const Duration(seconds: 3));
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Returns true if [url] is a private/local network address that only
   /// works on the same WiFi — these must not be used on cellular.
   static bool _isLocalUrl(String url) {
@@ -192,6 +204,10 @@ class ApiService {
   static String? _cachedToken;
   static String? _cachedRefreshToken;
   static bool _isRefreshing = false;
+  static bool _isHandlingUnauthorized = false;
+
+  /// M2: Set this callback to navigate to login when JWT expires and refresh fails.
+  static void Function()? onUnauthorized;
 
   static Future<void> _saveToken(String token) async {
     _cachedToken = token;
@@ -227,6 +243,21 @@ class ApiService {
     if (_cachedRefreshToken != null) return _cachedRefreshToken;
     _cachedRefreshToken = await SecurityService.readCredential('refresh_jwt');
     return _cachedRefreshToken;
+  }
+
+  /// M2: Called on 401 — attempts refresh, clears token and fires [onUnauthorized] if refresh fails.
+  static Future<void> _handleUnauthorized() async {
+    if (_isHandlingUnauthorized) return; // debounce concurrent 401s
+    _isHandlingUnauthorized = true;
+    try {
+      final refreshed = await refreshAccessToken();
+      if (!refreshed) {
+        await clearToken();
+        onUnauthorized?.call();
+      }
+    } finally {
+      _isHandlingUnauthorized = false;
+    }
   }
 
   /// Attempt to refresh the access token using the refresh token.
@@ -393,6 +424,10 @@ class ApiService {
     }
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return body is Map<String, dynamic> ? body : {'data': body};
+    }
+    // M2: on 401, attempt token refresh in background; signal logout if refresh fails
+    if (res.statusCode == 401) {
+      _handleUnauthorized().ignore();
     }
     final detail = body is Map ? body['detail'] ?? 'Unknown error' : body;
     throw ApiException(res.statusCode, detail.toString());
@@ -1235,6 +1270,60 @@ class ApiService {
     return [];
   }
 
+  // ═══════════════════════════════════════════════════════
+  //  REFERRAL ENDPOINTS
+  // ═══════════════════════════════════════════════════════
+
+  /// Get or generate the user's unique referral code + stats.
+  static Future<Map<String, dynamic>> getReferralCode() async {
+    final token = await getToken();
+    if (token == null) return {};
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/auth/referral-code'), headers: _jsonHeaders(token))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    return {};
+  }
+
+  /// Apply a referral code entered by the user.
+  static Future<Map<String, dynamic>> applyReferralCode(String code) async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/apply-referral'),
+          headers: _jsonHeaders(token),
+          body: jsonEncode({'code': code}),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Get list of users I've referred and total bonus earned.
+  static Future<Map<String, dynamic>> getMyReferrals() async {
+    final token = await getToken();
+    if (token == null) return {'referrals': [], 'total_bonus': 0.0};
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/auth/referrals'), headers: _jsonHeaders(token))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    return {'referrals': [], 'total_bonus': 0.0};
+  }
+
+  /// Get next scheduled auto-payout date and pending balance.
+  static Future<Map<String, dynamic>> getNextPayoutDate() async {
+    final token = await getToken();
+    if (token == null) return {};
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/drivers/payouts/next-date'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 8));
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    return {};
+  }
+
   /// Get driver's payout methods.
   static Future<List<Map<String, dynamic>>> getPayoutMethods() async {
     final token = await getToken();
@@ -1788,19 +1877,24 @@ class ApiService {
     return _parse(res);
   }
 
-  /// Create a PayPal order via backend proxy.
+  /// Create a PayPal order via backend proxy (secrets stay server-side).
+  /// Returns `{ order_id, approval_url }`.
   static Future<Map<String, dynamic>> createPayPalOrder({
     required String amount,
-    required String currency,
+    String currency = 'USD',
+    String description = 'Cruise ride payment',
   }) async {
-    final h = await _authHeaders();
     final res = await _client
         .post(
-          Uri.parse('$_baseUrl/payments/paypal/create-order'),
-          headers: h,
-          body: jsonEncode({'amount': amount, 'currency': currency}),
+          Uri.parse('$_baseUrl/paypal/create-order'),
+          headers: _jsonHeaders(),
+          body: jsonEncode({
+            'amount': amount,
+            'currency': currency,
+            'description': description,
+          }),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 20));
     return _parse(res);
   }
 
@@ -1885,6 +1979,24 @@ class ApiService {
         )
         .timeout(const Duration(seconds: 20));
     return _parse(res);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  STRIPE SETUP INTENT
+  // ═══════════════════════════════════════════════════════
+
+  /// Create a Stripe SetupIntent for saving a card for future off-session charges.
+  /// Returns the client_secret needed to confirm via Stripe SDK.
+  static Future<String?> createSetupIntent() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/payments/setup-intent'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    final data = _parse(res);
+    return data['client_secret'] as String?;
   }
 }
 

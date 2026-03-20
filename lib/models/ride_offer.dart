@@ -12,6 +12,8 @@ class RideOffer {
   final double distanceToPickupKm;
   final int estimatedMinutes;
   final String vehicleType;
+  final String riderPhotoUrl;
+  final double riderRating;
 
   const RideOffer({
     required this.offerId,
@@ -24,6 +26,8 @@ class RideOffer {
     required this.distanceToPickupKm,
     required this.estimatedMinutes,
     required this.vehicleType,
+    this.riderPhotoUrl = '',
+    this.riderRating = 5.0,
   });
 
   factory RideOffer.fromJson(Map<String, dynamic> json) {
@@ -45,6 +49,8 @@ class RideOffer {
           (json['distance_to_pickup_km'] as num?)?.toDouble() ?? 0,
       estimatedMinutes: (json['estimated_minutes'] as num?)?.toInt() ?? 0,
       vehicleType: json['vehicle_type']?.toString() ?? 'Fusion',
+      riderPhotoUrl: json['rider_photo_url']?.toString() ?? '',
+      riderRating: (json['rider_rating'] as num?)?.toDouble() ?? 5.0,
     );
   }
 }

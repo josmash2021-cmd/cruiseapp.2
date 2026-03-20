@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' if (dart.library.html) 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -262,6 +263,14 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   final _passwordCtrl = TextEditingController();
   bool _obscurePass = true;
 
+  // ── Inline duplicate-check state ───────────────────────────────────────────
+  String? _emailError;
+  String? _phoneError;
+  bool _checkingEmail = false;
+  bool _checkingPhone = false;
+  Timer? _emailDebounce;
+  Timer? _phoneDebounce;
+
   // ── Step 1: Vehicle ────────────────────────────────────────────────────────
   final _makeCtrl = TextEditingController();
   final _modelCtrl = TextEditingController();
@@ -286,7 +295,17 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   bool _submitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    _emailCtrl.addListener(_onEmailChanged);
+    _phoneCtrl.addListener(_onPhoneChanged);
+    _passwordCtrl.addListener(() => setState(() {}));
+  }
+
+  @override
   void dispose() {
+    _emailDebounce?.cancel();
+    _phoneDebounce?.cancel();
     _pageCtrl.dispose();
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
@@ -316,7 +335,11 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             _passwordCtrl.text.contains(RegExp(r'[A-Z]')) &&
             _passwordCtrl.text.contains(
               RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'),
-            );
+            ) &&
+            _emailError == null &&
+            _phoneError == null &&
+            !_checkingEmail &&
+            !_checkingPhone;
       case 1:
         final year = int.tryParse(_yearCtrl.text.trim()) ?? 0;
         return _makeCtrl.text.trim().isNotEmpty &&
@@ -362,6 +385,126 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     } else {
       Navigator.of(context).pop();
     }
+  }
+
+  // ── Inline duplicate-check helpers ─────────────────────────────────────────
+
+  void _onEmailChanged() {
+    _emailDebounce?.cancel();
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty ||
+        !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$').hasMatch(email)) {
+      if (_emailError != null || _checkingEmail) {
+        setState(() {
+          _emailError = null;
+          _checkingEmail = false;
+        });
+      }
+      return;
+    }
+    setState(() {
+      _checkingEmail = true;
+      _emailError = null;
+    });
+    _emailDebounce = Timer(const Duration(milliseconds: 600), () async {
+      final exists = await ApiService.checkExists(email, role: 'driver');
+      if (!mounted) return;
+      setState(() {
+        _checkingEmail = false;
+        _emailError =
+            exists ? 'This email is already registered as a driver' : null;
+      });
+    });
+  }
+
+  void _onPhoneChanged() {
+    _phoneDebounce?.cancel();
+    final raw = _phoneCtrl.text.replaceAll(RegExp(r'\D'), '');
+    if (raw.length < 10) {
+      if (_phoneError != null || _checkingPhone) {
+        setState(() {
+          _phoneError = null;
+          _checkingPhone = false;
+        });
+      }
+      return;
+    }
+    final phone = '+1$raw';
+    setState(() {
+      _checkingPhone = true;
+      _phoneError = null;
+    });
+    _phoneDebounce = Timer(const Duration(milliseconds: 600), () async {
+      final exists = await ApiService.checkExists(phone, role: 'driver');
+      if (!mounted) return;
+      setState(() {
+        _checkingPhone = false;
+        _phoneError =
+            exists ? 'This phone number is already registered as a driver' : null;
+      });
+    });
+  }
+
+  Widget _inlineFieldStatus(String? error, bool checking) {
+    if (!checking && error == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, left: 4),
+      child: Row(
+        children: [
+          if (checking)
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                  strokeWidth: 1.5, color: Colors.white38),
+            )
+          else
+            const Icon(Icons.error_outline_rounded,
+                size: 14, color: Colors.redAccent),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              checking ? 'Checking...' : error!,
+              style: TextStyle(
+                color: checking ? Colors.white38 : Colors.redAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _driverStrengthRow(String label, bool met) {
+    return Row(
+      children: [
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          transitionBuilder: (child, anim) => ScaleTransition(
+            scale: anim,
+            child: FadeTransition(opacity: anim, child: child),
+          ),
+          child: Icon(
+            met ? Icons.check_circle_rounded : Icons.circle_outlined,
+            key: ValueKey(met),
+            size: 16,
+            color: met ? _gold : Colors.white38,
+          ),
+        ),
+        const SizedBox(width: 8),
+        AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 250),
+          style: TextStyle(
+            fontSize: 13,
+            color: met ? _gold : Colors.white38,
+            fontWeight: met ? FontWeight.w600 : FontWeight.w400,
+          ),
+          child: Text(label),
+        ),
+      ],
+    );
   }
 
   // ── Image helpers ──────────────────────────────────────────────────────────
@@ -823,6 +966,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             icon: Icons.email_outlined,
             keyboard: TextInputType.emailAddress,
           ),
+          _inlineFieldStatus(_emailError, _checkingEmail),
           const SizedBox(height: 16),
           _field(
             ctrl: _phoneCtrl,
@@ -830,6 +974,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             icon: Icons.phone_outlined,
             keyboard: TextInputType.phone,
           ),
+          _inlineFieldStatus(_phoneError, _checkingPhone),
           const SizedBox(height: 16),
           _field(
             ctrl: _passwordCtrl,
@@ -845,6 +990,31 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 size: 20,
               ),
               onPressed: () => setState(() => _obscurePass = !_obscurePass),
+            ),
+          ),
+          // ── Password requirements checklist ──
+          Padding(
+            padding: const EdgeInsets.only(top: 14, left: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _driverStrengthRow(
+                    'At least 8 characters',
+                    _passwordCtrl.text.length >= 8),
+                const SizedBox(height: 6),
+                _driverStrengthRow(
+                    'Contains a number',
+                    _passwordCtrl.text.contains(RegExp(r'[0-9]'))),
+                const SizedBox(height: 6),
+                _driverStrengthRow(
+                    'An uppercase letter',
+                    _passwordCtrl.text.contains(RegExp(r'[A-Z]'))),
+                const SizedBox(height: 6),
+                _driverStrengthRow(
+                    r'A special character (!@#$' "'" r's etc.)',
+                    _passwordCtrl.text.contains(
+                        RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'))),
+              ],
             ),
           ),
           const SizedBox(height: 40),

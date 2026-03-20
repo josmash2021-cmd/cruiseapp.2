@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -419,7 +419,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                               fit: BoxFit.cover,
                               width: 60,
                               height: 60,
-                              errorBuilder: (_a, _b, _c) => const Icon(
+                              errorBuilder: (_, __, ___) => const Icon(
                                 Icons.person_rounded,
                                 color: Colors.black,
                                 size: 30,
@@ -430,7 +430,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                               fit: BoxFit.cover,
                               width: 60,
                               height: 60,
-                              errorBuilder: (_a, _b, _c) => const Icon(
+                              errorBuilder: (_, __, ___) => const Icon(
                                 Icons.person_rounded,
                                 color: Colors.black,
                                 size: 30,

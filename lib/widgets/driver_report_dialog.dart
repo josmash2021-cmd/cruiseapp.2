@@ -1,5 +1,4 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+﻿import 'package:flutter/material.dart';
 import '../services/driver_report_service.dart';
 import '../services/user_session.dart';
 
@@ -104,7 +103,7 @@ class _DriverReportDialogState extends State<DriverReportDialog> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF44336).withOpacity(0.15),
+                  color: const Color(0xFFF44336).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(Icons.report_problem, color: Color(0xFFF44336)),
@@ -218,7 +217,7 @@ class _DriverReportDialogState extends State<DriverReportDialog> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFD4A24C),
                 foregroundColor: Colors.black,
-                disabledBackgroundColor: const Color(0xFFD4A24C).withOpacity(0.5),
+                disabledBackgroundColor: const Color(0xFFD4A24C).withValues(alpha: 0.5),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),

@@ -37,6 +37,12 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   List<String> _dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   List<Map<String, dynamic>> _transactions = [];
 
+  // Auto-payout data
+  DateTime? _nextPayoutDate;
+  double _pendingBalance = 0.0;
+  bool _stripeConnected = false;
+  List<Map<String, dynamic>> _cashoutHistory = [];
+
   double get _maxDay {
     final m = _dailyEarnings.isEmpty ? 0.0 : _dailyEarnings.reduce(max);
     return m > 0 ? m : 1.0;
@@ -59,6 +65,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     );
     _listAnim = CurvedAnimation(parent: _listCtrl, curve: Curves.easeOutCubic);
     _fetchEarnings();
+    _fetchPayoutData();
   }
 
   Future<void> _fetchEarnings() async {
@@ -98,6 +105,25 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       if (!mounted) return;
       setState(() => _loading = false);
     }
+  }
+
+  Future<void> _fetchPayoutData() async {
+    try {
+      final results = await Future.wait([
+        ApiService.getNextPayoutDate(),
+        ApiService.getDriverCashouts(),
+      ]);
+      if (!mounted) return;
+      final info = results[0] as Map<String, dynamic>;
+      final history = results[1] as List<Map<String, dynamic>>;
+      setState(() {
+        _pendingBalance = (info['pending_balance'] as num?)?.toDouble() ?? 0.0;
+        _stripeConnected = info['stripe_connected'] as bool? ?? false;
+        _cashoutHistory = history;
+        final raw = info['next_payout_date'] as String?;
+        if (raw != null) _nextPayoutDate = DateTime.tryParse(raw);
+      });
+    } catch (_) {}
   }
 
   @override
@@ -319,7 +345,16 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   // ── Stripe Connect (Setup Payouts) ──
                   _StripeConnectButton(),
 
+                  const SizedBox(height: 20),
+
+                  // ── Next Auto-Payout card ──
+                  _buildNextPayoutCard(),
+
                   const SizedBox(height: 28),
+
+                  // ── Cashout history ──
+                  if (_cashoutHistory.isNotEmpty) ...
+                    _buildCashoutHistory(),
 
                   // ── Recent transactions ──
                   Text(
@@ -353,6 +388,191 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
         ],
       ),
     );
+  }
+
+  String _formatPayoutDate(DateTime dt) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final d = dt.toLocal();
+    return '${days[d.weekday - 1]}, ${months[d.month - 1]} ${d.day}';
+  }
+
+  Widget _buildNextPayoutCard() {
+    final hasDate = _nextPayoutDate != null;
+    final dateLabel = hasDate ? _formatPayoutDate(_nextPayoutDate!) : '—';
+    final pendingLabel = '\$${_pendingBalance.toStringAsFixed(2)}';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: _stripeConnected
+              ? const Color(0xFF34A853).withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.08),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: _stripeConnected
+                  ? const Color(0xFF34A853).withValues(alpha: 0.15)
+                  : _gold.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              _stripeConnected
+                  ? Icons.schedule_rounded
+                  : Icons.info_outline_rounded,
+              color: _stripeConnected ? const Color(0xFF34A853) : _gold,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Next Auto-Payout',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _stripeConnected
+                      ? dateLabel
+                      : 'Connect Stripe to enable',
+                  style: TextStyle(
+                    color: _stripeConnected ? Colors.white : Colors.white54,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'Pending',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                pendingLabel,
+                style: TextStyle(
+                  color: _pendingBalance > 0 ? _gold : Colors.white38,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildCashoutHistory() {
+    return [
+      const Text(
+        'Payout History',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      const SizedBox(height: 14),
+      ..._cashoutHistory.take(8).map((c) {
+        final amount = (c['amount'] as num?)?.toDouble() ?? 0.0;
+        final status = c['status'] as String? ?? 'pending';
+        final rawDate = c['created_at'] as String?;
+        DateTime? date;
+        if (rawDate != null) date = DateTime.tryParse(rawDate)?.toLocal();
+        final dateStr = date != null ? _formatPayoutDate(date) : '—';
+        final isCompleted = status == 'completed';
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1C1C1E),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: isCompleted
+                      ? const Color(0xFF34A853).withValues(alpha: 0.15)
+                      : Colors.orange.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isCompleted
+                      ? Icons.check_circle_rounded
+                      : Icons.hourglass_top_rounded,
+                  color: isCompleted
+                      ? const Color(0xFF34A853)
+                      : Colors.orange,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isCompleted ? 'Payout Sent' : 'Pending',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      dateStr,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '\$${amount.toStringAsFixed(2)}',
+                style: TextStyle(
+                  color: isCompleted ? const Color(0xFF34A853) : Colors.orange,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+      const SizedBox(height: 14),
+    ];
   }
 
   Widget _buildBarChart() {
@@ -569,22 +789,56 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   onPressed: () async {
                     Navigator.pop(ctx);
                     try {
-                      await ApiService.requestCashout(amount: _total);
+                      final result = await ApiService.requestCashout(amount: _total);
                       if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            S
-                                .of(context)
-                                .cashOutInitiated(_total.toStringAsFixed(2)),
+                      final transferId = result['transfer_id'] as String?;
+                      final stripeErr = result['stripe_error'] as String?;
+                      if (transferId != null) {
+                        // Real Stripe transfer initiated
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              '✅ ${S.of(context).cashOutInitiated(_total.toStringAsFixed(2))}',
+                            ),
+                            backgroundColor: _gold,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                          backgroundColor: _gold,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                        );
+                        _fetchEarnings();
+                      } else if (stripeErr != null) {
+                        // Transfer failed but cashout record was created
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Cashout recorded but transfer failed. Contact support. ($stripeErr)',
+                            ),
+                            backgroundColor: Colors.orange,
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 6),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                        ),
-                      );
+                        );
+                      } else {
+                        // No Stripe Connect — cashout pending manual processing
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text(
+                              'Cashout requested. Set up Stripe payouts below to receive funds automatically.',
+                            ),
+                            backgroundColor: _gold,
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 5),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        );
+                      }
                     } catch (e) {
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(

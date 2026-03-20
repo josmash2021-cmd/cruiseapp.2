@@ -1,0 +1,19 @@
+﻿Analyzing lib...                                                
+
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\pages\driver_navigation_page.dart:1617:45 - use_build_context_synchronously
+   info - The private field _showPassword could be 'final' - lib\screens\account_screen.dart:484:8 - prefer_final_fields
+   info - The private field _lastSpriteIdx could be 'final' - lib\screens\driver\driver_online_screen.dart:178:7 - prefer_final_fields
+   info - The private field _currentSpeed could be 'final' - lib\screens\game_navigation_screen.dart:745:10 - prefer_final_fields
+   info - The private field _routeGlowPhase could be 'final' - lib\screens\map_screen.dart:166:10 - prefer_final_fields
+   info - The private field _glowFrameSkip could be 'final' - lib\screens\map_screen.dart:2433:7 - prefer_final_fields
+   info - The private field _cameraBearing could be 'final' - lib\screens\rider_tracking_screen.dart:83:10 - prefer_final_fields
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_tracking_screen.dart:507:40 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_tracking_screen.dart:507:47 - no_leading_underscores_for_local_identifiers
+
+flutter : 9 issues found. (ran in 4.6s)
+At line:1 char:1
++ flutter analyze lib/ --no-pub 2>&1 | Out-File -FilePath "C:\Users\Pum ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (9 issues found. (ran in 4.6s):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

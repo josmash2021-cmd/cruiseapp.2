@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -55,7 +55,7 @@ class GameCarRenderer {
 
     // ── SOMBRA PROYECTADA (más grande para efecto flotante) ──
     final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.25)
+      ..color = Colors.black.withValues(alpha: 0.25)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
 
     canvas.drawOval(
@@ -90,7 +90,7 @@ class GameCarRenderer {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          palette.highlight.withOpacity(0.6),
+          palette.highlight.withValues(alpha: 0.6),
           Colors.transparent,
         ],
       ).createShader(gradientRect);
@@ -120,7 +120,7 @@ class GameCarRenderer {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            palette.highlight.withOpacity(0.3),
+            palette.highlight.withValues(alpha: 0.3),
             Colors.transparent,
           ],
         ).createShader(Rect.fromLTWH(cx - 22, cy - 60, 44, 55)),
@@ -158,7 +158,7 @@ class GameCarRenderer {
 
     canvas.drawPath(
       glarePath,
-      Paint()..color = Colors.white.withOpacity(0.4),
+      Paint()..color = Colors.white.withValues(alpha: 0.4),
     );
 
     // ── FAROS DELANTEROS (LED brillante) ──
@@ -243,7 +243,7 @@ class GameCarRenderer {
     canvas.drawPath(
       waistLine,
       Paint()
-        ..color = Colors.white.withOpacity(0.3)
+        ..color = Colors.white.withValues(alpha: 0.3)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -254,7 +254,7 @@ class GameCarRenderer {
     canvas.drawOval(
       Rect.fromCenter(center: center, width: 18, height: 12),
       Paint()
-        ..color = color.withOpacity(0.3)
+        ..color = color.withValues(alpha: 0.3)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
 
@@ -326,7 +326,7 @@ class GameCarRenderer {
     canvas.drawOval(
       Rect.fromCenter(center: Offset(cx, cy + 70), width: 100, height: 50),
       Paint()
-        ..color = Colors.black.withOpacity(0.25)
+        ..color = Colors.black.withValues(alpha: 0.25)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
     );
 
@@ -425,7 +425,7 @@ class GameCarRenderer {
     canvas.drawOval(
       Rect.fromCenter(center: Offset(cx, cy + 70), width: 80, height: 45),
       Paint()
-        ..color = palette.accent.withOpacity(0.2)
+        ..color = palette.accent.withValues(alpha: 0.2)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 25),
     );
 
@@ -471,8 +471,8 @@ class GameCarRenderer {
       Paint()
         ..shader = LinearGradient(
           colors: [
-            Colors.cyan.withOpacity(0.4),
-            Colors.blue.withOpacity(0.2),
+            Colors.cyan.withValues(alpha: 0.4),
+            Colors.blue.withValues(alpha: 0.2),
           ],
         ).createShader(Rect.fromLTWH(cx - 20, cy - 50, 40, 60)),
     );

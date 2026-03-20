@@ -110,17 +110,16 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Use backend to send OTP (handles EmailJS server-side + fallback)
+    // Generate OTP on backend (stores code server-side)
     final otpResult = await ApiService.sendOtp(email: email);
 
     if (!mounted) return;
     setState(() => _sending = false);
 
     final ok = otpResult['ok'] == true;
-    final method = otpResult['method'] as String? ?? '';
     final backendCode = otpResult['code'] as String?;
 
-    if (!ok) {
+    if (!ok || backendCode == null) {
       _showSnack(
         'Failed to send code. Try again.',
         Colors.white.withValues(alpha: 0.6),
@@ -128,22 +127,18 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (method == 'email') {
-      _showSnack('Code sent to $email', const Color(0xFFE8C547));
-    } else if (backendCode != null) {
-      // Backend returned code directly — show it to user
-      _showSnack('Your code: $backendCode', const Color(0xFFE8C547));
-    } else {
-      _showSnack('Code sent', const Color(0xFFE8C547));
-    }
+    // Send the code to user's email via EmailJS
+    await EmailService.sendVerificationCode(toEmail: email, code: backendCode);
+    if (!mounted) return;
 
-    // Navigate to verify screen — use backend code if available, else dummy (backend verifies)
+    _showSnack('Code sent to $email', const Color(0xFFE8C547));
+
     Navigator.of(context).push(
       slideFromRightRoute(
         VerifyCodeScreen(
           email: email,
-          expectedCode: backendCode ?? '000000',
-          useBackendVerify: backendCode == null,
+          expectedCode: '',
+          useBackendVerify: true,
         ),
       ),
     );

@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -80,7 +80,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   mapbox.PointAnnotation? _dropoffAnnot;
   mapbox.PolylineAnnotation? _fullRouteAnnot;
   mapbox.PolylineAnnotation? _remainingRouteAnnot;
-  double _cameraBearing = 0;
+  final double _cameraBearing = 0;
   Uint8List? _pickupPinBytes;
   Uint8List? _dropoffPinBytes;
 
@@ -422,12 +422,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
-          pageBuilder: (_a, _b, _c) => RiderRatingScreen(
+          pageBuilder: (_, __, ___) => RiderRatingScreen(
             driverName: widget.driverName,
             tripId: widget.tripId,
             fare: widget.price,
           ),
-          transitionsBuilder: (_a, anim, _c, child) =>
+          transitionsBuilder: (_, anim, __, child) =>
               FadeTransition(opacity: anim, child: child),
           transitionDuration: const Duration(milliseconds: 500),
         ),
@@ -503,8 +503,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               if (!mounted) return;
               Navigator.of(context).pushAndRemoveUntil(
                 PageRouteBuilder(
-                  pageBuilder: (_a, _b, _c) => const HomeScreen(),
-                  transitionsBuilder: (_a, a, _c, child) =>
+                  pageBuilder: (_, __, ___) => const HomeScreen(),
+                  transitionsBuilder: (_, a, __, child) =>
                       FadeTransition(opacity: a, child: child),
                   transitionDuration: const Duration(milliseconds: 400),
                 ),
@@ -587,9 +587,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       final style = _map!.style;
       
       // Generar imagen de sombra si no existe
-      if (_carShadowBytes == null) {
-        _carShadowBytes = await _generateShadowImage();
-      }
+      _carShadowBytes ??= await _generateShadowImage();
       
       // Add car image to style
       if (!_carImageAdded) {
@@ -658,7 +656,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       // CAR SOURCE & LAYER (se crea después para quedar encima)
       final sourceExists = await style.styleSourceExists(_carSourceId);
       if (!sourceExists) {
-        final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{"bearing":${_animBearing}}}]}';
+        final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{"bearing":$_animBearing}}}]}';
         await style.addSource(
           mapbox.GeoJsonSource(id: _carSourceId, data: geoJson),
         );
@@ -680,7 +678,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         _startCarEntranceAnimation();
       } else {
         // Update car position
-        final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{"bearing":${_animBearing}}}]}';
+        final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{"bearing":$_animBearing}}}]}';
         final source = await style.getSource(_carSourceId);
         if (source != null) {
           (source as mapbox.GeoJsonSource).updateGeoJSON(geoJson);
@@ -739,7 +737,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     
     // Dibujar círculo negro difuminado (sombra)
     final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.4)
+      ..color = Colors.black.withValues(alpha: 0.4)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15);
     
     canvas.drawCircle(
@@ -1283,9 +1281,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _camNELng = _tgtNELng;
       _camInitialized = true;
       _programmaticCam = true;
-      _map!.cameraForCoordinates(
+      _map!.cameraForCoordinatesPadding(
         [mapbox.Point(coordinates: mapbox.Position(_camSWLng, _camSWLat)),
          mapbox.Point(coordinates: mapbox.Position(_camNELng, _camNELat))],
+        mapbox.CameraOptions(),
         mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: 420, right: 50),
         null, null,
       ).then((cam) {
@@ -1727,7 +1726,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     if (_fullRouteAnnot == null && _routePts.length >= 2) {
       _fullRouteAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
         geometry: mapbox.LineString(coordinates: _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
-        lineColor: const Color(0xFF2A3A5A).value,
+        lineColor: const Color(0xFF2A3A5A).toARGB32(),
         lineWidth: 8.0,
         lineJoin: mapbox.LineJoin.ROUND,
       ));
@@ -1744,7 +1743,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       }
       _remainingRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
         geometry: mapbox.LineString(coordinates: fullRouteCoords),
-        lineColor: const Color(0xFF5BA3F5).value,
+        lineColor: const Color(0xFF5BA3F5).toARGB32(),
         lineWidth: 10.0,
         lineJoin: mapbox.LineJoin.ROUND,
       ));
@@ -1946,7 +1945,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF3B30).withOpacity(0.12),
+                  color: const Color(0xFFFF3B30).withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -1970,7 +1969,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 S.of(context).cancelFeeWarning,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.5),
+                  color: Colors.white.withValues(alpha: 0.5),
                   fontSize: 14,
                 ),
               ),
@@ -1998,8 +1997,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                     if (mounted) {
                       Navigator.of(context).pushAndRemoveUntil(
                         PageRouteBuilder(
-                          pageBuilder: (_a, _b, _c) => const HomeScreen(),
-                          transitionsBuilder: (_a, anim, _c, child) =>
+                          pageBuilder: (_, __, ___) => const HomeScreen(),
+                          transitionsBuilder: (_, anim, __, child) =>
                               FadeTransition(opacity: anim, child: child),
                           transitionDuration: const Duration(milliseconds: 400),
                         ),
@@ -2058,7 +2057,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white.withOpacity(0.6),
+                    color: Colors.white.withValues(alpha: 0.6),
                   ),
                 ),
               ),
@@ -2697,8 +2696,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                     // Navigate to rider home with smooth fade
                     Navigator.of(context).pushAndRemoveUntil(
                       PageRouteBuilder(
-                        pageBuilder: (_a, _b, _c) => const HomeScreen(),
-                        transitionsBuilder: (_a, anim, _c, child) {
+                        pageBuilder: (_, __, ___) => const HomeScreen(),
+                        transitionsBuilder: (_, anim, __, child) {
                           return FadeTransition(opacity: anim, child: child);
                         },
                         transitionDuration: const Duration(milliseconds: 500),
@@ -2791,7 +2790,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             filterQuality: FilterQuality.high,
             isAntiAlias: true,
             cacheWidth: 320,
-            errorBuilder: (_a, _b, _c) => Icon(
+            errorBuilder: (_, __, ___) => Icon(
               Icons.directions_car_rounded,
               size: 36,
               color: Colors.white.withValues(alpha: 0.3),

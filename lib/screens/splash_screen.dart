@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:local_auth/local_auth.dart';
@@ -203,89 +203,69 @@ class _SplashScreenState extends State<SplashScreen>
     await initFuture;
     if (_disposed) return;
 
+    // ── Start computing destination IN PARALLEL with exit animation ──
+    // By the time the 800ms animation finishes, the destination is already ready.
+    final destinationFuture = _computeDestination().catchError((e) {
+      debugPrint('[SplashScreen] destination error: $e');
+      return const WelcomeScreen() as Widget;
+    });
+
     // Phase 3 — scale up + fade out
     await _exitCtrl.forward().orCancel.catchError((_) {});
     if (_disposed) return;
 
-    _navigate();
+    // Destination should already be resolved — no black screen gap
+    final destination = await destinationFuture;
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(smoothFadeRoute(destination, durationMs: 400));
   }
 
-  void _navigate() async {
-    if (!mounted) return;
+  /// Computes which screen to navigate to. Runs in parallel with the exit
+  /// animation so there is no black-screen gap after the splash fades out.
+  Future<Widget> _computeDestination() async {
     final loggedIn = await UserSession.isLoggedIn();
-    if (!mounted) return;
+    if (!loggedIn) return const WelcomeScreen();
 
-    Widget destination;
-    if (loggedIn) {
-      // ── Check if dispatch blocked/deleted/deactivated account ──
-      try {
-        final status = await ApiService.getAccountStatus().timeout(
-          const Duration(seconds: 3),
-          onTimeout: () => 'active',
-        );
-        if (status == 'blocked' || status == 'deleted') {
-          await UserSession.logout();
-          if (!mounted) return;
-          Navigator.of(context).pushReplacement(
-            smoothFadeRoute(const WelcomeScreen(), durationMs: 400),
-          );
-          return;
-        }
-        if (status == 'deactivated') {
-          if (!mounted) return;
-          Navigator.of(context).pushReplacement(
-            smoothFadeRoute(const AccountDeactivatedScreen(), durationMs: 400),
-          );
-          return;
-        }
-      } catch (e) {
-        debugPrint('[SplashScreen] Account status check failed: $e');
-        // Backend unreachable — allow login from cache
+    // ── Check if dispatch blocked/deleted/deactivated account ──
+    try {
+      final status = await ApiService.getAccountStatus().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => 'active',
+      );
+      if (status == 'blocked' || status == 'deleted') {
+        await UserSession.logout();
+        return const WelcomeScreen();
       }
-      if (!mounted) return;
-      final mode = await UserSession.getMode();
-      if (mode == 'driver') {
-        // Check driver approval status + profile photo
-        try {
-          final approvalResult = await ApiService.getDriverApprovalStatus().timeout(
-            const Duration(seconds: 3),
-            onTimeout: () => {'status': 'approved'},
-          );
-          final vStatus =
-              approvalResult['approval_status'] as String? ??
-              approvalResult['status'] as String? ??
-              'none';
-          if (vStatus == 'approved') {
-            destination = const DriverHomeScreen();
-          } else {
-            // pending, rejected, none → show review screen
-            if (!mounted) return;
-            Navigator.of(context).pushReplacement(
-              smoothFadeRoute(
-                const DriverPendingReviewScreen(),
-                durationMs: 400,
-              ),
-            );
-            return;
-          }
-        } catch (e) {
-          debugPrint('[SplashScreen] Driver approval check failed: $e');
-          // Backend unreachable — let them through
-          destination = const DriverHomeScreen();
-        }
-      } else {
-        destination = const HomeScreen();
+      if (status == 'deactivated') {
+        return const AccountDeactivatedScreen();
       }
-      // Initialize profile photo for riders (and drivers) to ensure it persists
-      await UserSession.initPhotoNotifier();
-    } else {
-      destination = const WelcomeScreen();
+    } catch (e) {
+      debugPrint('[SplashScreen] Account status check failed: $e');
     }
 
-    if (!mounted) return;
-    Navigator.of(
-      context,
-    ).pushReplacement(smoothFadeRoute(destination, durationMs: 400));
+    final mode = await UserSession.getMode();
+    if (mode == 'driver') {
+      try {
+        final approvalResult = await ApiService.getDriverApprovalStatus().timeout(
+          const Duration(seconds: 3),
+          onTimeout: () => {'status': 'approved'},
+        );
+        final vStatus =
+            approvalResult['approval_status'] as String? ??
+            approvalResult['status'] as String? ??
+            'none';
+        if (vStatus != 'approved') {
+          return const DriverPendingReviewScreen();
+        }
+      } catch (e) {
+        debugPrint('[SplashScreen] Driver approval check failed: $e');
+      }
+      await UserSession.initPhotoNotifier();
+      return const DriverHomeScreen();
+    } else {
+      await UserSession.initPhotoNotifier();
+      return const HomeScreen();
+    }
   }
 
   @override
@@ -380,7 +360,7 @@ class _SplashScreenState extends State<SplashScreen>
                             style: GoogleFonts.cinzel(
                               fontSize: 11,
                               fontWeight: FontWeight.w400,
-                              color: _gold.withOpacity(0.7),
+                              color: _gold.withValues(alpha: 0.7),
                               letterSpacing: 6,
                             ),
                           ),
@@ -420,7 +400,7 @@ class _SplashScreenState extends State<SplashScreen>
         gradient: LinearGradient(
           colors: [
             Colors.transparent,
-            _gold.withOpacity(0.7),
+            _gold.withValues(alpha: 0.7),
             Colors.transparent,
           ],
         ),
@@ -435,7 +415,7 @@ class _SplashScreenState extends State<SplashScreen>
         width: 5,
         height: 5,
         decoration: BoxDecoration(
-          color: _gold.withOpacity(0.8),
+          color: _gold.withValues(alpha: 0.8),
         ),
       ),
     );
@@ -469,11 +449,11 @@ class _SplashScreenState extends State<SplashScreen>
             letterSpacing: 6,
             shadows: [
               Shadow(
-                color: _gold.withOpacity(0.5 + glowIntensity * 0.5),
+                color: _gold.withValues(alpha: 0.5 + glowIntensity * 0.5),
                 blurRadius: 20 + glowIntensity * 40,
               ),
               Shadow(
-                color: _goldBright.withOpacity(glowIntensity * 0.4),
+                color: _goldBright.withValues(alpha: glowIntensity * 0.4),
                 blurRadius: 50,
               ),
             ],

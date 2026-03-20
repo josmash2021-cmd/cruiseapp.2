@@ -175,7 +175,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // -- Multi-angle 3D car sprites (8 directions) --
   List<Uint8List>? _navCarSprites;
   double _cameraBearing = 0;
-  int _lastSpriteIdx = -1;
+  final int _lastSpriteIdx = -1;
 
   // -- Vehicle-based markers (asset images) --
   Uint8List? _suvIconBytes;
@@ -1294,8 +1294,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Super smooth bearing interpolation — gradual turn, no snap
     double diff = _targetHeading - _heading;
     // Normalize to [-180, 180]
-    while (diff > 180) diff -= 360;
-    while (diff < -180) diff += 360;
+    while (diff > 180) { diff -= 360; }
+    while (diff < -180) { diff += 360; }
     // Use smoother interpolation factor for fluid rotation
     _heading += diff * (t * 0.25).clamp(0.0, 1.0);
 
@@ -1566,7 +1566,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             driverId: _driverId!,
           );
         } catch (e) {
-          _snack(S.of(context).tripNoLongerAvailable);
+          if (mounted) _snack(S.of(context).tripNoLongerAvailable);
           setState(
             () => _pendingOffers.removeWhere((o) => o['offer_id'] == offerId),
           );
@@ -1576,7 +1576,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         try {
           await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
         } catch (e) {
-          _snack(S.of(context).tripNoLongerAvailable);
+          if (mounted) _snack(S.of(context).tripNoLongerAvailable);
           setState(
             () => _pendingOffers.removeWhere((o) => o['trip_id'] == tripId),
           );
@@ -1599,12 +1599,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Populate active trip data from the accepted offer
     final name = (r['rider_name'] ?? 'Rider') as String;
     _pickupLL = LatLng(
-      (r['pickup_lat'] as num).toDouble(),
-      (r['pickup_lng'] as num).toDouble(),
+      (r['pickup_lat'] as num?)?.toDouble() ?? 0.0,
+      (r['pickup_lng'] as num?)?.toDouble() ?? 0.0,
     );
     _dropoffLL = LatLng(
-      (r['dropoff_lat'] as num).toDouble(),
-      (r['dropoff_lng'] as num).toDouble(),
+      (r['dropoff_lat'] as num?)?.toDouble() ?? 0.0,
+      (r['dropoff_lng'] as num?)?.toDouble() ?? 0.0,
     );
 
     _currentOfferId = offerId;
@@ -1658,6 +1658,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         );
       } catch (_) {}
     }
+    if (!mounted) return;
     setState(() {
       _isPickupSummary = true;
       _phase = _Phase.routeSummary;
@@ -1684,6 +1685,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         );
       } catch (_) {}
     }
+    if (!mounted) return;
     setState(() {
       _phase = _Phase.enRouteToPickup;
       _cameraFollowing = true;
@@ -1710,6 +1712,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         await ApiService.updateTripStatus(tripId: _tripId!, status: 'arrived');
       } catch (_) {}
     }
+    if (!mounted) return;
     setState(() {
       _phase = _Phase.arrivedAtPickup;
       _slideVal = 0;
@@ -1727,6 +1730,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         await ApiService.updateTripStatus(tripId: _tripId!, status: 'in_trip');
       } catch (_) {}
     }
+    if (!mounted) return;
     // Show route summary with Start Navigation button
     setState(() {
       _isPickupSummary = false;
@@ -1848,6 +1852,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         );
       } catch (_) {}
     }
+    if (!mounted) return;
     setState(() {
       _trips++;
       _earnings += _fare;
@@ -2048,7 +2053,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             );
             final leg = route['legs'][0];
             final steps = leg['steps'] as List;
-            String instr = S.of(context).headToDestination;
+            String instr = mounted ? S.of(context).headToDestination : '';
             if (steps.isNotEmpty) {
               instr = (steps[0]['html_instructions']?.toString() ?? '')
                   .replaceAll(RegExp(r'<[^>]*>'), '');
@@ -2099,7 +2104,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           final pts = _decodePoly(route['geometry'] as String);
           final distM = (route['distance'] as num?)?.toInt() ?? 0;
           final durS = (route['duration'] as num?)?.toInt() ?? 0;
-          String instr = S.of(context).headToDestination;
+          String instr = mounted ? S.of(context).headToDestination : '';
           final legs = route['legs'] as List?;
           if (legs != null && legs.isNotEmpty) {
             final steps = legs[0]['steps'] as List?;
@@ -2179,7 +2184,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final coords = pts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
-      lineColor: c.value,
+      lineColor: c.toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
@@ -2208,7 +2213,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     await _clearPickupDropoffAnnotations();
     _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
-      iconColor: const Color(0xFF4CAF50).value,
+      iconColor: const Color(0xFF4CAF50).toARGB32(),
       iconSize: 1.2,
     ));
   }
@@ -2219,7 +2224,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     await _clearPickupDropoffAnnotations();
     _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
-      iconColor: const Color(0xFFEA4335).value,
+      iconColor: const Color(0xFFEA4335).toARGB32(),
       iconSize: 1.2,
     ));
   }
@@ -2230,12 +2235,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     await _clearPickupDropoffAnnotations();
     _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
-      iconColor: const Color(0xFF4CAF50).value,
+      iconColor: const Color(0xFF4CAF50).toARGB32(),
       iconSize: 1.2,
     ));
     _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
-      iconColor: const Color(0xFFEA4335).value,
+      iconColor: const Color(0xFFEA4335).toARGB32(),
       iconSize: 1.2,
     ));
   }
@@ -2309,8 +2314,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final coords = points
         .map((p) => mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
         .toList();
-    _map!.cameraForCoordinates(
+    _map!.cameraForCoordinatesPadding(
       coords,
+      mapbox.CameraOptions(),
       mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: _mapBottomPadding + 60, right: 60),
       null, null,
     ).then((cam) {
@@ -2335,17 +2341,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     if (pointMgr != null) {
       _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
-        iconColor: const Color(0xFF2196F3).value,
+        iconColor: const Color(0xFF2196F3).toARGB32(),
         iconSize: 1.2,
       ));
       _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
-        iconColor: const Color(0xFF4CAF50).value,
+        iconColor: const Color(0xFF4CAF50).toARGB32(),
         iconSize: 1.2,
       ));
       _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
-        iconColor: const Color(0xFFEA4335).value,
+        iconColor: const Color(0xFFEA4335).toARGB32(),
         iconSize: 1.2,
       ));
     }
@@ -2433,7 +2439,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final coords = pts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
     final annot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
-      lineColor: c.value,
+      lineColor: c.toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));

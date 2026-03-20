@@ -48,6 +48,7 @@ class PlaceDetails {
 }
 
 /// Production-ready Places service with Uber-like autocomplete behavior.
+/// Uses a sequence counter to discard stale results when the user types quickly.
 ///
 /// Uses Google Places Autocomplete as primary provider with:
 /// - No type restrictions (full address + establishment coverage)
@@ -236,6 +237,9 @@ class PlacesService {
   //  • Nominatim + Photon as SUPPLEMENTARY sources
   //  • No country restriction on Google (worldwide coverage)
 
+  // Fix 3: sequence counter — discard results from superseded requests
+  int _autocompleteSeq = 0;
+
   Future<List<PlaceSuggestion>> autocomplete(
     String input, {
     double? latitude,
@@ -244,6 +248,7 @@ class PlacesService {
     final cleanInput = input.trim();
     if (cleanInput.isEmpty) return [];
 
+    final seq = ++_autocompleteSeq; // Capture this request's sequence number
     final hasLocation = latitude != null && longitude != null;
 
     try {
@@ -265,30 +270,37 @@ class PlacesService {
         ).catchError((_) => <PlaceSuggestion>[]),
       ]);
 
-      // Merge: Google first (best quality), then supplementary
-      final merged = <PlaceSuggestion>[];
-      merged.addAll(results[0]); // Google (primary, most relevant)
-      merged.addAll(results[1]); // Nominatim
-      merged.addAll(results[2]); // Photon
+      // Fix 3: if a newer request was started while we were awaiting, discard
+      if (seq != _autocompleteSeq) return [];
 
-      if (merged.isEmpty) return [];
+      // Google results are already proximity-ranked by the API via location+radius.
+      // Sort only the OSM results by proximity, then append them after Google.
+      final googleResults = results[0];
+      final osmCandidates = <PlaceSuggestion>[];
+      osmCandidates.addAll(results[1]); // Nominatim
+      osmCandidates.addAll(results[2]); // Photon
 
-      final deduped = _dedupeByDescription(merged);
-
-      // Sort by proximity if we have user location
-      if (hasLocation) {
-        deduped.sort((a, b) {
+      if (hasLocation && osmCandidates.isNotEmpty) {
+        osmCandidates.sort((a, b) {
           final aHas = a.lat != null && a.lng != null;
           final bHas = b.lat != null && b.lng != null;
           if (!aHas && !bHas) return 0;
-          if (!aHas) return 1; // push items without coords to bottom
+          if (!aHas) return 1;
           if (!bHas) return -1;
           final aDist = _haversineDistance(latitude, longitude, a.lat!, a.lng!);
           final bDist = _haversineDistance(latitude, longitude, b.lat!, b.lng!);
           return aDist.compareTo(bDist);
         });
       }
-      return deduped.take(25).toList();
+
+      // Merge: Google first (best quality + already proximity-sorted), then OSM
+      final merged = <PlaceSuggestion>[];
+      merged.addAll(googleResults);
+      merged.addAll(osmCandidates);
+
+      if (merged.isEmpty) return [];
+
+      return _dedupeByDescription(merged).take(25).toList();
     } catch (_) {
       return [];
     }
@@ -465,7 +477,7 @@ class PlacesService {
       'q': input,
       'limit': '10',
       'lang': 'en',
-      'osm_tag': 'place',
+      // No osm_tag filter — returns all types: addresses, streets, POIs, businesses
       'bbox': '-179.15,-14.55,-64.55,71.39',
     };
     if (lat != null && lon != null) {

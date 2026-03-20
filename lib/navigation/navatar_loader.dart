@@ -107,13 +107,7 @@ class NavatarLoader {
   static final Map<String, Uint8List> _rotatedCache = {};
 
   /// Currently selected navatar model.
-  static NavatarModel _current = NavatarModel.sedan;
-
-  /// Get/set the active navatar model.
-  static NavatarModel get current => _current;
-  static set current(NavatarModel model) {
-    _current = model;
-  }
+  static NavatarModel current = NavatarModel.sedan;
 
   /// Clear all caches (call on memory warning or model change).
   static void invalidate() {
@@ -190,11 +184,11 @@ class NavatarLoader {
 
   /// Loads sprites for the currently selected navatar.
   static Future<List<Uint8List>?> loadCurrentSprites() =>
-      loadSprites(_current);
+      loadSprites(current);
 
   /// Loads raw bytes for the currently selected navatar (alias).
   static Future<List<Uint8List>?> loadCurrentSpriteBytes() =>
-      loadSprites(_current);
+      loadSprites(current);
 
   /// Preloads all navatar models so switching is instant.
   static Future<void> preloadAll() async {
@@ -225,7 +219,7 @@ class NavatarLoader {
 
   /// Returns sprite bytes for the currently selected model.
   static Uint8List? currentSpriteForAngle(double viewAngleDeg) =>
-      spriteForAngle(_current, viewAngleDeg);
+      spriteForAngle(current, viewAngleDeg);
 
   // ── Raw Bytes (for Apple Maps / custom rendering) ──────────────────
 

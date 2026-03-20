@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io' if (dart.library.html) 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
@@ -24,6 +23,7 @@ import 'privacy_screen.dart';
 import 'about_screen.dart';
 import 'ride_history_screen.dart';
 import 'promo_code_screen.dart';
+import 'referral_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'driver/driver_home_screen.dart'; // unused but keep for potential future use
 
@@ -283,6 +283,7 @@ class _AccountScreenState extends State<AccountScreen> {
         S.of(context).scheduledRides,
       ),
       _MenuItem('promos', Icons.local_offer_rounded, S.of(context).promoCodes),
+      _MenuItem('referral', Icons.card_giftcard_rounded, 'Invite Friends'),
       _MenuItem('safety', Icons.shield_outlined, S.of(context).safety),
       _MenuItem('inbox', Icons.mail_outline_rounded, S.of(context).inbox),
       _MenuItem('settings', Icons.settings_outlined, S.of(context).settings),
@@ -319,6 +320,11 @@ class _AccountScreenState extends State<AccountScreen> {
                 Navigator.of(
                   context,
                 ).push(slideFromRightRoute(const PromoCodeScreen()));
+                break;
+              case 'referral':
+                Navigator.of(
+                  context,
+                ).push(slideFromRightRoute(const ReferralScreen()));
                 break;
               case 'safety':
                 Navigator.of(
@@ -482,7 +488,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
   bool _biometricAvailable = false;
   BiometricIconType _biometricType = BiometricIconType.faceId;
   String? _password;
-  bool _showPassword = false;
+  final bool _showPassword = false;
 
   @override
   void initState() {

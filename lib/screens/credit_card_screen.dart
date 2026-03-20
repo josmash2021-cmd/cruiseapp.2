@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import '../l10n/app_localizations.dart';
 import '../config/app_theme.dart';
+import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 
 class CreditCardScreen extends StatefulWidget {
@@ -59,8 +60,17 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Create a PaymentMethod via Stripe SDK (tokenizes the card securely)
-      final paymentMethod = await Stripe.instance.createPaymentMethod(
+      // Step 1: Get SetupIntent client_secret from backend
+      // This registers the card for future off-session charges (handles 3DS properly)
+      final clientSecret = await ApiService.createSetupIntent();
+      if (clientSecret == null || !mounted) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Step 2: Confirm SetupIntent — creates PM + authorises card for off-session
+      final si = await Stripe.instance.confirmSetupIntent(
+        paymentIntentClientSecret: clientSecret,
         params: PaymentMethodParams.card(
           paymentMethodData: PaymentMethodData(
             billingDetails: BillingDetails(
@@ -73,16 +83,15 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
 
       if (!mounted) return;
 
-      // Extract card brand and last4 from Stripe's response
-      final card = paymentMethod.card;
-      final brand = card.brand ?? 'card';
-      final last4 = card.last4 ?? '????';
+      // Step 3: Save the confirmed PaymentMethod ID
+      final pmId = si.paymentMethodId;
+      await LocalDataService.saveStripePaymentMethodId(pmId);
 
-      // Persist the Stripe payment method ID for future charges
-      await LocalDataService.saveStripePaymentMethodId(paymentMethod.id);
+      // Step 4: Use brand/last4 from card field (available after user typed card)
+      final brand = _cardDetails?.brand ?? 'card';
+      final last4 = _cardDetails?.last4 ?? '????';
 
       if (!mounted) return;
-      // Return brand:last4 so caller can persist both
       Navigator.of(context).pop('$brand:$last4');
     } on StripeException catch (e) {
       if (!mounted) return;
@@ -188,9 +197,6 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                         ),
                         child: Row(
                           children: [
-                            // Card brand logo
-                            _CardBrandLogo(brand: _cardDetails?.brand),
-                            const SizedBox(width: 8),
                             Expanded(
                               child: CardField(
                                 enablePostalCode: false,

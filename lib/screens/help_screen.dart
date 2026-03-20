@@ -944,9 +944,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   Future<void> _initChat() async {
     try {
+      final locale = Localizations.localeOf(context).languageCode;
       // Re-probe the server URL in case the tunnel changed
       await ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 4));
-      final locale = Localizations.localeOf(context).languageCode;
       final chat = await ApiService.createSupportChat(
         subject: 'Soporte general',
         locale: locale,

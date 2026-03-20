@@ -1,0 +1,118 @@
+﻿Analyzing lib...                                                
+
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\admin\admin_dashboard.dart:183:45 - deprecated_member_use
+   info - Unnecessary braces in a string interpolation - lib\admin\admin_dashboard.dart:603:23 - unnecessary_brace_in_string_interps
+   info - The 'children' argument should be last in widget constructor invocations - lib\config\smooth_transitions.dart:271:7 - sort_child_properties_last
+   info - Unnecessary use of getter and setter to wrap a field - lib\navigation\navatar_loader.dart:113:27 - unnecessary_getters_setters
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\pages\driver_navigation_page.dart:1617:45 - use_build_context_synchronously
+   info - Statements in an if should be enclosed in a block - lib\screens\about_screen.dart:229:7 - curly_braces_in_flow_control_structures
+   info - The import of 'package:flutter/services.dart' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/material.dart' - lib\screens\account_screen.dart:5:8 - unnecessary_import
+   info - The private field _showPassword could be 'final' - lib\screens\account_screen.dart:485:8 - prefer_final_fields
+   info - Unnecessary use of string interpolation - lib\screens\driver\driver_analytics_screen.dart:325:27 - unnecessary_string_interpolations
+   info - The local variable '_a' starts with an underscore - lib\screens\driver\driver_home_screen.dart:741:48 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\driver\driver_home_screen.dart:741:52 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\driver\driver_home_screen.dart:741:56 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\driver\driver_home_screen.dart:750:48 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\driver\driver_home_screen.dart:750:52 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\driver\driver_home_screen.dart:750:56 - no_leading_underscores_for_local_identifiers
+   info - The import of 'package:flutter/services.dart' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/material.dart' - lib\screens\driver\driver_manage_account_screen.dart:3:8 - unnecessary_import
+   info - The local variable '_a' starts with an underscore - lib\screens\driver\driver_menu_screen.dart:422:46 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\driver\driver_menu_screen.dart:422:50 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\driver\driver_menu_screen.dart:422:54 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\driver\driver_menu_screen.dart:433:46 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\driver\driver_menu_screen.dart:433:50 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\driver\driver_menu_screen.dart:433:54 - no_leading_underscores_for_local_identifiers
+   info - The private field _lastSpriteIdx could be 'final' - lib\screens\driver\driver_online_screen.dart:178:7 - prefer_final_fields
+   info - Statements in a while should be enclosed in a block - lib\screens\driver\driver_online_screen.dart:1297:24 - curly_braces_in_flow_control_structures
+   info - Statements in a while should be enclosed in a block - lib\screens\driver\driver_online_screen.dart:1298:25 - curly_braces_in_flow_control_structures
+   info - The local variable '_a' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:473:48 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:473:52 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:473:56 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:478:48 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:478:52 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:478:56 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:937:46 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:937:50 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:937:54 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:948:46 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:948:50 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\driver\driver_profile_screen.dart:948:54 - no_leading_underscores_for_local_identifiers
+   info - Statements in an if should be enclosed in a block - lib\screens\game_navigation_screen.dart:187:24 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\screens\game_navigation_screen.dart:188:29 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\screens\game_navigation_screen.dart:189:29 - curly_braces_in_flow_control_structures
+   info - The private field _currentSpeed could be 'final' - lib\screens\game_navigation_screen.dart:745:10 - prefer_final_fields
+   info - Statements in a while should be enclosed in a block - lib\screens\game_navigation_screen.dart:776:32 - curly_braces_in_flow_control_structures
+   info - Statements in a while should be enclosed in a block - lib\screens\game_navigation_screen.dart:777:33 - curly_braces_in_flow_control_structures
+   info - Statements in a while should be enclosed in a block - lib\screens\game_navigation_screen.dart:807:24 - curly_braces_in_flow_control_structures
+   info - Statements in a while should be enclosed in a block - lib\screens\game_navigation_screen.dart:808:25 - curly_braces_in_flow_control_structures
+   info - Statements in a while should be enclosed in a block - lib\screens\game_navigation_screen.dart:890:24 - curly_braces_in_flow_control_structures
+   info - Statements in a while should be enclosed in a block - lib\screens\game_navigation_screen.dart:891:25 - curly_braces_in_flow_control_structures
+   info - The private field _routeGlowPhase could be 'final' - lib\screens\map_screen.dart:166:10 - prefer_final_fields
+   info - The private field _glowFrameSkip could be 'final' - lib\screens\map_screen.dart:2433:7 - prefer_final_fields
+   info - The local variable '_srchTitle' starts with an underscore - lib\screens\map_screen.dart:3777:11 - no_leading_underscores_for_local_identifiers
+   info - Don't use 'BuildContext's across async gaps - lib\screens\map_screen.dart:3777:29 - use_build_context_synchronously
+   info - The local variable '_srchMsg' starts with an underscore - lib\screens\map_screen.dart:3778:11 - no_leading_underscores_for_local_identifiers
+   info - Don't use 'BuildContext's across async gaps - lib\screens\map_screen.dart:3778:27 - use_build_context_synchronously
+   info - The local variable '_cmpTitle' starts with an underscore - lib\screens\map_screen.dart:4052:19 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_cmpMsg' starts with an underscore - lib\screens\map_screen.dart:4053:19 - no_leading_underscores_for_local_identifiers
+   info - Statements in an if should be enclosed in a block - lib\screens\map_screen.dart:4096:28 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\screens\map_screen.dart:4181:28 - curly_braces_in_flow_control_structures
+   info - The local variable '_doneTitle' starts with an underscore - lib\screens\map_screen.dart:4486:11 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_doneMsg' starts with an underscore - lib\screens\map_screen.dart:4487:11 - no_leading_underscores_for_local_identifiers
+   info - Don't use 'BuildContext's across async gaps - lib\screens\payment_accounts_screen.dart:230:26 - use_build_context_synchronously
+   info - Statements in an if should be enclosed in a block - lib\screens\pickup_dropoff_search_screen.dart:606:11 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\screens\pickup_dropoff_search_screen.dart:612:11 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\screens\pickup_dropoff_search_screen.dart:717:11 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\screens\profile_review_screen.dart:324:59 - curly_braces_in_flow_control_structures
+   info - The local variable '_a' starts with an underscore - lib\screens\ride_request_screen.dart:2621:50 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\ride_request_screen.dart:2621:54 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\ride_request_screen.dart:2621:58 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_rating_screen.dart:140:23 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\rider_rating_screen.dart:140:27 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_rating_screen.dart:140:31 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_rating_screen.dart:141:30 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_rating_screen.dart:141:40 - no_leading_underscores_for_local_identifiers
+   info - The private field _cameraBearing could be 'final' - lib\screens\rider_tracking_screen.dart:83:10 - prefer_final_fields
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_tracking_screen.dart:425:25 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\rider_tracking_screen.dart:425:29 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_tracking_screen.dart:425:33 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_tracking_screen.dart:430:32 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_tracking_screen.dart:430:42 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_tracking_screen.dart:506:33 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\rider_tracking_screen.dart:506:37 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_tracking_screen.dart:506:41 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_tracking_screen.dart:507:40 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_tracking_screen.dart:507:47 - no_leading_underscores_for_local_identifiers
+   info - The 'if' statement could be replaced by a null-aware assignment - lib\screens\rider_tracking_screen.dart:590:7 - prefer_conditional_assignment
+   info - Unnecessary braces in a string interpolation - lib\screens\rider_tracking_screen.dart:661:195 - unnecessary_brace_in_string_interps
+   info - Unnecessary braces in a string interpolation - lib\screens\rider_tracking_screen.dart:683:195 - unnecessary_brace_in_string_interps
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_tracking_screen.dart:2002:41 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\rider_tracking_screen.dart:2002:45 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_tracking_screen.dart:2002:49 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_tracking_screen.dart:2003:48 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_tracking_screen.dart:2003:58 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_tracking_screen.dart:2701:39 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\rider_tracking_screen.dart:2701:43 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_tracking_screen.dart:2701:47 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_tracking_screen.dart:2702:46 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_tracking_screen.dart:2702:56 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_a' starts with an underscore - lib\screens\rider_tracking_screen.dart:2795:28 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\rider_tracking_screen.dart:2795:32 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\rider_tracking_screen.dart:2795:36 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_schedTitle' starts with an underscore - lib\screens\schedule_booking_screen.dart:427:13 - no_leading_underscores_for_local_identifiers
+   info - Don't use 'BuildContext's across async gaps - lib\screens\schedule_booking_screen.dart:427:32 - use_build_context_synchronously
+   info - The local variable '_schedMsg' starts with an underscore - lib\screens\schedule_booking_screen.dart:428:13 - no_leading_underscores_for_local_identifiers
+   info - Don't use 'BuildContext's across async gaps - lib\screens\schedule_booking_screen.dart:428:30 - use_build_context_synchronously
+   info - The local variable '_a' starts with an underscore - lib\screens\schedule_booking_screen.dart:1026:52 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_b' starts with an underscore - lib\screens\schedule_booking_screen.dart:1026:56 - no_leading_underscores_for_local_identifiers
+   info - The local variable '_c' starts with an underscore - lib\screens\schedule_booking_screen.dart:1026:60 - no_leading_underscores_for_local_identifiers
+   info - The import of 'dart:ui' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/services.dart' - lib\services\notification_service.dart:1:8 - unnecessary_import
+   info - The import of 'package:flutter/services.dart' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/material.dart' - lib\widgets\driver_report_dialog.dart:2:8 - unnecessary_import
+
+flutter : 108 issues found. (ran in 6.0s)
+At line:1 char:1
++ flutter analyze lib/ --no-pub 2>&1 | Out-File -FilePath "C:\Users\Pum ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (108 issues found. (ran in 6.0s):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

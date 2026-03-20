@@ -1891,7 +1891,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         'tier': 'VIP',
         'tierShort': 'VIP',
         'desc': 'Luxury SUV with premium amenities',
-        'features': 'Spacious • Leather • Wi-Fi',
+        'features': 'Spacious • Leather',
         'idx': 0,
         'accent': _gold,
         'image': 'cruise_3.png',
@@ -2116,32 +2116,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ],
                   ),
                   
-                  // Arrow indicator
-                  Positioned(
-                    right: 16,
-                    bottom: 16,
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: isVIP 
-                          ? accent.withValues(alpha: 0.2)
-                          : Colors.white.withValues(alpha: 0.08),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isVIP 
-                            ? accent.withValues(alpha: 0.4)
-                            : Colors.white.withValues(alpha: 0.15),
-                          width: 1,
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.arrow_forward_rounded,
-                        color: isVIP ? accent : Colors.white.withValues(alpha: 0.6),
-                        size: 18,
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),

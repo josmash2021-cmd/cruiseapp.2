@@ -322,7 +322,7 @@ class _DriverAnalyticsScreenState extends State<DriverAnalyticsScreen> {
                         _infoRow(
                           Icons.route_rounded,
                           'Total Miles',
-                          '${(_sessions.fold<double>(0, (s, ss) => s + ss.miles)).toStringAsFixed(1)}',
+                          (_sessions.fold<double>(0, (s, ss) => s + ss.miles)).toStringAsFixed(1),
                         ),
                         _infoRow(
                           Icons.emoji_events_rounded,

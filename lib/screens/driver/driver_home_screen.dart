@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io' show File;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -738,7 +738,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             ? Image.network(
                                 _photoUrl!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_a, _b, _c) => Icon(
+                                errorBuilder: (_, __, ___) => Icon(
                                   Icons.person_rounded,
                                   color: Colors.white.withValues(alpha: 0.6),
                                   size: 20,
@@ -747,7 +747,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             : Image.file(
                                 File(_photoUrl!),
                                 fit: BoxFit.cover,
-                                errorBuilder: (_a, _b, _c) => Icon(
+                                errorBuilder: (_, __, ___) => Icon(
                                   Icons.person_rounded,
                                   color: Colors.white.withValues(alpha: 0.6),
                                   size: 20,

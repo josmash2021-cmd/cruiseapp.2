@@ -163,7 +163,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   List<LatLng> _activeRoutePoints = [];
 
   AnimationController? _glowController;
-  double _routeGlowPhase = 0.0;
+  final double _routeGlowPhase = 0.0;
 
   // Gold animated 3D location dot
   List<Uint8List> _goldDotFrames = [];
@@ -226,7 +226,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   bool _promoActive = false;
   int _promoDiscountPercent = 0;
   String _selectedPaymentMethod =
-      'google_pay'; // id: google_pay, credit_card, paypal
+      Platform.isIOS ? 'apple_pay' : 'google_pay';
   Set<String> _linkedPaymentMethods = {}; // persisted linked methods
   String? _savedCardLast4;
   String? _savedCardBrand;
@@ -2430,7 +2430,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _routeAnnot = null;
   }
 
-  int _glowFrameSkip = 0;
+  final int _glowFrameSkip = 0;
 
   void _onGlowTick() {
     // Glow animation no longer rebuilds Google Maps polylines
@@ -3774,9 +3774,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
     // ── IMMEDIATE ride ──
     _setStage(RideStage.matching);
+    if (!mounted) return;
+    final srchTitle = S.of(context).searchingDriverTitle;
+    final srchMsg = S.of(context).searchingDriverMessage(_rides[_selectedRide].name);
     await LocalDataService.addNotification(
-      title: S.of(context).searchingDriverTitle,
-      message: S.of(context).searchingDriverMessage(_rides[_selectedRide].name),
+      title: srchTitle,
+      message: srchMsg,
       type: 'ride',
     );
 
@@ -4047,9 +4050,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             if (_firestoreTripId != null) {
               TripFirestoreService.syncTripCompleted(_firestoreTripId!);
             }
+            final cmpTitle = mounted ? S.of(context).tripCompletedTitle : '';
+            final cmpMsg = mounted ? S.of(context).arrivedAtDestination : '';
             await LocalDataService.addNotification(
-              title: S.of(context).tripCompletedTitle,
-              message: S.of(context).arrivedAtDestination,
+              title: cmpTitle,
+              message: cmpMsg,
               type: 'ride',
             );
             // â”€â”€ Show payment confirmation â”€â”€
@@ -4089,11 +4094,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 fsSyncedInTrip = true;
                 TripFirestoreService.syncTripStarted(_firestoreTripId!);
               }
-              LocalDataService.addNotification(
+              if (mounted) { LocalDataService.addNotification(
                 title: S.of(context).tripStartedTitle,
                 message: S.of(context).headingToDestination(_dropoffAddress),
                 type: 'ride',
-              );
+              ); }
             }
             final dropoffPos = _dropoffPosition;
             if (mounted) {
@@ -4174,11 +4179,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 fsSyncedArrived = true;
                 TripFirestoreService.syncDriverArrived(_firestoreTripId!);
               }
-              LocalDataService.addNotification(
+              if (mounted) { LocalDataService.addNotification(
                 title: S.of(context).driverArrivedTitle,
                 message: S.of(context).driverArrivedMessage(_driverName),
                 type: 'ride',
-              );
+              ); }
             }
             if (mounted) {
               setState(() {
@@ -4479,9 +4484,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       createdAt: DateTime.now(),
     );
     await LocalDataService.addTrip(completedTrip);
+    final doneTitle = mounted ? S.of(context).tripCompletedTitle : '';
+    final doneMsg = mounted ? '${S.of(context).arrivedAtDestination} (${completedRide.name})' : '';
     await LocalDataService.addNotification(
-      title: S.of(context).tripCompletedTitle,
-      message: '${S.of(context).arrivedAtDestination} (${completedRide.name})',
+      title: doneTitle,
+      message: doneMsg,
       type: 'ride',
     );
 

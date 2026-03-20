@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import '../models/lat_lng.dart';
 
 import '../services/api_service.dart';
@@ -179,7 +179,7 @@ class RiderTripState {
 // ═══════════════════════════════════════════════════════════════════
 //  Main controller
 // ═══════════════════════════════════════════════════════════════════
-class RiderTripController extends ChangeNotifier {
+class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   RiderTripState _state = const RiderTripState();
   RiderTripState get state => _state;
 
@@ -187,6 +187,52 @@ class RiderTripController extends ChangeNotifier {
 
   Timer? _searchTimer;
   Timer? _pollTimer;
+  Timer? _timeoutTimer; // Fix 1: client-side search timeout
+  bool _isRequesting = false; // Fix 2: anti-double-tap guard
+
+  RiderTripController() {
+    WidgetsBinding.instance.addObserver(this); // M3: observe lifecycle
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // M3: when app returns to foreground with an active trip, re-sync state
+    if (state == AppLifecycleState.resumed) {
+      _refreshActiveTripOnResume();
+    }
+  }
+
+  Future<void> _refreshActiveTripOnResume() async {
+    final tripId = _state.tripId;
+    if (tripId == null || tripId == 999999) { return; } // no trip or simulated
+    final phase = _state.phase;
+    if (phase != RiderPhase.onTrip &&
+        phase != RiderPhase.driverAssigned &&
+        phase != RiderPhase.driverArriving) { return; }
+    try {
+      final status = await ApiService.getDispatchStatus(tripId);
+      final tripStatus = status['status']?.toString() ?? '';
+      if (tripStatus == 'completed') {
+        _pollTimer?.cancel();
+        _timeoutTimer?.cancel();
+        _state = _state.copyWith(phase: RiderPhase.completed);
+        notifyListeners();
+      } else if (tripStatus == 'cancelled' ||
+          tripStatus == 'canceled' ||
+          tripStatus == 'no_drivers') {
+        _pollTimer?.cancel();
+        _timeoutTimer?.cancel();
+        _isRequesting = false;
+        _state = _state.copyWith(
+          phase: RiderPhase.cancelled,
+          cancelReason: 'El viaje fue cancelado mientras la app estaba en segundo plano.',
+        );
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('⚠️ resume trip refresh failed: $e');
+    }
+  }
 
   // ─── Location selection ──────────────────────────────────────
 
@@ -270,7 +316,7 @@ class RiderTripController extends ChangeNotifier {
       RideOption(
         id: 'suburban',
         name: 'VIP',
-        description: 'Spacious • Leather • Snacks & Drinks',
+        description: 'Spacious • Leather',
         priceEstimate: _round(baseFare * 2.20),
         etaMinutes: 5 + math.Random().nextInt(8),
         icon: '🚐',
@@ -331,6 +377,33 @@ class RiderTripController extends ChangeNotifier {
   // ─── Request ride ───────────────────────────────────────────
 
   Future<void> requestRide() async {
+    // Fix 2: prevent double-tap from spawning duplicate requests
+    if (_isRequesting) return;
+    _isRequesting = true;
+
+    // Fix 4: validate GPS coords before sending to backend
+    final pickup = _state.pickup;
+    final dropoff = _state.dropoff;
+    if (pickup == null || dropoff == null) {
+      _isRequesting = false;
+      _state = _state.copyWith(
+        phase: RiderPhase.cancelled,
+        cancelReason: 'Selecciona una ubicación válida de recogida y destino.',
+      );
+      notifyListeners();
+      return;
+    }
+    if ((pickup.lat == 0.0 && pickup.lng == 0.0) ||
+        (dropoff.lat == 0.0 && dropoff.lng == 0.0)) {
+      _isRequesting = false;
+      _state = _state.copyWith(
+        phase: RiderPhase.cancelled,
+        cancelReason: 'GPS no disponible. Verifica tu ubicación e intenta de nuevo.',
+      );
+      notifyListeners();
+      return;
+    }
+
     _state = _state.copyWith(phase: RiderPhase.requesting);
     notifyListeners();
 
@@ -342,7 +415,20 @@ class RiderTripController extends ChangeNotifier {
     });
 
     // Call backend dispatch
+    // _pollingStarted = true means _isRequesting stays true while polling runs;
+    // finally resets it only when polling never started (any early-exit path).
+    bool pollingStarted = false;
     try {
+      // Fix H5: connectivity check before hitting backend
+      if (!await ApiService.isOnline()) {
+        _state = _state.copyWith(
+          phase: RiderPhase.cancelled,
+          cancelReason: 'Sin conexión a internet. Verifica tu red e intenta de nuevo.',
+        );
+        notifyListeners();
+        return;
+      }
+
       final userId = await ApiService.getCurrentUserId();
       if (userId == null) {
         _state = _state.copyWith(phase: RiderPhase.cancelled);
@@ -354,10 +440,10 @@ class RiderTripController extends ChangeNotifier {
         riderId: userId,
         pickupAddress: _state.pickupLabel,
         dropoffAddress: _state.dropoffLabel,
-        pickupLat: _state.pickup!.lat,
-        pickupLng: _state.pickup!.lng,
-        dropoffLat: _state.dropoff!.lat,
-        dropoffLng: _state.dropoff!.lng,
+        pickupLat: pickup.lat,
+        pickupLng: pickup.lng,
+        dropoffLat: dropoff.lat,
+        dropoffLng: dropoff.lng,
         fare: _state.selectedOption?.priceEstimate,
         vehicleType: _state.selectedOption?.name,
       );
@@ -374,15 +460,37 @@ class RiderTripController extends ChangeNotifier {
 
       // Poll dispatch status until a driver accepts
       _startDispatchPolling(tripId);
+      pollingStarted = true; // guard: keep _isRequesting=true while polling
     } catch (e) {
       debugPrint('❌ dispatchRideRequest failed: $e');
       _state = _state.copyWith(phase: RiderPhase.cancelled);
       notifyListeners();
+    } finally {
+      // Reset only if polling never started — polling callbacks own the flag
+      if (!pollingStarted) _isRequesting = false;
     }
   }
 
   void _startDispatchPolling(int tripId) {
     _pollTimer?.cancel();
+    _timeoutTimer?.cancel();
+
+    // Fix 1: hard client-side timeout — 4 minutes max searching
+    _timeoutTimer = Timer(const Duration(minutes: 4), () {
+      _pollTimer?.cancel();
+      _isRequesting = false;
+      if (_state.phase == RiderPhase.searchingDriver ||
+          _state.phase == RiderPhase.requesting) {
+        // Attempt to cancel on backend too
+        ApiService.cancelTrip(tripId).catchError((_) => <String, dynamic>{});
+        _state = _state.copyWith(
+          phase: RiderPhase.cancelled,
+          cancelReason: 'No se encontró un driver disponible. Por favor intenta de nuevo.',
+        );
+        notifyListeners();
+      }
+    });
+
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       try {
         final status = await ApiService.getDispatchStatus(tripId);
@@ -390,12 +498,16 @@ class RiderTripController extends ChangeNotifier {
 
         if (tripStatus == 'accepted' || tripStatus == 'driver_en_route') {
           timer.cancel();
+          _timeoutTimer?.cancel();
+          _isRequesting = false;
           _onDriverMatched(status, tripId);
         } else if (tripStatus == 'cancelled' ||
             tripStatus == 'no_drivers' ||
             tripStatus == 'expired' ||
             tripStatus == 'canceled') {
           timer.cancel();
+          _timeoutTimer?.cancel();
+          _isRequesting = false;
           // Extract cancel reason from trip data
           final tripData = status['trip'] as Map<String, dynamic>?;
           final reason = tripData?['cancel_reason']?.toString();
@@ -469,6 +581,8 @@ class RiderTripController extends ChangeNotifier {
   void cancelRide() {
     _searchTimer?.cancel();
     _pollTimer?.cancel();
+    _timeoutTimer?.cancel();
+    _isRequesting = false;
 
     // Cancel on backend if we have a trip ID
     final tripId = _state.tripId;
@@ -483,6 +597,8 @@ class RiderTripController extends ChangeNotifier {
   void reset() {
     _searchTimer?.cancel();
     _pollTimer?.cancel();
+    _timeoutTimer?.cancel();
+    _isRequesting = false;
     _state = const RiderTripState();
     notifyListeners();
   }
@@ -491,6 +607,8 @@ class RiderTripController extends ChangeNotifier {
   void setSimulatedDriver(MatchedDriver driver) {
     _searchTimer?.cancel();
     _pollTimer?.cancel();
+    _timeoutTimer?.cancel();
+    _isRequesting = false;
     
     _state = _state.copyWith(
       phase: RiderPhase.driverAssigned,
@@ -503,8 +621,10 @@ class RiderTripController extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // M3: unregister lifecycle observer
     _searchTimer?.cancel();
     _pollTimer?.cancel();
+    _timeoutTimer?.cancel();
     super.dispose();
   }
 }

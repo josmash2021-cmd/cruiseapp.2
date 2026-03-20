@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'config/mapbox_config.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'config/smooth_transitions.dart';
@@ -26,17 +27,48 @@ import 'l10n/app_localizations.dart';
 /// Global theme notifier so any screen can toggle night mode.
 final themeNotifier = ThemeNotifier();
 
+/// M2: Global navigator key for imperative navigation (auto-logout on 401).
+final _navigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   // Catch all unhandled async Dart errors
   await runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
 
+      // M1: Catch platform-level errors (native threads, plugin exceptions)
+      WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
+        debugPrint('[PlatformError] $error\n$stack');
+        if (kReleaseMode) {
+          FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        }
+        return true; // mark as handled — prevents default crash dialog
+      };
+
       // Catch any Flutter framework errors and log them instead of crashing
       FlutterError.onError = (FlutterErrorDetails details) {
         FlutterError.presentError(details);
         debugPrint('[FlutterError] ${details.exception}\n${details.stack}');
+        if (kReleaseMode) {
+          FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+        }
       };
+
+      // M1: Friendly error widget in release mode — no red/grey screen of death
+      if (kReleaseMode) {
+        ErrorWidget.builder = (FlutterErrorDetails _) {
+          return const Material(
+            color: Colors.black,
+            child: Center(
+              child: Text(
+                'Algo salió mal.\nCierra y reinicia la app.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70, fontSize: 15),
+              ),
+            ),
+          );
+        };
+      }
 
       // Only minimal sync work before runApp — everything else moves to
       // SplashScreen so the first frame paints instantly (no white flash).
@@ -61,6 +93,9 @@ void main() async {
     },
     (error, stack) {
       debugPrint('[ZoneError] $error\n$stack');
+      if (kReleaseMode) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      }
     },
   );
 }
@@ -107,6 +142,9 @@ Future<void> heavyInit() async {
       );
     }
     try {
+      // Enable Crashlytics in release mode only
+      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(kReleaseMode);
+
       final messaging = FirebaseMessaging.instance;
       await messaging.requestPermission(alert: true, badge: true, sound: true);
       final fcmToken = await messaging.getToken();
@@ -175,6 +213,14 @@ class _UberCloneAppState extends State<UberCloneApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // M2: auto-logout when JWT is expired and refresh also fails
+    ApiService.onUnauthorized = () async {
+      await ApiService.clearToken();
+      _navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const SplashScreen()),
+        (_) => false,
+      );
+    };
   }
 
   @override
@@ -206,6 +252,7 @@ class _UberCloneAppState extends State<UberCloneApp>
           duration: const Duration(milliseconds: 400),
           curve: Curves.easeInOut,
           child: MaterialApp(
+            navigatorKey: _navigatorKey,
             debugShowCheckedModeBanner: false,
             themeMode: themeNotifier.mode,
             theme: lightTheme,

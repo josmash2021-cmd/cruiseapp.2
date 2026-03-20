@@ -351,7 +351,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     canvas.drawPath(
       modernCarBody(cx, cy + 10, bW + 3, bH + 2),
       Paint()
-        ..color = Colors.black.withOpacity(0.5)
+        ..color = Colors.black.withValues(alpha: 0.5)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
     );
 
@@ -389,7 +389,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       canvas.drawLine(
         wheelCenter.translate(-2, -3),
         wheelCenter.translate(2, 3),
-        Paint()..color = Colors.white.withOpacity(0.3)..strokeWidth = 1,
+        Paint()..color = Colors.white.withValues(alpha: 0.3)..strokeWidth = 1,
       );
     }
 
@@ -420,10 +420,10 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           begin: const Alignment(-0.8, -0.3),
           end: const Alignment(0.8, 0.3),
           colors: [
-            Colors.white.withOpacity(0.2),
+            Colors.white.withValues(alpha: 0.2),
             Colors.transparent,
             Colors.transparent,
-            Colors.black.withOpacity(0.15),
+            Colors.black.withValues(alpha: 0.15),
           ],
         ).createShader(bodyRect),
     );
@@ -443,7 +443,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         Offset(cx + side * bW * 0.20, cy - bH * 0.82),
         Offset(cx + side * bW * 0.15, cy - bH * 0.45),
         Paint()
-          ..color = Colors.white.withOpacity(0.25)
+          ..color = Colors.white.withValues(alpha: 0.25)
           ..strokeWidth = 1.2
           ..strokeCap = StrokeCap.round,
       );
@@ -453,7 +453,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       Offset(cx, cy - bH * 0.85),
       Offset(cx, cy - bH * 0.40),
       Paint()
-        ..color = Colors.white.withOpacity(0.15)
+        ..color = Colors.white.withValues(alpha: 0.15)
         ..strokeWidth = 0.8,
     );
 
@@ -475,9 +475,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           begin: const Alignment(-0.8, -0.8),
           end: const Alignment(0.5, 0.5),
           colors: [
-            glassHi.withOpacity(0.6),
+            glassHi.withValues(alpha: 0.6),
             glass,
-            glass.withOpacity(0.8),
+            glass.withValues(alpha: 0.8),
           ],
         ).createShader(windshieldPath.getBounds()),
     );
@@ -490,7 +490,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       ..lineTo(cx + bW * 0.52, cy - bH * 0.05)
       ..close();
     
-    canvas.drawPath(roofPath, Paint()..color = glass.withOpacity(0.9));
+    canvas.drawPath(roofPath, Paint()..color = glass.withValues(alpha: 0.9));
     
     // Roof reflection
     canvas.drawPath(
@@ -500,7 +500,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.white.withOpacity(0.3),
+            Colors.white.withValues(alpha: 0.3),
             Colors.transparent,
           ],
         ).createShader(roofPath.getBounds()),
@@ -534,7 +534,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           ..lineTo(cx + side * bW * 0.78, cy - bH * 0.22)
           ..lineTo(cx + side * bW * 0.74, cy + bH * 0.15),
         Paint()
-          ..color = Colors.white.withOpacity(0.4)
+          ..color = Colors.white.withValues(alpha: 0.4)
           ..strokeWidth = 1
           ..style = PaintingStyle.stroke,
       );
@@ -570,7 +570,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           ..lineTo(cx + side * bW * 0.60, cy - bH * 0.88)
           ..close(),
         Paint()
-          ..color = Colors.white.withOpacity(0.3)
+          ..color = Colors.white.withValues(alpha: 0.3)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
       );
     }
@@ -613,7 +613,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         const Radius.circular(2),
       ),
       Paint()
-        ..color = Colors.red.withOpacity(0.25)
+        ..color = Colors.red.withValues(alpha: 0.25)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
     );
 
@@ -634,7 +634,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         Offset(cx + side * (bW + 3), cy - bH * 0.24),
         Offset(cx + side * (bW + 5), cy - bH * 0.26),
         Paint()
-          ..color = Colors.white.withOpacity(0.3)
+          ..color = Colors.white.withValues(alpha: 0.3)
           ..strokeWidth = 1,
       );
     }
@@ -653,7 +653,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       Offset(cx - bW * 0.25, cy + bH * 0.80),
       Offset(cx + bW * 0.25, cy + bH * 0.80),
       Paint()
-        ..color = Colors.white.withOpacity(0.2)
+        ..color = Colors.white.withValues(alpha: 0.2)
         ..strokeWidth = 1,
     );
 
@@ -1608,13 +1608,14 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         onTap = () async {
           HapticFeedback.heavyImpact();
           _sm.completeTrip();
+          final nav = Navigator.of(context);
           final tid = int.tryParse(widget.tripId);
           if (tid != null) {
             try {
               await ApiService.updateTripStatus(tripId: tid, status: 'completed');
             } catch (_) {}
           }
-          if (context.mounted) Navigator.of(context).pop();
+          if (mounted) nav.pop();
         };
       default:
         return const SizedBox.shrink();

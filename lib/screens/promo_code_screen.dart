@@ -120,7 +120,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
       _showSnack(e.message);
     } catch (_) {
       setState(() => _loading = false);
-      _showSnack(S.of(context).couldNotValidatePromo);
+      if (mounted) _showSnack(S.of(context).couldNotValidatePromo);
     }
   }
 

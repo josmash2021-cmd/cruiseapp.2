@@ -198,6 +198,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     );
     if (!mounted) return;
     if (approved == true) {
+      final paypalMsg = S.of(context).paypalLinked;
       await LocalDataService.linkPaymentMethod('paypal');
       ApiService.addRiderPaymentMethod(
         methodType: 'paypal',
@@ -205,7 +206,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
         setDefault: false,
       ).catchError((_) => <String, dynamic>{});
       setState(() => _paypalLinked = true);
-      _showSnack(S.of(context).paypalLinked);
+      _showSnack(paypalMsg);
       await _loadServerMethods();
     }
   }
@@ -223,6 +224,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       brand = parts[0];
       last4 = parts[1];
     }
+    final cardMsg = S.of(context).cardAddedMsg('${_capitalizedBrand(brand)} •••• $last4');
     await LocalDataService.linkPaymentMethod('credit_card');
     await LocalDataService.saveCreditCardLast4(last4);
     await LocalDataService.saveCreditCardBrand(brand);
@@ -237,9 +239,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       _savedCardLast4 = last4;
       _savedCardBrand = brand;
     });
-    _showSnack(
-      S.of(context).cardAddedMsg('${_capitalizedBrand(brand)} •••• $last4'),
-    );
+    _showSnack(cardMsg);
     await _loadServerMethods();
   }
 

@@ -268,8 +268,8 @@ class SmoothTransitions {
     Duration itemDelay = const Duration(milliseconds: 50),
   }) {
     return _StaggeredList(
-      children: children,
       itemDelay: itemDelay,
+      children: children,
     );
   }
 

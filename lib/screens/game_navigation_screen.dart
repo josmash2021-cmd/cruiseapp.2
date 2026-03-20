@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -184,9 +184,9 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
     // Speed zoom: más velocidad = más zoom out
     final speedKmh = values.speed * 3.6;
     double targetZoom = 17.0;
-    if (speedKmh > 80) targetZoom = 16.0;
-    else if (speedKmh > 50) targetZoom = 16.5;
-    else if (speedKmh < 10) targetZoom = 18.0;
+    if (speedKmh > 80) { targetZoom = 16.0; }
+    else if (speedKmh > 50) { targetZoom = 16.5; }
+    else if (speedKmh < 10) { targetZoom = 18.0; }
 
     _speedZoom = _lerp(_speedZoom, targetZoom, 0.05);
   }
@@ -311,7 +311,7 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
     canvas.drawPath(
       shadowPath,
       Paint()
-        ..color = Colors.black.withOpacity(0.3)
+        ..color = Colors.black.withValues(alpha: 0.3)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15),
     );
 
@@ -344,8 +344,8 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          const Color(0xFF7AB8F7).withOpacity(0.8),
-          const Color(0xFF4A90E2).withOpacity(0.3),
+          const Color(0xFF7AB8F7).withValues(alpha: 0.8),
+          const Color(0xFF4A90E2).withValues(alpha: 0.3),
         ],
       ).createShader(Rect.fromLTWH(0, cy - 80, size.width, 140));
 
@@ -390,7 +390,7 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Colors.white.withOpacity(0.4),
+            Colors.white.withValues(alpha: 0.4),
             Colors.transparent,
           ],
         ).createShader(Rect.fromLTWH(cx - 18, cy - 52, 36, 32)),
@@ -519,7 +519,7 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
                       radius: 1.5,
                       colors: [
                         Colors.transparent,
-                        Colors.blue.withOpacity(0.03 * (_currentSpeed / 30).clamp(0, 1)),
+                        Colors.blue.withValues(alpha: 0.03 * (_currentSpeed / 30).clamp(0, 1)),
                       ],
                     ),
                   ),
@@ -558,12 +558,12 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1E2E).withOpacity(0.95),
+        color: const Color(0xFF1A1E2E).withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFF2A3A5C), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.4),
+            color: Colors.black.withValues(alpha: 0.4),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -588,7 +588,7 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
                 '${_distanceRemaining.toStringAsFixed(1)} km remaining',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Colors.white.withOpacity(0.6),
+                  color: Colors.white.withValues(alpha: 0.6),
                 ),
               ),
             ],
@@ -628,12 +628,12 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1E2E).withOpacity(0.95),
+        color: const Color(0xFF1A1E2E).withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFF2A3A5C), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.4),
+            color: Colors.black.withValues(alpha: 0.4),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -653,7 +653,7 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF5BA3F5).withOpacity(0.4),
+                      color: const Color(0xFF5BA3F5).withValues(alpha: 0.4),
                       blurRadius: 12,
                       spreadRadius: 2,
                     ),
@@ -685,7 +685,7 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
                         'to ${widget.destinationName}',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.white.withOpacity(0.6),
+                          color: Colors.white.withValues(alpha: 0.6),
                         ),
                       ),
                   ],
@@ -707,12 +707,12 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
         width: 52,
         height: 52,
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1E2E).withOpacity(0.95),
+          color: const Color(0xFF1A1E2E).withValues(alpha: 0.95),
           shape: BoxShape.circle,
           border: Border.all(color: const Color(0xFF2A3A5C)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 12,
             ),
           ],
@@ -742,7 +742,7 @@ class MovementInterpolator {
 
   LatLng _currentPos = const LatLng(0, 0);
   double _currentBearing = 0;
-  double _currentSpeed = 0;
+  final double _currentSpeed = 0;
 
   LatLng _targetPos = const LatLng(0, 0);
   double _targetBearing = 0;
@@ -773,8 +773,8 @@ class MovementInterpolator {
 
     // Calcular diferencia angular mínima
     double deltaBearing = bearing - _targetBearing;
-    while (deltaBearing > 180) deltaBearing -= 360;
-    while (deltaBearing < -180) deltaBearing += 360;
+    while (deltaBearing > 180) { deltaBearing -= 360; }
+    while (deltaBearing < -180) { deltaBearing += 360; }
     _targetBearing = _targetBearing + deltaBearing;
   }
 
@@ -804,8 +804,8 @@ class MovementInterpolator {
 
   double _lerpAngle(double a, double b, double t) {
     double diff = b - a;
-    while (diff > 180) diff -= 360;
-    while (diff < -180) diff += 360;
+    while (diff > 180) { diff -= 360; }
+    while (diff < -180) { diff += 360; }
     return a + diff * t;
   }
 
@@ -887,8 +887,12 @@ class SmoothCameraController {
 
   double _lerpAngle(double a, double b, double t) {
     double diff = b - a;
-    while (diff > 180) diff -= 360;
-    while (diff < -180) diff += 360;
+    while (diff > 180) { 
+      diff -= 360; 
+    }
+    while (diff < -180) { 
+      diff += 360; 
+    }
     return a + diff * t;
   }
 

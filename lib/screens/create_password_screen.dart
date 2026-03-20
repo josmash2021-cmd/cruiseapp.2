@@ -355,19 +355,28 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
   Widget _strengthRow(AppColors c, String label, bool met) {
     return Row(
       children: [
-        Icon(
-          met ? Icons.check_circle_rounded : Icons.circle_outlined,
-          size: 16,
-          color: met ? const Color(0xFFE8C547) : c.textTertiary,
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          transitionBuilder: (child, anim) => ScaleTransition(
+            scale: anim,
+            child: FadeTransition(opacity: anim, child: child),
+          ),
+          child: Icon(
+            met ? Icons.check_circle_rounded : Icons.circle_outlined,
+            key: ValueKey(met),
+            size: 16,
+            color: met ? const Color(0xFFE8C547) : c.textTertiary,
+          ),
         ),
         const SizedBox(width: 8),
-        Text(
-          label,
+        AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 250),
           style: TextStyle(
             fontSize: 13,
             color: met ? const Color(0xFFE8C547) : c.textTertiary,
             fontWeight: met ? FontWeight.w600 : FontWeight.w400,
           ),
+          child: Text(label),
         ),
       ],
     );

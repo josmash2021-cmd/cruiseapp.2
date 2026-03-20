@@ -180,7 +180,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             padding: const EdgeInsets.all(8.0),
             child: Chip(
               label: const Text('Online'),
-              backgroundColor: Colors.green.withOpacity(0.2),
+              backgroundColor: Colors.green.withValues(alpha: 0.2),
               side: const BorderSide(color: Colors.green),
             ),
           ),
@@ -600,7 +600,7 @@ class _TripsList extends StatelessWidget {
                 Icon(Icons.local_taxi_outlined, size: 64, color: Colors.grey[400]),
                 const SizedBox(height: 16),
                 Text(
-                  'No ${status} trips',
+                  'No $status trips',
                   style: TextStyle(fontSize: 18, color: Colors.grey[600]),
                 ),
               ],
@@ -721,17 +721,18 @@ class _TripsList extends StatelessWidget {
   }
 
   Future<void> _cancelTrip(BuildContext context, String tripId) async {
+    final messenger = ScaffoldMessenger.of(context);
     try {
       await FirebaseFirestore.instance.collection('trips').doc(tripId).update({
         'status': 'cancelled',
         'cancelReason': 'Cancelled by dispatch',
         'cancelledAt': FieldValue.serverTimestamp(),
       });
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Trip cancelled successfully')),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(content: Text('Failed to cancel trip: $e')),
       );
     }
@@ -955,16 +956,17 @@ class DriversScreen extends StatelessWidget {
   }
 
   Future<void> _setDriverOnlineStatus(BuildContext context, String driverId, bool online) async {
+    final messenger = ScaffoldMessenger.of(context);
     try {
       await FirebaseFirestore.instance.collection('drivers').doc(driverId).update({
         'isOnline': online,
         'lastStatusChange': FieldValue.serverTimestamp(),
       });
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(content: Text('Driver set ${online ? 'online' : 'offline'}')),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(content: Text('Failed to update status: $e')),
       );
     }

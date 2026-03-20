@@ -5,6 +5,7 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../services/email_service.dart';
 import '../services/sms_service.dart';
 import 'create_password_screen.dart';
 
@@ -132,16 +133,25 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
     if (_resending || _resendSeconds > 0) return;
     setState(() => _resending = true);
 
-    bool sent = false;
     if (widget.useVerifyApi) {
+      // Phone — resend via Twilio
       final result = await SmsService.sendVerificationCode(toPhone: widget.email);
-      sent = result.ok;
-      if (result.trialBlocked || !sent) {
-        // Dev mode fallback
-        final devCode = _generateCode();
-        debugPrint('📱 DEV MODE — new code for ${widget.email}: $devCode');
-        _showSnack('Dev mode: check console', const Color(0xFFE8C547));
+      if (!mounted) return;
+      if (result.ok) {
+        _showSnack('Code resent!', const Color(0xFFE8C547));
+      } else {
+        _showSnack('Failed to resend. Try again.', Colors.white.withValues(alpha: 0.6));
       }
+    } else {
+      // Email — regenerate via backend then send with EmailJS
+      final otpResult = await ApiService.sendOtp(email: widget.email);
+      if (!mounted) return;
+      final code = otpResult['code'] as String?;
+      if (code != null) {
+        await EmailService.sendVerificationCode(toEmail: widget.email, code: code);
+      }
+      if (!mounted) return;
+      _showSnack('Code resent to ${widget.email}', const Color(0xFFE8C547));
     }
 
     if (!mounted) return;
@@ -150,10 +160,6 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
       _resendSeconds = 60;
     });
     _startResendTimer();
-
-    if (sent) {
-      _showSnack('Code resent!', const Color(0xFFE8C547));
-    }
   }
 
   void _startResendTimer() {
@@ -325,8 +331,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
               const Spacer(),
 
               // ── Resend code button ──
-              if (widget.useVerifyApi)
-                Center(
+              Center(
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: TextButton(

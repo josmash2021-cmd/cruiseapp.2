@@ -186,8 +186,7 @@ class UserSession {
     await prefs.remove(_key);
     await prefs.remove(_modeKey);
     await prefs.remove('pending_password');
-    // NOTE: We intentionally DO NOT remove _photoKey here
-    // so the profile photo persists when the app is closed and reopened
+    await prefs.remove(_photoKey); // Clear so another account on same device gets its own photo
     await ApiService.clearToken();
     ApiService.clearUserCache();
     // Clear all user-specific data so accounts are fully independent

@@ -320,8 +320,9 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
                                                         frame,
                                                         wasSynchronouslyLoaded,
                                                       ) {
-                                                        if (wasSynchronouslyLoaded)
+                                                        if (wasSynchronouslyLoaded) {
                                                           return child;
+                                                        }
                                                         return AnimatedOpacity(
                                                           opacity: frame == null
                                                               ? 0.0

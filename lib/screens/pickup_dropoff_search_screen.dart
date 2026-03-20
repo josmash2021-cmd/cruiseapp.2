@@ -602,18 +602,20 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
             .firstOrNull;
 
         // Update subtitles if addresses are saved
-        if (homeAddr != null)
+        if (homeAddr != null) {
           quickItems[0] = _QuickPlace(
             Icons.home_rounded,
             S.of(context).homeLabel,
             homeAddr.address,
           );
-        if (workAddr != null)
+        }
+        if (workAddr != null) {
           quickItems[1] = _QuickPlace(
             Icons.work_rounded,
             S.of(context).workLabel,
             workAddr.address,
           );
+        }
 
         return ListView(
           padding: const EdgeInsets.only(top: 8),
@@ -713,11 +715,12 @@ class _PlacesAutocompleteSheetState extends State<_PlacesAutocompleteSheet> {
           latitude: widget.initialLat,
           longitude: widget.initialLng,
         );
-        if (mounted)
+        if (mounted) {
           setState(() {
             _suggestions = results;
             _loading = false;
           });
+        }
       } catch (_) {
         if (mounted) setState(() => _loading = false);
       }

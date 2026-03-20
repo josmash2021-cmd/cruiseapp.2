@@ -70,6 +70,11 @@ TWILIO_SERVICE_SID = os.getenv("TWILIO_SERVICE_SID", "")  # Verify Service SID (
 # ── In-memory OTP store: phone → {code, expires} ──
 _otp_store: dict = {}  # {phone: {"code": str, "expires": float}}
 _OTP_TTL = 300  # 5 minutes
+
+# L3: per-driver response cache for /dispatch/driver/pending
+# Prevents DB hammering when client polls faster than the 5-second interval
+_pending_cache: dict = {}  # {driver_id: (monotonic_ts, offers_list)}
+_PENDING_CACHE_TTL = 3.0   # seconds — any call within this window reuses cached result
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
@@ -565,6 +570,94 @@ async def _migrate_postgres(conn):
         except Exception as _e:
             logging.warning("Postgres migration skip %s.%s: %s", table, col, _e)
 
+# ── Weekly auto-payout helpers ──────────────────────────────────────────
+
+def _next_tuesday_2am() -> datetime:
+    """Return the next Tuesday at 02:00 UTC (or today if it's Tuesday and before 2 AM)."""
+    now = datetime.now(timezone.utc)
+    days_ahead = (1 - now.weekday()) % 7  # 1 = Tuesday
+    if days_ahead == 0 and now.hour >= 2:
+        days_ahead = 7
+    target = (now + timedelta(days=days_ahead)).replace(
+        hour=2, minute=0, second=0, microsecond=0
+    )
+    return target
+
+
+async def _auto_payout_all_drivers():
+    """Transfer pending_balance to every eligible driver via Stripe Connect."""
+    if not STRIPE_SECRET:
+        logging.warning("[AutoPayout] STRIPE_SECRET not configured — skipping")
+        return
+    logging.info("[AutoPayout] Starting weekly payout run")
+    try:
+        import stripe as _s
+        _s.api_key = STRIPE_SECRET
+    except Exception as e:
+        logging.error("[AutoPayout] Stripe import failed: %s", e)
+        return
+
+    async with SessionLocal() as db:
+        result = await db.execute(
+            select(User).where(
+                and_(
+                    User.role == "driver",
+                    User.stripe_connect_id.isnot(None),
+                    User.pending_balance > 1.0,
+                )
+            )
+        )
+        drivers = result.scalars().all()
+        logging.info("[AutoPayout] %d driver(s) eligible for payout", len(drivers))
+
+        for drv in drivers:
+            amount = round(drv.pending_balance, 2)
+            try:
+                cashout = Cashout(user_id=drv.id, amount=amount)
+                db.add(cashout)
+                await db.flush()  # get cashout.id
+
+                transfer = _s.Transfer.create(
+                    amount=max(int(amount * 100), 50),
+                    currency="usd",
+                    destination=drv.stripe_connect_id,
+                    description=f"Cruise weekly auto-payout — cashout #{cashout.id}",
+                    metadata={"cashout_id": str(cashout.id), "driver_id": str(drv.id)},
+                )
+                cashout.status = "completed"
+                drv.pending_balance = 0.0
+                await db.commit()
+                logging.info(
+                    "[AutoPayout] Driver %s — $%.2f — transfer %s",
+                    drv.id, amount, transfer["id"],
+                )
+                # Push notification
+                if drv.fcm_token:
+                    _send_fcm_push(
+                        drv.fcm_token,
+                        title="💰 Payout Sent!",
+                        body=f"${amount:.2f} has been transferred to your bank account.",
+                        data={"type": "auto_payout", "amount": str(amount)},
+                    )
+            except Exception as e:
+                await db.rollback()
+                logging.error("[AutoPayout] Failed for driver %s: %s", drv.id, e)
+
+
+async def _schedule_weekly_payouts():
+    """Background loop: sleep until next Tuesday 02:00 UTC, run payouts, repeat."""
+    while True:
+        target = _next_tuesday_2am()
+        wait_secs = (target - datetime.now(timezone.utc)).total_seconds()
+        logging.info(
+            "[AutoPayout] Next run scheduled at %s (in %.0f s)",
+            target.isoformat(), wait_secs,
+        )
+        await asyncio.sleep(max(wait_secs, 0))
+        await _auto_payout_all_drivers()
+        await asyncio.sleep(60)  # prevent tight re-entry at the same second
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Run ALL initialization in background so Railway healthcheck passes immediately
@@ -597,6 +690,8 @@ async def lifespan(app: FastAPI):
                 await firestore_sync.bulk_sync_all(SessionLocal)
             except Exception as e:
                 logging.error("Bulk Firestore sync failed: %s", e)
+        # Start weekly auto-payout scheduler
+        asyncio.create_task(_schedule_weekly_payouts())
 
     asyncio.create_task(_bg_init())
     yield
@@ -2660,6 +2755,21 @@ async def charge_trip_endpoint(trip_id: int, user: User = Depends(_get_current_u
     return result
 
 
+@app.post("/payments/setup-intent", dependencies=[Depends(_verify_api_key)])
+async def create_setup_intent(user: User = Depends(_get_current_user)):
+    """Create a Stripe SetupIntent so the rider's card is authorised for future off-session charges."""
+    if not _HAS_STRIPE:
+        return {"client_secret": "seti_mock_secret_for_testing"}
+    try:
+        intent = _stripe_mod.SetupIntent.create(
+            usage="off_session",
+            metadata={"user_id": str(user.id)},
+        )
+        return {"client_secret": intent.client_secret}
+    except _stripe_mod.error.StripeError as e:
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+
 @app.patch("/trips/{trip_id}/status", dependencies=[Depends(_verify_api_key)])
 async def update_trip_status(trip_id: int, status: str = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
@@ -2690,9 +2800,10 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             logging.error("Firestore sync on update_trip_status failed: %s", e)
 
     # Auto-charge rider when trip is completed
+    charge_result = None
     if status == "completed" and trip.payment_status == "unpaid":
         try:
-            await _charge_trip(trip, db)
+            charge_result = await _charge_trip(trip, db)
         except Exception as e:
             logging.error("[AutoCharge] Failed for trip %s: %s", trip_id, e)
 
@@ -2710,10 +2821,16 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
                     body="Your driver has arrived at the pickup point!",
                     data={"type": "driver_arrived", "trip_id": str(trip_id)})
             elif status == "completed":
-                fare_str = f"${trip.fare:.2f}" if trip.fare else ""
-                _send_fcm_push(rider.fcm_token, title="✅ Trip Completed",
-                    body=f"Your trip is complete. {fare_str} charged.",
-                    data={"type": "trip_completed", "trip_id": str(trip_id)})
+                # Fix H7: differentiate notification based on actual charge outcome
+                if trip.payment_status == "paid":
+                    fare_str = f"${trip.fare:.2f}" if trip.fare else ""
+                    _send_fcm_push(rider.fcm_token, title="✅ Trip Completed",
+                        body=f"Your trip is complete. {fare_str} charged to your card.",
+                        data={"type": "trip_completed", "trip_id": str(trip_id)})
+                else:
+                    _send_fcm_push(rider.fcm_token, title="⚠️ Payment Failed",
+                        body="Your trip is complete but we couldn't charge your card. Please update your payment method.",
+                        data={"type": "payment_failed", "trip_id": str(trip_id)})
             elif status == "canceled":
                 _send_fcm_push(rider.fcm_token, title="⚠️ Trip Canceled",
                     body="Your trip has been canceled.",
@@ -2980,12 +3097,163 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     db.add(cashout)
     await db.commit()
     await db.refresh(cashout)
-    return {"id": cashout.id, "amount": cashout.amount, "status": cashout.status}
+
+    # ── Stripe Connect Transfer (real payout to driver's bank) ──
+    transfer_id = None
+    stripe_error = None
+    if user.stripe_connect_id and STRIPE_SECRET:
+        try:
+            import stripe as _s
+            _s.api_key = STRIPE_SECRET
+            # Amount in cents; Stripe requires positive integer
+            amount_cents = max(int(body.amount * 100), 50)
+            transfer = _s.Transfer.create(
+                amount=amount_cents,
+                currency="usd",
+                destination=user.stripe_connect_id,
+                description=f"Cruise driver payout — cashout #{cashout.id}",
+                metadata={"cashout_id": str(cashout.id), "driver_id": str(user.id)},
+            )
+            transfer_id = transfer["id"]
+            cashout.status = "completed"
+            # Deduct from pending_balance
+            result2 = await db.execute(select(User).where(User.id == user.id))
+            drv = result2.scalar_one_or_none()
+            if drv:
+                drv.pending_balance = round(max(0.0, (drv.pending_balance or 0.0) - body.amount), 2)
+            await db.commit()
+            await db.refresh(cashout)
+            logging.info("[Cashout] Stripe Transfer %s created for driver %s — $%.2f", transfer_id, user.id, body.amount)
+        except Exception as _se:
+            stripe_error = str(_se)[:200]
+            logging.error("[Cashout] Stripe Transfer failed for driver %s: %s", user.id, _se)
+
+    return {
+        "id": cashout.id,
+        "amount": cashout.amount,
+        "status": cashout.status,
+        "transfer_id": transfer_id,
+        "stripe_error": stripe_error,
+    }
 
 @app.get("/drivers/cashouts", dependencies=[Depends(_verify_api_key)])
 async def get_cashouts(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Cashout).where(Cashout.user_id == user.id).order_by(Cashout.created_at.desc()))
     return [{"id": c.id, "amount": c.amount, "status": c.status, "created_at": c.created_at.isoformat()} for c in result.scalars().all()]
+
+@app.get("/drivers/payouts/next-date", dependencies=[Depends(_verify_api_key)])
+async def get_next_payout_date(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Return next scheduled auto-payout date (Tuesday 02:00 UTC) and driver's pending balance."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    drv = result.scalar_one_or_none()
+    pending = round(float(drv.pending_balance or 0.0), 2) if drv else 0.0
+    next_date = _next_tuesday_2am()
+    return {
+        "next_payout_date": next_date.isoformat(),
+        "pending_balance": pending,
+        "stripe_connected": bool(drv and drv.stripe_connect_id),
+    }
+
+# ═══════════════════════════════════════════════════════
+#  REFERRAL ENDPOINTS
+# ═══════════════════════════════════════════════════════
+
+class ApplyReferralIn(BaseModel):
+    code: str
+
+@app.get("/auth/referral-code", dependencies=[Depends(_verify_api_key)])
+async def get_referral_code(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get or auto-generate the authenticated user's unique referral code."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    if not db_user.referral_code:
+        for _ in range(20):
+            raw = secrets.token_urlsafe(6).upper().replace("-", "").replace("_", "")[:8]
+            exists = await db.execute(select(User).where(User.referral_code == raw))
+            if not exists.scalar_one_or_none():
+                db_user.referral_code = raw
+                break
+        await db.commit()
+        await db.refresh(db_user)
+    ref_count_r = await db.execute(
+        select(func.count(Referral.id)).where(Referral.referrer_id == user.id)
+    )
+    bonus_r = await db.execute(
+        select(func.coalesce(func.sum(Referral.referrer_bonus), 0.0)).where(
+            and_(Referral.referrer_id == user.id, Referral.status == "completed")
+        )
+    )
+    return {
+        "referral_code": db_user.referral_code,
+        "referral_count": ref_count_r.scalar() or 0,
+        "total_bonus_earned": round(float(bonus_r.scalar() or 0), 2),
+        "bonus_per_referral": 10.0,
+    }
+
+@app.post("/auth/apply-referral", dependencies=[Depends(_verify_api_key)])
+async def apply_referral_code(body: ApplyReferralIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Apply a referral code. Can only be applied once per account."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    if db_user.referred_by:
+        raise HTTPException(400, "You have already used a referral code")
+    code = body.code.strip().upper()
+    ref_result = await db.execute(select(User).where(User.referral_code == code))
+    referrer = ref_result.scalar_one_or_none()
+    if not referrer:
+        raise HTTPException(404, "Referral code not found")
+    if referrer.id == user.id:
+        raise HTTPException(400, "You cannot use your own referral code")
+    referral = Referral(
+        referrer_id=referrer.id,
+        referee_id=user.id,
+        referral_code=code,
+        status="completed",
+        referrer_bonus=10.0,
+        referee_bonus=10.0,
+        completed_at=datetime.now(timezone.utc),
+    )
+    db_user.referred_by = referrer.id
+    db.add(referral)
+    # Add $10 to referrer's pending_balance
+    referrer.pending_balance = round((referrer.pending_balance or 0.0) + 10.0, 2)
+    await db.commit()
+    # Push notification to referrer
+    if referrer.fcm_token:
+        _send_fcm_push(
+            referrer.fcm_token,
+            title="🎉 Referral Bonus!",
+            body=f"{db_user.first_name} joined using your code. $10 added to your earnings!",
+            data={"type": "referral_bonus", "amount": "10.0"},
+        )
+    logging.info("[Referral] User %s referred by %s (code=%s)", user.id, referrer.id, code)
+    return {"ok": True, "referee_bonus": 10.0, "message": "Code applied! You earned a $10 credit."}
+
+@app.get("/auth/referrals", dependencies=[Depends(_verify_api_key)])
+async def get_my_referrals(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get list of users I've referred and total bonus earned."""
+    result = await db.execute(
+        select(Referral).where(Referral.referrer_id == user.id).order_by(Referral.created_at.desc())
+    )
+    referrals = result.scalars().all()
+    out = []
+    for r in referrals:
+        ref_res = await db.execute(select(User).where(User.id == r.referee_id))
+        referee = ref_res.scalar_one_or_none()
+        name = f"{referee.first_name} {referee.last_name[0]}." if referee else "Unknown"
+        out.append({
+            "id": r.id,
+            "referee_name": name,
+            "status": r.status,
+            "bonus": r.referrer_bonus,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        })
+    total_bonus = sum(r["bonus"] for r in out if r["status"] == "completed")
+    return {"referrals": out, "total_bonus": round(total_bonus, 2)}
 
 @app.get("/drivers/payout-methods", dependencies=[Depends(_verify_api_key)])
 async def get_payout_methods(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -3218,6 +3486,12 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
 
 @app.get("/dispatch/driver/pending", dependencies=[Depends(_verify_api_key)])
 async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # L3: return cached result if same driver called within _PENDING_CACHE_TTL seconds
+    _now = time.monotonic()
+    _cached = _pending_cache.get(driver_id)
+    if _cached and (_now - _cached[0]) < _PENDING_CACHE_TTL:
+        return _cached[1]
+
     result = await db.execute(
         select(DispatchOffer, Trip)
         .join(Trip, DispatchOffer.trip_id == Trip.id)
@@ -3230,12 +3504,15 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
         rider = rider_result.scalar_one_or_none()
         rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
         rider_phone = rider.phone or "" if rider else ""
+        rider_photo_url = rider.photo_url or "" if rider else ""
         offers.append({
             "offer_id": offer.id,
             "rider_name": rider_name,
             "rider_phone": rider_phone,
+            "rider_photo_url": rider_photo_url,
             **_trip_dict(trip),
         })
+    _pending_cache[driver_id] = (time.monotonic(), offers)  # L3: cache for TTL
     return offers
 
 @app.post("/dispatch/driver/accept", dependencies=[Depends(_verify_api_key)])
@@ -3248,6 +3525,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     if not offer:
         raise HTTPException(404, "Offer not found")
     offer.status = "accepted"
+    _pending_cache.pop(driver_id, None)  # L3: invalidate cache so next poll is fresh
 
     trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id))
     trip = trip_result.scalar_one_or_none()
@@ -7595,6 +7873,89 @@ async def create_driver_incentive(
     db.add(incentive)
     await db.commit()
     return {"status": "created", "incentive_id": incentive.id}
+
+# ═══════════════════════════════════════════════════════
+#  PAYPAL PAYMENTS
+# ═══════════════════════════════════════════════════════
+
+PAYPAL_CLIENT_ID     = os.getenv("PAYPAL_CLIENT_ID", "")
+PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", "")
+PAYPAL_MODE          = os.getenv("PAYPAL_MODE", "sandbox")  # "sandbox" or "live"
+
+def _paypal_base_url() -> str:
+    return (
+        "https://api-m.paypal.com"
+        if PAYPAL_MODE == "live"
+        else "https://api-m.sandbox.paypal.com"
+    )
+
+async def _get_paypal_access_token() -> str:
+    """Obtain a PayPal OAuth2 access token using client_credentials grant."""
+    import base64, urllib.request, urllib.parse
+    url   = f"{_paypal_base_url()}/v1/oauth2/token"
+    creds = base64.b64encode(f"{PAYPAL_CLIENT_ID}:{PAYPAL_CLIENT_SECRET}".encode()).decode()
+    data  = urllib.parse.urlencode({"grant_type": "client_credentials"}).encode()
+    req   = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Authorization", f"Basic {creds}")
+    req.add_header("Content-Type",  "application/x-www-form-urlencoded")
+    loop  = asyncio.get_event_loop()
+    def _fetch():
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read().decode())
+    result = await loop.run_in_executor(None, _fetch)
+    return result["access_token"]
+
+class PayPalOrderIn(BaseModel):
+    amount:      str = "1.00"
+    currency:    str = "USD"
+    description: str = "Cruise ride payment"
+
+@app.post("/paypal/create-order", dependencies=[Depends(_verify_api_key)])
+async def create_paypal_order(body: PayPalOrderIn):
+    """Create a PayPal order and return the approval URL for the WebView."""
+    if not PAYPAL_CLIENT_ID or not PAYPAL_CLIENT_SECRET:
+        raise HTTPException(503, "PayPal is not configured on this server")
+    try:
+        access_token = await _get_paypal_access_token()
+        return_url   = "https://cruise-app.com/paypal/success"
+        cancel_url   = "https://cruise-app.com/paypal/cancel"
+        order_payload = {
+            "intent": "CAPTURE",
+            "purchase_units": [{
+                "amount":      {"currency_code": body.currency, "value": body.amount},
+                "description": body.description,
+            }],
+            "application_context": {
+                "return_url": return_url,
+                "cancel_url": cancel_url,
+                "user_action": "PAY_NOW",
+                "brand_name":  "Cruise",
+            },
+        }
+        import urllib.request
+        url  = f"{_paypal_base_url()}/v2/checkout/orders"
+        data = json.dumps(order_payload).encode()
+        req  = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Authorization", f"Bearer {access_token}")
+        req.add_header("Content-Type",  "application/json")
+        loop = asyncio.get_event_loop()
+        def _create():
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return json.loads(r.read().decode())
+        result = await loop.run_in_executor(None, _create)
+        approval_url = next(
+            (lnk["href"] for lnk in result.get("links", []) if lnk["rel"] == "approve"),
+            None,
+        )
+        if not approval_url:
+            raise HTTPException(500, "PayPal did not return an approval URL")
+        logging.info("[PayPal] Order created: %s", result.get("id"))
+        return {"order_id": result["id"], "approval_url": approval_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("[PayPal] create_paypal_order failed: %s", e)
+        raise HTTPException(502, f"PayPal error: {str(e)}")
 
 # -------------------------------------------------------
 #  SERVER STARTUP (if run directly)

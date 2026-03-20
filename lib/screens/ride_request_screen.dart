@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -963,7 +963,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (points.isEmpty) return;
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
-      lineColor: const Color(0xFF5BA3F5).value,
+      lineColor: const Color(0xFF5BA3F5).toARGB32(),
       lineWidth: 4.0,
     ));
   }
@@ -1062,9 +1062,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (p.longitude < minLng) minLng = p.longitude;
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
-    _mapCtrl!.cameraForCoordinates(
+    _mapCtrl!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
+      mapbox.CameraOptions(),
       mapbox.MbxEdgeInsets(top: 100, left: 80, bottom: 300, right: 80),
       null, null,
     ).then((cam) {
@@ -1242,10 +1243,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 cameraOptions: mapbox.CameraOptions(
                   center: mapbox.Point(coordinates: mapbox.Position(_center.longitude, _center.latitude)),
                   zoom: 15.5,
-                  pitch: 45.0,
+                  pitch: 0.0,
                 ),
                 onMapCreated: (ctrl) async {
                   _mapCtrl = ctrl;
+                  ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+                  ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+                  ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+                  ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
                   _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                   _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
                   setState(() => _mapReady = true);
@@ -1926,9 +1931,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   static String _carAssetForOption(String name) {
     final key = name.trim().toLowerCase();
-    if (key.contains('suv') || key.contains('suburban')) return 'assets/images/suburban.png';
-    if (key.contains('comfort') || key.contains('camry')) return 'assets/images/camry.png';
-    return 'assets/images/fusion.png';
+    if (key.contains('vip') || key.contains('suburban')) return 'assets/images/cruise_3.png';
+    if (key.contains('sedan') || key.contains('camry')) return 'assets/images/cruise_7.png';
+    return 'assets/images/cruise_6.png';
   }
 
   Widget _buildRideOptionCard(AppColors c, RideOption opt, bool selected) {
@@ -2191,7 +2196,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   center: const Alignment(0, -0.3),
                   radius: 0.8,
                   colors: [
-                    c.gold.withOpacity(0.08),
+                    c.gold.withValues(alpha: 0.08),
                     Colors.transparent,
                   ],
                 ),
@@ -2223,7 +2228,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: c.gold.withOpacity(ringAlpha),
+                                color: c.gold.withValues(alpha: ringAlpha),
                                 width: ringWidth,
                               ),
                             ),
@@ -2238,8 +2243,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             shape: BoxShape.circle,
                             gradient: RadialGradient(
                               colors: [
-                                c.gold.withOpacity(0.3),
-                                c.gold.withOpacity(0.1),
+                                c.gold.withValues(alpha: 0.3),
+                                c.gold.withValues(alpha: 0.1),
                               ],
                             ),
                           ),
@@ -2253,12 +2258,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             color: const Color(0xFF1A1A1A),
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: c.gold.withOpacity(0.6),
+                              color: c.gold.withValues(alpha: 0.6),
                               width: 2,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: c.gold.withOpacity(0.4),
+                                color: c.gold.withValues(alpha: 0.4),
                                 blurRadius: 20,
                                 spreadRadius: 5,
                               ),
@@ -2281,7 +2286,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.green.withOpacity(0.6),
+                                color: Colors.green.withValues(alpha: 0.6),
                                 blurRadius: 10,
                                 spreadRadius: 2,
                               ),
@@ -2311,7 +2316,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                         color: const Color(0xFF1A1A1A),
                         borderRadius: BorderRadius.circular(30),
                         border: Border.all(
-                          color: c.gold.withOpacity(0.3),
+                          color: c.gold.withValues(alpha: 0.3),
                           width: 1,
                         ),
                       ),
@@ -2348,12 +2353,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                         color: const Color(0xFF1A1A1A),
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.08),
+                          color: Colors.white.withValues(alpha: 0.08),
                           width: 1,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
+                            color: Colors.black.withValues(alpha: 0.3),
                             blurRadius: 20,
                             offset: const Offset(0, -4),
                           ),
@@ -2365,22 +2370,20 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                           // Ride type and price
                           Row(
                             children: [
-                              // Vehicle icon
-                              Container(
-                                width: 56,
+                              // Vehicle image
+                              SizedBox(
+                                width: 80,
                                 height: 56,
-                                decoration: BoxDecoration(
-                                  color: c.gold.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: c.gold.withOpacity(0.3),
-                                    width: 1,
+                                child: Image.asset(
+                                  _carAssetForOption(_ctrl.state.selectedOption?.name ?? ''),
+                                  fit: BoxFit.contain,
+                                  filterQuality: FilterQuality.high,
+                                  isAntiAlias: true,
+                                  errorBuilder: (_, __, ___) => Icon(
+                                    Icons.directions_car_rounded,
+                                    color: c.gold,
+                                    size: 32,
                                   ),
-                                ),
-                                child: Icon(
-                                  Icons.local_taxi_rounded,
-                                  color: c.gold,
-                                  size: 28,
                                 ),
                               ),
                               const SizedBox(width: 16),
@@ -2401,7 +2404,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                       _ctrl.state.selectedOption?.description ?? S.of(context).comfortableSedan,
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: Colors.white.withOpacity(0.5),
+                                        color: Colors.white.withValues(alpha: 0.5),
                                       ),
                                     ),
                                   ],
@@ -2422,7 +2425,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                     S.of(context).estFare,
                                     style: TextStyle(
                                       fontSize: 11,
-                                      color: Colors.white.withOpacity(0.4),
+                                      color: Colors.white.withValues(alpha: 0.4),
                                     ),
                                   ),
                                 ],
@@ -2433,7 +2436,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                           const SizedBox(height: 16),
                           Divider(
                             height: 1,
-                            color: Colors.white.withOpacity(0.08),
+                            color: Colors.white.withValues(alpha: 0.08),
                           ),
                           const SizedBox(height: 16),
                           
@@ -2453,12 +2456,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                 width: 40,
                                 height: 40,
                                 decoration: BoxDecoration(
-                                  color: c.gold.withOpacity(0.1),
+                                  color: c.gold.withValues(alpha: 0.1),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
                                   Icons.arrow_forward_rounded,
-                                  color: c.gold.withOpacity(0.6),
+                                  color: c.gold.withValues(alpha: 0.6),
                                   size: 20,
                                 ),
                               ),
@@ -2483,7 +2486,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             child: TextButton(
                               onPressed: _confirmCancelSearching,
                               style: TextButton.styleFrom(
-                                backgroundColor: Colors.white.withOpacity(0.08),
+                                backgroundColor: Colors.white.withValues(alpha: 0.08),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14),
                                 ),
@@ -2533,7 +2536,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w500,
-              color: Colors.white.withOpacity(0.8),
+              color: Colors.white.withValues(alpha: 0.8),
             ),
           ),
         ),
@@ -2617,7 +2620,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                   filterQuality: FilterQuality.high,
                                   isAntiAlias: true,
                                   cacheWidth: 256,
-                                  errorBuilder: (_a, _b, _c) => Icon(
+                                  errorBuilder: (_, __, ___) => Icon(
                                     Icons.directions_car_rounded,
                                     color: c.gold,
                                     size: 28,
@@ -3226,6 +3229,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   String _paymentLabel(String id) {
     final loc = S.of(context);
     switch (id) {
+      case 'apple_pay':
+        return 'Apple Pay';
       case 'google_pay':
         return 'Google Pay';
       case 'credit_card':
@@ -3236,7 +3241,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       case 'paypal':
         return 'PayPal';
       default:
-        return 'Google Pay';
+        return Platform.isIOS ? 'Apple Pay' : 'Google Pay';
     }
   }
 
@@ -3261,6 +3266,25 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   Widget _paymentLogoWidget(String id, double size) {
     switch (id) {
+      case 'apple_pay':
+        return Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Center(
+            child: Text(
+              '',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: size * 0.55,
+                fontFamily: '-apple-system',
+              ),
+            ),
+          ),
+        );
       case 'google_pay':
         return Container(
           width: size,

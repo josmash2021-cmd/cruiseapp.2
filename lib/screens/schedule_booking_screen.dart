@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -240,7 +240,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
     if (routePoints.isNotEmpty) {
       _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
         geometry: mapbox.LineString(coordinates: routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
-        lineColor: const Color(0xFFE8C547).value,
+        lineColor: const Color(0xFFE8C547).toARGB32(),
         lineWidth: 5.0,
       ));
     }
@@ -248,7 +248,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
     if (_pickupLatLng != null) {
       final a = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLatLng!.longitude, _pickupLatLng!.latitude)),
-        iconColor: const Color(0xFFE8C547).value,
+        iconColor: const Color(0xFFE8C547).toARGB32(),
         iconSize: 1.2,
       ));
       _markerAnnots.add(a);
@@ -257,7 +257,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
     if (_dropoffLatLng != null) {
       final a = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLatLng!.longitude, _dropoffLatLng!.latitude)),
-        iconColor: const Color(0xFFEA4335).value,
+        iconColor: const Color(0xFFEA4335).toARGB32(),
         iconSize: 1.2,
       ));
       _markerAnnots.add(a);
@@ -321,9 +321,10 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
     final maxLat = _pickupLatLng!.latitude > _dropoffLatLng!.latitude ? _pickupLatLng!.latitude : _dropoffLatLng!.latitude;
     final minLng = _pickupLatLng!.longitude < _dropoffLatLng!.longitude ? _pickupLatLng!.longitude : _dropoffLatLng!.longitude;
     final maxLng = _pickupLatLng!.longitude > _dropoffLatLng!.longitude ? _pickupLatLng!.longitude : _dropoffLatLng!.longitude;
-    _mapCtrl?.cameraForCoordinates(
+    _mapCtrl?.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
+      mapbox.CameraOptions(),
       mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: 80, right: 60),
       null, null,
     ).then((cam) {
@@ -423,13 +424,14 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
         );
       } catch (_) {}
 
+      if (!mounted) return;
+      final schedTitle = S.of(context).rideScheduled;
+      final schedMsg = S.of(context).rideScheduledMsg(
+        DateFormat('MMM d \'at\' h:mm a').format(widget.scheduledAt),
+      );
       await LocalDataService.addNotification(
-        title: S.of(context).rideScheduled,
-        message: S
-            .of(context)
-            .rideScheduledMsg(
-              DateFormat('MMM d \'at\' h:mm a').format(widget.scheduledAt),
-            ),
+        title: schedTitle,
+        message: schedMsg,
         type: 'ride',
       );
 
@@ -1022,7 +1024,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                                   child: Image.asset(
                                     'assets/images/${ride.vehicle.toLowerCase()}.png',
                                     fit: BoxFit.contain,
-                                    errorBuilder: (_a, _b, _c) => const Icon(
+                                    errorBuilder: (_, __, ___) => const Icon(
                                       Icons.directions_car_rounded,
                                       color: _gold,
                                       size: 28,

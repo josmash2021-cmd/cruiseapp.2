@@ -1161,6 +1161,39 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   double _camLat = 0.0;
   double _camLng = 0.0;
   
+  Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
+    const gold = '#E8C547';
+    const goldDim = '#B8960A';
+    const goldFaint = '#6B5500';
+    const navy = '#0D1B2A';
+    const navyMid = '#0A1520';
+    final roadLayers = <String, String>{
+      'road-motorway-trunk': gold,
+      'road-motorway-trunk-case': goldDim,
+      'road-motorway': gold,
+      'road-motorway-case': goldDim,
+      'road-trunk': gold,
+      'road-trunk-case': goldDim,
+      'road-primary': goldDim,
+      'road-primary-case': goldFaint,
+      'road-secondary-tertiary': goldFaint,
+      'road-secondary-tertiary-case': goldFaint,
+      'road-street': '#3D2E00',
+      'road-street-case': '#1E1700',
+      'road-minor': '#2A1F00',
+      'road-minor-case': '#1A1300',
+    };
+    for (final entry in roadLayers.entries) {
+      try {
+        await ctrl.style.setStyleLayerProperty(entry.key, 'line-color', entry.value);
+      } catch (_) {}
+    }
+    try { await ctrl.style.setStyleLayerProperty('land', 'background-color', navy); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty('background', 'background-color', navyMid); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty('water', 'fill-color', '#0A1E35'); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty('road-label', 'text-color', gold); } catch (_) {}
+  }
+
   void _updateCameraForRoute() {
     if (_map == null || _userMovedMap || _routePts.isEmpty) return;
     
@@ -1489,6 +1522,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   // Points (car + pins) always above the route polyline
                   _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                   _updateAnnotations();
+                  // Dark navy + gold road theme
+                  await _applyDarkNavyGoldTheme(ctrl);
                 },
                 onScrollListener: (_) {
                   if (!_programmaticCam) setState(() => _userMovedMap = true);

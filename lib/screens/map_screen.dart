@@ -1163,6 +1163,71 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       _centerMapOn(_currentPosition!, zoom: _defaultMapZoom);
       await _setPickupAnnotation(_currentPosition!);
     }
+    // Apply dark navy + gold road theme
+    await _applyDarkNavyGoldTheme(controller);
+  }
+
+  /// Paints the map with a dark navy blue background and gold freeways/roads.
+  /// Uses setStyleLayerProperty to override paint on the navigation-night-v1 layers.
+  Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
+    const gold = '#E8C547';
+    const goldDim = '#B8960A';
+    const goldFaint = '#6B5500';
+    const navy = '#0D1B2A';
+    const navyMid = '#0A1520';
+
+    // Layer IDs in navigation-night-v1 / standard Mapbox styles for roads:
+    final roadLayers = <String, String>{
+      // Motorways / freeways — brightest gold
+      'road-motorway-trunk': gold,
+      'road-motorway-trunk-case': goldDim,
+      'road-motorway': gold,
+      'road-motorway-case': goldDim,
+      'road-trunk': gold,
+      'road-trunk-case': goldDim,
+      // Primary roads
+      'road-primary': goldDim,
+      'road-primary-case': goldFaint,
+      // Secondary / tertiary
+      'road-secondary-tertiary': goldFaint,
+      'road-secondary-tertiary-case': goldFaint,
+      // Street level
+      'road-street': '#3D2E00',
+      'road-street-case': '#1E1700',
+      'road-minor': '#2A1F00',
+      'road-minor-case': '#1A1300',
+    };
+
+    for (final entry in roadLayers.entries) {
+      try {
+        await ctrl.style.setStyleLayerProperty(
+          entry.key,
+          'line-color',
+          entry.value,
+        );
+      } catch (_) {}
+    }
+
+    // Background land color → dark navy
+    try {
+      await ctrl.style.setStyleLayerProperty('land', 'background-color', navy);
+    } catch (_) {}
+    try {
+      await ctrl.style.setStyleLayerProperty('background', 'background-color', navyMid);
+    } catch (_) {}
+
+    // Water — keep dark blue
+    try {
+      await ctrl.style.setStyleLayerProperty('water', 'fill-color', '#0A1E35');
+    } catch (_) {}
+
+    // Road labels — gold tint
+    try {
+      await ctrl.style.setStyleLayerProperty('road-label', 'text-color', gold);
+    } catch (_) {}
+    try {
+      await ctrl.style.setStyleLayerProperty('road-number-shield', 'text-color', '#000000');
+    } catch (_) {}
   }
 
   // ── Platform-aware camera helpers ─────────────────────────────────────

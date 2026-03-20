@@ -304,7 +304,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       _mapController?.flyTo(
         mapbox.CameraOptions(
           center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
-          zoom: 16, pitch: 45,
+          zoom: 16, pitch: 0, bearing: 0,
         ),
         mapbox.MapAnimationOptions(duration: 600),
       );
@@ -312,52 +312,41 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Future<void> _loadDriverData() async {
-    try {
-      final me = await ApiService.getMe();
-      if (me != null && mounted) {
+    // Fire all 3 requests in parallel — reduces Railway latency from 3 round-trips to 1
+    final results = await Future.wait([
+      ApiService.getMe().catchError((_) => null),
+      ApiService.getDriverEarnings(period: 'today').catchError((_) => <String, dynamic>{}),
+      ApiService.getNotifications().catchError((_) => <dynamic>[]),
+    ]);
+
+    if (!mounted) return;
+    final me = results[0] as Map<String, dynamic>?;
+    final earnings = results[1] as Map<String, dynamic>? ?? {};
+    final notifs = results[2] as List<dynamic>? ?? [];
+
+    setState(() {
+      if (me != null) {
         final firstName = me['first_name'] ?? 'Driver';
         final lastName = me['last_name'] ?? '';
-        setState(() {
-          _driverName = lastName.isNotEmpty
-              ? '$firstName ${lastName[0].toUpperCase()}.'
-              : firstName;
-          // Prefer locally cached photo (downloaded by UserSession)
-          if (UserSession.photoNotifier.value.isNotEmpty) {
-            _photoUrl = UserSession.photoNotifier.value;
-          } else {
-            final serverPhoto = me['photo_url']?.toString() ?? '';
-            if (serverPhoto.isNotEmpty) {
-              // Relative path from API → build full URL
-              _photoUrl = serverPhoto.startsWith('http')
-                  ? serverPhoto
-                  : '${ApiService.publicBaseUrl}$serverPhoto';
-            }
+        _driverName = lastName.isNotEmpty
+            ? '$firstName ${lastName[0].toUpperCase()}.'
+            : firstName;
+        if (UserSession.photoNotifier.value.isNotEmpty) {
+          _photoUrl = UserSession.photoNotifier.value;
+        } else {
+          final serverPhoto = me['photo_url']?.toString() ?? '';
+          if (serverPhoto.isNotEmpty) {
+            _photoUrl = serverPhoto.startsWith('http')
+                ? serverPhoto
+                : '${ApiService.publicBaseUrl}$serverPhoto';
           }
-        });
+        }
       }
-    } catch (_) {}
-
-    // Fetch today's stats
-    try {
-      final data = await ApiService.getDriverEarnings(period: 'today');
-      if (mounted) {
-        setState(() {
-          _todayEarnings = (data['total'] as num?)?.toDouble() ?? 0.0;
-          _todayTrips = (data['trips_count'] as num?)?.toInt() ?? 0;
-          _todayHours = (data['online_hours'] as num?)?.toDouble() ?? 0.0;
-        });
-      }
-    } catch (_) {}
-
-    // Fetch unread notification count
-    try {
-      final notifs = await ApiService.getNotifications();
-      if (mounted) {
-        setState(() {
-          _unreadCount = notifs.where((n) => n['is_read'] != true).length;
-        });
-      }
-    } catch (_) {}
+      _todayEarnings = (earnings['total'] as num?)?.toDouble() ?? 0.0;
+      _todayTrips = (earnings['trips_count'] as num?)?.toInt() ?? 0;
+      _todayHours = (earnings['online_hours'] as num?)?.toDouble() ?? 0.0;
+      _unreadCount = notifs.where((n) => n['is_read'] != true).length;
+    });
   }
 
   // ═══════════════════════════════════════════════════
@@ -652,16 +641,50 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         cameraOptions: mapbox.CameraOptions(
           center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
           zoom: 16.0,
-          pitch: 45.0,
+          pitch: 0.0,
+          bearing: 0.0,
         ),
         onMapCreated: (ctrl) async {
           _mapController = ctrl;
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           setState(() => _mapReady = true);
+          await _applyNavyGoldTheme(ctrl);
           _updateMyLocAnnotation();
         },
       ),
     );
+  }
+
+  // ── Dark navy + gold freeway theme (matches rider tracking screen) ──
+  Future<void> _applyNavyGoldTheme(mapbox.MapboxMap ctrl) async {
+    const gold = '#E8C547';
+    const goldDim = '#B8960A';
+    const goldFaint = '#6B5500';
+    const navy = '#0D1B2A';
+    const navyMid = '#0A1520';
+    final roadLayers = <String, String>{
+      'road-motorway-trunk': gold,
+      'road-motorway-trunk-case': goldDim,
+      'road-motorway': gold,
+      'road-motorway-case': goldDim,
+      'road-trunk': gold,
+      'road-trunk-case': goldDim,
+      'road-primary': goldDim,
+      'road-primary-case': goldFaint,
+      'road-secondary-tertiary': goldFaint,
+      'road-secondary-tertiary-case': goldFaint,
+      'road-street': '#3D2E00',
+      'road-street-case': '#1E1700',
+      'road-minor': '#2A1F00',
+      'road-minor-case': '#1A1300',
+    };
+    for (final entry in roadLayers.entries) {
+      try { await ctrl.style.setStyleLayerProperty(entry.key, 'line-color', entry.value); } catch (_) {}
+    }
+    try { await ctrl.style.setStyleLayerProperty('land', 'background-color', navy); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty('background', 'background-color', navyMid); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty('water', 'fill-color', '#0A1E35'); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty('road-label', 'text-color', gold); } catch (_) {}
   }
 
   // ═══════════════════════════════════════════════════

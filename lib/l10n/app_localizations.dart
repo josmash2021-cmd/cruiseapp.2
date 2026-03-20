@@ -812,9 +812,6 @@ class S {
 
   // ── Ride Request ──────────────────────────────────────────────────────────
   String get comfortableSedan => _es ? 'Sedán cómodo' : 'Comfortable sedan';
-  String get estFare => _es ? 'tarifa est.' : 'est. fare';
-  String get currentLocation => _es ? 'Ubicación actual' : 'Current location';
-  String get destination => _es ? 'Destino' : 'Destination';
   String get pleaseSelectDateTime => _es
       ? 'Por favor selecciona fecha y hora para tu viaje programado'
       : 'Please select a date and time for your scheduled ride';
@@ -899,7 +896,6 @@ class S {
   String get setAddressFor => _es ? 'Establecer dirección para' : 'Set address for';
   String searchAddressFor(String place) => _es ? 'Buscar dirección para $place' : 'Search address for $place';
   String get typeToSearchAddress => _es ? 'Escribe para buscar dirección' : 'Type to search address';
-  String get noResultsFound => _es ? 'No se encontraron resultados' : 'No results found';
   String get cancelTripConfirm => _es
       ? '¿Estás seguro de que deseas cancelar este viaje?'
       : 'Are you sure you want to cancel this trip?';
@@ -907,8 +903,6 @@ class S {
       ? 'Se te puede cobrar una tarifa de cancelación.'
       : 'You may be charged a cancellation fee.';
   String get yesCancelTrip => _es ? 'Sí, Cancelar Viaje' : 'Yes, Cancel Trip';
-  String get contactSupport => _es ? 'Contactar Soporte' : 'Contact Support';
-
   // ── Chat ──────────────────────────────────────────────────────────────────
   String get connectionIssueRetrying => _es
       ? 'Problema de conexión - reintentando...'
@@ -1359,11 +1353,6 @@ class S {
   String get pickupLocationHint =>
       _es ? 'Lugar de recogida' : 'Pickup location';
   String get whereToHint => _es ? '¿A dónde vas?' : 'Where to?';
-  String get setHomeAddress =>
-      _es ? 'Establece tu dirección de casa' : 'Set your home address';
-  String get setWorkAddress =>
-      _es ? 'Establece tu dirección de trabajo' : 'Set your work address';
-  String get chooseOnMap => _es ? 'Elegir en el mapa' : 'Choose on map';
   String setAddressTitle(String place) =>
       _es ? 'Establecer dirección de $place' : 'Set $place address';
 
@@ -1375,7 +1364,6 @@ class S {
   String get premiumBadge => 'PREMIUM';
   String get economyBadge => _es ? 'ECONÓMICO' : 'ECONOMY';
   String get comfortBadge => 'COMFORT';
-  String get estFare => _es ? 'tarifa est.' : 'est. fare';
   String get requestRideBtn => _es ? 'Solicitar viaje' : 'Request Ride';
   String get lookingForRide => _es ? 'Buscando conductor' : 'Looking for ride';
   String get paymentDeclined => _es ? 'Pago rechazado' : 'Payment Declined';
@@ -1550,13 +1538,6 @@ class S {
   String get yesCancelBtn => _es ? 'Sí, cancelar' : 'Yes, Cancel';
   String get destination => _es ? 'Destino' : 'Destination';
 
-  // ── Pickup/Dropoff Search Screen ───────────────────────────────────────────
-  String get whereTo => _es ? '¿A dónde?' : 'Where to?';
-  String get homeLabel => _es ? 'Casa' : 'Home';
-  String get workLabel => _es ? 'Trabajo' : 'Work';
-  String get pickLocationOnMap =>
-      _es ? 'Elige una ubicación en el mapa' : 'Pick a location on the map';
-
   // ── Promo Code Screen ──────────────────────────────────────────────────────
 
   // ── Payment Method Screen ─────────────────────────────────────────────────
@@ -1712,15 +1693,6 @@ class S {
       : 'Earn points and unlock rewards';
   String get currentLevel => _es ? 'Nivel actual' : 'Current level';
   String get allLevels => _es ? 'Todos los niveles' : 'All levels';
-
-  // ── Pickup/Dropoff Search (extra) ──────────────────────────────────────────
-  String get typeToSearchAddress => _es
-      ? 'Escribe para buscar una dirección'
-      : 'Type to search for an address';
-  String setAddressFor(String place) =>
-      _es ? 'Establecer dirección de $place' : 'Set $place address';
-  String searchAddressFor(String place) =>
-      _es ? 'Busca tu dirección de $place' : 'Search your $place address';
 
   // ── Promo (extra) ─────────────────────────────────────────────────────────
   String dollarOff(String amount) => '\$$amount OFF';
@@ -1983,9 +1955,6 @@ class S {
       : 'Are you sure you want to stop looking for a driver?';
   String get keepRide => _es ? 'Mantener viaje' : 'Keep Ride';
   String get cancelButton => _es ? 'Cancelar' : 'Cancel';
-  String get cancelFeeWarning => _es
-      ? '¿Estás seguro? Puede aplicar una tarifa de cancelación.'
-      : 'Are you sure? A cancellation fee may apply.';
   String get tripCancelledByOperator => _es
       ? 'Tu viaje ha sido cancelado por el operador. Por favor solicita un nuevo viaje.'
       : 'Your trip has been cancelled by the operator. Please request a new ride.';

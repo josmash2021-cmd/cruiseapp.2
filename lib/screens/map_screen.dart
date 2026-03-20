@@ -3331,7 +3331,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        S.of(context).chooseRide(_rides[_selectedRide].name),
+                        '${S.of(context).chooseRide} ${_rides[_selectedRide].name}',
                         maxLines: 1,
                         style: TextStyle(
                           fontWeight: FontWeight.w700,

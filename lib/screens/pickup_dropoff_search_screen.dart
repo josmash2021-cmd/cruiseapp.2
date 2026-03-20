@@ -478,7 +478,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     FavoritePlace? workAddr,
   ) async {
     // ── Choose on map ──
-    if (item.title == 'Choose on map') {
+    if (item.title == S.of(context).chooseOnMap) {
       final result = await Navigator.of(context).push<Map<String, dynamic>>(
         slideFromRightRoute(
           MapPickerScreen(
@@ -510,7 +510,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     }
 
     // ── Home or Work ──
-    final savedAddress = item.title == 'Home'
+    final savedAddress = item.title == S.of(context).homeLabel
         ? homeAddr?.address
         : workAddr?.address;
 
@@ -526,7 +526,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _PlacesAutocompleteSheet(
-        title: S.of(context).setAddressFor(item.title),
+        title: S.of(context).setAddressTitle(item.title),
         hint: S.of(context).searchAddressFor(item.title.toLowerCase()),
         initialLat: widget.initialPickupLat,
         initialLng: widget.initialPickupLng,
@@ -605,13 +605,13 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         if (homeAddr != null)
           quickItems[0] = _QuickPlace(
             Icons.home_rounded,
-            'Home',
+            S.of(context).homeLabel,
             homeAddr.address,
           );
         if (workAddr != null)
           quickItems[1] = _QuickPlace(
             Icons.work_rounded,
-            'Work',
+            S.of(context).workLabel,
             workAddr.address,
           );
 

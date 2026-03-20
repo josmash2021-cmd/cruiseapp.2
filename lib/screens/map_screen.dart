@@ -4088,7 +4088,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 _driverPosition!,
                 zoom: 18.5,
                 bearing: tripBearing,
-                tilt: 45,
+                tilt: 0,
               );
             }
             // Draw/update route from driver â†’ dropoff
@@ -4160,7 +4160,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 _driverPosition!,
                 zoom: 18.5,
                 bearing: pickupBearing,
-                tilt: 45,
+                tilt: 0,
               );
             }
             // Draw/update route from driver â†’ pickup
@@ -4543,9 +4543,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     // Car marker removed - no car icons on rider map
 
     if (_stage == RideStage.riding && _driverPosition != null) {
-      // Añadir inercia a la cámara: tilt dinámico basado en velocidad angular
-      final dynamicTilt = (55.0 + (curveTilt.abs() * 10.0)).clamp(55.0, 70.0);
-      _panTo(_driverPosition!, zoom: 18.5, bearing: bearing, tilt: dynamicTilt);
+      _panTo(_driverPosition!, zoom: 18.5, bearing: bearing, tilt: 0);
     }
 
     if (_driverRoutePoints.length > 2) {
@@ -4987,9 +4985,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   /// Returns display info for a payment method id.
   ({String label, Widget logoWidget}) _paymentMethodInfo(String id) {
+    // On iOS show Apple Pay, on Android show Google Pay
+    final isIOS = Platform.isIOS;
+    final walletLabel = isIOS ? 'Apple Pay' : 'Google Pay';
+    final walletLogo = isIOS ? _applePayLogoWidget(36) : _googlePayLogoWidget(36);
     switch (id) {
       case 'google_pay':
-        return (label: 'Google Pay', logoWidget: _googlePayLogoWidget(36));
+        return (label: walletLabel, logoWidget: walletLogo);
       case 'credit_card':
         if (_savedCardLast4 != null && _savedCardBrand != null) {
           return (
@@ -5009,7 +5011,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       case 'paypal':
         return (label: 'PayPal', logoWidget: _paypalLogoWidget(36));
       default:
-        return (label: 'Google Pay', logoWidget: _googlePayLogoWidget(36));
+        return (label: walletLabel, logoWidget: walletLogo);
     }
   }
 
@@ -5033,17 +5035,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Widget _cardBrandLogoWidget(String? brand, double size) {
-    final Map<String, ({String letter, Color color, bool italic})> brands = {
-      'visa': (letter: 'V', color: const Color(0xFF1A1F71), italic: true),
-      'mastercard': (
-        letter: 'M',
-        color: const Color(0xFFEB001B),
-        italic: false,
-      ),
-      'amex': (letter: 'A', color: const Color(0xFF006FCF), italic: false),
-      'discover': (letter: 'D', color: const Color(0xFFFF6000), italic: false),
-      'diners': (letter: 'D', color: const Color(0xFF0079BE), italic: false),
-      'jcb': (letter: 'J', color: const Color(0xFF0B7CBE), italic: false),
+    // Map brand to display name shown as clean text on white background (single logo only)
+    final Map<String, ({String text, Color color, bool italic})> brands = {
+      'visa': (text: 'VISA', color: const Color(0xFF1A1F71), italic: true),
+      'mastercard': (text: 'MC', color: const Color(0xFFEB001B), italic: false),
+      'amex': (text: 'AMEX', color: const Color(0xFF006FCF), italic: false),
+      'discover': (text: 'DISC', color: const Color(0xFFFF6000), italic: false),
+      'diners': (text: 'DC', color: const Color(0xFF0079BE), italic: false),
+      'jcb': (text: 'JCB', color: const Color(0xFF0B7CBE), italic: false),
     };
     final info = brands[brand];
     if (info == null) {
@@ -5053,6 +5052,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         icon: Icons.credit_card_rounded,
       );
     }
+    // Single clean logo: white pill with brand text in brand color
     return Container(
       width: size,
       height: size,
@@ -5062,14 +5062,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         border: Border.all(color: Colors.grey.shade300, width: 0.5),
       ),
       child: Center(
-        child: Text(
-          info.letter,
-          style: TextStyle(
-            color: info.color,
-            fontSize: size * 0.56,
-            fontWeight: FontWeight.w900,
-            fontStyle: info.italic ? FontStyle.italic : FontStyle.normal,
-            fontFamily: 'Roboto',
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              info.text,
+              style: TextStyle(
+                color: info.color,
+                fontSize: size * 0.40,
+                fontWeight: FontWeight.w900,
+                fontStyle: info.italic ? FontStyle.italic : FontStyle.normal,
+                letterSpacing: -0.5,
+              ),
+            ),
           ),
         ),
       ),
@@ -5107,6 +5113,30 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   fontFamily: 'Roboto',
                 ),
               ),
+      ),
+    );
+  }
+
+  /// Apple Pay logo widget for iOS.
+  Widget _applePayLogoWidget(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade700, width: 0.5),
+      ),
+      child: Center(
+        child: Text(
+          '\uF8FF Pay',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: size * 0.28,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.3,
+          ),
+        ),
       ),
     );
   }
@@ -5153,8 +5183,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final creditLabel = (_savedCardBrand != null && _savedCardLast4 != null)
         ? '${_capitalizedBrand(_savedCardBrand)} •••• $_savedCardLast4'
         : S.of(context).creditOrDebitCard;
+    final isIOS = Platform.isIOS;
     final methods = [
-      ('google_pay', 'Google Pay'),
+      ('google_pay', isIOS ? 'Apple Pay' : 'Google Pay'),
       ('credit_card', creditLabel),
       ('paypal', 'PayPal'),
     ];

@@ -417,6 +417,67 @@ workflows:
               exit 1
             fi
           done
+      - name: Delete stale provisioning profiles
+        script: |
+          python3 << 'PYEOF'
+          import base64, json, time, os, subprocess, urllib.request, urllib.error
+
+          def b64url(data):
+              if isinstance(data, str):
+                  data = data.encode()
+              return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
+
+          key_id     = os.environ.get('APP_STORE_CONNECT_KEY_IDENTIFIER', '')
+          issuer_id  = os.environ.get('APP_STORE_CONNECT_ISSUER_ID', '')
+          priv_key   = os.environ.get('APP_STORE_CONNECT_PRIVATE_KEY', '')
+
+          if not all([key_id, issuer_id, priv_key]):
+              print('Missing ASC credentials, skipping profile deletion')
+              exit(0)
+
+          with open('/tmp/asc_key.p8', 'w') as f:
+              f.write(priv_key)
+
+          hdr = b64url(json.dumps({"alg":"ES256","kid":key_id}, separators=(',',':')))
+          now = int(time.time())
+          pay = b64url(json.dumps({"iss":issuer_id,"iat":now,"exp":now+600,"aud":"appstoreconnect-v1"}, separators=(',',':')))
+          msg = f"{hdr}.{pay}"
+
+          result = subprocess.run(
+              ['openssl','dgst','-sha256','-sign','/tmp/asc_key.p8','-binary'],
+              input=msg.encode(), capture_output=True)
+          os.unlink('/tmp/asc_key.p8')
+
+          der = result.stdout
+          pos = 2
+          r_len = der[pos+1]; r = der[pos+2:pos+2+r_len]; pos += 2+r_len
+          s_len = der[pos+1]; s = der[pos+2:pos+2+s_len]
+          r = r.lstrip(b'\x00').rjust(32, b'\x00')
+          s = s.lstrip(b'\x00').rjust(32, b'\x00')
+          token = f"{msg}.{b64url(r+s)}"
+
+          hdrs = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+          url  = ("https://api.appstoreconnect.apple.com/v1/profiles"
+                  "?filter[profileType]=IOS_APP_STORE"
+                  "&filter[bundleId.identifier]=com.cruiseinride.app&limit=50")
+          try:
+              with urllib.request.urlopen(urllib.request.Request(url, headers=hdrs)) as r:
+                  data = json.loads(r.read())
+              for p in data.get('data', []):
+                  pid  = p['id']
+                  name = p.get('attributes', {}).get('name', '?')
+                  print(f'Deleting profile: {name} ({pid})')
+                  try:
+                      urllib.request.urlopen(urllib.request.Request(
+                          f"https://api.appstoreconnect.apple.com/v1/profiles/{pid}",
+                          method='DELETE', headers=hdrs))
+                      print('  ✅ deleted')
+                  except Exception as e:
+                      print(f'  ❌ {e}')
+          except Exception as e:
+              print(f'Failed to list profiles: {e}')
+          PYEOF
+
       - name: Set up code signing identities
         script: |
           keychain initialize

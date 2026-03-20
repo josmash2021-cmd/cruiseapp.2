@@ -83,6 +83,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ── Verification ──
   bool _isVerified = false;
 
+  // ── Bottom nav ──
+  int _navIndex = 0;
+
   // ── Online state (driver pressed back but is still connected) ──
   bool _isStillOnline = false;
   Timer? _tripPollTimer;
@@ -497,22 +500,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       elevation: 0,
       height: 64,
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-      selectedIndex: 0,
+      selectedIndex: _navIndex,
       onDestinationSelected: (i) {
         HapticFeedback.selectionClick();
-        switch (i) {
-          case 0:
-            break; // already home
-          case 1:
-            Navigator.of(context).push(slideFromRightRoute(const DriverEarningsScreen()));
-            break;
-          case 2:
-            Navigator.of(context).push(slideFromRightRoute(const DriverTripHistoryScreen()));
-            break;
-          case 3:
-            Navigator.of(context).push(slideFromRightRoute(const DriverMenuScreen()));
-            break;
-        }
+        if (i == 0) { setState(() => _navIndex = 0); return; }
+        setState(() => _navIndex = i);
+        final route = i == 1
+            ? slideFromRightRoute(const DriverEarningsScreen())
+            : i == 2
+                ? slideFromRightRoute(const DriverTripHistoryScreen())
+                : slideFromRightRoute(const DriverMenuScreen());
+        Navigator.of(context).push(route).then((_) {
+          if (mounted) setState(() => _navIndex = 0);
+        });
       },
       destinations: [
         NavigationDestination(

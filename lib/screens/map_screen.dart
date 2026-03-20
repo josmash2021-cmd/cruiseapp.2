@@ -2467,10 +2467,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 )),
                 zoom: _currentPosition != null ? 14 : 3,
               ),
-              scaleBar: mapbox.ScaleBarSettings(enabled: false),
-              compass: mapbox.CompassSettings(enabled: false),
-              attribution: mapbox.AttributionSettings(enabled: false),
-              logo: mapbox.LogoSettings(enabled: false),
               onMapCreated: _onMapCreated,
               onScrollListener: (_) => _onCameraMoveStarted(),
               onTapListener: (mapbox.MapContentGestureContext ctx) {

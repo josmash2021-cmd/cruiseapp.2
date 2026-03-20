@@ -2472,6 +2472,8 @@ class S {
   String get faceVerified => _es ? 'Verificado' : 'Verified';
 
   // ── Driver Navigation Page ──
+  String get estFare => _es ? 'Tarifa est.' : 'Est. fare';
+
   String get arrivedAtDest =>
       _es ? 'Llegaste al destino' : 'Arrived at destination';
   String get endTrip => _es ? 'FINALIZAR VIAJE' : 'END TRIP';

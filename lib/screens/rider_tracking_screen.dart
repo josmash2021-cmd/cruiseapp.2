@@ -588,7 +588,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       
       // Generar imagen de sombra si no existe
       if (_carShadowBytes == null) {
-        _carShadowBytes = _generateShadowImage();
+        _carShadowBytes = await _generateShadowImage();
       }
       
       // Add car image to style
@@ -732,10 +732,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   /// Genera imagen de sombra con efecto fade/blur
-  Uint8List _generateShadowImage() {
-    const size = 80;
+  Future<Uint8List> _generateShadowImage() async {
+    const double size = 80.0;
     final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, size, size));
     
     // Dibujar círculo negro difuminado (sombra)
     final shadowPaint = Paint()
@@ -749,8 +749,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     );
     
     final picture = recorder.endRecording();
-    final img = picture.toImageSync(size, size);
-    final byteData = img.toByteData(format: ui.ImageByteFormat.png);
+    final img = picture.toImageSync(size.toInt(), size.toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
     return byteData!.buffer.asUint8List();
   }
 
@@ -1494,12 +1494,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   zoom: 14.0,
                   pitch: 0.0,
                 ),
-                scaleBar: mapbox.ScaleBarSettings(enabled: false),
-                compass: mapbox.CompassSettings(enabled: false),
-                attribution: mapbox.AttributionSettings(enabled: false),
-                logo: mapbox.LogoSettings(enabled: false),
                 textureView: true,
-                antialiasing: false,
                 onMapCreated: (ctrl) async {
                   _map = ctrl;
                   // Ocultar elementos UI para carga más rápida
@@ -1508,12 +1503,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                   ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
                   
-                  // Precargar tiles alrededor del área de navegación para fluidez instantánea
-                  await ctrl.setTileCacheBudget(
-                    mapbox.TileCacheBudgetOptions(
-                      tileCacheBudgetInTiles: 1000, // Cache grande para fluidez
-                    ),
-                  );
                   
                   // Route polyline below road labels
                   _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
@@ -1526,10 +1515,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   await _applyDarkNavyGoldTheme(ctrl);
                 },
                 onScrollListener: (_) {
-                  if (!_programmaticCam) setState(() => _userMovedMap = true);
-                },
-                onScaleListener: (_) {
-                  // Detectar zoom manual del usuario para desactivar seguimiento
                   if (!_programmaticCam) setState(() => _userMovedMap = true);
                 },
               ),
@@ -2051,7 +2036,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                         const ChatScreen(
                           recipientName: 'Support',
                           avatarInitial: 'S',
-                          tripId: '',
+                          tripId: null,
                         ),
                       ),
                     );

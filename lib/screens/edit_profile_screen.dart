@@ -130,10 +130,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     
     // Upload to server in background so it persists across devices
     // This doesn't block the UI update
-    unawaited(ApiService.uploadPhoto(permanentPath).catchError((e) {
+    ApiService.uploadPhoto(permanentPath).catchError((e) {
       debugPrint('Photo upload failed (saved locally): $e');
       return '';
-    }));
+    });
   }
 
   Widget _photoOption(

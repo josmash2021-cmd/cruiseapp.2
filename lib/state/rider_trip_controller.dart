@@ -269,8 +269,8 @@ class RiderTripController extends ChangeNotifier {
     return [
       RideOption(
         id: 'suburban',
-        name: 'SUV',
-        description: 'Premium SUV experience',
+        name: 'VIP',
+        description: 'Spacious • Leather • Snacks & Drinks',
         priceEstimate: _round(baseFare * 2.20),
         etaMinutes: 5 + math.Random().nextInt(8),
         icon: '🚐',
@@ -278,8 +278,8 @@ class RiderTripController extends ChangeNotifier {
       ),
       RideOption(
         id: 'camry',
-        name: 'Comfort Sedan',
-        description: 'Comfortable sedan',
+        name: 'Sedan',
+        description: 'Comfort • Climate • Charger',
         priceEstimate: _round(baseFare * 1.35),
         etaMinutes: 4 + math.Random().nextInt(6),
         icon: '🚙',
@@ -287,8 +287,8 @@ class RiderTripController extends ChangeNotifier {
       ),
       RideOption(
         id: 'fusion',
-        name: 'Economy Sedan',
-        description: 'Affordable rides',
+        name: 'Economy',
+        description: 'Clean • Safe • Efficient',
         priceEstimate: _round(baseFare),
         etaMinutes: 3 + math.Random().nextInt(5),
         icon: '🚗',

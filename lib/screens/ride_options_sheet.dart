@@ -343,16 +343,10 @@ class RideOptionsSheet extends StatelessWidget {
           child: Row(
             children: [
               // Car image
-              Container(
-                width: 72,
-                height: 56,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: _buildCarImage(opt.id, isSelected),
-                ),
+              SizedBox(
+                width: 100,
+                height: 70,
+                child: _buildCarImage(opt.id, isSelected),
               ),
               const SizedBox(width: 14),
 
@@ -502,27 +496,25 @@ class RideOptionsSheet extends StatelessWidget {
     
     switch (type) {
       case 'suburban':
-        imagePath = 'assets/images/car_suv.png';
-        break;
-      case 'fusion':
-        imagePath = 'assets/images/car_comfort.png';
+        imagePath = 'assets/images/cruise_3.png';
         break;
       case 'camry':
+        imagePath = 'assets/images/cruise_7.png';
+        break;
+      case 'fusion':
       default:
-        imagePath = 'assets/images/car_sedan.png';
+        imagePath = 'assets/images/cruise_6.png';
     }
     
     return Image.asset(
       imagePath,
       fit: BoxFit.contain,
       filterQuality: FilterQuality.high,
-      errorBuilder: (ctx, err, st) => Container(
-        color: Colors.white.withValues(alpha: 0.05),
-        child: Icon(
-          Icons.directions_car_rounded,
-          color: isSelected ? _gold : Colors.white.withValues(alpha: 0.4),
-          size: 32,
-        ),
+      isAntiAlias: true,
+      errorBuilder: (ctx, err, st) => Icon(
+        Icons.directions_car_rounded,
+        color: isSelected ? _gold : Colors.white.withValues(alpha: 0.4),
+        size: 36,
       ),
     );
   }

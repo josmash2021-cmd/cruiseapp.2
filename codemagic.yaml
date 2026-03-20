@@ -514,12 +514,17 @@ workflows:
               <string>app-store</string>
               <key>teamID</key>
               <string>7QLC9UVB3Z</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.cruiseinride.app</key>
+                  <string>cruise</string>
+              </dict>
               <key>uploadBitcode</key>
               <false/>
               <key>uploadSymbols</key>
               <true/>
-              <key>signingStyle</key>
-              <string>automatic</string>
           </dict>
           </plist>
           PLISTEOF

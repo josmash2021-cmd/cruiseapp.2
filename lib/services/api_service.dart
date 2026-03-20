@@ -860,12 +860,15 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
       if (res.statusCode != 200 || res.bodyBytes.isEmpty) return '';
       final dir = await getApplicationDocumentsDirectory();
-      final ext = photoUrl.endsWith('.png') ? 'png' : 'jpg';
-      // Use the server filename (user_ID.ext) to isolate photos per user
-      final serverFilename = photoUrl.split('/').last;
-      final filename = serverFilename.isNotEmpty
-          ? serverFilename
-          : 'profile_photo.$ext';
+      // Use Uri.parse so pathSegments strips query params automatically,
+      // then URL-decode (handles Firebase Storage %2F-encoded paths).
+      final segments = Uri.parse(url).pathSegments;
+      String rawName = segments.isNotEmpty ? segments.last : 'profile_photo';
+      rawName = Uri.decodeComponent(rawName);
+      // Sanitize: keep only safe filename chars (alphanumeric, dot, underscore, hyphen)
+      final safeName = rawName.replaceAll(RegExp(r'[^\w.\-]'), '_');
+      final ext = safeName.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+      final filename = safeName.isNotEmpty ? safeName : 'profile_photo.$ext';
       final file = File('${dir.path}/$filename');
       await file.writeAsBytes(res.bodyBytes);
       return file.path;

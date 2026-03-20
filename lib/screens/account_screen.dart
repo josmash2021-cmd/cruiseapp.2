@@ -85,6 +85,39 @@ class _AccountScreenState extends State<AccountScreen> {
     _loadUser(); // Refresh avatar & name after editing profile
   }
 
+  Widget _buildAvatar(String photoPath, AppColors c) {
+    if (photoPath.isEmpty) {
+      return Icon(Icons.person_rounded, size: 38, color: c.textTertiary);
+    }
+    final isUrl = photoPath.startsWith('http://') ||
+        photoPath.startsWith('https://');
+    if (kIsWeb || isUrl) {
+      return Image.network(
+        photoPath,
+        fit: BoxFit.cover,
+        width: 70,
+        height: 70,
+        gaplessPlayback: true,
+        key: ValueKey(photoPath),
+        errorBuilder: (_, __, ___) =>
+            Icon(Icons.person_rounded, size: 38, color: c.textTertiary),
+      );
+    }
+    if (!File(photoPath).existsSync()) {
+      return Icon(Icons.person_rounded, size: 38, color: c.textTertiary);
+    }
+    return Image.file(
+      File(photoPath),
+      fit: BoxFit.cover,
+      width: 70,
+      height: 70,
+      filterQuality: FilterQuality.high,
+      cacheWidth: 280,
+      gaplessPlayback: true,
+      key: ValueKey(photoPath),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
@@ -163,54 +196,7 @@ class _AccountScreenState extends State<AccountScreen> {
                           ),
                         ),
                         child: ClipOval(
-                          child:
-                              photoPath.isNotEmpty &&
-                                  (kIsWeb || File(photoPath).existsSync())
-                              ? (kIsWeb
-                                    ? Image.network(
-                                        photoPath,
-                                        fit: BoxFit.cover,
-                                        width: 70,
-                                        height: 70,
-                                        gaplessPlayback: true,
-                                        key: ValueKey(photoPath), // Force rebuild
-                                      )
-                                    : Image.file(
-                                        File(photoPath),
-                                        fit: BoxFit.cover,
-                                        width: 70,
-                                        height: 70,
-                                        filterQuality: FilterQuality.high,
-                                        cacheWidth: 280,
-                                        gaplessPlayback: true,
-                                        key: ValueKey(photoPath), // Force rebuild
-                                        frameBuilder:
-                                            (
-                                              context,
-                                              child,
-                                              frame,
-                                              wasSynchronouslyLoaded,
-                                            ) {
-                                              if (wasSynchronouslyLoaded) {
-                                                return child;
-                                              }
-                                              return AnimatedOpacity(
-                                                opacity: frame == null
-                                                    ? 0.0
-                                                    : 1.0,
-                                                duration: const Duration(
-                                                  milliseconds: 150,
-                                                ),
-                                                curve: Curves.easeOutCubic,
-                                                child: child,
-                                              );
-                                            },
-                                      ))
-                              : Icon(
-                                  Icons.person_rounded,
-                                  size: 38,
-                                  color: c.textTertiary,
-                                ),
+                          child: _buildAvatar(photoPath, c),
                         ),
                       ),
                       if (_isVerified)

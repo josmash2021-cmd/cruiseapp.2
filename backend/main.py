@@ -102,6 +102,13 @@ else:
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+
+# ── Monitoring globals ──────────────────────────────────────────
+_SERVER_START_TIME = datetime.now(timezone.utc)
+_watchdog_stats = {
+    "db_failures": 0, "db_reconnects": 0,
+    "firebase_failures": 0, "firebase_reconnects": 0,
+}
 _TUNNEL_URL_FILE = os.path.join(os.path.dirname(__file__), "tunnel_url.txt")
 class _Pwd:
     """Direct bcrypt wrapper (passlib 1.7.4 is incompatible with bcrypt 5.0)."""
@@ -889,18 +896,31 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
 # -- Health check (public, no auth) --------------------
 @app.get("/health")
 async def health():
-    # Check database connectivity
     db_status = "ok"
+    db_latency_ms = 0.0
     try:
+        t0 = time.time()
         async with SessionLocal() as db:
-            await db.execute(select(func.count()).select_from(text("users")))
+            await db.execute(text("SELECT 1"))
+        db_latency_ms = round((time.time() - t0) * 1000, 1)
     except Exception as e:
-        db_status = f"error: {str(e)[:50]}"
-    
+        db_status = f"error: {str(e)[:80]}"
+
+    firebase_status = "ok" if _HAS_FIRESTORE else "disabled"
+
+    uptime_s = int((datetime.now(timezone.utc) - _SERVER_START_TIME).total_seconds())
+    uptime_str = f"{uptime_s // 3600}h {(uptime_s % 3600) // 60}m {uptime_s % 60}s"
+
+    overall = "ok" if db_status == "ok" else "degraded"
     return {
-        "status": "ok",
-        "database": db_status,
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "status": overall,
+        "version": "2.0",
+        "uptime": uptime_str,
+        "uptime_seconds": uptime_s,
+        "database": {"status": db_status, "latency_ms": db_latency_ms},
+        "firebase": firebase_status,
+        "watchdog": _watchdog_stats,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 # -- One-time migration endpoint (protected by API key) ------------------
@@ -7358,9 +7378,65 @@ def _clean_html_instructions(html_text: str) -> str:
     return text
 
 
+async def _connection_watchdog():
+    """Monitors DB + Firebase every 30 s and auto-reconnects on failure."""
+    global _HAS_FIRESTORE
+    await asyncio.sleep(15)  # Give server time to fully start
+    while True:
+        try:
+            # ── DB health check ──────────────────────────
+            try:
+                async with SessionLocal() as _db:
+                    await _db.execute(text("SELECT 1"))
+                _watchdog_stats["db_failures"] = 0
+            except Exception as _e:
+                _watchdog_stats["db_failures"] += 1
+                logging.error("[Watchdog] DB unreachable (fail #%d): %s",
+                              _watchdog_stats["db_failures"], _e)
+                if _watchdog_stats["db_failures"] >= 2:
+                    try:
+                        await engine.dispose()
+                        async with engine.begin() as _conn:
+                            await _conn.execute(text("SELECT 1"))
+                        _watchdog_stats["db_reconnects"] += 1
+                        _watchdog_stats["db_failures"] = 0
+                        logging.info("[Watchdog] ✅ DB reconnected (total: %d)",
+                                     _watchdog_stats["db_reconnects"])
+                    except Exception as _re:
+                        logging.error("[Watchdog] ❌ DB reconnect failed: %s", _re)
+
+            # ── Firebase health check ────────────────────
+            if _HAS_FIRESTORE:
+                try:
+                    import firestore_sync as _fs
+                    _fs._db.collection("_ping").document("watchdog").set(
+                        {"ts": datetime.now(timezone.utc).isoformat()}, merge=True
+                    )
+                    _watchdog_stats["firebase_failures"] = 0
+                except Exception as _e:
+                    _watchdog_stats["firebase_failures"] += 1
+                    logging.error("[Watchdog] Firebase unreachable (fail #%d): %s",
+                                  _watchdog_stats["firebase_failures"], _e)
+                    if _watchdog_stats["firebase_failures"] >= 2:
+                        try:
+                            import firestore_sync as _fs
+                            _fs._ensure_init()
+                            _watchdog_stats["firebase_reconnects"] += 1
+                            _watchdog_stats["firebase_failures"] = 0
+                            logging.info("[Watchdog] ✅ Firebase reconnected")
+                        except Exception as _re:
+                            logging.error("[Watchdog] ❌ Firebase reconnect failed: %s", _re)
+        except Exception as _outer:
+            logging.error("[Watchdog] Unexpected error: %s", _outer)
+
+        await asyncio.sleep(30)
+
+
 @app.on_event("startup")
 async def _start_scheduler():
     asyncio.create_task(_scheduled_ride_dispatcher())
+    asyncio.create_task(_connection_watchdog())
+    logging.info("[Startup] ✅ Scheduler + Connection Watchdog started")
 
 # ═══════════════════════════════════════════════════════
 #  SURGE PRICING

@@ -310,6 +310,51 @@ class ApiService {
     return _jsonHeaders(token);
   }
 
+  // ── Retry + auto-reconnect ────────────────────────────────────────────────
+
+  static int _consecutiveFailures = 0;
+
+  /// Wraps an HTTP call with exponential backoff (up to [maxAttempts]).
+  /// On connection errors, triggers [probeAndSetBestUrl] to find a live server.
+  static Future<http.Response> _withRetry(
+    Future<http.Response> Function() request, {
+    int maxAttempts = 3,
+    Duration baseDelay = const Duration(seconds: 1),
+  }) async {
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final res = await request();
+        _consecutiveFailures = 0;
+        return res;
+      } on SocketException catch (e) {
+        _consecutiveFailures++;
+        debugPrint('[ApiService] SocketException attempt $attempt/$maxAttempts: $e');
+        if (attempt < maxAttempts) {
+          if (_consecutiveFailures >= 2) {
+            debugPrint('[ApiService] Probing for best URL...');
+            await probeAndSetBestUrl();
+          }
+          await Future.delayed(baseDelay * pow(2, attempt - 1).toInt());
+        } else {
+          rethrow;
+        }
+      } on TimeoutException catch (e) {
+        _consecutiveFailures++;
+        debugPrint('[ApiService] Timeout attempt $attempt/$maxAttempts: $e');
+        if (attempt < maxAttempts) {
+          await probeAndSetBestUrl();
+          await Future.delayed(baseDelay * pow(2, attempt - 1).toInt());
+        } else {
+          rethrow;
+        }
+      } on HandshakeException catch (e) {
+        debugPrint('[ApiService] TLS error: $e');
+        rethrow;
+      }
+    }
+    throw ApiException(503, 'Server unreachable after $maxAttempts attempts');
+  }
+
   /// Parse response — returns decoded JSON map.
   /// Throws [ApiException] on non-2xx.
   /// Verifies response integrity via X-Checksum header (L8).

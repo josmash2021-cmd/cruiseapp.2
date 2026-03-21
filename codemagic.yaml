@@ -104,25 +104,16 @@ definitions:
         cd ios
         rm -rf Pods Podfile.lock
         export COCOAPODS_DISABLE_STATS=true
-        # Patch CocoaPods cdn_url? to force CDN mode for api.mapbox.com.
-        # cdn_url? makes an unauthenticated HEAD → Mapbox returns EOF →
-        # CocoaPods falls back to git clone which also fails. Adding an early-return
-        # makes CocoaPods use CDN mode where ~/.netrc credentials ARE consulted.
-        CP_SRC=$(gem contents cocoapods 2>/dev/null | grep 'sources_manager\.rb$' | head -1)
-        if [ -n "$CP_SRC" ] && [ -f "$CP_SRC" ]; then
-          if ! grep -q 'api\.mapbox\.com' "$CP_SRC"; then
-            perl -i -pe 's/def cdn_url\?\(url\)/def cdn_url?(url)\n      return true if url.to_s.start_with?("https:\/\/api.mapbox.com")/' "$CP_SRC"
-            echo "✅ Patched cdn_url? in $CP_SRC"
-          else
-            echo "✅ cdn_url? already patched"
-          fi
-        else
-          echo "⚠️  sources_manager.rb not found — skipping patch"
-        fi
-        # --repo-update: fetches Mapbox private specs + updates git-based public specs
+        # Mapbox distributes MapboxMaps via JFrog Artifactory (not standard CocoaPods CDN).
+        # cocoapods-art is the official plugin for Artifactory spec repos.
+        # ~/.netrc with api.mapbox.com credentials (set in *mapbox_auth) is used for auth.
+        gem install cocoapods-art --no-document --quiet
+        pod repo-art remove mapbox-ios 2>/dev/null || true
+        pod repo-art add mapbox-ios "https://api.mapbox.com/downloads/v2/specs/ios"
+        echo "✅ Mapbox Artifactory spec repo added"
         for i in 1 2 3; do
           echo "=== pod install attempt $i/3 ==="
-          if pod install --repo-update; then
+          if pod install --no-repo-update; then
             echo "✅ CocoaPods installed on attempt $i"
             break
           fi

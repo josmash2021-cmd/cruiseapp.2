@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../models/lat_lng.dart';
 import '../../config/mapbox_config.dart';
+import '../../config/map_theme.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -2935,6 +2936,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           );
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           _updateDriverAnnotation();
+          await MapTheme.applyNavyGold(ctrl);
         },
         onScrollListener: (_) {
           _onCameraMoveStarted();

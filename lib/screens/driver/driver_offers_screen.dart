@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../models/lat_lng.dart';
 import '../../config/mapbox_config.dart';
+import '../../config/map_theme.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -80,6 +81,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     _map = controller;
     _pointAnnotMgr = await controller.annotations.createPointAnnotationManager();
     _updateDriverAnnotation();
+    await MapTheme.applyNavyGold(controller);
   }
 
   Future<void> _updateDriverAnnotation() async {

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
+import '../config/map_theme.dart';
 
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
@@ -1286,74 +1287,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   double _camLng = 0.0;
   
   Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
-    const gold = '#E8C547';
-    const goldDim = '#B8960A';
-    const goldFaint = '#6B5500';
-    const navy = '#0D1B2A';
-    const navyMid = '#0A1520';
-    final roadLayers = <String, String>{
-      'road-motorway-trunk': gold,
-      'road-motorway-trunk-case': goldDim,
-      'road-motorway': gold,
-      'road-motorway-case': goldDim,
-      'road-trunk': gold,
-      'road-trunk-case': goldDim,
-      'road-primary': '#1B5DB8',
-      'road-primary-case': '#154A99',
-      'road-secondary-tertiary': '#154A99',
-      'road-secondary-tertiary-case': '#0F3A78',
-      'road-street': '#0F3A78',
-      'road-street-case': '#0A2B5C',
-      'road-minor': '#0A2B5C',
-      'road-minor-case': '#071E42',
-    };
-    for (final entry in roadLayers.entries) {
-      try {
-        await ctrl.style.setStyleLayerProperty(entry.key, 'line-color', entry.value);
-      } catch (_) {}
-    }
-    try { await ctrl.style.setStyleLayerProperty('land', 'background-color', navy); } catch (_) {}
-    try { await ctrl.style.setStyleLayerProperty('background', 'background-color', navyMid); } catch (_) {}
-    try { await ctrl.style.setStyleLayerProperty('water', 'fill-color', '#0A1E35'); } catch (_) {}
-    try { await ctrl.style.setStyleLayerProperty('road-label', 'text-color', gold); } catch (_) {}
-    
-    // Traffic colors - remove green, keep only orange (heavy) and red (severe)
-    final trafficLayers = <String, List<Map<String, dynamic>>>{
-      'traffic': [
-        {'property': 'congestion', 'value': 'low', 'color': 'rgba(0,0,0,0)'}, // hide green/low
-        {'property': 'congestion', 'value': 'moderate', 'color': 'rgba(0,0,0,0)'}, // hide yellow/moderate
-        {'property': 'congestion', 'value': 'heavy', 'color': '#FF9500'}, // orange for heavy
-        {'property': 'congestion', 'value': 'severe', 'color': '#FF3B30'}, // red for severe
-      ],
-      'traffic-slow': [
-        {'property': 'congestion', 'value': 'low', 'color': 'rgba(0,0,0,0)'},
-        {'property': 'congestion', 'value': 'moderate', 'color': 'rgba(0,0,0,0)'},
-        {'property': 'congestion', 'value': 'heavy', 'color': '#FF9500'},
-        {'property': 'congestion', 'value': 'severe', 'color': '#FF3B30'},
-      ],
-    };
-    
-    for (final entry in trafficLayers.entries) {
-      try {
-        // Hide low/moderate traffic by setting opacity to 0
-        await ctrl.style.setStyleLayerProperty(entry.key, 'line-opacity', [
-          'match',
-          ['get', 'congestion'],
-          ['low', 'moderate'],
-          0.0, // hide green/yellow
-          1.0, // show orange/red
-        ]);
-        
-        // Set colors for traffic
-        await ctrl.style.setStyleLayerProperty(entry.key, 'line-color', [
-          'match',
-          ['get', 'congestion'],
-          'heavy', '#FF9500', // orange
-          'severe', '#FF3B30', // red
-          'rgba(0,0,0,0)', // hide others
-        ]);
-      } catch (_) {}
-    }
+    await MapTheme.applyNavyGold(ctrl);
   }
 
   void _updateCameraForRoute() {

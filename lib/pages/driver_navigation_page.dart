@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../config/mapbox_config.dart';
+import '../config/map_theme.dart';
 import '../models/lat_lng.dart';
 
 import '../config/map_styles.dart';
@@ -832,6 +833,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                 _updateRouteAnnotation();
                 _updateDestAnnotation();
                 _updateDriverAnnotation();
+                await MapTheme.applyNavyGold(ctrl);
               },
               onScrollListener: (_) => _onCameraMoveStarted(),
             ),

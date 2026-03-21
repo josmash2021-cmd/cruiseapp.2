@@ -10,6 +10,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
+import '../config/map_theme.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1182,64 +1183,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   /// Paints the map with a dark navy blue background and gold freeways/roads.
   /// Uses setStyleLayerProperty to override paint on the navigation-night-v1 layers.
   Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
-    const gold = '#E8C547';
-    const goldDim = '#B8960A';
-    const goldFaint = '#6B5500';
-    const navy = '#0D1B2A';
-    const navyMid = '#0A1520';
-
-    // Layer IDs in navigation-night-v1 / standard Mapbox styles for roads:
-    final roadLayers = <String, String>{
-      // Motorways / freeways — brightest gold
-      'road-motorway-trunk': gold,
-      'road-motorway-trunk-case': goldDim,
-      'road-motorway': gold,
-      'road-motorway-case': goldDim,
-      'road-trunk': gold,
-      'road-trunk-case': goldDim,
-      // Primary roads
-      'road-primary': '#1B5DB8',
-      'road-primary-case': '#154A99',
-      // Secondary / tertiary
-      'road-secondary-tertiary': '#154A99',
-      'road-secondary-tertiary-case': '#0F3A78',
-      // Street level
-      'road-street': '#0F3A78',
-      'road-street-case': '#0A2B5C',
-      'road-minor': '#0A2B5C',
-      'road-minor-case': '#071E42',
-    };
-
-    for (final entry in roadLayers.entries) {
-      try {
-        await ctrl.style.setStyleLayerProperty(
-          entry.key,
-          'line-color',
-          entry.value,
-        );
-      } catch (_) {}
-    }
-
-    // Background land color → dark navy
-    try {
-      await ctrl.style.setStyleLayerProperty('land', 'background-color', navy);
-    } catch (_) {}
-    try {
-      await ctrl.style.setStyleLayerProperty('background', 'background-color', navyMid);
-    } catch (_) {}
-
-    // Water — keep dark blue
-    try {
-      await ctrl.style.setStyleLayerProperty('water', 'fill-color', '#0A1E35');
-    } catch (_) {}
-
-    // Road labels — gold tint
-    try {
-      await ctrl.style.setStyleLayerProperty('road-label', 'text-color', gold);
-    } catch (_) {}
-    try {
-      await ctrl.style.setStyleLayerProperty('road-number-shield', 'text-color', '#000000');
-    } catch (_) {}
+    await MapTheme.applyNavyGold(ctrl);
   }
 
   // ── Platform-aware camera helpers ─────────────────────────────────────

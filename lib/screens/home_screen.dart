@@ -9,6 +9,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
+import '../config/map_theme.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
@@ -93,34 +94,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Uint8List? _locationDotBytes;
 
   Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
-    const gold = '#E8C547';
-    const goldDim = '#B8960A';
-    const goldFaint = '#6B5500';
-    const navy = '#0D1B2A';
-    const navyMid = '#0A1520';
-    final roadLayers = <String, String>{
-      'road-motorway-trunk': gold,
-      'road-motorway-trunk-case': goldDim,
-      'road-motorway': gold,
-      'road-motorway-case': goldDim,
-      'road-trunk': gold,
-      'road-trunk-case': goldDim,
-      'road-primary': '#1B5DB8',
-      'road-primary-case': '#154A99',
-      'road-secondary-tertiary': '#154A99',
-      'road-secondary-tertiary-case': '#0F3A78',
-      'road-street': '#0F3A78',
-      'road-street-case': '#0A2B5C',
-      'road-minor': '#0A2B5C',
-      'road-minor-case': '#071E42',
-    };
-    for (final entry in roadLayers.entries) {
-      try { await ctrl.style.setStyleLayerProperty(entry.key, 'line-color', entry.value); } catch (_) {}
-    }
-    try { await ctrl.style.setStyleLayerProperty('land', 'background-color', navy); } catch (_) {}
-    try { await ctrl.style.setStyleLayerProperty('background', 'background-color', navyMid); } catch (_) {}
-    try { await ctrl.style.setStyleLayerProperty('water', 'fill-color', '#0A1E35'); } catch (_) {}
-    try { await ctrl.style.setStyleLayerProperty('road-label', 'text-color', gold); } catch (_) {}
+    await MapTheme.applyNavyGold(ctrl);
   }
 
   Future<void> _updateMiniMapAnnotation() async {

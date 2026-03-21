@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -63,7 +64,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
 }
 
 class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // ── Colours ──────────────────────────────────────────────────────────────
   static const _gold   = Color(0xFFD4A843);
   static const _bg     = Color(0xFF0A0A0A);
@@ -73,8 +74,25 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── State ─────────────────────────────────────────────────────────────────
   late final AnimationController _fadeCtrl;
   late final Animation<double>   _fadeAnim;
+  late final AnimationController _pulseCtrl;
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _annotMgr;
+  mapbox.PolylineAnnotationManager? _polyMgr;
+  mapbox.ScreenCoordinate? _pickupPx;
+
+  // ── Trip distance pickup→dropoff ─────────────────────────────────────────
+  double get _tripKm {
+    const r = 6371.0;
+    final lat1 = widget.pickupLatLng.latitude  * math.pi / 180;
+    final lat2 = widget.dropoffLatLng.latitude * math.pi / 180;
+    final dLat = (widget.dropoffLatLng.latitude  - widget.pickupLatLng.latitude)  * math.pi / 180;
+    final dLng = (widget.dropoffLatLng.longitude - widget.pickupLatLng.longitude) * math.pi / 180;
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1) * math.cos(lat2) *
+        math.sin(dLng / 2) * math.sin(dLng / 2);
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+  int get _tripEta => (_tripKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
 
   @override
   void initState() {
@@ -84,11 +102,16 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       duration: const Duration(milliseconds: 420),
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
   }
 
   @override
   void dispose() {
     _fadeCtrl.dispose();
+    _pulseCtrl.dispose();
     super.dispose();
   }
 
@@ -199,7 +222,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         ),
       );
 
-  Widget _infoRow(IconData icon, String topText, String subText) => Container(
+  Widget _infoRow(
+    IconData icon,
+    Color iconBg,
+    Color iconColor,
+    String label,
+    String address,
+  ) => Container(
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
       color: _card,
@@ -211,26 +240,27 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         Container(
           width: 38, height: 38,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
+            color: iconBg,
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, color: Colors.white54, size: 20),
+          child: Icon(icon, color: iconColor, size: 19),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(topText,
+              Text(label,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 11, fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                )),
+              const SizedBox(height: 2),
+              Text(address,
                 style: const TextStyle(color: Colors.white, fontSize: 14,
                     fontWeight: FontWeight.w600),
-                maxLines: 1, overflow: TextOverflow.ellipsis),
-              if (subText.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(subText,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-              ],
+                maxLines: 2, overflow: TextOverflow.ellipsis),
             ],
           ),
         ),
@@ -238,41 +268,239 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     ),
   );
 
+  // ── Safety / Help menus ───────────────────────────────────────────────────
+  void _showSafetyMenu() {
+    HapticFeedback.mediumImpact();
+    _showSheet(
+      title: 'Safety Center',
+      icon: Icons.shield_rounded,
+      iconColor: const Color(0xFF4CAF50),
+      items: [
+        _SheetItem(Icons.emergency_rounded, 'Emergency',
+            'Call 911 or emergency services', () {
+          Navigator.pop(context);
+          launchUrl(Uri.parse('tel:911'));
+        }),
+        _SheetItem(Icons.report_problem_rounded, 'Report Safety Issue',
+            'Report a safety concern about this trip', () => Navigator.pop(context)),
+        _SheetItem(Icons.share_location_rounded, 'Share My Location',
+            'Share trip with a trusted contact', () => Navigator.pop(context)),
+      ],
+    );
+  }
+
+  void _showHelpMenu() {
+    HapticFeedback.mediumImpact();
+    _showSheet(
+      title: 'Help',
+      icon: Icons.help_rounded,
+      iconColor: _gold,
+      items: [
+        _SheetItem(Icons.location_on_rounded, 'Problem with pickup address',
+            'The pickup location is incorrect or unclear',
+            () => Navigator.pop(context)),
+        _SheetItem(Icons.flag_rounded, 'Problem with dropoff address',
+            'The dropoff location is incorrect or unclear',
+            () => Navigator.pop(context)),
+        _SheetItem(Icons.directions_car_rounded, 'Problem with trip',
+            'Other issue with this trip',
+            () => Navigator.pop(context)),
+        _SheetItem(Icons.support_agent_rounded, 'Contact Support',
+            'Speak with a support agent',
+            () => Navigator.pop(context)),
+      ],
+    );
+  }
+
+  void _showSheet({
+    required String title,
+    required IconData icon,
+    required Color iconColor,
+    required List<_SheetItem> items,
+  }) {
+    final bot = MediaQuery.of(context).padding.bottom;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, bot + 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(children: [
+              Icon(icon, color: iconColor, size: 22),
+              const SizedBox(width: 10),
+              Text(title, style: const TextStyle(
+                  color: Colors.white, fontSize: 17,
+                  fontWeight: FontWeight.w800)),
+            ]),
+            const SizedBox(height: 14),
+            ...items.map(_buildSheetItem),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSheetItem(_SheetItem item) => GestureDetector(
+    onTap: item.onTap,
+    child: Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(children: [
+        Container(
+          width: 38, height: 38,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(item.icon, color: Colors.white70, size: 18),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(item.label,
+              style: const TextStyle(color: Colors.white, fontSize: 14,
+                  fontWeight: FontWeight.w600)),
+            if (item.sub.isNotEmpty) ...[const SizedBox(height: 2),
+              Text(item.sub,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.42),
+                    fontSize: 12)),
+            ],
+          ],
+        )),
+        Icon(Icons.chevron_right_rounded,
+            color: Colors.white.withValues(alpha: 0.28), size: 18),
+      ]),
+    ),
+  );
+
   // ── Map ───────────────────────────────────────────────────────────────────
   Future<void> _onMapReady(mapbox.MapboxMap ctrl) async {
     _map = ctrl;
     await MapTheme.applyNavyGold(ctrl);
+    _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
     _annotMgr = await ctrl.annotations.createPointAnnotationManager();
 
-    // Build a house-pin icon from canvas
-    final iconBytes = await _buildPickupPin();
-    if (iconBytes != null && _annotMgr != null && mounted) {
+    // Route line pickup → dropoff
+    final pts = widget.routePoints ?? [widget.pickupLatLng, widget.dropoffLatLng];
+    final coords = pts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: coords),
+      lineColor: _gold.toARGB32(),
+      lineWidth: 4.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    ));
+
+    // Pickup pin (white ring + gold inner)
+    final pickupBytes = await _buildPickupPin();
+    if (pickupBytes != null) {
       await _annotMgr!.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(
           widget.pickupLatLng.longitude, widget.pickupLatLng.latitude,
         )),
-        image: iconBytes,
+        image: pickupBytes,
         iconSize: 1.0,
       ));
     }
+
+    // Dropoff pin (white ring + dark inner + white dot)
+    final dropoffBytes = await _buildDropoffPin();
+    if (dropoffBytes != null) {
+      await _annotMgr!.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(
+          widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude,
+        )),
+        image: dropoffBytes,
+        iconSize: 1.0,
+      ));
+    }
+
+    // Fit camera to show both pins
+    final points = [
+      mapbox.Point(coordinates: mapbox.Position(
+          widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
+      mapbox.Point(coordinates: mapbox.Position(
+          widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
+    ];
+    final cam = await ctrl.cameraForCoordinatesPadding(
+      points,
+      mapbox.CameraOptions(),
+      mapbox.MbxEdgeInsets(top: 36, left: 36, bottom: 36, right: 36),
+      null, null,
+    );
+    ctrl.flyTo(cam, mapbox.MapAnimationOptions(duration: 600));
+
+    // Get pickup pixel position for pulsing overlay
+    await Future.delayed(const Duration(milliseconds: 750));
+    if (!mounted) return;
+    try {
+      final px = await ctrl.pixelForCoordinate(
+        mapbox.Point(coordinates: mapbox.Position(
+          widget.pickupLatLng.longitude, widget.pickupLatLng.latitude,
+        )),
+      );
+      if (mounted) setState(() => _pickupPx = px);
+    } catch (_) {}
   }
 
   Future<Uint8List?> _buildPickupPin() async {
     const double s = 80;
     final rec = ui.PictureRecorder();
     final c   = Canvas(rec, const Rect.fromLTWH(0, 0, s, s));
-
     // Shadow
-    c.drawCircle(const Offset(s / 2, s / 2 + 3), 20,
+    c.drawCircle(const Offset(s / 2, s / 2 + 3), 22,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.4)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9));
+    // White outer ring
+    c.drawCircle(const Offset(s / 2, s / 2), 22, Paint()..color = Colors.white);
+    // Gold fill
+    c.drawCircle(const Offset(s / 2, s / 2), 15,
+        Paint()..color = _gold);
+    // White center dot
+    c.drawCircle(const Offset(s / 2, s / 2), 5, Paint()..color = Colors.white);
+    final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
+    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+    return bytes?.buffer.asUint8List();
+  }
+
+  Future<Uint8List?> _buildDropoffPin() async {
+    const double s = 72;
+    final rec = ui.PictureRecorder();
+    final c   = Canvas(rec, const Rect.fromLTWH(0, 0, s, s));
+    // Shadow
+    c.drawCircle(const Offset(s / 2, s / 2 + 2), 17,
         Paint()
           ..color = Colors.black.withValues(alpha: 0.35)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8));
-    // White circle
-    c.drawCircle(const Offset(s / 2, s / 2), 20, Paint()..color = Colors.white);
-    // Blue inner
-    c.drawCircle(const Offset(s / 2, s / 2), 13,
-        Paint()..color = const Color(0xFF4285F4));
-
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7));
+    // White ring
+    c.drawCircle(const Offset(s / 2, s / 2), 17, Paint()..color = Colors.white);
+    // Dark inner
+    c.drawCircle(const Offset(s / 2, s / 2), 11,
+        Paint()..color = const Color(0xFF1A1A1A));
+    // White dot
+    c.drawCircle(const Offset(s / 2, s / 2), 4, Paint()..color = Colors.white);
     final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
     return bytes?.buffer.asUint8List();
@@ -281,9 +509,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── BUILD ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final top    = MediaQuery.of(context).padding.top;
-    final bot    = MediaQuery.of(context).padding.bottom;
-    final distMi = (widget.distToPickupKm * 0.621371).toStringAsFixed(1);
+    final top = MediaQuery.of(context).padding.top;
+    final bot = MediaQuery.of(context).padding.bottom;
 
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor:           Colors.transparent,
@@ -322,11 +549,31 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         ),
                       ),
                       const Spacer(),
-                      Icon(Icons.shield_rounded,
-                          color: Colors.white.withValues(alpha: 0.4), size: 21),
-                      const SizedBox(width: 14),
-                      Icon(Icons.help_outline_rounded,
-                          color: Colors.white.withValues(alpha: 0.4), size: 21),
+                      GestureDetector(
+                        onTap: _showSafetyMenu,
+                        child: Container(
+                          width: 36, height: 36,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.07),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.shield_rounded,
+                              color: Colors.white.withValues(alpha: 0.75), size: 19),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        onTap: _showHelpMenu,
+                        child: Container(
+                          width: 36, height: 36,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.07),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.help_outline_rounded,
+                              color: Colors.white.withValues(alpha: 0.75), size: 19),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -380,7 +627,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: SizedBox(
-                  height: 170,
+                  height: 190,
                   child: Stack(
                     children: [
                       mapbox.MapWidget(
@@ -390,34 +637,55 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                             widget.pickupLatLng.longitude,
                             widget.pickupLatLng.latitude,
                           )),
-                          zoom: 14.5,
+                          zoom: 13.5,
                           pitch: 0,
                         ),
                         onMapCreated: _onMapReady,
                       ),
-                      // Mapbox logo overlay
-                      Positioned(
-                        bottom: 6, left: 10,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(5),
-                          child: BackdropFilter(
-                            filter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 7, vertical: 3),
-                              color: Colors.black.withValues(alpha: 0.5),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.map_rounded,
-                                      color: Colors.white54, size: 10),
-                                  SizedBox(width: 3),
-                                  Text('mapbox',
-                                    style: TextStyle(
-                                        color: Colors.white54, fontSize: 9)),
-                                ],
+                      // Pulsing ring overlay at pickup pixel position
+                      if (_pickupPx != null)
+                        AnimatedBuilder(
+                          animation: _pulseCtrl,
+                          builder: (_, __) => Positioned(
+                            left: _pickupPx!.x - 44,
+                            top:  _pickupPx!.y - 44,
+                            child: IgnorePointer(
+                              child: SizedBox(
+                                width: 88, height: 88,
+                                child: CustomPaint(
+                                  painter: _PulsePainter(_pulseCtrl.value),
+                                ),
                               ),
                             ),
+                          ),
+                        ),
+                      // ETA chip
+                      Positioned(
+                        top: 10, right: 10,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.72),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$_tripEta min trip',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Mapbox attribution — plain text, no box
+                      Positioned(
+                        bottom: 5, left: 8,
+                        child: Text('© Mapbox',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.45),
+                            fontSize: 9,
                           ),
                         ),
                       ),
@@ -427,59 +695,27 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               ),
             ),
 
-            // ── Address card ──────────────────────────────────────────────
+            // ── Pickup address card ───────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: _infoRow(
-                Icons.home_rounded,
+                Icons.location_on_rounded,
+                const Color(0xFF1E3A2F),
+                const Color(0xFF4CAF50),
+                'Pickup',
                 widget.pickupAddress,
-                widget.dropoffAddress,
               ),
             ),
 
-            // ── Vehicle + fare ────────────────────────────────────────────
+            // ── Dropoff address card ──────────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: _card,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _border),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 38, height: 38,
-                      decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.directions_car_rounded,
-                          color: _gold, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(widget.vehicleType,
-                            style: const TextStyle(color: Colors.white,
-                                fontSize: 14, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 2),
-                          Text('$distMi mi · ${widget.etaMinutes} min away',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.42),
-                              fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                    Text('\$${widget.fare.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        color: _gold, fontSize: 19,
-                        fontWeight: FontWeight.w800)),
-                  ],
-                ),
+              child: _infoRow(
+                Icons.flag_rounded,
+                const Color(0xFF2A1F0E),
+                _gold,
+                'Dropoff',
+                widget.dropoffAddress,
               ),
             ),
 
@@ -537,4 +773,41 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ),
     );
   }
+}
+
+// ─── Pulsing gold ring painter ────────────────────────────────────────────────
+class _PulsePainter extends CustomPainter {
+  final double t;
+  const _PulsePainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const color = Color(0xFFD4A843);
+    final center = Offset(size.width / 2, size.height / 2);
+    for (int i = 0; i < 3; i++) {
+      final phase  = (t + i / 3) % 1.0;
+      final radius = 22.0 + phase * 22.0;
+      final opacity = (1.0 - phase) * 0.45;
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..color = color.withValues(alpha: opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PulsePainter old) => old.t != t;
+}
+
+// ─── Bottom-sheet item data class ─────────────────────────────────────────────
+class _SheetItem {
+  final IconData   icon;
+  final String     label;
+  final String     sub;
+  final VoidCallback onTap;
+  const _SheetItem(this.icon, this.label, this.sub, this.onTap);
 }

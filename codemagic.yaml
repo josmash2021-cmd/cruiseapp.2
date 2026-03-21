@@ -1,214 +1,257 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# CruiseinRide — Codemagic CI/CD
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# REQUIRED encrypted variables (add in Codemagic UI → Team settings → Global variables):
+#   ENV_MAPBOX_TOKEN       — Mapbox secret access token (sk.eyJ1…) for SDK download
+#   CM_KEYSTORE            — Base64-encoded release .jks / .keystore file
+#   CM_KEYSTORE_PASSWORD   — Keystore password
+#   CM_KEY_ALIAS           — Key alias
+#   CM_KEY_PASSWORD        — Key password
+#
+# The App Store Connect integration "CruiseinRide" must be configured in
+# Codemagic UI → Integrations → App Store Connect.
+# ══════════════════════════════════════════════════════════════════════════════
+
+definitions:
+  # ── Shared environment variables (merged into each workflow) ──────────────
+  vars: &shared_vars
+    ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
+    ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
+    ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
+    ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
+    ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
+    ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
+    ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
+    ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
+    ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
+    ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
+    ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+    ENV_MAPS_SERVICES_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
+    ENV_PAYPAL_SANDBOX: "false"
+    ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
+    ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
+
+  # ── Reusable script anchors ───────────────────────────────────────────────
+  scripts:
+    - &configure_git
+      name: Configure Git for large transfers
+      script: |
+        git config --global http.postBuffer 524288000
+        git config --global http.lowSpeedLimit 0
+        git config --global http.lowSpeedTime 999999
+
+    - &mapbox_auth
+      name: Configure Mapbox downloads token
+      script: |
+        # Android SDK: Gradle reads MAPBOX_DOWNLOADS_TOKEN from ~/.gradle/gradle.properties
+        mkdir -p ~/.gradle
+        printf 'MAPBOX_DOWNLOADS_TOKEN=%s\n' "${ENV_MAPBOX_TOKEN:-}" >> ~/.gradle/gradle.properties
+        # iOS / CocoaPods: reads from ~/.netrc
+        printf 'machine api.mapbox.com\nlogin mapbox\npassword %s\n' "${ENV_MAPBOX_TOKEN:-}" >> ~/.netrc
+        chmod 0600 ~/.netrc
+        echo "Mapbox downloads token configured"
+
+    - &generate_env
+      name: Generate env.dart
+      script: |
+        mkdir -p lib/config
+        python3 << 'PYEOF'
+        import os
+        sandbox_val = os.environ.get('ENV_PAYPAL_SANDBOX', 'false').lower()
+        sandbox_bool = 'true' if sandbox_val == 'true' else 'false'
+        lines = [
+          'class Env {',
+          "  static const String apiKey = '" + os.environ.get('ENV_API_KEY', '') + "';",
+          "  static const String hmacSecret = '" + os.environ.get('ENV_HMAC_SECRET', '') + "';",
+          "  static const String mapsServicesKey = '" + os.environ.get('ENV_MAPS_SERVICES_KEY', '') + "';",
+          "  static const String emailjsServiceId = '" + os.environ.get('ENV_EMAILJS_SERVICE_ID', '') + "';",
+          "  static const String emailjsTemplateId = '" + os.environ.get('ENV_EMAILJS_TEMPLATE_ID', '') + "';",
+          "  static const String emailjsPublicKey = '" + os.environ.get('ENV_EMAILJS_PUBLIC_KEY', '') + "';",
+          "  static const String emailjsPrivateKey = '" + os.environ.get('ENV_EMAILJS_PRIVATE_KEY', '') + "';",
+          "  static const String stripePublishableKey = '" + os.environ.get('ENV_STRIPE_PK', '') + "';",
+          "  static const String stripeMerchantId = '" + os.environ.get('ENV_STRIPE_MERCHANT', '') + "';",
+          "  static const String twilioAccountSid = '" + os.environ.get('ENV_TWILIO_SID', '') + "';",
+          "  static const String twilioAuthToken = '" + os.environ.get('ENV_TWILIO_TOKEN', '') + "';",
+          "  static const String twilioServiceSid = '" + os.environ.get('ENV_TWILIO_SERVICE', '') + "';",
+          '  static const bool paypalSandbox = ' + sandbox_bool + ';',
+          "  static const String paypalClientId = '" + os.environ.get('ENV_PAYPAL_CLIENT_ID', '') + "';",
+          "  static const String paypalSecret = '" + os.environ.get('ENV_PAYPAL_SECRET', '') + "';",
+          '}',
+        ]
+        with open('lib/config/env.dart', 'w') as f:
+            f.write('\n'.join(lines) + '\n')
+        print('env.dart generated successfully')
+        PYEOF
+        echo "env.dart contents:"
+        cat lib/config/env.dart
+
+    - &flutter_pub_get
+      name: Get Flutter packages
+      script: flutter pub get
+
+    - &pod_install
+      name: Install CocoaPods dependencies
+      script: |
+        cd ios
+        rm -rf Pods Podfile.lock
+        export COCOAPODS_DISABLE_STATS=true
+        for i in 1 2 3; do
+          echo "=== pod install attempt $i/3 ==="
+          if pod install --repo-update; then
+            echo "✅ CocoaPods installed on attempt $i"
+            break
+          fi
+          if [ $i -lt 3 ]; then
+            WAIT=$((i * 45))
+            echo "⚠️ Attempt $i failed, waiting ${WAIT}s..."
+            sleep $WAIT
+          else
+            echo "❌ All pod install attempts failed"; exit 1
+          fi
+        done
+        [ -d Pods ] && [ -n "$(ls -A Pods)" ] || { echo "ERROR: Pods missing or empty"; exit 1; }
+        echo "CocoaPods installed. Size: $(du -sh Pods | cut -f1)"
+
+    - &decode_keystore
+      name: Decode Android keystore
+      script: |
+        if [ -n "${CM_KEYSTORE:-}" ]; then
+          echo "$CM_KEYSTORE" | base64 --decode > /tmp/cruise-release.keystore
+          echo "✅ Keystore decoded: $(du -sh /tmp/cruise-release.keystore | cut -f1)"
+        else
+          echo "⚠️  CM_KEYSTORE not set — release build will use debug signing"
+        fi
+
+    - &patch_no_codesign
+      name: Disable code signing in Xcode project
+      script: |
+        cd ios
+        python3 << 'PYEOF'
+        import re, glob
+        def patch(path):
+            with open(path, 'r') as f: c = f.read()
+            c = re.sub(r'\s*CODE_SIGN_ENTITLEMENTS = [^;]*;', '', c)
+            c = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"',
+                       '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', c)
+            c = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"', 'CODE_SIGN_IDENTITY = ""', c)
+            c = re.sub(r'DEVELOPMENT_TEAM = [^;]*;', 'DEVELOPMENT_TEAM = "";', c)
+            c = re.sub(r'CODE_SIGN_STYLE = Automatic', 'CODE_SIGN_STYLE = Manual', c)
+            c = re.sub(r'VALIDATE_PRODUCT = YES', 'VALIDATE_PRODUCT = NO', c)
+            c = re.sub(r'\n\s*CODE_SIGNING_ALLOWED = [^;]*;', '', c)
+            c = re.sub(r'\n\s*CODE_SIGNING_REQUIRED = [^;]*;', '', c)
+            c = c.replace('buildSettings = {',
+                'buildSettings = {\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;')
+            with open(path, 'w') as f: f.write(c)
+            print(f"Patched: {path}")
+        patch('Runner.xcodeproj/project.pbxproj')
+        for p in glob.glob('Pods/**/*.pbxproj', recursive=True): patch(p)
+        PYEOF
+        printf 'CODE_SIGNING_ALLOWED=NO\nCODE_SIGNING_REQUIRED=NO\nCODE_SIGN_IDENTITY=\nCODE_SIGN_ENTITLEMENTS=\nEXPANDED_CODE_SIGN_IDENTITY=\n' >> Flutter/Release.xcconfig
+
+    - &delete_stale_profiles
+      name: Delete stale App Store provisioning profiles
+      script: |
+        python3 << 'PYEOF'
+        import base64, json, time, os, subprocess, urllib.request, sys
+        def b64url(d):
+            if isinstance(d, str): d = d.encode()
+            return base64.urlsafe_b64encode(d).rstrip(b'=').decode()
+        try:
+            key_id    = os.environ.get('APP_STORE_CONNECT_KEY_IDENTIFIER', '')
+            issuer_id = os.environ.get('APP_STORE_CONNECT_ISSUER_ID', '')
+            priv_key  = os.environ.get('APP_STORE_CONNECT_PRIVATE_KEY', '')
+            if not all([key_id, issuer_id, priv_key]):
+                print('Missing ASC credentials, skipping'); sys.exit(0)
+            priv_key = priv_key.replace('\\n', '\n')
+            with open('/tmp/asc_key.p8', 'w') as f: f.write(priv_key)
+            hdr = b64url(json.dumps({"alg":"ES256","kid":key_id}, separators=(',',':')))
+            now = int(time.time())
+            pay = b64url(json.dumps({"iss":issuer_id,"iat":now,"exp":now+600,
+                                      "aud":"appstoreconnect-v1"}, separators=(',',':')))
+            msg = f"{hdr}.{pay}"
+            r = subprocess.run(['openssl','dgst','-sha256','-sign','/tmp/asc_key.p8','-binary'],
+                               input=msg.encode(), capture_output=True)
+            os.unlink('/tmp/asc_key.p8')
+            der = r.stdout
+            if not der: print(f'openssl failed: {r.stderr.decode()}'); sys.exit(0)
+            pos=2; rl=der[pos+1]; rv=der[pos+2:pos+2+rl]; pos+=2+rl
+            sl=der[pos+1]; sv=der[pos+2:pos+2+sl]
+            rv=rv.lstrip(b'\x00').rjust(32,b'\x00'); sv=sv.lstrip(b'\x00').rjust(32,b'\x00')
+            token=f"{msg}.{b64url(rv+sv)}"
+            hdrs={"Authorization":f"Bearer {token}","Content-Type":"application/json"}
+            url=("https://api.appstoreconnect.apple.com/v1/profiles"
+                 "?filter[profileType]=IOS_APP_STORE"
+                 "&filter[bundleId.identifier]=com.cruiseinride.app&limit=50")
+            with urllib.request.urlopen(urllib.request.Request(url,headers=hdrs)) as resp:
+                data=json.loads(resp.read())
+            for p in data.get('data',[]):
+                pid=p['id']; name=p.get('attributes',{}).get('name','?')
+                print(f'Deleting: {name} ({pid})')
+                try:
+                    urllib.request.urlopen(urllib.request.Request(
+                        f"https://api.appstoreconnect.apple.com/v1/profiles/{pid}",
+                        method='DELETE',headers=hdrs))
+                    print('  ✅ deleted')
+                except Exception as e: print(f'  ❌ {e}')
+        except Exception as e: print(f'Profile deletion skipped: {e}')
+        PYEOF
+
 workflows:
+  # ────────────────────────────────────────────────────────────────────────────
+  # 1. iOS Sideload — unsigned IPA for Sideloadly / AltStore
+  #    Trigger: MANUAL only (start from Codemagic UI)
+  # ────────────────────────────────────────────────────────────────────────────
   ios-sideload:
-    name: iOS IPA para Sideloadly (sin Developer Account)
+    name: iOS IPA (Sideloadly — unsigned)
     max_build_duration: 60
     instance_type: mac_mini_m2
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
-          source: true
     environment:
       flutter: stable
       xcode: latest
       cocoapods: default
       vars:
+        <<: *shared_vars
         FLUTTER_XCODE_CODE_SIGNING_ALLOWED: "NO"
         FLUTTER_XCODE_CODE_SIGNING_REQUIRED: "NO"
-        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
-        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
-        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
-        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
-        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
-        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
-        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
-        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
-        ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
-        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
-        ENV_MAPS_SERVICES_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
-        ENV_PAYPAL_SANDBOX: "false"
-        ENV_PAYPAL_CLIENT_ID: "YOUR_PAYPAL_CLIENT_ID"
-        ENV_PAYPAL_SECRET: "YOUR_PAYPAL_SECRET"
     scripts:
-      - name: Generate env.dart
-        script: |
-          mkdir -p lib/config
-          python3 << 'PYEOF'
-          import os
-          sandbox_val = os.environ.get('ENV_PAYPAL_SANDBOX', 'false').lower()
-          sandbox_bool = 'true' if sandbox_val == 'true' else 'false'
-          lines = [
-            'class Env {',
-            "  static const String apiKey = '" + os.environ.get('ENV_API_KEY', '') + "';",
-            "  static const String hmacSecret = '" + os.environ.get('ENV_HMAC_SECRET', '') + "';",
-            "  static const String mapsServicesKey = '" + os.environ.get('ENV_MAPS_SERVICES_KEY', '') + "';",
-            "  static const String emailjsServiceId = '" + os.environ.get('ENV_EMAILJS_SERVICE_ID', '') + "';",
-            "  static const String emailjsTemplateId = '" + os.environ.get('ENV_EMAILJS_TEMPLATE_ID', '') + "';",
-            "  static const String emailjsPublicKey = '" + os.environ.get('ENV_EMAILJS_PUBLIC_KEY', '') + "';",
-            "  static const String emailjsPrivateKey = '" + os.environ.get('ENV_EMAILJS_PRIVATE_KEY', '') + "';",
-            "  static const String stripePublishableKey = '" + os.environ.get('ENV_STRIPE_PK', '') + "';",
-            "  static const String stripeMerchantId = '" + os.environ.get('ENV_STRIPE_MERCHANT', '') + "';",
-            "  static const String twilioAccountSid = '" + os.environ.get('ENV_TWILIO_SID', '') + "';",
-            "  static const String twilioAuthToken = '" + os.environ.get('ENV_TWILIO_TOKEN', '') + "';",
-            "  static const String twilioServiceSid = '" + os.environ.get('ENV_TWILIO_SERVICE', '') + "';",
-            '  static const bool paypalSandbox = ' + sandbox_bool + ';',
-            "  static const String paypalClientId = '" + os.environ.get('ENV_PAYPAL_CLIENT_ID', '') + "';",
-            "  static const String paypalSecret = '" + os.environ.get('ENV_PAYPAL_SECRET', '') + "';",
-            '}',
-          ]
-          with open('lib/config/env.dart', 'w') as f:
-              f.write('\n'.join(lines) + '\n')
-          print('env.dart generated successfully')
-          PYEOF
-          echo "env.dart contents:"
-          cat lib/config/env.dart
-      - name: Configure Git for better network handling
-        script: |
-          git config --global http.postBuffer 524288000
-          git config --global http.lowSpeedLimit 0
-          git config --global http.lowSpeedTime 999999
-          echo "Git configured for large transfers"
-      - name: Get Flutter packages
-        script: |
-          flutter pub get
+      - *generate_env
+      - *configure_git
+      - *mapbox_auth
+      - *flutter_pub_get
       - name: Generate iOS config files
+        script: flutter build ios --config-only --no-codesign --no-pub
+      - *pod_install
+      - *patch_no_codesign
+      - name: Flutter build iOS (unsigned)
         script: |
-          flutter build ios --config-only --no-codesign --no-pub
-      - name: Install CocoaPods dependencies
-        script: |
-          cd ios
-          # Only clear project Pods (keep ~/Library/Caches/CocoaPods to reuse downloads)
-          rm -rf Pods Podfile.lock
-          export COCOAPODS_DISABLE_STATS=true
-          
-          # Reintentar hasta 3 veces con esperas progresivas
-          for i in 1 2 3; do
-            echo "=== pod install attempt $i/3 ==="
-            if pod install --repo-update; then
-              echo "✅ CocoaPods installed successfully on attempt $i"
-              break
-            fi
-            if [ $i -lt 3 ]; then
-              WAIT_TIME=$((i * 45))
-              echo "⚠️ Attempt $i failed, waiting ${WAIT_TIME}s before retry..."
-              sleep $WAIT_TIME
-            else
-              echo "❌ ERROR: All 3 pod install attempts failed"
-              exit 1
-            fi
-          done
-          
-          # Verificar que Pods existe y tiene contenido
-          if [ ! -d Pods ] || [ -z "$(ls -A Pods)" ]; then
-            echo "ERROR: Pods directory is missing or empty"
-            exit 1
-          fi
-          
-          echo "CocoaPods dependencies installed successfully"
-          echo "Pods directory size: $(du -sh Pods | cut -f1)"
-      - name: Disable code signing in project
-        script: |
-          cd ios
-          python3 << 'PYEOF'
-          import re, glob
-
-          def patch_pbxproj(path):
-              with open(path, 'r') as f:
-                  content = f.read()
-              # Remove entitlements
-              content = re.sub(r'\s*CODE_SIGN_ENTITLEMENTS = [^;]*;', '', content)
-              # Clear signing identity
-              content = re.sub(r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*"',
-                               '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = ""', content)
-              content = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*"',
-                               'CODE_SIGN_IDENTITY = ""', content)
-              # Remove development team
-              content = re.sub(r'DEVELOPMENT_TEAM = [^;]*;',
-                               'DEVELOPMENT_TEAM = "";', content)
-              # Set manual signing
-              content = re.sub(r'CODE_SIGN_STYLE = Automatic',
-                               'CODE_SIGN_STYLE = Manual', content)
-              # Disable product validation
-              content = re.sub(r'VALIDATE_PRODUCT = YES',
-                               'VALIDATE_PRODUCT = NO', content)
-              # Remove existing CODE_SIGNING_ALLOWED/REQUIRED lines to avoid dupes
-              content = re.sub(r'\n\s*CODE_SIGNING_ALLOWED = [^;]*;', '', content)
-              content = re.sub(r'\n\s*CODE_SIGNING_REQUIRED = [^;]*;', '', content)
-              # Inject CODE_SIGNING_ALLOWED=NO into every buildSettings block
-              content = content.replace(
-                  'buildSettings = {',
-                  'buildSettings = {\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;'
-              )
-              with open(path, 'w') as f:
-                  f.write(content)
-              print(f"Patched: {path}")
-
-          patch_pbxproj('Runner.xcodeproj/project.pbxproj')
-          for p in glob.glob('Pods/**/*.pbxproj', recursive=True):
-              patch_pbxproj(p)
-          PYEOF
-
-          # Inject into xcconfig (no leading spaces)
-          printf 'CODE_SIGNING_ALLOWED=NO\nCODE_SIGNING_REQUIRED=NO\nCODE_SIGN_IDENTITY=\nCODE_SIGN_ENTITLEMENTS=\nEXPANDED_CODE_SIGN_IDENTITY=\n' >> Flutter/Release.xcconfig
-      - name: Flutter build iOS (no codesign)
-        script: |
-          # flutter build ios compiles Dart → ARM and runs xcodebuild internally.
-          # --no-codesign   : skips signing (CODE_SIGNING_ALLOWED=NO already set in Podfile)
-          # --no-tree-shake-icons : required because the project uses non-constant IconData
-          flutter build ios \
-            --release \
-            --no-codesign \
-            --no-tree-shake-icons
-
-          # flutter always outputs to build/ios/iphoneos/Runner.app
+          flutter build ios --release --no-codesign --no-tree-shake-icons
           APP="build/ios/iphoneos/Runner.app"
-          if [ ! -d "$APP" ]; then
-            echo "ERROR: Runner.app not found at $APP"
-            find build/ios -type d -name "*.app" 2>/dev/null
-            exit 1
-          fi
-
+          [ -d "$APP" ] || { find build/ios -type d -name "*.app"; exit 1; }
           APP_SIZE=$(du -sm "$APP" | cut -f1)
-          echo "Build OK: $APP (${APP_SIZE} MB)"
-          if [ "$APP_SIZE" -lt 5 ]; then
-            echo "ERROR: .app is too small (${APP_SIZE} MB) — Dart compilation likely failed"
-            ls -la "$APP/"
-            exit 1
-          fi
-      - name: Empaquetar .app en .ipa
+          echo "Runner.app: ${APP_SIZE} MB"
+          [ "$APP_SIZE" -gt 5 ] || { echo "ERROR: App too small (${APP_SIZE} MB)"; exit 1; }
+      - name: Package as IPA
         script: |
           APP_PATH="build/ios/iphoneos/Runner.app"
-          if [ ! -d "$APP_PATH" ]; then
-            echo "ERROR: Runner.app not found at $APP_PATH"
-            exit 1
-          fi
-          echo "Packaging: $APP_PATH ($(du -sh "$APP_PATH" | cut -f1))"
-
-          rm -rf build/ios/ipa
-          mkdir -p build/ios/ipa/Payload
+          [ -d "$APP_PATH" ] || { echo "ERROR: Runner.app not found"; exit 1; }
+          rm -rf build/ios/ipa && mkdir -p build/ios/ipa/Payload
           cp -r "$APP_PATH" build/ios/ipa/Payload/Runner.app
-
           cd build/ios/ipa
-          echo "Payload contents:"; ls -la Payload/
-
           zip -r cruise-app.ipa Payload
-
-          IPA_SIZE_BYTES=$(stat -f%z cruise-app.ipa 2>/dev/null || stat -c%s cruise-app.ipa 2>/dev/null)
-          echo "IPA: cruise-app.ipa (${IPA_SIZE_BYTES} bytes)"
-          if [ "${IPA_SIZE_BYTES}" -lt 50000 ]; then
-            echo "ERROR: IPA too small — packaging failed"
-            exit 1
-          fi
-          echo "IPA packaging completed successfully"
+          IPA_SIZE=$(stat -f%z cruise-app.ipa 2>/dev/null || stat -c%s cruise-app.ipa 2>/dev/null)
+          echo "IPA: ${IPA_SIZE} bytes"
+          [ "${IPA_SIZE}" -gt 50000 ] || { echo "ERROR: IPA too small"; exit 1; }
     artifacts:
       - build/ios/ipa/cruise-app.ipa
       - /tmp/xcodebuild_logs/*.log
 
+  # ────────────────────────────────────────────────────────────────────────────
+  # 2. iOS Ad Hoc — signed IPA for direct device install
+  #    Trigger: push to main
+  # ────────────────────────────────────────────────────────────────────────────
   ios-adhoc:
-    name: iOS Ad Hoc (instalar en iPhone)
+    name: iOS Ad Hoc (device install)
     max_build_duration: 120
     instance_type: mac_mini_m2
     triggering:
@@ -228,89 +271,19 @@ workflows:
       xcode: latest
       cocoapods: default
       vars:
-        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
-        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
-        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
-        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
-        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
-        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
-        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
-        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
-        ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
-        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
-        ENV_MAPS_SERVICES_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
-        ENV_PAYPAL_SANDBOX: "false"
-        ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
-        ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
+        <<: *shared_vars
     scripts:
-      - name: Generate env.dart
-        script: |
-          mkdir -p lib/config
-          python3 << 'PYEOF'
-          import os
-          sandbox_val = os.environ.get('ENV_PAYPAL_SANDBOX', 'false').lower()
-          sandbox_bool = 'true' if sandbox_val == 'true' else 'false'
-          lines = [
-            'class Env {',
-            "  static const String apiKey = '" + os.environ.get('ENV_API_KEY', '') + "';",
-            "  static const String hmacSecret = '" + os.environ.get('ENV_HMAC_SECRET', '') + "';",
-            "  static const String mapsServicesKey = '" + os.environ.get('ENV_MAPS_SERVICES_KEY', '') + "';",
-            "  static const String emailjsServiceId = '" + os.environ.get('ENV_EMAILJS_SERVICE_ID', '') + "';",
-            "  static const String emailjsTemplateId = '" + os.environ.get('ENV_EMAILJS_TEMPLATE_ID', '') + "';",
-            "  static const String emailjsPublicKey = '" + os.environ.get('ENV_EMAILJS_PUBLIC_KEY', '') + "';",
-            "  static const String emailjsPrivateKey = '" + os.environ.get('ENV_EMAILJS_PRIVATE_KEY', '') + "';",
-            "  static const String stripePublishableKey = '" + os.environ.get('ENV_STRIPE_PK', '') + "';",
-            "  static const String stripeMerchantId = '" + os.environ.get('ENV_STRIPE_MERCHANT', '') + "';",
-            "  static const String twilioAccountSid = '" + os.environ.get('ENV_TWILIO_SID', '') + "';",
-            "  static const String twilioAuthToken = '" + os.environ.get('ENV_TWILIO_TOKEN', '') + "';",
-            "  static const String twilioServiceSid = '" + os.environ.get('ENV_TWILIO_SERVICE', '') + "';",
-            '  static const bool paypalSandbox = ' + sandbox_bool + ';',
-            "  static const String paypalClientId = '" + os.environ.get('ENV_PAYPAL_CLIENT_ID', '') + "';",
-            "  static const String paypalSecret = '" + os.environ.get('ENV_PAYPAL_SECRET', '') + "';",
-            '}',
-          ]
-          with open('lib/config/env.dart', 'w') as f:
-              f.write('\n'.join(lines) + '\n')
-          print('env.dart generated successfully')
-          PYEOF
-          echo "env.dart contents:"
-          cat lib/config/env.dart
-      - name: Configure Git for better network handling
-        script: |
-          git config --global http.postBuffer 524288000
-          git config --global http.lowSpeedLimit 0
-          git config --global http.lowSpeedTime 999999
-      - name: Get Flutter packages
-        script: |
-          flutter pub get
+      - *generate_env
+      - *configure_git
+      - *mapbox_auth
+      - *flutter_pub_get
       - name: Generate iOS config files
-        script: |
-          flutter build ios --config-only --no-pub
-      - name: Install CocoaPods dependencies
-        script: |
-          cd ios
-          rm -rf Pods Podfile.lock
-          export COCOAPODS_DISABLE_STATS=true
-          for i in 1 2 3; do
-            echo "=== pod install attempt $i/3 ==="
-            if pod install --repo-update; then
-              echo "✅ Pods installed on attempt $i"
-              break
-            fi
-            if [ $i -lt 3 ]; then
-              echo "⚠️ Attempt $i failed, waiting $((i * 45))s..."
-              sleep $((i * 45))
-            else
-              echo "❌ All attempts failed"
-              exit 1
-            fi
-          done
+        script: flutter build ios --config-only --no-pub
+      - *pod_install
       - name: Flutter build IPA (Ad Hoc)
         script: |
           xcode-project use-profiles
-          flutter build ipa --release \
-            --no-tree-shake-icons
+          flutter build ipa --release --no-tree-shake-icons
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
@@ -322,8 +295,12 @@ workflows:
           success: true
           failure: true
 
+  # ────────────────────────────────────────────────────────────────────────────
+  # 3. iOS App Store — TestFlight submission
+  #    Trigger: MANUAL only
+  # ────────────────────────────────────────────────────────────────────────────
   ios-release:
-    name: iOS Release Build (App Store)
+    name: iOS App Store (TestFlight)
     max_build_duration: 120
     instance_type: mac_mini_m2
     integrations:
@@ -338,152 +315,17 @@ workflows:
       xcode: latest
       cocoapods: default
       vars:
+        <<: *shared_vars
         BUNDLE_ID: "com.cruiseinride.app"
-        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
-        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
-        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
-        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
-        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
-        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
-        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
-        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
-        ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
-        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
-        ENV_MAPS_SERVICES_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
-        ENV_PAYPAL_SANDBOX: "false"
-        ENV_PAYPAL_CLIENT_ID: "YOUR_PAYPAL_CLIENT_ID"
-        ENV_PAYPAL_SECRET: "YOUR_PAYPAL_SECRET"
     scripts:
-      - name: Generate env.dart
-        script: |
-          mkdir -p lib/config
-          python3 << 'PYEOF'
-          import os
-          sandbox_val = os.environ.get('ENV_PAYPAL_SANDBOX', 'false').lower()
-          sandbox_bool = 'true' if sandbox_val == 'true' else 'false'
-          lines = [
-            'class Env {',
-            "  static const String apiKey = '" + os.environ.get('ENV_API_KEY', '') + "';",
-            "  static const String hmacSecret = '" + os.environ.get('ENV_HMAC_SECRET', '') + "';",
-            "  static const String mapsServicesKey = '" + os.environ.get('ENV_MAPS_SERVICES_KEY', '') + "';",
-            "  static const String emailjsServiceId = '" + os.environ.get('ENV_EMAILJS_SERVICE_ID', '') + "';",
-            "  static const String emailjsTemplateId = '" + os.environ.get('ENV_EMAILJS_TEMPLATE_ID', '') + "';",
-            "  static const String emailjsPublicKey = '" + os.environ.get('ENV_EMAILJS_PUBLIC_KEY', '') + "';",
-            "  static const String emailjsPrivateKey = '" + os.environ.get('ENV_EMAILJS_PRIVATE_KEY', '') + "';",
-            "  static const String stripePublishableKey = '" + os.environ.get('ENV_STRIPE_PK', '') + "';",
-            "  static const String stripeMerchantId = '" + os.environ.get('ENV_STRIPE_MERCHANT', '') + "';",
-            "  static const String twilioAccountSid = '" + os.environ.get('ENV_TWILIO_SID', '') + "';",
-            "  static const String twilioAuthToken = '" + os.environ.get('ENV_TWILIO_TOKEN', '') + "';",
-            "  static const String twilioServiceSid = '" + os.environ.get('ENV_TWILIO_SERVICE', '') + "';",
-            '  static const bool paypalSandbox = ' + sandbox_bool + ';',
-            "  static const String paypalClientId = '" + os.environ.get('ENV_PAYPAL_CLIENT_ID', '') + "';",
-            "  static const String paypalSecret = '" + os.environ.get('ENV_PAYPAL_SECRET', '') + "';",
-            '}',
-          ]
-          with open('lib/config/env.dart', 'w') as f:
-              f.write('\n'.join(lines) + '\n')
-          print('env.dart generated successfully')
-          PYEOF
-          echo "env.dart contents:"
-          cat lib/config/env.dart
-      - name: Configure Git for better network handling
-        script: |
-          git config --global http.postBuffer 524288000
-          git config --global http.lowSpeedLimit 0
-          git config --global http.lowSpeedTime 999999
-      - name: Get Flutter packages
-        script: |
-          flutter pub get
+      - *generate_env
+      - *configure_git
+      - *mapbox_auth
+      - *flutter_pub_get
       - name: Generate iOS config files
-        script: |
-          flutter build ios --config-only --no-codesign
-      - name: Install CocoaPods dependencies
-        script: |
-          cd ios
-          rm -rf Pods Podfile.lock
-          export COCOAPODS_DISABLE_STATS=true
-          for i in 1 2 3; do
-            echo "=== pod install attempt $i/3 ==="
-            if pod install --repo-update; then
-              echo "✅ Pods installed on attempt $i"
-              break
-            fi
-            if [ $i -lt 3 ]; then
-              echo "⚠️ Attempt $i failed, waiting $((i * 45))s..."
-              sleep $((i * 45))
-            else
-              echo "❌ All attempts failed"
-              exit 1
-            fi
-          done
-      - name: Delete stale provisioning profiles
-        script: |
-          python3 << 'PYEOF'
-          import base64, json, time, os, subprocess, urllib.request, urllib.error, sys
-
-          def b64url(data):
-              if isinstance(data, str):
-                  data = data.encode()
-              return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
-
-          try:
-              key_id    = os.environ.get('APP_STORE_CONNECT_KEY_IDENTIFIER', '')
-              issuer_id = os.environ.get('APP_STORE_CONNECT_ISSUER_ID', '')
-              priv_key  = os.environ.get('APP_STORE_CONNECT_PRIVATE_KEY', '')
-
-              if not all([key_id, issuer_id, priv_key]):
-                  print('Missing ASC credentials, skipping'); sys.exit(0)
-
-              # Codemagic may store key with literal \n — convert to real newlines
-              priv_key = priv_key.replace('\\n', '\n')
-
-              with open('/tmp/asc_key.p8', 'w') as f:
-                  f.write(priv_key)
-
-              hdr = b64url(json.dumps({"alg":"ES256","kid":key_id}, separators=(',',':')))
-              now = int(time.time())
-              pay = b64url(json.dumps({"iss":issuer_id,"iat":now,"exp":now+600,"aud":"appstoreconnect-v1"}, separators=(',',':')))
-              msg = f"{hdr}.{pay}"
-
-              result = subprocess.run(
-                  ['openssl','dgst','-sha256','-sign','/tmp/asc_key.p8','-binary'],
-                  input=msg.encode(), capture_output=True)
-              os.unlink('/tmp/asc_key.p8')
-
-              der = result.stdout
-              if not der:
-                  print(f'openssl failed: {result.stderr.decode()}'); sys.exit(0)
-
-              pos = 2
-              r_len = der[pos+1]; r = der[pos+2:pos+2+r_len]; pos += 2+r_len
-              s_len = der[pos+1]; s = der[pos+2:pos+2+s_len]
-              r = r.lstrip(b'\x00').rjust(32, b'\x00')
-              s = s.lstrip(b'\x00').rjust(32, b'\x00')
-              token = f"{msg}.{b64url(r+s)}"
-
-              hdrs = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-              url  = ("https://api.appstoreconnect.apple.com/v1/profiles"
-                      "?filter[profileType]=IOS_APP_STORE"
-                      "&filter[bundleId.identifier]=com.cruiseinride.app&limit=50")
-
-              with urllib.request.urlopen(urllib.request.Request(url, headers=hdrs)) as resp:
-                  data = json.loads(resp.read())
-              for p in data.get('data', []):
-                  pid  = p['id']
-                  name = p.get('attributes', {}).get('name', '?')
-                  print(f'Deleting profile: {name} ({pid})')
-                  try:
-                      urllib.request.urlopen(urllib.request.Request(
-                          f"https://api.appstoreconnect.apple.com/v1/profiles/{pid}",
-                          method='DELETE', headers=hdrs))
-                      print('  ✅ deleted')
-                  except Exception as e:
-                      print(f'  ❌ {e}')
-          except Exception as e:
-              print(f'Profile deletion skipped: {e}')
-          PYEOF
-
+        script: flutter build ios --config-only --no-codesign
+      - *pod_install
+      - *delete_stale_profiles
       - name: Set up code signing identities
         script: |
           keychain initialize
@@ -494,41 +336,27 @@ workflows:
           xcode-project use-profiles
           security find-identity -v -p codesigning
           echo "✅ Code signing identities installed"
-
-      - name: Strip Apple Pay entitlement (profile workaround)
+      - name: Strip Apple Pay entitlement
         script: |
-          /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.in-app-payments" ios/Runner/Runner.entitlements 2>/dev/null || true
-          echo "Runner.entitlements after strip:"
-          cat ios/Runner/Runner.entitlements
-
-      - name: Build IPA
+          /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.in-app-payments" \
+            ios/Runner/Runner.entitlements 2>/dev/null || true
+      - name: Build IPA (App Store)
         script: |
           mkdir -p /tmp/xcodebuild_logs
-
           cat > /tmp/ExportOptions.plist << 'PLISTEOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>app-store</string>
-              <key>teamID</key>
-              <string>7QLC9UVB3Z</string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>provisioningProfiles</key>
-              <dict>
-                  <key>com.cruiseinride.app</key>
-                  <string>cruise</string>
-              </dict>
-              <key>uploadBitcode</key>
-              <false/>
-              <key>uploadSymbols</key>
-              <true/>
-          </dict>
-          </plist>
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store</string>
+            <key>teamID</key><string>7QLC9UVB3Z</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key><dict>
+              <key>com.cruiseinride.app</key><string>cruise</string>
+            </dict>
+            <key>uploadBitcode</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
           PLISTEOF
-
           flutter build ipa --release \
             --no-tree-shake-icons \
             --build-number=$BUILD_NUMBER \
@@ -549,8 +377,14 @@ workflows:
           success: true
           failure: true
 
+  # ────────────────────────────────────────────────────────────────────────────
+  # 4. Android APK — release APK with keystore signing
+  #    Trigger: push to main
+  #    Add these as encrypted vars in Codemagic UI:
+  #      CM_KEYSTORE, CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD
+  # ────────────────────────────────────────────────────────────────────────────
   android-apk:
-    name: Android APK (instalable)
+    name: Android APK (release)
     max_build_duration: 60
     instance_type: linux_x2
     triggering:
@@ -564,65 +398,21 @@ workflows:
       flutter: stable
       java: 17
       vars:
-        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
-        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
-        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
-        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
-        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
-        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
-        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
-        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
-        ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
-        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
-        ENV_MAPS_SERVICES_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
-        ENV_PAYPAL_SANDBOX: "false"
-        ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
-        ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
+        <<: *shared_vars
     scripts:
       - name: Write android/local.properties
         script: |
           echo "MAPS_API_KEY=$ENV_MAPS_SERVICES_KEY" >> android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
-      - name: Generate env.dart
-        script: |
-          mkdir -p lib/config
-          python3 << 'PYEOF'
-          import os
-          sandbox_val = os.environ.get('ENV_PAYPAL_SANDBOX', 'false').lower()
-          sandbox_bool = 'true' if sandbox_val == 'true' else 'false'
-          lines = [
-            'class Env {',
-            "  static const String apiKey = '" + os.environ.get('ENV_API_KEY', '') + "';",
-            "  static const String hmacSecret = '" + os.environ.get('ENV_HMAC_SECRET', '') + "';",
-            "  static const String mapsServicesKey = '" + os.environ.get('ENV_MAPS_SERVICES_KEY', '') + "';",
-            "  static const String emailjsServiceId = '" + os.environ.get('ENV_EMAILJS_SERVICE_ID', '') + "';",
-            "  static const String emailjsTemplateId = '" + os.environ.get('ENV_EMAILJS_TEMPLATE_ID', '') + "';",
-            "  static const String emailjsPublicKey = '" + os.environ.get('ENV_EMAILJS_PUBLIC_KEY', '') + "';",
-            "  static const String emailjsPrivateKey = '" + os.environ.get('ENV_EMAILJS_PRIVATE_KEY', '') + "';",
-            "  static const String stripePublishableKey = '" + os.environ.get('ENV_STRIPE_PK', '') + "';",
-            "  static const String stripeMerchantId = '" + os.environ.get('ENV_STRIPE_MERCHANT', '') + "';",
-            "  static const String twilioAccountSid = '" + os.environ.get('ENV_TWILIO_SID', '') + "';",
-            "  static const String twilioAuthToken = '" + os.environ.get('ENV_TWILIO_TOKEN', '') + "';",
-            "  static const String twilioServiceSid = '" + os.environ.get('ENV_TWILIO_SERVICE', '') + "';",
-            '  static const bool paypalSandbox = ' + sandbox_bool + ';',
-            "  static const String paypalClientId = '" + os.environ.get('ENV_PAYPAL_CLIENT_ID', '') + "';",
-            "  static const String paypalSecret = '" + os.environ.get('ENV_PAYPAL_SECRET', '') + "';",
-            '}',
-          ]
-          with open('lib/config/env.dart', 'w') as f:
-              f.write('\n'.join(lines) + '\n')
-          print('env.dart generated successfully')
-          PYEOF
-          echo "env.dart contents:"
-          cat lib/config/env.dart
-      - name: Flutter pub get
-        script: flutter pub get
+      - *generate_env
+      - *mapbox_auth
+      - *decode_keystore
+      - *flutter_pub_get
       - name: Build APK
         script: |
           flutter build apk --release --no-tree-shake-icons --build-number=$BUILD_NUMBER
           APK=$(find build/app/outputs -name "*.apk" | head -1)
-          echo "APK: $APK  Size: $(du -sh "$APK" | cut -f1)"
+          echo "APK: $APK  ($(du -sh "$APK" | cut -f1))"
     artifacts:
       - build/app/outputs/**/*.apk
     publishing:
@@ -633,6 +423,10 @@ workflows:
           success: true
           failure: true
 
+  # ────────────────────────────────────────────────────────────────────────────
+  # 5. Android AAB — Play Store bundle (signed)
+  #    Trigger: push of a git tag (e.g. v1.2.3)
+  # ────────────────────────────────────────────────────────────────────────────
   android-release:
     name: Android AAB (Play Store)
     max_build_duration: 60
@@ -648,60 +442,22 @@ workflows:
       flutter: stable
       java: 17
       vars:
-        ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
-        ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-        ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
-        ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
-        ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
-        ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
-        ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
-        ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
-        ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
-        ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
-        ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
-        ENV_MAPS_SERVICES_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
-        ENV_PAYPAL_SANDBOX: "false"
-        ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
-        ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
+        <<: *shared_vars
     scripts:
       - name: Write android/local.properties
         script: |
           echo "MAPS_API_KEY=$ENV_MAPS_SERVICES_KEY" >> android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
-      - name: Generate env.dart
+      - *generate_env
+      - *mapbox_auth
+      - name: Decode keystore (required for Play Store)
         script: |
-          mkdir -p lib/config
-          python3 << 'PYEOF'
-          import os
-          sandbox_val = os.environ.get('ENV_PAYPAL_SANDBOX', 'false').lower()
-          sandbox_bool = 'true' if sandbox_val == 'true' else 'false'
-          lines = [
-            'class Env {',
-            "  static const String apiKey = '" + os.environ.get('ENV_API_KEY', '') + "';",
-            "  static const String hmacSecret = '" + os.environ.get('ENV_HMAC_SECRET', '') + "';",
-            "  static const String mapsServicesKey = '" + os.environ.get('ENV_MAPS_SERVICES_KEY', '') + "';",
-            "  static const String emailjsServiceId = '" + os.environ.get('ENV_EMAILJS_SERVICE_ID', '') + "';",
-            "  static const String emailjsTemplateId = '" + os.environ.get('ENV_EMAILJS_TEMPLATE_ID', '') + "';",
-            "  static const String emailjsPublicKey = '" + os.environ.get('ENV_EMAILJS_PUBLIC_KEY', '') + "';",
-            "  static const String emailjsPrivateKey = '" + os.environ.get('ENV_EMAILJS_PRIVATE_KEY', '') + "';",
-            "  static const String stripePublishableKey = '" + os.environ.get('ENV_STRIPE_PK', '') + "';",
-            "  static const String stripeMerchantId = '" + os.environ.get('ENV_STRIPE_MERCHANT', '') + "';",
-            "  static const String twilioAccountSid = '" + os.environ.get('ENV_TWILIO_SID', '') + "';",
-            "  static const String twilioAuthToken = '" + os.environ.get('ENV_TWILIO_TOKEN', '') + "';",
-            "  static const String twilioServiceSid = '" + os.environ.get('ENV_TWILIO_SERVICE', '') + "';",
-            '  static const bool paypalSandbox = ' + sandbox_bool + ';',
-            "  static const String paypalClientId = '" + os.environ.get('ENV_PAYPAL_CLIENT_ID', '') + "';",
-            "  static const String paypalSecret = '" + os.environ.get('ENV_PAYPAL_SECRET', '') + "';",
-            '}',
-          ]
-          with open('lib/config/env.dart', 'w') as f:
-              f.write('\n'.join(lines) + '\n')
-          print('env.dart generated successfully')
-          PYEOF
-          echo "env.dart contents:"
-          cat lib/config/env.dart
-      - name: Flutter pub get
-        script: flutter pub get
+          if [ -z "${CM_KEYSTORE:-}" ]; then
+            echo "❌ CM_KEYSTORE not set — cannot build a signed Play Store AAB"; exit 1
+          fi
+          echo "$CM_KEYSTORE" | base64 --decode > /tmp/cruise-release.keystore
+          echo "✅ Keystore decoded: $(du -sh /tmp/cruise-release.keystore | cut -f1)"
+      - *flutter_pub_get
       - name: Build AAB
         script: |
           flutter build appbundle --release --no-tree-shake-icons --build-number=$BUILD_NUMBER

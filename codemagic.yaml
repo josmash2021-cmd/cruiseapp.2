@@ -104,27 +104,21 @@ definitions:
         cd ios
         rm -rf Pods Podfile.lock
         export COCOAPODS_DISABLE_STATS=true
-        # Patch CocoaPods cdn_url? to treat Mapbox CDN as CDN (not git).
-        # By default cdn_url? does an unauthenticated HEAD → Mapbox returns EOF →
-        # CocoaPods falls back to git clone which also fails. Injecting a single
-        # early-return for api.mapbox.com makes CocoaPods use CDN mode, which
-        # reads ~/.netrc correctly for all subsequent spec fetches.
-        python3 - << 'PYEOF'
-import subprocess, os
-r = subprocess.run(['gem', 'contents', 'cocoapods'], capture_output=True, text=True)
-for line in r.stdout.splitlines():
-    p = line.strip()
-    if p.endswith('sources_manager.rb') and os.path.isfile(p):
-        txt = open(p).read()
-        needle  = 'def cdn_url?(url)'
-        inject  = '      return true if url.to_s.start_with?("https://api.mapbox.com")\n'
-        if needle in txt and inject not in txt:
-            open(p, 'w').write(txt.replace(needle, needle + '\n' + inject, 1))
-            print(f"Patched cdn_url? in {p}")
-        else:
-            print("cdn_url? already patched or needle not found")
-        break
-PYEOF
+        # Patch CocoaPods cdn_url? to force CDN mode for api.mapbox.com.
+        # cdn_url? makes an unauthenticated HEAD → Mapbox returns EOF →
+        # CocoaPods falls back to git clone which also fails. Adding an early-return
+        # makes CocoaPods use CDN mode where ~/.netrc credentials ARE consulted.
+        CP_SRC=$(gem contents cocoapods 2>/dev/null | grep 'sources_manager\.rb$' | head -1)
+        if [ -n "$CP_SRC" ] && [ -f "$CP_SRC" ]; then
+          if ! grep -q 'api\.mapbox\.com' "$CP_SRC"; then
+            perl -i -pe 's/def cdn_url\?\(url\)/def cdn_url?(url)\n      return true if url.to_s.start_with?("https:\/\/api.mapbox.com")/' "$CP_SRC"
+            echo "✅ Patched cdn_url? in $CP_SRC"
+          else
+            echo "✅ cdn_url? already patched"
+          fi
+        else
+          echo "⚠️  sources_manager.rb not found — skipping patch"
+        fi
         # --repo-update: fetches Mapbox private specs + updates git-based public specs
         for i in 1 2 3; do
           echo "=== pod install attempt $i/3 ==="

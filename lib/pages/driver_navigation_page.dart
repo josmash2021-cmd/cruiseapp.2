@@ -839,8 +839,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
             ),
           ),
 
-          // ── TOP NAV BANNER (removed per request) ─────────────────────────
-          // Positioned(top: top + 8, left: 12, right: 12, child: _navBanner()),
+          // ── TOP NAV BANNER ────────────────────────────────────────────────
+          Positioned(top: top + 8, left: 12, right: 12, child: _navBanner()),
 
           // ── DRIVER ACTION PANEL (solo mostrar cuando no es idle/completed) ──
           if (_sm.phase != TripPhase.idle && _sm.phase != TripPhase.completed)

@@ -2585,7 +2585,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         child: SlideTransition(
                           position:
                               Tween<Offset>(
-                                begin: const Offset(0, 0.015),
+                                begin: const Offset(0, 0.06),
                                 end: Offset.zero,
                               ).animate(
                                 CurvedAnimation(
@@ -2622,9 +2622,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       case RideStage.options:
       case RideStage.confirmPickup:
       case RideStage.payment:
-      case RideStage.matching:
       case RideStage.riding:
         return const Duration(milliseconds: 340);
+      case RideStage.matching:
+        return const Duration(milliseconds: 420);
     }
   }
 
@@ -2747,7 +2748,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             promoExtra;
         return safeClamp(payH + bottomInset, 400.0, 0.72);
       case RideStage.matching:
-        return safeClamp(360 + bottomInset, 320.0, 0.56);
+        return safeClamp(500 + bottomInset, 450.0, 0.82);
       case RideStage.riding:
         return safeClamp(310 + bottomInset, 280.0, 0.50);
     }
@@ -6058,7 +6059,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Widget _matchingPanel() {
     final ride = _rides[_selectedRide];
-    final isSearching = _driverName == 'Searching...';
 
     return Container(
       key: const ValueKey('matching'),
@@ -6069,283 +6069,209 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Handle ──
+            // ── Drag handle ──
             Padding(
-              padding: const EdgeInsets.only(top: 10, bottom: 4),
+              padding: const EdgeInsets.only(top: 10, bottom: 0),
               child: Center(child: _handle()),
             ),
+            const SizedBox(height: 22),
 
-            // ── Header: status + radar ──
+            // ── Radar hero — full centered visual ──
+            Center(
+              child: SizedBox(
+                width: 164,
+                height: 164,
+                child: _MatchingRadar(color: _gold, isSearching: true),
+              ),
+            ),
+            const SizedBox(height: 26),
+
+            // ── Status text ──
+            _AnimatedSearchText(
+              text: S.of(context).lookingForDriver,
+              style: TextStyle(
+                color: _c.textPrimary,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              S.of(context).findingBestNearby(ride.name),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _c.textSecondary,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // ── Indeterminate gold progress bar ──
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-              child: Row(
-                children: [
-                  // Radar animation
-                  SizedBox(
-                    width: 56,
-                    height: 56,
-                    child: _MatchingRadar(color: _gold, isSearching: isSearching),
+              padding: const EdgeInsets.symmetric(horizontal: 52),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: const SizedBox(
+                  height: 3,
+                  child: LinearProgressIndicator(
+                    color: _gold,
+                    backgroundColor: Color(0xFF2A2A2A),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // ── Trip summary card: badge + price | pickup → dropoff ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _c.border),
+                ),
+                child: Row(
+                  children: [
+                    // Ride badge + price column
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        isSearching
-                            ? _AnimatedSearchText(
-                                text: S.of(context).lookingForDriver,
-                                style: TextStyle(
-                                  color: _c.textPrimary,
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.3,
-                                ),
-                              )
-                            : Text(
-                                S.of(context).driverFound,
-                                style: const TextStyle(
-                                  color: _gold,
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                        const SizedBox(height: 3),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 250),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: _gold.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
                           child: Text(
-                            isSearching
-                                ? S.of(context).findingBestNearby(ride.name)
-                                : S.of(context).arrivingIn(ride.name, _driverEta),
-                            key: ValueKey(isSearching),
-                            style: TextStyle(
-                              color: _c.textSecondary,
-                              fontSize: 13,
+                            ride.name,
+                            style: const TextStyle(
+                              color: _gold,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
                             ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          ride.price,
+                          style: TextStyle(
+                            color: _c.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  // Ride type badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: _gold.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _gold.withValues(alpha: 0.25)),
-                    ),
-                    child: Text(
-                      ride.name,
-                      style: const TextStyle(
-                        color: _gold,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.3,
+                    // Divider
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      child: Container(
+                        width: 1,
+                        height: 38,
+                        color: _c.border,
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            // ── Progress bar ──
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: SizedBox(
-                  height: 3,
-                  child: LinearProgressIndicator(
-                    value: isSearching ? null : 1.0,
-                    color: _gold,
-                    backgroundColor: _c.border,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            // ── Driver info card ──
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                switchInCurve: Curves.easeOutCubic,
-                child: isSearching
-                    ? _matchingSkeletonCard()
-                    : _matchingDriverCard(),
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            // ── Route summary ──
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _c.border),
-                ),
-                child: IntrinsicHeight(
-                  child: Row(
-                    children: [
-                      // Pickup
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 8, height: 8,
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Color(0xFF4CAF50),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _pickupAddress.isNotEmpty
-                                    ? _pickupAddress
-                                    : S.of(context).pickupLabel,
-                                style: TextStyle(
-                                  color: _c.textPrimary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
+                    // Pickup / dropoff addresses
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Color(0xFF4CAF50),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Divider
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Icon(
-                          Icons.chevron_right_rounded,
-                          color: _c.textTertiary,
-                          size: 16,
-                        ),
-                      ),
-                      // Dropoff
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 8, height: 8,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: _gold,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _dropoffAddress.isNotEmpty
-                                    ? _dropoffAddress
-                                    : S.of(context).dropoffLabel,
-                                style: TextStyle(
-                                  color: _c.textPrimary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: Text(
+                                  _pickupAddress.isNotEmpty
+                                      ? _pickupAddress
+                                      : S.of(context).pickupLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: _c.textSecondary,
+                                    fontSize: 12,
+                                  ),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
+                          const SizedBox(height: 7),
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _gold,
+                                ),
+                              ),
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: Text(
+                                  _dropoffAddress.isNotEmpty
+                                      ? _dropoffAddress
+                                      : S.of(context).dropoffLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: _c.textPrimary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
 
             const Spacer(),
 
-            // ── Action buttons ──
+            // ── Cancel button ──
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-              child: Row(
-                children: [
-                  // Cancel button
-                  BouncingButton(
-                    onPressed: () {
-                      _rideLifecycleTimer?.cancel();
-                      _tripPollTimer?.cancel();
-                      _setStage(RideStage.options);
-                    },
-                    child: Container(
-                      height: 52,
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      decoration: BoxDecoration(
-                        color: Colors.transparent,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: _c.border, width: 1.5),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        S.of(context).cancelRide,
-                        style: TextStyle(
-                          color: _c.textSecondary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: OutlinedButton(
+                  onPressed: () {
+                    _rideLifecycleTimer?.cancel();
+                    _tripPollTimer?.cancel();
+                    _setStage(RideStage.options);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: _c.border, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  // Contact/Call button
-                  Expanded(
-                    child: BouncingButton(
-                      onPressed: () {
-                        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                          SnackBar(
-                            content: Text(S.of(context).driverContacted),
-                          ),
-                        );
-                      },
-                      child: Container(
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: _gold,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _gold.withValues(alpha: 0.3),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        alignment: Alignment.center,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.phone_rounded, size: 18, color: Colors.black),
-                            const SizedBox(width: 8),
-                            Text(
-                              isSearching
-                                  ? S.of(context).contactSupport
-                                  : S.of(context).callDriver,
-                              style: const TextStyle(
-                                color: Colors.black,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.2,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                  child: Text(
+                    S.of(context).cancelRide,
+                    style: TextStyle(
+                      color: _c.textSecondary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ],
@@ -7161,14 +7087,42 @@ class _MatchingRadarState extends State<_MatchingRadar>
       );
     }
 
-    return ListenableBuilder(
-      listenable: _ctrl,
-      builder: (_, __) {
-        return CustomPaint(
-          size: const Size(100, 100),
-          painter: _RadarPainter(progress: _ctrl.value, color: widget.color),
-        );
-      },
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // Pulse rings
+        ListenableBuilder(
+          listenable: _ctrl,
+          builder: (_, __) => CustomPaint(
+            size: Size(size.width, size.height),
+            painter: _RadarPainter(
+              progress: _ctrl.value,
+              color: widget.color,
+            ),
+          ),
+        ),
+        // Center car icon
+        Container(
+          width: 54,
+          height: 54,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: widget.color,
+            boxShadow: [
+              BoxShadow(
+                color: widget.color.withValues(alpha: 0.45),
+                blurRadius: 18,
+                spreadRadius: 3,
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.directions_car_rounded,
+            color: Colors.black,
+            size: 28,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -7184,33 +7138,42 @@ class _RadarPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final maxRadius = size.width / 2;
 
-    // 3 concentric expanding rings
-    for (int i = 0; i < 3; i++) {
-      final phase = (progress + i * 0.33) % 1.0;
-      final radius = maxRadius * 0.3 + maxRadius * 0.7 * phase;
-      final alpha = (1.0 - phase).clamp(0.0, 1.0) * 0.35;
+    // 4 concentric expanding rings — staggered phase, quadratic fade
+    for (int i = 0; i < 4; i++) {
+      final phase = (progress + i * 0.25) % 1.0;
+      final radius = maxRadius * 0.34 + maxRadius * 0.66 * phase;
+      final alpha = ((1.0 - phase) * (1.0 - phase)).clamp(0.0, 1.0) * 0.55;
+      if (alpha < 0.01) continue;
 
       final paint = Paint()
         ..color = color.withValues(alpha: alpha)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0;
+        ..strokeWidth = 1.5 + (1.0 - phase) * 1.5;
 
       canvas.drawCircle(center, radius, paint);
     }
 
-    // Center gold dot
-    final dotPaint = Paint()..color = color;
-    canvas.drawCircle(center, 10, dotPaint);
-
-    // Inner shimmer
-    final shimmer = Paint()
-      ..color = color.withValues(alpha: 0.15)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(
-      center,
-      20 + 6 * math.sin(progress * math.pi * 2),
-      shimmer,
+    // Rotating sweep arc — 60° arc spinning around the inner ring
+    final arcPaint = Paint()
+      ..color = color.withValues(alpha: 0.30)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+    final arcStart = progress * math.pi * 2 - math.pi / 2;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: maxRadius * 0.68),
+      arcStart,
+      math.pi / 3,
+      false,
+      arcPaint,
     );
+
+    // Inner glow fill — subtle pulsing disk
+    final glowRadius = maxRadius * 0.34 + 4 * math.sin(progress * math.pi * 2);
+    final glowPaint = Paint()
+      ..color = color.withValues(alpha: 0.10)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, glowRadius, glowPaint);
   }
 
   @override

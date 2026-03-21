@@ -1666,6 +1666,23 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     );
   }
 
+  Widget _actionCircleBtn({
+    required IconData icon,
+    required Color bg,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+        child: Icon(icon, size: 22, color: color),
+      ),
+    );
+  }
+
   Widget _circleBtn(IconData icon, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
@@ -1851,231 +1868,237 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Widget _bottomCard(AppColors c, double botPad) {
-    final s = S.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardColor = isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF8F8F8);
-    final gold = const Color(0xFFE8C547);
-    
+    final bg = isDark ? const Color(0xFF1C1C1C) : Colors.white;
+    final textPrimary = isDark ? Colors.white : const Color(0xFF111111);
+    final textMuted = isDark
+        ? Colors.white.withValues(alpha: 0.45)
+        : Colors.black.withValues(alpha: 0.45);
+    final divColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.08);
+    final fieldBg = isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF0F0F0);
+
+    final vehicleLabel = [
+      widget.vehicleColor,
+      widget.vehicleMake,
+      widget.vehicleModel,
+    ].where((v) => v.isNotEmpty).join(' ');
+
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: isDark 
-            ? [const Color(0xFF1E1E1E), const Color(0xFF141414)]
-            : [Colors.white, const Color(0xFFF5F5F5)],
-        ),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 30,
-            offset: const Offset(0, -8),
+            color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.15),
+            blurRadius: 28,
+            offset: const Offset(0, -6),
           ),
         ],
-        border: Border(
-          top: BorderSide(
-            color: gold.withValues(alpha: 0.3),
-            width: 1.5,
-          ),
-        ),
       ),
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Enhanced drag handle with gold accent
-              Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 16),
-                width: 44,
-                height: 5,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Drag handle ──
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 4),
+                width: 38,
+                height: 4,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      gold.withValues(alpha: 0.6),
-                      gold.withValues(alpha: 0.3),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(3),
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : Colors.black.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              _banner(c),
-              if (_phase == _TrackPhase.arriving ||
-                  _phase == _TrackPhase.arrived) ...[
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  alignment: Alignment.topCenter,
-                  child: _showDetails
-                      ? Container(
-                          margin: const EdgeInsets.only(top: 12),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: isDark 
-                                ? Colors.white.withValues(alpha: 0.05)
-                                : Colors.black.withValues(alpha: 0.03),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: gold.withValues(alpha: 0.15),
+            ),
+            // ── Header: meeting point + live ETA ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
+              child: _banner(c),
+            ),
+            Divider(height: 1, thickness: 1, color: divColor),
+            // ── Driver avatar + car image ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Avatar with rating below
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 62,
+                        height: 62,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.10)
+                              : Colors.black.withValues(alpha: 0.07),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.18)
+                                : Colors.black.withValues(alpha: 0.12),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            widget.driverName.isNotEmpty
+                                ? widget.driverName[0].toUpperCase()
+                                : 'D',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: textPrimary,
                             ),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.info_outline_rounded,
-                                    size: 16,
-                                    color: gold.withValues(alpha: 0.8),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      s.driverArriveInstruction,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.white.withValues(alpha: 0.7),
-                                        height: 1.4,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              _tripAddressRow(
-                                iconColor: gold,
-                                label: widget.pickupLabel.isNotEmpty
-                                    ? widget.pickupLabel
-                                    : s.pickupLocation,
-                              ),
-                              const SizedBox(height: 8),
-                              _tripAddressRow(
-                                iconColor: const Color(0xFFEA4335),
-                                label: widget.dropoffLabel.isNotEmpty
-                                    ? widget.dropoffLabel
-                                    : s.destinationLabel,
-                              ),
-                            ],
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-                const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: () => setState(() => _showDetails = !_showDetails),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: gold.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _showDetails ? S.of(context).showLess : S.of(context).showMore,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: gold,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        AnimatedRotation(
-                          turns: _showDetails ? 0.5 : 0,
-                          duration: const Duration(milliseconds: 250),
-                          child: Icon(
-                            Icons.keyboard_arrow_down,
-                            color: gold,
-                            size: 18,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
-              const SizedBox(height: 16),
-              _driverRow(c),
-              const SizedBox(height: 16),
-              Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
-              const SizedBox(height: 10),
-              // Enhanced message button
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      slideFromRightRoute(
-                        ChatScreen(
-                          recipientName: widget.driverName.split(' ').first,
-                          avatarInitial: widget.driverName[0].toUpperCase(),
-                          tripId: widget.tripId,
                         ),
                       ),
-                    );
-                  },
-                  icon: Icon(
-                    Icons.message_rounded,
-                    size: 18,
-                    color: isDark ? Colors.white70 : Colors.black54,
+                      const SizedBox(height: 5),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            widget.driverRating.toStringAsFixed(1),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: textPrimary,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          const Icon(
+                            Icons.star_rounded,
+                            size: 14,
+                            color: Color(0xFFE8C547),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  label: Text(
-                    s.messageDriver(widget.driverName.split(' ').first),
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white.withValues(alpha: 0.9) : Colors.black87,
+                  const SizedBox(width: 16),
+                  // Car image — fills remaining space, right-aligned
+                  Expanded(
+                    child: SizedBox(
+                      height: 80,
+                      child: Image.asset(
+                        _vehicleAsset,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.centerRight,
+                        filterQuality: FilterQuality.high,
+                        isAntiAlias: true,
+                        cacheWidth: 400,
+                        errorBuilder: (_, __, ___) => Icon(
+                          Icons.directions_car_rounded,
+                          size: 48,
+                          color: textMuted,
+                        ),
+                      ),
                     ),
                   ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isDark 
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : Colors.black.withValues(alpha: 0.05),
-                    foregroundColor: isDark ? Colors.white : Colors.black,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
+                ],
               ),
-              // ── Cancel Trip button (show during onTrip as well) ──
-              if (_phase == _TrackPhase.arriving || _phase == _TrackPhase.onTrip) ...[
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  height: 44,
-                  child: TextButton(
-                    onPressed: _phase == _TrackPhase.onTrip 
-                        ? _showCancelOnTripDialog 
-                        : _showCancelDialog,
-                    style: TextButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+            ),
+            Divider(height: 1, thickness: 1, color: divColor),
+            // ── Plate number + car description ──
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+              child: Column(
+                children: [
+                  Text(
+                    widget.vehiclePlate.isNotEmpty
+                        ? widget.vehiclePlate.toUpperCase()
+                        : '—',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 4.0,
+                      color: textPrimary,
+                      height: 1,
+                    ),
+                  ),
+                  if (vehicleLabel.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      vehicleLabel,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: textMuted,
                       ),
                     ),
-                    child: Text(
-                      S.of(context).cancelTrip,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFFFF3B30),
+                  ],
+                ],
+              ),
+            ),
+            Divider(height: 1, thickness: 1, color: divColor),
+            // ── Action bar: message pill + call + options ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context).push(
+                        slideFromRightRoute(
+                          ChatScreen(
+                            recipientName: widget.driverName.split(' ').first,
+                            avatarInitial: widget.driverName.isNotEmpty
+                                ? widget.driverName[0].toUpperCase()
+                                : 'D',
+                            tripId: widget.tripId,
+                          ),
+                        ),
+                      ),
+                      child: Container(
+                        height: 48,
+                        padding: const EdgeInsets.symmetric(horizontal: 18),
+                        decoration: BoxDecoration(
+                          color: fieldBg,
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          S.of(context).typeMessage,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: textMuted,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-              const SizedBox(height: 8),
-            ],
-          ),
+                  const SizedBox(width: 10),
+                  _actionCircleBtn(
+                    icon: Icons.phone_rounded,
+                    bg: fieldBg,
+                    color: textPrimary,
+                    onTap: () {},
+                  ),
+                  const SizedBox(width: 10),
+                  _actionCircleBtn(
+                    icon: Icons.more_horiz_rounded,
+                    bg: fieldBg,
+                    color: textPrimary,
+                    onTap: _phase == _TrackPhase.onTrip
+                        ? _showCancelOnTripDialog
+                        : _showCancelDialog,
+                  ),
+                ],
+              ),
+            ),
+            if (botPad > 0) SizedBox(height: botPad * 0.5),
+          ],
         ),
       ),
     );
@@ -2225,61 +2248,75 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final s = S.of(context);
     switch (_phase) {
       case _TrackPhase.arriving:
+        final addr = widget.pickupLabel.trim().isNotEmpty
+            ? widget.pickupLabel
+            : s.pickupLocation;
         return Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: RichText(
-                text: TextSpan(
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    height: 1.2,
-                  ),
-                  text: s.meetDriverAtPickup,
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            AnimatedBuilder(
-              animation: _etaPulse,
-              builder: (_, __) {
-                return Container(
-                  width: 62,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.15),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    s.meetDriverAtPickup,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white.withValues(alpha: 0.55),
+                      height: 1.2,
                     ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '$_etaMinutes',
-                        style: const TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                          height: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'min',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white.withValues(alpha: 0.5),
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 3),
+                  Text(
+                    addr,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 1.25,
+                    ),
                   ),
-                );
-              },
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            // ETA badge — solid dark box, number updates live via setState
+            Container(
+              width: 62,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$_etaMinutes',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'min',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         );
@@ -2309,31 +2346,73 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           ),
         );
       case _TrackPhase.onTrip:
+        final dropAddr = widget.dropoffLabel.trim().isNotEmpty
+            ? widget.dropoffLabel
+            : s.destinationLabel;
         return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Text(
-                s.onTripToDestination,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    s.onTripToDestination,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white.withValues(alpha: 0.55),
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    dropAddr,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
               ),
             ),
+            const SizedBox(width: 12),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              width: 62,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
+                color: Colors.black87,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Text(
-                '$_etaMinutes min',
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$_etaMinutes',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'min',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

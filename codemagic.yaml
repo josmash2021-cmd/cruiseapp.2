@@ -104,28 +104,22 @@ definitions:
         cd ios
         rm -rf Pods Podfile.lock
         export COCOAPODS_DISABLE_STATS=true
-        # Clear any stale Mapbox spec repo cache from previous builds
-        rm -rf "$HOME/.cocoapods/repos/mapbox-downloads-v2-specs-ios"
-        rm -rf "$HOME/.cocoapods/repos-art/mapbox-ios"
-        # Patch cdn_url? so CocoaPods treats api.mapbox.com as CDN (not git).
-        # Without this, CocoaPods makes an unauthenticated HEAD → EOF → falls back to git.
-        CP_SRC=$(gem contents cocoapods 2>/dev/null | grep 'sources_manager\.rb$' | head -1)
-        if [ -n "$CP_SRC" ] && [ -f "$CP_SRC" ]; then
-          perl -i -pe 's/def cdn_url\?\(url\)/def cdn_url?(url)\n      return true if url.to_s.start_with?("https:\/\/api.mapbox.com")/' "$CP_SRC"
-          echo "✅ Patched cdn_url? in $CP_SRC"
+        # ── Patch 1: sources_manager.rb — force CDN mode for api.mapbox.com ──
+        # CocoaPods HEAD-checks the URL unauthenticated → Mapbox returns EOF →
+        # falls back to git clone which also fails. Early-return true skips the check.
+        CP_MGR=$(gem contents cocoapods 2>/dev/null | grep 'sources_manager\.rb$' | head -1)
+        if [ -n "$CP_MGR" ] && [ -f "$CP_MGR" ] && ! grep -q 'api\.mapbox\.com' "$CP_MGR"; then
+          perl -i -pe 's/def cdn_url\?\(url\)/def cdn_url?(url)\n      return true if url.to_s.start_with?("https:\/\/api.mapbox.com")/' "$CP_MGR"
+          echo "✅ Patched cdn_url? in $CP_MGR"
         fi
-        # Pre-seed the CDN cache files CocoaPods expects so preheat_existing_files
-        # does not raise rb_sysopen. curl uses ~/.netrc for authentication.
-        MAPBOX_BASE="https://api.mapbox.com/downloads/v2/specs/ios"
-        MAPBOX_REPO="$HOME/.cocoapods/repos/mapbox-downloads-v2-specs-ios"
-        mkdir -p "$MAPBOX_REPO"
-        curl -sf --netrc -o "$MAPBOX_REPO/deprecated_podspecs.txt" \
-          "$MAPBOX_BASE/deprecated_podspecs.txt" 2>/dev/null \
-          || printf "" > "$MAPBOX_REPO/deprecated_podspecs.txt"
-        curl -sf --netrc -o "$MAPBOX_REPO/all_pods.txt" \
-          "$MAPBOX_BASE/all_pods.txt" 2>/dev/null \
-          || printf "MapboxMaps\nMapboxCommon\nMapboxCoreMaps\n" > "$MAPBOX_REPO/all_pods.txt"
-        echo "CDN cache seeded: $(ls "$MAPBOX_REPO/")"
+        # ── Patch 2: cdn_source.rb — guard local_file call in deprecated_local_podspecs ──
+        # download_file is async; local_file raises rb_sysopen if the file isn't on disk yet.
+        # We replace the local_file call with a safe version that returns [] when missing.
+        CP_CDN=$(gem contents cocoapods-core 2>/dev/null | grep 'cdn_source\.rb$' | head -1)
+        if [ -n "$CP_CDN" ] && [ -f "$CP_CDN" ] && ! grep -q 'exist.*deprecated_podspecs' "$CP_CDN"; then
+          perl -i -pe "s|local_file\('deprecated_podspecs\.txt', \&:to_a\)|((File.exist?(repo.join('deprecated_podspecs.txt')) ? local_file('deprecated_podspecs.txt', \&:to_a) : []))|g" "$CP_CDN"
+          echo "✅ Patched deprecated_local_podspecs guard in $CP_CDN"
+        fi
         for i in 1 2 3; do
           echo "=== pod install attempt $i/3 ==="
           if pod install --repo-update; then

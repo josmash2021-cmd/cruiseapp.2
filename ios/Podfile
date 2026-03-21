@@ -1,4 +1,6 @@
-# Use git-based specs repo instead of CDN — more reliable on CI (avoids CDN EOF errors)
+# Mapbox private spec source — authenticated via ~/.netrc (MAPBOX_DOWNLOADS_TOKEN)
+source 'https://api.mapbox.com/downloads/v2/specs/ios'
+# Public specs via git repo — avoids CDN EOF errors on CI
 source 'https://github.com/CocoaPods/Specs.git'
 
 platform :ios, '16.0'

@@ -96,11 +96,10 @@ definitions:
         cd ios
         rm -rf Pods Podfile.lock
         export COCOAPODS_DISABLE_STATS=true
-        # --no-repo-update: Podfile uses git source (github.com/CocoaPods/Specs.git)
-        # which is cloned on first use — no CDN involved, no EOF errors
+        # --repo-update: fetches Mapbox private specs + updates git-based public specs
         for i in 1 2 3; do
           echo "=== pod install attempt $i/3 ==="
-          if pod install --no-repo-update; then
+          if pod install --repo-update; then
             echo "✅ CocoaPods installed on attempt $i"
             break
           fi

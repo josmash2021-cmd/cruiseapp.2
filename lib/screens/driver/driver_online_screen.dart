@@ -2107,19 +2107,109 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           String instr = mounted ? S.of(context).headToDestination : '';
           final legs = route['legs'] as List?;
           if (legs != null && legs.isNotEmpty) {
-            final steps = legs[0]['steps'] as List?;
-            if (steps != null && steps.isNotEmpty) {
-              instr = steps[0]['name']?.toString() ?? instr;
+            final rawSteps = legs[0]['steps'] as List? ?? [];
+            if (rawSteps.isNotEmpty) {
+              instr = rawSteps[0]['name']?.toString().isNotEmpty == true
+                  ? 'Head on ${rawSteps[0]['name']}'
+                  : instr;
+            }
+            // Build NavRoute from OSRM steps for turn-by-turn instructions
+            final navSteps = <NavStep>[];
+            for (int i = 0; i < rawSteps.length - 1; i++) {
+              final step = rawSteps[i] as Map<String, dynamic>;
+              final nextStep = rawSteps[i + 1] as Map<String, dynamic>;
+              final mv = step['maneuver'] as Map<String, dynamic>? ?? {};
+              final type = mv['type']?.toString() ?? 'straight';
+              final mod = mv['modifier']?.toString() ?? '';
+              String maneuver;
+              if (type == 'turn') {
+                if (mod == 'left') maneuver = 'turn-left';
+                else if (mod == 'right') maneuver = 'turn-right';
+                else if (mod == 'slight left') maneuver = 'turn-slight-left';
+                else if (mod == 'slight right') maneuver = 'turn-slight-right';
+                else if (mod == 'sharp left') maneuver = 'turn-sharp-left';
+                else if (mod == 'sharp right') maneuver = 'turn-sharp-right';
+                else maneuver = 'straight';
+              } else if (type == 'merge') {
+                maneuver = 'merge';
+              } else if (type == 'fork') {
+                maneuver = mod.contains('left') ? 'fork-left' : 'fork-right';
+              } else if (type == 'ramp') {
+                maneuver = mod.contains('left') ? 'ramp-left' : 'ramp-right';
+              } else {
+                maneuver = 'straight';
+              }
+              final locArr = mv['location'] as List? ?? [0, 0];
+              final stepLoc = LatLng(
+                (locArr[1] as num).toDouble(),
+                (locArr[0] as num).toDouble(),
+              );
+              final nMv = nextStep['maneuver'] as Map<String, dynamic>? ?? {};
+              final nArr = nMv['location'] as List? ?? [0, 0];
+              final nextLoc = LatLng(
+                (nArr[1] as num).toDouble(),
+                (nArr[0] as num).toDouble(),
+              );
+              final sName = step['name']?.toString() ?? '';
+              final sDist = (step['distance'] as num?)?.toDouble() ?? 0;
+              final sDur = (step['duration'] as num?)?.toDouble() ?? 0;
+              String instrText;
+              if (type == 'depart') {
+                instrText = sName.isNotEmpty ? 'Head on $sName' : 'Depart';
+              } else if (type == 'arrive') {
+                instrText = 'Arrive at destination';
+              } else if (type == 'turn') {
+                instrText = 'Turn $mod${sName.isNotEmpty ? ' on $sName' : ''}';
+              } else if (type == 'merge') {
+                instrText = 'Merge${sName.isNotEmpty ? ' onto $sName' : ''}';
+              } else if (type == 'fork') {
+                instrText = 'Keep $mod at fork${sName.isNotEmpty ? ' onto $sName' : ''}';
+              } else if (type == 'ramp') {
+                instrText = 'Take ramp${sName.isNotEmpty ? ' to $sName' : ''}';
+              } else {
+                instrText = sName.isNotEmpty ? 'Continue on $sName' : 'Continue';
+              }
+              List<LatLng> stepPoly = [stepLoc, nextLoc];
+              final stepGeo = step['geometry'];
+              if (stepGeo is String && stepGeo.isNotEmpty) {
+                final dec = _decodePoly(stepGeo);
+                if (dec.isNotEmpty) stepPoly = dec;
+              }
+              navSteps.add(NavStep(
+                instruction: instrText,
+                maneuver: maneuver,
+                distanceMeters: sDist,
+                durationSeconds: sDur.toInt(),
+                streetName: sName,
+                startLocation: stepLoc,
+                endLocation: nextLoc,
+                polyline: stepPoly,
+              ));
+            }
+            if (navSteps.isNotEmpty) {
+              final navRoute = NavRoute(
+                overviewPolyline: pts,
+                steps: navSteps,
+                totalDistanceMeters: distM.toDouble(),
+                totalDurationSeconds: durS,
+                startAddress: '',
+                endAddress: '',
+              );
+              _currentNavRoute = navRoute;
+              _navService.startNavigation(navRoute);
+              _rerouteCount = 0;
+              instr = navSteps.first.instruction;
+              debugPrint('OSRM Nav: ${navSteps.length} steps parsed');
             }
           }
-          debugPrint('ðŸ—ºï¸ OSRM route OK: ${pts.length} points');
+          debugPrint('ðŸ—ºï¸ OSRM route OK: ${pts.length} points');
           setState(() {
             _routePts = pts;
             _navDist = distM / 1609.34;
             _navEta = (durS / 60).ceil().clamp(1, 999);
             _navInstruct = instr;
-            _setRouteAnnotation(pts, c);
           });
+          _setRouteAnnotation(pts, c);
           return;
         }
       }
@@ -6208,41 +6298,48 @@ Widget _navHeader() {
     required Widget child,
     double minChildSize = 0.18,
   }) {
-    return DraggableScrollableSheet(
-      initialChildSize: minChildSize,
-      minChildSize: minChildSize,
-      maxChildSize: 0.85,
-      snap: true,
-      snapSizes: [minChildSize, 0.55, 0.85],
-      builder: (ctx, scrollCtrl) {
-        return Container(
-          decoration: BoxDecoration(
-            color: surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(
-              top: BorderSide(color: _gold.withValues(alpha: 0.08)),
+    final screenH = MediaQuery.of(context).size.height;
+    return SizedBox(
+      height: screenH,
+      child: DraggableScrollableSheet(
+        initialChildSize: minChildSize,
+        minChildSize: minChildSize,
+        maxChildSize: 0.85,
+        snap: true,
+        snapSizes: [minChildSize, 0.55, 0.85],
+        builder: (ctx, scrollCtrl) {
+          return Container(
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border(
+                top: BorderSide(color: _gold.withValues(alpha: 0.08)),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: shadowC,
+                  blurRadius: 20,
+                  offset: const Offset(0, -4),
+                ),
+              ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: shadowC,
-                blurRadius: 20,
-                offset: const Offset(0, -4),
-              ),
-            ],
-          ),
-          child: ListView(
-            controller: scrollCtrl,
-            physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.zero,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                child: child,
-              ),
-            ],
-          ),
-        );
-      },
+            child: ListView(
+              controller: scrollCtrl,
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.zero,
+              children: [
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                    child: child,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 

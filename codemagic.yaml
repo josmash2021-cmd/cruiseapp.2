@@ -96,9 +96,11 @@ definitions:
         cd ios
         rm -rf Pods Podfile.lock
         export COCOAPODS_DISABLE_STATS=true
+        # --no-repo-update: Podfile uses git source (github.com/CocoaPods/Specs.git)
+        # which is cloned on first use — no CDN involved, no EOF errors
         for i in 1 2 3; do
           echo "=== pod install attempt $i/3 ==="
-          if pod install --repo-update; then
+          if pod install --no-repo-update; then
             echo "✅ CocoaPods installed on attempt $i"
             break
           fi
@@ -219,8 +221,6 @@ workflows:
       - *configure_git
       - *mapbox_auth
       - *flutter_pub_get
-      - name: Generate iOS config files
-        script: flutter build ios --config-only --no-codesign --no-pub
       - *pod_install
       - *patch_no_codesign
       - name: Flutter build iOS (unsigned)
@@ -277,8 +277,6 @@ workflows:
       - *configure_git
       - *mapbox_auth
       - *flutter_pub_get
-      - name: Generate iOS config files
-        script: flutter build ios --config-only --no-pub
       - *pod_install
       - name: Flutter build IPA (Ad Hoc)
         script: |
@@ -322,8 +320,6 @@ workflows:
       - *configure_git
       - *mapbox_auth
       - *flutter_pub_get
-      - name: Generate iOS config files
-        script: flutter build ios --config-only --no-codesign
       - *pod_install
       - *delete_stale_profiles
       - name: Set up code signing identities

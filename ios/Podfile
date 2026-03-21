@@ -1,4 +1,6 @@
-# Uncomment this line to define a global platform for your project
+# Use git-based specs repo instead of CDN — more reliable on CI (avoids CDN EOF errors)
+source 'https://github.com/CocoaPods/Specs.git'
+
 platform :ios, '16.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.

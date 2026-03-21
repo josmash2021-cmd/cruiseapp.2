@@ -1344,7 +1344,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _goldDotAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
         image: dotBytes,
-        iconSize: 0.4,
+        iconSize: 0.7,
       ));
     } else if (isNav) {
       // Remove dot annotation if switching to car
@@ -2973,8 +2973,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             below: "road-label",
           );
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-          _updateDriverAnnotation();
           await MapTheme.applyNavyGold(ctrl);
+          // Center on actual driver GPS (fixes Miami default when _locate() finished before map was ready)
+          _animateToPosition(_pos, zoom: 15.5, bearing: _heading, tilt: 0);
+          _updateDriverAnnotation();
         },
         onScrollListener: (_) {
           _onCameraMoveStarted();

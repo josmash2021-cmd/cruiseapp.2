@@ -1210,6 +1210,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   /// Fit the camera to a list of points with [padding] (pixels) on all sides.
   Future<void> _fitBounds(List<LatLng> points, double padding) async {
+    await _fitBoundsInsets(points, padding, padding, padding, padding);
+  }
+
+  /// Fit the camera with independent insets per edge.
+  Future<void> _fitBoundsInsets(
+    List<LatLng> points,
+    double top, double left, double bottom, double right,
+  ) async {
     if (_mapController == null || points.isEmpty) return;
     final coords = points
         .map((p) => mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
@@ -1217,13 +1225,30 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final cam = await _mapController!.cameraForCoordinatesPadding(
       coords,
       mapbox.CameraOptions(),
-      mapbox.MbxEdgeInsets(top: padding, left: padding, bottom: padding, right: padding),
+      mapbox.MbxEdgeInsets(top: top, left: left, bottom: bottom, right: right),
       null, null,
     );
     if (mounted) _mapController?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
   }
+
+  /// Returns the bottom pixel inset to account for the bottom panel height.
+  double _panelBottomInset() {
+    switch (_stage) {
+      case RideStage.options:
+        return 360.0;
+      case RideStage.payment:
+      case RideStage.confirmPickup:
+        return 300.0;
+      case RideStage.matching:
+      case RideStage.riding:
+        return 280.0;
+      default:
+        return 80.0;
+    }
+  }
+
   Future<void> _fitRideBounds(List<LatLng> points) async {
-    await _fitBounds(points, 80);
+    await _fitBoundsInsets(points, 90, 70, _panelBottomInset(), 70);
   }
 
   Future<double> _currentZoom() async {
@@ -2306,12 +2331,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         ? _activeRoutePoints
         : [if (_currentPosition != null) _currentPosition!];
     if (pts.isEmpty) return;
-    await _fitBounds(pts, 80);
+    await _fitBoundsInsets(pts, 90, 70, _panelBottomInset(), 70);
   }
 
   Future<void> _applyRouteVerticalBias(List<LatLng> points) async {
     if (!_hasMapController || points.isEmpty) return;
-    await _fitBounds(points, 80);
+    await _fitBoundsInsets(points, 90, 70, _panelBottomInset(), 70);
   }
 
   double _routeVerticalShiftFactor() {

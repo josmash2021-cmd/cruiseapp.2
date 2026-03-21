@@ -55,6 +55,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ignore: unused_field
   bool _mapReady = false;
   final GoldLocationDot _goldDot = GoldLocationDot();
+  StreamSubscription<Position>? _posStream;
 
   // ── Stats ──
   double _todayEarnings = 0.0;
@@ -183,6 +184,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _statsCtrl.dispose();
     _fabCtrl.dispose();
     _goldDot.dispose();
+    _posStream?.cancel();
     _accountStatusTimer?.cancel();
     _tripPollTimer?.cancel();
     UserSession.photoNotifier.removeListener(_onPhotoUpdated);
@@ -203,7 +205,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
       image: bytes,
-      iconSize: 0.5,
+      iconSize: 1.0,
     ));
   }
 
@@ -317,7 +319,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
       if (!mounted) return;
       setState(() => _currentLatLng = LatLng(pos.latitude, pos.longitude));
-      _updateMyLocAnnotation(); // <-- Update pin when location changes
+      _updateMyLocAnnotation();
       _mapController?.flyTo(
         mapbox.CameraOptions(
           center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
@@ -325,6 +327,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ),
         mapbox.MapAnimationOptions(duration: 600),
       );
+
+      // ── Real-time GPS stream ──
+      _posStream?.cancel();
+      _posStream = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 5,
+        ),
+      ).listen((p) {
+        if (!mounted) return;
+        final ll = LatLng(p.latitude, p.longitude);
+        setState(() => _currentLatLng = ll);
+        _updateMyLocAnnotation();
+        _mapController?.easeTo(
+          mapbox.CameraOptions(
+            center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)),
+          ),
+          mapbox.MapAnimationOptions(duration: 400),
+        );
+      });
     } catch (_) {}
   }
 

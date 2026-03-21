@@ -91,6 +91,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   LatLng _pos = const LatLng(25.7617, -80.1918);
   StreamSubscription<Position>? _posStream;
   bool _lastStyleDark = true;
+  // Cache: offerId → Future<String> static map URL (with real routed polyline)
+  final Map<String, Future<String>> _offerMapUrlCache = {};
 
   void _animateToPosition(
     LatLng pos, {
@@ -4115,6 +4117,101 @@ Widget _navHeader() {
     );
   }
 
+  /// Decode a Google/OSRM polyline string into a list of [lng,lat] coordinate pairs.
+  static List<List<double>> _decodePolylineCoords(String encoded) {
+    final pts = <List<double>>[];
+    int i = 0, lat = 0, lng = 0;
+    while (i < encoded.length) {
+      int s = 0, r = 0, b;
+      do {
+        b = encoded.codeUnitAt(i++) - 63;
+        r |= (b & 0x1F) << s;
+        s += 5;
+      } while (b >= 0x20);
+      lat += (r & 1) != 0 ? ~(r >> 1) : (r >> 1);
+      s = 0; r = 0;
+      do {
+        b = encoded.codeUnitAt(i++) - 63;
+        r |= (b & 0x1F) << s;
+        s += 5;
+      } while (b >= 0x20);
+      lng += (r & 1) != 0 ? ~(r >> 1) : (r >> 1);
+      pts.add([lng / 1E5, lat / 1E5]);
+    }
+    return pts;
+  }
+
+  /// Fetch both legs (driver→pickup + pickup→dropoff) from OSRM and build
+  /// a Mapbox Static API URL with the real road polyline overlaid.
+  Future<String> _buildOfferMapUrl(
+    LatLng driver,
+    LatLng pickup,
+    LatLng dropoff,
+  ) async {
+    final token = MapboxConfig.publicToken;
+    final dLng = driver.longitude.toStringAsFixed(6);
+    final dLat = driver.latitude.toStringAsFixed(6);
+    final pLng = pickup.longitude.toStringAsFixed(6);
+    final pLat = pickup.latitude.toStringAsFixed(6);
+    final oLng = dropoff.longitude.toStringAsFixed(6);
+    final oLat = dropoff.latitude.toStringAsFixed(6);
+
+    // Fetch two legs from OSRM
+    List<List<double>> allPts = [];
+    try {
+      // Leg 1: driver → pickup
+      final uri1 = Uri.https(
+        'router.project-osrm.org',
+        '/route/v1/driving/${driver.longitude},${driver.latitude};${pickup.longitude},${pickup.latitude}',
+        {'overview': 'full', 'geometries': 'polyline'},
+      );
+      final r1 = await http.get(uri1).timeout(const Duration(seconds: 6));
+      final d1 = jsonDecode(r1.body);
+      if (d1 is Map && d1['code']?.toString().toUpperCase() == 'OK') {
+        final geo1 = (d1['routes'] as List?)?.first?['geometry']?.toString();
+        if (geo1 != null) allPts.addAll(_decodePolylineCoords(geo1));
+      }
+    } catch (_) {}
+
+    try {
+      // Leg 2: pickup → dropoff
+      final uri2 = Uri.https(
+        'router.project-osrm.org',
+        '/route/v1/driving/${pickup.longitude},${pickup.latitude};${dropoff.longitude},${dropoff.latitude}',
+        {'overview': 'full', 'geometries': 'polyline'},
+      );
+      final r2 = await http.get(uri2).timeout(const Duration(seconds: 6));
+      final d2 = jsonDecode(r2.body);
+      if (d2 is Map && d2['code']?.toString().toUpperCase() == 'OK') {
+        final geo2 = (d2['routes'] as List?)?.first?['geometry']?.toString();
+        if (geo2 != null) allPts.addAll(_decodePolylineCoords(geo2));
+      }
+    } catch (_) {}
+
+    // Pins
+    final driverPin = 'pin-s-car+1a73e8($dLng,$dLat)';
+    final pickupPin  = 'pin-s+00c853($pLng,$pLat)';
+    final dropoffPin = 'pin-s+333333($oLng,$oLat)';
+
+    String pathOverlay;
+    if (allPts.length >= 2) {
+      // Subsample to ≤100 points so URL stays within Mapbox's 8192-char limit
+      final step = allPts.length > 100 ? (allPts.length / 100).ceil() : 1;
+      final sampled = <List<double>>[];
+      for (int k = 0; k < allPts.length; k += step) sampled.add(allPts[k]);
+      if (sampled.last != allPts.last) sampled.add(allPts.last);
+      final coords = sampled.map((p) => '${p[0].toStringAsFixed(5)},${p[1].toStringAsFixed(5)}').join(';');
+      pathOverlay = 'path-4+3b82f6-1($coords)';
+    } else {
+      // Fallback: straight line
+      pathOverlay = 'path-3+3b82f6-0.8($dLng,$dLat;$pLng,$pLat;$oLng,$oLat)';
+    }
+
+    return 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
+        '$driverPin,$pickupPin,$dropoffPin,$pathOverlay'
+        '/auto/700x320@2x?padding=70,50,50,50&access_token=$token';
+  }
+
   Widget _offerCard(
     Map<String, dynamic> offer,
     bool isDark,
@@ -4147,25 +4244,12 @@ Widget _navHeader() {
     final tripEta = (tripDistKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
     final tripDistMi = tripDistKm * 0.621371;
 
-    // Build Mapbox Static API URL showing the full route: driver → pickup → dropoff
-    // Center & zoom is auto-calculated by Mapbox using "auto" mode
-    final dLng = _pos.longitude.toStringAsFixed(6);
-    final dLat = _pos.latitude.toStringAsFixed(6);
-    final pLng = pickupLng.toStringAsFixed(6);
-    final pLat = pickupLat.toStringAsFixed(6);
-    final dstLng = dropoffLng.toStringAsFixed(6);
-    final dstLat = dropoffLat.toStringAsFixed(6);
-    // Driver: blue arrow pin, Pickup: green dot, Dropoff: dark square
-    final driverPin = 'pin-s-car+1a73e8($dLng,$dLat)';
-    final pickupPin = 'pin-s+00c853($pLng,$pLat)';
-    final dropoffPin = 'pin-s+333333($dstLng,$dstLat)';
-    // Polyline path: driver → pickup → dropoff (encoded as URL path)
-    final pathOverlay = 'path-3+1a73e8-0.8($dLng,$dLat;$pLng,$pLat;$dstLng,$dstLat)';
-    final mapToken = MapboxConfig.publicToken;
-    final staticMapUrl =
-        'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
-        '$driverPin,$pickupPin,$dropoffPin,$pathOverlay'
-        '/auto/700x280@2x?padding=60&access_token=$mapToken';
+    // Cache per offer so we don't re-fetch on every rebuild
+    final offerId = (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_${pickupLng}').toString();
+    final mapFuture = _offerMapUrlCache.putIfAbsent(
+      offerId,
+      () => _buildOfferMapUrl(_pos, pickupLL, dropoffLL),
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -4186,49 +4270,66 @@ Widget _navHeader() {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── MAP PREVIEW (top section) ──
+            // ── MAP PREVIEW (top section, real OSRM route) ──
             SizedBox(
               height: 200,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    staticMapUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: const Color(0xFF1A1A2E),
-                      child: const Center(
-                        child: Icon(Icons.map_rounded, color: Colors.white24, size: 48),
-                      ),
-                    ),
-                    loadingBuilder: (_, child, progress) {
-                      if (progress == null) return child;
-                      return Container(
-                        color: const Color(0xFF1A1A2E),
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: _gold,
+              child: FutureBuilder<String>(
+                future: mapFuture,
+                builder: (context, snap) {
+                  final url = snap.data;
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (url != null)
+                        Image.network(
+                          url,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: const Color(0xFF1A1A2E),
+                            child: const Center(
+                              child: Icon(Icons.map_rounded, color: Colors.white24, size: 48),
+                            ),
+                          ),
+                          loadingBuilder: (_, child, progress) {
+                            if (progress == null) return child;
+                            return Container(
+                              color: const Color(0xFF1A1A2E),
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: _gold,
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      else
+                        Container(
+                          color: const Color(0xFF1A1A2E),
+                          child: const Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: _gold,
+                            ),
                           ),
                         ),
-                      );
-                    },
-                  ),
-                  // Fade gradient at bottom so content below blends in
-                  Positioned(
-                    left: 0, right: 0, bottom: 0,
-                    child: Container(
-                      height: 60,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Colors.white],
+                      // Fade gradient at bottom so content below blends in
+                      Positioned(
+                        left: 0, right: 0, bottom: 0,
+                        child: Container(
+                          height: 60,
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Colors.transparent, Colors.white],
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
+                    ],
+                  );
+                },
               ),
             ),
 

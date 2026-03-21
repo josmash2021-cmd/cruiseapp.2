@@ -74,6 +74,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   static const _navyGlow  = Color(0x405BA3F5);
 
   // ── Map ──
+  final _mapKey = GlobalKey();
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
@@ -2956,29 +2957,36 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   Widget _mapW(bool isDark) {
-    final bool isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
-    final styleUri = isNav ? MapboxConfig.styleNavigation : MapboxConfig.styleDark;
     return RepaintBoundary(
       child: mapbox.MapWidget(
-        styleUri: styleUri,
+        key: _mapKey,
+        styleUri: MapboxConfig.styleDark,
         cameraOptions: mapbox.CameraOptions(
           center: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
           zoom: 15.5,
-          bearing: _heading,
-          pitch: isNav ? 55.0 : 0.0,
+          bearing: 0,
+          pitch: 0,
         ),
         onMapCreated: (ctrl) async {
           _map = ctrl;
           _lastStyleDark = isDark;
-          // Route polyline below road labels, points always on top
-          _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
-            below: "road-label",
-          );
+          // Polyline manager with no 'below' constraint — avoids silent failure
+          // when the layer name doesn't exist in the style.
+          _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           await MapTheme.applyNavyGold(ctrl);
-          // Center on actual driver GPS (fixes Miami default when _locate() finished before map was ready)
+          // Center on actual driver GPS
           _animateToPosition(_pos, zoom: 15.5, bearing: _heading, tilt: 0);
           _updateDriverAnnotation();
+          // Re-draw route if map initialised after _drawRoute already ran
+          if (_routePts.length > 1) {
+            _setRouteAnnotation(_routePts, _navyRoute);
+            await Future.delayed(const Duration(milliseconds: 200));
+            final dest = (_phase == _Phase.enRouteToPickup || _phase == _Phase.routeSummary)
+                ? _pickupLL
+                : _dropoffLL;
+            _fitBounds(_pos, dest);
+          }
         },
         onScrollListener: (_) {
           _onCameraMoveStarted();

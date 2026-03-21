@@ -76,7 +76,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   late final NavigationService _navService;
   late final SmoothMotion _motion;
 
-  // ── Map ───────────────────────────────────────────────────────────────────
+  // ── Map ─────────────────────────────────────────────────────────────────────
+  final _mapKey = GlobalKey();
   mapbox.MapboxMap? _map;
   bool _mapReady = false;
   mapbox.PolylineAnnotationManager? _polyMgr;
@@ -695,17 +696,15 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   Widget _buildMap() {
-    final isNav = _phase == TripPhase.toPickup || _phase == TripPhase.onTrip;
     return mapbox.MapWidget(
-      styleUri: _isSatellite
-          ? 'mapbox://styles/mapbox/satellite-streets-v12'
-          : MapboxConfig.styleNavigation,
+      key: _mapKey,
+      styleUri: MapboxConfig.styleNavigation,
       cameraOptions: mapbox.CameraOptions(
         center: mapbox.Point(
             coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
         zoom: 17.0,
-        pitch: isNav ? 60.0 : 0.0,
-        bearing: isNav ? _bearing : 0.0,
+        pitch: 60.0,
+        bearing: 0,
       ),
       onMapCreated: (ctrl) async {
         _map      = ctrl;

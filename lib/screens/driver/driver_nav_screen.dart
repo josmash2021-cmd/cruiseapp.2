@@ -110,7 +110,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   // ── UI state ──────────────────────────────────────────────────────────────
   bool   _isMuted          = false;
-  bool   _isSatellite      = false;
   bool   _nearPickup        = false;
   bool   _completing       = false;
   double _slideVal         = 0;
@@ -342,13 +341,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _routeCasingAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
       lineColor: const Color(0xFF0D2840).toARGB32(),
-      lineWidth: 14.0,
+      lineWidth: 18.0,
     ));
     // Bright blue route line on top
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
-      lineColor: const Color(0xFF5BA3F5).toARGB32(),
-      lineWidth: 9.0,
+      lineColor: const Color(0xFF4D9FFF).toARGB32(),
+      lineWidth: 13.0,
     ));
   }
 
@@ -397,7 +396,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   //  CAMERA
   // =========================================================================
 
-  void _animateCamera(LatLng pos, {double? zoom, double bearing = 0, double tilt = 60}) {
+  void _animateCamera(LatLng pos, {double? zoom, double bearing = 0, double tilt = 55}) {
     final speedZoom = 17.5 - (_currentSpeedMph / 80.0).clamp(0.0, 1.0) * 2.5;
     final z = zoom ?? speedZoom;
     // Lookahead offset
@@ -440,7 +439,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _isOverview      = false;
       _hasResumedOnce  = true;
     });
-    _animateCamera(_pos, bearing: _bearing);
+    _animateCamera(_pos, bearing: _bearing, tilt: 55);
   }
 
   LatLng _lookaheadPoint(LatLng o, double bearingDeg, double distM) {
@@ -634,26 +633,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             // ── RIGHT FAB COLUMN ─────────────────────────────────────────
             Positioned(
               right: 12,
-              bottom: 90 + bot + 60,
-              child: _buildRightFabs(),
-            ),
-
-            // ── RESUME PILL (when camera panned) ─────────────────────────
-            if (!_cameraFollowing)
-              Positioned(
-                bottom: 90 + bot + 64,
-                left: _hasResumedOnce ? 12 : 0,
-                right: _hasResumedOnce ? null : 0,
-                child: _hasResumedOnce
-                    ? _buildRecenterFab()
-                    : Center(child: _buildResumePill()),
-              ),
-
-            // ── BOTTOM STREET PILL ────────────────────────────────────────
-            Positioned(
               bottom: 90 + bot + 10,
-              left: 12,
-              child: _buildStreetPill(),
+              child: _buildRightFabs(),
             ),
 
             // ── BOTTOM BAR ────────────────────────────────────────────────
@@ -887,13 +868,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Route overview toggle
+        // 1. Route overview toggle
         _mapFab(
           icon: Icons.layers_rounded,
           onTap: () {
             HapticFeedback.lightImpact();
             setState(() {
-              _isOverview     = !_isOverview;
+              _isOverview      = !_isOverview;
               _cameraFollowing = !_isOverview;
             });
             if (_isOverview) {
@@ -902,33 +883,23 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                   : widget.pickupLatLng;
               _animateCameraOverview(_pos, dest);
             } else {
-              _animateCamera(_pos, bearing: _bearing);
+              _recenter();
             }
           },
           active: _isOverview,
         ),
         const SizedBox(height: 10),
-        // Mute
+        // 2. Re-center / compass — resumes 3D follow mode
         _mapFab(
-          icon: _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+          icon: Icons.navigation_rounded,
           onTap: () {
-            HapticFeedback.lightImpact();
-            setState(() => _isMuted = !_isMuted);
+            HapticFeedback.mediumImpact();
+            _recenter();
           },
-          active: _isMuted,
+          active: _cameraFollowing && !_isOverview,
         ),
         const SizedBox(height: 10),
-        // Satellite toggle
-        _mapFab(
-          icon: Icons.satellite_alt_rounded,
-          onTap: () {
-            HapticFeedback.lightImpact();
-            setState(() => _isSatellite = !_isSatellite);
-          },
-          active: _isSatellite,
-        ),
-        const SizedBox(height: 10),
-        // Safety shield
+        // 3. Safety shield
         _mapFab(
           icon: Icons.shield_rounded,
           onTap: () {},
@@ -966,108 +937,23 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         ),
       );
 
-  // =========================================================================
-  //  RESUME PILL
-  // =========================================================================
-
-  Widget _buildResumePill() => GestureDetector(
-    onTap: () {
-      HapticFeedback.mediumImpact();
-      _recenter();
-    },
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-      decoration: BoxDecoration(
-        color: _pillBlue,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: _pillBlue.withValues(alpha: 0.55),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.gps_fixed_rounded, color: Colors.white, size: 16),
-          SizedBox(width: 7),
-          Text('Resume',
-            style: TextStyle(
-              color: Colors.white, fontSize: 14,
-              fontWeight: FontWeight.w700)),
-        ],
-      ),
-    ),
-  );
-
-  Widget _buildRecenterFab() => GestureDetector(
-    onTap: () {
-      HapticFeedback.mediumImpact();
-      _recenter();
-    },
-    child: Container(
-      width: 46, height: 46,
-      decoration: BoxDecoration(
-        color: _pillBlue,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 12, offset: const Offset(0, 3)),
-        ],
-      ),
-      child: const Icon(Icons.gps_fixed_rounded, color: Colors.white, size: 20),
-    ),
-  );
-
-  // =========================================================================
-  //  STREET NAME PILL
-  // =========================================================================
-
-  Widget _buildStreetPill() {
-    final street = _currentStreet.isNotEmpty
-        ? _currentStreet
-        : (_phase == TripPhase.onTrip ? widget.dropoffAddress : widget.pickupAddress);
-    if (street.isEmpty) return const SizedBox.shrink();
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 220),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: _pillBlue,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 10, offset: const Offset(0, 3)),
-        ],
-      ),
-      child: Text(street,
-        style: const TextStyle(
-          color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
-        maxLines: 1, overflow: TextOverflow.ellipsis),
-    );
-  }
 
   // =========================================================================
   //  BOTTOM BAR (DoorDash style)
   // =========================================================================
 
   Widget _buildBottomBar(double botPad) {
-    // ETA text
-    final eta = _etaMinutes;
+    final eta  = _etaMinutes;
     final dist = _distRemainingMi;
     final now  = DateTime.now();
     final arr  = now.add(Duration(minutes: eta));
     int   h    = arr.hour % 12; if (h == 0) h = 12;
     final m    = arr.minute.toString().padLeft(2, '0');
     final ap   = arr.hour >= 12 ? 'PM' : 'AM';
-    final etaStr = eta <= 2
-        ? 'Arriving soon'
-        : '$eta min  ·  ${dist.toStringAsFixed(1)} mi  ·  $h:$m $ap';
+    final arrStr = '$h:$m $ap';
+    final distStr = '${dist.toStringAsFixed(2)} mi';
+    final etaLabel = eta <= 2 ? 'Arriving soon' : '$eta min';
 
-    // Maneuver for bottom indicator
     final maneuver = _navState?.currentManeuver ?? 'straight';
     final mInfo    = NavigationService.getManeuverIcon(maneuver);
 
@@ -1076,10 +962,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 60,
+          height: 68,
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Overview toggle '^'
+              // '^' overview toggle
               GestureDetector(
                 onTap: () {
                   HapticFeedback.lightImpact();
@@ -1092,57 +979,69 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                         ? widget.dropoffLatLng : widget.pickupLatLng;
                     _animateCameraOverview(_pos, dest);
                   } else {
-                    _animateCamera(_pos, bearing: _bearing);
+                    _recenter();
                   }
                 },
                 child: SizedBox(
-                  width: 52,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        _isOverview ? Icons.zoom_in_map_rounded : Icons.zoom_out_map_rounded,
-                        color: Colors.white.withValues(alpha: 0.7), size: 22),
-                    ],
-                  ),
+                  width: 54,
+                  child: Icon(
+                    _isOverview ? Icons.zoom_in_map_rounded : Icons.keyboard_arrow_up_rounded,
+                    color: Colors.white.withValues(alpha: 0.75), size: 26),
                 ),
               ),
-              // Turn icon
+              // Turn arrow
               SizedBox(
-                width: 36,
+                width: 34,
                 child: Icon(mInfo.icon,
-                    color: Colors.white.withValues(alpha: 0.6), size: 22),
+                    color: Colors.white.withValues(alpha: 0.65), size: 22),
               ),
-              // ETA text
+              // ETA block (big number + sub-line)
               Expanded(
-                child: Text(etaStr,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.85),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                child: eta <= 2
+                    ? Text('Arriving soon',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ))
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('$eta min',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 26,
+                              fontWeight: FontWeight.w900,
+                              height: 1.0,
+                            )),
+                          const SizedBox(height: 2),
+                          Text('$distStr · $arrStr',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            )),
+                        ],
+                      ),
               ),
               // Exit button
               GestureDetector(
                 onTap: _exitNav,
                 child: Container(
                   height: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: 22),
                   decoration: BoxDecoration(
                     border: Border(
                         left: BorderSide(
                             color: Colors.white.withValues(alpha: 0.08))),
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Exit',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700)),
-                    ],
+                  child: Center(
+                    child: Text('Exit',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700)),
                   ),
                 ),
               ),

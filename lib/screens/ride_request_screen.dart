@@ -72,6 +72,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
   mapbox.PointAnnotation? _goldDotAnnot;
+  mapbox.PointAnnotation? _userDotAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
   LatLng _center = const LatLng(25.7617, -80.1918); // Miami default
   LatLng? _userLocation;
@@ -176,7 +177,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _autoSetDropoff(widget.initialDropoffAddress!);
       }
     });
-    _goldDot.build(() { if (mounted) setState(() {}); });
+    _goldDot.build(() { if (mounted) _updateUserDotAnnotation(); });
     _loadLinkedPayments();
     _loadPinIcon();
   }
@@ -760,6 +761,30 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     super.dispose();
   }
 
+  // ── User location dot (animated pulsing circle) ──
+
+  Future<void> _updateUserDotAnnotation() async {
+    final bytes = _goldDot.currentBytes;
+    final loc = _userLocation;
+    if (bytes == null || loc == null || _pointAnnotMgr == null) return;
+    try {
+      if (_userDotAnnot == null) {
+        _userDotAnnot = await _pointAnnotMgr!.create(
+          mapbox.PointAnnotationOptions(
+            geometry: mapbox.Point(
+              coordinates: mapbox.Position(loc.longitude, loc.latitude),
+            ),
+            image: bytes,
+            iconSize: 0.5,
+          ),
+        );
+      } else {
+        _userDotAnnot!.image = bytes;
+        await _pointAnnotMgr!.update(_userDotAnnot!);
+      }
+    } catch (_) {}
+  }
+
   // ── Location ──
 
   Future<void> _initLocation() async {
@@ -813,10 +838,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             _userLocation = lastLl;
             _center = lastLl;
           });
-          _mapCtrl?.flyTo(
-            mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(lastLl.longitude, lastLl.latitude)), zoom: 15.5),
-            mapbox.MapAnimationOptions(duration: 600),
-          );
+          _mapCtrl?.setCamera(mapbox.CameraOptions(
+            center: mapbox.Point(coordinates: mapbox.Position(lastLl.longitude, lastLl.latitude)),
+            zoom: 15.5,
+          ));
         }
       } catch (_) {}
 
@@ -1271,18 +1296,20 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                   ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                   ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                  // Center on user's location instantly — no Miami flash
+                  if (_userLocation != null) {
+                    await ctrl.setCamera(mapbox.CameraOptions(
+                      center: mapbox.Point(coordinates: mapbox.Position(_userLocation!.longitude, _userLocation!.latitude)),
+                      zoom: 15.5,
+                    ));
+                  }
                   _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
                     below: 'road-label',
                   );
                   _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                  _updateUserDotAnnotation(); // place animated user location circle
                   setState(() => _mapReady = true);
                   await _applyDarkNavyGoldTheme(ctrl);
-                  if (_userLocation != null) {
-                    ctrl.flyTo(
-                      mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_userLocation!.longitude, _userLocation!.latitude)), zoom: 15.5),
-                      mapbox.MapAnimationOptions(duration: 800),
-                    );
-                  }
                 },
                 onScrollListener: (_) {
                   if (!_programmaticCam) setState(() => _userMovedMap = true);

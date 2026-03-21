@@ -112,7 +112,16 @@ class UserSession {
       if (profile != null) {
         // Use existing cached photo path immediately — don't block on download
         final existingUser = await getUser();
-        final cachedPhotoPath = existingUser?['photoPath'] ?? '';
+        final prefs0 = await SharedPreferences.getInstance();
+        String cachedPhotoPath = existingUser?['photoPath'] ?? '';
+        // Verify the file still exists on disk (iOS UUID change / OS cleanup)
+        if (cachedPhotoPath.isNotEmpty && !kIsWeb) {
+          if (!await File(cachedPhotoPath).exists()) {
+            // Try _photoKey as fallback
+            final alt = prefs0.getString(_photoKey) ?? '';
+            cachedPhotoPath = (alt.isNotEmpty && await File(alt).exists()) ? alt : '';
+          }
+        }
         // Repopulate local cache right away with cached photo
         await saveUser(
           firstName: profile['first_name']?.toString() ?? '',
@@ -270,7 +279,6 @@ class UserSession {
       if (p.isEmpty || kIsWeb) return false;
       if (await File(p).exists()) {
         photoNotifier.value = p;
-        await updateField('photoPath', p);
         await prefs.setString(_photoKey, p);
         return true;
       }
@@ -278,7 +286,6 @@ class UserSession {
       final healed = await _healStalePath(p);
       if (healed.isNotEmpty) {
         photoNotifier.value = healed;
-        await updateField('photoPath', healed);
         await prefs.setString(_photoKey, healed);
         return true;
       }

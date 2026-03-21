@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
+import '../config/map_theme.dart';
 import '../config/mapbox_config.dart';
 import '../l10n/app_localizations.dart';
 import '../models/lat_lng.dart';
@@ -130,8 +131,13 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               center: mapbox.Point(coordinates: mapbox.Position(_center.longitude, _center.latitude)),
               zoom: 15.0,
             ),
-            onMapCreated: (ctrl) {
+            onMapCreated: (ctrl) async {
               _mapCtrl = ctrl;
+              ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+              ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+              ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+              ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+              await MapTheme.applyNavyGold(ctrl);
               Future.delayed(
                 const Duration(milliseconds: 800),
                 _onCameraIdle,

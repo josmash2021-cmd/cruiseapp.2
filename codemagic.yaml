@@ -44,13 +44,21 @@ definitions:
     - &mapbox_auth
       name: Configure Mapbox downloads token
       script: |
+        TOKEN="${ENV_MAPBOX_TOKEN:-}"
+        if [ -z "$TOKEN" ]; then
+          echo "ERROR: ENV_MAPBOX_TOKEN is not set. Add it as a secret variable in Codemagic app settings."; exit 1
+        fi
+        if echo "$TOKEN" | grep -q '^pk\.'; then
+          echo "ERROR: ENV_MAPBOX_TOKEN starts with 'pk.' — this is a PUBLIC token and cannot download the SDK."
+          echo "Create a SECRET token (sk.) with Downloads:Read scope at account.mapbox.com/access-tokens"; exit 1
+        fi
         # Android SDK: Gradle reads MAPBOX_DOWNLOADS_TOKEN from ~/.gradle/gradle.properties
         mkdir -p ~/.gradle
-        printf 'MAPBOX_DOWNLOADS_TOKEN=%s\n' "${ENV_MAPBOX_TOKEN:-}" >> ~/.gradle/gradle.properties
+        printf 'MAPBOX_DOWNLOADS_TOKEN=%s\n' "$TOKEN" >> ~/.gradle/gradle.properties
         # iOS / CocoaPods: reads from ~/.netrc
-        printf 'machine api.mapbox.com\nlogin mapbox\npassword %s\n' "${ENV_MAPBOX_TOKEN:-}" >> ~/.netrc
+        printf 'machine api.mapbox.com\nlogin mapbox\npassword %s\n' "$TOKEN" > ~/.netrc
         chmod 0600 ~/.netrc
-        echo "Mapbox downloads token configured"
+        echo "Mapbox downloads token configured (sk. token OK)"
 
     - &generate_env
       name: Generate env.dart
@@ -210,7 +218,7 @@ workflows:
     environment:
       flutter: stable
       xcode: latest
-      cocoapods: default
+      cocoapods: 1.15.2
       vars:
         <<: *shared_vars
         FLUTTER_XCODE_CODE_SIGNING_ALLOWED: "NO"
@@ -268,7 +276,7 @@ workflows:
         bundle_identifier: com.cruiseinride.app
       flutter: stable
       xcode: latest
-      cocoapods: default
+      cocoapods: 1.15.2
       vars:
         <<: *shared_vars
     scripts:
@@ -310,7 +318,7 @@ workflows:
         - ios_signing
       flutter: stable
       xcode: latest
-      cocoapods: default
+      cocoapods: 1.15.2
       vars:
         <<: *shared_vars
         BUNDLE_ID: "com.cruiseinride.app"

@@ -32,6 +32,7 @@ import 'driver_analytics_screen.dart';
 import 'driver_inbox_screen.dart';
 import '../../services/map_launcher_service.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
+import 'driver_trip_accept_screen.dart';
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  CRUISE DRIVER — ONLINE SCREEN
@@ -1627,8 +1628,45 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _nearPickupNotified = false;
     _nearDropoffNotified = false;
 
-    // Show route summary with client info before navigation
-    _showPickupSummary();
+    // Push DoorDash-style trip accept screen
+    if (!mounted) return;
+    final riderPhotoUrl = (r['rider_photo_url'] ?? r['photo_url'] ?? '') as String;
+    final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 4.8;
+    final result = await Navigator.of(context).push<String>(
+      slideUpFadeRoute(
+        DriverTripAcceptScreen(
+          tripId:         tripId ?? offerId ?? 0,
+          riderName:      name,
+          riderPhotoUrl:  riderPhotoUrl,
+          riderRating:    riderRating,
+          pickupLatLng:   _pickupLL,
+          dropoffLatLng:  _dropoffLL,
+          pickupAddress:  _pickupAddr,
+          dropoffAddress: _dropoffAddr,
+          fare:           _fare,
+          vehicleType:    _vehicleType,
+          driverPos:      _pos,
+          distToPickupKm: _distToPickup,
+          etaMinutes:     _etaToPickup,
+          riderPhone:     _riderPhone,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (result == 'completed') {
+      // Show the earnings / completed overlay (mirrors _complete())
+      setState(() {
+        _trips++;
+        _earnings += _fare;
+        _lastTripEarnings = _fare;
+        _phase = _Phase.completed;
+        _stars = 5;
+      });
+      _doneCtrl.forward(from: 0);
+    } else {
+      // Cancelled or back-pressed — return to searching
+      _cancel();
+    }
   }
 
   Future<void> _rejectOffer(Map<String, dynamic> r) async {

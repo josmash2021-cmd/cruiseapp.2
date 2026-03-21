@@ -82,6 +82,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   mapbox.PolylineAnnotationManager? _polyMgr;
   mapbox.PointAnnotationManager? _pointMgr;
   mapbox.PolylineAnnotation? _routeAnnot;
+  mapbox.PolylineAnnotation? _routeCasingAnnot;
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
 
@@ -109,6 +110,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // ── UI state ──────────────────────────────────────────────────────────────
   bool   _isMuted          = false;
   bool   _isSatellite      = false;
+  bool   _nearPickup        = false;
   bool   _completing       = false;
   double _slideVal         = 0;
   bool   _slid             = false;
@@ -226,6 +228,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
     // Auto-proximity check for phase transitions
     _sm.checkProximity(raw);
+
+    // Show "Arrived at Pickup" button when within 300 m
+    if (_phase == TripPhase.toPickup && !_nearPickup) {
+      if (_hav(raw, widget.pickupLatLng) < 0.3 && mounted) {
+        setState(() => _nearPickup = true);
+      }
+    }
   }
 
   // =========================================================================
@@ -318,15 +327,27 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     final coords = _routePts
         .map((p) => mapbox.Position(p.longitude, p.latitude))
         .toList();
+    final geom = mapbox.LineString(coordinates: coords);
 
+    if (_routeCasingAnnot != null) {
+      try { await mgr.delete(_routeCasingAnnot!); } catch (_) {}
+      _routeCasingAnnot = null;
+    }
     if (_routeAnnot != null) {
       try { await mgr.delete(_routeAnnot!); } catch (_) {}
       _routeAnnot = null;
     }
+    // Dark casing (border) – drawn first so it sits under the line
+    _routeCasingAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geom,
+      lineColor: const Color(0xFF0D2840).toARGB32(),
+      lineWidth: 14.0,
+    ));
+    // Bright blue route line on top
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
-      lineColor: _routeBlue.toARGB32(),
-      lineWidth: 8.0,
+      geometry: geom,
+      lineColor: const Color(0xFF5BA3F5).toARGB32(),
+      lineWidth: 9.0,
     ));
   }
 
@@ -451,6 +472,17 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _animateCameraOverview(_pos, widget.pickupLatLng);
   }
 
+  double _hav(LatLng a, LatLng b) {
+    const r    = 6371.0;
+    final dLat = (b.latitude  - a.latitude)  * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final s    = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(a.latitude  * math.pi / 180) *
+        math.cos(b.latitude  * math.pi / 180) *
+        math.sin(dLng / 2) * math.sin(dLng / 2);
+    return r * 2 * math.atan2(math.sqrt(s), math.sqrt(1 - s));
+  }
+
   void _startRide() {
     HapticFeedback.heavyImpact();
     _sm.beginTrip();
@@ -504,57 +536,46 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   Future<Uint8List?> _buildArrowIcon() async {
-    const double w = 80, h = 120;
+    const double w = 80, h = 80;
     final rec = ui.PictureRecorder();
     final c   = Canvas(rec, Rect.fromLTWH(0, 0, w, h));
     final cx  = w / 2;
+    final cy  = h / 2;
 
-    // Drop shadow
+    // 3D fade shadow – large soft ellipse beneath the circle
     c.drawOval(
-      Rect.fromCenter(center: Offset(cx, h * 0.82), width: 38, height: 10),
+      Rect.fromCenter(center: Offset(cx, cy + 7), width: 66, height: 22),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.45)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+        ..color = Colors.black.withValues(alpha: 0.38)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
+    );
+    c.drawOval(
+      Rect.fromCenter(center: Offset(cx, cy + 3), width: 48, height: 13),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.22)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
     );
 
-    // Arrow body (white teardrop pointing up)
-    final body = Path()
-      ..moveTo(cx, 6)                       // tip
-      ..cubicTo(cx + 28, 30, cx + 22, 70, cx, 90)
-      ..cubicTo(cx - 22, 70, cx - 28, 30, cx, 6)
-      ..close();
+    // White circle body
+    c.drawCircle(Offset(cx, cy), 22, Paint()..color = Colors.white);
 
-    // White fill with subtle gradient effect
-    c.drawPath(body, Paint()..color = Colors.white);
-
-    // Highlight
-    c.drawPath(
-      Path()
-        ..moveTo(cx, 10)
-        ..cubicTo(cx + 18, 26, cx + 14, 56, cx, 72)
-        ..cubicTo(cx - 8, 56, cx - 10, 28, cx, 10)
-        ..close(),
+    // Gold ring border
+    c.drawCircle(
+      Offset(cx, cy), 22,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.25)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        ..color = const Color(0xFFD4A843).withValues(alpha: 0.45)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0,
     );
 
-    // Outline
-    c.drawPath(body,
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.18)
-        ..style  = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-
-    // Inner dark chevron for direction clarity
+    // Gold directional chevron (points UP – rotated with iconRotate)
     final chevron = Path()
-      ..moveTo(cx, 20)
-      ..lineTo(cx + 12, 46)
-      ..lineTo(cx, 40)
-      ..lineTo(cx - 12, 46)
+      ..moveTo(cx,      cy - 13)
+      ..lineTo(cx + 8,  cy + 5)
+      ..lineTo(cx,      cy + 1)
+      ..lineTo(cx - 8,  cy + 5)
       ..close();
-    c.drawPath(chevron, Paint()..color = const Color(0xFF1A6EBB).withValues(alpha: 0.7));
+    c.drawPath(chevron, Paint()..color = const Color(0xFFD4A843));
 
     final img   = await rec.endRecording().toImage(w.toInt(), h.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
@@ -643,7 +664,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             ),
 
             // ── PHASE OVERLAY (arrived / slide) ───────────────────────
-            if (_phase == TripPhase.toPickup)
+            if (_nearPickup && _phase == TripPhase.toPickup)
               Positioned(
                 bottom: 90 + bot + 10,
                 right: 12,
@@ -689,8 +710,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       onMapCreated: (ctrl) async {
         _map      = ctrl;
         _mapReady = true;
-        _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager(
-            below: 'road-label');
+        _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
         _pointMgr = await ctrl.annotations.createPointAnnotationManager();
         await MapTheme.applyNavyGold(ctrl);
         _updateRouteAnnotation();

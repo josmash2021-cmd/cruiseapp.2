@@ -183,6 +183,14 @@ class _SplashScreenState extends State<SplashScreen>
       debugPrint('[SplashScreen] heavyInit error: $e');
     });
 
+    // ── Start destination computation IMMEDIATELY at the very beginning ──
+    // This gives it the full animation duration (~3.7 s) to resolve instead
+    // of only the 800 ms exit animation, eliminating the black-screen gap.
+    final destinationFuture = _computeDestination(initFuture).catchError((e) {
+      debugPrint('[SplashScreen] destination error: $e');
+      return const WelcomeScreen() as Widget;
+    });
+
     // Small delay on launch
     await Future.delayed(const Duration(milliseconds: 300));
     if (_disposed) return;
@@ -199,17 +207,6 @@ class _SplashScreenState extends State<SplashScreen>
     await Future.delayed(const Duration(milliseconds: 500));
     if (_disposed) return;
 
-    // Ensure heavy init finished before navigating (with timeout)
-    await initFuture;
-    if (_disposed) return;
-
-    // ── Start computing destination IN PARALLEL with exit animation ──
-    // By the time the 800ms animation finishes, the destination is already ready.
-    final destinationFuture = _computeDestination().catchError((e) {
-      debugPrint('[SplashScreen] destination error: $e');
-      return const WelcomeScreen() as Widget;
-    });
-
     // Phase 3 — scale up + fade out
     await _exitCtrl.forward().orCancel.catchError((_) {});
     if (_disposed) return;
@@ -217,21 +214,28 @@ class _SplashScreenState extends State<SplashScreen>
     // Destination should already be resolved — no black screen gap
     final destination = await destinationFuture;
     if (!mounted) return;
-    // Instant replace: the splash already faded to opacity-0, so no need
-    // for an additional fade-from-black on the incoming screen.
+
+    // Fade-in transition: home screen fades in from the black splash background
+    // so even a tiny remaining wait is a smooth cross-fade, never a hard black cut.
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => destination,
-        transitionDuration: Duration.zero,
+        transitionDuration: const Duration(milliseconds: 400),
         reverseTransitionDuration: Duration.zero,
-        transitionsBuilder: (_, __, ___, child) => child,
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
+          child: child,
+        ),
       ),
     );
   }
 
-  /// Computes which screen to navigate to. Runs in parallel with the exit
-  /// animation so there is no black-screen gap after the splash fades out.
-  Future<Widget> _computeDestination() async {
+  /// Computes which screen to navigate to. Runs in parallel with the full
+  /// splash animation (started at the very beginning) so there is no
+  /// black-screen gap after the splash fades out.
+  Future<Widget> _computeDestination(Future<void> initFuture) async {
+    // Wait for URL discovery before making any network calls
+    await initFuture;
     final loggedIn = await UserSession.isLoggedIn();
     if (!loggedIn) return const WelcomeScreen();
 

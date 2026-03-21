@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show ValueNotifier, kIsWeb;
@@ -109,35 +110,45 @@ class UserSession {
     try {
       final profile = await ApiService.getMe();
       if (profile != null) {
-        // Download photo from server if available (critical after reinstall
-        // where local files are wiped but server still has the photo)
-        String localPhotoPath = '';
-        final serverPhotoUrl = profile['photo_url']?.toString() ?? '';
-        if (serverPhotoUrl.isNotEmpty) {
-          try {
-            localPhotoPath = await ApiService.downloadPhoto(serverPhotoUrl);
-          } catch (_) {}
-        }
-        // If download failed, keep the existing cached photo path
-        if (localPhotoPath.isEmpty) {
-          final existingUser = await getUser();
-          localPhotoPath = existingUser?['photoPath'] ?? '';
-        }
-        // Repopulate local cache
+        // Use existing cached photo path immediately — don't block on download
+        final existingUser = await getUser();
+        final cachedPhotoPath = existingUser?['photoPath'] ?? '';
+        // Repopulate local cache right away with cached photo
         await saveUser(
           firstName: profile['first_name']?.toString() ?? '',
           lastName: profile['last_name']?.toString() ?? '',
           email: profile['email']?.toString() ?? '',
           phone: profile['phone']?.toString() ?? '',
-          photoPath: localPhotoPath,
+          photoPath: cachedPhotoPath,
           gender: profile['gender']?.toString() ?? '',
           userId: int.tryParse(profile['id']?.toString() ?? ''),
           role: profile['role']?.toString() ?? 'rider',
         );
-        if (localPhotoPath.isNotEmpty) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_photoKey, localPhotoPath);
-          photoNotifier.value = localPhotoPath;
+        if (cachedPhotoPath.isNotEmpty) {
+          photoNotifier.value = cachedPhotoPath;
+        }
+        // Fire photo download in background — does not block navigation
+        final serverPhotoUrl = profile['photo_url']?.toString() ?? '';
+        if (serverPhotoUrl.isNotEmpty) {
+          unawaited(
+            ApiService.downloadPhoto(serverPhotoUrl).then((path) async {
+              if (path.isNotEmpty) {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setString(_photoKey, path);
+                await saveUser(
+                  firstName: profile['first_name']?.toString() ?? '',
+                  lastName: profile['last_name']?.toString() ?? '',
+                  email: profile['email']?.toString() ?? '',
+                  phone: profile['phone']?.toString() ?? '',
+                  photoPath: path,
+                  gender: profile['gender']?.toString() ?? '',
+                  userId: int.tryParse(profile['id']?.toString() ?? ''),
+                  role: profile['role']?.toString() ?? 'rider',
+                );
+                photoNotifier.value = path;
+              }
+            }).catchError((_) {}),
+          );
         }
         return true;
       }

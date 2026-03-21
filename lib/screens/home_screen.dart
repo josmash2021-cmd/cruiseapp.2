@@ -1890,39 +1890,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // ─── Fleet: Redesigned professional vehicle cards ───
   Widget _buildFleetStack(double screenW) {
+    // Unified dark card background for all tiers
+    const cardBg = [Color(0xFF1A1D24), Color(0xFF252A35)];
+
     final vehicles = [
       {
         'tier': 'VIP',
-        'tierShort': 'VIP',
         'desc': 'Luxury SUV with premium amenities',
         'features': 'Spacious • Leather • Snacks & Drinks',
         'idx': 0,
         'accent': _gold,
         'image': 'cruise_3.png',
         'gradient': const [Color(0xFFE8C547), Color(0xFFD4A574)],
-        'cardColors': const [Color(0xFF1A1D24), Color(0xFF252A35)],
       },
       {
         'tier': 'PREMIUM',
-        'tierShort': 'PREMIUM',
         'desc': 'Elegant sedan for any occasion',
         'features': 'Comfort • Climate • Charger',
         'idx': 1,
         'accent': const Color(0xFFCECECE),
         'image': 'cruise_7.png',
         'gradient': const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
-        'cardColors': const [Color(0xFF1A1A2E), Color(0xFF22222E)],
       },
       {
         'tier': 'COMFORT',
-        'tierShort': 'COMFORT',
         'desc': 'Reliable ride at great value',
         'features': 'Clean • Safe • Efficient',
         'idx': 2,
         'accent': const Color(0xFF4CAF50),
         'image': 'cruise_6.png',
         'gradient': const [Color(0xFF66BB6A), Color(0xFF388E3C)],
-        'cardColors': const [Color(0xFF0D1A0F), Color(0xFF162018)],
       },
     ];
 
@@ -1932,18 +1929,119 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         final idx = v['idx'] as int;
         final tier = v['tier'] as String;
         final gradient = v['gradient'] as List<Color>;
-        final cardColors = v['cardColors'] as List<Color>;
         final isVIP = tier == 'VIP';
         final isPremium = tier == 'PREMIUM';
         final isComfort = tier == 'COMFORT';
 
-        // Pick the animation controller per tier
-        final anim = isVIP
+        // ── Animated tier badge (animation lives here, not on the card) ──
+        final badgeAnim = isVIP
             ? _shimmerController
             : isPremium
                 ? _promoShimmerCtrl
                 : _clockRotateCtrl;
 
+        final animatedBadge = AnimatedBuilder(
+          animation: badgeAnim,
+          builder: (_, __) {
+            final t = badgeAnim.value;
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                // Base badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: gradient),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.45),
+                        blurRadius: 14,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isVIP ? Icons.star_rounded : isPremium ? Icons.diamond_rounded : Icons.eco_rounded,
+                        color: isVIP ? Colors.white : Colors.black87,
+                        size: 12,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        tier,
+                        style: TextStyle(
+                          color: isVIP ? Colors.white : Colors.black87,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // VIP: diagonal shimmer sweep across the badge
+                if (isVIP)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: IgnorePointer(
+                        child: Transform.translate(
+                          offset: Offset(160 * (t * 2.4 - 0.8), 0),
+                          child: Transform.rotate(
+                            angle: 0.4,
+                            child: Container(
+                              width: 28,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(colors: [
+                                  Colors.transparent,
+                                  Colors.white.withValues(alpha: 0.55),
+                                  Colors.transparent,
+                                ]),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                // Premium: white flash pulse
+                if (isPremium)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: IgnorePointer(
+                        child: Opacity(
+                          opacity: (() {
+                            final d = (t - 0.5).abs();
+                            return (1.0 - d * 5.5).clamp(0.0, 0.35);
+                          })(),
+                          child: Container(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ),
+                // Comfort: green glow pulse
+                if (isComfort)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: IgnorePointer(
+                        child: Opacity(
+                          opacity: (0.12 + 0.18 * math.sin(t * 2 * math.pi)).clamp(0.0, 0.35),
+                          child: Container(color: accent),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+
+        // ── Static card — no AnimatedBuilder wrapper ──
         return Padding(
           padding: EdgeInsets.only(
             bottom: idx < 2 ? 16 : 0,
@@ -1956,259 +2054,113 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               if (!mounted) return;
               Navigator.of(context).push(slideFromRightRoute(const RideRequestScreen()));
             },
-            child: AnimatedBuilder(
-              animation: anim,
-              builder: (_, __) {
-                final t = anim.value; // 0→1 repeating
-                return Container(
-                  height: 130,
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: cardColors,
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: accent.withValues(alpha: 0.30),
-                      width: isVIP ? 1.5 : 1.0,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        blurRadius: 24,
-                        offset: const Offset(0, 10),
-                      ),
-                      BoxShadow(
-                        color: accent.withValues(alpha: isVIP ? 0.15 : 0.08),
-                        blurRadius: 36,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 130),
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: cardBg,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: accent.withValues(alpha: 0.30),
+                  width: isVIP ? 1.5 : 1.0,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
                   ),
-                  child: Stack(
-                    children: [
-
-                      // ── Shared ambient glow (top-right) ──
-                      Positioned(
-                        right: -50, top: -30,
-                        child: Container(
-                          width: 200, height: 200,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: RadialGradient(colors: [
-                              accent.withValues(alpha: isVIP ? 0.20 : 0.10),
-                              Colors.transparent,
-                            ]),
-                          ),
-                        ),
+                  BoxShadow(
+                    color: accent.withValues(alpha: isVIP ? 0.15 : 0.08),
+                    blurRadius: 36,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Stack(
+                children: [
+                  // Ambient glow top-right (static)
+                  Positioned(
+                    right: -50, top: -30,
+                    child: Container(
+                      width: 200, height: 200,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(colors: [
+                          accent.withValues(alpha: isVIP ? 0.18 : 0.09),
+                          Colors.transparent,
+                        ]),
                       ),
-
-                      // ── VIP: diagonal shimmer sweep ──
-                      if (isVIP)
-                        Positioned.fill(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(24),
-                            child: IgnorePointer(
-                              child: Transform.translate(
-                                offset: Offset((screenW * (t * 2.2 - 0.5)), 0),
-                                child: Transform.rotate(
-                                  angle: 0.35,
-                                  child: Container(
-                                    width: 55,
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(colors: [
-                                        Colors.transparent,
-                                        Colors.white.withValues(alpha: 0.14),
-                                        Colors.transparent,
-                                      ]),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-
-                      // ── Premium: periodic white flash + sparkle ──
-                      if (isPremium) ...[
-                        Positioned.fill(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(24),
-                            child: IgnorePointer(
-                              child: Opacity(
-                                opacity: (() {
-                                  final d = (t - 0.5).abs();
-                                  return (1.0 - d * 6.0).clamp(0.0, 0.16);
-                                })(),
-                                child: Container(color: Colors.white),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          left: 30, top: 10,
-                          child: Opacity(
-                            opacity: (() {
-                              final phase = (t * 2.0) % 1.0;
-                              return phase < 0.25 ? (phase * 4.0) : phase < 0.5 ? (1.0 - (phase - 0.25) * 4.0) : 0.0;
-                            })().clamp(0.0, 0.7),
-                            child: const Icon(Icons.star_rounded, color: Colors.white, size: 10),
-                          ),
-                        ),
-                        Positioned(
-                          left: 80, bottom: 14,
-                          child: Opacity(
-                            opacity: (() {
-                              final phase = ((t + 0.4) * 2.0) % 1.0;
-                              return phase < 0.25 ? (phase * 4.0) : phase < 0.5 ? (1.0 - (phase - 0.25) * 4.0) : 0.0;
-                            })().clamp(0.0, 0.5),
-                            child: const Icon(Icons.lens_blur_rounded, color: Colors.white70, size: 8),
-                          ),
-                        ),
-                      ],
-
-                      // ── Comfort: savings pulse glow + badge ──
-                      if (isComfort) ...[
-                        Positioned(
-                          left: -20, bottom: -20,
-                          child: Container(
-                            width: 120, height: 120,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: RadialGradient(colors: [
-                                accent.withValues(alpha: 0.18 * (0.5 + 0.5 * math.sin(t * 2 * math.pi))),
-                                Colors.transparent,
-                              ]),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 12, top: 12,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: accent.withValues(alpha: 0.35)),
-                            ),
-                            child: Row(
+                    ),
+                  ),
+                  // Content row
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          flex: 5,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 16, 8, 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.savings_rounded, color: accent, size: 11),
-                                const SizedBox(width: 3),
-                                Text('SAVE', style: TextStyle(
-                                  color: accent, fontSize: 9,
-                                  fontWeight: FontWeight.w800, letterSpacing: 0.8,
-                                )),
+                                animatedBadge,
+                                const SizedBox(height: 10),
+                                Text(
+                                  v['desc'] as String,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.9),
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.3,
+                                    height: 1.2,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  v['features'] as String,
+                                  softWrap: true,
+                                  style: TextStyle(
+                                    color: accent.withValues(alpha: 0.85),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
                         ),
+                        SizedBox(
+                          width: screenW * 0.38,
+                          height: 130,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                            child: Image.asset(
+                              'assets/images/${v['image']}',
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.high,
+                              isAntiAlias: true,
+                              alignment: Alignment.centerRight,
+                              errorBuilder: (ctx, err, st) => Icon(
+                                Icons.directions_car_rounded,
+                                color: accent.withValues(alpha: 0.5),
+                                size: 50,
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
-
-                      // ── Content ──
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 5,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 16, 0, 16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  // Tier badge
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(colors: gradient),
-                                      borderRadius: BorderRadius.circular(20),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: accent.withValues(alpha: 0.4),
-                                          blurRadius: 12,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          isVIP
-                                              ? Icons.star_rounded
-                                              : isPremium
-                                                  ? Icons.diamond_rounded
-                                                  : Icons.eco_rounded,
-                                          color: isVIP ? Colors.white : Colors.black87,
-                                          size: 12,
-                                        ),
-                                        const SizedBox(width: 5),
-                                        Text(
-                                          v['tierShort'] as String,
-                                          style: TextStyle(
-                                            color: isVIP ? Colors.white : Colors.black87,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w900,
-                                            letterSpacing: 1.2,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    v['desc'] as String,
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.9),
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: -0.3,
-                                      height: 1.2,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    v['features'] as String,
-                                    style: TextStyle(
-                                      color: accent.withValues(alpha: 0.85),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: 0.3,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            width: screenW * 0.40,
-                            height: 130,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                              child: Image.asset(
-                                'assets/images/${v['image']}',
-                                fit: BoxFit.contain,
-                                filterQuality: FilterQuality.high,
-                                isAntiAlias: true,
-                                alignment: Alignment.centerRight,
-                                errorBuilder: (ctx, err, st) => Icon(
-                                  Icons.directions_car_rounded,
-                                  color: accent.withValues(alpha: 0.5),
-                                  size: 50,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                    ],
+                    ),
                   ),
-                );
-              },
+                ],
+              ),
             ),
           ),
         );

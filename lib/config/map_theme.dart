@@ -12,6 +12,12 @@ class MapTheme {
   static const _navyMid  = '#0A1520';
 
   static Future<void> applyNavyGold(mapbox.MapboxMap ctrl) async {
+    // ── Hide all map ornaments ──
+    try { ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false)); } catch (_) {}
+    try { ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false)); } catch (_) {}
+    try { ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false)); } catch (_) {}
+    try { ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false)); } catch (_) {}
+
     final roadLayers = <String, String>{
       // ── Freeways / motorways → gold ──
       'road-motorway-trunk':      _gold,

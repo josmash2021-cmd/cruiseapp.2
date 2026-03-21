@@ -33,9 +33,18 @@ class GoldLocationDot {
     final frames = <Uint8List>[];
 
     for (int i = 0; i < _frameCount; i++) {
+      // t goes 0→1 over one full cycle
       final t = i / _frameCount;
-      final pulseRadius = 40.0 + 20.0 * t;
-      final pulseAlpha = (0.35 * (1.0 - t)).clamp(0.0, 1.0);
+      // Two rings offset by half a cycle for continuous wave effect
+      final t2 = (t + 0.5) % 1.0;
+
+      // Ring 1: starts small, grows to edge, fades out
+      final ring1Radius = 18.0 + 42.0 * t;
+      final ring1Alpha  = (1.0 - t) * 0.55;
+
+      // Ring 2: same but phase-shifted
+      final ring2Radius = 18.0 + 42.0 * t2;
+      final ring2Alpha  = (1.0 - t2) * 0.55;
 
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(
@@ -44,53 +53,74 @@ class GoldLocationDot {
       );
       const center = Offset(_canvasSize / 2, _canvasSize / 2);
 
-      // 3D shadow beneath dot
+      // ── Drop shadow ──
       canvas.drawCircle(
-        center.translate(0, 4),
+        center.translate(0, 3),
         22,
         Paint()
-          ..color = const Color(0x50000000)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+          ..color = const Color(0x60000000)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9),
       );
 
-      // Outer pulse ring (fading gold)
+      // ── Pulse ring 1 (white, expanding) ──
       canvas.drawCircle(
         center,
-        pulseRadius,
+        ring1Radius,
         Paint()
-          ..color = _gold.withValues(alpha: pulseAlpha * 0.4)
+          ..color = Colors.white.withValues(alpha: ring1Alpha * 0.25)
           ..style = PaintingStyle.fill,
       );
       canvas.drawCircle(
         center,
-        pulseRadius,
+        ring1Radius,
         Paint()
-          ..color = _gold.withValues(alpha: pulseAlpha)
+          ..color = Colors.white.withValues(alpha: ring1Alpha)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5,
+          ..strokeWidth = 2.0,
       );
 
-      // Gold outer ring (3D gradient)
+      // ── Pulse ring 2 (white, offset phase) ──
+      canvas.drawCircle(
+        center,
+        ring2Radius,
+        Paint()
+          ..color = Colors.white.withValues(alpha: ring2Alpha * 0.20)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawCircle(
+        center,
+        ring2Radius,
+        Paint()
+          ..color = Colors.white.withValues(alpha: ring2Alpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+
+      // ── White outer ring (static halo around gold core) ──
       canvas.drawCircle(
         center,
         18,
+        Paint()..color = Colors.white,
+      );
+
+      // ── Gold core circle ──
+      canvas.drawCircle(
+        center,
+        13,
         Paint()
           ..shader = ui.Gradient.radial(
-            center.translate(-4, -4),
-            22,
+            center.translate(-3, -3),
+            16,
             [const Color(0xFFF5E27A), _gold, const Color(0xFFB8941E)],
-            [0.0, 0.5, 1.0],
+            [0.0, 0.55, 1.0],
           ),
       );
 
-      // White inner dot
-      canvas.drawCircle(center, 9, Paint()..color = Colors.white);
-
-      // Specular highlight for 3D look
+      // ── Specular highlight (3D feel) ──
       canvas.drawCircle(
         center.translate(-3, -3),
         5,
-        Paint()..color = const Color(0x40FFFFFF),
+        Paint()..color = const Color(0x55FFFFFF),
       );
 
       final img = await recorder
@@ -104,7 +134,8 @@ class GoldLocationDot {
     if (frames.length != _frameCount) return;
     _frames = frames;
 
-    _timer = Timer.periodic(const Duration(milliseconds: 65), (_) {
+    // ~60ms per frame → ~1.4s per full pulse cycle, smooth and fluid
+    _timer = Timer.periodic(const Duration(milliseconds: 58), (_) {
       _frame = (_frame + 1) % _frames.length;
       onTick();
     });

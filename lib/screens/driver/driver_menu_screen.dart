@@ -41,11 +41,12 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   static const _card = Color(0xFF1C1C1E);
 
   // ── Dynamic profile data ──
-  String _driverName = 'Cruise Driver';
-  String _tierName = 'Gold';
+  String _driverName = '';
+  String _tierName = '';
   String _rating = '—';
   String? _photoUrl;
   String? _dispatchPassword;
+  bool _profileLoaded = false;
 
   late AnimationController _entranceCtrl;
   late Animation<double> _entranceAnim;
@@ -120,9 +121,18 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
               _rating = '${rNum.toStringAsFixed(0)}%';
             }
           }
+          _profileLoaded = true;
         });
       }
     } catch (_) {}
+    // Mark loaded even on error so skeleton is replaced with fallback
+    if (mounted && !_profileLoaded) {
+      setState(() {
+        if (_driverName.isEmpty) _driverName = 'Driver';
+        if (_tierName.isEmpty) _tierName = 'Green';
+        _profileLoaded = true;
+      });
+    }
   }
 
   @override
@@ -439,7 +449,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     )
                   : Center(
                       child: Text(
-                        _driverName.isNotEmpty
+                        (_profileLoaded && _driverName.isNotEmpty)
                             ? _driverName[0].toUpperCase()
                             : 'C',
                         style: const TextStyle(
@@ -458,15 +468,24 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   Row(
                     children: [
                       Flexible(
-                        child: Text(
-                          _driverName,
-                          style: TextStyle(
-                            color: dc.text,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        child: _profileLoaded
+                            ? Text(
+                                _driverName,
+                                style: TextStyle(
+                                  color: dc.text,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              )
+                            : Container(
+                                height: 18,
+                                width: 120,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
                       ),
                       if (_photoUrl != null && _photoUrl!.isNotEmpty) ...[
                         const SizedBox(width: 6),
@@ -489,37 +508,47 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   Row(
                     children: [
                       // Tier badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [_gold, _goldLight],
+                      if (_profileLoaded)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
                           ),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.stars_rounded,
-                              color: Colors.black,
-                              size: 12,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [_gold, _goldLight],
                             ),
-                            const SizedBox(width: 3),
-                            Text(
-                              _tierName,
-                              style: const TextStyle(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.stars_rounded,
                                 color: Colors.black,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
+                                size: 12,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 3),
+                              Text(
+                                _tierName,
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Container(
+                          height: 20,
+                          width: 56,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
-                      ),
                       const SizedBox(width: 10),
                       // Rating
                       const Icon(Icons.star_rounded, color: _gold, size: 14),

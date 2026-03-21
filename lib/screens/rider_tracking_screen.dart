@@ -776,7 +776,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         
         // Move layer to top so it's always visible above everything
         try {
-          await style.moveStyleLayer(_carLayerId, null, true);
+          await style.moveStyleLayer(_carLayerId, null);
         } catch (_) {}
         
         // Iniciar animación de entrada inmediatamente después de crear el carro
@@ -792,8 +792,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         }
         
         // Update the icon if mode changed
-        final currentLayer = await style.getStyleLayer(_carLayerId);
-        if (currentLayer != null) {
+        final layerExists = await style.styleLayerExists(_carLayerId);
+        if (layerExists) {
           await style.setStyleLayerProperty(_carLayerId, 'icon-image', imageId);
           await style.setStyleLayerProperty(_carLayerId, 'icon-size', isArrowMode ? 1.0 : 1.0);
           await style.setStyleLayerProperty(_carLayerId, 'icon-rotate', isArrowMode ? 0.0 : _animBearing);
@@ -801,7 +801,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         
         // Ensure layer stays on top
         try {
-          await style.moveStyleLayer(_carLayerId, null, true);
+          await style.moveStyleLayer(_carLayerId, null);
         } catch (_) {}
       }
     } catch (_) {}

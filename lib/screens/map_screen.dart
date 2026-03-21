@@ -7094,7 +7094,6 @@ class _MatchingRadarState extends State<_MatchingRadar>
         ListenableBuilder(
           listenable: _ctrl,
           builder: (_, __) => CustomPaint(
-            size: Size(size.width, size.height),
             painter: _RadarPainter(
               progress: _ctrl.value,
               color: widget.color,

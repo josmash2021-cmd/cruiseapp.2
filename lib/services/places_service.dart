@@ -254,15 +254,23 @@ class PlacesService {
     try {
       // Run all providers in parallel for maximum coverage
       final results = await Future.wait([
-        // [0] Google Places Autocomplete — PRIMARY (unrestricted)
+        // [0] Google Places — ALL types (businesses, POIs, airports, addresses)
         _searchWithGoogleAutocomplete(
           cleanInput,
           lat: latitude,
           lon: longitude,
         ).catchError((_) => <PlaceSuggestion>[]),
-        // [1] Nominatim: supplementary street addresses
+        // [1] Google Places — GEOCODE type (residential addresses, streets, postal codes)
+        //     Running this separately ensures homes/apartments always appear.
+        _searchWithGoogleAutocomplete(
+          cleanInput,
+          lat: latitude,
+          lon: longitude,
+          types: 'geocode',
+        ).catchError((_) => <PlaceSuggestion>[]),
+        // [2] Nominatim: supplementary street addresses
         _searchWithNominatim(cleanInput).catchError((_) => <PlaceSuggestion>[]),
-        // [2] Photon: supplementary geocoder
+        // [3] Photon: supplementary geocoder
         _searchWithPhoton(
           cleanInput,
           lat: latitude,
@@ -270,15 +278,18 @@ class PlacesService {
         ).catchError((_) => <PlaceSuggestion>[]),
       ]);
 
-      // Fix 3: if a newer request was started while we were awaiting, discard
+      // Discard stale results if a newer request fired while we were awaiting
       if (seq != _autocompleteSeq) return [];
 
-      // Google results are already proximity-ranked by the API via location+radius.
-      // Sort only the OSM results by proximity, then append them after Google.
-      final googleResults = results[0];
+      // Merge both Google result sets: geocode-specific (addresses) leads, then all-types
+      final googleResults = <PlaceSuggestion>[];
+      googleResults.addAll(results[1]); // geocode (residential / streets first)
+      googleResults.addAll(results[0]); // all-types (businesses, airports, POIs)
+      final googleDeduped = _dedupeByDescription(googleResults);
+
       final osmCandidates = <PlaceSuggestion>[];
-      osmCandidates.addAll(results[1]); // Nominatim
-      osmCandidates.addAll(results[2]); // Photon
+      osmCandidates.addAll(results[2]); // Nominatim
+      osmCandidates.addAll(results[3]); // Photon
 
       if (hasLocation && osmCandidates.isNotEmpty) {
         osmCandidates.sort((a, b) {
@@ -293,9 +304,9 @@ class PlacesService {
         });
       }
 
-      // Merge: Google first (best quality + already proximity-sorted), then OSM
+      // Merge: Google deduped first (best quality + proximity-sorted), then OSM
       final merged = <PlaceSuggestion>[];
-      merged.addAll(googleResults);
+      merged.addAll(googleDeduped);
       merged.addAll(osmCandidates);
 
       if (merged.isEmpty) return [];
@@ -320,16 +331,20 @@ class PlacesService {
     String input, {
     double? lat,
     double? lon,
+    String? types, // e.g. 'geocode' for addresses, 'establishment' for businesses
   }) async {
     final params = <String, String>{
       'input': input,
       'key': apiKey,
       'sessiontoken': _sessionToken,
       'components': 'country:us',
-      // NO 'types' — return everything (addresses, establishments, POIs)
-      // 'components' — restrict to US addresses only
       // NO 'strictbounds' — location is soft bias only
     };
+    // When types is provided it narrows results to that category.
+    // Omitting it returns the full mixed set (addresses + businesses + POIs).
+    if (types != null && types.isNotEmpty) {
+      params['types'] = types;
+    }
 
     // Location bias: center on user, 50km radius (soft preference, not filter)
     if (lat != null && lon != null) {

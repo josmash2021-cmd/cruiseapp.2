@@ -1633,8 +1633,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         setState(() {
           _isAddressFieldFocused = false;
           _panelDragHeight = null;
+          _planBodyVisible = false; // fade out plan panel content
         });
       }
+
+      // Brief map-reveal moment: fit both pins while panel fades
+      await _fitBoundsInsets(
+        [_currentPosition!, _dropoffPosition!],
+        90, 60, 220, 60,
+      );
+      await Future.delayed(const Duration(milliseconds: 480));
+      if (!mounted) return;
 
       _setStage(RideStage.loading);
       final ok = await _prepareRoutePreview(returnToPin: false);
@@ -2827,11 +2836,26 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Widget _planPanel() {
-    return Container(
-      height: double.infinity,
+    return ClipRRect(
       key: const ValueKey('plan'),
+      borderRadius: const BorderRadius.all(Radius.circular(28)),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+      height: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-      decoration: _panelDecoration,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1B2A).withValues(alpha: 0.82),
+        borderRadius: const BorderRadius.all(Radius.circular(28)),
+        border: Border.fromBorderSide(BorderSide(color: _c.border, width: 1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.30),
+            blurRadius: 28,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
       child: SafeArea(
         top: false,
         child: AnimatedSlide(
@@ -2889,6 +2913,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               ],
             ),
           ),
+        ),
+      ),
         ),
       ),
     );

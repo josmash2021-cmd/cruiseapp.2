@@ -129,7 +129,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
     _fabScale = CurvedAnimation(parent: _fabCtrl, curve: Curves.elasticOut);
 
-    _goldDot.build(() { if (mounted) setState(() {}); });
+    _goldDot.build(() {
+      if (mounted) {
+        setState(() {});
+        _syncDotAnnotation(); // Keep dot pulsing on map
+      }
+    });
     _initLocation();
     _loadDriverData();
     _checkVerification();
@@ -188,15 +193,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final mgr = _pointAnnotMgr;
     if (mgr == null || _currentLatLng == null) return;
     final bytes = _goldDot.currentBytes;
-    if (bytes == null) return;
+    if (bytes == null) return; // Dot not ready yet
+    
+    // Delete existing if position or icon changed
     if (_myLocAnnot != null) {
       try { await mgr.delete(_myLocAnnot!); } catch (_) {}
     }
+    
     _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
       image: bytes,
       iconSize: 0.5,
     ));
+  }
+
+  /// Re-sync the location dot annotation whenever the dot animation frame changes.
+  void _syncDotAnnotation() {
+    if (!mounted || _currentLatLng == null) return;
+    // Update annotation without full setState - just refresh the icon
+    _updateMyLocAnnotation();
   }
 
   // ═══════════════════════════════════════════════════
@@ -302,6 +317,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
       if (!mounted) return;
       setState(() => _currentLatLng = LatLng(pos.latitude, pos.longitude));
+      _updateMyLocAnnotation(); // <-- Update pin when location changes
       _mapController?.flyTo(
         mapbox.CameraOptions(
           center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
@@ -649,7 +665,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           setState(() => _mapReady = true);
           await _applyNavyGoldTheme(ctrl);
-          _updateMyLocAnnotation();
+          // Wait a moment for dot to be ready, then show it
+          if (_goldDot.isReady) {
+            _updateMyLocAnnotation();
+          } else {
+            // Retry when dot is ready
+            Future.delayed(const Duration(milliseconds: 100), () {
+              if (mounted && _goldDot.isReady) _updateMyLocAnnotation();
+            });
+          }
         },
       ),
     );

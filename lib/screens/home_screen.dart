@@ -3457,6 +3457,7 @@ class _LaterOptionsSheet extends StatelessWidget {
 
 // ─────────────────────────────────────────────
 // Animated glow border painter for Where-to card
+// Uses PathMetrics on a real RRect path for pixel-perfect smooth corners.
 // ─────────────────────────────────────────────
 class _GlowBorderPainter extends CustomPainter {
   final double progress;
@@ -3471,146 +3472,81 @@ class _GlowBorderPainter extends CustomPainter {
     required this.isDark,
   });
 
-  // Sample N points along a rounded rect perimeter (clockwise from top-center)
-  static List<Offset> _sampleRRect(RRect rr, int n) {
-    final pts = <Offset>[];
-    final w = rr.width, h = rr.height;
-    final r = rr.tlRadiusX.clamp(0, w / 2);
-    // Perimeter segments: top, tr-corner, right, br-corner, bottom, bl-corner, left, tl-corner
-    final straight = (w - 2 * r) * 2 + (h - 2 * r) * 2;
-    final corners = 2 * 3.14159265 * r; // total corner arc length
-    final total = straight + corners;
-    for (int i = 0; i < n; i++) {
-      var d = (i / n) * total;
-      double x, y;
-      final topW = w - 2 * r;
-      // Top edge (left to right)
-      if (d < topW) {
-        x = rr.left + r + d;
-        y = rr.top;
-        pts.add(Offset(x, y));
-        continue;
-      }
-      d -= topW;
-      // Top-right corner
-      final qArc = 3.14159265 * r / 2;
-      if (d < qArc) {
-        final a = -3.14159265 / 2 + (d / qArc) * (3.14159265 / 2);
-        x = rr.right - r + r * _cos(a);
-        y = rr.top + r + r * _sin(a);
-        pts.add(Offset(x, y));
-        continue;
-      }
-      d -= qArc;
-      // Right edge
-      final rightH = h - 2 * r;
-      if (d < rightH) {
-        x = rr.right;
-        y = rr.top + r + d;
-        pts.add(Offset(x, y));
-        continue;
-      }
-      d -= rightH;
-      // Bottom-right corner
-      if (d < qArc) {
-        final a = 0.0 + (d / qArc) * (3.14159265 / 2);
-        x = rr.right - r + r * _cos(a);
-        y = rr.bottom - r + r * _sin(a);
-        pts.add(Offset(x, y));
-        continue;
-      }
-      d -= qArc;
-      // Bottom edge (right to left)
-      if (d < topW) {
-        x = rr.right - r - d;
-        y = rr.bottom;
-        pts.add(Offset(x, y));
-        continue;
-      }
-      d -= topW;
-      // Bottom-left corner
-      if (d < qArc) {
-        final a = 3.14159265 / 2 + (d / qArc) * (3.14159265 / 2);
-        x = rr.left + r + r * _cos(a);
-        y = rr.bottom - r + r * _sin(a);
-        pts.add(Offset(x, y));
-        continue;
-      }
-      d -= qArc;
-      // Left edge (bottom to top)
-      if (d < rightH) {
-        x = rr.left;
-        y = rr.bottom - r - d;
-        pts.add(Offset(x, y));
-        continue;
-      }
-      d -= rightH;
-      // Top-left corner
-      if (d < qArc) {
-        final a = 3.14159265 + (d / qArc) * (3.14159265 / 2);
-        x = rr.left + r + r * _cos(a);
-        y = rr.top + r + r * _sin(a);
-        pts.add(Offset(x, y));
-        continue;
-      }
-      pts.add(Offset(rr.left + r, rr.top));
-    }
-    return pts;
-  }
-
-  static double _cos(double a) => math.cos(a);
-  static double _sin(double a) => math.sin(a);
-
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(28));
 
-    // Base subtle border — always visible
-    final basePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = gold.withValues(alpha: isDark ? 0.12 : 0.20);
-    canvas.drawRRect(rrect, basePaint);
+    // Base subtle border — smooth RRect, always visible
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2
+        ..isAntiAlias = true
+        ..color = gold.withValues(alpha: isDark ? 0.12 : 0.20),
+    );
 
-    // ── Seamless traveling glow: draw segments along perimeter ──
-    const segments = 200;
-    const glowLen = 0.18; // fraction of perimeter that glows
-    final pts = _sampleRRect(rrect, segments);
+    // Build the border path from the RRect — Flutter uses Bézier curves
+    // internally so corners are mathematically exact (no pixel jaggedness).
+    final borderPath = Path()..addRRect(rrect);
+    final metricsList = borderPath.computeMetrics().toList();
+    if (metricsList.isEmpty) return;
+    final pm = metricsList.first;
+    final total = pm.length;
 
-    final headIdx = (progress * segments).round() % segments;
+    const glowFraction = 0.18; // fraction of perimeter covered by the glow
+    final glowLen = total * glowFraction;
+    final headDist = (progress * total) % total;
 
-    for (int k = 0; k < (segments * glowLen).round(); k++) {
-      final idx = (headIdx - k + segments) % segments;
-      final nextIdx = (idx + 1) % segments;
-      // Fade: 0 at tail → 1 at head
-      final t = 1.0 - (k / (segments * glowLen));
-      // Bell-curve fade: strong in middle, fades both ends
-      final alpha = t * t * (3 - 2 * t); // smoothstep
+    // Divide glow tail into steps for the fade gradient
+    const steps = 48;
+    final stepLen = glowLen / steps;
 
-      // Bright line
-      canvas.drawLine(
-        pts[idx],
-        pts[nextIdx],
+    for (int k = 0; k < steps; k++) {
+      final t = 1.0 - k / steps; // 1.0 at head → 0.0 at tail
+      final fadeAlpha = t * t * (3 - 2 * t); // smoothstep
+      if (fadeAlpha < 0.02) continue;
+
+      final segEnd   = (headDist - k * stepLen + total) % total;
+      final segStart = (segEnd - stepLen + total) % total;
+
+      // extractPath handles wrapping correctly when start > end
+      final Path seg;
+      if (segStart <= segEnd) {
+        seg = pm.extractPath(segStart, segEnd);
+      } else {
+        seg = pm.extractPath(segStart, total)
+          ..addPath(pm.extractPath(0, segEnd), Offset.zero);
+      }
+
+      // Bright stroke — isAntiAlias + round join = crisp smooth line
+      canvas.drawPath(
+        seg,
         Paint()
+          ..style      = PaintingStyle.stroke
           ..strokeWidth = 2.5
-          ..color = Color.lerp(
-            gold,
-            goldLight,
-            t,
-          )!.withValues(alpha: alpha * 0.95)
-          ..strokeCap = StrokeCap.round,
+          ..strokeCap  = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..isAntiAlias = true
+          ..color = Color.lerp(gold, goldLight, t)!
+              .withValues(alpha: fadeAlpha * 0.95),
       );
-      // Outer glow halo
-      canvas.drawLine(
-        pts[idx],
-        pts[nextIdx],
-        Paint()
-          ..strokeWidth = 10
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8)
-          ..color = goldLight.withValues(alpha: alpha * 0.35)
-          ..strokeCap = StrokeCap.round,
-      );
+
+      // Soft outer glow halo (every other step for perf)
+      if (k % 2 == 0) {
+        canvas.drawPath(
+          seg,
+          Paint()
+            ..style      = PaintingStyle.stroke
+            ..strokeWidth = 12
+            ..strokeCap  = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round
+            ..isAntiAlias = true
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8)
+            ..color = goldLight.withValues(alpha: fadeAlpha * 0.30),
+        );
+      }
     }
   }
 

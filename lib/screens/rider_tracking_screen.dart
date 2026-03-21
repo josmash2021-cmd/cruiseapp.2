@@ -97,6 +97,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   static const String _carShadowImageId = 'car-shadow-image';
   bool _carImageAdded = false;
   bool _carShadowAdded = false;
+  static const String _arrowImageId = 'arrow-image';
+  bool _arrowImageAdded = false;
 
   // ── Car entrance animation (transición de formación profesional) ──
   bool _carEntranceStarted = false;
@@ -544,10 +546,17 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       isPickup: false,
       label: widget.dropoffLabel,
     );
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      // Force annotation update now that bytes are ready
+      _updateAnnotations();
+    }
   }
 
-  /// Load car PNG based on ride type (SUV, Comfort, Sedan)
+  // ── Navigation arrow mode (when centering/navigation active) ──
+  bool _navArrowMode = false;
+  Uint8List? _arrowIconBytes;
+  
   Future<void> _loadCarIcon() async {
     final rideName = widget.rideName.toLowerCase();
     String carAsset;
@@ -573,22 +582,111 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       } catch (_) {}
     }
     
+    // Also load navigation arrow icon
+    await _loadArrowIcon();
+    
     if (mounted) setState(() {});
+  }
+  
+  /// Load navigation arrow icon for centering mode
+  Future<void> _loadArrowIcon() async {
+    // Generate a golden arrow icon
+    _arrowIconBytes = await _renderNavigationArrow();
+  }
+  
+  /// Render a golden navigation arrow
+  Future<Uint8List> _renderNavigationArrow() async {
+    const double size = 100;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
+    const cx = size / 2;
+    const cy = size / 2;
+    const gold = Color(0xFFE8C547);
+    
+    // Drop shadow
+    canvas.drawCircle(
+      const Offset(cx, cy + 2),
+      size * 0.4,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.4)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+    
+    // Gold circle background
+    canvas.drawCircle(
+      const Offset(cx, cy),
+      size * 0.38,
+      Paint()..color = gold,
+    );
+    
+    // White arrow pointing up
+    final arrowPath = Path()
+      ..moveTo(cx, cy - size * 0.22)
+      ..lineTo(cx - size * 0.18, cy + size * 0.08)
+      ..lineTo(cx - size * 0.06, cy + size * 0.08)
+      ..lineTo(cx - size * 0.06, cy + size * 0.22)
+      ..lineTo(cx + size * 0.06, cy + size * 0.22)
+      ..lineTo(cx + size * 0.06, cy + size * 0.08)
+      ..lineTo(cx + size * 0.18, cy + size * 0.08)
+      ..close();
+    
+    canvas.drawPath(
+      arrowPath,
+      Paint()..color = Colors.white,
+    );
+    
+    // Inner highlight
+    canvas.drawCircle(
+      Offset(cx - size * 0.1, cy - size * 0.1),
+      size * 0.15,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+    
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
   }
 
   /// Update car marker using GeoJSON source - con sombra 3D fade
+  /// Uses navigation arrow when _navArrowMode is true
   Future<void> _updateCarMarkerOnMap() async {
-    if (_map == null || _carIconBytes == null) return;
+    if (_map == null) return;
     if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+    
+    // Use arrow icon in nav mode, car icon otherwise
+    final iconBytes = _navArrowMode && _arrowIconBytes != null ? _arrowIconBytes! : _carIconBytes;
+    if (iconBytes == null) return;
     
     try {
       final style = _map!.style;
+      final imageId = _navArrowMode ? _arrowImageId : _carImageId;
+      final isArrowMode = _navArrowMode;
       
-      // Generar imagen de sombra si no existe
-      _carShadowBytes ??= await _generateShadowImage();
+      // Generar imagen de sombra si no existe (only for car mode)
+      if (!isArrowMode) {
+        _carShadowBytes ??= await _generateShadowImage();
+      }
       
-      // Add car image to style
-      if (!_carImageAdded) {
+      // Add/update the appropriate image
+      if (isArrowMode && !_arrowImageAdded && _arrowIconBytes != null) {
+        await style.addStyleImage(
+          _arrowImageId,
+          1.0,
+          mapbox.MbxImage(
+            width: 100,
+            height: 100,
+            data: _arrowIconBytes!,
+          ),
+          false,
+          [],
+          [],
+          null,
+        );
+        _arrowImageAdded = true;
+      } else if (!_carImageAdded && !isArrowMode) {
         await style.addStyleImage(
           _carImageId,
           1.0,
@@ -605,53 +703,55 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         _carImageAdded = true;
       }
       
-      // Add shadow image to style
-      if (!_carShadowAdded) {
-        await style.addStyleImage(
-          _carShadowImageId,
-          1.0,
-          mapbox.MbxImage(
-            width: 80,
-            height: 80,
-            data: _carShadowBytes!,
-          ),
-          false,
-          [],
-          [],
-          null,
-        );
-        _carShadowAdded = true;
-      }
-      
-      // SHADOW SOURCE & LAYER (se crea primero para quedar debajo)
-      final shadowSourceExists = await style.styleSourceExists(_carShadowSourceId);
-      if (!shadowSourceExists) {
-        final shadowGeoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{}}]}';
-        await style.addSource(
-          mapbox.GeoJsonSource(id: _carShadowSourceId, data: shadowGeoJson),
-        );
+      // Only add shadow in car mode (not arrow mode)
+      if (!isArrowMode && _carShadowBytes != null) {
+        if (!_carShadowAdded) {
+          await style.addStyleImage(
+            _carShadowImageId,
+            1.0,
+            mapbox.MbxImage(
+              width: 80,
+              height: 80,
+              data: _carShadowBytes!,
+            ),
+            false,
+            [],
+            [],
+            null,
+          );
+          _carShadowAdded = true;
+        }
         
-        final shadowLayer = mapbox.SymbolLayer(
-          id: _carShadowLayerId,
-          sourceId: _carShadowSourceId,
-          iconImage: _carShadowImageId,
-          iconSize: 1.2,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconAllowOverlap: true,
-          iconIgnorePlacement: true,
-          iconOpacity: 0.6,
-        );
-        await style.addLayer(shadowLayer);
-      } else {
-        // Update shadow position
-        final shadowGeoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{}}]}';
-        final shadowSource = await style.getSource(_carShadowSourceId);
-        if (shadowSource != null) {
-          (shadowSource as mapbox.GeoJsonSource).updateGeoJSON(shadowGeoJson);
+        // SHADOW SOURCE & LAYER (se crea primero para quedar debajo)
+        final shadowSourceExists = await style.styleSourceExists(_carShadowSourceId);
+        if (!shadowSourceExists) {
+          final shadowGeoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{}}]}';
+          await style.addSource(
+            mapbox.GeoJsonSource(id: _carShadowSourceId, data: shadowGeoJson),
+          );
+          
+          final shadowLayer = mapbox.SymbolLayer(
+            id: _carShadowLayerId,
+            sourceId: _carShadowSourceId,
+            iconImage: _carShadowImageId,
+            iconSize: 1.2,
+            iconAnchor: mapbox.IconAnchor.BOTTOM,
+            iconAllowOverlap: true,
+            iconIgnorePlacement: true,
+            iconOpacity: 0.6,
+          );
+          await style.addLayer(shadowLayer);
+        } else {
+          // Update shadow position
+          final shadowGeoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{}}]}';
+          final shadowSource = await style.getSource(_carShadowSourceId);
+          if (shadowSource != null) {
+            (shadowSource as mapbox.GeoJsonSource).updateGeoJSON(shadowGeoJson);
+          }
         }
       }
       
-      // CAR SOURCE & LAYER (se crea después para quedar encima)
+      // CAR/ARROW SOURCE & LAYER - Always on top
       final sourceExists = await style.styleSourceExists(_carSourceId);
       if (!sourceExists) {
         final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{"bearing":$_animBearing}}}]}';
@@ -659,28 +759,49 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           mapbox.GeoJsonSource(id: _carSourceId, data: geoJson),
         );
         
+        // Add layer at top of all layers (above traffic, roads, etc)
         final layer = mapbox.SymbolLayer(
           id: _carLayerId,
           sourceId: _carSourceId,
-          iconImage: _carImageId,
-          iconSize: 1.0 * _carEntranceProgress, // Aplicar escala de animación de entrada
-          iconOpacity: _carEntranceProgress, // Fade in simultáneo
-          iconRotate: _animBearing,
+          iconImage: imageId,
+          iconSize: isArrowMode ? 1.0 : (1.0 * _carEntranceProgress),
+          iconOpacity: isArrowMode ? 1.0 : _carEntranceProgress,
+          iconRotate: isArrowMode ? 0.0 : _animBearing, // Arrow always points up
           iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
           iconAllowOverlap: true,
           iconIgnorePlacement: true,
         );
         await style.addLayer(layer);
         
+        // Move layer to top so it's always visible above everything
+        try {
+          await style.moveStyleLayer(_carLayerId, null, true);
+        } catch (_) {}
+        
         // Iniciar animación de entrada inmediatamente después de crear el carro
-        _startCarEntranceAnimation();
+        if (!isArrowMode) {
+          _startCarEntranceAnimation();
+        }
       } else {
-        // Update car position
+        // Update car/arrow position
         final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{"bearing":$_animBearing}}}]}';
         final source = await style.getSource(_carSourceId);
         if (source != null) {
           (source as mapbox.GeoJsonSource).updateGeoJSON(geoJson);
         }
+        
+        // Update the icon if mode changed
+        final currentLayer = await style.getStyleLayer(_carLayerId);
+        if (currentLayer != null) {
+          await style.setStyleLayerProperty(_carLayerId, 'icon-image', imageId);
+          await style.setStyleLayerProperty(_carLayerId, 'icon-size', isArrowMode ? 1.0 : 1.0);
+          await style.setStyleLayerProperty(_carLayerId, 'icon-rotate', isArrowMode ? 0.0 : _animBearing);
+        }
+        
+        // Ensure layer stays on top
+        try {
+          await style.moveStyleLayer(_carLayerId, null, true);
+        } catch (_) {}
       }
     } catch (_) {}
   }
@@ -1195,6 +1316,44 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     try { await ctrl.style.setStyleLayerProperty('background', 'background-color', navyMid); } catch (_) {}
     try { await ctrl.style.setStyleLayerProperty('water', 'fill-color', '#0A1E35'); } catch (_) {}
     try { await ctrl.style.setStyleLayerProperty('road-label', 'text-color', gold); } catch (_) {}
+    
+    // Traffic colors - remove green, keep only orange (heavy) and red (severe)
+    final trafficLayers = <String, List<Map<String, dynamic>>>{
+      'traffic': [
+        {'property': 'congestion', 'value': 'low', 'color': 'rgba(0,0,0,0)'}, // hide green/low
+        {'property': 'congestion', 'value': 'moderate', 'color': 'rgba(0,0,0,0)'}, // hide yellow/moderate
+        {'property': 'congestion', 'value': 'heavy', 'color': '#FF9500'}, // orange for heavy
+        {'property': 'congestion', 'value': 'severe', 'color': '#FF3B30'}, // red for severe
+      ],
+      'traffic-slow': [
+        {'property': 'congestion', 'value': 'low', 'color': 'rgba(0,0,0,0)'},
+        {'property': 'congestion', 'value': 'moderate', 'color': 'rgba(0,0,0,0)'},
+        {'property': 'congestion', 'value': 'heavy', 'color': '#FF9500'},
+        {'property': 'congestion', 'value': 'severe', 'color': '#FF3B30'},
+      ],
+    };
+    
+    for (final entry in trafficLayers.entries) {
+      try {
+        // Hide low/moderate traffic by setting opacity to 0
+        await ctrl.style.setStyleLayerProperty(entry.key, 'line-opacity', [
+          'match',
+          ['get', 'congestion'],
+          ['low', 'moderate'],
+          0.0, // hide green/yellow
+          1.0, // show orange/red
+        ]);
+        
+        // Set colors for traffic
+        await ctrl.style.setStyleLayerProperty(entry.key, 'line-color', [
+          'match',
+          ['get', 'congestion'],
+          'heavy', '#FF9500', // orange
+          'severe', '#FF3B30', // red
+          'rgba(0,0,0,0)', // hide others
+        ]);
+      } catch (_) {}
+    }
   }
 
   void _updateCameraForRoute() {
@@ -1306,9 +1465,17 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void _recenter() {
     setState(() {
       _userMovedMap = false;
+      _navArrowMode = true; // Enable navigation arrow mode when centering
     });
     // Mostrar ruta completa con padding apropiado
     _updateCameraForRoute();
+    
+    // After 5 seconds, switch back to car mode automatically
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) {
+        setState(() => _navArrowMode = false);
+      }
+    });
   }
 
   double _hav(LatLng a, LatLng b) {
@@ -1751,32 +1918,54 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   Widget _bottomCard(AppColors c, double botPad) {
     final s = S.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF8F8F8);
+    final gold = const Color(0xFFE8C547);
+    
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: isDark 
+            ? [const Color(0xFF1E1E1E), const Color(0xFF141414)]
+            : [Colors.white, const Color(0xFFF5F5F5)],
+        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 30,
+            offset: const Offset(0, -8),
           ),
         ],
+        border: Border(
+          top: BorderSide(
+            color: gold.withValues(alpha: 0.3),
+            width: 1.5,
+          ),
+        ),
       ),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Enhanced drag handle with gold accent
               Container(
-                margin: const EdgeInsets.only(top: 10, bottom: 14),
-                width: 36,
-                height: 4,
+                margin: const EdgeInsets.only(top: 12, bottom: 16),
+                width: 44,
+                height: 5,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(2),
+                  gradient: LinearGradient(
+                    colors: [
+                      gold.withValues(alpha: 0.6),
+                      gold.withValues(alpha: 0.3),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
               _banner(c),
@@ -1787,61 +1976,88 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   curve: Curves.easeInOut,
                   alignment: Alignment.topCenter,
                   child: _showDetails
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(top: 10),
-                              child: Text(
-                                s.driverArriveInstruction,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  height: 1.3,
-                                ),
+                      ? Container(
+                          margin: const EdgeInsets.only(top: 12),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: isDark 
+                                ? Colors.white.withValues(alpha: 0.05)
+                                : Colors.black.withValues(alpha: 0.03),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: gold.withValues(alpha: 0.15),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.info_outline_rounded,
+                                    size: 16,
+                                    color: gold.withValues(alpha: 0.8),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      s.driverArriveInstruction,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.white.withValues(alpha: 0.7),
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                            const SizedBox(height: 10),
-                            _tripAddressRow(
-                              iconColor: const Color(0xFFD4A843),
-                              label: widget.pickupLabel.isNotEmpty
-                                  ? widget.pickupLabel
-                                  : s.pickupLocation,
-                            ),
-                            const SizedBox(height: 6),
-                            _tripAddressRow(
-                              iconColor: const Color(0xFFD4A843),
-                              label: widget.dropoffLabel.isNotEmpty
-                                  ? widget.dropoffLabel
-                                  : s.destinationLabel,
-                            ),
-                          ],
+                              const SizedBox(height: 12),
+                              _tripAddressRow(
+                                iconColor: gold,
+                                label: widget.pickupLabel.isNotEmpty
+                                    ? widget.pickupLabel
+                                    : s.pickupLocation,
+                              ),
+                              const SizedBox(height: 8),
+                              _tripAddressRow(
+                                iconColor: const Color(0xFFEA4335),
+                                label: widget.dropoffLabel.isNotEmpty
+                                    ? widget.dropoffLabel
+                                    : s.destinationLabel,
+                              ),
+                            ],
+                          ),
                         )
                       : const SizedBox.shrink(),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 GestureDetector(
                   onTap: () => setState(() => _showDetails = !_showDetails),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: gold.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           _showDetails ? S.of(context).showLess : S.of(context).showMore,
                           style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: gold,
                           ),
                         ),
-                        const SizedBox(width: 2),
+                        const SizedBox(width: 4),
                         AnimatedRotation(
                           turns: _showDetails ? 0.5 : 0,
                           duration: const Duration(milliseconds: 250),
                           child: Icon(
                             Icons.keyboard_arrow_down,
-                            color: Colors.white.withValues(alpha: 0.7),
-                            size: 20,
+                            color: gold,
+                            size: 18,
                           ),
                         ),
                       ],
@@ -1849,17 +2065,18 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   ),
                 ),
               ],
-              const SizedBox(height: 14),
-              Divider(height: 1, color: Colors.white.withValues(alpha: 0.1)),
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
+              Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+              const SizedBox(height: 16),
               _driverRow(c),
-              const SizedBox(height: 14),
-              Divider(height: 1, color: Colors.white.withValues(alpha: 0.1)),
-              const SizedBox(height: 6),
+              const SizedBox(height: 16),
+              Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+              const SizedBox(height: 10),
+              // Enhanced message button
               SizedBox(
                 width: double.infinity,
-                height: 48,
-                child: TextButton(
+                height: 52,
+                child: ElevatedButton.icon(
                   onPressed: () {
                     Navigator.of(context).push(
                       slideFromRightRoute(
@@ -1871,55 +2088,58 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                       ),
                     );
                   },
-                  style: TextButton.styleFrom(
-                    backgroundColor: Colors.white.withValues(alpha: 0.08),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                  icon: Icon(
+                    Icons.message_rounded,
+                    size: 18,
+                    color: isDark ? Colors.white70 : Colors.black54,
+                  ),
+                  label: Text(
+                    s.messageDriver(widget.driverName.split(' ').first),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white.withValues(alpha: 0.9) : Colors.black87,
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.message_rounded,
-                        size: 18,
-                        color: Colors.white.withValues(alpha: 0.7),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        s.messageDriver(widget.driverName.split(' ').first),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ],
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isDark 
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.black.withValues(alpha: 0.05),
+                    foregroundColor: isDark ? Colors.white : Colors.black,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                 ),
               ),
               // ── Cancel Trip button (show during onTrip as well) ──
               if (_phase == _TrackPhase.arriving || _phase == _TrackPhase.onTrip) ...[
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
-                  height: 40,
+                  height: 44,
                   child: TextButton(
                     onPressed: _phase == _TrackPhase.onTrip 
                         ? _showCancelOnTripDialog 
                         : _showCancelDialog,
+                    style: TextButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                     child: Text(
                       S.of(context).cancelTrip,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
                         color: Color(0xFFFF3B30),
                       ),
                     ),
                   ),
                 ),
               ],
-              const SizedBox(height: 4),
+              const SizedBox(height: 8),
             ],
           ),
         ),

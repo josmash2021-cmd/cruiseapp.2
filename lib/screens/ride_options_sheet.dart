@@ -278,18 +278,18 @@ class RideOptionsSheet extends StatelessWidget {
     
     if (isSuv) {
       tierColor = const Color(0xFFE8C547);
-      tierLabel = 'PREMIUM';
+      tierLabel = 'VIP';
       displayName = 'SUV';
       hasShimmer = true;
     } else if (isCamry) {
       tierColor = const Color(0xFFB8BCC8);
       tierLabel = 'COMFORT';
-      displayName = 'Sedan';
+      displayName = 'Comfort';
       hasShimmer = true;
     } else {
       tierColor = const Color(0xFF43A047);
-      tierLabel = 'ECONOMY';
-      displayName = 'Economy';
+      tierLabel = 'REGULAR';
+      displayName = 'Regular';
       hasShimmer = true;
     }
 
@@ -454,32 +454,32 @@ class RideOptionsSheet extends StatelessWidget {
 
   Widget _infoChip(IconData icon, String label, bool isDark) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : Colors.black.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(6),
+            ? Colors.white.withValues(alpha: 0.08)
+            : Colors.black.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             icon,
-            size: 12,
+            size: 14,
             color: isDark
-                ? Colors.white.withValues(alpha: 0.4)
-                : Colors.black.withValues(alpha: 0.35),
+                ? Colors.white.withValues(alpha: 0.55)
+                : Colors.black.withValues(alpha: 0.45),
           ),
-          const SizedBox(width: 3),
+          const SizedBox(width: 4),
           Text(
             label,
             style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
               color: isDark
-                  ? Colors.white.withValues(alpha: 0.5)
-                  : Colors.black.withValues(alpha: 0.45),
+                  ? Colors.white.withValues(alpha: 0.65)
+                  : Colors.black.withValues(alpha: 0.55),
             ),
           ),
         ],

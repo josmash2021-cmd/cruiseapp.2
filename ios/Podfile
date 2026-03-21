@@ -1,6 +1,5 @@
-# Mapbox uses JFrog Artifactory — requires cocoapods-art plugin
-# pod repo-art add mapbox-ios is run by CI before pod install
-plugin 'cocoapods-art', :sources => ['mapbox-ios']
+# Mapbox private spec source — authenticated via ~/.netrc
+source 'https://api.mapbox.com/downloads/v2/specs/ios'
 # Public specs via git repo — avoids CDN EOF errors on CI
 source 'https://github.com/CocoaPods/Specs.git'
 

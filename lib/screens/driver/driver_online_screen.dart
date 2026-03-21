@@ -4128,6 +4128,7 @@ Widget _navHeader() {
     // Parse offer data
     final name = (offer['rider_name'] ?? 'Rider') as String;
     final init = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 4.8;
     final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
     final pickupAddr = (offer['pickup_address'] ?? 'Pickup') as String;
     final dropoffAddr = (offer['dropoff_address'] ?? 'Drop-off') as String;
@@ -4145,19 +4146,32 @@ Widget _navHeader() {
     final tripEta = (tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
 
     final circleFill = isDark ? Colors.white54 : Colors.white54;
-    final chipBg = Colors.white.withValues(alpha: 0.04);
+    final chipBg = Colors.white.withValues(alpha: 0.05);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: cardBorder),
+        color: const Color(0xFF141414).withValues(alpha: 0.93),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.09),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.72),
+            blurRadius: 34,
+            offset: const Offset(0, 14),
+            spreadRadius: -6,
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+          BoxShadow(
+            color: _gold.withValues(alpha: 0.07),
+            blurRadius: 22,
+            offset: Offset.zero,
           ),
         ],
       ),
@@ -4169,51 +4183,60 @@ Widget _navHeader() {
             // â”€â”€ Top row: Avatar + Name + Fare â”€â”€
             Row(
               children: [
-                // Avatar with gold gradient
+                // Vehicle icon badge
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 46,
+                  height: 46,
                   decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [_gold, _goldLight],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                    color: _gold.withValues(alpha: 0.11),
+                    borderRadius: BorderRadius.circular(13),
+                    border: Border.all(
+                      color: _gold.withValues(alpha: 0.28),
                     ),
                   ),
-                  child: Center(
-                    child: Text(
-                      init,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
+                  child: const Icon(
+                    Icons.directions_car_rounded,
+                    color: _gold,
+                    size: 23,
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Name + vehicle
+                // Vehicle type + rating/verified
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        name,
+                        vehicleType,
                         style: TextStyle(
                           color: textPrimary,
-                          fontSize: 16,
+                          fontSize: 17,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        vehicleType,
-                        style: TextStyle(
-                          color: _gold,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          const Icon(Icons.star_rounded, color: _gold, size: 13),
+                          const SizedBox(width: 3),
+                          Text(
+                            rating.toStringAsFixed(1),
+                            style: const TextStyle(
+                              color: _gold, fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.verified_rounded, color: _gold, size: 13),
+                          const SizedBox(width: 3),
+                          const Text(
+                            'Verified',
+                            style: TextStyle(
+                              color: _gold, fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -4457,11 +4480,12 @@ Widget _navHeader() {
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  ROUTE PREVIEW PANEL (shown when tapping an offer card)
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Widget _routePreviewPanel(bool isDark) {
     final offer = _previewingOffer!;
     final name = (offer['rider_name'] ?? 'Rider') as String;
     final init = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 4.8;
     final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
     final pickupAddr = (offer['pickup_address'] ?? 'Pickup') as String;
     final dropoffAddr = (offer['dropoff_address'] ?? 'Drop-off') as String;
@@ -4521,25 +4545,19 @@ Widget _navHeader() {
                   Row(
                     children: [
                       Container(
-                        width: 44,
-                        height: 44,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: [_gold, _goldLight],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: _gold.withValues(alpha: 0.11),
+                          borderRadius: BorderRadius.circular(13),
+                          border: Border.all(
+                            color: _gold.withValues(alpha: 0.28),
                           ),
                         ),
-                        child: Center(
-                          child: Text(
-                            init,
-                            style: const TextStyle(
-                              color: Colors.black,
-                              fontSize: 19,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
+                        child: const Icon(
+                          Icons.directions_car_rounded,
+                          color: _gold,
+                          size: 23,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -4548,21 +4566,36 @@ Widget _navHeader() {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              name,
+                              vehicleType,
                               style: const TextStyle(
                                 color: cTextPrimary,
-                                fontSize: 16,
+                                fontSize: 17,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              vehicleType,
-                              style: const TextStyle(
-                                color: _gold,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
+                            const SizedBox(height: 5),
+                            Row(
+                              children: [
+                                const Icon(Icons.star_rounded, color: _gold, size: 13),
+                                const SizedBox(width: 3),
+                                Text(
+                                  rating.toStringAsFixed(1),
+                                  style: const TextStyle(
+                                    color: _gold, fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.verified_rounded, color: _gold, size: 13),
+                                const SizedBox(width: 3),
+                                const Text(
+                                  'Verified',
+                                  style: TextStyle(
+                                    color: _gold, fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

@@ -104,42 +104,29 @@ definitions:
         cd ios
         rm -rf Pods Podfile.lock
         export COCOAPODS_DISABLE_STATS=true
-        # ── Patch 1: sources_manager.rb — force CDN mode for api.mapbox.com ──
-        CP_MGR=$(gem contents cocoapods 2>/dev/null | grep 'sources_manager\.rb$' | head -1)
-        if [ -n "$CP_MGR" ] && [ -f "$CP_MGR" ]; then
-          ruby -e '
-            f = ARGV[0]
-            src = File.read(f)
-            unless src.include?("api.mapbox.com")
-              src.sub!("def cdn_url?(url)", "def cdn_url?(url)\n      return true if url.to_s.start_with?(\"https://api.mapbox.com\")")
-              File.write(f, src)
-              puts "patched"
-            end
-          ' "$CP_MGR"
-          echo "✅ Patched cdn_url? in $CP_MGR"
-        fi
-        # ── Patch 2: cdn_source.rb — guard deprecated_podspecs.txt read ──
-        # File.foreach raises Errno::ENOENT when deprecated_podspecs.txt does not exist.
-        # We insert an early return at the top of deprecated_local_podspecs.
-        CP_CDN=$(gem contents cocoapods-core 2>/dev/null | grep 'cdn_source\.rb$' | head -1)
-        if [ -n "$CP_CDN" ] && [ -f "$CP_CDN" ]; then
-          ruby -e '
-            f = ARGV[0]
-            src = File.read(f)
-            unless src.include?("PATCHED_DEPRECATED")
-              src.sub!(
-                "def deprecated_local_podspecs\n",
-                "def deprecated_local_podspecs\n      # PATCHED_DEPRECATED\n      path = repo.join(\"deprecated_podspecs.txt\")\n      return [] unless path.exist?\n"
-              )
-              File.write(f, src)
-              puts "patched"
-            end
-          ' "$CP_CDN"
-          echo "✅ Patched deprecated_local_podspecs in $CP_CDN"
-        fi
+
+        # Remove any stale Mapbox repos so CocoaPods doesn't create -1/-2 suffixed dirs
+        rm -rf "$HOME/.cocoapods/repos/mapbox-downloads-v2-specs-ios"
+        rm -rf "$HOME/.cocoapods/repos/mapbox-downloads-v2-specs-ios-1"
+        rm -rf "$HOME/.cocoapods/repos/mapbox-downloads-v2-specs-ios-2"
+
+        # Manually register the Mapbox CDN spec repo using pod repo add.
+        # We embed credentials in the URL so curl auth works without .netrc lookup issues.
+        # The --type cdn flag tells CocoaPods to treat it as a CDN (not git).
+        MAPBOX_URL="https://mapbox:${ENV_MAPBOX_TOKEN}@api.mapbox.com/downloads/v2/specs/ios"
+        pod repo add mapbox-downloads-v2-specs-ios "$MAPBOX_URL" --type cdn 2>&1 || true
+        echo "✅ Mapbox CDN spec repo registered"
+
+        # Also ensure .netrc is correct for binary downloads
+        printf 'machine api.mapbox.com\nlogin mapbox\npassword %s\n' "$ENV_MAPBOX_TOKEN" > ~/.netrc
+        chmod 0600 ~/.netrc
+
+        # --no-repo-update: skip the CDN update step that crashes with rb_sysopen.
+        # The repo was just freshly added above so it's already up to date.
+        # Public specs (github.com/CocoaPods/Specs) update via git which works fine.
         for i in 1 2 3; do
           echo "=== pod install attempt $i/3 ==="
-          if pod install --repo-update; then
+          if pod install --no-repo-update; then
             echo "✅ CocoaPods installed on attempt $i"
             break
           fi

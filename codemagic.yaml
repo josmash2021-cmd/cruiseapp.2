@@ -105,20 +105,37 @@ definitions:
         rm -rf Pods Podfile.lock
         export COCOAPODS_DISABLE_STATS=true
         # ── Patch 1: sources_manager.rb — force CDN mode for api.mapbox.com ──
-        # CocoaPods HEAD-checks the URL unauthenticated → Mapbox returns EOF →
-        # falls back to git clone which also fails. Early-return true skips the check.
         CP_MGR=$(gem contents cocoapods 2>/dev/null | grep 'sources_manager\.rb$' | head -1)
-        if [ -n "$CP_MGR" ] && [ -f "$CP_MGR" ] && ! grep -q 'api\.mapbox\.com' "$CP_MGR"; then
-          perl -i -pe 's/def cdn_url\?\(url\)/def cdn_url?(url)\n      return true if url.to_s.start_with?("https:\/\/api.mapbox.com")/' "$CP_MGR"
+        if [ -n "$CP_MGR" ] && [ -f "$CP_MGR" ]; then
+          ruby -e '
+            f = ARGV[0]
+            src = File.read(f)
+            unless src.include?("api.mapbox.com")
+              src.sub!("def cdn_url?(url)", "def cdn_url?(url)\n      return true if url.to_s.start_with?(\"https://api.mapbox.com\")")
+              File.write(f, src)
+              puts "patched"
+            end
+          ' "$CP_MGR"
           echo "✅ Patched cdn_url? in $CP_MGR"
         fi
-        # ── Patch 2: cdn_source.rb — guard local_file call in deprecated_local_podspecs ──
-        # download_file is async; local_file raises rb_sysopen if the file isn't on disk yet.
-        # We replace the local_file call with a safe version that returns [] when missing.
+        # ── Patch 2: cdn_source.rb — guard deprecated_podspecs.txt read ──
+        # File.foreach raises Errno::ENOENT when deprecated_podspecs.txt does not exist.
+        # We insert an early return at the top of deprecated_local_podspecs.
         CP_CDN=$(gem contents cocoapods-core 2>/dev/null | grep 'cdn_source\.rb$' | head -1)
-        if [ -n "$CP_CDN" ] && [ -f "$CP_CDN" ] && ! grep -q 'exist.*deprecated_podspecs' "$CP_CDN"; then
-          perl -i -pe "s|local_file\('deprecated_podspecs\.txt', \&:to_a\)|((File.exist?(repo.join('deprecated_podspecs.txt')) ? local_file('deprecated_podspecs.txt', \&:to_a) : []))|g" "$CP_CDN"
-          echo "✅ Patched deprecated_local_podspecs guard in $CP_CDN"
+        if [ -n "$CP_CDN" ] && [ -f "$CP_CDN" ]; then
+          ruby -e '
+            f = ARGV[0]
+            src = File.read(f)
+            unless src.include?("PATCHED_DEPRECATED")
+              src.sub!(
+                "def deprecated_local_podspecs\n",
+                "def deprecated_local_podspecs\n      # PATCHED_DEPRECATED\n      path = repo.join(\"deprecated_podspecs.txt\")\n      return [] unless path.exist?\n"
+              )
+              File.write(f, src)
+              puts "patched"
+            end
+          ' "$CP_CDN"
+          echo "✅ Patched deprecated_local_podspecs in $CP_CDN"
         fi
         for i in 1 2 3; do
           echo "=== pod install attempt $i/3 ==="

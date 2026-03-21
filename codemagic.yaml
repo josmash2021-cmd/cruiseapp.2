@@ -104,6 +104,27 @@ definitions:
         cd ios
         rm -rf Pods Podfile.lock
         export COCOAPODS_DISABLE_STATS=true
+        # Patch CocoaPods cdn_url? to treat Mapbox CDN as CDN (not git).
+        # By default cdn_url? does an unauthenticated HEAD → Mapbox returns EOF →
+        # CocoaPods falls back to git clone which also fails. Injecting a single
+        # early-return for api.mapbox.com makes CocoaPods use CDN mode, which
+        # reads ~/.netrc correctly for all subsequent spec fetches.
+        python3 - << 'PYEOF'
+import subprocess, os
+r = subprocess.run(['gem', 'contents', 'cocoapods'], capture_output=True, text=True)
+for line in r.stdout.splitlines():
+    p = line.strip()
+    if p.endswith('sources_manager.rb') and os.path.isfile(p):
+        txt = open(p).read()
+        needle  = 'def cdn_url?(url)'
+        inject  = '      return true if url.to_s.start_with?("https://api.mapbox.com")\n'
+        if needle in txt and inject not in txt:
+            open(p, 'w').write(txt.replace(needle, needle + '\n' + inject, 1))
+            print(f"Patched cdn_url? in {p}")
+        else:
+            print("cdn_url? already patched or needle not found")
+        break
+PYEOF
         # --repo-update: fetches Mapbox private specs + updates git-based public specs
         for i in 1 2 3; do
           echo "=== pod install attempt $i/3 ==="

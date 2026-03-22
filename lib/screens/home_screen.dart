@@ -804,7 +804,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             minChildSize: _kMinSheet,
             maxChildSize: _kMaxSheet,
             snap: true,
-            snapSizes: const [_kMinSheet, 0.5, _kMaxSheet],
+            snapSizes: const [_kMinSheet, _kMaxSheet],
             builder: (ctx, scrollCtrl) =>
                 _buildSheet(scrollCtrl, bottomPad),
           ),

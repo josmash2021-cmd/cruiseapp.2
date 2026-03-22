@@ -626,34 +626,44 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           padding: const EdgeInsets.only(top: 8),
           children: [
             for (final item in quickItems)
-              ListTile(
-                onTap: () => _onQuickPlaceTap(item, homeAddr, workAddr),
-                leading: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(item.icon, size: 20, color: c.textSecondary),
-                ),
-                title: Text(
-                  item.title,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: c.textPrimary,
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
                   ),
                 ),
-                subtitle: Text(
-                  item.subtitle,
-                  style: TextStyle(fontSize: 13, color: c.textTertiary),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 2,
+                child: ListTile(
+                  onTap: () => _onQuickPlaceTap(item, homeAddr, workAddr),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: c.surface,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(item.icon, size: 20, color: c.textSecondary),
+                  ),
+                  title: Text(
+                    item.title,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    item.subtitle,
+                    style: TextStyle(fontSize: 13, color: c.textTertiary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
                 ),
               ),
           ],

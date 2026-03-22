@@ -127,101 +127,67 @@ class PlacesService {
     required double lat,
     required double lng,
   }) async {
-    // 1) Native platform geocoder (most reliable, no API key needed)
-    try {
-      final placemarks = await geo
-          .placemarkFromCoordinates(lat, lng)
-          .timeout(const Duration(seconds: 5));
-      if (placemarks.isNotEmpty) {
-        final p = placemarks.first;
-        final parts = <String>[];
-        // Street address
-        if (p.street != null && p.street!.isNotEmpty) {
-          parts.add(p.street!);
-        } else {
-          if (p.subThoroughfare != null && p.subThoroughfare!.isNotEmpty) {
-            parts.add(p.subThoroughfare!);
-          }
-          if (p.thoroughfare != null && p.thoroughfare!.isNotEmpty) {
-            parts.add(p.thoroughfare!);
-          }
+    // Run native geocoder and Google API in parallel — first good result wins.
+    String? parseNative(List<geo.Placemark> placemarks) {
+      if (placemarks.isEmpty) return null;
+      final p = placemarks.first;
+      final parts = <String>[];
+      if (p.street != null && p.street!.isNotEmpty) {
+        parts.add(p.street!);
+      } else {
+        if (p.subThoroughfare != null && p.subThoroughfare!.isNotEmpty) {
+          parts.add(p.subThoroughfare!);
         }
-        if (p.locality != null && p.locality!.isNotEmpty) {
-          parts.add(p.locality!);
-        }
-        if (p.administrativeArea != null && p.administrativeArea!.isNotEmpty) {
-          parts.add(p.administrativeArea!);
-        }
-        if (parts.isNotEmpty) {
-          final addr = parts.join(', ');
-          debugPrint('✅ Native geocode: $addr');
-          return addr;
+        if (p.thoroughfare != null && p.thoroughfare!.isNotEmpty) {
+          parts.add(p.thoroughfare!);
         }
       }
-    } catch (e) {
-      debugPrint('⚠️ Native geocode error: $e');
-    }
-
-    // 2) Google Geocoding API (best quality)
-    try {
-      final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
-        'latlng': '$lat,$lng',
-        'key': apiKey,
-      });
-      final res = await http.get(uri).timeout(const Duration(seconds: 6));
-      final data = jsonDecode(res.body);
-      if (data['status'] == 'OK') {
-        final results = data['results'] as List?;
-        if (results != null && results.isNotEmpty) {
-          return results.first['formatted_address']?.toString();
-        }
+      if (p.locality != null && p.locality!.isNotEmpty) parts.add(p.locality!);
+      if (p.administrativeArea != null && p.administrativeArea!.isNotEmpty) {
+        parts.add(p.administrativeArea!);
       }
-      debugPrint('⚠️ Google Geocode status: ${data['status']}');
-    } catch (e) {
-      debugPrint('⚠️ Google Geocode error: $e');
+      return parts.isNotEmpty ? parts.join(', ') : null;
     }
 
-    // Nominatim fallback
+    // 1) Parallel: native + Google (both fast, no dependency on each other)
+    try {
+      final both = await Future.wait([
+        geo.placemarkFromCoordinates(lat, lng)
+            .timeout(const Duration(seconds: 5))
+            .then(parseNative)
+            .catchError((_) => null),
+        http.get(Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
+              'latlng': '$lat,$lng',
+              'key': apiKey,
+            }))
+            .timeout(const Duration(seconds: 5))
+            .then((res) {
+              final data = jsonDecode(res.body);
+              if (data['status'] == 'OK') {
+                final results = data['results'] as List?;
+                if (results != null && results.isNotEmpty) {
+                  return results.first['formatted_address']?.toString();
+                }
+              }
+              return null;
+            })
+            .catchError((_) => null),
+      ]);
+
+      // Native result preferred (no network round-trip)
+      if (both[0] != null && (both[0] as String).isNotEmpty) {
+        debugPrint('✅ Native geocode: ${both[0]}');
+        return both[0] as String;
+      }
+      if (both[1] != null && (both[1] as String).isNotEmpty) {
+        return both[1] as String;
+      }
+    } catch (_) {}
+
+    // 2) Fallback: Nominatim only (skip Photon to save a round-trip)
     try {
       final nominatim = await _reverseWithNominatim(lat: lat, lng: lng);
       if (nominatim != null && nominatim.isNotEmpty) return nominatim;
-    } catch (_) {}
-
-    // Photon fallback (uses OSM data, no rate limit)
-    try {
-      final photonUri = Uri.https('photon.komoot.io', '/reverse', {
-        'lat': '$lat',
-        'lon': '$lng',
-      });
-      final pRes = await http
-          .get(photonUri)
-          .timeout(const Duration(seconds: 5));
-      if (pRes.statusCode == 200) {
-        final pData = jsonDecode(pRes.body);
-        final features = pData['features'] as List?;
-        if (features != null && features.isNotEmpty) {
-          final props = features.first['properties'] as Map<String, dynamic>?;
-          if (props != null) {
-            final parts = <String>[];
-            final houseNumber = props['housenumber']?.toString();
-            final street = props['street']?.toString();
-            if (houseNumber != null && street != null) {
-              parts.add('$houseNumber $street');
-            } else if (street != null) {
-              parts.add(street);
-            }
-            final city =
-                props['city']?.toString() ??
-                props['town']?.toString() ??
-                props['village']?.toString();
-            if (city != null) parts.add(city);
-            final state = props['state']?.toString();
-            if (state != null) parts.add(_abbreviateState(state));
-            if (parts.isNotEmpty) return parts.join(', ');
-            if (props['name'] != null) return props['name'].toString();
-          }
-        }
-      }
     } catch (_) {}
 
     return null;
@@ -252,25 +218,43 @@ class PlacesService {
     final hasLocation = latitude != null && longitude != null;
 
     try {
-      // Run all providers in parallel for maximum coverage
-      final results = await Future.wait([
+      // ── Phase 1: run the 2 Google requests in parallel (fast, low-bandwidth) ──
+      final googleBoth = await Future.wait([
         // [0] Google Places — ALL types (businesses, POIs, airports, addresses)
         _searchWithGoogleAutocomplete(
           cleanInput,
           lat: latitude,
           lon: longitude,
         ).catchError((_) => <PlaceSuggestion>[]),
-        // [1] Google Places — GEOCODE type (residential addresses, streets, postal codes)
-        //     Running this separately ensures homes/apartments always appear.
+        // [1] Google Places — GEOCODE type (residential addresses, streets)
         _searchWithGoogleAutocomplete(
           cleanInput,
           lat: latitude,
           lon: longitude,
           types: 'geocode',
         ).catchError((_) => <PlaceSuggestion>[]),
-        // [2] Nominatim: supplementary street addresses
+      ]);
+
+      // Discard stale results
+      if (seq != _autocompleteSeq) return [];
+
+      // Merge Google results: geocode (addresses) first, then all-types
+      final googleResults = <PlaceSuggestion>[];
+      googleResults.addAll(googleBoth[1]);
+      googleResults.addAll(googleBoth[0]);
+      final googleDeduped = _dedupeByDescription(googleResults);
+
+      // If Google returned enough results, skip OSM entirely (saves 2 network
+      // round-trips on every keystroke — especially important on cellular).
+      if (googleDeduped.length >= 5) {
+        return googleDeduped.take(25).toList();
+      }
+
+      // ── Phase 2: only hit OSM when Google gave too few results ──
+      if (seq != _autocompleteSeq) return googleDeduped;
+
+      final osmBoth = await Future.wait([
         _searchWithNominatim(cleanInput).catchError((_) => <PlaceSuggestion>[]),
-        // [3] Photon: supplementary geocoder
         _searchWithPhoton(
           cleanInput,
           lat: latitude,
@@ -278,18 +262,11 @@ class PlacesService {
         ).catchError((_) => <PlaceSuggestion>[]),
       ]);
 
-      // Discard stale results if a newer request fired while we were awaiting
-      if (seq != _autocompleteSeq) return [];
-
-      // Merge both Google result sets: geocode-specific (addresses) leads, then all-types
-      final googleResults = <PlaceSuggestion>[];
-      googleResults.addAll(results[1]); // geocode (residential / streets first)
-      googleResults.addAll(results[0]); // all-types (businesses, airports, POIs)
-      final googleDeduped = _dedupeByDescription(googleResults);
+      if (seq != _autocompleteSeq) return googleDeduped;
 
       final osmCandidates = <PlaceSuggestion>[];
-      osmCandidates.addAll(results[2]); // Nominatim
-      osmCandidates.addAll(results[3]); // Photon
+      osmCandidates.addAll(osmBoth[0]);
+      osmCandidates.addAll(osmBoth[1]);
 
       if (hasLocation && osmCandidates.isNotEmpty) {
         osmCandidates.sort((a, b) {
@@ -304,13 +281,11 @@ class PlacesService {
         });
       }
 
-      // Merge: Google deduped first (best quality + proximity-sorted), then OSM
       final merged = <PlaceSuggestion>[];
       merged.addAll(googleDeduped);
       merged.addAll(osmCandidates);
 
       if (merged.isEmpty) return [];
-
       return _dedupeByDescription(merged).take(25).toList();
     } catch (_) {
       return [];
@@ -359,7 +334,7 @@ class PlacesService {
     );
 
     try {
-      final res = await http.get(uri);
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
       if (res.statusCode != 200) return [];
       final data = jsonDecode(res.body);
 

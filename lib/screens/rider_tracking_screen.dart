@@ -98,6 +98,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   static const String _carShadowImageId = 'car-shadow-image';
   bool _carImageAdded = false;
   bool _carShadowAdded = false;
+  bool _carUpdateInProgress = false; // guard: prevents 60fps async race conditions
+  LatLng? _directTargetPos; // for GPS fallback: lerp target when off-route
   static const String _arrowImageId = 'arrow-image';
   bool _arrowImageAdded = false;
 
@@ -263,15 +265,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       }
     }
     
-    // Fallback: if projection didn't work, move car directly
+    // Fallback: if projection didn't work, set a lerp target (never teleport _animPos)
     if (!usedRouteProjection) {
-      _animPos = ll;
-      _driverPos = ll;
-      // Calculate bearing from previous position if we have one
-      if (_driverPos.latitude != 0 && _driverPos.longitude != 0) {
-        final newBearing = _bearing(_driverPos, ll);
-        if (newBearing != 0) _animBearing = newBearing;
-      }
+      _directTargetPos = ll;
     }
 
     // Update phase and distances
@@ -651,161 +647,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     return byteData!.buffer.asUint8List();
   }
 
-  /// Update car marker using GeoJSON source - con sombra 3D fade
-  /// Uses navigation arrow when _navArrowMode is true
-  Future<void> _updateCarMarkerOnMap() async {
-    if (_map == null) return;
-    if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
-    
-    // Use arrow icon in nav mode, car icon otherwise
-    final iconBytes = _navArrowMode && _arrowIconBytes != null ? _arrowIconBytes! : _carIconBytes;
-    if (iconBytes == null) return;
-    
-    try {
-      final style = _map!.style;
-      final imageId = _navArrowMode ? _arrowImageId : _carImageId;
-      final isArrowMode = _navArrowMode;
-      
-      // Generar imagen de sombra si no existe (only for car mode)
-      if (!isArrowMode) {
-        _carShadowBytes ??= await _generateShadowImage();
-      }
-      
-      // Add/update the appropriate image
-      if (isArrowMode && !_arrowImageAdded && _arrowIconBytes != null) {
-        await style.addStyleImage(
-          _arrowImageId,
-          1.0,
-          mapbox.MbxImage(
-            width: 100,
-            height: 100,
-            data: _arrowIconBytes!,
-          ),
-          false,
-          [],
-          [],
-          null,
-        );
-        _arrowImageAdded = true;
-      } else if (!_carImageAdded && !isArrowMode) {
-        await style.addStyleImage(
-          _carImageId,
-          1.0,
-          mapbox.MbxImage(
-            width: 64,
-            height: 64,
-            data: _carIconBytes!,
-          ),
-          false,
-          [],
-          [],
-          null,
-        );
-        _carImageAdded = true;
-      }
-      
-      // Only add shadow in car mode (not arrow mode)
-      if (!isArrowMode && _carShadowBytes != null) {
-        if (!_carShadowAdded) {
-          await style.addStyleImage(
-            _carShadowImageId,
-            1.0,
-            mapbox.MbxImage(
-              width: 80,
-              height: 80,
-              data: _carShadowBytes!,
-            ),
-            false,
-            [],
-            [],
-            null,
-          );
-          _carShadowAdded = true;
-        }
-        
-        // SHADOW SOURCE & LAYER (se crea primero para quedar debajo)
-        final shadowSourceExists = await style.styleSourceExists(_carShadowSourceId);
-        if (!shadowSourceExists) {
-          final shadowGeoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{}}]}';
-          await style.addSource(
-            mapbox.GeoJsonSource(id: _carShadowSourceId, data: shadowGeoJson),
-          );
-          
-          final shadowLayer = mapbox.SymbolLayer(
-            id: _carShadowLayerId,
-            sourceId: _carShadowSourceId,
-            iconImage: _carShadowImageId,
-            iconSize: 1.2,
-            iconAnchor: mapbox.IconAnchor.BOTTOM,
-            iconAllowOverlap: true,
-            iconIgnorePlacement: true,
-            iconOpacity: 0.6,
-          );
-          await style.addLayer(shadowLayer);
-        } else {
-          // Update shadow position
-          final shadowGeoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{}}]}';
-          final shadowSource = await style.getSource(_carShadowSourceId);
-          if (shadowSource != null) {
-            (shadowSource as mapbox.GeoJsonSource).updateGeoJSON(shadowGeoJson);
-          }
-        }
-      }
-      
-      // CAR/ARROW SOURCE & LAYER - Always on top
-      final sourceExists = await style.styleSourceExists(_carSourceId);
-      if (!sourceExists) {
-        final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{"bearing":$_animBearing}}}]}';
-        await style.addSource(
-          mapbox.GeoJsonSource(id: _carSourceId, data: geoJson),
-        );
-        
-        // Add layer at top of all layers (above traffic, roads, etc)
-        final layer = mapbox.SymbolLayer(
-          id: _carLayerId,
-          sourceId: _carSourceId,
-          iconImage: imageId,
-          iconSize: isArrowMode ? 1.0 : (1.0 * _carEntranceProgress),
-          iconOpacity: isArrowMode ? 1.0 : _carEntranceProgress,
-          iconRotate: isArrowMode ? 0.0 : _animBearing, // Arrow always points up
-          iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
-          iconAllowOverlap: true,
-          iconIgnorePlacement: true,
-        );
-        await style.addLayer(layer);
-        
-        // Move layer to top so it's always visible above everything
-        try {
-          await style.moveStyleLayer(_carLayerId, null);
-        } catch (_) {}
-        
-        // Iniciar animación de entrada inmediatamente después de crear el carro
-        if (!isArrowMode) {
-          _startCarEntranceAnimation();
-        }
-      } else {
-        // Update car/arrow position
-        final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[${_animPos.longitude},${_animPos.latitude}]},"properties":{"bearing":$_animBearing}}}]}';
-        final source = await style.getSource(_carSourceId);
-        if (source != null) {
-          (source as mapbox.GeoJsonSource).updateGeoJSON(geoJson);
-        }
-        
-        // Update the icon if mode changed
-        final layerExists = await style.styleLayerExists(_carLayerId);
-        if (layerExists) {
-          await style.setStyleLayerProperty(_carLayerId, 'icon-image', imageId);
-          await style.setStyleLayerProperty(_carLayerId, 'icon-size', isArrowMode ? 1.0 : 1.0);
-          await style.setStyleLayerProperty(_carLayerId, 'icon-rotate', isArrowMode ? 0.0 : _animBearing);
-        }
-        
-        // Ensure layer stays on top
-        try {
-          await style.moveStyleLayer(_carLayerId, null);
-        } catch (_) {}
-      }
-    } catch (_) {}
-  }
 
   /// Inicia la animación de entrada del carro - transición profesional estilo "formación"
   void _startCarEntranceAnimation() {
@@ -828,7 +669,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _carEntranceProgress = _elasticOut(progress);
       
       // Redibujar el carro con la nueva escala
-      _updateCarMarkerOnMap();
+      _updateCarSmooth();
       
       if (progress >= 1.0) {
         _carEntranceComplete = true;
@@ -1277,9 +1118,27 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _driverPos = pos;
     _driverBearing = newBearing;
 
+    // ── Direct-target lerp (GPS fallback when off-route) ──
+    final tgt = _directTargetPos;
+    if (tgt != null) {
+      const lerpFactor = 0.08; // smooth catch-up, never teleport
+      final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * lerpFactor;
+      final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * lerpFactor;
+      final newBrg = _bearing(_animPos, LatLng(newLat, newLng));
+      _animPos = LatLng(newLat, newLng);
+      _driverPos = _animPos;
+      if (newBrg != 0) {
+        double db = newBrg - _animBearing;
+        if (db > 180) db -= 360;
+        if (db < -180) db += 360;
+        _animBearing = (_animBearing + db * 0.05) % 360;
+      }
+    }
+
     // Update map annotations directly — no setState needed (avoids 60fps widget rebuilds)
     _updateCameraForRoute();
-    _updateAnnotations();
+    _updateCarSmooth(); // fast path: only car GeoJSON
+    _updateStaticAnnotationsOnce(); // slow path: pins + route, created once
   }
 
   // ── Cámara con seguimiento ultra-fluido tipo "chase" del carro ──
@@ -1814,57 +1673,154 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     );
   }
 
-  Future<void> _updateAnnotations() async {
+  // ── Fast path: update only the car GeoJSON (called every 60fps frame) ──
+  void _updateCarSmooth() {
+    if (_carUpdateInProgress) return; // skip frame if previous update still running
+    if (_map == null) return;
+    if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+    _carUpdateInProgress = true;
+    _updateCarGeoJsonOnly().whenComplete(() => _carUpdateInProgress = false);
+  }
+
+  // Update only the car/shadow GeoJSON source positions (no layer recreation)
+  Future<void> _updateCarGeoJsonOnly() async {
+    if (_map == null) return;
+    final iconBytes = _navArrowMode && _arrowIconBytes != null ? _arrowIconBytes! : _carIconBytes;
+    if (iconBytes == null) return;
+    try {
+      final style = _map!.style;
+      final imageId = _navArrowMode ? _arrowImageId : _carImageId;
+      final isArrow = _navArrowMode;
+
+      // ── First time: add image + create source + layer ──
+      if (isArrow && !_arrowImageAdded && _arrowIconBytes != null) {
+        await style.addStyleImage(_arrowImageId, 1.0,
+          mapbox.MbxImage(width: 100, height: 100, data: _arrowIconBytes!),
+          false, [], [], null);
+        _arrowImageAdded = true;
+      } else if (!isArrow && !_carImageAdded && _carIconBytes != null) {
+        await style.addStyleImage(_carImageId, 1.0,
+          mapbox.MbxImage(width: 64, height: 64, data: _carIconBytes!),
+          false, [], [], null);
+        _carImageAdded = true;
+        // Shadow image
+        _carShadowBytes ??= await _generateShadowImage();
+        if (_carShadowBytes != null && !_carShadowAdded) {
+          await style.addStyleImage(_carShadowImageId, 1.0,
+            mapbox.MbxImage(width: 80, height: 80, data: _carShadowBytes!),
+            false, [], [], null);
+          _carShadowAdded = true;
+        }
+      }
+
+      final lng = _animPos.longitude;
+      final lat = _animPos.latitude;
+      final brg = _animBearing;
+      final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{"bearing":$brg}}]}';
+
+      final sourceExists = await style.styleSourceExists(_carSourceId);
+      if (!sourceExists) {
+        // Create shadow source + layer first
+        if (!isArrow && _carShadowAdded) {
+          final shadowGeo = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{}}]}';
+          await style.addSource(mapbox.GeoJsonSource(id: _carShadowSourceId, data: shadowGeo));
+          await style.addLayer(mapbox.SymbolLayer(
+            id: _carShadowLayerId, sourceId: _carShadowSourceId,
+            iconImage: _carShadowImageId, iconSize: 1.2,
+            iconAnchor: mapbox.IconAnchor.BOTTOM,
+            iconAllowOverlap: true, iconIgnorePlacement: true, iconOpacity: 0.6,
+          ));
+        }
+        // Create car source + layer
+        await style.addSource(mapbox.GeoJsonSource(id: _carSourceId, data: geoJson));
+        final scale = isArrow ? 1.0 : _carEntranceProgress.clamp(0.01, 1.0);
+        await style.addLayer(mapbox.SymbolLayer(
+          id: _carLayerId, sourceId: _carSourceId,
+          iconImage: imageId,
+          iconSize: scale,
+          iconOpacity: isArrow ? 1.0 : _carEntranceProgress,
+          iconRotate: isArrow ? 0.0 : brg,
+          iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
+          iconAllowOverlap: true, iconIgnorePlacement: true,
+        ));
+        try { await style.moveStyleLayer(_carLayerId, null); } catch (_) {}
+        if (!isArrow) _startCarEntranceAnimation();
+      } else {
+        // ── Hot path: just update position + rotation in existing source ──
+        final source = await style.getSource(_carSourceId);
+        if (source != null) (source as mapbox.GeoJsonSource).updateGeoJSON(geoJson);
+
+        final layerExists = await style.styleLayerExists(_carLayerId);
+        if (layerExists) {
+          await style.setStyleLayerProperty(_carLayerId, 'icon-image', imageId);
+          await style.setStyleLayerProperty(_carLayerId, 'icon-rotate', isArrow ? 0.0 : brg);
+          final scale = isArrow ? 1.0 : _carEntranceProgress.clamp(0.01, 1.0);
+          await style.setStyleLayerProperty(_carLayerId, 'icon-size', scale);
+          try { await style.moveStyleLayer(_carLayerId, null); } catch (_) {}
+        }
+
+        // Update shadow position
+        if (!isArrow) {
+          final shadowGeo = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{}}]}';
+          final shadowSrc = await style.getSource(_carShadowSourceId);
+          if (shadowSrc != null) (shadowSrc as mapbox.GeoJsonSource).updateGeoJSON(shadowGeo);
+        }
+      }
+    } catch (_) {}
+  }
+
+  // ── Slow path: create pins + route polylines once when bytes are ready ──
+  bool _staticAnnotsDone = false;
+  Future<void> _updateStaticAnnotationsOnce() async {
+    if (_staticAnnotsDone) return;
     final pointMgr = _pointAnnotMgr;
     final polyMgr = _polylineAnnotMgr;
     if (pointMgr == null || polyMgr == null) return;
+    if (_pickupPinBytes == null || _dropoffPinBytes == null) return;
+    if (_routePts.length < 2) return;
+    _staticAnnotsDone = true; // mark before await to prevent double-creation
 
-    // ── Car marker usando GeoJSON source (método correcto) ──
-    await _updateCarMarkerOnMap();
-
-    // ── Pickup / dropoff pins (create once) ──
-    // Usar los puntos exactos de la ruta para que los pines estén sobre la línea
-    if (_pickupAnnot == null && _pickupPinBytes != null) {
-      _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+    // Pickup pin
+    try {
+      _pickupAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
         image: _pickupPinBytes!,
         iconSize: 1.05,
       ));
-    }
-    if (_dropoffAnnot == null && _dropoffPinBytes != null) {
-      _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+    } catch (_) {}
+
+    // Dropoff pin
+    try {
+      _dropoffAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
         image: _dropoffPinBytes!,
         iconSize: 1.05,
       ));
-    }
+    } catch (_) {}
 
-    // ── Full route polyline (create once) ──
-    if (_fullRouteAnnot == null && _routePts.length >= 2) {
-      _fullRouteAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
+    // Full route underline
+    final coords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    try {
+      _fullRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: coords),
         lineColor: const Color(0xFF2A3A5A).toARGB32(),
-        lineWidth: 8.0,
-        lineJoin: mapbox.LineJoin.ROUND,
+        lineWidth: 8.0, lineJoin: mapbox.LineJoin.ROUND,
       ));
-    }
+    } catch (_) {}
 
-    // ── Remaining route polyline - shows complete path from pickup to dropoff ──
-    // Mostrar ruta completa desde pickup hasta destino
-    final fullRouteCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    if (fullRouteCoords.length >= 2) {
-      if (_remainingRouteAnnot != null) {
-        try {
-          await polyMgr.update(_remainingRouteAnnot!..geometry = mapbox.LineString(coordinates: fullRouteCoords));
-        } catch (_) { _remainingRouteAnnot = null; }
-      }
+    // Active route line (blue)
+    try {
       _remainingRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: fullRouteCoords),
+        geometry: mapbox.LineString(coordinates: coords),
         lineColor: const Color(0xFF5BA3F5).toARGB32(),
-        lineWidth: 10.0,
-        lineJoin: mapbox.LineJoin.ROUND,
+        lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
       ));
-    }
+    } catch (_) {}
+  }
+
+  Future<void> _updateAnnotations() async {
+    _updateCarSmooth();
+    await _updateStaticAnnotationsOnce();
   }
 
   Widget _bottomCard(AppColors c, double botPad) {

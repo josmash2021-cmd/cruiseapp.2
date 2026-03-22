@@ -351,10 +351,56 @@ workflows:
         script: |
           set -o pipefail
           mkdir -p /tmp/xcodebuild_logs
-          flutter build ipa --release \
+
+          # Step 1 — generate Flutter build files (Dart → native) without archiving
+          flutter build ios --release \
             --no-tree-shake-icons \
+            --no-codesign \
             --build-number=$BUILD_NUMBER \
             2>&1 | tee /tmp/xcodebuild_logs/flutter_build.log
+
+          # Step 2 — get the provisioning profile UUID that was installed by xcode-project use-profiles
+          PROFILE_UUID=$(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision 2>/dev/null \
+            | plutil -extract UUID raw - 2>/dev/null \
+            || ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision 2>/dev/null \
+            | head -1 | xargs -I{} basename {} .mobileprovision)
+          echo "Using provisioning profile UUID: $PROFILE_UUID"
+
+          # Step 3 — archive with explicit manual signing
+          xcodebuild archive \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -archivePath /tmp/Runner.xcarchive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=7QLC9UVB3Z \
+            CODE_SIGN_IDENTITY="iPhone Distribution" \
+            PROVISIONING_PROFILE="$PROFILE_UUID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            2>&1 | tee -a /tmp/xcodebuild_logs/flutter_build.log
+
+          # Step 4 — write ExportOptions.plist
+          python3 -c "
+          open('/tmp/ExportOptions.plist','w').write('''<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<plist version=\"1.0\"><dict>
+  <key>method</key><string>app-store</string>
+  <key>teamID</key><string>7QLC9UVB3Z</string>
+  <key>signingStyle</key><string>manual</string>
+  <key>stripSwiftSymbols</key><true/>
+  <key>uploadBitcode</key><false/>
+  <key>uploadSymbols</key><true/>
+</dict></plist>''')
+          print('ExportOptions.plist written')
+          "
+
+          # Step 5 — export IPA
+          mkdir -p build/ios/ipa
+          xcodebuild -exportArchive \
+            -archivePath /tmp/Runner.xcarchive \
+            -exportPath build/ios/ipa \
+            -exportOptionsPlist /tmp/ExportOptions.plist \
+            2>&1 | tee -a /tmp/xcodebuild_logs/flutter_build.log
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

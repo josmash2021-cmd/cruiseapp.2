@@ -347,12 +347,6 @@ workflows:
           xcode-project use-profiles
           security find-identity -v -p codesigning
           echo "✅ Code signing identities installed"
-      - name: Strip entitlements not covered by CI profile
-        script: |
-          /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.in-app-payments" \
-            ios/Runner/Runner.entitlements 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Delete :aps-environment" \
-            ios/Runner/Runner.entitlements 2>/dev/null || true
       - name: Build IPA (App Store)
         script: |
           set -o pipefail

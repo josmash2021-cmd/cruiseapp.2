@@ -122,6 +122,13 @@ class UserSession {
             cachedPhotoPath = (alt.isNotEmpty && await File(alt).exists()) ? alt : '';
           }
         }
+        // If no cached path from user session, try _photoKey directly (survives logout)
+        if (cachedPhotoPath.isEmpty && !kIsWeb) {
+          final persistedPath = prefs0.getString(_photoKey) ?? '';
+          cachedPhotoPath = (persistedPath.isNotEmpty && await File(persistedPath).exists()) 
+              ? persistedPath 
+              : '';
+        }
         // Repopulate local cache right away with cached photo
         await saveUser(
           firstName: profile['first_name']?.toString() ?? '',
@@ -200,13 +207,14 @@ class UserSession {
   }
 
   /// Log out — clear saved session, mode, and JWT token.
-  /// Profile photo path is preserved so it survives sign-out/sign-in.
+  /// Profile photo path is preserved so it survives sign-out/sign-in for the same user.
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
     await prefs.remove(_modeKey);
     await prefs.remove('pending_password');
-    await prefs.remove(_photoKey); // Clear so another account on same device gets its own photo
+    // Keep _photoKey so the same user sees their photo after re-login.
+    // Photo files are already isolated by userId in the filename (user_$userId.ext).
     await ApiService.clearToken();
     ApiService.clearUserCache();
     // Clear all user-specific data so accounts are fully independent

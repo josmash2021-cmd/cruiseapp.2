@@ -323,13 +323,13 @@ workflows:
         bundle_identifier: com.cruiseinride.app
       groups:
         - default
-        - ios_signing
       flutter: stable
       xcode: latest
       cocoapods: 1.15.2
       vars:
         <<: *shared_vars
         BUNDLE_ID: "com.cruiseinride.app"
+        FLUTTER_XCODE_DEVELOPMENT_TEAM: "7QLC9UVB3Z"
     scripts:
       - *generate_env
       - *configure_git
@@ -354,20 +354,21 @@ workflows:
       - name: Build IPA (App Store)
         script: |
           mkdir -p /tmp/xcodebuild_logs
+          # ExportOptions: method=app-store, manual signing.
+          # Do NOT specify provisioningProfiles — xcode-project use-profiles
+          # already embedded the correct profile into the Xcode project.
           cat > /tmp/ExportOptions.plist << 'PLISTEOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>app-store</string>
-            <key>teamID</key><string>7QLC9UVB3Z</string>
-            <key>signingStyle</key><string>manual</string>
-            <key>provisioningProfiles</key><dict>
-              <key>com.cruiseinride.app</key><string>cruise</string>
-            </dict>
-            <key>uploadBitcode</key><false/>
-            <key>uploadSymbols</key><true/>
-          </dict></plist>
-          PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>method</key><string>app-store</string>
+  <key>teamID</key><string>7QLC9UVB3Z</string>
+  <key>signingStyle</key><string>manual</string>
+  <key>stripSwiftSymbols</key><true/>
+  <key>uploadBitcode</key><false/>
+  <key>uploadSymbols</key><true/>
+</dict></plist>
+PLISTEOF
           flutter build ipa --release \
             --no-tree-shake-icons \
             --build-number=$BUILD_NUMBER \

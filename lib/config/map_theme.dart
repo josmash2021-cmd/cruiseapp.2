@@ -33,7 +33,7 @@ class MapTheme {
     }
 
     // ── FREEWAYS / HIGHWAYS → gold ──────────────────────────────────────
-    // Support both v10 (legacy) and v11 (modern) layer naming
+    // Support v10 (legacy), v11 (modern), and custom style layer naming
     const goldRoads = [
       // v10 style layers (legacy navigation styles)
       'road-motorway',
@@ -47,7 +47,7 @@ class MapTheme {
       'tunnel-motorway',
       'tunnel-trunk',
       'tunnel-motorway-trunk-link',
-      // v11 style layers (dark-v11, standard v11 styles) - simplified structure
+      // v11 style layers (dark-v11, standard v11 styles)
       'road-major',
       'road-highway',
       'road-motorway-alt',
@@ -56,6 +56,18 @@ class MapTheme {
       'highway',
       'road-motorway-2',
       'road-trunk-2',
+      // v11 dark-v11 specific layers
+      'road-motorway-alt-1',
+      'road-motorway-alt-2',
+      'road-highway-motorway',
+      'road-highway-trunk',
+      // Standard v11 layer groups
+      'road-motorway-primary',
+      'road-trunk-primary',
+      'bridge-motorway-primary',
+      'bridge-trunk-primary',
+      'tunnel-motorway-primary',
+      'tunnel-trunk-primary',
     ];
     for (final layer in goldRoads) {
       try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _gold); } catch (_) {}
@@ -74,6 +86,14 @@ class MapTheme {
       'motorway-case',
       'trunk-case',
       'highway-case',
+      // v11 casing variants
+      'road-motorway-alt-case',
+      'road-highway-motorway-case',
+      'road-highway-trunk-case',
+      'bridge-motorway-alt-case',
+      'bridge-highway-case',
+      'tunnel-motorway-alt-case',
+      'tunnel-highway-case',
     ];
     for (final layer in goldCasings) {
       try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _goldCase); } catch (_) {}
@@ -96,6 +116,13 @@ class MapTheme {
       'tunnel-secondary-tertiary',
       'tunnel-primary-link',
       'tunnel-secondary-tertiary-link',
+      // v11 variants
+      'road-primary-navigation-1',
+      'road-primary-navigation-2',
+      'bridge-primary-1',
+      'bridge-primary-2',
+      'tunnel-primary-1',
+      'tunnel-primary-2',
     ];
     for (final layer in greyRoads) {
       try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _greyRoad); } catch (_) {}
@@ -120,6 +147,11 @@ class MapTheme {
       'tunnel-street',
       'tunnel-minor',
       'tunnel-path',
+      // v11 variants
+      'road-street-navigation-1',
+      'road-street-navigation-2',
+      'road-minor-navigation',
+      'road-minor-navigation-1',
     ];
     for (final layer in greyMinorRoads) {
       try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _greyMinor); } catch (_) {}
@@ -140,6 +172,10 @@ class MapTheme {
       'tunnel-secondary-tertiary-case',
       'tunnel-street-case',
       'tunnel-minor-case',
+      // v11 variants
+      'road-primary-case-1',
+      'road-primary-case-2',
+      'road-secondary-tertiary-case-1',
     ];
     for (final layer in greyCasings) {
       try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _greyCase); } catch (_) {}
@@ -149,6 +185,9 @@ class MapTheme {
     try { await ctrl.style.setStyleLayerProperty('road-label', 'text-color', '#5A6070'); } catch (_) {}
     try { await ctrl.style.setStyleLayerProperty('road-number-shield', 'text-color', _gold); } catch (_) {}
     try { await ctrl.style.setStyleLayerProperty('road-exit-shield', 'text-color', _gold); } catch (_) {}
+    // v11 label variants
+    try { await ctrl.style.setStyleLayerProperty('road-label-navigation', 'text-color', '#5A6070'); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty('road-label-simple', 'text-color', '#5A6070'); } catch (_) {}
 
     // ── Buildings → dark navy tint ──────────────────────────────────────
     for (final layer in ['building', 'building-outline']) {
@@ -164,6 +203,9 @@ class MapTheme {
       'traffic-moderate',
       'traffic-heavy',
       'traffic-severe',
+      // v11 traffic
+      'traffic-v1',
+      'traffic-v1-case',
     ];
     for (final layer in trafficLayers) {
       try { await ctrl.style.setStyleLayerProperty(layer, 'line-opacity', 0.0); } catch (_) {}

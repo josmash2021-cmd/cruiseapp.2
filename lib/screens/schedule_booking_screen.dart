@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
+import '../config/map_theme.dart';
 import 'package:intl/intl.dart';
 
 import '../config/api_keys.dart';
@@ -909,6 +910,11 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                       ),
                       onMapCreated: (ctrl) async {
                         _mapCtrl = ctrl;
+                        ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+                        ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+                        ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+                        ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                        await MapTheme.applyNavyGold(ctrl);
                         _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                         _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
                         setState(() => _mapReady = true);

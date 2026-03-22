@@ -1035,28 +1035,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 24),
 
-              // ── Hero CTA ("Where to?" or Ride in Progress) ──
+              // ── Active Ride Banner (if exists) ──
+              if (_activeRide != null) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: _buildRideInProgressCard(),
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              // ── Hero CTA ("Where to?") ──
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: _buildHeroCTA(),
               ),
 
-              if (_activeRide == null) ...[
-                const SizedBox(height: 28),
+              const SizedBox(height: 28),
 
-                // ── Circular action buttons ──
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildCircularActions(),
-                ),
+              // ── Circular action buttons ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: _buildCircularActions(),
+              ),
 
-                const SizedBox(height: 36),
+              const SizedBox(height: 36),
 
-                // ── Fleet header + cards ──
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildFleetHeader(),
-                ),
+              // ── Fleet header + cards ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: _buildFleetHeader(),
+              ),
                 const SizedBox(height: 16),
                 AnimatedCrossFade(
                   firstChild: Padding(
@@ -1115,7 +1123,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ),
                 ],
-              ],
 
                   const SizedBox(height: 32),
 
@@ -1356,15 +1363,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ─── Hero CTA Card ───
   Widget _buildHeroCTA() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final verifyDisabled = !_isVerified && _activeRide == null;
+    final verifyDisabled = !_isVerified;
     final zoneBlocked = !_serviceZoneActive && _activeServiceStates.isNotEmpty;
     final disabled = verifyDisabled || zoneBlocked;
     return GestureDetector(
       onTap: () async {
-        if (_activeRide != null) {
-          _resumeActiveRide();
-          return;
-        }
         if (zoneBlocked) {
           showDialog<void>(
             context: context,
@@ -1455,59 +1458,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
-                  child: _activeRide != null
-                          // ── RIDE IN PROGRESS inside the Where to card ──
-                          ? Row(
-                              children: [
-                                Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: _gold.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(14),
-                                    child: Image.asset(
-                                      'assets/images/logoapp.png',
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (ctx, err, st) => Icon(
-                                        Icons.directions_car_rounded,
-                                        color: _gold,
-                                        size: 24,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        S.of(context).rideInProgressTitle,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        S.of(context).rideInProgressSubtitle,
-                                        style: TextStyle(
-                                          color: Colors.white.withValues(alpha: 0.5),
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            )
-                          // ── NORMAL "Where to?" content ──
-                          : Row(
+                  child: Row(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
                                 Expanded(

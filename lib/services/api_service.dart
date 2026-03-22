@@ -13,6 +13,17 @@ import 'security_service.dart';
 import 'firebase_storage_service.dart';
 import '../config/env.dart';
 
+/// Simple in-memory cache entry with TTL
+class _CacheEntry {
+  final dynamic data;
+  final DateTime timestamp;
+  final Duration ttl;
+  
+  _CacheEntry(this.data, this.ttl) : timestamp = DateTime.now();
+  
+  bool get isExpired => DateTime.now().difference(timestamp) > ttl;
+}
+
 /// Communicates with the Cruise Ride backend (FastAPI + PostgreSQL).
 ///
 /// The active server URL is loaded from SharedPreferences on startup so it
@@ -27,16 +38,76 @@ class ApiService {
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 
+  // ── In-memory response cache for GET requests ────────────────────────
+  static final Map<String, _CacheEntry> _responseCache = {};
+  static final Map<String, Future<http.Response>> _inFlightRequests = {};
+  
+  /// Clear the response cache - call when user logs out or data changes
+  static void clearCache() {
+    _responseCache.clear();
+    _inFlightRequests.clear();
+    debugPrint('[ApiService] Response cache cleared');
+  }
+  
+  /// Cache GET responses for a short time to reduce server load
+  static Future<http.Response> _cachedGet(
+    Uri url, {
+    Map<String, String>? headers,
+    Duration cacheTtl = const Duration(seconds: 5),
+    bool useCache = true,
+  }) async {
+    final cacheKey = url.toString();
+    
+    // Check cache first
+    if (useCache && _responseCache.containsKey(cacheKey)) {
+      final entry = _responseCache[cacheKey]!;
+      if (!entry.isExpired) {
+        return entry.data as http.Response;
+      }
+      _responseCache.remove(cacheKey);
+    }
+    
+    // Deduplicate concurrent requests for the same URL
+    if (_inFlightRequests.containsKey(cacheKey)) {
+      return await _inFlightRequests[cacheKey]!;
+    }
+    
+    // Make the request and track it
+    final requestFuture = _client.get(url, headers: headers).timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        _inFlightRequests.remove(cacheKey);
+        throw TimeoutException('Request to \${url.path} timed out');
+      },
+    );
+    
+    _inFlightRequests[cacheKey] = requestFuture;
+    
+    try {
+      final response = await requestFuture;
+      
+      // Cache successful GET responses
+      if (useCache && response.statusCode == 200) {
+        _responseCache[cacheKey] = _CacheEntry(response, cacheTtl);
+      }
+      
+      return response;
+    } finally {
+      _inFlightRequests.remove(cacheKey);
+    }
+  }
+
   /// Persistent IOClient backed by a tuned HttpClient.
   /// - autoUncompress: auto-decompresses gzip/deflate responses
-  /// - connectionTimeout: 10 s — fail fast instead of hanging
-  /// - idleTimeout: 90 s — keep TCP/TLS alive between calls (no re-handshake)
+  /// - connectionTimeout: 8 s — fail fast instead of hanging
+  /// - idleTimeout: 60 s — keep TCP/TLS alive between calls
+  /// - maxConnectionsPerHost: 10 — increased for parallel API calls
   static final http.Client _client = () {
     final inner = HttpClient()
       ..autoUncompress = true
-      ..connectionTimeout = const Duration(seconds: 10)
-      ..idleTimeout = const Duration(seconds: 90)
-      ..maxConnectionsPerHost = 6;
+      ..connectionTimeout = const Duration(seconds: 8)
+      ..idleTimeout = const Duration(seconds: 60)
+      ..maxConnectionsPerHost = 10;
     return IOClient(inner);
   }();
 
@@ -299,6 +370,9 @@ class ApiService {
     await SecurityService.deleteCredential('refresh_jwt');
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
+    // Clear all caches on logout
+    clearCache();
+    clearUserCache();
     SecurityService.logSecurityEvent('token_cleared');
   }
 
@@ -605,9 +679,13 @@ class ApiService {
     if (token == null) return null;
 
     try {
-      final res = await _client
-          .get(Uri.parse('$_baseUrl/auth/me'), headers: _jsonHeaders(token))
-          .timeout(const Duration(seconds: 5));
+      // Use cached GET for better performance - cache for 2 seconds
+      final res = await _cachedGet(
+        Uri.parse('$_baseUrl/auth/me'),
+        headers: _jsonHeaders(token),
+        cacheTtl: const Duration(seconds: 2),
+        useCache: true,
+      );
       if (res.statusCode == 200) return jsonDecode(res.body);
       // Auto-refresh on 401
       if (res.statusCode == 401) {

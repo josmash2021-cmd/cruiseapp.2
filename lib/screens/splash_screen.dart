@@ -207,23 +207,23 @@ class _SplashScreenState extends State<SplashScreen>
     await Future.delayed(const Duration(milliseconds: 500));
     if (_disposed) return;
 
-    // Phase 3 — scale up + fade out
-    await _exitCtrl.forward().orCancel.catchError((_) {});
-    if (_disposed) return;
+    // Phase 3 — scale up + fade out (run in parallel with destination resolution)
+    final exitFuture = _exitCtrl.forward().orCancel.catchError((_) {});
+    
+    // Wait for both animation AND destination to be ready
+    final results = await Future.wait([exitFuture, destinationFuture]);
+    if (_disposed || !mounted) return;
+    
+    final destination = results[1] as Widget;
 
-    // Destination should already be resolved — no black screen gap
-    final destination = await destinationFuture;
-    if (!mounted) return;
-
-    // Fade-in transition: home screen fades in from the black splash background
-    // so even a tiny remaining wait is a smooth cross-fade, never a hard black cut.
+    // Instant transition - no black screen gap
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => destination,
-        transitionDuration: const Duration(milliseconds: 400),
+        transitionDuration: const Duration(milliseconds: 200),
         reverseTransitionDuration: Duration.zero,
         transitionsBuilder: (_, anim, __, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
           child: child,
         ),
       ),

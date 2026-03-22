@@ -783,28 +783,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     super.dispose();
   }
 
-  // ── User location dot (animated pulsing circle) ──
-
+  // ── User location dot — hidden on ride request map ──
   Future<void> _updateUserDotAnnotation() async {
-    final bytes = _goldDot.currentBytes;
-    final loc = _userLocation;
-    if (bytes == null || loc == null || _pointAnnotMgr == null) return;
-    try {
-      if (_userDotAnnot == null) {
-        _userDotAnnot = await _pointAnnotMgr!.create(
-          mapbox.PointAnnotationOptions(
-            geometry: mapbox.Point(
-              coordinates: mapbox.Position(loc.longitude, loc.latitude),
-            ),
-            image: bytes,
-            iconSize: 0.5,
-          ),
-        );
-      } else {
-        _userDotAnnot!.image = bytes;
-        await _pointAnnotMgr!.update(_userDotAnnot!);
-      }
-    } catch (_) {}
+    // No GPS dot shown on this screen — pickup pin already marks the user's location
   }
 
   // ── Location ──
@@ -1101,7 +1082,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
           image: bytes,
-          iconSize: 0.5,
+          iconSize: 0.85,
         ));
       }
     }
@@ -1121,7 +1102,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
           image: bytes,
-          iconSize: 0.5,
+          iconSize: 0.85,
         ));
       }
     }

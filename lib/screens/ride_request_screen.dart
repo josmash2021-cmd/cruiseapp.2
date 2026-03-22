@@ -1406,9 +1406,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     child: _circleButton(
                       icon: Icons.arrow_back,
                       onTap: () {
-                        _ctrl.reset();
-                        _navigatingToTracking = false;
-                        _sheetCtrl.reverse();
+                        Navigator.of(context).pop();
                       },
                       c: c,
                     ),

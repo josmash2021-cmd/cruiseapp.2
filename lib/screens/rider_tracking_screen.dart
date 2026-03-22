@@ -1453,7 +1453,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             RepaintBoundary(
               child: mapbox.MapWidget(
                 key: const ValueKey('rider-map'),
-                styleUri: 'mapbox://styles/mapbox/navigation-night-v1',
+                styleUri: 'mapbox://styles/mapbox/dark-v11',
                 cameraOptions: mapbox.CameraOptions(
                   center: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
                   zoom: 14.0,
@@ -1462,22 +1462,20 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 textureView: true,
                 onMapCreated: (ctrl) async {
                   _map = ctrl;
-                  // Ocultar elementos UI para carga más rápida
                   ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
                   ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                   ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                   ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                  
-                  
                   // Route polyline below road labels
                   _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
-                    below: "road-label",
+                    below: 'road-label',
                   );
                   // Points (car + pins) always above the route polyline
                   _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                   _updateAnnotations();
-                  // Dark navy + gold road theme
-                  await _applyDarkNavyGoldTheme(ctrl);
+                },
+                onStyleLoadedListener: (_) async {
+                  if (_map != null) await _applyDarkNavyGoldTheme(_map!);
                 },
                 onScrollListener: (_) {
                   if (!_programmaticCam) setState(() => _userMovedMap = true);

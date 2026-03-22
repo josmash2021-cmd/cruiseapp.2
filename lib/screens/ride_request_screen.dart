@@ -1306,7 +1306,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             else
               RepaintBoundary(
                 child: mapbox.MapWidget(
-                  styleUri: MapboxConfig.styleDark,
+                  styleUri: 'mapbox://styles/mapbox/dark-v11',
                   cameraOptions: mapbox.CameraOptions(
                     center: mapbox.Point(coordinates: mapbox.Position(_center!.longitude, _center!.latitude)),
                     zoom: 15.5,
@@ -1324,7 +1324,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                     _updateUserDotAnnotation();
                     setState(() => _mapReady = true);
-                    await _applyDarkNavyGoldTheme(ctrl);
+                  },
+                  onStyleLoadedListener: (_) async {
+                    if (_mapCtrl != null) await _applyDarkNavyGoldTheme(_mapCtrl!);
                   },
                   onScrollListener: (_) {
                     if (!_programmaticCam) setState(() => _userMovedMap = true);

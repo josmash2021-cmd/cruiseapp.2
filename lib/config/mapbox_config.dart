@@ -5,11 +5,11 @@ class MapboxConfig {
   static const String accessToken =
       'pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w';
 
-  // ── Style URLs — todos usan el mismo estilo oscuro tipo Google Maps ──
-  static const String _nightNav = 'mapbox://styles/mapbox/navigation-night-v1';
+  // ── Style URLs — dark-v11 uses standard layer IDs compatible with our navy/gold theme ──
+  static const String _darkV11 = 'mapbox://styles/mapbox/dark-v11';
 
-  static const String styleDark        = _nightNav;
-  static const String styleLight       = _nightNav;
-  static const String styleNavigation  = _nightNav;
-  static const String styleGameNavigation = _nightNav;
+  static const String styleDark        = _darkV11;
+  static const String styleLight       = _darkV11;
+  static const String styleNavigation  = _darkV11;
+  static const String styleGameNavigation = _darkV11;
 }

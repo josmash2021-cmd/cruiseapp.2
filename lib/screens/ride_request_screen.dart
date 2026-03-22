@@ -75,7 +75,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   mapbox.PointAnnotation? _goldDotAnnot;
   mapbox.PointAnnotation? _userDotAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
-  LatLng _center = const LatLng(25.7617, -80.1918); // Miami default
+  LatLng? _center;
   LatLng? _userLocation;
   bool _mapReady = false;
 
@@ -88,6 +88,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // ── Searching animation ──
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
+
+  // ── Searching card: radar rings + cycling text + shimmer ──
+  late AnimationController _radarCtrl;
+  late AnimationController _shimmerCtrl;
+  int _searchStatusIdx = 0;
+  Timer? _searchStatusTimer;
+  int _searchElapsedSec = 0;
+  Timer? _searchElapsedTimer;
 
   // ── Bottom sheet ──
   late AnimationController _sheetCtrl;
@@ -150,6 +158,15 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       begin: 0.6,
       end: 1.0,
     ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+
+    _radarCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..repeat();
+    _shimmerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
 
     _sheetCtrl = AnimationController(
       vsync: this,
@@ -758,6 +775,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _ctrl.removeListener(_onStateChange);
     _ctrl.dispose();
     _pulseCtrl.dispose();
+    _radarCtrl.dispose();
+    _shimmerCtrl.dispose();
+    _searchStatusTimer?.cancel();
+    _searchElapsedTimer?.cancel();
     _sheetCtrl.dispose();
     super.dispose();
   }
@@ -898,6 +919,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           _searchMapTimer?.cancel();
           _searchingSplash = false;
           _searchingShowMap = true;
+          // Start cycling status messages
+          _searchStatusIdx = 0;
+          _searchElapsedSec = 0;
+          _searchStatusTimer?.cancel();
+          _searchStatusTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+            if (mounted) setState(() => _searchStatusIdx++);
+          });
+          _searchElapsedTimer?.cancel();
+          _searchElapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+            if (mounted) setState(() => _searchElapsedSec++);
+          });
           // Fit route so user sees pickup → dropoff
           if (_ctrl.state.route != null) {
             _fitRoute(_ctrl.state.route!.points);
@@ -1283,40 +1315,41 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         body: Stack(
           children: [
             // ── Map ──
-            RepaintBoundary(
-              child: mapbox.MapWidget(
-                styleUri: MapboxConfig.styleDark,
-                cameraOptions: mapbox.CameraOptions(
-                  center: mapbox.Point(coordinates: mapbox.Position(_center.longitude, _center.latitude)),
-                  zoom: 15.5,
-                  pitch: 0.0,
+            if (_center == null)
+              Container(
+                color: const Color(0xFF07080D),
+                child: const Center(
+                  child: CircularProgressIndicator(color: Color(0xFFE8C547), strokeWidth: 2),
                 ),
-                onMapCreated: (ctrl) async {
-                  _mapCtrl = ctrl;
-                  ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-                  ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-                  ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-                  ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                  // Center on user's location instantly — no Miami flash
-                  if (_userLocation != null) {
-                    await ctrl.setCamera(mapbox.CameraOptions(
-                      center: mapbox.Point(coordinates: mapbox.Position(_userLocation!.longitude, _userLocation!.latitude)),
-                      zoom: 15.5,
-                    ));
-                  }
-                  _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
-                    below: 'road-label',
-                  );
-                  _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                  _updateUserDotAnnotation(); // place animated user location circle
-                  setState(() => _mapReady = true);
-                  await _applyDarkNavyGoldTheme(ctrl);
-                },
-                onScrollListener: (_) {
-                  if (!_programmaticCam) setState(() => _userMovedMap = true);
-                },
+              )
+            else
+              RepaintBoundary(
+                child: mapbox.MapWidget(
+                  styleUri: MapboxConfig.styleDark,
+                  cameraOptions: mapbox.CameraOptions(
+                    center: mapbox.Point(coordinates: mapbox.Position(_center!.longitude, _center!.latitude)),
+                    zoom: 15.5,
+                    pitch: 0.0,
+                  ),
+                  onMapCreated: (ctrl) async {
+                    _mapCtrl = ctrl;
+                    ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+                    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+                    ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+                    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                    _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+                      below: 'road-label',
+                    );
+                    _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                    _updateUserDotAnnotation();
+                    setState(() => _mapReady = true);
+                    await _applyDarkNavyGoldTheme(ctrl);
+                  },
+                  onScrollListener: (_) {
+                    if (!_programmaticCam) setState(() => _userMovedMap = true);
+                  },
+                ),
               ),
-            ),
 
             // ── Back button ──
             Positioned(
@@ -3608,6 +3641,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _splashTimer = null;
     _driverFoundTimer?.cancel();
     _driverFoundTimer = null;
+    _searchStatusTimer?.cancel();
+    _searchStatusTimer = null;
+    _searchElapsedTimer?.cancel();
+    _searchElapsedTimer = null;
     _searchingShowMap = false;
     _searchingSplash = false;
     _driverFoundVisible = false;
@@ -3666,35 +3703,58 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     );
   }
 
-  /// Bottom card shown after 4 seconds — map is visible behind
+  /// Cycling status messages for the searching card.
+  static const _searchMessages = [
+    'Connecting you with nearby drivers…',
+    'Finding your best match…',
+    'Checking driver availability…',
+    'Almost there…',
+    'Searching nearby…',
+  ];
+
+  /// Format elapsed seconds into m:ss
+  String _fmtElapsed(int sec) {
+    final m = sec ~/ 60;
+    final s = sec % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  /// Premium animated "Looking for ride" bottom card
   Widget _buildSearchingBottomCard(AppColors c) {
     final option = _ctrl.state.selectedOption;
     final s = _ctrl.state;
     final pickupAddr = s.pickupLabel.isNotEmpty
-        ? s.pickupLabel
+        ? _truncateHalf(s.pickupLabel)
         : S.of(context).pickupLocation;
     final dropoffAddr = s.dropoffLabel.isNotEmpty
-        ? s.dropoffLabel
+        ? _truncateHalf(s.dropoffLabel)
         : S.of(context).destination;
-    // Parse ETA from route durationText (e.g. "12 mins") or fallback to option
-    int etaMin = option?.etaMinutes ?? 0;
-    if (s.route != null && s.route!.durationText.isNotEmpty) {
-      final m = RegExp(r'(\d+)').firstMatch(s.route!.durationText);
-      if (m != null) etaMin = int.tryParse(m.group(1)!) ?? etaMin;
-    }
-    final distMi = s.route != null ? (s.route!.distanceMeters / 1609.34) : null;
+    final statusMsg = _searchMessages[_searchStatusIdx % _searchMessages.length];
+
     return Positioned(
       left: 0,
       right: 0,
       bottom: 0,
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF1E1E28), Color(0xFF141418)],
+          ),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(
+            top: BorderSide(color: c.gold.withValues(alpha: 0.15), width: 1),
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 20,
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 30,
+              offset: const Offset(0, -8),
+            ),
+            BoxShadow(
+              color: c.gold.withValues(alpha: 0.05),
+              blurRadius: 40,
               offset: const Offset(0, -4),
             ),
           ],
@@ -3702,68 +3762,327 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         child: SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 8),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // Handle
                 Container(
-                  width: 36,
+                  width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
+                    color: c.gold.withValues(alpha: 0.25),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 18),
 
-                // "Looking for ride" with progress bar
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: c.gold,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      S.of(context).lookingForRide,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
+                // ── Radar pulse + car icon ──
+                SizedBox(
+                  height: 100,
+                  child: AnimatedBuilder(
+                    animation: _radarCtrl,
+                    builder: (context, _) {
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // Expanding radar rings
+                          ...List.generate(3, (i) {
+                            final phase = (_radarCtrl.value + i * 0.33) % 1.0;
+                            final size = 40.0 + phase * 80.0;
+                            final alpha = (1.0 - phase).clamp(0.0, 1.0) * 0.35;
+                            return Container(
+                              width: size,
+                              height: size,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: c.gold.withValues(alpha: alpha),
+                                  width: 1.5 - phase * 0.8,
+                                ),
+                              ),
+                            );
+                          }),
+                          // Inner glow
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: RadialGradient(
+                                colors: [
+                                  c.gold.withValues(alpha: 0.18),
+                                  c.gold.withValues(alpha: 0.04),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                          // Center icon
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1A1A22),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: c.gold.withValues(alpha: 0.5),
+                                width: 2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: c.gold.withValues(alpha: 0.25),
+                                  blurRadius: 16,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              Icons.local_taxi_rounded,
+                              color: c.gold,
+                              size: 22,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
 
-                // Progress bar
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
-                  child: SizedBox(
-                    height: 3,
-                    child: LinearProgressIndicator(
-                      backgroundColor: Colors.white.withValues(alpha: 0.08),
-                      valueColor: AlwaysStoppedAnimation(c.gold),
+                // ── Cycling status text ──
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: SlideTransition(
+                      position: Tween(
+                        begin: const Offset(0, 0.15),
+                        end: Offset.zero,
+                      ).animate(anim),
+                      child: child,
+                    ),
+                  ),
+                  child: Text(
+                    statusMsg,
+                    key: ValueKey<int>(_searchStatusIdx),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.75),
+                      letterSpacing: -0.2,
                     ),
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 4),
+                // Elapsed timer
+                Text(
+                  _fmtElapsed(_searchElapsedSec),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withValues(alpha: 0.3),
+                    fontFeatures: const [ui.FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(height: 16),
 
-                // Cancel button
+                // ── Shimmer progress bar ──
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: SizedBox(
+                    height: 4,
+                    child: AnimatedBuilder(
+                      animation: _shimmerCtrl,
+                      builder: (context, _) {
+                        return Stack(
+                          children: [
+                            Container(color: Colors.white.withValues(alpha: 0.06)),
+                            FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: 1.0,
+                              child: ShaderMask(
+                                shaderCallback: (rect) {
+                                  final shimmerX = -1.0 + _shimmerCtrl.value * 3.0;
+                                  return LinearGradient(
+                                    begin: Alignment(shimmerX - 0.3, 0),
+                                    end: Alignment(shimmerX + 0.3, 0),
+                                    colors: [
+                                      Colors.transparent,
+                                      c.gold,
+                                      Colors.transparent,
+                                    ],
+                                  ).createShader(rect);
+                                },
+                                blendMode: BlendMode.srcIn,
+                                child: Container(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // ── Ride details row ──
+                if (option != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.06),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        // Vehicle icon
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: c.gold.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Center(
+                            child: Image.asset(
+                              _carAssetForOption(option.name),
+                              width: 36,
+                              height: 24,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.directions_car_rounded,
+                                color: c.gold,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Ride name + description
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                option.name,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                option.description,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white.withValues(alpha: 0.4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Price
+                        Text(
+                          '\$${option.priceEstimate.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: c.gold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (option != null) const SizedBox(height: 12),
+
+                // ── Route: pickup → dropoff ──
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.03),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    children: [
+                      // Pickup dot
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF34A853),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          pickupAddr,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white.withValues(alpha: 0.65),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 14,
+                          color: c.gold.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      // Dropoff dot
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: c.gold,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          dropoffAddr,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white.withValues(alpha: 0.65),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Cancel button ──
                 SizedBox(
                   width: double.infinity,
-                  height: 48,
+                  height: 50,
                   child: TextButton(
                     onPressed: _confirmCancelSearching,
                     style: TextButton.styleFrom(
-                      backgroundColor: Colors.white.withValues(alpha: 0.06),
+                      backgroundColor: Colors.white.withValues(alpha: 0.05),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.06),
+                        ),
                       ),
                     ),
                     child: Text(
@@ -3771,7 +4090,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white.withValues(alpha: 0.6),
+                        color: Colors.white.withValues(alpha: 0.55),
+                        letterSpacing: 0.3,
                       ),
                     ),
                   ),

@@ -100,24 +100,38 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _imagesPrecached = false;
   StreamSubscription<Position>? _locationSub;
   final GoldLocationDot _miniDot = GoldLocationDot();
+  bool _updatingMiniMapAnnot = false; // guard: prevents concurrent annotation updates
 
   Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
     await MapTheme.applyNavyGold(ctrl);
   }
 
   Future<void> _updateMiniMapAnnotation() async {
-    final mgr = _miniMapAnnotMgr;
-    if (mgr == null || _currentLatLng == null) return;
-    final bytes = _miniDot.currentBytes;
-    if (bytes == null) return;
-    if (_miniMapAnnot != null) {
-      try { await mgr.delete(_miniMapAnnot!); } catch (_) {}
+    // Guard: prevent concurrent updates that create multiple pins
+    if (_updatingMiniMapAnnot) return;
+    _updatingMiniMapAnnot = true;
+    
+    try {
+      final mgr = _miniMapAnnotMgr;
+      if (mgr == null || _currentLatLng == null) return;
+      final bytes = _miniDot.currentBytes;
+      if (bytes == null) return;
+      
+      // Delete old annotation if exists
+      if (_miniMapAnnot != null) {
+        try { await mgr.delete(_miniMapAnnot!); } catch (_) {}
+        _miniMapAnnot = null;
+      }
+      
+      // Create new annotation at current position
+      _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
+        image: bytes,
+        iconSize: 1.0,
+      ));
+    } finally {
+      _updatingMiniMapAnnot = false;
     }
-    _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
-      image: bytes,
-      iconSize: 1.0,
-    ));
   }
 
   @override

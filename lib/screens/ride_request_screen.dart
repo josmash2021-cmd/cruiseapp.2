@@ -2282,7 +2282,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     'Connecting to nearby drivers…',
     'Almost there…',
     'Confirming your ride…',
-    'A driver is on the way…',
   ];
 
   Widget _buildLocationInfo(IconData icon, String text, Color color) {
@@ -2328,57 +2327,61 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         : S.of(context).destination;
 
     return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
+      left: 16,
+      right: 16,
+      bottom: 24,
       child: AnimatedSlide(
-        duration: const Duration(milliseconds: 400),
+        duration: const Duration(milliseconds: 420),
         curve: Curves.easeOutCubic,
-        offset: _searchingShowMap ? Offset.zero : const Offset(0, 1),
+        offset: _searchingShowMap ? Offset.zero : const Offset(0, 1.2),
         child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 300),
+          duration: const Duration(milliseconds: 320),
           opacity: _searchingShowMap ? 1.0 : 0.0,
           child: Container(
             decoration: BoxDecoration(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-              // Deep 3D shadow stack
+              borderRadius: BorderRadius.circular(28),
+              // 3D fade shadow — layered for depth
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.70),
-                  blurRadius: 48,
-                  spreadRadius: 8,
-                  offset: const Offset(0, -12),
+                  color: Colors.black.withValues(alpha: 0.65),
+                  blurRadius: 40,
+                  spreadRadius: 4,
+                  offset: const Offset(0, 12),
                 ),
                 BoxShadow(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.08),
-                  blurRadius: 60,
+                  color: Colors.black.withValues(alpha: 0.30),
+                  blurRadius: 16,
                   spreadRadius: 0,
-                  offset: const Offset(0, -8),
+                  offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.06),
+                  blurRadius: 48,
+                  spreadRadius: 0,
+                  offset: Offset.zero,
                 ),
               ],
             ),
             child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              borderRadius: BorderRadius.circular(28),
               child: Container(
                 decoration: const BoxDecoration(
                   color: Color(0xFF0F0F14),
                 ),
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // ── Drag handle ──
-                        Container(
-                          width: 36,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // ── Drag handle ──
+                      Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(2),
                         ),
+                      ),
                         const SizedBox(height: 20),
 
                         // ── Radar animation + car + route info row ──
@@ -2632,7 +2635,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     ),
                   ),
                 ),
-              ),
             ),
           ),
         ),

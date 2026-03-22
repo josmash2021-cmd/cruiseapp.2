@@ -504,31 +504,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   void _exitNav() {
     HapticFeedback.lightImpact();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('Exit Navigation',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-        content: const Text('Are you sure you want to exit navigation?',
-            style: TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(S.of(context).cancel,
-                style: const TextStyle(color: Colors.white54)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.of(context).pop('cancelled');
-            },
-            child: const Text('Exit',
-                style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
+    Navigator.of(context).pop('cancelled');
   }
 
   // =========================================================================

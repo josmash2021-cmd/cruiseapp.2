@@ -106,26 +106,26 @@ const _pageTransitions = PageTransitionsTheme(
   },
 );
 
-// Cinzel (titles) + Inter (body/labels) — elegant branding with readable UI
+// Poppins (titles/headlines) + Inter (body/labels) — modern, clean, very readable
 TextTheme _cinzelHeadlines(TextTheme base) {
   return base.copyWith(
-    // ── Cinzel for all headline/title styles ──
-    displayLarge: GoogleFonts.cinzel(textStyle: base.displayLarge),
-    displayMedium: GoogleFonts.cinzel(textStyle: base.displayMedium),
-    displaySmall: GoogleFonts.cinzel(textStyle: base.displaySmall),
-    headlineLarge: GoogleFonts.cinzel(textStyle: base.headlineLarge),
-    headlineMedium: GoogleFonts.cinzel(textStyle: base.headlineMedium),
-    headlineSmall: GoogleFonts.cinzel(textStyle: base.headlineSmall),
-    titleLarge: GoogleFonts.cinzel(textStyle: base.titleLarge),
-    titleMedium: GoogleFonts.cinzel(textStyle: base.titleMedium),
-    titleSmall: GoogleFonts.cinzel(textStyle: base.titleSmall),
-    // ── Inter for body and label styles — clean and readable ──
-    bodyLarge: GoogleFonts.inter(textStyle: base.bodyLarge),
-    bodyMedium: GoogleFonts.inter(textStyle: base.bodyMedium),
-    bodySmall: GoogleFonts.inter(textStyle: base.bodySmall),
-    labelLarge: GoogleFonts.inter(textStyle: base.labelLarge),
+    // ── Poppins for all headline/title/display styles ──
+    displayLarge:  GoogleFonts.poppins(textStyle: base.displayLarge),
+    displayMedium: GoogleFonts.poppins(textStyle: base.displayMedium),
+    displaySmall:  GoogleFonts.poppins(textStyle: base.displaySmall),
+    headlineLarge:  GoogleFonts.poppins(textStyle: base.headlineLarge),
+    headlineMedium: GoogleFonts.poppins(textStyle: base.headlineMedium),
+    headlineSmall:  GoogleFonts.poppins(textStyle: base.headlineSmall),
+    titleLarge:  GoogleFonts.poppins(textStyle: base.titleLarge),
+    titleMedium: GoogleFonts.poppins(textStyle: base.titleMedium),
+    titleSmall:  GoogleFonts.poppins(textStyle: base.titleSmall),
+    // ── Inter for body and label styles ──
+    bodyLarge:   GoogleFonts.inter(textStyle: base.bodyLarge),
+    bodyMedium:  GoogleFonts.inter(textStyle: base.bodyMedium),
+    bodySmall:   GoogleFonts.inter(textStyle: base.bodySmall),
+    labelLarge:  GoogleFonts.inter(textStyle: base.labelLarge),
     labelMedium: GoogleFonts.inter(textStyle: base.labelMedium),
-    labelSmall: GoogleFonts.inter(textStyle: base.labelSmall),
+    labelSmall:  GoogleFonts.inter(textStyle: base.labelSmall),
   );
 }
 

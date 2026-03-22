@@ -4221,7 +4221,7 @@ Widget _navHeader() {
     LatLng pickup,
     LatLng dropoff,
   ) async {
-    final token = MapboxConfig.publicToken;
+    final token = MapboxConfig.accessToken;
     final dLng = driver.longitude.toStringAsFixed(6);
     final dLat = driver.latitude.toStringAsFixed(6);
     final pLng = pickup.longitude.toStringAsFixed(6);

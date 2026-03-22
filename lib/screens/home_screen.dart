@@ -79,6 +79,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _stateCheckDone = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _zonesSub;
 
+  // ── Map-first draggable sheet ──
+  final DraggableScrollableController _sheetController = DraggableScrollableController();
+  final GlobalKey _mapKey = GlobalKey();
+  static const double _kMinSheet = 0.13;
+  static const double _kMaxSheet = 0.92;
+
   // User profile data
   String _firstName = '';
   String _lastName = '';
@@ -178,6 +184,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     UserSession.photoNotifier.removeListener(_onPhotoChanged);
+    _sheetController.dispose();
     _miniDot.dispose();
     _shimmerController.dispose();
     _boltFlashCtrl.dispose();
@@ -728,114 +735,243 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final screenW = MediaQuery.of(context).size.width;
     final topPad = MediaQuery.of(context).padding.top;
     final bottomPad = MediaQuery.of(context).padding.bottom;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final scaffoldBg = const Color(0xFF07080D);
-
-    // Theme color helpers — dark cards everywhere
-    // ignore: unused_local_variable
-    final textMain = Colors.white;
-    // ignore: unused_local_variable
-    final textSub = Colors.white.withValues(alpha: 0.45);
-    // ignore: unused_local_variable
-    final textMuted = Colors.white.withValues(alpha: 0.35);
-    // ignore: unused_local_variable
-    final textFaint = Colors.white.withValues(alpha: 0.4);
-    // ignore: unused_local_variable
-    final surface = const Color(0xFF161820);
-    // ignore: unused_local_variable
-    final cardBg = Colors.white.withValues(alpha: 0.04);
-    // ignore: unused_local_variable
-    final cardBorder = Colors.white.withValues(alpha: 0.06);
-    // ignore: unused_local_variable
-    final iconMuted = Colors.white.withValues(alpha: 0.4);
-    // ignore: unused_local_variable
-    final iconFaint = Colors.white.withValues(alpha: 0.7);
-    // ignore: unused_local_variable
-    final glassColor = Colors.white.withValues(alpha: 0.06);
-    // ignore: unused_local_variable
-    final glassBorder = Colors.white.withValues(alpha: 0.08);
 
     return Scaffold(
-      backgroundColor: scaffoldBg,
+      backgroundColor: const Color(0xFF07080D),
       body: Stack(
         children: [
-          // ── Mesh gradient background ──
-          if (isDark) ...[
-            Positioned(top: -60, right: -40, child: _glowOrb(180, _gold, 0.07)),
-            Positioned(
-              top: 300,
-              left: -80,
-              child: _glowOrb(260, _goldLight, 0.03),
+          // ── Full-screen map — scales back as sheet rises ──
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _sheetController,
+              builder: (context, child) {
+                double frac = 0;
+                try {
+                  frac = ((_sheetController.size - _kMinSheet) /
+                          (_kMaxSheet - _kMinSheet))
+                      .clamp(0.0, 1.0);
+                } catch (_) {}
+                return Transform.translate(
+                  offset: Offset(0, frac * 20.0),
+                  child: Transform.scale(
+                    scale: 1.0 - frac * 0.06,
+                    alignment: Alignment.topCenter,
+                    child: child!,
+                  ),
+                );
+              },
+              child: RepaintBoundary(child: _buildFullMap()),
             ),
-            Positioned(
-              bottom: 120,
-              right: -60,
-              child: _glowOrb(200, _gold, 0.04),
-            ),
-          ],
+          ),
 
-          // ── Main scroll content ──
-          CustomScrollView(
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-              decelerationRate: ScrollDecelerationRate.fast,
-            ),
-            cacheExtent: 3000,
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            slivers: [
-              SliverToBoxAdapter(child: SizedBox(height: topPad + 16)),
+          // ── Locate / account buttons floating top-right ──
+          Positioned(
+            top: topPad + 10,
+            right: 16,
+            child: _buildMapFab(),
+          ),
 
-              // ━━━ TOP BAR: greeting + avatar + bell ━━━
-              SliverToBoxAdapter(
-                child: RepaintBoundary(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: _buildTopBar(),
+          // ── Draggable bottom sheet ──
+          DraggableScrollableSheet(
+            controller: _sheetController,
+            initialChildSize: _kMinSheet,
+            minChildSize: _kMinSheet,
+            maxChildSize: _kMaxSheet,
+            snap: true,
+            snapSizes: const [_kMinSheet, _kMaxSheet],
+            builder: (ctx, scrollCtrl) =>
+                _buildSheet(scrollCtrl, bottomPad),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════
+  //  M A P - F I R S T   H E L P E R S
+  // ════════════════════════════════════════════════════
+
+  // Full-screen Mapbox background
+  Widget _buildFullMap() {
+    final pos = _currentLatLng ?? const LatLng(25.7617, -80.1918);
+    return mapbox.MapWidget(
+      key: _mapKey,
+      styleUri: MapboxConfig.styleDark,
+      cameraOptions: mapbox.CameraOptions(
+        center: mapbox.Point(
+          coordinates: mapbox.Position(pos.longitude, pos.latitude),
+        ),
+        zoom: 15.0,
+      ),
+      onMapCreated: (ctrl) async {
+        _miniMapController = ctrl;
+        ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+        ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+        ctrl.attribution
+            .updateSettings(mapbox.AttributionSettings(enabled: false));
+        ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+        await _applyDarkNavyGoldTheme(ctrl);
+        _miniMapAnnotMgr =
+            await ctrl.annotations.createPointAnnotationManager();
+        _updateMiniMapAnnotation();
+      },
+    );
+  }
+
+  // Floating FAB buttons on top of map (notifications + account)
+  Widget _buildMapFab() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _glassIconButton(
+          Icons.notifications_rounded,
+          badge: _unreadNotifications > 0 ? _unreadNotifications : 0,
+          onTap: _openNotificationsSheet,
+        ),
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: () async {
+            await Navigator.of(context)
+                .push(slideFromRightRoute(const AccountScreen()));
+            _loadSavedData();
+          },
+          child: _buildAvatarChip(),
+        ),
+      ],
+    );
+  }
+
+  // Small avatar pill for the FAB area
+  Widget _buildAvatarChip() {
+    final initials = '${_firstName.isNotEmpty ? _firstName[0] : ''}${_lastName.isNotEmpty ? _lastName[0] : ''}'.toUpperCase();
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.92),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipOval(
+        child: _photoPath != null && _photoPath!.isNotEmpty
+            ? (_photoPath!.startsWith('http')
+                ? Image.network(
+                    _photoPath!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Center(
+                      child: Text(initials,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  )
+                : Image.file(
+                    File(_photoPath!),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Center(
+                      child: Text(initials,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ))
+            : Center(
+                child: Text(
+                  initials.isEmpty ? '?' : initials,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
+      ),
+    );
+  }
 
-              SliverToBoxAdapter(child: const SizedBox(height: 28)),
-
-              // ━━━ HERO: "Where to?" large CTA card (also shows Ride in Progress inside) ━━━
-              SliverToBoxAdapter(
-                child: RepaintBoundary(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: _buildHeroCTA(),
+  // Draggable bottom sheet content
+  Widget _buildSheet(ScrollController sc, double botPad) {
+    final screenW = MediaQuery.of(context).size.width;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A0B10),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.65),
+            blurRadius: 32,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        child: SingleChildScrollView(
+          controller: sc,
+          physics: const ClampingScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ── Drag handle ──
+              const SizedBox(height: 10),
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
+              ),
+              const SizedBox(height: 16),
+
+              // ── Greeting row (always visible in collapsed state) ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: _buildTopBar(),
+              ),
+              const SizedBox(height: 24),
+
+              // ── Hero CTA ("Where to?" or Ride in Progress) ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: _buildHeroCTA(),
               ),
 
               if (_activeRide == null) ...[
-              SliverToBoxAdapter(child: const SizedBox(height: 28)),
+                const SizedBox(height: 28),
 
-              // ━━━ CIRCULAR ACTION BUTTONS ━━━
-              SliverToBoxAdapter(
-                child: RepaintBoundary(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: _buildCircularActions(),
-                  ),
+                // ── Circular action buttons ──
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: _buildCircularActions(),
                 ),
-              ),
 
-              SliverToBoxAdapter(child: const SizedBox(height: 36)),
+                const SizedBox(height: 36),
 
-              // ━━━ FLEET: Full-width stacked cards ━━━
-              SliverToBoxAdapter(
-                child: Padding(
+                // ── Fleet header + cards ──
+                Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: _buildFleetHeader(),
                 ),
-              ),
-              SliverToBoxAdapter(child: const SizedBox(height: 16)),
-              SliverToBoxAdapter(
-                child: AnimatedCrossFade(
-                  firstChild: RepaintBoundary(child: _buildFleetStack(screenW)),
+                const SizedBox(height: 16),
+                AnimatedCrossFade(
+                  firstChild: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: RepaintBoundary(child: _buildFleetStack(screenW)),
+                  ),
                   secondChild: const SizedBox.shrink(),
                   crossFadeState: _fleetExpanded
                       ? CrossFadeState.showFirst
@@ -843,32 +979,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   duration: const Duration(milliseconds: 300),
                   sizeCurve: Curves.easeInOut,
                 ),
-              ),
 
-              SliverToBoxAdapter(child: const SizedBox(height: 36)),
+                const SizedBox(height: 36),
 
-              // ━━━ SAVED PLACES ━━━
-              SliverToBoxAdapter(
-                child: Padding(
+                // ── Quick access ──
+                Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: _buildSectionHeader('Quick Access', null, null),
                 ),
-              ),
-              SliverToBoxAdapter(child: const SizedBox(height: 16)),
-              SliverToBoxAdapter(
-                child: RepaintBoundary(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: _buildQuickAccessGrid(),
-                  ),
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: RepaintBoundary(child: _buildQuickAccessGrid()),
                 ),
-              ),
 
-              // ━━━ RECENT TRIPS (timeline style) ━━━
-              if (_recentTrips.isNotEmpty) ...[
-                SliverToBoxAdapter(child: const SizedBox(height: 36)),
-                SliverToBoxAdapter(
-                  child: Padding(
+                // ── Recent trips ──
+                if (_recentTrips.isNotEmpty) ...[
+                  const SizedBox(height: 36),
+                  Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: _buildSectionHeader(
                       S.of(context).recentActivity,
@@ -876,19 +1004,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       null,
                     ),
                   ),
-                ),
-                SliverToBoxAdapter(child: const SizedBox(height: 16)),
-                SliverToBoxAdapter(
-                  child: RepaintBoundary(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: _buildRecentTimeline(),
-                    ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: RepaintBoundary(child: _buildRecentTimeline()),
                   ),
-                ),
-              ] else if (_loadingSavedData) ...[
-                SliverToBoxAdapter(
-                  child: Padding(
+                ] else if (_loadingSavedData) ...[
+                  Padding(
                     padding: const EdgeInsets.symmetric(vertical: 30),
                     child: Center(
                       child: SizedBox(
@@ -901,42 +1023,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-                ),
+                ],
               ],
 
-              // ━━━ LIVE MAP CARD ━━━
-              SliverToBoxAdapter(child: const SizedBox(height: 36)),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildSectionHeader(
-                    S.of(context).liveLocation,
-                    null,
-                    null,
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(child: const SizedBox(height: 16)),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: RepaintBoundary(child: _buildLiveMapCard()),
-                ),
-              ),
-              ], // end if (_activeRide == null)
+              const SizedBox(height: 32),
 
-              SliverToBoxAdapter(child: SizedBox(height: 90 + bottomPad)),
+              // ── Dock navigation ──
+              _buildDockNav(context, botPad),
+              SizedBox(height: botPad + 12),
             ],
           ),
-
-          // ── Dock-style bottom navigation ──
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: _buildDockNav(context, bottomPad),
-          ),
-        ],
+        ),
       ),
     );
   }

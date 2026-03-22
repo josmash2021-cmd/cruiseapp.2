@@ -1113,11 +1113,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         bytes = _goldPinIcon;
       }
       if (bytes != null) {
+        // anchorX for pin+label: pin tip may not be at horizontal center.
+        // Use iconOffset to shift so pin tip lands exactly at the coordinate.
+        final Offset? anchor = (_showPinLabels && _pickupPinWithLabel != null)
+            ? _pickupPinWithLabel!.$2
+            : null;
         _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
           image: bytes,
           iconSize: 0.85,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: anchor != null ? [(0.5 - anchor.dx), 0.0] : [0.0, 0.0],
         ));
       }
     }
@@ -1134,11 +1140,15 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         bytes = _goldPinIcon;
       }
       if (bytes != null) {
+        final Offset? anchor2 = (_showPinLabels && _dropoffPinWithLabel != null)
+            ? _dropoffPinWithLabel!.$2
+            : null;
         _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
           image: bytes,
           iconSize: 0.85,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: anchor2 != null ? [(0.5 - anchor2.dx), 0.0] : [0.0, 0.0],
         ));
       }
     }
@@ -1365,10 +1375,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                     ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                     ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                    _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
-                      below: 'road-label',
-                    );
+                    // Point manager first → renders ABOVE polyline manager
                     _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                    _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
                     _updateUserDotAnnotation();
                     setState(() => _mapReady = true);
                   },

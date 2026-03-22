@@ -131,6 +131,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _isSimulationMode = false;
   Timer? _simulatedDriverTimer;
 
+  // ── Route loading: hide idle state while route is being fetched ──
+  bool _fetchingRoute = false;
+
   // ── Driver Found overlay ──
   bool _driverFoundVisible = false;
   Timer? _driverFoundTimer;
@@ -890,6 +893,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     switch (s.phase) {
       case RiderPhase.previewRoute:
       case RiderPhase.selectingRide:
+        _fetchingRoute = false;
         _drawRoute();
         _sheetCtrl.forward();
         break;
@@ -991,6 +995,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         }
         break;
       default:
+        _fetchingRoute = false;
         _searchingShowMap = false;
         _searchingSplash = false;
         _searchMapTimer?.cancel();
@@ -1262,6 +1267,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final pickupLabel = result['pickupLabel'] as String? ?? '';
     final dropoffLabel = result['dropoffLabel'] as String? ?? '';
 
+    // Show route-loading state immediately so user never sees idle map (photo 3)
+    setState(() => _fetchingRoute = true);
+
     if (pickupDetails != null) {
       _ctrl.setPickup(pickupDetails, pickupLabel);
     } else if (_userLocation != null) {
@@ -1444,8 +1452,28 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 ),
               ),
 
-            // ── "Where to?" pill (idle) ──
-            _buildWhereToBar(c, topPad, phase == RiderPhase.idle),
+            // ── Route loading overlay: covers the idle map while route is fetching ──
+            if (_fetchingRoute)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: _fetchingRoute ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 250),
+                    child: Container(
+                      color: const Color(0xFF07080D),
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFFE8C547),
+                          strokeWidth: 2.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // ── "Where to?" pill (idle, hidden while fetching route) ──
+            _buildWhereToBar(c, topPad, phase == RiderPhase.idle && !_fetchingRoute),
 
             // ── Route preview sheet ──
             if (phase == RiderPhase.previewRoute ||

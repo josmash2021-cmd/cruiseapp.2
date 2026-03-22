@@ -126,7 +126,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
         children: [
           // Map — Mapbox on both iOS and Android
           mapbox.MapWidget(
-            styleUri: MapboxConfig.styleDark,
+            styleUri: 'mapbox://styles/mapbox/dark-v11',
             cameraOptions: mapbox.CameraOptions(
               center: mapbox.Point(coordinates: mapbox.Position(_center.longitude, _center.latitude)),
               zoom: 15.0,
@@ -137,11 +137,13 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
               ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
               ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-              await MapTheme.applyNavyGold(ctrl);
               Future.delayed(
                 const Duration(milliseconds: 800),
                 _onCameraIdle,
               );
+            },
+            onStyleLoadedListener: (_) async {
+              if (_mapCtrl != null) await MapTheme.applyNavyGold(_mapCtrl!);
             },
             onCameraChangeListener: _onCameraChanged,
             onMapIdleListener: _onMapIdle,

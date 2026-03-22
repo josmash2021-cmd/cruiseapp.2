@@ -262,7 +262,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               Text(address,
                 style: const TextStyle(color: Colors.white, fontSize: 14,
                     fontWeight: FontWeight.w600),
-                maxLines: 2, overflow: TextOverflow.ellipsis),
+                maxLines: 3, overflow: TextOverflow.ellipsis),
             ],
           ),
         ),
@@ -506,46 +506,93 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     } catch (_) {}
   }
 
-  Future<Uint8List?> _buildPickupPin() async {
-    const double s = 80;
-    final rec = ui.PictureRecorder();
-    final c   = Canvas(rec, const Rect.fromLTWH(0, 0, s, s));
-    // Shadow
-    c.drawCircle(const Offset(s / 2, s / 2 + 3), 22,
-        Paint()
-          ..color = Colors.black.withValues(alpha: 0.4)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9));
-    // White outer ring
-    c.drawCircle(const Offset(s / 2, s / 2), 22, Paint()..color = Colors.white);
-    // White fill
-    c.drawCircle(const Offset(s / 2, s / 2), 15,
-        Paint()..color = Colors.white);
-    // White center dot
-    c.drawCircle(const Offset(s / 2, s / 2), 5, Paint()..color = Colors.white);
-    final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
-  }
+  // ── Pin builders (matching rider app gold theme) ──────────────────────────
+  Future<Uint8List?> _buildPickupPin() async => _buildGoldPin(isPickup: true);
+  Future<Uint8List?> _buildDropoffPin() async => _buildGoldPin(isPickup: false);
 
-  Future<Uint8List?> _buildDropoffPin() async {
-    const double s = 72;
-    final rec = ui.PictureRecorder();
-    final c   = Canvas(rec, const Rect.fromLTWH(0, 0, s, s));
-    // Shadow
-    c.drawCircle(const Offset(s / 2, s / 2 + 2), 17,
+  Future<Uint8List?> _buildGoldPin({required bool isPickup}) async {
+    const double size = 100;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
+    const cx = size / 2;
+    const cy = size / 2;
+    const r = size * 0.38;
+    const gold = Color(0xFFE8C547);
+
+    // Drop shadow
+    canvas.drawCircle(
+      const Offset(cx, cy + 2),
+      r + 3,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+    );
+
+    if (isPickup) {
+      // Gold circle for pickup
+      canvas.drawCircle(const Offset(cx, cy), r, Paint()..color = gold);
+      canvas.drawCircle(
+        const Offset(cx, cy),
+        r,
         Paint()
-          ..color = Colors.black.withValues(alpha: 0.35)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7));
-    // White ring
-    c.drawCircle(const Offset(s / 2, s / 2), 17, Paint()..color = Colors.white);
-    // White inner
-    c.drawCircle(const Offset(s / 2, s / 2), 11,
-        Paint()..color = Colors.white);
-    // White dot
-    c.drawCircle(const Offset(s / 2, s / 2), 4, Paint()..color = Colors.white);
-    final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..color = Colors.white.withValues(alpha: 0.25),
+      );
+    } else {
+      // Gold rounded square for dropoff
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: const Offset(cx, cy),
+          width: r * 2,
+          height: r * 2,
+        ),
+        Radius.circular(r * 0.28),
+      );
+      canvas.drawRRect(rect, Paint()..color = gold);
+      canvas.drawRRect(
+        rect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..color = Colors.white.withValues(alpha: 0.25),
+      );
+    }
+
+    // Inner highlight
+    canvas.drawCircle(
+      Offset(cx - r * 0.2, cy - r * 0.2),
+      r * 0.5,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.15)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+
+    // White center icon (simple dot for pickup, flag for dropoff)
+    final iconPaint = Paint()
+      ..color = Colors.white
+      ..isAntiAlias = true;
+    const s = size * 0.13;
+
+    if (isPickup) {
+      // White dot center for pickup
+      canvas.drawCircle(const Offset(cx, cy), s * 0.6, iconPaint);
+    } else {
+      // Simple flag icon for dropoff
+      final flagPath = Path()
+        ..moveTo(cx - s * 0.5, cy - s * 0.8)
+        ..lineTo(cx + s * 0.8, cy - s * 0.5)
+        ..lineTo(cx - s * 0.2, cy - s * 0.2)
+        ..lineTo(cx - s * 0.2, cy + s * 0.8)
+        ..lineTo(cx - s * 0.5, cy + s * 0.8)
+        ..close();
+      canvas.drawPath(flagPath, iconPaint);
+    }
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData?.buffer.asUint8List();
   }
 
   // ── BUILD ─────────────────────────────────────────────────────────────────

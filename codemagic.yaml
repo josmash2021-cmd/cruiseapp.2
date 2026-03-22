@@ -380,19 +380,7 @@ workflows:
             2>&1 | tee -a /tmp/xcodebuild_logs/flutter_build.log
 
           # Step 4 — write ExportOptions.plist
-          python3 -c "
-          open('/tmp/ExportOptions.plist','w').write('''<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
-<plist version=\"1.0\"><dict>
-  <key>method</key><string>app-store</string>
-  <key>teamID</key><string>7QLC9UVB3Z</string>
-  <key>signingStyle</key><string>manual</string>
-  <key>stripSwiftSymbols</key><true/>
-  <key>uploadBitcode</key><false/>
-  <key>uploadSymbols</key><true/>
-</dict></plist>''')
-          print('ExportOptions.plist written')
-          "
+          python3 -c "content='<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>method</key><string>app-store</string><key>teamID</key><string>7QLC9UVB3Z</string><key>signingStyle</key><string>manual</string><key>stripSwiftSymbols</key><true/><key>uploadBitcode</key><false/><key>uploadSymbols</key><true/></dict></plist>'; open('/tmp/ExportOptions.plist','w').write(content); print('ExportOptions.plist written')"
 
           # Step 5 — export IPA
           mkdir -p build/ios/ipa

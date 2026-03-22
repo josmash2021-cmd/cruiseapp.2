@@ -1287,6 +1287,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           initialPickupText: _currentAddress,
           initialPickupLat: _userLocation?.latitude,
           initialPickupLng: _userLocation?.longitude,
+          // Fire before the pop transition starts so the idle map is never
+          // visible during the animation back to this screen.
+          onWillReturn: () {
+            if (mounted) setState(() => _fetchingRoute = true);
+          },
         ),
       ),
     );
@@ -1298,8 +1303,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final pickupLabel = result['pickupLabel'] as String? ?? '';
     final dropoffLabel = result['dropoffLabel'] as String? ?? '';
 
-    // Show route-loading state immediately so user never sees idle map (photo 3)
-    setState(() => _fetchingRoute = true);
+    // Ensure loading overlay is up (already set by onWillReturn, but guard here too)
+    if (!_fetchingRoute) setState(() => _fetchingRoute = true);
 
     if (pickupDetails != null) {
       _ctrl.setPickup(pickupDetails, pickupLabel);

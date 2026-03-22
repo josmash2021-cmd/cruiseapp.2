@@ -23,12 +23,16 @@ class PickupDropoffSearchScreen extends StatefulWidget {
   final String initialPickupText;
   final double? initialPickupLat;
   final double? initialPickupLng;
+  /// Called immediately before Navigator.pop so the parent screen can
+  /// enter its loading state before the pop transition begins.
+  final VoidCallback? onWillReturn;
 
   const PickupDropoffSearchScreen({
     super.key,
     this.initialPickupText = 'Current location',
     this.initialPickupLat,
     this.initialPickupLng,
+    this.onWillReturn,
   });
 
   @override
@@ -163,6 +167,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   }
 
   void _returnResults() {
+    widget.onWillReturn?.call();
     Navigator.of(context).pop({
       'pickup': _pickupDetails,
       'dropoff': _dropoffDetails,

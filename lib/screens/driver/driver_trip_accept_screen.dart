@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -395,20 +397,60 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     ),
   );
 
-  // ── Map ───────────────────────────────────────────────────────────────────
+  // ── Map ─────────────────────────────────────────────────────────────────────
+  /// Fetch a real road route from OSRM. Returns decoded [LatLng] list or null.
+  Future<List<mapbox.Position>?> _fetchOsrmRoute() async {
+    final o = widget.pickupLatLng;
+    final d = widget.dropoffLatLng;
+    try {
+      final path = '/route/v1/driving/${o.longitude},${o.latitude};${d.longitude},${d.latitude}';
+      final uri  = Uri.https('router.project-osrm.org', path, {
+        'overview': 'full',
+        'geometries': 'polyline',
+      });
+      final res  = await http.get(uri).timeout(const Duration(seconds: 8));
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (data['code']?.toString().toUpperCase() == 'OK') {
+        final routes = data['routes'] as List?;
+        if (routes != null && routes.isNotEmpty) {
+          return _decodePoly(routes[0]['geometry'] as String);
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  List<mapbox.Position> _decodePoly(String encoded) {
+    final pts = <mapbox.Position>[];
+    int i = 0, lat = 0, lng = 0;
+    while (i < encoded.length) {
+      int s = 0, r = 0, b;
+      do { b = encoded.codeUnitAt(i++) - 63; r |= (b & 0x1F) << s; s += 5; } while (b >= 0x20);
+      lat += (r & 1) != 0 ? ~(r >> 1) : (r >> 1);
+      s = 0; r = 0;
+      do { b = encoded.codeUnitAt(i++) - 63; r |= (b & 0x1F) << s; s += 5; } while (b >= 0x20);
+      lng += (r & 1) != 0 ? ~(r >> 1) : (r >> 1);
+      pts.add(mapbox.Position(lng / 1E5, lat / 1E5));
+    }
+    return pts;
+  }
+
   Future<void> _onMapReady(mapbox.MapboxMap ctrl) async {
     _map = ctrl;
     await MapTheme.applyNavyGold(ctrl);
     _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
     _annotMgr = await ctrl.annotations.createPointAnnotationManager();
 
-    // Route line pickup → dropoff
-    final pts = widget.routePoints ?? [widget.pickupLatLng, widget.dropoffLatLng];
-    final coords = pts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    // Fetch real road route from OSRM; fall back to straight line only if network fails
+    final osrm = await _fetchOsrmRoute();
+    final coords = osrm ?? [
+      mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude),
+      mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude),
+    ];
     await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
       lineColor: _gold.toARGB32(),
-      lineWidth: 4.0,
+      lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
 
@@ -475,9 +517,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9));
     // White outer ring
     c.drawCircle(const Offset(s / 2, s / 2), 22, Paint()..color = Colors.white);
-    // Gold fill
+    // White fill
     c.drawCircle(const Offset(s / 2, s / 2), 15,
-        Paint()..color = _gold);
+        Paint()..color = Colors.white);
     // White center dot
     c.drawCircle(const Offset(s / 2, s / 2), 5, Paint()..color = Colors.white);
     final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
@@ -496,9 +538,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7));
     // White ring
     c.drawCircle(const Offset(s / 2, s / 2), 17, Paint()..color = Colors.white);
-    // Dark inner
+    // White inner
     c.drawCircle(const Offset(s / 2, s / 2), 11,
-        Paint()..color = const Color(0xFF1A1A1A));
+        Paint()..color = Colors.white);
     // White dot
     c.drawCircle(const Offset(s / 2, s / 2), 4, Paint()..color = Colors.white);
     final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
@@ -682,7 +724,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       // Mapbox attribution — plain text, no box
                       Positioned(
                         bottom: 5, left: 8,
-                        child: Text('© Mapbox',
+                        child: Text(' Mapbox',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.45),
                             fontSize: 9,
@@ -700,8 +742,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: _infoRow(
                 Icons.location_on_rounded,
-                const Color(0xFF1E3A2F),
-                const Color(0xFF4CAF50),
+                Colors.white.withValues(alpha: 0.12),
+                Colors.white,
                 'Pickup',
                 widget.pickupAddress,
               ),
@@ -712,8 +754,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               child: _infoRow(
                 Icons.flag_rounded,
-                const Color(0xFF2A1F0E),
-                _gold,
+                Colors.white.withValues(alpha: 0.12),
+                Colors.white,
                 'Dropoff',
                 widget.dropoffAddress,
               ),

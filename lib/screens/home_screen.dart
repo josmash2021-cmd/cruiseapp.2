@@ -19,6 +19,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'airport_terminal_sheet.dart';
 import 'identity_verification_screen.dart';
 import 'map_screen.dart';
+import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
 import 'rider_tracking_screen.dart';
 import 'scheduled_rides_screen.dart';
@@ -415,8 +416,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Future<void> _checkDriversOnline() async {
     try {
-      final lat = _currentLatLng?.latitude ?? 25.7617;
-      final lng = _currentLatLng?.longitude ?? -80.1918;
+      if (_currentLatLng == null) return;
+      final lat = _currentLatLng!.latitude;
+      final lng = _currentLatLng!.longitude;
       final count = await ApiService.getNearbyDriversCount(lat: lat, lng: lng);
       if (mounted) setState(() => _driversOnline = count > 0);
     } catch (_) {
@@ -803,7 +805,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // Full-screen Mapbox background
   Widget _buildFullMap() {
-    final pos = _currentLatLng ?? const LatLng(25.7617, -80.1918);
+    if (_currentLatLng == null) {
+      return Container(
+        color: const Color(0xFF07080D),
+        child: const Center(
+          child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
+        ),
+      );
+    }
+    final pos = _currentLatLng!;
     return mapbox.MapWidget(
       key: _mapKey,
       styleUri: MapboxConfig.styleDark,
@@ -831,12 +841,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // "Where to?" search bar floating over the map
   Widget _buildWhereToBar() {
     return GestureDetector(
-      onTap: () async {
-        if (!await _ensureVerified()) return;
-        if (!mounted) return;
-        await Navigator.of(context).push(scaleExpandRoute(const RideRequestScreen()));
-        if (mounted) _loadSavedData();
-      },
+      onTap: _openSearchThenRide,
       child: Container(
         height: 48,
         decoration: BoxDecoration(
@@ -1370,12 +1375,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           );
           return;
         }
-        if (!await _ensureVerified()) return;
-        if (!mounted) return;
-        await Navigator.of(
-          context,
-        ).push(scaleExpandRoute(const RideRequestScreen()));
-        if (mounted) _loadSavedData();
+        await _openSearchThenRide();
       },
       child: ListenableBuilder(
         listenable: _shimmerController,
@@ -2206,11 +2206,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             right: 24,
           ),
           child: GestureDetector(
-            onTap: () async {
-              if (!await _ensureVerified()) return;
-              if (!mounted) return;
-              Navigator.of(context).push(slideFromRightRoute(const RideRequestScreen()));
-            },
+            onTap: _openSearchThenRide,
             child: Container(
               constraints: const BoxConstraints(minHeight: 130),
               clipBehavior: Clip.antiAlias,
@@ -2639,6 +2635,46 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         .then((_) {
           if (mounted) _loadSavedData();
         });
+  }
+
+  /// Open the search screen (photo 3) directly, then push RideRequestScreen
+  /// with the pickup/dropoff results pre-filled.
+  Future<void> _openSearchThenRide() async {
+    if (_activeRide != null) {
+      _resumeActiveRide();
+      return;
+    }
+    if (!await _ensureVerified()) return;
+    if (!mounted) return;
+
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      sharedAxisZRoute(
+        PickupDropoffSearchScreen(
+          initialPickupLat: _currentLatLng?.latitude,
+          initialPickupLng: _currentLatLng?.longitude,
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    final pickupDetails = result['pickup'] as PlaceDetails?;
+    final dropoffDetails = result['dropoff'] as PlaceDetails?;
+    final pickupLabel = result['pickupLabel'] as String? ?? '';
+    final dropoffLabel = result['dropoffLabel'] as String? ?? '';
+
+    if (dropoffDetails == null) return;
+
+    await Navigator.of(context).push(
+      slideUpFadeRoute(
+        RideRequestScreen(
+          initialDropoffAddress: dropoffLabel.isNotEmpty
+              ? dropoffLabel
+              : dropoffDetails.address,
+        ),
+      ),
+    );
+    if (mounted) _loadSavedData();
   }
 
   // ─── Recent trips timeline ───

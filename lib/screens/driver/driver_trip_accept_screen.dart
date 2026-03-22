@@ -683,6 +683,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           pitch: 0,
                         ),
                         onMapCreated: _onMapReady,
+                        onStyleLoadedListener: (_) async {
+                          if (_map != null) await MapTheme.applyNavyGold(_map!);
+                        },
                       ),
                       // Pulsing ring overlay at pickup pixel position
                       if (_pickupPx != null)

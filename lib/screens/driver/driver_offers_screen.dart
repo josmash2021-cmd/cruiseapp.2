@@ -45,7 +45,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
   mapbox.PointAnnotation? _driverAnnot;
-  LatLng _driverPos = const LatLng(25.7617, -80.1918);
+  LatLng? _driverPos;
   bool _loading = true;
   bool _accepting = false;
   final GoldLocationDot _goldDot = GoldLocationDot();
@@ -86,14 +86,14 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
 
   Future<void> _updateDriverAnnotation() async {
     final mgr = _pointAnnotMgr;
-    if (mgr == null) return;
+    if (mgr == null || _driverPos == null) return;
     final bytes = _goldDot.currentBytes;
     if (bytes == null) return;
     if (_driverAnnot != null) {
       try { await mgr.delete(_driverAnnot!); } catch (_) {}
     }
     _driverAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(_driverPos.longitude, _driverPos.latitude)),
+      geometry: mapbox.Point(coordinates: mapbox.Position(_driverPos!.longitude, _driverPos!.latitude)),
       image: bytes,
       iconSize: 0.5,
     ));
@@ -103,8 +103,6 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     try {
       bool svc = await Geolocator.isLocationServiceEnabled();
       if (!svc) {
-        _ctrl.driverLatLng = _driverPos;
-        _ctrl.start(driverId: widget.driverId);
         if (mounted) setState(() => _loading = false);
         return;
       }
@@ -112,8 +110,6 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
         if (perm == LocationPermission.denied) {
-          _ctrl.driverLatLng = _driverPos;
-          _ctrl.start(driverId: widget.driverId);
           if (mounted) setState(() => _loading = false);
           return;
         }
@@ -141,23 +137,28 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
             ),
           );
         }
-        _ctrl.driverLatLng = _driverPos;
-        _ctrl.start(driverId: widget.driverId);
         if (mounted) setState(() => _loading = false);
         return;
       }
+      // Try last known for instant display
+      try {
+        final lastKnown = await Geolocator.getLastKnownPosition();
+        if (lastKnown != null && mounted) {
+          setState(() => _driverPos = LatLng(lastKnown.latitude, lastKnown.longitude));
+        }
+      } catch (_) {}
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
           timeLimit: Duration(seconds: 10),
         ),
       );
-      _driverPos = LatLng(pos.latitude, pos.longitude);
-    } catch (_) {
-      // Use default Miami
+      if (mounted) setState(() => _driverPos = LatLng(pos.latitude, pos.longitude));
+    } catch (_) {}
+    if (_driverPos != null) {
+      _ctrl.driverLatLng = _driverPos!;
+      _ctrl.start(driverId: widget.driverId);
     }
-    _ctrl.driverLatLng = _driverPos;
-    _ctrl.start(driverId: widget.driverId);
     if (mounted) setState(() => _loading = false);
   }
 
@@ -176,7 +177,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     List<LatLng>? routePts;
     try {
       final route = await RouteService.fetchNavRoute(
-        origin: _driverPos,
+        origin: _driverPos!,
         destination: accepted.pickupLatLng,
       );
       routePts = route?.overviewPolyline;
@@ -191,7 +192,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
           pickupLatLng: accepted.pickupLatLng,
           dropoffLatLng: accepted.dropoffLatLng,
           tripId: accepted.offerId,
-          initialDriverPos: _driverPos,
+          initialDriverPos: _driverPos!,
           routePoints: routePts,
           riderName: accepted.riderName,
           riderPhotoUrl: accepted.riderPhotoUrl,
@@ -288,14 +289,24 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
         children: [
           // ── Background map ──
           Positioned.fill(
-            child: mapbox.MapWidget(
-              styleUri: MapboxConfig.styleDark,
-              cameraOptions: mapbox.CameraOptions(
-                center: mapbox.Point(coordinates: mapbox.Position(_driverPos.longitude, _driverPos.latitude)),
-                zoom: 14.0,
-              ),
-              onMapCreated: _onMapCreated,
-            ),
+            child: _driverPos == null
+                ? Container(
+                    color: const Color(0xFF07080D),
+                    child: const Center(
+                      child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
+                    ),
+                  )
+                : mapbox.MapWidget(
+                    styleUri: MapboxConfig.styleDark,
+                    cameraOptions: mapbox.CameraOptions(
+                      center: mapbox.Point(coordinates: mapbox.Position(_driverPos!.longitude, _driverPos!.latitude)),
+                      zoom: 14.0,
+                    ),
+                    onMapCreated: _onMapCreated,
+                    onStyleLoadedListener: (_) async {
+                      if (_map != null) await MapTheme.applyNavyGold(_map!);
+                    },
+                  ),
           ),
 
           // ── Gradient overlay for readability ──

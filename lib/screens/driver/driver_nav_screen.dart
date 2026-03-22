@@ -668,9 +668,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         _mapReady = true;
         _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
         _pointMgr = await ctrl.annotations.createPointAnnotationManager();
-        await MapTheme.applyNavyGold(ctrl);
         _updateRouteAnnotation();
         _updateDestPin(widget.pickupLatLng);
+      },
+      onStyleLoadedListener: (_) async {
+        if (_map != null) await MapTheme.applyNavyGold(_map!);
       },
       onScrollListener: (_) => _onCameraMoveStarted(),
     );

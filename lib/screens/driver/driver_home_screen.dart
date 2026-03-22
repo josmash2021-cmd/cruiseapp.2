@@ -686,7 +686,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _mapController = ctrl;
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           setState(() => _mapReady = true);
-          await _applyNavyGoldTheme(ctrl);
           // Wait a moment for dot to be ready, then show it
           if (_goldDot.isReady) {
             _updateMyLocAnnotation();
@@ -696,6 +695,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               if (mounted && _goldDot.isReady) _updateMyLocAnnotation();
             });
           }
+        },
+        onStyleLoadedListener: (_) async {
+          if (_mapController != null) await _applyNavyGoldTheme(_mapController!);
         },
       ),
     );

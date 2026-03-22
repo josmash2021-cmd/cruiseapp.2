@@ -89,7 +89,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   mapbox.PolylineAnnotation? _routeAnnot;
   mapbox.PolylineAnnotation? _previewPickupAnnot;
   mapbox.PolylineAnnotation? _previewDropoffAnnot;
-  LatLng _pos = const LatLng(25.7617, -80.1918);
+  LatLng? _pos;
   StreamSubscription<Position>? _posStream;
   bool _lastStyleDark = true;
   // Cache: offerId → Future<String> static map URL (with real routed polyline)
@@ -412,8 +412,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         ),
       );
       if (!mounted) return;
-      setState(() => _pos = LatLng(pos.latitude, pos.longitude));
-      _moveToLatLng(_pos);
+      final ll = LatLng(pos.latitude, pos.longitude);
+      setState(() => _pos = ll);
+      _moveToLatLng(ll);
     } catch (_) {}
   }
 
@@ -822,12 +823,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       return;
     }
     debugPrint(
-      'ðŸŸ¢ Going online: driverId=$_driverId lat=${_pos.latitude} lng=${_pos.longitude}',
+      'ðŸŸ¢ Going online: driverId=$_driverId lat=${_pos?.latitude} lng=${_pos?.longitude}',
     );
+    if (_pos == null) return;
     ApiService.updateDriverLocation(
           driverId: _driverId!,
-          lat: _pos.latitude,
-          lng: _pos.longitude,
+          lat: _pos!.latitude,
+          lng: _pos!.longitude,
           isOnline: true,
         )
         .then((_) {
@@ -839,11 +841,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   void _goOfflineBackend() {
-    if (_driverId == null) return;
+    if (_driverId == null || _pos == null) return;
     ApiService.updateDriverLocation(
       driverId: _driverId!,
-      lat: _pos.latitude,
-      lng: _pos.longitude,
+      lat: _pos!.latitude,
+      lng: _pos!.longitude,
       isOnline: false,
     ).catchError((_) => <String, dynamic>{});
   }
@@ -1251,7 +1253,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   double _targetHeading = 0;
 
   void _smoothMoveTo(LatLng target, double heading) {
-    _animFrom = _pos;
+    _animFrom = _pos!;
     _animTo = target;
     _targetHeading = heading;
     _driverAnim.forward(from: 0);
@@ -1310,7 +1312,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _cameraBearing = _heading;
       _map?.flyTo(
         mapbox.CameraOptions(
-          center: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+          center: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
           zoom: 18.0,
           bearing: _heading,
           pitch: 60,
@@ -1341,11 +1343,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       final dotBytes = _goldenDotFrames[_goldenDotFrame % _goldenDotFrames.length];
       if (_goldDotAnnot != null) {
         try {
-          await pointMgr.update(_goldDotAnnot!..geometry = mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)));
+          await pointMgr.update(_goldDotAnnot!..geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)));
         } catch (_) { _goldDotAnnot = null; }
       }
+      if (_pos == null) return;
       _goldDotAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+        geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
         image: dotBytes,
         iconSize: 0.7,
       ));
@@ -1360,14 +1363,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       if (carBytes != null) {
         if (_carAnnot != null) {
           try {
-            _carAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude));
+            _carAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
             _carAnnot!.iconRotate = _heading;
             await pointMgr.update(_carAnnot!);
           } catch (_) { _carAnnot = null; }
         }
         if (_carAnnot == null) {
           _carAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-            geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+            geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
             image: carBytes,
             iconSize: 1.2,
             iconRotate: _heading,
@@ -1488,8 +1491,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final random = math.Random();
     final pickupDistanceKm = 0.5 + random.nextDouble() * 1.5;
     final angle = random.nextDouble() * 2 * math.pi;
-    final pickupLat = _pos.latitude + (pickupDistanceKm / 111) * math.cos(angle);
-    final pickupLng = _pos.longitude + (pickupDistanceKm / (111 * math.cos(_pos.latitude * math.pi / 180))) * math.sin(angle);
+    final pickupLat = _pos!.latitude + (pickupDistanceKm / 111) * math.cos(angle);
+    final pickupLng = _pos!.longitude + (pickupDistanceKm / (111 * math.cos(_pos!.latitude * math.pi / 180))) * math.sin(angle);
     
     // Generate dropoff location 1-5km from pickup (2-8 min trip)
     // Total trip time: 2-10 minutes
@@ -1621,7 +1624,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _dropoffAddr = r['dropoff_address'] ?? 'Drop-off';
     _fare = (r['fare'] as num?)?.toDouble() ?? 0;
     _vehicleType = _mapRideType((r['vehicle_type'] ?? 'Comfort') as String);
-    _distToPickup = _hav(_pos, _pickupLL);
+    _distToPickup = _hav(_pos!, _pickupLL);
     _etaToPickup = (_distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
     _tripDist = _hav(_pickupLL, _dropoffLL);
     _tripEta = (_tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
@@ -1648,7 +1651,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           dropoffAddress: _dropoffAddr,
           fare:           _fare,
           vehicleType:    _vehicleType,
-          driverPos:      _pos,
+          driverPos:      _pos!,
           distToPickupKm: _distToPickup,
           etaMinutes:     _etaToPickup,
           riderPhone:     _riderPhone,
@@ -1705,7 +1708,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _isPickupSummary = true;
       _phase = _Phase.routeSummary;
       _cameraFollowing = false;
-      _navDist = _hav(_pos, _pickupLL);
+      _navDist = _hav(_pos!, _pickupLL);
       _navEta = (_navDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
       _navInstruct = S.of(context).headToPickup;
       _navProgress = 0;
@@ -1713,9 +1716,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _slid = false;
     });
     _setPickupDropoffAnnotations();
-    await _drawRoute(_pos, _pickupLL, 'pickup', _navyRoute);
+    await _drawRoute(_pos!, _pickupLL, 'pickup', _navyRoute);
     await Future.delayed(const Duration(milliseconds: 150));
-    _fitBounds(_pos, _pickupLL);
+    _fitBounds(_pos!, _pickupLL);
   }
 
   Future<void> _toPickup() async {
@@ -1732,7 +1735,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _phase = _Phase.enRouteToPickup;
       _cameraFollowing = true;
       _reFollowTimer?.cancel();
-      _navDist = _hav(_pos, _pickupLL);
+      _navDist = _hav(_pos!, _pickupLL);
       _navEta = (_navDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
       _navInstruct = S.of(context).headToPickup;
       _navProgress = 0;
@@ -1740,10 +1743,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _slid = false;
     });
     _setPickupAnnotation();
-    await _drawRoute(_pos, _pickupLL, 'pickup', _navyRoute);
+    await _drawRoute(_pos!, _pickupLL, 'pickup', _navyRoute);
     // Wait for frame with updated map padding, then center on both points
     await Future.delayed(const Duration(milliseconds: 150));
-    _fitBounds(_pos, _pickupLL);
+    _fitBounds(_pos!, _pickupLL);
   }
 
   Future<void> _arrivePickup() async {
@@ -1779,7 +1782,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _phase = _Phase.routeSummary;
       _cameraFollowing = false;
       _reFollowTimer?.cancel();
-      _navDist = _hav(_pos, _dropoffLL);
+      _navDist = _hav(_pos!, _dropoffLL);
       _navEta = (_navDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
       _navInstruct = S.of(context).headToDropOff;
       _navProgress = 0;
@@ -1787,11 +1790,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _slid = false;
     });
     _setDropoffAnnotation();
-    await _drawRoute(_pos, _dropoffLL, 'trip', _navyRoute);
+    await _drawRoute(_pos!, _dropoffLL, 'trip', _navyRoute);
     await Future.delayed(const Duration(milliseconds: 150));
     _nearDropoffNotified = false;
     // Show overview of route to dropoff (not navigation camera yet)
-    _fitBounds(_pos, _dropoffLL);
+    _fitBounds(_pos!, _dropoffLL);
   }
 
   /// User pressed "Start Navigation" from the route summary — begin actual nav.
@@ -1811,7 +1814,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       });
       _setPickupAnnotation();
       _cameraBearing = _heading;
-      _animateToPosition(_pos, zoom: 17.5, bearing: _heading, tilt: 55);
+      _animateToPosition(_pos!, zoom: 17.5, bearing: _heading, tilt: 55);
       if (!_isSimulationMode) {
         MapLauncherService.prefersInApp().then((inApp) {
           if (!inApp) {
@@ -1833,7 +1836,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       });
       _setDropoffAnnotation();
       _cameraBearing = _heading;
-      _animateToPosition(_pos, zoom: 17.5, bearing: _heading, tilt: 55);
+      _animateToPosition(_pos!, zoom: 17.5, bearing: _heading, tilt: 55);
       if (!_isSimulationMode) {
         MapLauncherService.prefersInApp().then((inApp) {
           if (!inApp) {
@@ -1875,7 +1878,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _pendingOffers = [];
     });
     _clearAllAnnotations();
-    _animateToPosition(_pos, zoom: 15.5, bearing: 0, tilt: 0);
+    if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     _startPolling();
   }
 
@@ -1924,7 +1927,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _pendingOffers = [];
       });
       _clearAllAnnotations();
-      _animateToPosition(_pos, zoom: 15.5, bearing: 0, tilt: 0);
+      if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
       _startPolling();
     });
   }
@@ -2037,14 +2040,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _pendingOffers = [];
     });
     _clearAllAnnotations();
-    _animateToPosition(_pos, zoom: 15.5, bearing: 0, tilt: 0);
+    if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     _startPolling();
   }
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  NAV — Real GPS drives the navigation now.
   //  _simNav is kept as a no-op for backward compat.
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _simNav() {
     // No-op: real GPS position stream handles all nav updates
   }
@@ -2483,7 +2486,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     if (pointMgr != null && mounted) {
       if (results[0] != null) {
         _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+          geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
           image: results[0],
           iconSize: 1.0,
         ));
@@ -2506,18 +2509,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     // Draw both route segments concurrently
     await Future.wait([
-      _drawPreviewRoute(_pos,     pickupLL,  'prev_to_pickup', _navyRoute),
+      _drawPreviewRoute(_pos!,    pickupLL,  'prev_to_pickup', _navyRoute),
       _drawPreviewRoute(pickupLL, dropoffLL, 'prev_trip',      _navyRoute),
     ]);
 
     // Fit camera to show all three points
     if (!mounted) return;
     await Future.delayed(const Duration(milliseconds: 200));
-    _fitBoundsMulti([_pos, pickupLL, dropoffLL]);
+    _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
 
     await Future.delayed(const Duration(milliseconds: 600));
     if (mounted && _previewingOffer != null) {
-      _fitBoundsMulti([_pos, pickupLL, dropoffLL]);
+      _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
     }
   }
 
@@ -2642,7 +2645,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _previewingOffer = null;
     });
     _clearAllAnnotations();
-    _animateToPosition(_pos, zoom: 15.5, bearing: 0, tilt: 0);
+    if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
   }
 
   void _snack(String s) {
@@ -3007,16 +3010,24 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     setState(() => _cameraFollowing = true);
     final bearing = _smoothedBearing;
     _cameraBearing = bearing; // sync for sprite selection
-    _animateToPosition(_pos, zoom: 17.5, bearing: bearing, tilt: 55);
+    if (_pos != null) _animateToPosition(_pos!, zoom: 17.5, bearing: bearing, tilt: 55);
   }
 
   Widget _mapW(bool isDark) {
+    if (_pos == null) {
+      return Container(
+        color: const Color(0xFF07080D),
+        child: const Center(
+          child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
+        ),
+      );
+    }
     return RepaintBoundary(
       child: mapbox.MapWidget(
         key: _mapKey,
         styleUri: MapboxConfig.styleDark,
         cameraOptions: mapbox.CameraOptions(
-          center: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+          center: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
           zoom: 15.5,
           bearing: 0,
           pitch: 0,
@@ -3028,7 +3039,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           // when the layer name doesn't exist in the style.
           _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-          await MapTheme.applyNavyGold(ctrl);
           // Always fly to real GPS — never the Miami default
           try {
             final gps = await Geolocator.getCurrentPosition(
@@ -3041,7 +3051,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               setState(() => _pos = LatLng(gps.latitude, gps.longitude));
             }
           } catch (_) {}
-          _animateToPosition(_pos, zoom: 15.5, bearing: _heading, tilt: 0);
+          if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: _heading, tilt: 0);
           _updateDriverAnnotation();
           // Re-draw route if map initialised after _drawRoute already ran
           if (_routePts.length > 1) {
@@ -3050,8 +3060,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             final dest = (_phase == _Phase.enRouteToPickup || _phase == _Phase.routeSummary)
                 ? _pickupLL
                 : _dropoffLL;
-            _fitBounds(_pos, dest);
+            if (_pos != null) _fitBounds(_pos!, dest);
           }
+        },
+        onStyleLoadedListener: (_) async {
+          if (_map != null) await MapTheme.applyNavyGold(_map!);
         },
         onScrollListener: (_) {
           _onCameraMoveStarted();
@@ -4310,7 +4323,7 @@ Widget _navHeader() {
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
 
-    final distToPickupKm = _hav(_pos, pickupLL);
+    final distToPickupKm = _hav(_pos!, pickupLL);
     final etaToPickup = (distToPickupKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
     final distToPickupMi = distToPickupKm * 0.621371;
     final tripDistKm = _hav(pickupLL, dropoffLL);
@@ -4321,7 +4334,7 @@ Widget _navHeader() {
     final offerId = (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_${pickupLng}').toString();
     final mapFuture = _offerMapUrlCache.putIfAbsent(
       offerId,
-      () => _buildOfferMapUrl(_pos, pickupLL, dropoffLL),
+      () => _buildOfferMapUrl(_pos!, pickupLL, dropoffLL),
     );
 
     return ClipRRect(
@@ -4599,7 +4612,7 @@ Widget _navHeader() {
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
     final vehicleType = _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
-    final distToPickup = _hav(_pos, pickupLL);
+    final distToPickup = _hav(_pos!, pickupLL);
     final etaToPickup = (distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
     final tripDist = _hav(pickupLL, dropoffLL);
     final tripEta = (tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
@@ -5229,7 +5242,7 @@ Widget _navHeader() {
               GestureDetector(
                 onTap: () {
                   HapticFeedback.lightImpact();
-                  _fitBoundsMulti([_pos, _pickupLL, _dropoffLL]);
+                  _fitBoundsMulti([_pos!, _pickupLL, _dropoffLL]);
                 },
                 child: Container(
                   width: 48,

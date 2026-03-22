@@ -503,10 +503,12 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
                 ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                 ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                 ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                await MapTheme.applyNavyGold(ctrl);
                 _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                 _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
                 await _drawRoute();
+              },
+              onStyleLoadedListener: (_) async {
+                if (_map != null) await MapTheme.applyNavyGold(_map!);
               },
               onScrollListener: (_) {
                 // Usuario movió el mapa - opcional: pausar follow temporalmente

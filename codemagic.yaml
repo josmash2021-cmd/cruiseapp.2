@@ -361,7 +361,8 @@ workflows:
 
           # Step 2 — get the provisioning profile UUID installed by xcode-project use-profiles
           PROFILE_PATH=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision 2>/dev/null | head -1)
-          PROFILE_UUID=$(security cms -D -i "$PROFILE_PATH" | /usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin)
+          security cms -D -i "$PROFILE_PATH" > /tmp/profile.plist
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /tmp/profile.plist)
           echo "Profile path: $PROFILE_PATH"
           echo "Using provisioning profile UUID: $PROFILE_UUID"
 

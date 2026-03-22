@@ -523,8 +523,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     return (bytes, bytes);
   }
 
-  /// Draw a gold pin at a specific position on a canvas.
-  /// [isPickup] = true → circle; false → rounded square.
+  /// Draw a teardrop location pin.
+  /// The tip points DOWN and sits at (ox + size/2, oy + size) — the coordinate.
+  /// A fade gradient blends the tip into the route-line colour.
   void _drawGoldPinAt(
     Canvas canvas,
     double ox,
@@ -533,54 +534,82 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _PinIcon icon = _PinIcon.none,
     bool isPickup = true,
   }) {
-    final cx = ox + size / 2;
-    final cy = oy + size / 2; // center of the shape
-    final r = size * 0.38;
+    final cx = ox + size / 2;      // horizontal center
+    final tipY = oy + size;         // tip of the pin = coordinate point
+    final r = size * 0.32;          // radius of the round head
+    final headCY = oy + r + size * 0.04; // vertical center of the round head
 
-    // Shadow
-    canvas.drawCircle(
-      Offset(cx, cy + 2),
-      r + 2,
+    // ── Build teardrop path ──
+    // Round head (top) + two bezier curves tapering to a tip (bottom).
+    final path = Path();
+    // Start at the left side of the head at its vertical center
+    path.moveTo(cx - r, headCY);
+    // Arc the top half of the head
+    path.arcTo(
+      Rect.fromCircle(center: Offset(cx, headCY), radius: r),
+      math.pi,        // start: left
+      -math.pi,       // sweep: counter-clockwise top
+      false,
+    );
+    // Right side bezier curving to the tip
+    path.cubicTo(
+      cx + r,       headCY + r * 1.0,
+      cx + r * 0.22, tipY - size * 0.04,
+      cx,            tipY,
+    );
+    // Left side bezier back to start
+    path.cubicTo(
+      cx - r * 0.22, tipY - size * 0.04,
+      cx - r,        headCY + r * 1.0,
+      cx - r,        headCY,
+    );
+    path.close();
+
+    // ── Drop shadow ──
+    canvas.drawPath(
+      path.shift(const Offset(0, 3)),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..color = Colors.black.withValues(alpha: 0.32)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
 
-    if (isPickup) {
-      // ── Circle shape for pickup ──
-      canvas.drawCircle(Offset(cx, cy), r, Paint()..color = _gold);
-      canvas.drawCircle(
-        Offset(cx, cy),
-        r,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..color = Colors.white.withValues(alpha: 0.25),
-      );
-    } else {
-      // ── Rounded square shape for dropoff ──
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, cy), width: r * 2, height: r * 2),
-        Radius.circular(r * 0.28),
-      );
-      canvas.drawRRect(rect, Paint()..color = _gold);
-      canvas.drawRRect(
-        rect,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..color = Colors.white.withValues(alpha: 0.25),
-      );
-    }
+    // ── Fill teardrop with gold ──
+    canvas.drawPath(path, Paint()..color = _gold);
 
-    // Subtle inner highlight on top-left for modern 3D feel
-    canvas.drawCircle(
-      Offset(cx - r * 0.2, cy - r * 0.2),
-      r * 0.5,
+    // ── White inner stroke ──
+    canvas.drawPath(
+      path,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.15)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0
+        ..color = Colors.white.withValues(alpha: 0.22),
     );
+
+    // ── Subtle highlight on top-left ──
+    canvas.drawCircle(
+      Offset(cx - r * 0.25, headCY - r * 0.25),
+      r * 0.42,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.18)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
+
+    // ── Fade blend at tip: vertical gradient transparent→route-blue ──
+    // Covers roughly the bottom 35% of the pin area, softening the tip.
+    final fadeTop = headCY + r * 0.8;
+    canvas.drawRect(
+      Rect.fromLTRB(cx - r, fadeTop, cx + r, tipY),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, fadeTop),
+          Offset(cx, tipY),
+          [Colors.transparent, const Color(0x885BA3F5)],
+        )
+        ..blendMode = BlendMode.srcATop,
+    );
+
+    // Icon center = center of the round head
+    final cy = headCY; // alias so icon drawing code below still works
 
     // Draw icon directly on pin — modern filled style
     const iconColor = Color(0xFFFFFFFF);
@@ -1088,6 +1117,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
           image: bytes,
           iconSize: 0.85,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
         ));
       }
     }
@@ -1108,6 +1138,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
           image: bytes,
           iconSize: 0.85,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
         ));
       }
     }

@@ -305,7 +305,7 @@ class RideOptionsSheet extends StatelessWidget {
               : Colors.black.withValues(alpha: 0.06));
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: GestureDetector(
         onTap: () => onSelect(opt),
         child: AnimatedContainer(

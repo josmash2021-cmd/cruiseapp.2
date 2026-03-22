@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
@@ -34,8 +35,8 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   int _step = 0; // 0=intro, 1=processing, 2=confirmed, 3=pending, 4=rejected
   String? _licenseFrontPath;
   String? _licenseBackPath;
-  String? _carRegistrationPath;
-  String _docType = 'license'; // license | id | passport
+  String? _selfiePath;
+  final String _docType = 'license';
   bool _processing = false;
   bool _verified = false;
   String? _rejectionReason;
@@ -67,46 +68,30 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     super.dispose();
   }
 
-  /// Show document type picker, then launch scanner(s).
+  /// Scan license front, license back, then capture selfie.
   Future<void> _startVerification() async {
-    // Show bottom sheet to pick document type
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _DocTypePicker(),
-    );
-    if (picked == null || !mounted) return;
-    setState(() => _docType = picked);
-
-    // Scan front
-    final frontLabel = _docType == 'license'
-        ? 'Front'
-        : (_docType == 'passport' ? 'Passport' : 'ID');
+    // Scan license front
     final frontPath = await Navigator.of(context).push<String?>(
-      slideFromRightRoute(LicenseScannerScreen(side: frontLabel)),
+      slideFromRightRoute(const LicenseScannerScreen(side: 'Front')),
     );
     if (frontPath == null || !mounted) return;
     _licenseFrontPath = frontPath;
 
-    // License requires back scan too
-    if (_docType == 'license') {
-      await Future.delayed(const Duration(milliseconds: 600));
-      if (!mounted) return;
-      final backPath = await Navigator.of(context).push<String?>(
-        slideFromRightRoute(const LicenseScannerScreen(side: 'Back')),
-      );
-      if (backPath == null || !mounted) return;
-      _licenseBackPath = backPath;
-    }
-
-    // Scan Car Registration (for drivers)
+    // Scan license back
     await Future.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
-    final regPath = await Navigator.of(context).push<String?>(
-      slideFromRightRoute(const LicenseScannerScreen(side: 'Car Registration')),
+    final backPath = await Navigator.of(context).push<String?>(
+      slideFromRightRoute(const LicenseScannerScreen(side: 'Back')),
     );
-    if (regPath == null || !mounted) return;
-    _carRegistrationPath = regPath;
+    if (backPath == null || !mounted) return;
+    _licenseBackPath = backPath;
+
+    // Capture selfie (becomes profile photo)
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    final selfiePath = await _captureSelfie();
+    if (selfiePath == null || !mounted) return;
+    _selfiePath = selfiePath;
 
     setState(() {
       _step = 1;
@@ -115,8 +100,34 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     await _completeVerification();
   }
 
+  /// Launch front camera to capture a selfie for the profile photo.
+  Future<String?> _captureSelfie() async {
+    // Show guide sheet before opening camera
+    final proceed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _SelfieGuideSheet(),
+    );
+    if (proceed != true || !mounted) return null;
+    try {
+      final picker = ImagePicker();
+      final xFile = await picker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.front,
+        imageQuality: 85,
+      );
+      return xFile?.path;
+    } catch (e) {
+      debugPrint('⚠️ Selfie capture failed: $e');
+      return null;
+    }
+  }
+
   Future<void> _completeVerification() async {
-    final Map<String, dynamic> body = {'id_document_type': _docType};
+    final Map<String, dynamic> body = {
+      'id_document_type': _docType,
+      'role': 'rider',
+    };
 
     // Encode license front
     if (_licenseFrontPath != null) {
@@ -138,14 +149,21 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
       }
     }
 
-    // Encode car registration
-    if (_carRegistrationPath != null) {
+    // Encode selfie — also sent as profile_photo so backend sets profilePhotoUrl
+    if (_selfiePath != null) {
       try {
-        final bytes = await File(_carRegistrationPath!).readAsBytes();
-        body['vehicle_registration'] = base64Encode(bytes);
+        final bytes = await File(_selfiePath!).readAsBytes();
+        final encoded = base64Encode(bytes);
+        body['selfie'] = encoded;
+        body['profile_photo'] = encoded;
       } catch (e) {
-        debugPrint('⚠️ Failed to read car registration: $e');
+        debugPrint('⚠️ Failed to read selfie: $e');
       }
+    }
+
+    // Save selfie locally as profile photo immediately (before approval)
+    if (_selfiePath != null) {
+      await UserSession.updateField('photo', _selfiePath!);
     }
 
     // Submit verification request to backend for dispatch review
@@ -192,6 +210,12 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
             LocalDataService.setIdentityVerified('license');
             UserSession.updateField('isVerified', 'true');
             UserSession.updateField('verificationStatus', 'approved');
+            // Update profile photo from Firestore (backend-hosted URL)
+            final photoUrl = data['profilePhotoUrl'] as String? ??
+                data['selfieUrl'] as String?;
+            if (photoUrl != null && photoUrl.isNotEmpty) {
+              UserSession.updateField('photo', photoUrl);
+            }
             _checkCtrl.forward();
             setState(() {
               _verified = true;
@@ -230,6 +254,12 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           await LocalDataService.setIdentityVerified('license');
           await UserSession.updateField('isVerified', 'true');
           await UserSession.updateField('verificationStatus', 'approved');
+          // Update profile photo from polling response
+          final photoUrl = result['profile_photo_url'] as String? ??
+              result['selfie_url'] as String?;
+          if (photoUrl != null && photoUrl.isNotEmpty) {
+            await UserSession.updateField('photo', photoUrl);
+          }
           if (!mounted) return;
           _checkCtrl.forward();
           setState(() {
@@ -362,14 +392,20 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           // Steps preview
           _stepPreview(
             c,
-            Icons.badge_rounded,
-            S.of(context).selectDocumentType,
+            Icons.credit_card_rounded,
+            'License — Front side',
           ),
           const SizedBox(height: 12),
           _stepPreview(
             c,
-            Icons.document_scanner_rounded,
-            S.of(context).scanYourDocument,
+            Icons.flip_rounded,
+            'License — Back side',
+          ),
+          const SizedBox(height: 12),
+          _stepPreview(
+            c,
+            Icons.face_rounded,
+            'Selfie — becomes your profile photo',
           ),
           const SizedBox(height: 12),
           _stepPreview(
@@ -820,6 +856,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
                   _step = 0;
                   _licenseFrontPath = null;
                   _licenseBackPath = null;
+                  _selfiePath = null;
                   _rejectionReason = null;
                 });
               },
@@ -874,16 +911,17 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
 }
 
 // ═══════════════════════════════════════════
-//  Document Type Picker Bottom Sheet
+//  Selfie Guide Bottom Sheet
 // ═══════════════════════════════════════════
-class _DocTypePicker extends StatelessWidget {
+class _SelfieGuideSheet extends StatelessWidget {
   static const _gold = Color(0xFFE8C547);
+  const _SelfieGuideSheet();
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF1A1A1A) : Colors.white;
-    final textC = isDark ? Colors.white : Colors.black;
+    final textC = isDark ? Colors.white : Colors.black87;
     final sub = isDark ? Colors.white60 : Colors.black54;
 
     return Container(
@@ -893,127 +931,94 @@ class _DocTypePicker extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              S.of(context).selectDocumentType,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: textC,
+              const SizedBox(height: 24),
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _gold.withValues(alpha: 0.12),
+                ),
+                child: const Icon(Icons.face_rounded, color: _gold, size: 40),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              S.of(context).chooseDocToScan,
-              style: TextStyle(fontSize: 14, color: sub),
-            ),
-            const SizedBox(height: 24),
-            _docOption(
-              context,
-              icon: Icons.credit_card_rounded,
-              title: S.of(context).driversLicense,
-              subtitle: S.of(context).frontAndBack,
-              value: 'license',
-              textC: textC,
-              sub: sub,
-            ),
-            _docOption(
-              context,
-              icon: Icons.badge_rounded,
-              title: S.of(context).governmentId,
-              subtitle: S.of(context).frontOnly,
-              value: 'id',
-              textC: textC,
-              sub: sub,
-            ),
-            _docOption(
-              context,
-              icon: Icons.menu_book_rounded,
-              title: S.of(context).passport,
-              subtitle: S.of(context).frontOnly,
-              value: 'passport',
-              textC: textC,
-              sub: sub,
-            ),
-            const SizedBox(height: 16),
-          ],
+              const SizedBox(height: 20),
+              Text(
+                'Take a Selfie',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: textC,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This photo will be your profile picture.\nLook straight at the camera with good lighting.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: sub, height: 1.5),
+              ),
+              const SizedBox(height: 24),
+              // Tips
+              _tip(isDark, Icons.light_mode_rounded, 'Good, even lighting on your face'),
+              const SizedBox(height: 10),
+              _tip(isDark, Icons.remove_red_eye_rounded, 'Eyes open, face fully visible'),
+              const SizedBox(height: 10),
+              _tip(isDark, Icons.no_photography_rounded, 'No sunglasses or hats'),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: () => Navigator.pop(context, true),
+                  icon: const Icon(Icons.camera_alt_rounded, size: 20),
+                  label: const Text(
+                    'Open Camera',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _docOption(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required String value,
-    required Color textC,
-    required Color sub,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => Navigator.pop(context, value),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _gold.withValues(alpha: 0.15)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: _gold.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(icon, color: _gold, size: 24),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: textC,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(fontSize: 13, color: sub),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(Icons.chevron_right_rounded, color: sub, size: 22),
-              ],
-            ),
+  Widget _tip(bool isDark, IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: _gold),
+        const SizedBox(width: 10),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 14,
+            color: isDark ? Colors.white70 : Colors.black54,
           ),
         ),
-      ),
+      ],
     );
   }
 }

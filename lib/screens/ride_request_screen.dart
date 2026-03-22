@@ -2242,341 +2242,15 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     return '${s.substring(0, cut).trimRight()}…';
   }
 
-  // ── Searching splash (Phase 1) ──
+  // ── Searching bottom card — premium animated "Looking for ride" ──
 
-  Widget _buildSearchingSplash(AppColors c) {
-    return AnimatedOpacity(
-      opacity: _searchingSplash ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 500),
-      child: Container(
-        color: const Color(0xFF0D0D0D),
-        child: Stack(
-          children: [
-            // Background gradient
-            Container(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: const Alignment(0, -0.3),
-                  radius: 0.8,
-                  colors: [
-                    c.gold.withValues(alpha: 0.08),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-            
-            // Animated radar waves
-            Center(
-              child: SizedBox(
-                width: 400,
-                height: 400,
-                child: AnimatedBuilder(
-                  animation: _pulseCtrl,
-                  builder: (context, child) {
-                    return Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // Multiple expanding rings
-                        ...List.generate(4, (index) {
-                          final delay = index * 0.25;
-                          final t = ((_pulseAnim.value - 0.6) / 0.4 + delay) % 1.0;
-                          final ringSize = 80.0 + t * 280.0;
-                          final ringAlpha = (1.0 - t).clamp(0.0, 1.0) * 0.3;
-                          final ringWidth = 2.0 - t * 1.0;
-                          
-                          return Container(
-                            width: ringSize,
-                            height: ringSize,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: c.gold.withValues(alpha: ringAlpha),
-                                width: ringWidth,
-                              ),
-                            ),
-                          );
-                        }),
-                        
-                        // Inner glow circle
-                        Container(
-                          width: 100,
-                          height: 100,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: RadialGradient(
-                              colors: [
-                                c.gold.withValues(alpha: 0.3),
-                                c.gold.withValues(alpha: 0.1),
-                              ],
-                            ),
-                          ),
-                        ),
-                        
-                        // Center car icon
-                        Container(
-                          width: 60,
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1A1A1A),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: c.gold.withValues(alpha: 0.6),
-                              width: 2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: c.gold.withValues(alpha: 0.4),
-                                blurRadius: 20,
-                                spreadRadius: 5,
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            Icons.local_taxi_rounded,
-                            color: c.gold,
-                            size: 28,
-                          ),
-                        ),
-                        
-                        // Pulsing dot
-                        Container(
-                          width: 8,
-                          height: 8,
-                          margin: const EdgeInsets.only(top: 70),
-                          decoration: BoxDecoration(
-                            color: Colors.green,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.green.withValues(alpha: 0.6),
-                                blurRadius: 10,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-            
-            // Bottom content card
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 0,
-              child: SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Status text
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
-                        borderRadius: BorderRadius.circular(30),
-                        border: Border.all(
-                          color: c.gold.withValues(alpha: 0.3),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation(c.gold),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            S.of(context).lookingForRide,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    // Ride info card
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.08),
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.3),
-                            blurRadius: 20,
-                            offset: const Offset(0, -4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Ride type and price
-                          Row(
-                            children: [
-                              // Vehicle image
-                              SizedBox(
-                                width: 80,
-                                height: 56,
-                                child: Image.asset(
-                                  _carAssetForOption(_ctrl.state.selectedOption?.name ?? ''),
-                                  fit: BoxFit.contain,
-                                  filterQuality: FilterQuality.high,
-                                  isAntiAlias: true,
-                                  errorBuilder: (_, __, ___) => Icon(
-                                    Icons.directions_car_rounded,
-                                    color: c.gold,
-                                    size: 32,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _ctrl.state.selectedOption?.name ?? 'Fusion',
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w800,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _ctrl.state.selectedOption?.description ?? S.of(context).comfortableSedan,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.white.withValues(alpha: 0.5),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    '\$${_ctrl.state.selectedOption?.priceEstimate.toStringAsFixed(2) ?? '0.00'}',
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w900,
-                                      color: c.gold,
-                                    ),
-                                  ),
-                                  Text(
-                                    S.of(context).estFare,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.white.withValues(alpha: 0.4),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          
-                          const SizedBox(height: 16),
-                          Divider(
-                            height: 1,
-                            color: Colors.white.withValues(alpha: 0.08),
-                          ),
-                          const SizedBox(height: 16),
-                          
-                          // Route info
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildLocationInfo(
-                                  Icons.my_location_rounded,
-                                  _ctrl.state.pickupLabel.isNotEmpty 
-                                      ? _ctrl.state.pickupLabel 
-                                      : S.of(context).currentLocation,
-                                  Colors.green,
-                                ),
-                              ),
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: c.gold.withValues(alpha: 0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.arrow_forward_rounded,
-                                  color: c.gold.withValues(alpha: 0.6),
-                                  size: 20,
-                                ),
-                              ),
-                              Expanded(
-                                child: _buildLocationInfo(
-                                  Icons.location_on_rounded,
-                                  _ctrl.state.dropoffLabel.isNotEmpty
-                                      ? _truncateHalf(_ctrl.state.dropoffLabel)
-                                      : S.of(context).destination,
-                                  c.gold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          
-                          const SizedBox(height: 20),
-                          
-                          // Cancel button
-                          SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: TextButton(
-                              onPressed: _confirmCancelSearching,
-                              style: TextButton.styleFrom(
-                                backgroundColor: Colors.white.withValues(alpha: 0.08),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                              ),
-                              child: Text(
-                                S.of(context).cancel,
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  static const List<String> _searchStatusMessages = [
+    'Looking for your driver…',
+    'Connecting to nearby drivers…',
+    'Almost there…',
+    'Confirming your ride…',
+    'A driver is on the way…',
+  ];
 
   Widget _buildLocationInfo(IconData icon, String text, Color color) {
     return Row(
@@ -2604,6 +2278,332 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           ),
         ),
       ],
+    );
+  }
+
+  // ── Premium "Looking for ride" bottom card ──
+
+  Widget _buildSearchingBottomCard(AppColors c) {
+    final s = _ctrl.state;
+    final statusMsg = _searchStatusMessages[
+        _searchStatusIdx % _searchStatusMessages.length];
+    final pickupText = s.pickupLabel.isNotEmpty
+        ? s.pickupLabel
+        : S.of(context).currentLocation;
+    final dropoffText = s.dropoffLabel.isNotEmpty
+        ? _truncateHalf(s.dropoffLabel)
+        : S.of(context).destination;
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+        offset: _searchingShowMap ? Offset.zero : const Offset(0, 1),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 300),
+          opacity: _searchingShowMap ? 1.0 : 0.0,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              // Deep 3D shadow stack
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.70),
+                  blurRadius: 48,
+                  spreadRadius: 8,
+                  offset: const Offset(0, -12),
+                ),
+                BoxShadow(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.08),
+                  blurRadius: 60,
+                  spreadRadius: 0,
+                  offset: const Offset(0, -8),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Color(0xFF0F0F14),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // ── Drag handle ──
+                        Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // ── Radar animation + car + route info row ──
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Radar pulse stack
+                            SizedBox(
+                              width: 80,
+                              height: 80,
+                              child: AnimatedBuilder(
+                                animation: _radarCtrl,
+                                builder: (context, _) {
+                                  return Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      // 3 expanding rings
+                                      ...List.generate(3, (i) {
+                                        final offset = i / 3.0;
+                                        final t = (_radarCtrl.value + offset) % 1.0;
+                                        final size = 28.0 + t * 60.0;
+                                        final alpha = (1.0 - t) * 0.45;
+                                        return Container(
+                                          width: size,
+                                          height: size,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: const Color(0xFFE8C547)
+                                                  .withValues(alpha: alpha),
+                                              width: 1.5,
+                                            ),
+                                          ),
+                                        );
+                                      }),
+                                      // Gold glow core
+                                      Container(
+                                        width: 50,
+                                        height: 50,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          gradient: RadialGradient(
+                                            colors: [
+                                              const Color(0xFFE8C547)
+                                                  .withValues(alpha: 0.25),
+                                              const Color(0xFFE8C547)
+                                                  .withValues(alpha: 0.0),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      // Car icon circle
+                                      Container(
+                                        width: 42,
+                                        height: 42,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF1C1C24),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: const Color(0xFFE8C547)
+                                                .withValues(alpha: 0.55),
+                                            width: 1.5,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: const Color(0xFFE8C547)
+                                                  .withValues(alpha: 0.30),
+                                              blurRadius: 16,
+                                              spreadRadius: 2,
+                                            ),
+                                          ],
+                                        ),
+                                        child: const Icon(
+                                          Icons.local_taxi_rounded,
+                                          color: Color(0xFFE8C547),
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 18),
+
+                            // ── Status + route ──
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Animated status message
+                                  AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 350),
+                                    transitionBuilder: (child, anim) =>
+                                        FadeTransition(
+                                      opacity: anim,
+                                      child: SlideTransition(
+                                        position: Tween<Offset>(
+                                          begin: const Offset(0, 0.15),
+                                          end: Offset.zero,
+                                        ).animate(anim),
+                                        child: child,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      statusMsg,
+                                      key: ValueKey(statusMsg),
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                        letterSpacing: -0.2,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+
+                                  // Route pill
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 6,
+                                        height: 6,
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFF4ADE80),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          pickupText,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.white
+                                                .withValues(alpha: 0.50),
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5),
+                                        child: Icon(
+                                          Icons.arrow_forward_rounded,
+                                          size: 11,
+                                          color: Colors.white
+                                              .withValues(alpha: 0.30),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          dropoffText,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.white
+                                                .withValues(alpha: 0.50),
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // ── Shimmer progress bar ──
+                        AnimatedBuilder(
+                          animation: _shimmerCtrl,
+                          builder: (context, _) {
+                            return Container(
+                              height: 3,
+                              decoration: BoxDecoration(
+                                color:
+                                    Colors.white.withValues(alpha: 0.07),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                              child: FractionallySizedBox(
+                                alignment: Alignment.centerLeft,
+                                widthFactor: 1.0,
+                                child: ShaderMask(
+                                  shaderCallback: (bounds) =>
+                                      LinearGradient(
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                    stops: [
+                                      (_shimmerCtrl.value - 0.3)
+                                          .clamp(0.0, 1.0),
+                                      _shimmerCtrl.value.clamp(0.0, 1.0),
+                                      (_shimmerCtrl.value + 0.3)
+                                          .clamp(0.0, 1.0),
+                                    ],
+                                    colors: const [
+                                      Color(0xFFE8C547),
+                                      Colors.white,
+                                      Color(0xFFE8C547),
+                                    ],
+                                  ).createShader(bounds),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE8C547),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // ── Cancel button ──
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: TextButton(
+                            onPressed: _confirmCancelSearching,
+                            style: TextButton.styleFrom(
+                              backgroundColor:
+                                  Colors.white.withValues(alpha: 0.06),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                side: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.10),
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              S.of(context).cancel,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white60,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -3684,407 +3684,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     );
   }
 
-  /// Cycling status messages for the searching card.
-  static const _searchMessages = [
-    'Connecting you with nearby drivers…',
-    'Finding your best match…',
-    'Checking driver availability…',
-    'Almost there…',
-    'Searching nearby…',
-  ];
-
-  /// Format elapsed seconds into m:ss
-  String _fmtElapsed(int sec) {
-    final m = sec ~/ 60;
-    final s = sec % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
-  }
-
-  /// Premium animated "Looking for ride" bottom card
-  Widget _buildSearchingBottomCard(AppColors c) {
-    final option = _ctrl.state.selectedOption;
-    final s = _ctrl.state;
-    final pickupAddr = s.pickupLabel.isNotEmpty
-        ? _truncateHalf(s.pickupLabel)
-        : S.of(context).pickupLocation;
-    final dropoffAddr = s.dropoffLabel.isNotEmpty
-        ? _truncateHalf(s.dropoffLabel)
-        : S.of(context).destination;
-    final statusMsg = _searchMessages[_searchStatusIdx % _searchMessages.length];
-
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF1E1E28), Color(0xFF141418)],
-          ),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          border: Border(
-            top: BorderSide(color: c.gold.withValues(alpha: 0.15), width: 1),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.5),
-              blurRadius: 30,
-              offset: const Offset(0, -8),
-            ),
-            BoxShadow(
-              color: c.gold.withValues(alpha: 0.05),
-              blurRadius: 40,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Handle
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: c.gold.withValues(alpha: 0.25),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 18),
-
-                // ── Radar pulse + car icon ──
-                SizedBox(
-                  height: 100,
-                  child: AnimatedBuilder(
-                    animation: _radarCtrl,
-                    builder: (context, _) {
-                      return Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          // Expanding radar rings
-                          ...List.generate(3, (i) {
-                            final phase = (_radarCtrl.value + i * 0.33) % 1.0;
-                            final size = 40.0 + phase * 80.0;
-                            final alpha = (1.0 - phase).clamp(0.0, 1.0) * 0.35;
-                            return Container(
-                              width: size,
-                              height: size,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: c.gold.withValues(alpha: alpha),
-                                  width: 1.5 - phase * 0.8,
-                                ),
-                              ),
-                            );
-                          }),
-                          // Inner glow
-                          Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: RadialGradient(
-                                colors: [
-                                  c.gold.withValues(alpha: 0.18),
-                                  c.gold.withValues(alpha: 0.04),
-                                  Colors.transparent,
-                                ],
-                              ),
-                            ),
-                          ),
-                          // Center icon
-                          Container(
-                            width: 46,
-                            height: 46,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1A1A22),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: c.gold.withValues(alpha: 0.5),
-                                width: 2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: c.gold.withValues(alpha: 0.25),
-                                  blurRadius: 16,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                            child: Icon(
-                              Icons.local_taxi_rounded,
-                              color: c.gold,
-                              size: 22,
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // ── Cycling status text ──
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 400),
-                  transitionBuilder: (child, anim) => FadeTransition(
-                    opacity: anim,
-                    child: SlideTransition(
-                      position: Tween(
-                        begin: const Offset(0, 0.15),
-                        end: Offset.zero,
-                      ).animate(anim),
-                      child: child,
-                    ),
-                  ),
-                  child: Text(
-                    statusMsg,
-                    key: ValueKey<int>(_searchStatusIdx),
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white.withValues(alpha: 0.75),
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                // Elapsed timer
-                Text(
-                  _fmtElapsed(_searchElapsedSec),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white.withValues(alpha: 0.3),
-                    fontFeatures: const [ui.FontFeature.tabularFigures()],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // ── Shimmer progress bar ──
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: SizedBox(
-                    height: 4,
-                    child: AnimatedBuilder(
-                      animation: _shimmerCtrl,
-                      builder: (context, _) {
-                        return Stack(
-                          children: [
-                            Container(color: Colors.white.withValues(alpha: 0.06)),
-                            FractionallySizedBox(
-                              alignment: Alignment.centerLeft,
-                              widthFactor: 1.0,
-                              child: ShaderMask(
-                                shaderCallback: (rect) {
-                                  final shimmerX = -1.0 + _shimmerCtrl.value * 3.0;
-                                  return LinearGradient(
-                                    begin: Alignment(shimmerX - 0.3, 0),
-                                    end: Alignment(shimmerX + 0.3, 0),
-                                    colors: [
-                                      Colors.transparent,
-                                      c.gold,
-                                      Colors.transparent,
-                                    ],
-                                  ).createShader(rect);
-                                },
-                                blendMode: BlendMode.srcIn,
-                                child: Container(
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-
-                // ── Ride details row ──
-                if (option != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.06),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        // Vehicle icon
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: c.gold.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Center(
-                            child: Image.asset(
-                              _carAssetForOption(option.name),
-                              width: 36,
-                              height: 24,
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) => Icon(
-                                Icons.directions_car_rounded,
-                                color: c.gold,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Ride name + description
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                option.name,
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                option.description,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.white.withValues(alpha: 0.4),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Price
-                        Text(
-                          '\$${option.priceEstimate.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: c.gold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (option != null) const SizedBox(height: 12),
-
-                // ── Route: pickup → dropoff ──
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.03),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    children: [
-                      // Pickup dot
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF34A853),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          pickupAddr,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white.withValues(alpha: 0.65),
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Icon(
-                          Icons.arrow_forward_rounded,
-                          size: 14,
-                          color: c.gold.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      // Dropoff dot
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: c.gold,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          dropoffAddr,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white.withValues(alpha: 0.65),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // ── Cancel button ──
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: TextButton(
-                    onPressed: _confirmCancelSearching,
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.white.withValues(alpha: 0.05),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.06),
-                        ),
-                      ),
-                    ),
-                    child: Text(
-                      S.of(context).cancel,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withValues(alpha: 0.55),
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
     await MapTheme.applyNavyGold(ctrl);

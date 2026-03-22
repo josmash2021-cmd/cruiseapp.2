@@ -33,7 +33,9 @@ class MapTheme {
     }
 
     // ── FREEWAYS / HIGHWAYS → gold ──────────────────────────────────────
+    // Support both v10 (legacy) and v11 (modern) layer naming
     const goldRoads = [
+      // v10 style layers (legacy navigation styles)
       'road-motorway',
       'road-motorway-navigation',
       'road-trunk',
@@ -45,6 +47,15 @@ class MapTheme {
       'tunnel-motorway',
       'tunnel-trunk',
       'tunnel-motorway-trunk-link',
+      // v11 style layers (dark-v11, standard v11 styles) - simplified structure
+      'road-major',
+      'road-highway',
+      'road-motorway-alt',
+      'motorway',
+      'trunk',
+      'highway',
+      'road-motorway-2',
+      'road-trunk-2',
     ];
     for (final layer in goldRoads) {
       try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _gold); } catch (_) {}
@@ -58,6 +69,11 @@ class MapTheme {
       'bridge-trunk-case',
       'tunnel-motorway-case',
       'tunnel-trunk-case',
+      'road-highway-case',
+      'road-major-case',
+      'motorway-case',
+      'trunk-case',
+      'highway-case',
     ];
     for (final layer in goldCasings) {
       try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _goldCase); } catch (_) {}

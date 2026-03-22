@@ -353,27 +353,12 @@ workflows:
             ios/Runner/Runner.entitlements 2>/dev/null || true
       - name: Build IPA (App Store)
         script: |
+          set -o pipefail
           mkdir -p /tmp/xcodebuild_logs
-          python3 -c "
-          content = '''<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-          <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
-          <plist version=\"1.0\"><dict>
-            <key>method</key><string>app-store</string>
-            <key>teamID</key><string>7QLC9UVB3Z</string>
-            <key>signingStyle</key><string>manual</string>
-            <key>stripSwiftSymbols</key><true/>
-            <key>uploadBitcode</key><false/>
-            <key>uploadSymbols</key><true/>
-          </dict></plist>'''
-          open('/tmp/ExportOptions.plist','w').write(content)
-          print('ExportOptions.plist written')
-          "
           flutter build ipa --release \
             --no-tree-shake-icons \
             --build-number=$BUILD_NUMBER \
-            --export-options-plist=/tmp/ExportOptions.plist \
             2>&1 | tee /tmp/xcodebuild_logs/flutter_build.log
-          exit ${PIPESTATUS[0]}
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

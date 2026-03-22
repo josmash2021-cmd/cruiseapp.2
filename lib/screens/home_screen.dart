@@ -84,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final DraggableScrollableController _sheetController = DraggableScrollableController();
   final GlobalKey _mapKey = GlobalKey();
   static const double _kMinSheet = 0.13;
-  static const double _kMaxSheet = 0.92;
+  static const double _kMaxSheet = 1.0;
 
   // User profile data
   String _firstName = '';
@@ -790,7 +790,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             minChildSize: _kMinSheet,
             maxChildSize: _kMaxSheet,
             snap: true,
-            snapSizes: const [_kMinSheet, _kMaxSheet],
+            snapSizes: const [_kMinSheet, 0.5, _kMaxSheet],
             builder: (ctx, scrollCtrl) =>
                 _buildSheet(scrollCtrl, bottomPad),
           ),
@@ -968,39 +968,51 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // Draggable bottom sheet content
   Widget _buildSheet(ScrollController sc, double botPad) {
     final screenW = MediaQuery.of(context).size.width;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFF0A0B10),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.65),
-            blurRadius: 32,
-            offset: const Offset(0, -6),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-        child: SingleChildScrollView(
-          controller: sc,
-          physics: const ClampingScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ── Drag handle ──
-              const SizedBox(height: 10),
-              Center(
-                child: Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
+    final topPad = MediaQuery.of(context).padding.top;
+
+    return AnimatedBuilder(
+      animation: _sheetController,
+      builder: (context, child) {
+        double size = _kMinSheet;
+        try { size = _sheetController.size; } catch (_) {}
+        final frac = ((size - 0.85) / 0.15).clamp(0.0, 1.0);
+        final r = 30.0 * (1.0 - frac);
+        final topExtra = frac * topPad;
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A0B10),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(r)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.65),
+                blurRadius: 32,
+                offset: const Offset(0, -6),
               ),
-              const SizedBox(height: 16),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(r)),
+            child: SingleChildScrollView(
+              controller: sc,
+              physics: const ClampingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ── Top safe-area spacer when fully expanded ──
+                  SizedBox(height: topExtra),
+                  // ── Drag handle ──
+                  const SizedBox(height: 10),
+                  Center(
+                    child: Container(
+                      width: 38,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
               // ── Greeting row (always visible in collapsed state) ──
               Padding(
@@ -1091,15 +1103,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ],
               ],
 
-              const SizedBox(height: 32),
+                  const SizedBox(height: 32),
 
-              // ── Dock navigation ──
-              _buildDockNav(context, botPad),
-              SizedBox(height: botPad + 12),
-            ],
+                  // ── Dock navigation ──
+                  _buildDockNav(context, botPad),
+                  SizedBox(height: botPad + 12),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

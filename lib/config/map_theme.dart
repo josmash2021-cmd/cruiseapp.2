@@ -1,16 +1,18 @@
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
-/// Shared map theme helper — dark navy background with gold roads.
+/// Shared map theme helper — dark navy background, gold freeways, grey streets.
 class MapTheme {
   MapTheme._();
 
   // ── Colours ────────────────────────────────────────────────────────────
-  static const String _navy      = '#0A1128';   // deep navy background
-  static const String _navyLight = '#0F1A36';   // slightly lighter for land
-  static const String _navyWater = '#070E22';   // darker for water
-  static const String _gold      = '#D4A843';   // gold for roads
-  static const String _goldDim   = '#B8923A';   // dimmer gold for smaller roads
-  static const String _goldCase  = '#8B6F2E';   // casing / outlines
+  static const String _navy       = '#0A1128';  // deep navy background
+  static const String _navyLight  = '#0F1A36';  // slightly lighter for land
+  static const String _navyWater  = '#070E22';  // darker for water
+  static const String _gold       = '#D4A843';  // gold — freeways / highways only
+  static const String _goldCase   = '#8B6F2E';  // casing for freeway edges
+  static const String _greyRoad   = '#2A2E3A';  // dark grey — primary/secondary streets
+  static const String _greyMinor  = '#1E2128';  // darker grey — minor/local streets
+  static const String _greyCase   = '#161820';  // casing for grey roads
 
   static Future<void> applyNavyGold(mapbox.MapboxMap ctrl) async {
     // ── Hide map ornaments ──────────────────────────────────────────────
@@ -30,18 +32,61 @@ class MapTheme {
       try { await ctrl.style.setStyleLayerProperty(layer, 'fill-color', _navyWater); } catch (_) {}
     }
 
-    // ── ALL road line layers → gold ─────────────────────────────────────
-    // Major roads and highways
+    // ── FREEWAYS / HIGHWAYS → gold ──────────────────────────────────────
     const goldRoads = [
       'road-motorway',
       'road-motorway-navigation',
       'road-trunk',
       'road-trunk-navigation',
+      'road-motorway-trunk-link',
+      'bridge-motorway',
+      'bridge-trunk',
+      'bridge-motorway-trunk-link',
+      'tunnel-motorway',
+      'tunnel-trunk',
+      'tunnel-motorway-trunk-link',
+    ];
+    for (final layer in goldRoads) {
+      try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _gold); } catch (_) {}
+    }
+
+    // ── Freeway casings → darker gold ───────────────────────────────────
+    const goldCasings = [
+      'road-motorway-case',
+      'road-trunk-case',
+      'bridge-motorway-case',
+      'bridge-trunk-case',
+      'tunnel-motorway-case',
+      'tunnel-trunk-case',
+    ];
+    for (final layer in goldCasings) {
+      try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _goldCase); } catch (_) {}
+    }
+
+    // ── Primary / secondary streets → dark grey ─────────────────────────
+    const greyRoads = [
       'road-primary',
       'road-primary-navigation',
+      'road-primary-link',
       'road-secondary',
       'road-secondary-tertiary',
       'road-secondary-tertiary-navigation',
+      'road-secondary-tertiary-link',
+      'bridge-primary',
+      'bridge-secondary-tertiary',
+      'bridge-primary-link',
+      'bridge-secondary-tertiary-link',
+      'tunnel-primary',
+      'tunnel-secondary-tertiary',
+      'tunnel-primary-link',
+      'tunnel-secondary-tertiary-link',
+    ];
+    for (final layer in greyRoads) {
+      try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _greyRoad); } catch (_) {}
+    }
+
+    // ── Minor / local / service streets → darker grey ───────────────────
+    const greyMinorRoads = [
       'road-street',
       'road-street-navigation',
       'road-street-low',
@@ -52,122 +97,61 @@ class MapTheme {
       'road-path',
       'road-pedestrian',
       'road-pedestrian-navigation',
-      // Bridges
-      'bridge-motorway',
-      'bridge-trunk',
-      'bridge-primary',
-      'bridge-secondary-tertiary',
       'bridge-street',
       'bridge-minor',
       'bridge-path-pedestrian',
       'bridge-construction',
-      // Tunnels
-      'tunnel-motorway',
-      'tunnel-trunk',
-      'tunnel-primary',
-      'tunnel-secondary-tertiary',
       'tunnel-street',
       'tunnel-minor',
       'tunnel-path',
-      // Links / ramps
-      'road-motorway-trunk-link',
-      'road-primary-link',
-      'road-secondary-tertiary-link',
-      'bridge-motorway-trunk-link',
-      'bridge-primary-link',
-      'bridge-secondary-tertiary-link',
-      'tunnel-motorway-trunk-link',
-      'tunnel-primary-link',
-      'tunnel-secondary-tertiary-link',
-      // One-way arrows
-      'road-oneway-arrow-blue',
-      'road-oneway-arrow-white',
-      // Turn lanes
-      'turning-feature',
-      'turning-feature-outline',
     ];
-
-    for (final layer in goldRoads) {
-      try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _gold); } catch (_) {}
+    for (final layer in greyMinorRoads) {
+      try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _greyMinor); } catch (_) {}
     }
 
-    // ── Road casings → darker gold ──────────────────────────────────────
-    const casingRoads = [
-      'road-motorway-case',
-      'road-trunk-case',
+    // ── All road casings (non-freeway) → darkest grey ───────────────────
+    const greyCasings = [
       'road-primary-case',
       'road-secondary-tertiary-case',
       'road-street-case',
       'road-minor-case',
       'road-service-link-case',
-      'bridge-motorway-case',
-      'bridge-trunk-case',
       'bridge-primary-case',
       'bridge-secondary-tertiary-case',
       'bridge-street-case',
       'bridge-minor-case',
-      'tunnel-motorway-case',
-      'tunnel-trunk-case',
       'tunnel-primary-case',
       'tunnel-secondary-tertiary-case',
       'tunnel-street-case',
       'tunnel-minor-case',
     ];
-
-    for (final layer in casingRoads) {
-      try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _goldCase); } catch (_) {}
+    for (final layer in greyCasings) {
+      try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _greyCase); } catch (_) {}
     }
 
-    // ── Smaller roads → dimmer gold ─────────────────────────────────────
-    const dimRoads = [
-      'road-minor',
-      'road-minor-low',
-      'road-path',
-      'road-pedestrian',
-      'road-service-link',
-      'bridge-minor',
-      'bridge-path-pedestrian',
-      'tunnel-minor',
-      'tunnel-path',
-    ];
-
-    for (final layer in dimRoads) {
-      try { await ctrl.style.setStyleLayerProperty(layer, 'line-color', _goldDim); } catch (_) {}
-    }
-
-    // ── Road labels → gold text ─────────────────────────────────────────
-    const roadLabels = [
-      'road-label',
-      'road-number-shield',
-      'road-exit-shield',
-    ];
-
-    for (final layer in roadLabels) {
-      try { await ctrl.style.setStyleLayerProperty(layer, 'text-color', _gold); } catch (_) {}
-    }
+    // ── Road labels → gold for freeways, muted grey for others ─────────
+    try { await ctrl.style.setStyleLayerProperty('road-label', 'text-color', '#5A6070'); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty('road-number-shield', 'text-color', _gold); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty('road-exit-shield', 'text-color', _gold); } catch (_) {}
 
     // ── Buildings → dark navy tint ──────────────────────────────────────
     for (final layer in ['building', 'building-outline']) {
       try { await ctrl.style.setStyleLayerProperty(layer, 'fill-color', '#111D3A'); } catch (_) {}
     }
 
-    // ── Traffic: hide green/yellow, keep only orange (heavy) + red (severe) ─
-    for (final layer in ['traffic', 'traffic-slow', 'traffic-case']) {
-      try {
-        await ctrl.style.setStyleLayerProperty(layer, 'line-opacity', [
-          'match',
-          ['get', 'congestion'],
-          ['low', 'moderate'], 0.0,
-          1.0,
-        ]);
-        await ctrl.style.setStyleLayerProperty(layer, 'line-color', [
-          'match',
-          ['get', 'congestion'],
-          'heavy',  '#FF9500',
-          'severe', '#FF3B30',
-          'rgba(0,0,0,0)',
-        ]);
-      } catch (_) {}
+    // ── Traffic layers → COMPLETELY HIDDEN ─────────────────────────────
+    // Hide all traffic overlays (green/yellow/orange/red lines)
+    const trafficLayers = [
+      'traffic',
+      'traffic-slow',
+      'traffic-case',
+      'traffic-moderate',
+      'traffic-heavy',
+      'traffic-severe',
+    ];
+    for (final layer in trafficLayers) {
+      try { await ctrl.style.setStyleLayerProperty(layer, 'line-opacity', 0.0); } catch (_) {}
+      try { await ctrl.style.setStyleLayerProperty(layer, 'visibility', 'none'); } catch (_) {}
     }
   }
 }

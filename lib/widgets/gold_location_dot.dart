@@ -17,7 +17,7 @@ import 'package:flutter/material.dart';
 class GoldLocationDot {
   static const Color _gold = Color(0xFFE8C547);
   static const int _frameCount = 24;
-  static const double _canvasSize = 140.0;
+  static const double _canvasSize = 200.0;
 
   List<Uint8List> _frames = [];
   int _frame = 0;
@@ -39,11 +39,11 @@ class GoldLocationDot {
       final t2 = (t + 0.5) % 1.0;
 
       // Ring 1: starts small, grows to edge, fades out
-      final ring1Radius = 18.0 + 42.0 * t;
+      final ring1Radius = 28.0 + 60.0 * t;
       final ring1Alpha  = (1.0 - t) * 0.55;
 
       // Ring 2: same but phase-shifted
-      final ring2Radius = 18.0 + 42.0 * t2;
+      final ring2Radius = 28.0 + 60.0 * t2;
       final ring2Alpha  = (1.0 - t2) * 0.55;
 
       final recorder = ui.PictureRecorder();
@@ -53,13 +53,21 @@ class GoldLocationDot {
       );
       const center = Offset(_canvasSize / 2, _canvasSize / 2);
 
-      // ── Drop shadow ──
+      // ── Drop shadow (3D) ──
+      canvas.drawCircle(
+        center.translate(0, 6),
+        34,
+        Paint()
+          ..color = const Color(0x80000000)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
+      );
+      // ── Secondary shadow (depth) ──
       canvas.drawCircle(
         center.translate(0, 3),
-        22,
+        30,
         Paint()
-          ..color = const Color(0x60000000)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9),
+          ..color = const Color(0x40000000)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
       );
 
       // ── Pulse ring 1 (white, expanding) ──
@@ -99,18 +107,18 @@ class GoldLocationDot {
       // ── White outer ring (static halo around gold core) ──
       canvas.drawCircle(
         center,
-        18,
+        28,
         Paint()..color = Colors.white,
       );
 
       // ── Gold core circle ──
       canvas.drawCircle(
         center,
-        13,
+        20,
         Paint()
           ..shader = ui.Gradient.radial(
-            center.translate(-3, -3),
-            16,
+            center.translate(-4, -4),
+            24,
             [const Color(0xFFF5E27A), _gold, const Color(0xFFB8941E)],
             [0.0, 0.55, 1.0],
           ),
@@ -118,9 +126,15 @@ class GoldLocationDot {
 
       // ── Specular highlight (3D feel) ──
       canvas.drawCircle(
-        center.translate(-3, -3),
-        5,
-        Paint()..color = const Color(0x55FFFFFF),
+        center.translate(-5, -5),
+        8,
+        Paint()..color = const Color(0x66FFFFFF),
+      );
+      // ── Secondary specular (lower) ──
+      canvas.drawCircle(
+        center.translate(-2, -2),
+        4,
+        Paint()..color = const Color(0x33FFFFFF),
       );
 
       final img = await recorder

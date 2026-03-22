@@ -115,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
       image: bytes,
-      iconSize: 0.5,
+      iconSize: 1.0,
     ));
   }
 
@@ -766,9 +766,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
 
-          // ── Locate / account buttons floating top-right ──
+          // ── "Where to?" search bar floating at top ──
           Positioned(
-            top: topPad + 10,
+            top: topPad + 12,
+            left: 20,
+            right: 64,
+            child: _buildWhereToBar(),
+          ),
+
+          // ── Notification button floating top-right ──
+          Positioned(
+            top: topPad + 12,
             right: 16,
             child: _buildMapFab(),
           ),
@@ -820,7 +828,68 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // Floating FAB buttons on top of map (notifications + account)
+  // "Where to?" search bar floating over the map
+  Widget _buildWhereToBar() {
+    return GestureDetector(
+      onTap: () async {
+        if (!await _ensureVerified()) return;
+        if (!mounted) return;
+        await Navigator.of(context).push(scaleExpandRoute(const RideRequestScreen()));
+        if (mounted) _loadSavedData();
+      },
+      child: Container(
+        height: 48,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1C22),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 16),
+            Icon(Icons.search_rounded, color: Colors.white.withValues(alpha: 0.5), size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Where to?',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Container(
+              margin: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: _gold.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.schedule_rounded, color: _gold, size: 14),
+                  const SizedBox(width: 4),
+                  Text('Now', style: TextStyle(color: _gold, fontSize: 13, fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Floating FAB buttons on top of map (notifications only)
   Widget _buildMapFab() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -829,15 +898,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Icons.notifications_rounded,
           badge: _unreadNotifications > 0 ? _unreadNotifications : 0,
           onTap: _openNotificationsSheet,
-        ),
-        const SizedBox(height: 10),
-        GestureDetector(
-          onTap: () async {
-            await Navigator.of(context)
-                .push(slideFromRightRoute(const AccountScreen()));
-            _loadSavedData();
-          },
-          child: _buildAvatarChip(),
         ),
       ],
     );

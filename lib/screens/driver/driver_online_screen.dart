@@ -2975,7 +2975,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           await MapTheme.applyNavyGold(ctrl);
-          // Center on actual driver GPS
+          // Always fly to real GPS — never the Miami default
+          try {
+            final gps = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.high,
+                timeLimit: Duration(seconds: 6),
+              ),
+            );
+            if (mounted) {
+              setState(() => _pos = LatLng(gps.latitude, gps.longitude));
+            }
+          } catch (_) {}
           _animateToPosition(_pos, zoom: 15.5, bearing: _heading, tilt: 0);
           _updateDriverAnnotation();
           // Re-draw route if map initialised after _drawRoute already ran

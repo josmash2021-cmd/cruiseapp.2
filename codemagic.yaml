@@ -349,38 +349,41 @@ workflows:
           echo "✅ Code signing identities installed"
       - name: Build IPA (App Store)
         script: |
-          set -o pipefail
           mkdir -p /tmp/xcodebuild_logs
 
-          # Step 1 — generate Flutter build files (Dart → native) without archiving
+          # Step 1 — generate Flutter build files without code signing
           flutter build ios --release \
             --no-tree-shake-icons \
             --no-codesign \
             --build-number=$BUILD_NUMBER \
             2>&1 | tee /tmp/xcodebuild_logs/flutter_build.log
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "flutter build ios failed"; exit 1; fi
 
-          # Step 2 — get the provisioning profile UUID installed by xcode-project use-profiles
+          # Step 2 — read provisioning profile UUID and name
           PROFILE_PATH=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision 2>/dev/null | head -1)
+          if [ -z "$PROFILE_PATH" ]; then echo "No provisioning profile found"; exit 1; fi
           security cms -D -i "$PROFILE_PATH" > /tmp/profile.plist
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /tmp/profile.plist)
-          echo "Profile path: $PROFILE_PATH"
-          echo "Using provisioning profile UUID: $PROFILE_UUID"
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /tmp/profile.plist)
+          echo "Profile: $PROFILE_NAME ($PROFILE_UUID)"
 
           # Step 3 — archive with explicit manual signing
           xcodebuild archive \
             -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
+            -sdk iphoneos \
             -archivePath /tmp/Runner.xcarchive \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=7QLC9UVB3Z \
             CODE_SIGN_IDENTITY="iPhone Distribution" \
             PROVISIONING_PROFILE="$PROFILE_UUID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             2>&1 | tee -a /tmp/xcodebuild_logs/flutter_build.log
+          if [ ! -d /tmp/Runner.xcarchive ]; then echo "Archive failed — xcarchive not created"; exit 1; fi
 
-          # Step 4 — write ExportOptions.plist
-          python3 -c "content='<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>method</key><string>app-store</string><key>teamID</key><string>7QLC9UVB3Z</string><key>signingStyle</key><string>manual</string><key>stripSwiftSymbols</key><true/><key>uploadBitcode</key><false/><key>uploadSymbols</key><true/></dict></plist>'; open('/tmp/ExportOptions.plist','w').write(content); print('ExportOptions.plist written')"
+          # Step 4 — write ExportOptions.plist with provisioningProfiles dict
+          python3 -c "import sys; uuid=sys.argv[1]; open('/tmp/ExportOptions.plist','w').write('<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>method</key><string>app-store</string><key>teamID</key><string>7QLC9UVB3Z</string><key>signingStyle</key><string>manual</string><key>provisioningProfiles</key><dict><key>com.cruiseinride.app</key><string>' + uuid + '</string></dict><key>stripSwiftSymbols</key><true/><key>uploadBitcode</key><false/><key>uploadSymbols</key><true/></dict></plist>'); print('ExportOptions.plist written')" "$PROFILE_UUID"
 
           # Step 5 — export IPA
           mkdir -p build/ios/ipa
@@ -389,6 +392,7 @@ workflows:
             -exportPath build/ios/ipa \
             -exportOptionsPlist /tmp/ExportOptions.plist \
             2>&1 | tee -a /tmp/xcodebuild_logs/flutter_build.log
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "exportArchive failed"; exit 1; fi
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

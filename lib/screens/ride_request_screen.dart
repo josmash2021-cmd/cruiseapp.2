@@ -1121,11 +1121,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (p.longitude < minLng) minLng = p.longitude;
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
+    final screenH = MediaQuery.of(context).size.height;
+    // bottom panel occupies ~50% of screen — push route into the upper half
+    final bottomPad = screenH * 0.52;
     _mapCtrl!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
       mapbox.CameraOptions(),
-      mapbox.MbxEdgeInsets(top: 100, left: 80, bottom: 300, right: 80),
+      mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60),
       null, null,
     ).then((cam) {
       _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));
@@ -3711,9 +3714,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         mapbox.Point(coordinates: mapbox.Position(bounds.southwest.longitude, bounds.southwest.latitude)),
         mapbox.Point(coordinates: mapbox.Position(bounds.northeast.longitude, bounds.northeast.latitude)),
       ];
+      final screenH = MediaQuery.of(context).size.height;
+      final bottomPad = screenH * 0.52;
       final cam = await _mapCtrl?.cameraForCoordinatesPadding(
         coords, mapbox.CameraOptions(),
-        mapbox.MbxEdgeInsets(top: 80, left: 80, bottom: 80, right: 80), null, null,
+        mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60), null, null,
       );
       if (cam != null) _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
     } else if (_userLocation != null) {

@@ -4,20 +4,22 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-/// Shared animated gold location dot for Mapbox map screens.
+/// Minimalist animated gold location dot for Mapbox map screens.
 ///
-/// Usage:
-///   1. Create and build in initState:
-///        _goldDot = GoldLocationDot();
-///        _goldDot.build(() { if (mounted) setState(() {}); });
-///   2. Dispose in dispose():
-///        _goldDot.dispose();
-///   3. Use currentBytes to get the current animation frame PNG bytes
-///      and update a PointAnnotation on the Mapbox map.
+/// Design: flat 2D gold core + white ring + single expanding pulse ring
+/// with a 3D fade shadow underneath. Clean, premium, one animation only.
 class GoldLocationDot {
   static const Color _gold = Color(0xFFE8C547);
-  static const int _frameCount = 24;
-  static const double _canvasSize = 200.0;
+  // Single pulse: 20 frames at 70ms → ~1.4s cycle
+  static const int _frameCount = 20;
+  static const double _canvasSize = 160.0;
+
+  // Core dimensions
+  static const double _coreR    = 14.0; // gold filled circle
+  static const double _ringR    = 20.0; // white outer ring radius
+
+  // Pulse ring: expands from _ringR to _pulseMaxR, fades out
+  static const double _pulseMaxR = 52.0;
 
   List<Uint8List> _frames = [];
   int _frame = 0;
@@ -25,26 +27,17 @@ class GoldLocationDot {
 
   bool get isReady => _frames.isNotEmpty;
 
-  /// Current animation frame as PNG bytes, or null if not ready.
   Uint8List? get currentBytes => _frames.isEmpty ? null : _frames[_frame];
 
-  /// Pre-render all animation frames then start the pulse timer.
   Future<void> build(VoidCallback onTick) async {
     final frames = <Uint8List>[];
 
     for (int i = 0; i < _frameCount; i++) {
-      // t goes 0→1 over one full cycle
-      final t = i / _frameCount;
-      // Two rings offset by half a cycle for continuous wave effect
-      final t2 = (t + 0.5) % 1.0;
+      final t = i / _frameCount; // 0 → 1
 
-      // Ring 1: starts small, grows to edge, fades out
-      final ring1Radius = 28.0 + 60.0 * t;
-      final ring1Alpha  = (1.0 - t) * 0.55;
-
-      // Ring 2: same but phase-shifted
-      final ring2Radius = 28.0 + 60.0 * t2;
-      final ring2Alpha  = (1.0 - t2) * 0.55;
+      // Single pulse ring: expand + fade
+      final pulseR = _ringR + (_pulseMaxR - _ringR) * t;
+      final pulseAlpha = (1.0 - t) * 0.50;
 
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(
@@ -53,88 +46,49 @@ class GoldLocationDot {
       );
       const center = Offset(_canvasSize / 2, _canvasSize / 2);
 
-      // ── Drop shadow (3D) ──
-      canvas.drawCircle(
-        center.translate(0, 6),
-        34,
+      // ── 3D fade shadow — soft ellipse below the pin ──
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: center.translate(0, _ringR + 6),
+          width: _ringR * 2.6,
+          height: _ringR * 0.7,
+        ),
         Paint()
-          ..color = const Color(0x80000000)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
-      );
-      // ── Secondary shadow (depth) ──
-      canvas.drawCircle(
-        center.translate(0, 3),
-        30,
-        Paint()
-          ..color = const Color(0x40000000)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+          ..color = const Color(0xCC000000)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
       );
 
-      // ── Pulse ring 1 (white, expanding) ──
+      // ── Single expanding pulse ring ──
       canvas.drawCircle(
         center,
-        ring1Radius,
+        pulseR,
         Paint()
-          ..color = Colors.white.withValues(alpha: ring1Alpha * 0.25)
+          ..color = _gold.withValues(alpha: pulseAlpha * 0.18)
           ..style = PaintingStyle.fill,
       );
       canvas.drawCircle(
         center,
-        ring1Radius,
+        pulseR,
         Paint()
-          ..color = Colors.white.withValues(alpha: ring1Alpha)
+          ..color = _gold.withValues(alpha: pulseAlpha)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0,
+          ..strokeWidth = 1.8,
       );
 
-      // ── Pulse ring 2 (white, offset phase) ──
+      // ── White outer ring (static) ──
       canvas.drawCircle(
         center,
-        ring2Radius,
+        _ringR,
         Paint()
-          ..color = Colors.white.withValues(alpha: ring2Alpha * 0.20)
+          ..color = Colors.white
           ..style = PaintingStyle.fill,
       );
+
+      // ── Flat 2D gold core ──
       canvas.drawCircle(
         center,
-        ring2Radius,
-        Paint()
-          ..color = Colors.white.withValues(alpha: ring2Alpha)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5,
-      );
-
-      // ── White outer ring (static halo around gold core) ──
-      canvas.drawCircle(
-        center,
-        28,
-        Paint()..color = Colors.white,
-      );
-
-      // ── Gold core circle ──
-      canvas.drawCircle(
-        center,
-        20,
-        Paint()
-          ..shader = ui.Gradient.radial(
-            center.translate(-4, -4),
-            24,
-            [const Color(0xFFF5E27A), _gold, const Color(0xFFB8941E)],
-            [0.0, 0.55, 1.0],
-          ),
-      );
-
-      // ── Specular highlight (3D feel) ──
-      canvas.drawCircle(
-        center.translate(-5, -5),
-        8,
-        Paint()..color = const Color(0x66FFFFFF),
-      );
-      // ── Secondary specular (lower) ──
-      canvas.drawCircle(
-        center.translate(-2, -2),
-        4,
-        Paint()..color = const Color(0x33FFFFFF),
+        _coreR,
+        Paint()..color = _gold,
       );
 
       final img = await recorder
@@ -148,8 +102,8 @@ class GoldLocationDot {
     if (frames.length != _frameCount) return;
     _frames = frames;
 
-    // ~60ms per frame → ~1.4s per full pulse cycle, smooth and fluid
-    _timer = Timer.periodic(const Duration(milliseconds: 58), (_) {
+    // 70ms per frame → ~1.4s per full pulse cycle
+    _timer = Timer.periodic(const Duration(milliseconds: 70), (_) {
       _frame = (_frame + 1) % _frames.length;
       onTick();
     });

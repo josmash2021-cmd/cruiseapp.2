@@ -2343,10 +2343,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null) return;
     await _clearPickupDropoffAnnotations();
+    final bytes = await _buildCirclePin(const Color(0xFF4CAF50), 22);
     _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
-      iconColor: const Color(0xFF4CAF50).toARGB32(),
-      iconSize: 1.7,
+      image: bytes,
+      iconSize: 1.0,
     ));
   }
 
@@ -2354,10 +2355,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null) return;
     await _clearPickupDropoffAnnotations();
+    final bytes = await _buildRingPin(Colors.white, 22);
     _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
-      iconColor: const Color(0xFFEA4335).toARGB32(),
-      iconSize: 1.7,
+      image: bytes,
+      iconSize: 1.0,
     ));
   }
 
@@ -2365,15 +2367,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null) return;
     await _clearPickupDropoffAnnotations();
+    final pickupBytes  = await _buildCirclePin(const Color(0xFF4CAF50), 22);
+    final dropoffBytes = await _buildRingPin(Colors.white, 22);
     _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
-      iconColor: const Color(0xFF4CAF50).toARGB32(),
-      iconSize: 1.7,
+      image: pickupBytes,
+      iconSize: 1.0,
     ));
     _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
-      iconColor: const Color(0xFFEA4335).toARGB32(),
-      iconSize: 1.7,
+      image: dropoffBytes,
+      iconSize: 1.0,
     ));
   }
 
@@ -2458,56 +2462,106 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // â"€â"€ Preview offer route on map â"€â"€
   Future<void> _previewOfferRoute(Map<String, dynamic> offer) async {
-    final pickupLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
-    final pickupLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
+    final pickupLat  = (offer['pickup_lat']  as num?)?.toDouble() ?? 0;
+    final pickupLng  = (offer['pickup_lng']  as num?)?.toDouble() ?? 0;
     final dropoffLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
     final dropoffLng = (offer['dropoff_lng'] as num?)?.toDouble() ?? 0;
-    final pickupLL = LatLng(pickupLat, pickupLng);
+    final pickupLL  = LatLng(pickupLat,  pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
 
-    setState(() {
-      _previewingOffer = offer;
-    });
+    setState(() => _previewingOffer = offer);
     await _clearAllAnnotations();
+
+    // Build bitmap pins concurrently
+    final results = await Future.wait([
+      _buildCirclePin(const Color(0xFF2196F3), 22),  // driver  – blue
+      _buildCirclePin(const Color(0xFFD4A843), 22),  // pickup  – gold
+      _buildRingPin(Colors.white, 22),               // dropoff – white ring
+    ]);
+
     final pointMgr = _pointAnnotMgr;
-    if (pointMgr != null) {
-      _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
-        iconColor: const Color(0xFF2196F3).toARGB32(),
-        iconSize: 1.7,
-      ));
-      _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
-        iconColor: const Color(0xFF4CAF50).toARGB32(),
-        iconSize: 1.7,
-      ));
-      _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
-        iconColor: const Color(0xFFEA4335).toARGB32(),
-        iconSize: 1.7,
-      ));
+    if (pointMgr != null && mounted) {
+      if (results[0] != null) {
+        _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+          image: results[0],
+          iconSize: 1.0,
+        ));
+      }
+      if (results[1] != null) {
+        _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
+          image: results[1],
+          iconSize: 1.0,
+        ));
+      }
+      if (results[2] != null) {
+        _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
+          image: results[2],
+          iconSize: 1.0,
+        ));
+      }
     }
 
-    // Draw driver → pickup route (navy blue)
-    await _drawPreviewRoute(
-      _pos,
-      pickupLL,
-      'prev_to_pickup',
-      _navyRoute,
-    );
-    // Draw pickup → dropoff route (navy blue)
-    await _drawPreviewRoute(pickupLL, dropoffLL, 'prev_trip', _navyRoute);
+    // Draw both route segments concurrently
+    await Future.wait([
+      _drawPreviewRoute(_pos,     pickupLL,  'prev_to_pickup', _navyRoute),
+      _drawPreviewRoute(pickupLL, dropoffLL, 'prev_trip',      _navyRoute),
+    ]);
 
-    // Wait for frame to render with updated map padding, then fit bounds
+    // Fit camera to show all three points
     if (!mounted) return;
-    await Future.delayed(const Duration(milliseconds: 150));
+    await Future.delayed(const Duration(milliseconds: 200));
     _fitBoundsMulti([_pos, pickupLL, dropoffLL]);
 
-    // Re-fit after animation settles for pixel-perfect centering
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 600));
     if (mounted && _previewingOffer != null) {
       _fitBoundsMulti([_pos, pickupLL, dropoffLL]);
     }
+  }
+
+  /// Solid filled circle pin (e.g. driver dot, pickup dot)
+  Future<Uint8List?> _buildCirclePin(Color fill, double radius) async {
+    final s = (radius * 2 + 8).roundToDouble();
+    final rec = ui.PictureRecorder();
+    final c   = Canvas(rec, Rect.fromLTWH(0, 0, s, s));
+    final cx  = s / 2;
+    // Shadow
+    c.drawCircle(Offset(cx, cx + 2), radius,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.35)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+    // White border
+    c.drawCircle(Offset(cx, cx), radius, Paint()..color = Colors.white);
+    // Fill
+    c.drawCircle(Offset(cx, cx), radius - 3, Paint()..color = fill);
+    final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
+    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+    return bytes?.buffer.asUint8List();
+  }
+
+  /// Ring-only pin (e.g. dropoff marker — white ring, dark center)
+  Future<Uint8List?> _buildRingPin(Color ringColor, double radius) async {
+    final s = (radius * 2 + 8).roundToDouble();
+    final rec = ui.PictureRecorder();
+    final c   = Canvas(rec, Rect.fromLTWH(0, 0, s, s));
+    final cx  = s / 2;
+    // Shadow
+    c.drawCircle(Offset(cx, cx + 2), radius,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.35)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+    // White ring
+    c.drawCircle(Offset(cx, cx), radius, Paint()..color = ringColor);
+    // Dark inner
+    c.drawCircle(Offset(cx, cx), radius - 5,
+        Paint()..color = const Color(0xFF0A0C12));
+    // White center dot
+    c.drawCircle(Offset(cx, cx), 4, Paint()..color = ringColor);
+    final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
+    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+    return bytes?.buffer.asUint8List();
   }
 
   Future<void> _drawPreviewRoute(LatLng o, LatLng d, String id, Color c) async {

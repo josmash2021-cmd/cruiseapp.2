@@ -4324,233 +4324,189 @@ Widget _navHeader() {
       () => _buildOfferMapUrl(_pos, pickupLL, dropoffLL),
     );
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-            spreadRadius: -2,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            // Semi-transparent dark — almost transparent, floating glass look
+            color: const Color(0xFF0D0D0D).withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.09),
+              width: 1,
+            ),
+            boxShadow: [
+              // Deep 3D lift shadow
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.55),
+                blurRadius: 36,
+                spreadRadius: -4,
+                offset: const Offset(0, 14),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 10,
+                spreadRadius: -2,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ── MAP PREVIEW (top section, real OSRM route) ──
-            SizedBox(
-              height: 200,
-              child: FutureBuilder<String>(
-                future: mapFuture,
-                builder: (context, snap) {
-                  final url = snap.data;
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (url != null)
-                        Image.network(
-                          url,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: const Color(0xFF1A1A2E),
-                            child: const Center(
-                              child: Icon(Icons.map_rounded, color: Colors.white24, size: 48),
-                            ),
-                          ),
-                          loadingBuilder: (_, child, progress) {
-                            if (progress == null) return child;
-                            return Container(
-                              color: const Color(0xFF1A1A2E),
-                              child: const Center(
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: _gold,
-                                ),
-                              ),
-                            );
-                          },
-                        )
-                      else
-                        Container(
-                          color: const Color(0xFF1A1A2E),
-                          child: const Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: _gold,
-                            ),
-                          ),
-                        ),
-                      // Fade gradient at bottom so content below blends in
-                      Positioned(
-                        left: 0, right: 0, bottom: 0,
-                        child: Container(
-                          height: 60,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [Colors.transparent, Colors.white],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-
-            // ── CONTENT SECTION (white background) ──
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // ── Ride type pill badge (centered, like Uber's "UberX" pill) ──
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1A1A),
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.directions_car_rounded, color: Colors.white, size: 15),
-                        const SizedBox(width: 6),
-                        Text(
-                          vehicleType,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.2,
-                          ),
-                        ),
-                      ],
-                    ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── Vehicle type pill (centered) ──
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
                   ),
-                  const SizedBox(height: 12),
-
-                  // ── Fare (large, centered) ──
-                  Text(
-                    '\$${fare.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      color: Color(0xFF111111),
-                      fontSize: 42,
-                      fontWeight: FontWeight.w900,
-                      height: 1.0,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-
-                  // ── Star rating ──
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.star_rounded, color: Color(0xFF111111), size: 14),
-                      const SizedBox(width: 4),
+                      Icon(Icons.directions_car_rounded,
+                          color: Colors.white.withValues(alpha: 0.85), size: 15),
+                      const SizedBox(width: 6),
                       Text(
-                        rating.toStringAsFixed(2),
-                        style: const TextStyle(
-                          color: Color(0xFF111111),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                        vehicleType,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                ),
+                const SizedBox(height: 14),
 
-                  // ── Address rows: Uber style ──
-                  // Row 1: driver → pickup
-                  _uberAddressRow(
-                    icon: Icons.circle,
-                    iconColor: const Color(0xFF111111),
-                    iconSize: 10,
-                    topLine: '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
-                    bottomLine: pickupAddr,
-                    showConnector: true,
+                // ── Fare (large, centered) ──
+                Text(
+                  '\$${fare.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 44,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
                   ),
-                  const SizedBox(height: 2),
-                  // Row 2: pickup → dropoff
-                  _uberAddressRow(
-                    icon: Icons.square_rounded,
-                    iconColor: const Color(0xFF111111),
-                    iconSize: 10,
-                    topLine: '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
-                    bottomLine: dropoffAddr,
-                    showConnector: false,
-                  ),
+                ),
+                const SizedBox(height: 8),
 
-                  const SizedBox(height: 20),
+                // ── Star rating ──
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.star_rounded, color: _gold, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      rating.toStringAsFixed(2),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
 
-                  // ── Action buttons ──
-                  Row(
-                    children: [
-                      // Reject
-                      Expanded(
-                        child: SizedBox(
-                          height: 52,
-                          child: OutlinedButton(
-                            onPressed: () => _rejectOffer(offer),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFFE0E0E0), width: 1.5),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              backgroundColor: Colors.white,
+                // ── Divider ──
+                Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
+                const SizedBox(height: 16),
+
+                // ── Pickup row: driver → pickup ──
+                _uberAddressRow(
+                  icon: Icons.circle,
+                  iconColor: Colors.white,
+                  iconSize: 9,
+                  topLine: '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
+                  bottomLine: pickupAddr,
+                  showConnector: true,
+                  darkMode: true,
+                ),
+                const SizedBox(height: 2),
+                // ── Dropoff row: pickup → dropoff ──
+                _uberAddressRow(
+                  icon: Icons.square_rounded,
+                  iconColor: Colors.white,
+                  iconSize: 9,
+                  topLine: '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
+                  bottomLine: dropoffAddr,
+                  showConnector: false,
+                  darkMode: true,
+                ),
+
+                const SizedBox(height: 20),
+
+                // ── Action buttons ──
+                Row(
+                  children: [
+                    // Reject
+                    Expanded(
+                      child: SizedBox(
+                        height: 50,
+                        child: OutlinedButton(
+                          onPressed: () => _rejectOffer(offer),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              width: 1.5,
                             ),
-                            child: Text(
-                              S.of(context).reject,
-                              style: const TextStyle(
-                                color: Color(0xFF333333),
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                              ),
+                            backgroundColor: Colors.white.withValues(alpha: 0.05),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: Text(
+                            S.of(context).reject,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      // Accept
-                      Expanded(
-                        flex: 2,
-                        child: SizedBox(
-                          height: 52,
-                          child: ElevatedButton(
-                            onPressed: () => _acceptOffer(offer),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF111111),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Accept
+                    Expanded(
+                      flex: 2,
+                      child: SizedBox(
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: () => _acceptOffer(offer),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _gold,
+                            foregroundColor: Colors.black,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            child: Text(
-                              S.of(context).accept,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                              ),
+                          ),
+                          child: Text(
+                            S.of(context).accept,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -4563,7 +4519,16 @@ Widget _navHeader() {
     required String topLine,
     required String bottomLine,
     required bool showConnector,
+    bool darkMode = false,
   }) {
+    final subColor = darkMode
+        ? Colors.white.withValues(alpha: 0.45)
+        : const Color(0xFF666666);
+    final mainColor = darkMode ? Colors.white : const Color(0xFF111111);
+    final lineColor = darkMode
+        ? Colors.white.withValues(alpha: 0.20)
+        : const Color(0xFFCCCCCC);
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4578,7 +4543,7 @@ Widget _navHeader() {
                 Container(
                   width: 1.5,
                   height: 36,
-                  color: const Color(0xFFCCCCCC),
+                  color: lineColor,
                   margin: const EdgeInsets.symmetric(vertical: 3),
                 ),
             ],
@@ -4591,8 +4556,8 @@ Widget _navHeader() {
             children: [
               Text(
                 topLine,
-                style: const TextStyle(
-                  color: Color(0xFF666666),
+                style: TextStyle(
+                  color: subColor,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -4600,8 +4565,8 @@ Widget _navHeader() {
               const SizedBox(height: 2),
               Text(
                 bottomLine,
-                style: const TextStyle(
-                  color: Color(0xFF111111),
+                style: TextStyle(
+                  color: mainColor,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),

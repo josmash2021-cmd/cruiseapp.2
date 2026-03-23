@@ -92,6 +92,10 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
         if (!mounted) return;
         setState(() => _status = 'approved');
         _approvedCtrl.forward();
+        // Auto-navigate to DriverHomeScreen after brief animation
+        Future.delayed(const Duration(milliseconds: 1200), () {
+          if (mounted) _enterApp();
+        });
         return;
       } else if (status == 'rejected') {
         final reason =
@@ -132,6 +136,10 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
             LocalDataService.setDriverApprovalStatus('approved');
             setState(() => _status = 'approved');
             _approvedCtrl.forward();
+            // Auto-navigate to DriverHomeScreen after brief animation
+            Future.delayed(const Duration(milliseconds: 1200), () {
+              if (mounted) _enterApp();
+            });
             return;
           } else if (status == 'rejected' && _status != 'rejected') {
             _pollTimer?.cancel();
@@ -167,6 +175,10 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           if (!mounted) return;
           setState(() => _status = 'approved');
           _approvedCtrl.forward();
+          // Auto-navigate to DriverHomeScreen after brief animation
+          Future.delayed(const Duration(milliseconds: 1200), () {
+            if (mounted) _enterApp();
+          });
         } else if (status == 'rejected') {
           _pollTimer?.cancel();
           final reason =

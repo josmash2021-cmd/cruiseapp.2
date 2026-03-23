@@ -259,28 +259,45 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (mode == 'driver') {
       await UserSession.initPhotoNotifier();
-      // Check driver approval with timeout — default to approved if slow
+
+      // ── Read approval status from local cache first (instant) ──
+      final cachedStatus = await LocalDataService.getDriverApprovalStatus();
+
+      if (cachedStatus == 'approved') {
+        // Verified → go straight to DriverHomeScreen
+        unawaited(_backgroundProfileSync());
+        return const DriverHomeScreen();
+      }
+
+      if (cachedStatus == 'pending' || cachedStatus == 'rejected') {
+        // Not verified → show pending/review screen
+        return const DriverPendingReviewScreen();
+      }
+
+      // ── No cached status ('none') → fetch from backend (one time only) ──
       await initFuture;
       try {
-        final approvalResult = await ApiService.getDriverApprovalStatus().timeout(
-          const Duration(seconds: 3),
-          onTimeout: () => {'status': 'approved'},
-        );
-        final vStatus =
+        final approvalResult = await ApiService.getDriverApprovalStatus()
+            .timeout(const Duration(seconds: 3));
+        final status =
             approvalResult['approval_status'] as String? ??
             approvalResult['status'] as String? ??
-            'approved';
-        if (vStatus != 'approved') {
+            'pending';
+
+        // Save to local cache for next time
+        await LocalDataService.setDriverApprovalStatus(status);
+
+        if (status == 'approved') {
+          unawaited(_backgroundProfileSync());
+          return const DriverHomeScreen();
+        } else {
           return const DriverPendingReviewScreen();
         }
       } catch (e) {
         debugPrint('[SplashScreen] Driver approval check failed: $e');
+        // Network error — default to pending for safety
+        return const DriverPendingReviewScreen();
       }
-
-      // Fire background profile sync (no await)
-      unawaited(_backgroundProfileSync());
-
-      return const DriverHomeScreen();
     } else {
       await UserSession.initPhotoNotifier();
 

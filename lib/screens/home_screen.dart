@@ -18,6 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'airport_terminal_sheet.dart';
 import 'identity_verification_screen.dart';
+import 'map_picker_screen.dart';
 import 'map_screen.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
@@ -2181,8 +2182,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         return Padding(
           padding: EdgeInsets.only(
             bottom: idx < 2 ? 16 : 0,
-            left: 24,
-            right: 24,
           ),
           child: GestureDetector(
             onTap: _openSearchThenRide,

@@ -218,8 +218,8 @@ class PlacesService {
     final hasLocation = latitude != null && longitude != null;
 
     try {
-      // ── Phase 1: run the 2 Google requests in parallel (fast, low-bandwidth) ──
-      final googleBoth = await Future.wait([
+      // ── Run ALL providers in parallel for maximum coverage & speed ──
+      final allResults = await Future.wait([
         // [0] Google Places — ALL types (businesses, POIs, airports, addresses)
         _searchWithGoogleAutocomplete(
           cleanInput,
@@ -233,28 +233,16 @@ class PlacesService {
           lon: longitude,
           types: 'geocode',
         ).catchError((_) => <PlaceSuggestion>[]),
-      ]);
-
-      // Discard stale results
-      if (seq != _autocompleteSeq) return [];
-
-      // Merge Google results: geocode (addresses) first, then all-types
-      final googleResults = <PlaceSuggestion>[];
-      googleResults.addAll(googleBoth[1]);
-      googleResults.addAll(googleBoth[0]);
-      final googleDeduped = _dedupeByDescription(googleResults);
-
-      // If Google returned enough results, skip OSM entirely (saves 2 network
-      // round-trips on every keystroke — especially important on cellular).
-      if (googleDeduped.length >= 5) {
-        return googleDeduped.take(25).toList();
-      }
-
-      // ── Phase 2: only hit OSM when Google gave too few results ──
-      if (seq != _autocompleteSeq) return googleDeduped;
-
-      final osmBoth = await Future.wait([
+        // [2] Google Places — ADDRESS type (exact street addresses, house numbers)
+        _searchWithGoogleAutocomplete(
+          cleanInput,
+          lat: latitude,
+          lon: longitude,
+          types: 'address',
+        ).catchError((_) => <PlaceSuggestion>[]),
+        // [3] Nominatim (OSM — good for residential addresses)
         _searchWithNominatim(cleanInput).catchError((_) => <PlaceSuggestion>[]),
+        // [4] Photon (OSM — proximity-biased, good for nearby addresses)
         _searchWithPhoton(
           cleanInput,
           lat: latitude,
@@ -262,12 +250,21 @@ class PlacesService {
         ).catchError((_) => <PlaceSuggestion>[]),
       ]);
 
-      if (seq != _autocompleteSeq) return googleDeduped;
+      // Discard stale results
+      if (seq != _autocompleteSeq) return [];
 
+      // Merge: address-type results first (most relevant for house numbers),
+      // then geocode (streets/areas), then all-types (businesses/POIs),
+      // then OSM fallbacks.
+      final merged = <PlaceSuggestion>[];
+      merged.addAll(allResults[2]); // address (exact street addresses)
+      merged.addAll(allResults[1]); // geocode (residential, streets)
+      merged.addAll(allResults[0]); // all types (businesses, POIs)
+
+      // Sort OSM results by proximity if location available
       final osmCandidates = <PlaceSuggestion>[];
-      osmCandidates.addAll(osmBoth[0]);
-      osmCandidates.addAll(osmBoth[1]);
-
+      osmCandidates.addAll(allResults[3]); // Nominatim
+      osmCandidates.addAll(allResults[4]); // Photon
       if (hasLocation && osmCandidates.isNotEmpty) {
         osmCandidates.sort((a, b) {
           final aHas = a.lat != null && a.lng != null;
@@ -280,9 +277,6 @@ class PlacesService {
           return aDist.compareTo(bDist);
         });
       }
-
-      final merged = <PlaceSuggestion>[];
-      merged.addAll(googleDeduped);
       merged.addAll(osmCandidates);
 
       if (merged.isEmpty) return [];
@@ -312,8 +306,8 @@ class PlacesService {
       'input': input,
       'key': apiKey,
       'sessiontoken': _sessionToken,
-      'components': 'country:us',
       // NO 'strictbounds' — location is soft bias only
+      // NO 'components' — no country restriction, worldwide coverage
     };
     // When types is provided it narrows results to that category.
     // Omitting it returns the full mixed set (addresses + businesses + POIs).

@@ -513,8 +513,32 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, paddedW, totalH));
 
-    // ── Draw pin ──
+    // ── Draw pin (airport uses special rendering in _buildStandalonePin) ──
     _drawGoldPinAt(canvas, adjPinX, pinY, pinSize, icon: icon, isPickup: isPickup);
+
+    // If airport, overlay a golden departure icon on the pin head
+    if (icon == _PinIcon.airplane) {
+      final iconTp = TextPainter(
+        text: TextSpan(
+          text: String.fromCharCode(Icons.flight_takeoff_rounded.codePoint),
+          style: TextStyle(
+            fontSize: pinSize * 0.34,
+            fontFamily: Icons.flight_takeoff_rounded.fontFamily,
+            package: Icons.flight_takeoff_rounded.fontPackage,
+            color: Colors.white,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final headCY = pinY + pinSize * 0.32 + pinSize * 0.04;
+      iconTp.paint(
+        canvas,
+        Offset(
+          adjPinX + pinSize / 2 - iconTp.width / 2,
+          headCY - iconTp.height / 2,
+        ),
+      );
+    }
 
     // ── Draw label box ──
     final bgRect = RRect.fromRectAndRadius(
@@ -580,6 +604,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _PinIcon icon = _PinIcon.none,
     bool isPickup = true,
   }) async {
+    // Airport: clean departure icon only — no teardrop
+    if (icon == _PinIcon.airplane) {
+      final bytes = await _buildAirportIconBytes(100);
+      return (bytes, bytes);
+    }
     const double size = 120;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
@@ -589,6 +618,53 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
     final bytes = byteData!.buffer.asUint8List();
     return (bytes, bytes);
+  }
+
+  /// Render a clean golden flight_takeoff icon (no background shape).
+  static Future<Uint8List> _buildAirportIconBytes(double dim) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, dim, dim));
+
+    // Drop shadow behind the icon for map contrast
+    final shadow = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.flight_takeoff_rounded.codePoint),
+        style: TextStyle(
+          fontSize: dim * 0.72,
+          fontFamily: Icons.flight_takeoff_rounded.fontFamily,
+          package: Icons.flight_takeoff_rounded.fontPackage,
+          color: Colors.black.withValues(alpha: 0.45),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    shadow.paint(
+      canvas,
+      Offset((dim - shadow.width) / 2 + 1, (dim - shadow.height) / 2 + 2),
+    );
+
+    // Golden departure icon
+    final tp = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.flight_takeoff_rounded.codePoint),
+        style: TextStyle(
+          fontSize: dim * 0.72,
+          fontFamily: Icons.flight_takeoff_rounded.fontFamily,
+          package: Icons.flight_takeoff_rounded.fontPackage,
+          color: _gold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(
+      canvas,
+      Offset((dim - tp.width) / 2, (dim - tp.height) / 2),
+    );
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(dim.toInt(), dim.toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
   }
 
   /// Draw a teardrop location pin.
@@ -816,36 +892,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         break;
 
       case _PinIcon.airplane:
-        final s = size * 0.12;
-        // Fuselage (filled oval)
-        canvas.drawOval(
-          Rect.fromCenter(
-            center: Offset(cx, cy),
-            width: s * 0.55,
-            height: s * 2.0,
-          ),
-          iconPaint,
-        );
-        // Wings (filled)
-        final wings = Path()
-          ..moveTo(cx, cy - s * 0.05)
-          ..lineTo(cx - s * 1.2, cy + s * 0.35)
-          ..lineTo(cx - s * 1.2, cy + s * 0.5)
-          ..lineTo(cx, cy + s * 0.18)
-          ..lineTo(cx + s * 1.2, cy + s * 0.5)
-          ..lineTo(cx + s * 1.2, cy + s * 0.35)
-          ..close();
-        canvas.drawPath(wings, iconPaint);
-        // Tail fins (filled)
-        final tail = Path()
-          ..moveTo(cx, cy + s * 0.65)
-          ..lineTo(cx - s * 0.5, cy + s * 1.0)
-          ..lineTo(cx - s * 0.5, cy + s * 1.1)
-          ..lineTo(cx, cy + s * 0.85)
-          ..lineTo(cx + s * 0.5, cy + s * 1.1)
-          ..lineTo(cx + s * 0.5, cy + s * 1.0)
-          ..close();
-        canvas.drawPath(tail, iconPaint);
+        // Handled externally — standalone pins use _buildAirportIconBytes,
+        // pin-with-label overlays the icon after drawing the teardrop.
         break;
 
       case _PinIcon.none:

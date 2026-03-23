@@ -850,23 +850,23 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         );
         break;
       case _PinIcon.airplane:
-        final planePath = Path()
-          ..moveTo(cx, iy - s * 1.1)
-          ..lineTo(cx - s * 0.15, iy - s * 0.6)
-          ..lineTo(cx - s * 1.0, iy - s * 0.1)
-          ..lineTo(cx - s * 0.15, iy - s * 0.15)
-          ..lineTo(cx - s * 0.15, iy + s * 0.5)
-          ..lineTo(cx - s * 0.55, iy + s * 0.9)
-          ..lineTo(cx - s * 0.15, iy + s * 0.75)
-          ..lineTo(cx, iy + s * 1.0)
-          ..lineTo(cx + s * 0.15, iy + s * 0.75)
-          ..lineTo(cx + s * 0.55, iy + s * 0.9)
-          ..lineTo(cx + s * 0.15, iy + s * 0.5)
-          ..lineTo(cx + s * 0.15, iy - s * 0.15)
-          ..lineTo(cx + s * 1.0, iy - s * 0.1)
-          ..lineTo(cx + s * 0.15, iy - s * 0.6)
-          ..close();
-        canvas.drawPath(planePath, iconPaint);
+        // Clean flight_takeoff glyph — no custom path
+        final tp = TextPainter(
+          text: TextSpan(
+            text: String.fromCharCode(Icons.flight_takeoff_rounded.codePoint),
+            style: TextStyle(
+              fontSize: s * 2.8,
+              fontFamily: Icons.flight_takeoff_rounded.fontFamily,
+              package: Icons.flight_takeoff_rounded.fontPackage,
+              color: Colors.white,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(
+          canvas,
+          Offset(cx - tp.width / 2, iy - tp.height / 2),
+        );
         break;
       case _PinIcon.person:
         canvas.drawCircle(Offset(cx, iy - s * 0.5), s * 0.5, iconPaint);

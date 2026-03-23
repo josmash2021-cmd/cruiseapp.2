@@ -373,14 +373,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   }
 
   /// Render a combined pin + label bitmap as a single image.
-  /// The pin appears on top and the label box BELOW the pin (centered).
-  /// [labelOnLeft] is deprecated - now always places label BELOW the pin.
+  /// The pin appears on the LEFT and the label box on the RIGHT (horizontal layout).
+  /// This places the pin at the route endpoint with label beside it.
   Future<(Uint8List, Offset, Uint8List)> _buildPinWithLabel({
     required String text,
     bool isPickup = true,
     String? etaText,
     _PinIcon icon = _PinIcon.none,
-    bool labelOnLeft = false, // deprecated, kept for compatibility
+    bool labelOnLeft = false,
   }) async {
     final label = _truncateHalf(text);
     final showEta = etaText != null && etaText.isNotEmpty;
@@ -429,22 +429,22 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         : 0.0;
     final labelW = hPad + dotSize + gap + textPainter.width + etaW + hPad + 10;
     const labelH = 95.0;
-    const pinLabelGap = 12.0; // Gap between pin and label (vertical)
+    const pinLabelGap = 12.0; // Gap between pin and label
 
     // ── Total canvas ──
-    // Vertical stack: pin on top, label below
-    final totalW = math.max(pinSize, labelW);
-    final totalH = pinSize + pinLabelGap + labelH;
+    // Horizontal layout: pin on left, label on right
+    final totalW = pinSize + pinLabelGap + labelW;
+    final totalH = math.max(pinSize, labelH);
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, totalW, totalH));
 
-    // Position pin at top center
-    final double pinX = (totalW - pinSize) / 2;
-    final double pinY = 0;
-    // Position label below the pin, centered
-    final double labelX = (totalW - labelW) / 2;
-    final double labelY = pinSize + pinLabelGap;
+    // Position pin at left, vertically centered
+    final double pinX = 0;
+    final double pinY = (totalH - pinSize) / 2;
+    // Position label to the right of pin, vertically centered
+    final double labelX = pinSize + pinLabelGap;
+    final double labelY = (totalH - labelH) / 2;
 
     // ── Draw pin ──
     _drawGoldPinAt(canvas, pinX, pinY, pinSize, icon: icon, isPickup: isPickup);
@@ -501,9 +501,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final img = await picture.toImage(totalW.ceil(), totalH.ceil());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
 
-    // Anchor: pin tip is at (pinX + pinSize/2, pinSize) — normalized to image dims
+    // Anchor: pin tip is at (pinX + pinSize/2, pinY + pinSize) — normalized to image dims
+    // The pin tip should land exactly on the route endpoint
     final anchorX = (pinX + pinSize / 2) / totalW;
-    final anchorY = pinSize / totalH; // Pin tip is at pinSize (bottom of pin area)
+    final anchorY = (pinY + pinSize) / totalH; // Pin tip is at bottom of pin
 
     final rawBytes = bytes!.buffer.asUint8List();
     return (rawBytes, Offset(anchorX, anchorY), rawBytes);

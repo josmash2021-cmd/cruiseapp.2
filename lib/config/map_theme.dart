@@ -249,83 +249,62 @@ class MapTheme {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // Golden Roads — #C8973A on ALL road hierarchy levels
+  // Golden Roads — #C8973A on FREEWAYS / HIGHWAYS only
   // ════════════════════════════════════════════════════════════════════════
   static Future<void> applyGoldenRoads(mapbox.MapboxMap map) async {
     const color = '#C8973A';
-    const layers = [
-      // Motorway / trunk
+    const casingColor = '#8B6F2E';
+    // Motorway / trunk fill layers only — NO primary, secondary, street
+    const fillLayers = [
       'road-motorway-trunk',
-      'road-motorway-trunk-case',
       'road-motorway',
       'road-trunk',
-      'road-motorway-case',
-      'road-trunk-case',
-      // Primary
-      'road-primary',
-      'road-primary-case',
-      // Secondary / tertiary
-      'road-secondary-tertiary',
-      'road-secondary-tertiary-case',
-      // Street / minor
-      'road-street',
-      'road-street-case',
-      // Alternate naming conventions
+      'road-motorway-trunk-link',
+      'bridge-motorway-trunk',
+      'bridge-motorway-trunk-link',
+      'tunnel-motorway-trunk',
+      'tunnel-motorway-trunk-link',
       'motorway',
       'motorway_link',
       'trunk',
       'trunk_link',
-      'primary',
-      'primary_link',
-      // Bridge variants
-      'bridge-motorway-trunk',
-      'bridge-motorway-trunk-case',
-      'bridge-primary',
-      'bridge-primary-case',
-      'bridge-secondary-tertiary',
-      'bridge-secondary-tertiary-case',
-      'bridge-street',
-      'bridge-street-case',
-      // Tunnel variants
-      'tunnel-motorway-trunk',
-      'tunnel-motorway-trunk-case',
-      'tunnel-primary',
-      'tunnel-primary-case',
-      'tunnel-secondary-tertiary',
-      'tunnel-secondary-tertiary-case',
-      'tunnel-street',
-      'tunnel-street-case',
-      // Links
-      'road-motorway-trunk-link',
-      'road-primary-link',
-      'road-secondary-tertiary-link',
-      'bridge-motorway-trunk-link',
-      'bridge-primary-link',
-      'bridge-secondary-tertiary-link',
-      'tunnel-motorway-trunk-link',
-      'tunnel-primary-link',
-      'tunnel-secondary-tertiary-link',
     ];
-    for (final layerId in layers) {
-      try {
-        await map.style.setStyleLayerProperty(layerId, 'line-color', color);
-      } catch (_) {}
+    for (final layerId in fillLayers) {
+      try { await map.style.setStyleLayerProperty(layerId, 'line-color', color); } catch (_) {}
+    }
+    // Motorway / trunk casing layers only
+    const caseLayers = [
+      'road-motorway-trunk-case',
+      'road-motorway-case',
+      'road-trunk-case',
+      'bridge-motorway-trunk-case',
+      'bridge-motorway-case',
+      'bridge-trunk-case',
+      'tunnel-motorway-trunk-case',
+      'tunnel-motorway-case',
+      'tunnel-trunk-case',
+      'motorway-case',
+      'trunk-case',
+    ];
+    for (final layerId in caseLayers) {
+      try { await map.style.setStyleLayerProperty(layerId, 'line-color', casingColor); } catch (_) {}
     }
 
-    // Dynamic fallback: apply golden to any road-like layer we missed
+    // Dynamic fallback: only motorway/trunk/highway — NOT primary/secondary/street
     try {
       final allLayers = await map.style.getStyleLayers();
-      final roadPattern = RegExp(
-        r'(road|motorway|trunk|highway|primary|secondary|tertiary|street|bridge-.*road|tunnel-.*road)',
-        caseSensitive: false,
-      );
+      final fwPattern = RegExp(r'(motorway|trunk|highway)', caseSensitive: false);
       for (final layer in allLayers) {
         if (layer == null) continue;
         final id = layer.id;
-        if (!roadPattern.hasMatch(id)) continue;
+        if (!fwPattern.hasMatch(id)) continue;
         if (id.contains('label') || id.contains('shield') || id.contains('number')) continue;
         try {
-          await map.style.setStyleLayerProperty(id, 'line-color', color);
+          if (id.contains('case')) {
+            await map.style.setStyleLayerProperty(id, 'line-color', casingColor);
+          } else {
+            await map.style.setStyleLayerProperty(id, 'line-color', color);
+          }
         } catch (_) {}
       }
     } catch (_) {}

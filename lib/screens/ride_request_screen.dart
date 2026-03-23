@@ -404,7 +404,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// Render a combined pin + label bitmap as a single image.
   /// When [labelOnLeft] is false: pin on LEFT, label on RIGHT (pickup default).
   /// When [labelOnLeft] is true:  label on LEFT, pin on RIGHT (dropoff default).
-  /// The returned anchor always points to the pin tip so it lands on the coordinate.
+  /// The canvas is padded so the pin tip is at exact bottom-center,
+  /// allowing `iconAnchor: BOTTOM` with zero offset.
   Future<(Uint8List, Offset, Uint8List)> _buildPinWithLabel({
     required String text,
     bool isPickup = true,
@@ -461,34 +462,42 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     const labelH = 95.0;
     const pinLabelGap = 12.0;
 
-    // ── Total canvas ──
-    final totalW = pinSize + pinLabelGap + labelW;
+    // ── Unpadded layout ──
+    final rawW = pinSize + pinLabelGap + labelW;
     final totalH = math.max(pinSize, labelH);
 
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, totalW, totalH));
-
-    // ── Layout positions depending on labelOnLeft ──
-    final double pinX;
-    final double labelX;
+    double pinX, labelX;
     if (labelOnLeft) {
-      // Label on LEFT, pin on RIGHT
       labelX = 0;
       pinX = labelW + pinLabelGap;
     } else {
-      // Pin on LEFT, label on RIGHT
       pinX = 0;
       labelX = pinSize + pinLabelGap;
     }
     final double pinY = (totalH - pinSize) / 2;
     final double labelY = (totalH - labelH) / 2;
 
+    // ── Pad canvas so pin tip is at bottom-center ──
+    final pinTipX = pinX + pinSize / 2;
+    final leftMargin = pinTipX;
+    final rightMargin = rawW - pinTipX;
+    final maxM = math.max(leftMargin, rightMargin);
+    final leftPad = maxM - leftMargin;
+    final paddedW = 2 * maxM;
+
+    // Shift drawing positions by leftPad
+    final adjPinX = pinX + leftPad;
+    final adjLabelX = labelX + leftPad;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, paddedW, totalH));
+
     // ── Draw pin ──
-    _drawGoldPinAt(canvas, pinX, pinY, pinSize, icon: icon, isPickup: isPickup);
+    _drawGoldPinAt(canvas, adjPinX, pinY, pinSize, icon: icon, isPickup: isPickup);
 
     // ── Draw label box ──
     final bgRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(labelX, labelY, labelW, labelH),
+      Rect.fromLTWH(adjLabelX, labelY, labelW, labelH),
       const Radius.circular(12),
     );
     canvas.drawRRect(bgRect, Paint()..color = const Color(0xF01A1A1A));
@@ -500,7 +509,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         ..strokeWidth = 1.5,
     );
 
-    double x = labelX + hPad;
+    double x = adjLabelX + hPad;
 
     // ETA badge
     if (showEta && etaPainter != null) {
@@ -535,15 +544,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     );
 
     final picture = recorder.endRecording();
-    final img = await picture.toImage(totalW.ceil(), totalH.ceil());
+    final img = await picture.toImage(paddedW.ceil(), totalH.ceil());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
 
-    // Anchor: pin tip is at (pinX + pinSize/2, pinY + pinSize) — normalized
-    final anchorX = (pinX + pinSize / 2) / totalW;
-    final anchorY = (pinY + pinSize) / totalH;
+    // Anchor: pin tip is now at bottom-center by construction
+    const anchorOffset = Offset(0.5, 1.0);
 
     final rawBytes = bytes!.buffer.asUint8List();
-    return (rawBytes, Offset(anchorX, anchorY), rawBytes);
+    return (rawBytes, anchorOffset, rawBytes);
   }
 
   /// Render a standalone gold pin (no label) as raw bytes.
@@ -1140,34 +1148,26 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
 
+    const scale = 0.85;
+
     // Pickup marker
     if (_pickupAnnot != null) { try { await mgr.delete(_pickupAnnot!); } catch (_) {} _pickupAnnot = null; }
     if (s.pickup != null) {
       Uint8List? bytes;
-      Offset? anchor;
       if (_showPinLabels && _pickupPinWithLabel != null) {
         bytes = _pickupPinWithLabel!.$1;
-        anchor = _pickupPinWithLabel!.$2;
       } else if (_pickupPinOnly != null) {
         bytes = _pickupPinOnly!.$1;
       } else {
         bytes = _goldPinIcon;
       }
       if (bytes != null) {
-        final decoded = await decodeImageFromList(bytes);
-        final imgW = decoded.width.toDouble();
-        final imgH = decoded.height.toDouble();
-        // iconOffset is in image-pixel space; Mapbox multiplies by iconSize internally.
-        // Do NOT multiply by scale here — that would double-scale.
-        const scale = 0.85;
-        final ox = anchor != null ? (0.5 - anchor.dx) * imgW : 0.0;
-        final oy = anchor != null ? (0.5 - anchor.dy) * imgH : -(imgH * 0.5);
         _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
           image: bytes,
           iconSize: scale,
-          iconAnchor: mapbox.IconAnchor.CENTER,
-          iconOffset: [ox, oy],
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
         ));
       }
     }
@@ -1176,28 +1176,20 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (_dropoffAnnot != null) { try { await mgr.delete(_dropoffAnnot!); } catch (_) {} _dropoffAnnot = null; }
     if (s.dropoff != null) {
       Uint8List? bytes;
-      Offset? anchor;
       if (_showPinLabels && _dropoffPinWithLabel != null) {
         bytes = _dropoffPinWithLabel!.$1;
-        anchor = _dropoffPinWithLabel!.$2;
       } else if (_dropoffPinOnly != null) {
         bytes = _dropoffPinOnly!.$1;
       } else {
         bytes = _goldPinIcon;
       }
       if (bytes != null) {
-        final decoded = await decodeImageFromList(bytes);
-        final imgW = decoded.width.toDouble();
-        final imgH = decoded.height.toDouble();
-        const scale = 0.85;
-        final ox = anchor != null ? (0.5 - anchor.dx) * imgW : 0.0;
-        final oy = anchor != null ? (0.5 - anchor.dy) * imgH : -(imgH * 0.5);
         _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
           image: bytes,
           iconSize: scale,
-          iconAnchor: mapbox.IconAnchor.CENTER,
-          iconOffset: [ox, oy],
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
         ));
       }
     }

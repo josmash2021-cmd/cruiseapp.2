@@ -32,6 +32,7 @@ import '../config/app_theme.dart';
 import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/places_service.dart';
 import '../l10n/app_localizations.dart';
@@ -103,6 +104,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   StreamSubscription<Position>? _locationSub;
   final GoldLocationDot _miniDot = GoldLocationDot();
   bool _updatingMiniMapAnnot = false; // guard: prevents concurrent annotation updates
+  bool _prefetchingRoute = false; // loading overlay while pre-fetching route
 
   // ── Smooth location interpolation ──
   Ticker? _locTicker;
@@ -891,6 +893,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             builder: (ctx, scrollCtrl) =>
                 _buildSheet(scrollCtrl, bottomPad),
           ),
+
+          // ── Route pre-fetch loading overlay ──
+          if (_prefetchingRoute)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black54,
+                child: const Center(
+                  child: CircularProgressIndicator(color: _gold, strokeWidth: 2.5),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -2741,18 +2754,37 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           : null
     );
 
+    // ── Pre-fetch route BEFORE navigating so the next screen is instant ──
+    RouteResult? preloadedRoute;
+    if (effectivePickup != null) {
+      // Show a subtle loading indicator while fetching
+      setState(() => _prefetchingRoute = true);
+      try {
+        final dirs = DirectionsService(ApiKeys.webServices);
+        preloadedRoute = await dirs.getRoute(
+          origin: LatLng(effectivePickup.lat, effectivePickup.lng),
+          destination: LatLng(dropoffDetails.lat, dropoffDetails.lng),
+        );
+      } catch (_) {
+        // Fallback: let ride_request_screen fetch normally
+      }
+      if (!mounted) return;
+      setState(() => _prefetchingRoute = false);
+    }
+
+    final effectiveDropoffLabel = dropoffLabel.isNotEmpty
+        ? dropoffLabel
+        : dropoffDetails.address;
+
     await Navigator.of(context).push(
       slideUpFadeRoute(
         RideRequestScreen(
           initialPickupDetails: effectivePickup,
           initialDropoffDetails: dropoffDetails,
           initialPickupLabel: pickupLabel,
-          initialDropoffLabel: dropoffLabel.isNotEmpty
-              ? dropoffLabel
-              : dropoffDetails.address,
-          initialDropoffAddress: dropoffLabel.isNotEmpty
-              ? dropoffLabel
-              : dropoffDetails.address,
+          initialDropoffLabel: effectiveDropoffLabel,
+          initialDropoffAddress: effectiveDropoffLabel,
+          preloadedRoute: preloadedRoute,
         ),
       ),
     );

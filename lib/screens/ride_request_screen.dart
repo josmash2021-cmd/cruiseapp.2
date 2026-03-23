@@ -54,6 +54,7 @@ class RideRequestScreen extends StatefulWidget {
   final PlaceDetails? initialDropoffDetails;
   final String? initialPickupLabel;
   final String? initialDropoffLabel;
+  final RouteResult? preloadedRoute;
   const RideRequestScreen({
     super.key,
     this.fastRide = false,
@@ -66,6 +67,7 @@ class RideRequestScreen extends StatefulWidget {
     this.initialDropoffDetails,
     this.initialPickupLabel,
     this.initialDropoffLabel,
+    this.preloadedRoute,
   });
 
   @override
@@ -196,37 +198,55 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (widget.scheduledAt != null) {
       _ctrl.setSchedule(widget.scheduledAt);
     }
-    _initLocation().then((_) {
-      // Auto-geocode airport and set as pickup when airport selection provided
-      if (widget.airportSelection != null) {
-        _autoSetAirportPickup(widget.airportSelection!);
-      }
-      // Direct details available (e.g. from Choose on map) — use immediately
-      if (widget.initialPickupDetails != null) {
-        _ctrl.setPickup(
-          widget.initialPickupDetails!,
-          widget.initialPickupLabel ?? widget.initialPickupDetails!.address,
-        );
-      } else if (_userLocation != null && widget.initialDropoffDetails != null) {
-        _ctrl.setPickup(
-          PlaceDetails(
-            address: _currentAddress,
-            lat: _userLocation!.latitude,
-            lng: _userLocation!.longitude,
-          ),
-          _currentAddress,
-        );
-      }
-      if (widget.initialDropoffDetails != null) {
-        _ctrl.setDropoff(
-          widget.initialDropoffDetails!,
-          widget.initialDropoffLabel ?? widget.initialDropoffDetails!.address,
-        );
-      } else if (widget.initialDropoffAddress != null) {
-        // Fallback: re-geocode from address string
-        _autoSetDropoff(widget.initialDropoffAddress!);
-      }
-    });
+
+    // ── Pre-loaded route: skip the network fetch entirely ──
+    if (widget.preloadedRoute != null &&
+        widget.initialPickupDetails != null &&
+        widget.initialDropoffDetails != null) {
+      _ctrl.setPreloadedRoute(
+        pickup: widget.initialPickupDetails!,
+        pickupLabel: widget.initialPickupLabel ??
+            widget.initialPickupDetails!.address,
+        dropoff: widget.initialDropoffDetails!,
+        dropoffLabel: widget.initialDropoffLabel ??
+            widget.initialDropoffDetails!.address,
+        route: widget.preloadedRoute!,
+      );
+      // Still resolve GPS for the user-dot overlay
+      _initLocation();
+    } else {
+      _initLocation().then((_) {
+        // Auto-geocode airport and set as pickup when airport selection provided
+        if (widget.airportSelection != null) {
+          _autoSetAirportPickup(widget.airportSelection!);
+        }
+        // Direct details available (e.g. from Choose on map) — use immediately
+        if (widget.initialPickupDetails != null) {
+          _ctrl.setPickup(
+            widget.initialPickupDetails!,
+            widget.initialPickupLabel ?? widget.initialPickupDetails!.address,
+          );
+        } else if (_userLocation != null && widget.initialDropoffDetails != null) {
+          _ctrl.setPickup(
+            PlaceDetails(
+              address: _currentAddress,
+              lat: _userLocation!.latitude,
+              lng: _userLocation!.longitude,
+            ),
+            _currentAddress,
+          );
+        }
+        if (widget.initialDropoffDetails != null) {
+          _ctrl.setDropoff(
+            widget.initialDropoffDetails!,
+            widget.initialDropoffLabel ?? widget.initialDropoffDetails!.address,
+          );
+        } else if (widget.initialDropoffAddress != null) {
+          // Fallback: re-geocode from address string
+          _autoSetDropoff(widget.initialDropoffAddress!);
+        }
+      });
+    }
     _goldDot.build(() { if (mounted) _updateUserDotAnnotation(); });
     _loadLinkedPayments();
     _loadPinIcon();

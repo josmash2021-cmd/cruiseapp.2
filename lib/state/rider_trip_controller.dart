@@ -248,6 +248,28 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _tryFetchRoute();
   }
 
+  /// Set a pre-fetched route directly without triggering a network request.
+  void setPreloadedRoute({
+    required PlaceDetails pickup,
+    required String pickupLabel,
+    required PlaceDetails dropoff,
+    required String dropoffLabel,
+    required RouteResult route,
+  }) {
+    final options = _generateRideOptions(route);
+    _state = _state.copyWith(
+      pickup: pickup,
+      pickupLabel: pickupLabel,
+      dropoff: dropoff,
+      dropoffLabel: dropoffLabel,
+      route: route,
+      rideOptions: options,
+      selectedOption: options.isNotEmpty ? options.first : null,
+      phase: RiderPhase.previewRoute,
+    );
+    notifyListeners();
+  }
+
   void startLocationSelection() {
     _state = _state.copyWith(phase: RiderPhase.selectingLocations);
     notifyListeners();

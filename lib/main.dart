@@ -213,13 +213,26 @@ class _UberCloneAppState extends State<UberCloneApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // M2: auto-logout when JWT is expired and refresh also fails
+    // M2: auto-logout when JWT is expired and refresh also fails.
+    // Guard against re-entry: if already on auth screens, skip.
     ApiService.onUnauthorized = () async {
+      // Prevent double-fire or firing during login
+      final nav = _navigatorKey.currentState;
+      if (nav == null) return;
+      // Check if we're already showing an auth/splash screen
+      bool alreadyOnAuth = false;
+      nav.popUntil((route) {
+        final name = route.settings.name;
+        if (name == '/' || route.isFirst) alreadyOnAuth = true;
+        return true; // don't actually pop — just inspect
+      });
       await ApiService.clearToken();
-      _navigatorKey.currentState?.pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const SplashScreen()),
-        (_) => false,
-      );
+      if (!alreadyOnAuth) {
+        nav.pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const SplashScreen()),
+          (_) => false,
+        );
+      }
     };
   }
 

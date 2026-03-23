@@ -139,10 +139,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _initLocation();
     _loadDriverData();
     _checkVerification();
-    _accountStatusTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) => _checkAccountStatus(),
-    );
+    // Delay first poll to let JWT propagate on slow devices
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!mounted) return;
+      _checkAccountStatus();
+      _accountStatusTimer = Timer.periodic(
+        const Duration(seconds: 30),
+        (_) => _checkAccountStatus(),
+      );
+    });
 
     // Listen for photo updates from UserSession
     UserSession.photoNotifier.addListener(_onPhotoUpdated);

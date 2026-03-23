@@ -260,10 +260,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       const Duration(seconds: 30),
       (_) => _checkDriversOnline(),
     );
-    _accountStatusTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) => _checkAccountStatus(),
-    );
+    // Delay first poll to let JWT propagate on slow devices
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!mounted) return;
+      _checkAccountStatus();
+      _accountStatusTimer = Timer.periodic(
+        const Duration(seconds: 30),
+        (_) => _checkAccountStatus(),
+      );
+    });
     UserSession.photoNotifier.addListener(_onPhotoChanged);
   }
 

@@ -276,6 +276,7 @@ class ApiService {
   static String? _cachedRefreshToken;
   static bool _isRefreshing = false;
   static bool _isHandlingUnauthorized = false;
+  static bool _loginInProgress = false;
 
   /// M2: Set this callback to navigate to login when JWT expires and refresh fails.
   static void Function()? onUnauthorized;
@@ -317,8 +318,9 @@ class ApiService {
   }
 
   /// M2: Called on 401 — attempts refresh, clears token and fires [onUnauthorized] if refresh fails.
+  /// Suppressed during login flow to prevent false logout on auth-related 401s.
   static Future<void> _handleUnauthorized() async {
-    if (_isHandlingUnauthorized) return; // debounce concurrent 401s
+    if (_isHandlingUnauthorized || _loginInProgress) return;
     _isHandlingUnauthorized = true;
     try {
       final refreshed = await refreshAccessToken();
@@ -631,19 +633,25 @@ class ApiService {
     required String password,
     String? role,
   }) async {
-    final body = <String, dynamic>{
-      'identifier': identifier,
-      'password': password,
-    };
-    if (role != null) body['role'] = role;
-    final res = await _client
-        .post(
-          Uri.parse('$_baseUrl/auth/login'),
-          headers: _jsonHeaders(),
-          body: jsonEncode(body),
-        )
-        .timeout(const Duration(seconds: 10));
-    return _parse(res);
+    _loginInProgress = true;
+    try {
+      final body = <String, dynamic>{
+        'identifier': identifier,
+        'password': password,
+      };
+      if (role != null) body['role'] = role;
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/auth/login'),
+            headers: _jsonHeaders(),
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
+      return _parse(res);
+    } catch (e) {
+      _loginInProgress = false; // clear on failure so flag doesn't stick
+      rethrow;
+    }
   }
 
   /// Exchange the temporary login_token for a full JWT.
@@ -652,24 +660,28 @@ class ApiService {
   static Future<Map<String, dynamic>> completeLogin({
     required String loginToken,
   }) async {
-    final res = await _client
-        .post(
-          Uri.parse('$_baseUrl/auth/complete-login'),
-          headers: _jsonHeaders(),
-          body: jsonEncode({'login_token': loginToken}),
-        )
-        .timeout(const Duration(seconds: 10));
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/auth/complete-login'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({'login_token': loginToken}),
+          )
+          .timeout(const Duration(seconds: 10));
 
-    final data = _parse(res);
-    final token = data['access_token'] as String;
-    await _saveToken(token);
-    if (data['refresh_token'] != null) {
-      await _saveRefreshToken(data['refresh_token'] as String);
+      final data = _parse(res);
+      final token = data['access_token'] as String;
+      await _saveToken(token);
+      if (data['refresh_token'] != null) {
+        await _saveRefreshToken(data['refresh_token'] as String);
+      }
+      // Clear stale user cache so getCurrentUserId fetches fresh data
+      _cachedUser = data['user'] as Map<String, dynamic>?;
+      debugPrint('✅ Login complete — user ${data['user']?['id']}');
+      return data;
+    } finally {
+      _loginInProgress = false;
     }
-    // Clear stale user cache so getCurrentUserId fetches fresh data
-    _cachedUser = data['user'] as Map<String, dynamic>?;
-    debugPrint('✅ Login complete — user ${data['user']?['id']}');
-    return data;
   }
 
   /// Get the current user's profile (requires valid JWT).
@@ -893,13 +905,32 @@ class ApiService {
   /// Check account status (dispatch may have blocked/deleted).
   static Future<String> getAccountStatus() async {
     final token = await getToken();
-    if (token == null) throw ApiException(401, 'Not logged in');
+    if (token == null) return 'active'; // no token yet — assume active, don't trigger logout
     final res = await _client
         .get(
           Uri.parse('$_baseUrl/auth/account-status'),
           headers: _jsonHeaders(token),
         )
         .timeout(const Duration(seconds: 5));
+    // Handle 401 gracefully — attempt refresh but don't trigger global logout
+    // from a background poll. The main _parse 401 handler is too aggressive here.
+    if (res.statusCode == 401) {
+      final refreshed = await refreshAccessToken();
+      if (refreshed) {
+        final newToken = await getToken();
+        final retry = await _client
+            .get(
+              Uri.parse('$_baseUrl/auth/account-status'),
+              headers: _jsonHeaders(newToken),
+            )
+            .timeout(const Duration(seconds: 5));
+        if (retry.statusCode == 200) {
+          final d = jsonDecode(retry.body);
+          return (d is Map ? d['status'] as String? : null) ?? 'active';
+        }
+      }
+      return 'active'; // refresh failed — don't logout from background poll
+    }
     final data = _parse(res);
     return data['status'] as String? ?? 'active';
   }

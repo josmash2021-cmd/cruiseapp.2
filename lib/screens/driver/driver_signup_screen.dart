@@ -362,6 +362,26 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   }
 
   void _next() {
+    // On Step 0: force-validate email & phone if debounce hasn't fired yet
+    if (_step == 0) {
+      final email = _emailCtrl.text.trim();
+      final phone = _phoneCtrl.text.replaceAll(RegExp(r'\D'), '');
+      if (email.isNotEmpty &&
+          RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$').hasMatch(email) &&
+          !_checkingEmail &&
+          _emailError == null) {
+        // Trigger immediate check if not yet validated
+        _emailDebounce?.cancel();
+        _validateEmailNow(email);
+      }
+      if (phone.length >= 10 &&
+          !_checkingPhone &&
+          _phoneError == null) {
+        _phoneDebounce?.cancel();
+        _validatePhoneNow('+1$phone');
+      }
+    }
+
     if (_step < _totalSteps - 1) {
       setState(() => _step++);
       _pageCtrl.animateToPage(
@@ -372,6 +392,36 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     } else {
       _submit();
     }
+  }
+
+  /// Immediately validate email (no debounce).
+  Future<void> _validateEmailNow(String email) async {
+    setState(() {
+      _checkingEmail = true;
+      _emailError = null;
+    });
+    final exists = await ApiService.checkExists(email, role: 'driver');
+    if (!mounted) return;
+    setState(() {
+      _checkingEmail = false;
+      _emailError =
+          exists ? 'This email is already registered as a driver' : null;
+    });
+  }
+
+  /// Immediately validate phone (no debounce).
+  Future<void> _validatePhoneNow(String phone) async {
+    setState(() {
+      _checkingPhone = true;
+      _phoneError = null;
+    });
+    final exists = await ApiService.checkExists(phone, role: 'driver');
+    if (!mounted) return;
+    setState(() {
+      _checkingPhone = false;
+      _phoneError =
+          exists ? 'This phone number is already registered as a driver' : null;
+    });
   }
 
   void _back() {
@@ -965,6 +1015,28 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             label: S.of(context).emailAddressLabel,
             icon: Icons.email_outlined,
             keyboard: TextInputType.emailAddress,
+            errorText: _emailError,
+            suffix: _checkingEmail
+                ? const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _gold,
+                      ),
+                    ),
+                  )
+                : _emailError != null
+                    ? const Icon(Icons.error_outline_rounded,
+                        color: Colors.redAccent, size: 20)
+                    : _emailCtrl.text.trim().isNotEmpty &&
+                            RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$')
+                                .hasMatch(_emailCtrl.text.trim())
+                        ? const Icon(Icons.check_circle_rounded,
+                            color: Colors.green, size: 20)
+                        : null,
           ),
           _inlineFieldStatus(_emailError, _checkingEmail),
           const SizedBox(height: 16),
@@ -973,6 +1045,29 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             label: S.of(context).phoneNumberLabel,
             icon: Icons.phone_outlined,
             keyboard: TextInputType.phone,
+            errorText: _phoneError,
+            suffix: _checkingPhone
+                ? const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _gold,
+                      ),
+                    ),
+                  )
+                : _phoneError != null
+                    ? const Icon(Icons.error_outline_rounded,
+                        color: Colors.redAccent, size: 20)
+                    : _phoneCtrl.text
+                                .replaceAll(RegExp(r'\D'), '')
+                                .length >=
+                            10
+                        ? const Icon(Icons.check_circle_rounded,
+                            color: Colors.green, size: 20)
+                        : null,
           ),
           _inlineFieldStatus(_phoneError, _checkingPhone),
           const SizedBox(height: 16),
@@ -1835,7 +1930,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     Widget? suffix,
     int? maxLength,
     bool capitalize = false,
+    String? errorText,
   }) {
+    final hasError = errorText != null;
     return TextField(
       controller: ctrl,
       obscureText: obscure,
@@ -1850,18 +1947,24 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
       decoration: InputDecoration(
         labelText: label,
         labelStyle: TextStyle(color: Colors.white38, fontSize: 14),
-        prefixIcon: Icon(icon, color: _gold, size: 20),
+        prefixIcon: Icon(icon, color: hasError ? Colors.redAccent : _gold, size: 20),
         suffixIcon: suffix,
         counterText: '',
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Colors.white12),
+          borderSide: BorderSide(
+            color: hasError ? Colors.redAccent : Colors.white12,
+            width: hasError ? 1.5 : 1.0,
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: _gold, width: 1.5),
+          borderSide: BorderSide(
+            color: hasError ? Colors.redAccent : _gold,
+            width: hasError ? 2 : 1.5,
+          ),
         ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,

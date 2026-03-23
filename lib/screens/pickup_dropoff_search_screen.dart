@@ -486,7 +486,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         slideFromRightRoute(
           MapPickerScreen(
             initialLat: widget.initialPickupLat,
-            initialLng: widget.initialLng,
+            initialLng: widget.initialPickupLng,
           ),
         ),
       );

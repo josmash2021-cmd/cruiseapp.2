@@ -210,11 +210,17 @@ class _SplashScreenState extends State<SplashScreen>
     // Phase 3 — scale up + fade out (run in parallel with destination resolution)
     final exitFuture = _exitCtrl.forward().orCancel.catchError((_) {});
     
-    // Wait for both animation AND destination to be ready
-    final results = await Future.wait([exitFuture, destinationFuture]);
+    // ── CRITICAL: Navigate as soon as destination is ready, don't wait for exit animation ──
+    // This eliminates the black screen gap that appears when animation finishes first
+    final destination = await destinationFuture;
     if (_disposed || !mounted) return;
     
-    final destination = results[1] as Widget;
+    // Wait just a tiny bit for exit animation to start (for smooth visual)
+    await Future.any([
+      Future.delayed(const Duration(milliseconds: 100)),
+      exitFuture,
+    ]);
+    if (_disposed || !mounted) return;
 
     // Instant transition - no black screen gap
     Navigator.of(context).pushReplacement(

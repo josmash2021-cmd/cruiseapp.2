@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -224,10 +225,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: c.bg,
+        backgroundColor: Colors.transparent,
         body: Column(
           children: [
-            // ── Header with fields ──
+            // ── Header with fields (stays fully opaque) ──
             Container(
               padding: EdgeInsets.only(
                 top: topPad + 8,
@@ -353,20 +354,25 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                 minHeight: 2,
               ),
 
-            // ── Suggestions list ──
+            // ── Suggestions list (glassmorphism) ──
             Expanded(
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.65),
-                child: _suggestions.isEmpty
-                    ? _buildRecentPlaces(c)
-                    : ListView.builder(
-                        padding: EdgeInsets.zero,
-                        itemCount: _suggestions.length,
-                        itemBuilder: (context, idx) {
-                          final s = _suggestions[idx];
-                          return _buildSuggestionTile(c, s);
-                        },
-                      ),
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    child: _suggestions.isEmpty
+                        ? _buildRecentPlaces(c)
+                        : ListView.builder(
+                            padding: EdgeInsets.zero,
+                            itemCount: _suggestions.length,
+                            itemBuilder: (context, idx) {
+                              final s = _suggestions[idx];
+                              return _buildSuggestionTile(c, s);
+                            },
+                          ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -495,12 +501,15 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       final lat = result['lat'] as double;
       final lng = result['lng'] as double;
       
-      // Build pickup details from initial location
-      final pickupDetails = PlaceDetails(
-        address: widget.initialPickupText,
-        lat: widget.initialPickupLat ?? 0,
-        lng: widget.initialPickupLng ?? 0,
-      );
+      // Build pickup details from initial location (null if no coordinates)
+      final PlaceDetails? pickupDetails =
+          (widget.initialPickupLat != null && widget.initialPickupLng != null)
+              ? PlaceDetails(
+                  address: widget.initialPickupText,
+                  lat: widget.initialPickupLat!,
+                  lng: widget.initialPickupLng!,
+                )
+              : null;
       final dropoffDetails = PlaceDetails(address: addr, lat: lat, lng: lng);
       
       // Return results and let parent navigate to RideRequestScreen

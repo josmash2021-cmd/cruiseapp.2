@@ -126,7 +126,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
         children: [
           // Map — Mapbox on both iOS and Android
           mapbox.MapWidget(
-            styleUri: 'mapbox://styles/mapbox/dark-v11',
+            styleUri: MapboxConfig.styleDark,
             cameraOptions: mapbox.CameraOptions(
               center: mapbox.Point(coordinates: mapbox.Position(_center.longitude, _center.latitude)),
               zoom: 15.0,

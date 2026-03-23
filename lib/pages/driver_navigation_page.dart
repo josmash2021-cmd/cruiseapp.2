@@ -833,7 +833,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                 _updateRouteAnnotation();
                 _updateDestAnnotation();
                 _updateDriverAnnotation();
-                await MapTheme.applyNavyGold(ctrl);
+              },
+              onStyleLoadedListener: (_) async {
+                if (_map != null) await MapTheme.applyNavyGold(_map!);
               },
               onScrollListener: (_) => _onCameraMoveStarted(),
             ),

@@ -47,6 +47,13 @@ class MapTheme {
       'tunnel-motorway',
       'tunnel-trunk',
       'tunnel-motorway-trunk-link',
+      // v11 dark-v11 — principal combined motorway+trunk layers
+      'road-motorway-trunk',
+      'bridge-motorway-trunk',
+      'tunnel-motorway-trunk',
+      'road-motorway-trunk-link',
+      'bridge-motorway-trunk-link',
+      'tunnel-motorway-trunk-link',
       // v11 style layers (dark-v11, standard v11 styles)
       'road-major',
       'road-highway',
@@ -86,6 +93,10 @@ class MapTheme {
       'motorway-case',
       'trunk-case',
       'highway-case',
+      // v11 dark-v11 combined motorway+trunk casing
+      'road-motorway-trunk-case',
+      'bridge-motorway-trunk-case',
+      'tunnel-motorway-trunk-case',
       // v11 casing variants
       'road-motorway-alt-case',
       'road-highway-motorway-case',
@@ -211,5 +222,25 @@ class MapTheme {
       try { await ctrl.style.setStyleLayerProperty(layer, 'line-opacity', 0.0); } catch (_) {}
       try { await ctrl.style.setStyleLayerProperty(layer, 'visibility', 'none'); } catch (_) {}
     }
+
+    // ── Dynamic fallback: enumerate all layers and style any motorway/trunk/highway we missed ──
+    try {
+      final layersJson = await ctrl.style.getStyleLayers();
+      final layers = layersJson.layers ?? [];
+      final motorwayPattern = RegExp(r'(motorway|trunk|highway)', caseSensitive: false);
+      for (final layer in layers) {
+        final id = layer.id;
+        if (!motorwayPattern.hasMatch(id)) continue;
+        // Skip casings, labels, and shields — they have their own rules
+        if (id.contains('label') || id.contains('shield')) continue;
+        try {
+          if (id.contains('case')) {
+            await ctrl.style.setStyleLayerProperty(id, 'line-color', _goldCase);
+          } else {
+            await ctrl.style.setStyleLayerProperty(id, 'line-color', _gold);
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 }

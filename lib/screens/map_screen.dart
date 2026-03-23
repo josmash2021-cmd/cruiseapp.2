@@ -1177,7 +1177,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       await _setPickupAnnotation(_currentPosition!);
     }
     // Apply dark navy + gold road theme
-    await _applyDarkNavyGoldTheme(controller);
+  }
+
+  void _onStyleLoaded(mapbox.StyleLoadedEventData _) async {
+    if (_mapController != null) await _applyDarkNavyGoldTheme(_mapController!);
   }
 
   /// Paints the map with a dark navy blue background and gold freeways/roads.
@@ -2446,6 +2449,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 zoom: _currentPosition != null ? 14 : 3,
               ),
               onMapCreated: _onMapCreated,
+              onStyleLoadedListener: _onStyleLoaded,
               onScrollListener: (_) => _onCameraMoveStarted(),
               onTapListener: (mapbox.MapContentGestureContext ctx) {
                 _onMapTap(LatLng(ctx.point.coordinates.lat.toDouble(), ctx.point.coordinates.lng.toDouble()));
@@ -6673,7 +6677,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                           .push<Map<String, dynamic>>(
                             sharedAxisZRoute(PickupDropoffSearchScreen(
                               initialPickupText: _pickupAddress,
-                            )),
+                            ), opaque: false),
                           );
                       if (result != null &&
                           result['dropoffLabel'] != null &&

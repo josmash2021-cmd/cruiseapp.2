@@ -279,6 +279,19 @@ class PlacesService {
       }
       merged.addAll(osmCandidates);
 
+      // Geocoding fallback: if Google returned few results, try direct geocode
+      // to catch addresses not indexed by Places Autocomplete.
+      final googleCount =
+          allResults[0].length + allResults[1].length + allResults[2].length;
+      if (googleCount < 3) {
+        try {
+          final geocoded = await _geocodeFallback(cleanInput, latitude: latitude, longitude: longitude);
+          if (seq == _autocompleteSeq && geocoded.isNotEmpty) {
+            merged.addAll(geocoded);
+          }
+        } catch (_) {}
+      }
+
       if (merged.isEmpty) return [];
       return _dedupeByDescription(merged).take(25).toList();
     } catch (_) {
@@ -288,13 +301,12 @@ class PlacesService {
 
   // ─── Google Places Autocomplete (production-ready) ─────────────────
   //
-  // Key configuration for Uber-like coverage:
-  //  • NO 'types' param → returns ALL result types (addresses, streets,
-  //    businesses, POIs, airports, etc.)
-  //  • NO 'components' param → no country restriction
-  //  • NO 'strictbounds' → location is a BIAS not a restriction
-  //  • Session token → groups keystrokes for billing ($0.017/session)
-  //  • Location + radius → proximity ranking centered on user
+  // Configuration:
+  //  • 'components=country:us' → restrict to US addresses
+  //  • Session tokens → billing optimization ($0.017/session)
+  //  • Location + 80km radius → proximity ranking centered on user
+  //  • Optional 'types' → narrow by category (geocode, address, etc.)
+  //  • No strictbounds → location is a BIAS not a restriction
 
   Future<List<PlaceSuggestion>> _searchWithGoogleAutocomplete(
     String input, {
@@ -306,19 +318,16 @@ class PlacesService {
       'input': input,
       'key': apiKey,
       'sessiontoken': _sessionToken,
-      // NO 'strictbounds' — location is soft bias only
-      // NO 'components' — no country restriction, worldwide coverage
+      'components': 'country:us',
     };
-    // When types is provided it narrows results to that category.
-    // Omitting it returns the full mixed set (addresses + businesses + POIs).
     if (types != null && types.isNotEmpty) {
       params['types'] = types;
     }
 
-    // Location bias: center on user, 50km radius (soft preference, not filter)
+    // Location bias: center on user, 80km radius (soft preference, not filter)
     if (lat != null && lon != null) {
       params['location'] = '$lat,$lon';
-      params['radius'] = '50000'; // 50km bias radius
+      params['radius'] = '80000';
     }
 
     final uri = Uri.https(
@@ -645,6 +654,46 @@ class PlacesService {
       );
     } catch (_) {
       return null;
+    }
+  }
+
+  // ─── Geocoding Fallback (for sparse autocomplete) ──────────────────
+
+  Future<List<PlaceSuggestion>> _geocodeFallback(
+    String query, {
+    double? latitude,
+    double? longitude,
+  }) async {
+    final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
+      'address': query,
+      'key': apiKey,
+      'components': 'country:US',
+    });
+    try {
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) return [];
+      final data = jsonDecode(res.body);
+      if (data['status'] != 'OK') return [];
+      final results = data['results'] as List? ?? [];
+      return results
+          .take(5)
+          .map<PlaceSuggestion?>((r) {
+            final loc = r['geometry']?['location'];
+            final lat = (loc?['lat'] as num?)?.toDouble();
+            final lng = (loc?['lng'] as num?)?.toDouble();
+            final addr = r['formatted_address']?.toString() ?? '';
+            if (lat == null || lng == null || addr.isEmpty) return null;
+            return PlaceSuggestion(
+              description: addr,
+              placeId: 'exact:$lat,$lng',
+              lat: lat,
+              lng: lng,
+            );
+          })
+          .whereType<PlaceSuggestion>()
+          .toList();
+    } catch (_) {
+      return [];
     }
   }
 

@@ -7,8 +7,9 @@ import 'package:animations/animations.dart';
 
 // ─── Shared Axis (Z) (Search bar tap → Search screen) ───
 // A profound depth transition used by modern Google/Android apps
-Route<T> sharedAxisZRoute<T>(Widget page, {int durationMs = 400}) {
+Route<T> sharedAxisZRoute<T>(Widget page, {int durationMs = 400, bool opaque = true}) {
   return PageRouteBuilder<T>(
+    opaque: opaque,
     pageBuilder: (context, animation, secondaryAnimation) => page,
     transitionDuration: Duration(milliseconds: durationMs),
     reverseTransitionDuration: Duration(milliseconds: (durationMs * 0.8).round()),

@@ -1453,7 +1453,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             RepaintBoundary(
               child: mapbox.MapWidget(
                 key: const ValueKey('rider-map'),
-                styleUri: 'mapbox://styles/mapbox/dark-v11',
+                styleUri: MapboxConfig.styleDark,
                 cameraOptions: mapbox.CameraOptions(
                   center: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
                   zoom: 14.0,

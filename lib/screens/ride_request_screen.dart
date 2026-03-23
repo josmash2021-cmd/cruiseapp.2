@@ -1154,17 +1154,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         bytes = _goldPinIcon;
       }
       if (bytes != null) {
-        // Decode image to get pixel dimensions for offset calculation
         final decoded = await decodeImageFromList(bytes);
         final imgW = decoded.width.toDouble();
         final imgH = decoded.height.toDouble();
-        // iconOffset: pixel shift from CENTER anchor to pin tip
-        // pin tip is at (anchor.dx * imgW, anchor.dy * imgH)
-        // center is at (imgW/2, imgH/2)
-        // offset = pinTip - center (in screen px, scaled by iconSize)
-        final scale = 0.85;
-        final ox = anchor != null ? (0.5 - anchor.dx) * imgW * scale : 0.0;
-        final oy = anchor != null ? (0.5 - anchor.dy) * imgH * scale : -(imgH * scale * 0.5);
+        // iconOffset is in image-pixel space; Mapbox multiplies by iconSize internally.
+        // Do NOT multiply by scale here — that would double-scale.
+        const scale = 0.85;
+        final ox = anchor != null ? (0.5 - anchor.dx) * imgW : 0.0;
+        final oy = anchor != null ? (0.5 - anchor.dy) * imgH : -(imgH * 0.5);
         _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
           image: bytes,
@@ -1192,9 +1189,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         final decoded = await decodeImageFromList(bytes);
         final imgW = decoded.width.toDouble();
         final imgH = decoded.height.toDouble();
-        final scale = 0.85;
-        final ox = anchor != null ? (0.5 - anchor.dx) * imgW * scale : 0.0;
-        final oy = anchor != null ? (0.5 - anchor.dy) * imgH * scale : -(imgH * scale * 0.5);
+        const scale = 0.85;
+        final ox = anchor != null ? (0.5 - anchor.dx) * imgW : 0.0;
+        final oy = anchor != null ? (0.5 - anchor.dy) * imgH : -(imgH * 0.5);
         _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
           image: bytes,
@@ -1410,7 +1407,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             else
               RepaintBoundary(
                 child: mapbox.MapWidget(
-                  styleUri: 'mapbox://styles/mapbox/dark-v11',
+                  styleUri: MapboxConfig.styleDark,
                   cameraOptions: mapbox.CameraOptions(
                     center: mapbox.Point(coordinates: mapbox.Position(_center!.longitude, _center!.latitude)),
                     zoom: 15.5,

@@ -103,8 +103,79 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final GoldLocationDot _miniDot = GoldLocationDot();
   bool _updatingMiniMapAnnot = false; // guard: prevents concurrent annotation updates
 
+  // ── Smooth location interpolation ──
+  Ticker? _locTicker;
+  LatLng? _locAnimFrom;      // start of interpolation
+  LatLng? _locAnimTo;        // target (latest GPS)
+  double _locAnimProgress = 1.0; // 0→1
+  Duration _locAnimStart = Duration.zero;
+  static const int _locAnimDurationMs = 2800; // smooth glide between updates
+
   Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
     await MapTheme.applyNavyGold(ctrl);
+  }
+
+  /// Interpolated position for the current animation frame.
+  LatLng get _interpolatedLatLng {
+    if (_locAnimFrom == null || _locAnimTo == null) return _currentLatLng ?? const LatLng(0, 0);
+    final t = _easedProgress(_locAnimProgress);
+    return LatLng(
+      _locAnimFrom!.latitude + (_locAnimTo!.latitude - _locAnimFrom!.latitude) * t,
+      _locAnimFrom!.longitude + (_locAnimTo!.longitude - _locAnimFrom!.longitude) * t,
+    );
+  }
+
+  /// Ease-out cubic: fast start, gentle stop.
+  double _easedProgress(double t) {
+    final t1 = 1.0 - t;
+    return 1.0 - t1 * t1 * t1;
+  }
+
+  /// Called by the Ticker on every vsync frame during location animation.
+  int _lastAnnotUpdateMs = 0;
+  void _onLocAnimTick(Duration elapsed) {
+    if (_locAnimFrom == null || _locAnimTo == null) return;
+    final dt = (elapsed - _locAnimStart).inMilliseconds;
+    _locAnimProgress = (dt / _locAnimDurationMs).clamp(0.0, 1.0);
+    // Throttle annotation updates to ~15fps (every 66ms) to avoid async backpressure
+    if (dt - _lastAnnotUpdateMs >= 66) {
+      _lastAnnotUpdateMs = dt;
+      _updateMiniMapAnnotation();
+    }
+  }
+
+  /// Start (or restart) smooth interpolation toward a new GPS target.
+  void _animateToLocation(LatLng target) {
+    // Start from current interpolated position (avoids jump)
+    _locAnimFrom = _interpolatedLatLng;
+    _locAnimTo = target;
+    _locAnimProgress = 0.0;
+
+    // Animate camera to target with smooth easing
+    _miniMapController?.flyTo(
+      mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(target.longitude, target.latitude))),
+      mapbox.MapAnimationOptions(duration: _locAnimDurationMs),
+    );
+
+    // Reset animation timer relative to current ticker elapsed
+    if (_locTicker != null && _locTicker!.isActive) {
+      _locAnimNeedsRestart = true;
+    } else {
+      _locAnimNeedsRestart = true;
+      _locTicker?.dispose();
+      _locTicker = createTicker(_onLocAnimTickWrapper);
+      _locTicker!.start();
+    }
+  }
+
+  bool _locAnimNeedsRestart = false;
+
+  void _onLocAnimTickWrapper(Duration elapsed) {
+    if (_locAnimNeedsRestart) {
+      _locAnimStart = elapsed;
+      _locAnimNeedsRestart = false;
+    }
+    _onLocAnimTick(elapsed);
   }
 
   Future<void> _updateMiniMapAnnotation() async {
@@ -114,22 +185,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     
     try {
       final mgr = _miniMapAnnotMgr;
-      if (mgr == null || _currentLatLng == null) return;
+      if (mgr == null) return;
       final bytes = _miniDot.currentBytes;
       if (bytes == null) return;
+      final pos = _interpolatedLatLng;
       
-      // Delete old annotation if exists
+      // If annotation already exists → update in-place (no delete+create)
       if (_miniMapAnnot != null) {
-        try { await mgr.delete(_miniMapAnnot!); } catch (_) {}
-        _miniMapAnnot = null;
+        try {
+          _miniMapAnnot!.geometry = mapbox.Point(
+            coordinates: mapbox.Position(pos.longitude, pos.latitude),
+          );
+          _miniMapAnnot!.image = bytes;
+          await mgr.update(_miniMapAnnot!);
+        } catch (_) {
+          // If update fails (e.g. annotation was invalidated), recreate
+          _miniMapAnnot = null;
+        }
       }
       
-      // Create new annotation at current position
-      _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
-        image: bytes,
-        iconSize: 1.0,
-      ));
+      // Create annotation only if it doesn't exist yet
+      if (_miniMapAnnot == null && _currentLatLng != null) {
+        _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+          image: bytes,
+          iconSize: 1.0,
+        ));
+      }
     } finally {
       _updatingMiniMapAnnot = false;
     }
@@ -167,10 +249,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _loadPromoUsed();
     _fetchCurrentLocation();
     _miniDot.build(() {
-      if (mounted) {
-        setState(() {});
-        _updateMiniMapAnnotation();
-      }
+      if (mounted) _updateMiniMapAnnotation();
     });
     _checkDriversOnline();
     _listenServiceZones();
@@ -202,6 +281,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     UserSession.photoNotifier.removeListener(_onPhotoChanged);
     _sheetController.dispose();
     _miniDot.dispose();
+    _locTicker?.dispose();
     _shimmerController.dispose();
     _boltFlashCtrl.dispose();
     _clockRotateCtrl.dispose();
@@ -353,6 +433,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _currentLatLng = LatLng(pos.latitude, pos.longitude);
         _locationError = null;
       });
+      // Set initial position without animation (first fix)
+      _locAnimFrom = _currentLatLng;
+      _locAnimTo = _currentLatLng;
+      _locAnimProgress = 1.0;
       _miniMapController?.flyTo(
         mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude))),
         mapbox.MapAnimationOptions(duration: 800),
@@ -377,11 +461,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             if (!mounted) return;
             final ll = LatLng(p.latitude, p.longitude);
             setState(() => _currentLatLng = ll);
-            _miniMapController?.flyTo(
-              mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude))),
-              mapbox.MapAnimationOptions(duration: 800),
-            );
-            _updateMiniMapAnnotation();
+            // Smoothly animate pin + camera to new position
+            _animateToLocation(ll);
           });
     } catch (e) {
       if (mounted && _currentLatLng == null) {
@@ -2635,6 +2716,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           initialPickupLat: _currentLatLng?.latitude,
           initialPickupLng: _currentLatLng?.longitude,
         ),
+        opaque: false,
       ),
     );
 
@@ -2647,16 +2729,29 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     if (dropoffDetails == null) return;
 
+    // Use current location as pickup if search didn't provide one
+    final effectivePickup = pickupDetails ?? (
+      _currentLatLng != null
+          ? PlaceDetails(
+              address: pickupLabel.isNotEmpty ? pickupLabel : 'Current location',
+              lat: _currentLatLng!.latitude,
+              lng: _currentLatLng!.longitude,
+            )
+          : null
+    );
+
     await Navigator.of(context).push(
       slideUpFadeRoute(
         RideRequestScreen(
+          initialPickupDetails: effectivePickup,
+          initialDropoffDetails: dropoffDetails,
+          initialPickupLabel: pickupLabel,
+          initialDropoffLabel: dropoffLabel.isNotEmpty
+              ? dropoffLabel
+              : dropoffDetails.address,
           initialDropoffAddress: dropoffLabel.isNotEmpty
               ? dropoffLabel
               : dropoffDetails.address,
-          initialPickupDetails: pickupDetails,
-          initialDropoffDetails: dropoffDetails,
-          initialPickupLabel: pickupLabel,
-          initialDropoffLabel: dropoffLabel,
         ),
       ),
     );
@@ -2873,9 +2968,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                   ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                   ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                  await _applyDarkNavyGoldTheme(ctrl);
                   _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                   _updateMiniMapAnnotation();
+                },
+                onStyleLoadedListener: (_) async {
+                  if (_miniMapController != null) await _applyDarkNavyGoldTheme(_miniMapController!);
                 },
                 gestureRecognizers: const {},
               ),

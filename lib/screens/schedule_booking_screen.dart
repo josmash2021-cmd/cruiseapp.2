@@ -914,13 +914,15 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                         ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                         ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                         ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                        await MapTheme.applyNavyGold(ctrl);
                         _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                         _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
                         setState(() => _mapReady = true);
                         if (_pickupLatLng != null && _dropoffLatLng != null) {
                           _fitMap();
                         }
+                      },
+                      onStyleLoadedListener: (_) async {
+                        if (_mapCtrl != null) await MapTheme.applyNavyGold(_mapCtrl!);
                       },
                     ),
                     if (_isLoadingRoute)

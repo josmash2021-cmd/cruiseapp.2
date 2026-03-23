@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
+import '../config/map_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'dart:math' show max, min;
@@ -431,6 +432,12 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               _mapController = ctrl;
               _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
               if (_showDrivers || _showTrips) _loadMarkers();
+            },
+            onStyleLoadedListener: (_) async {
+              if (_mapController != null) {
+                await MapTheme.applyGoldenRoads(_mapController!);
+                await MapTheme.enablePOILayers(_mapController!);
+              }
             },
           ),
         ),

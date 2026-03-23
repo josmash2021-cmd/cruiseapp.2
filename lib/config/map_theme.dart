@@ -347,9 +347,9 @@ class MapTheme {
       'landmark-icon',
     ];
     for (final layerId in layers) {
-      try {
-        await map.style.setStyleLayerProperty(layerId, 'visibility', 'visible');
-      } catch (_) {}
+      try { await map.style.setStyleLayerProperty(layerId, 'visibility', 'visible'); } catch (_) {}
+      try { await map.style.setStyleLayerProperty(layerId, 'icon-opacity', 1.0); } catch (_) {}
+      try { await map.style.setStyleLayerProperty(layerId, 'text-opacity', 1.0); } catch (_) {}
     }
 
     // Dynamic fallback: show any poi/landmark layers we missed
@@ -360,10 +360,13 @@ class MapTheme {
         if (layer == null) continue;
         final id = layer.id;
         if (!poiPattern.hasMatch(id)) continue;
-        try {
-          await map.style.setStyleLayerProperty(id, 'visibility', 'visible');
-        } catch (_) {}
+        try { await map.style.setStyleLayerProperty(id, 'visibility', 'visible'); } catch (_) {}
+        try { await map.style.setStyleLayerProperty(id, 'icon-opacity', 1.0); } catch (_) {}
+        try { await map.style.setStyleLayerProperty(id, 'text-opacity', 1.0); } catch (_) {}
       }
     } catch (_) {}
   }
+
+  /// Alias matching the user-facing name.
+  static Future<void> enablePOILayers(mapbox.MapboxMap map) => applyPoiVisibility(map);
 }

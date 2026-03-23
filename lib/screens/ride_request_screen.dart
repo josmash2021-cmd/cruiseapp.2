@@ -50,6 +50,10 @@ class RideRequestScreen extends StatefulWidget {
   final DateTime? scheduledAt;
   final AirportSelection? airportSelection;
   final String? initialDropoffAddress;
+  final PlaceDetails? initialPickupDetails;
+  final PlaceDetails? initialDropoffDetails;
+  final String? initialPickupLabel;
+  final String? initialDropoffLabel;
   const RideRequestScreen({
     super.key,
     this.fastRide = false,
@@ -58,6 +62,10 @@ class RideRequestScreen extends StatefulWidget {
     this.scheduledAt,
     this.airportSelection,
     this.initialDropoffAddress,
+    this.initialPickupDetails,
+    this.initialDropoffDetails,
+    this.initialPickupLabel,
+    this.initialDropoffLabel,
   });
 
   @override
@@ -193,8 +201,29 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (widget.airportSelection != null) {
         _autoSetAirportPickup(widget.airportSelection!);
       }
-      // Auto-set dropoff from Quick Access address
-      if (widget.initialDropoffAddress != null) {
+      // Direct details available (e.g. from Choose on map) — use immediately
+      if (widget.initialPickupDetails != null) {
+        _ctrl.setPickup(
+          widget.initialPickupDetails!,
+          widget.initialPickupLabel ?? widget.initialPickupDetails!.address,
+        );
+      } else if (_userLocation != null && widget.initialDropoffDetails != null) {
+        _ctrl.setPickup(
+          PlaceDetails(
+            address: _currentAddress,
+            lat: _userLocation!.latitude,
+            lng: _userLocation!.longitude,
+          ),
+          _currentAddress,
+        );
+      }
+      if (widget.initialDropoffDetails != null) {
+        _ctrl.setDropoff(
+          widget.initialDropoffDetails!,
+          widget.initialDropoffLabel ?? widget.initialDropoffDetails!.address,
+        );
+      } else if (widget.initialDropoffAddress != null) {
+        // Fallback: re-geocode from address string
         _autoSetDropoff(widget.initialDropoffAddress!);
       }
     });

@@ -845,10 +845,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ctrl.attribution
             .updateSettings(mapbox.AttributionSettings(enabled: false));
         ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-        await _applyDarkNavyGoldTheme(ctrl);
         _miniMapAnnotMgr =
             await ctrl.annotations.createPointAnnotationManager();
         _updateMiniMapAnnotation();
+      },
+      onStyleLoadedListener: (_) async {
+        if (_miniMapController != null) {
+          await _applyDarkNavyGoldTheme(_miniMapController!);
+        }
       },
     );
   }
@@ -2649,6 +2653,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           initialDropoffAddress: dropoffLabel.isNotEmpty
               ? dropoffLabel
               : dropoffDetails.address,
+          initialPickupDetails: pickupDetails,
+          initialDropoffDetails: dropoffDetails,
+          initialPickupLabel: pickupLabel,
+          initialDropoffLabel: dropoffLabel,
         ),
       ),
     );

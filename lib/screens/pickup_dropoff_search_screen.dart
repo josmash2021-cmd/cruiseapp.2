@@ -486,7 +486,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         slideFromRightRoute(
           MapPickerScreen(
             initialLat: widget.initialPickupLat,
-            initialLng: widget.initialPickupLng,
+            initialLng: widget.initialLng,
           ),
         ),
       );
@@ -494,21 +494,22 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       final addr = result['address'] as String;
       final lat = result['lat'] as double;
       final lng = result['lng'] as double;
-      setState(() {
-        _dropoffDetails = PlaceDetails(address: addr, lat: lat, lng: lng);
-        _dropoffLabel = addr;
-        _dropoffCtrl.text = addr;
-        _suggestions = [];
+      
+      // Build pickup details from initial location
+      final pickupDetails = PlaceDetails(
+        address: widget.initialPickupText,
+        lat: widget.initialPickupLat ?? 0,
+        lng: widget.initialPickupLng ?? 0,
+      );
+      final dropoffDetails = PlaceDetails(address: addr, lat: lat, lng: lng);
+      
+      // Return results and let parent navigate to RideRequestScreen
+      Navigator.of(context).pop({
+        'pickup': pickupDetails,
+        'dropoff': dropoffDetails,
+        'pickupLabel': widget.initialPickupText,
+        'dropoffLabel': addr,
       });
-      if (_pickupDetails != null) {
-        _returnResults();
-      } else {
-        setState(() {
-          _editingPickup = true;
-          _editingDropoff = false;
-        });
-        _pickupFocus.requestFocus();
-      }
       return;
     }
 

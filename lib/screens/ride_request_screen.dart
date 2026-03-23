@@ -1299,11 +1299,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           initialPickupText: _currentAddress,
           initialPickupLat: _userLocation?.latitude,
           initialPickupLng: _userLocation?.longitude,
-          // Fire before the pop transition starts so the idle map is never
-          // visible during the animation back to this screen.
-          onWillReturn: () {
-            if (mounted) setState(() => _fetchingRoute = true);
-          },
         ),
       ),
     );

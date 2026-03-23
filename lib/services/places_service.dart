@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+import '../config/mapbox_config.dart';
 
 class PlaceSuggestion {
   final String description;
@@ -248,6 +249,18 @@ class PlacesService {
           lat: latitude,
           lon: longitude,
         ).catchError((_) => <PlaceSuggestion>[]),
+        // [5] Mapbox Search Box API (full address coverage)
+        _searchWithMapboxSearchBox(
+          cleanInput,
+          lat: latitude,
+          lon: longitude,
+        ).catchError((_) => <PlaceSuggestion>[]),
+        // [6] Mapbox Geocoding v5 (supplementary coverage)
+        _searchWithMapboxGeocoding(
+          cleanInput,
+          lat: latitude,
+          lon: longitude,
+        ).catchError((_) => <PlaceSuggestion>[]),
       ]);
 
       // Discard stale results
@@ -261,10 +274,12 @@ class PlacesService {
       merged.addAll(allResults[1]); // geocode (residential, streets)
       merged.addAll(allResults[0]); // all types (businesses, POIs)
 
-      // Sort OSM results by proximity if location available
+      // Sort OSM + Mapbox results by proximity if location available
       final osmCandidates = <PlaceSuggestion>[];
       osmCandidates.addAll(allResults[3]); // Nominatim
       osmCandidates.addAll(allResults[4]); // Photon
+      osmCandidates.addAll(allResults[5]); // Mapbox Search Box
+      osmCandidates.addAll(allResults[6]); // Mapbox Geocoding v5
       if (hasLocation && osmCandidates.isNotEmpty) {
         osmCandidates.sort((a, b) {
           final aHas = a.lat != null && a.lng != null;
@@ -369,8 +384,8 @@ class PlacesService {
   // ─── Place Details ─────────────────────────────────────────────────
 
   Future<PlaceDetails?> details(String placeId) async {
-    // Handle embedded-coordinate placeIds from Nominatim/Photon/exact
-    for (final prefix in ['exact:', 'osm:', 'photon:']) {
+    // Handle embedded-coordinate placeIds from Nominatim/Photon/exact/Mapbox geocoding
+    for (final prefix in ['exact:', 'osm:', 'photon:', 'mapbox:']) {
       if (placeId.startsWith(prefix)) {
         final raw = placeId.substring(prefix.length);
         final parts = raw.split(',');
@@ -383,6 +398,12 @@ class PlacesService {
         }
         return null;
       }
+    }
+
+    // Handle Mapbox Search Box suggestions (retrieve by mapbox_id)
+    if (placeId.startsWith('mapbox_id:')) {
+      final mapboxId = placeId.substring('mapbox_id:'.length);
+      return _mapboxRetrieve(mapboxId);
     }
 
     // Google Place Details — include session token to bundle billing
@@ -693,6 +714,157 @@ class PlacesService {
           .whereType<PlaceSuggestion>()
           .toList();
     } catch (_) {
+      return [];
+    }
+  }
+
+  // ─── Mapbox Search Box API (full address coverage) ─────────────────
+
+  String _mapboxSessionToken = _uuid.v4();
+
+  Future<List<PlaceSuggestion>> _searchWithMapboxSearchBox(
+    String input, {
+    double? lat,
+    double? lon,
+  }) async {
+    final params = <String, String>{
+      'q': input,
+      'country': 'US',
+      'types': 'address,street,place,neighborhood,postcode',
+      'language': 'en',
+      'limit': '10',
+      'session_token': _mapboxSessionToken,
+      'access_token': MapboxConfig.accessToken,
+    };
+    if (lat != null && lon != null) {
+      params['proximity'] = '$lon,$lat';
+    }
+
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/search/searchbox/v1/suggest',
+      params,
+    );
+
+    try {
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) {
+        debugPrint('⚠️ Mapbox Search Box: ${res.statusCode} ${res.body}');
+        return [];
+      }
+      final data = jsonDecode(res.body);
+      final suggestions = data['suggestions'] as List? ?? [];
+      return suggestions.map<PlaceSuggestion?>((s) {
+        final name = s['name']?.toString() ?? '';
+        final fullAddr = s['full_address']?.toString() ?? '';
+        final placeFmt = s['place_formatted']?.toString() ?? '';
+        final mapboxId = s['mapbox_id']?.toString() ?? '';
+        if (mapboxId.isEmpty) return null;
+
+        final description = fullAddr.isNotEmpty
+            ? fullAddr
+            : (placeFmt.isNotEmpty ? '$name, $placeFmt' : name);
+        if (description.isEmpty) return null;
+
+        return PlaceSuggestion(
+          description: description,
+          placeId: 'mapbox_id:$mapboxId',
+        );
+      }).whereType<PlaceSuggestion>().toList();
+    } catch (e) {
+      debugPrint('⚠️ Mapbox Search Box error: $e');
+      return [];
+    }
+  }
+
+  // ─── Mapbox Search Box Retrieve (get coordinates from mapbox_id) ───
+
+  Future<PlaceDetails?> _mapboxRetrieve(String mapboxId) async {
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/search/searchbox/v1/retrieve/$mapboxId',
+      {
+        'session_token': _mapboxSessionToken,
+        'access_token': MapboxConfig.accessToken,
+      },
+    );
+
+    try {
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      final features = data['features'] as List?;
+      if (features == null || features.isEmpty) return null;
+
+      final feature = features[0];
+      final coords = feature['geometry']?['coordinates'] as List?;
+      if (coords == null || coords.length < 2) return null;
+
+      final props = feature['properties'] as Map<String, dynamic>? ?? {};
+      final fullAddr = props['full_address']?.toString() ??
+          props['name']?.toString() ??
+          '';
+
+      // Reset Mapbox session after retrieval (end of session)
+      _mapboxSessionToken = _uuid.v4();
+
+      return PlaceDetails(
+        address: fullAddr,
+        lat: (coords[1] as num).toDouble(),
+        lng: (coords[0] as num).toDouble(),
+      );
+    } catch (e) {
+      debugPrint('⚠️ Mapbox Retrieve error: $e');
+      return null;
+    }
+  }
+
+  // ─── Mapbox Geocoding v5 (supplementary coverage) ──────────────────
+
+  Future<List<PlaceSuggestion>> _searchWithMapboxGeocoding(
+    String input, {
+    double? lat,
+    double? lon,
+  }) async {
+    final params = <String, String>{
+      'country': 'US',
+      'types': 'address,place,neighborhood,postcode',
+      'language': 'en',
+      'limit': '5',
+      'access_token': MapboxConfig.accessToken,
+    };
+    if (lat != null && lon != null) {
+      params['proximity'] = '$lon,$lat';
+    }
+
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/geocoding/v5/mapbox.places/${Uri.encodeComponent(input)}.json',
+      params,
+    );
+
+    try {
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) return [];
+      final data = jsonDecode(res.body);
+      final features = data['features'] as List? ?? [];
+      return features.map<PlaceSuggestion?>((f) {
+        final placeName = f['place_name']?.toString() ?? '';
+        final coords = f['geometry']?['coordinates'] as List?;
+        if (placeName.isEmpty || coords == null || coords.length < 2) {
+          return null;
+        }
+        final lng = (coords[0] as num).toDouble();
+        final lat = (coords[1] as num).toDouble();
+        return PlaceSuggestion(
+          description: placeName,
+          placeId: 'mapbox:$lat,$lng',
+          lat: lat,
+          lng: lng,
+        );
+      }).whereType<PlaceSuggestion>().toList();
+    } catch (e) {
+      debugPrint('⚠️ Mapbox Geocoding v5 error: $e');
       return [];
     }
   }

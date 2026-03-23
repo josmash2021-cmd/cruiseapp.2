@@ -148,6 +148,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // ── Driver Found overlay ──
   bool _driverFoundVisible = false;
   Timer? _driverFoundTimer;
+  AnimationController? _dfCheckCtrl;
+  AnimationController? _dfStaggerCtrl;
+  AnimationController? _dfShimmerCtrl;
+  int _dfMsgIndex = 0;
+  Timer? _dfMsgTimer;
 
   // Combined pin+label bitmaps (raw bytes + anchor offset)
   bool _showPinLabels = true;
@@ -919,6 +924,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _splashTimer?.cancel();
     _simulatedDriverTimer?.cancel();
     _driverFoundTimer?.cancel();
+    _dfCheckCtrl?.dispose();
+    _dfStaggerCtrl?.dispose();
+    _dfShimmerCtrl?.dispose();
+    _dfMsgTimer?.cancel();
     _goldDot.dispose();
     _ctrl.removeListener(_onStateChange);
     _ctrl.dispose();
@@ -1075,12 +1084,38 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         }
         break;
       case RiderPhase.driverAssigned:
-        // Show "Driver Found" overlay, then auto-navigate after 2.5s
+        // Show premium "Driver Found" overlay, then auto-navigate after 4s
         if (!_driverFoundVisible && !_navigatingToTracking) {
           _driverFoundVisible = true;
           HapticFeedback.heavyImpact();
+
+          // Init animation controllers
+          _dfCheckCtrl?.dispose();
+          _dfCheckCtrl = AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 900),
+          )..forward();
+          _dfStaggerCtrl?.dispose();
+          _dfStaggerCtrl = AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 1400),
+          )..forward();
+          _dfShimmerCtrl?.dispose();
+          _dfShimmerCtrl = AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 2000),
+          )..repeat();
+          _dfMsgIndex = 0;
+          _dfMsgTimer?.cancel();
+          _dfMsgTimer = Timer.periodic(
+            const Duration(milliseconds: 1200),
+            (_) {
+              if (mounted) setState(() => _dfMsgIndex = (_dfMsgIndex + 1) % 3);
+            },
+          );
+
           _driverFoundTimer?.cancel();
-          _driverFoundTimer = Timer(const Duration(milliseconds: 2500), () {
+          _driverFoundTimer = Timer(const Duration(milliseconds: 4000), () {
             if (!mounted) return;
             _ctrl.transitionToArriving();
           });
@@ -3655,6 +3690,21 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Widget _buildDriverFoundOverlay(AppColors c) {
     final driver = _ctrl.state.driver!;
     final firstName = driver.name.split(' ').first;
+    const bg = Color(0xFF0A0A1A);
+    const gold = Color(0xFFC8973A);
+    final stagger = _dfStaggerCtrl;
+    final checkCtrl = _dfCheckCtrl;
+    final shimmer = _dfShimmerCtrl;
+    if (stagger == null || checkCtrl == null || shimmer == null) {
+      return const SizedBox.shrink();
+    }
+
+    final messages = [
+      '${driver.vehicleColor} ${driver.vehicleMake} ${driver.vehicleModel}',
+      '⭐ ${driver.rating.toStringAsFixed(1)} · ${driver.vehiclePlate}',
+      '$firstName ${S.of(context).isOnTheWay}',
+    ];
+
     return Positioned.fill(
       child: IgnorePointer(
         ignoring: false,
@@ -3662,140 +3712,282 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           opacity: _driverFoundVisible ? 1.0 : 0.0,
           duration: const Duration(milliseconds: 400),
           child: Container(
-            color: Colors.black.withValues(alpha: 0.75),
-            child: Center(
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.8, end: 1.0),
-                duration: const Duration(milliseconds: 500),
-                curve: Curves.elasticOut,
-                builder: (_, scale, child) => Transform.scale(
-                  scale: scale,
-                  child: child,
-                ),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 36),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 28,
-                    vertical: 32,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1E1E28), Color(0xFF16161E)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(
-                      color: c.gold.withValues(alpha: 0.3),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: c.gold.withValues(alpha: 0.2),
-                        blurRadius: 40,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Checkmark icon
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          color: c.gold.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
+            color: bg,
+            child: SafeArea(
+              child: Column(
+                children: [
+                  const Spacer(flex: 2),
+
+                  // ── Animated checkmark ──
+                  AnimatedBuilder(
+                    animation: checkCtrl,
+                    builder: (_, __) {
+                      return Transform.scale(
+                        scale: Curves.elasticOut.transform(
+                          checkCtrl.value.clamp(0.0, 1.0),
                         ),
-                        child: Icon(
-                          Icons.check_rounded,
-                          color: c.gold,
-                          size: 36,
+                        child: CustomPaint(
+                          size: const Size(72, 72),
+                          painter: _CheckmarkPainter(
+                            progress: checkCtrl.value,
+                            color: gold,
+                          ),
                         ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ── "Driver Found!" with shimmer ──
+                  FadeTransition(
+                    opacity: CurvedAnimation(
+                      parent: stagger,
+                      curve: const Interval(0.15, 0.45),
+                    ),
+                    child: AnimatedBuilder(
+                      animation: shimmer,
+                      builder: (_, child) => ShaderMask(
+                        shaderCallback: (bounds) => LinearGradient(
+                          colors: const [gold, Colors.white, gold],
+                          stops: [
+                            (shimmer.value - 0.3).clamp(0.0, 1.0),
+                            shimmer.value,
+                            (shimmer.value + 0.3).clamp(0.0, 1.0),
+                          ],
+                        ).createShader(bounds),
+                        blendMode: BlendMode.srcIn,
+                        child: child,
                       ),
-                      const SizedBox(height: 20),
-                      Text(
+                      child: Text(
                         S.of(context).driverFound,
                         style: const TextStyle(
-                          fontSize: 22,
+                          fontSize: 28,
                           fontWeight: FontWeight.w800,
                           color: Colors.white,
-                          letterSpacing: -0.3,
+                          letterSpacing: 1.5,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '$firstName ${S.of(context).isOnTheWay}',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white.withValues(alpha: 0.6),
-                        ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // ── Subtitle ──
+                  FadeTransition(
+                    opacity: CurvedAnimation(
+                      parent: stagger,
+                      curve: const Interval(0.2, 0.5),
+                    ),
+                    child: Text(
+                      '$firstName ${S.of(context).isOnTheWay}',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withValues(alpha: 0.6),
                       ),
-                      const SizedBox(height: 20),
-                      // Vehicle info pill
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
+                    ),
+                  ),
+
+                  const Spacer(),
+
+                  // ── Driver info card ──
+                  SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.25),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: stagger,
+                      curve: const Interval(0.3, 0.7, curve: Curves.easeOutCubic),
+                    )),
+                    child: FadeTransition(
+                      opacity: CurvedAnimation(
+                        parent: stagger,
+                        curve: const Interval(0.3, 0.6),
+                      ),
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 28),
+                        padding: const EdgeInsets.all(22),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(14),
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(22),
                           border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.08),
+                            color: gold.withValues(alpha: 0.25),
                           ),
                         ),
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              Icons.directions_car_rounded,
-                              color: c.gold,
-                              size: 18,
+                            // Driver avatar
+                            Container(
+                              width: 60,
+                              height: 60,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: gold.withValues(alpha: 0.15),
+                                border: Border.all(
+                                  color: gold.withValues(alpha: 0.4),
+                                  width: 2,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  firstName.isNotEmpty
+                                      ? firstName[0].toUpperCase()
+                                      : 'D',
+                                  style: const TextStyle(
+                                    color: gold,
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${driver.vehicleColor} ${driver.vehicleMake} ${driver.vehicleModel}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white70,
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    driver.name,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.star_rounded,
+                                          color: gold, size: 15),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        driver.rating.toStringAsFixed(1),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      if (driver.totalTrips > 0) ...[
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          '${driver.totalTrips} trips',
+                                          style: TextStyle(
+                                            color: Colors.white.withValues(alpha: 0.5),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  // Vehicle info
+                                  Text(
+                                    '${driver.vehicleColor} ${driver.vehicleMake} ${driver.vehicleModel}',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.55),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  // License plate pill
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(alpha: 0.15),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      driver.vehiclePlate,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 1.8,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      // Rating + plate
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star_rounded, color: c.gold, size: 16),
-                          const SizedBox(width: 4),
-                          Text(
-                            driver.rating.toStringAsFixed(1),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Text(
-                            driver.vehiclePlate,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white.withValues(alpha: 0.5),
-                              letterSpacing: 1.0,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+
+                  const SizedBox(height: 18),
+
+                  // ── ETA pill (bounce in) ──
+                  SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.4),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: stagger,
+                      curve: const Interval(0.5, 0.85, curve: Curves.easeOutCubic),
+                    )),
+                    child: FadeTransition(
+                      opacity: CurvedAnimation(
+                        parent: stagger,
+                        curve: const Interval(0.5, 0.75),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: gold.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(30),
+                          border: Border.all(
+                            color: gold.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 350),
+                          child: Text(
+                            messages[_dfMsgIndex],
+                            key: ValueKey(_dfMsgIndex),
+                            style: const TextStyle(
+                              color: gold,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const Spacer(),
+
+                  // ── Gold progress bar ──
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 64),
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0.0, end: 1.0),
+                      duration: const Duration(milliseconds: 3800),
+                      curve: Curves.easeInOut,
+                      builder: (_, value, __) => ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          value: value,
+                          backgroundColor: Colors.white10,
+                          valueColor: const AlwaysStoppedAnimation(gold),
+                          minHeight: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const Spacer(flex: 2),
+                ],
               ),
             ),
           ),
@@ -3811,6 +4003,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _splashTimer = null;
     _driverFoundTimer?.cancel();
     _driverFoundTimer = null;
+    _dfCheckCtrl?.dispose();
+    _dfCheckCtrl = null;
+    _dfStaggerCtrl?.dispose();
+    _dfStaggerCtrl = null;
+    _dfShimmerCtrl?.dispose();
+    _dfShimmerCtrl = null;
+    _dfMsgTimer?.cancel();
+    _dfMsgTimer = null;
     _searchStatusTimer?.cancel();
     _searchStatusTimer = null;
     _searchElapsedTimer?.cancel();
@@ -3928,4 +4128,66 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       ),
     );
   }
+}
+
+/// Draws a gold circle + animated checkmark tick.
+class _CheckmarkPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  _CheckmarkPainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final r = size.width / 2;
+
+    // Circle fill
+    final circlePaint = Paint()..color = color.withValues(alpha: 0.12);
+    canvas.drawCircle(center, r * progress.clamp(0.0, 1.0), circlePaint);
+
+    // Circle border
+    final borderPaint = Paint()
+      ..color = color.withValues(alpha: (progress * 0.6).clamp(0.0, 0.6))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+    canvas.drawCircle(center, r, borderPaint);
+
+    // Checkmark (draws after first 35% of animation)
+    final checkProgress = ((progress - 0.35) / 0.65).clamp(0.0, 1.0);
+    if (checkProgress > 0) {
+      final path = Path();
+      final p1 = Offset(size.width * 0.28, size.height * 0.52);
+      final p2 = Offset(size.width * 0.44, size.height * 0.68);
+      final p3 = Offset(size.width * 0.72, size.height * 0.35);
+
+      // First leg
+      final leg1 = ((checkProgress) / 0.5).clamp(0.0, 1.0);
+      path.moveTo(p1.dx, p1.dy);
+      path.lineTo(
+        p1.dx + (p2.dx - p1.dx) * leg1,
+        p1.dy + (p2.dy - p1.dy) * leg1,
+      );
+
+      // Second leg
+      if (checkProgress > 0.5) {
+        final leg2 = ((checkProgress - 0.5) / 0.5).clamp(0.0, 1.0);
+        path.lineTo(
+          p2.dx + (p3.dx - p2.dx) * leg2,
+          p2.dy + (p3.dy - p2.dy) * leg2,
+        );
+      }
+
+      final checkPaint = Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.5
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+      canvas.drawPath(path, checkPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CheckmarkPainter old) =>
+      old.progress != progress || old.color != color;
 }

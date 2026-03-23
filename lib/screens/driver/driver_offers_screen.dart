@@ -608,117 +608,370 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
 
   Widget _offerCard(RideOffer offer) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-        boxShadow: const [
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF2A2A35),
+            const Color(0xFF1E1E28),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: _gold.withValues(alpha: 0.3),
+          width: 1.5,
+        ),
+        boxShadow: [
+          // Main shadow
           BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 12,
-            offset: Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+          // Gold glow
+          BoxShadow(
+            color: _gold.withValues(alpha: 0.15),
+            blurRadius: 30,
+            offset: const Offset(0, 4),
+            spreadRadius: 2,
+          ),
+          // Facebook-style 3D depth shadow
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Fare header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
             decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.08),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
-              ),
+              color: Colors.white.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(20),
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  '\$${offer.fareUsd.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: _gold,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const Spacer(),
+                // Header with fare - UberX style
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    offer.vehicleType,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        _gold.withValues(alpha: 0.15),
+                        _gold.withValues(alpha: 0.05),
+                      ],
                     ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Addresses
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Dots/line indicator
-                Column(
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: const BoxDecoration(
-                        color: _green,
-                        shape: BoxShape.circle,
+                    border: Border(
+                      bottom: BorderSide(
+                        color: _gold.withValues(alpha: 0.2),
+                        width: 1,
                       ),
                     ),
-                    Container(width: 2, height: 28, color: Colors.white24),
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: _red,
-                        borderRadius: BorderRadius.circular(2),
+                  ),
+                  child: Row(
+                    children: [
+                      // Vehicle icon badge
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              _gold.withValues(alpha: 0.3),
+                              _gold.withValues(alpha: 0.1),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _gold.withValues(alpha: 0.4),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _gold.withValues(alpha: 0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.local_taxi_rounded,
+                          color: _gold,
+                          size: 24,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              offer.vehicleType,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.7),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '\$${offer.fareUsd.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                color: _gold,
+                                fontSize: 32,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Exclusive badge like UberX
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              _gold.withValues(alpha: 0.25),
+                              _gold.withValues(alpha: 0.1),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: _gold.withValues(alpha: 0.4),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.star_rounded,
+                              color: _gold,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Exclusivo',
+                              style: TextStyle(
+                                color: _gold,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 12),
-                // Addresses text
-                Expanded(
-                  child: Column(
+                // Addresses section
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        offer.pickupAddress,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      // Route indicator
+                      Column(
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: _green,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.3),
+                                width: 2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _green.withValues(alpha: 0.4),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            width: 2,
+                            height: 32,
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  _green.withValues(alpha: 0.6),
+                                  _red.withValues(alpha: 0.6),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(1),
+                            ),
+                          ),
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: _red,
+                              borderRadius: BorderRadius.circular(3),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.3),
+                                width: 2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _red.withValues(alpha: 0.4),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 18),
-                      Text(
-                        offer.dropoffAddress,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
+                      const SizedBox(width: 14),
+                      // Addresses
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _addressRow(
+                              offer.pickupAddress,
+                              '${offer.distanceToPickupKm.toStringAsFixed(1)} mi',
+                              isPickup: true,
+                            ),
+                            const SizedBox(height: 20),
+                            _addressRow(
+                              offer.dropoffAddress,
+                              '${offer.estimatedMinutes} min',
+                              isPickup: false,
+                            ),
+                          ],
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                // Stats badges row
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                  child: Row(
+                    children: [
+                      _glassBadge(
+                        Icons.person_outline_rounded,
+                        offer.riderName,
+                      ),
+                      const SizedBox(width: 8),
+                      _glassBadge(
+                        Icons.star_rounded,
+                        '4.9',
+                      ),
+                    ],
+                  ),
+                ),
+                // Action buttons with 3D style
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  child: Row(
+                    children: [
+                      // Decline button
+                      Expanded(
+                        flex: 1,
+                        child: GestureDetector(
+                          onTap: () => _onReject(offer),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.white.withValues(alpha: 0.1),
+                                  Colors.white.withValues(alpha: 0.05),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.2),
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Text(
+                                'Rechazar',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Accept button
+                      Expanded(
+                        flex: 2,
+                        child: GestureDetector(
+                          onTap: () => _onAccept(offer),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  _gold,
+                                  const Color(0xFFD4B03A),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _gold.withValues(alpha: 0.4),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Text(
+                                'Aceptar',
+                                style: TextStyle(
+                                  color: Colors.black.withValues(alpha: 0.9),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -726,81 +979,90 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
               ],
             ),
           ),
-          // Stats row
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Row(
-              children: [
-                _statBadge(
-                  Icons.near_me_rounded,
-                  '${offer.distanceToPickupKm.toStringAsFixed(1)} km',
-                ),
-                const SizedBox(width: 10),
-                _statBadge(
-                  Icons.access_time_rounded,
-                  '${offer.estimatedMinutes} min',
-                ),
-                const SizedBox(width: 10),
-                _statBadge(Icons.person_outline_rounded, offer.riderName),
-              ],
+        ),
+      ),
+    );
+  }
+
+  Widget _addressRow(String address, String meta, {required bool isPickup}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            address,
+            style: TextStyle(
+              color: isPickup ? Colors.white : Colors.white.withValues(alpha: 0.7),
+              fontSize: 14,
+              fontWeight: isPickup ? FontWeight.w600 : FontWeight.w500,
+              height: 1.3,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: isPickup ? _green.withValues(alpha: 0.15) : _gold.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isPickup ? _green.withValues(alpha: 0.3) : _gold.withValues(alpha: 0.3),
+              width: 1,
             ),
           ),
-          // Action buttons
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-            child: Row(
-              children: [
-                // Reject
-                Expanded(
-                  flex: 2,
-                  child: OutlinedButton(
-                    onPressed: () => _onReject(offer),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white60,
-                      side: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.15),
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: Text(
-                      S.of(context).skipOffer,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                // Accept
-                Expanded(
-                  flex: 3,
-                  child: ElevatedButton(
-                    onPressed: () => _onAccept(offer),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _green,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: Text(
-                      S.of(context).acceptOffer,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+          child: Text(
+            meta,
+            style: TextStyle(
+              color: isPickup ? _green : _gold,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _glassBadge(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.12),
+            Colors.white.withValues(alpha: 0.06),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 14,
+            color: _gold.withValues(alpha: 0.9),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.9),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

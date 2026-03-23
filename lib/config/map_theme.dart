@@ -242,5 +242,128 @@ class MapTheme {
         } catch (_) {}
       }
     } catch (_) {}
+
+    // ── Apply golden roads override + POI visibility on every map ──────
+    await applyGoldenRoads(ctrl);
+    await applyPoiVisibility(ctrl);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Golden Roads — #C8973A on ALL road hierarchy levels
+  // ════════════════════════════════════════════════════════════════════════
+  static Future<void> applyGoldenRoads(mapbox.MapboxMap map) async {
+    const color = '#C8973A';
+    const layers = [
+      // Motorway / trunk
+      'road-motorway-trunk',
+      'road-motorway-trunk-case',
+      'road-motorway',
+      'road-trunk',
+      'road-motorway-case',
+      'road-trunk-case',
+      // Primary
+      'road-primary',
+      'road-primary-case',
+      // Secondary / tertiary
+      'road-secondary-tertiary',
+      'road-secondary-tertiary-case',
+      // Street / minor
+      'road-street',
+      'road-street-case',
+      // Alternate naming conventions
+      'motorway',
+      'motorway_link',
+      'trunk',
+      'trunk_link',
+      'primary',
+      'primary_link',
+      // Bridge variants
+      'bridge-motorway-trunk',
+      'bridge-motorway-trunk-case',
+      'bridge-primary',
+      'bridge-primary-case',
+      'bridge-secondary-tertiary',
+      'bridge-secondary-tertiary-case',
+      'bridge-street',
+      'bridge-street-case',
+      // Tunnel variants
+      'tunnel-motorway-trunk',
+      'tunnel-motorway-trunk-case',
+      'tunnel-primary',
+      'tunnel-primary-case',
+      'tunnel-secondary-tertiary',
+      'tunnel-secondary-tertiary-case',
+      'tunnel-street',
+      'tunnel-street-case',
+      // Links
+      'road-motorway-trunk-link',
+      'road-primary-link',
+      'road-secondary-tertiary-link',
+      'bridge-motorway-trunk-link',
+      'bridge-primary-link',
+      'bridge-secondary-tertiary-link',
+      'tunnel-motorway-trunk-link',
+      'tunnel-primary-link',
+      'tunnel-secondary-tertiary-link',
+    ];
+    for (final layerId in layers) {
+      try {
+        await map.style.setStyleLayerProperty(layerId, 'line-color', color);
+      } catch (_) {}
+    }
+
+    // Dynamic fallback: apply golden to any road-like layer we missed
+    try {
+      final allLayers = await map.style.getStyleLayers();
+      final roadPattern = RegExp(
+        r'(road|motorway|trunk|highway|primary|secondary|tertiary|street|bridge-.*road|tunnel-.*road)',
+        caseSensitive: false,
+      );
+      for (final layer in allLayers) {
+        if (layer == null) continue;
+        final id = layer.id;
+        if (!roadPattern.hasMatch(id)) continue;
+        if (id.contains('label') || id.contains('shield') || id.contains('number')) continue;
+        try {
+          await map.style.setStyleLayerProperty(id, 'line-color', color);
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // POI / Business Icons — make visible on all maps
+  // ════════════════════════════════════════════════════════════════════════
+  static Future<void> applyPoiVisibility(mapbox.MapboxMap map) async {
+    const layers = [
+      'poi-label',
+      'poi',
+      'place-of-worship',
+      'poi-scalerank1',
+      'poi-scalerank2',
+      'poi-scalerank3',
+      'poi-scalerank4',
+      'points-of-interest',
+      'landmark-icon',
+    ];
+    for (final layerId in layers) {
+      try {
+        await map.style.setStyleLayerProperty(layerId, 'visibility', 'visible');
+      } catch (_) {}
+    }
+
+    // Dynamic fallback: show any poi/landmark layers we missed
+    try {
+      final allLayers = await map.style.getStyleLayers();
+      final poiPattern = RegExp(r'(poi|point.?of.?interest|landmark)', caseSensitive: false);
+      for (final layer in allLayers) {
+        if (layer == null) continue;
+        final id = layer.id;
+        if (!poiPattern.hasMatch(id)) continue;
+        try {
+          await map.style.setStyleLayerProperty(id, 'visibility', 'visible');
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../config/page_transitions.dart';
@@ -115,46 +116,92 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   }
 
   /// Attaches a Firestore query listener for verifications where userId matches.
-  /// Works regardless of document ID format used by the backend.
-  void _attachFirestoreListener() {
-    UserSession.getUser().then((user) {
-      final userId = user?['userId'];
-      if (userId == null || userId.isEmpty || !mounted) return;
-      final userIdInt = int.tryParse(userId) ?? 0;
-      if (userIdInt <= 0) return;
-      _firestoreSubscription = FirebaseFirestore.instance
-          .collection('verifications')
-          .where('userId', isEqualTo: userIdInt)
-          .snapshots()
-          .listen((snapshot) {
-        if (!mounted) return;
-        for (final doc in snapshot.docs) {
-          final data = doc.data();
-          final status = data['status'] as String? ?? '';
-          if (status == 'approved' && _status != 'approved') {
-            _pollTimer?.cancel();
-            LocalDataService.setDriverApprovalStatus('approved');
-            setState(() => _status = 'approved');
-            _approvedCtrl.forward();
-            // Auto-navigate to DriverHomeScreen after brief animation
-            Future.delayed(const Duration(milliseconds: 1200), () {
-              if (mounted) _enterApp();
-            });
-            return;
-          } else if (status == 'rejected' && _status != 'rejected') {
-            _pollTimer?.cancel();
-            final reason = data['reason'] as String? ?? S.of(context).applicationNotApproved;
-            LocalDataService.setDriverApprovalStatus('rejected');
-            setState(() {
-              _status = 'rejected';
-              _rejectionReason = reason;
-            });
-            return;
-          }
+  /// Ensures Firebase Auth is available first (Firestore rules require auth).
+  void _attachFirestoreListener() async {
+    try {
+      // Firestore security rules require authentication
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+    } catch (e) {
+      debugPrint('[PendingReview] Firebase Auth failed: $e');
+      return; // polling still covers this case
+    }
+
+    final user = await UserSession.getUser();
+    final userId = user?['userId'];
+    if (userId == null || userId.isEmpty || !mounted) return;
+    final userIdInt = int.tryParse(userId) ?? 0;
+    if (userIdInt <= 0) return;
+
+    // Listen by query (works regardless of doc ID format)
+    _firestoreSubscription = FirebaseFirestore.instance
+        .collection('verifications')
+        .where('userId', isEqualTo: userIdInt)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final status = data['status'] as String? ??
+            data['verificationStatus'] as String? ??
+            '';
+        final isApproved = status == 'approved' ||
+            data['isVerified'] == true ||
+            data['isApproved'] == true;
+        if (isApproved && _status != 'approved') {
+          _pollTimer?.cancel();
+          LocalDataService.setDriverApprovalStatus('approved');
+          setState(() => _status = 'approved');
+          _approvedCtrl.forward();
+          Future.delayed(const Duration(milliseconds: 1200), () {
+            if (mounted) _enterApp();
+          });
+          return;
+        } else if (status == 'rejected' && _status != 'rejected') {
+          _pollTimer?.cancel();
+          final reason = data['reason'] as String? ??
+              data['verificationReason'] as String? ??
+              S.of(context).applicationNotApproved;
+          LocalDataService.setDriverApprovalStatus('rejected');
+          setState(() {
+            _status = 'rejected';
+            _rejectionReason = reason;
+          });
+          return;
         }
-      }, onError: (_) {
-        // Firestore unavailable — polling still covers this case
-      });
+      }
+
+      // Also check the drivers collection directly (Dispatch writes here too)
+      if (snapshot.docs.isEmpty || _status == 'pending') {
+        _checkDriversCollection(userIdInt);
+      }
+    }, onError: (e) {
+      debugPrint('[PendingReview] Firestore listener error: $e');
+    });
+  }
+
+  /// Fallback: check the drivers collection directly
+  void _checkDriversCollection(int userIdInt) {
+    final docId = 'sql_$userIdInt';
+    FirebaseFirestore.instance
+        .collection('drivers')
+        .doc(docId)
+        .get()
+        .then((doc) {
+      if (!mounted || !doc.exists) return;
+      final data = doc.data() ?? {};
+      final verified = data['isVerified'] == true ||
+          data['verificationStatus'] == 'approved';
+      if (verified && _status != 'approved') {
+        _pollTimer?.cancel();
+        LocalDataService.setDriverApprovalStatus('approved');
+        setState(() => _status = 'approved');
+        _approvedCtrl.forward();
+        Future.delayed(const Duration(milliseconds: 1200), () {
+          if (mounted) _enterApp();
+        });
+      }
     }).catchError((_) {});
   }
 

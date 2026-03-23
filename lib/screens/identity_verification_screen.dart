@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
@@ -190,53 +191,70 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
 
   /// Firestore real-time listener — queries by userId field, fires instantly
   /// when Dispatch approves/rejects regardless of the document ID format.
-  void _attachFirestoreListener() {
-    UserSession.getUser().then((user) {
-      final userId = user?['userId'];
-      if (userId == null || userId.isEmpty || !mounted) return;
-      final userIdInt = int.tryParse(userId) ?? 0;
-      if (userIdInt <= 0) return;
-      _firestoreSubscription = FirebaseFirestore.instance
-          .collection('verifications')
-          .where('userId', isEqualTo: userIdInt)
-          .snapshots()
-          .listen((snapshot) {
-        if (!mounted) return;
-        for (final doc in snapshot.docs) {
-          final data = doc.data();
-          final status = data['status'] as String? ?? '';
-          if (status == 'approved' && !_verified) {
-            _pollTimer?.cancel();
-            LocalDataService.setIdentityVerified('license');
-            UserSession.updateField('isVerified', 'true');
-            UserSession.updateField('verificationStatus', 'approved');
-            // Update profile photo from Firestore (backend-hosted URL)
-            final photoUrl = data['profilePhotoUrl'] as String? ??
-                data['selfieUrl'] as String?;
-            if (photoUrl != null && photoUrl.isNotEmpty) {
-              UserSession.updateField('photo', photoUrl);
-            }
-            _checkCtrl.forward();
-            setState(() {
-              _verified = true;
-              _step = 2;
-            });
-            return;
-          } else if (status == 'rejected' && _step != 4) {
-            _pollTimer?.cancel();
-            final reason = data['reason'] as String? ?? 'Verification was not approved';
-            UserSession.updateField('verificationStatus', 'rejected');
-            setState(() {
-              _rejectionReason = reason;
-              _step = 4;
-            });
-            return;
+  /// Ensures Firebase Auth is available first (Firestore rules require auth).
+  void _attachFirestoreListener() async {
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+    } catch (e) {
+      debugPrint('[IdentityVerification] Firebase Auth failed: $e');
+      return; // polling still covers this case
+    }
+
+    final user = await UserSession.getUser();
+    final userId = user?['userId'];
+    if (userId == null || userId.isEmpty || !mounted) return;
+    final userIdInt = int.tryParse(userId) ?? 0;
+    if (userIdInt <= 0) return;
+
+    _firestoreSubscription = FirebaseFirestore.instance
+        .collection('verifications')
+        .where('userId', isEqualTo: userIdInt)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final status = data['status'] as String? ??
+            data['verificationStatus'] as String? ??
+            '';
+        final isApproved = status == 'approved' ||
+            data['isVerified'] == true ||
+            data['isApproved'] == true;
+        if (isApproved && !_verified) {
+          _pollTimer?.cancel();
+          LocalDataService.setIdentityVerified('license');
+          UserSession.updateField('isVerified', 'true');
+          UserSession.updateField('verificationStatus', 'approved');
+          // Update profile photo from Firestore (backend-hosted URL)
+          final photoUrl = data['profilePhotoUrl'] as String? ??
+              data['selfieUrl'] as String?;
+          if (photoUrl != null && photoUrl.isNotEmpty) {
+            UserSession.updateField('photo', photoUrl);
           }
+          _checkCtrl.forward();
+          setState(() {
+            _verified = true;
+            _step = 2;
+          });
+          return;
+        } else if (status == 'rejected' && _step != 4) {
+          _pollTimer?.cancel();
+          final reason = data['reason'] as String? ??
+              data['verificationReason'] as String? ??
+              'Verification was not approved';
+          UserSession.updateField('verificationStatus', 'rejected');
+          setState(() {
+            _rejectionReason = reason;
+            _step = 4;
+          });
+          return;
         }
-      }, onError: (_) {
-        // Firestore unavailable — polling still covers this case
-      });
-    }).catchError((_) {});
+      }
+    }, onError: (e) {
+      debugPrint('[IdentityVerification] Firestore listener error: $e');
+    });
   }
 
   void _startPolling() {

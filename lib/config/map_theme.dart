@@ -225,10 +225,10 @@ class MapTheme {
 
     // ── Dynamic fallback: enumerate all layers and style any motorway/trunk/highway we missed ──
     try {
-      final layersJson = await ctrl.style.getStyleLayers();
-      final layers = layersJson.layers ?? [];
+      final layers = await ctrl.style.getStyleLayers();
       final motorwayPattern = RegExp(r'(motorway|trunk|highway)', caseSensitive: false);
       for (final layer in layers) {
+        if (layer == null) continue;
         final id = layer.id;
         if (!motorwayPattern.hasMatch(id)) continue;
         // Skip casings, labels, and shields — they have their own rules

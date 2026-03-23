@@ -266,20 +266,20 @@ class PlacesService {
       // Discard stale results
       if (seq != _autocompleteSeq) return [];
 
-      // Merge: address-type results first (most relevant for house numbers),
-      // then geocode (streets/areas), then all-types (businesses/POIs),
+      // Merge: Mapbox Search Box first (best address coverage),
+      // then Mapbox Geocoding v5, then Google address results,
       // then OSM fallbacks.
       final merged = <PlaceSuggestion>[];
-      merged.addAll(allResults[2]); // address (exact street addresses)
-      merged.addAll(allResults[1]); // geocode (residential, streets)
-      merged.addAll(allResults[0]); // all types (businesses, POIs)
+      merged.addAll(allResults[5]); // Mapbox Search Box (primary — full address DB)
+      merged.addAll(allResults[6]); // Mapbox Geocoding v5 (supplementary)
+      merged.addAll(allResults[2]); // Google address (exact street addresses)
+      merged.addAll(allResults[1]); // Google geocode (residential, streets)
+      merged.addAll(allResults[0]); // Google all types (businesses, POIs)
 
-      // Sort OSM + Mapbox results by proximity if location available
+      // Sort OSM results by proximity if location available
       final osmCandidates = <PlaceSuggestion>[];
       osmCandidates.addAll(allResults[3]); // Nominatim
       osmCandidates.addAll(allResults[4]); // Photon
-      osmCandidates.addAll(allResults[5]); // Mapbox Search Box
-      osmCandidates.addAll(allResults[6]); // Mapbox Geocoding v5
       if (hasLocation && osmCandidates.isNotEmpty) {
         osmCandidates.sort((a, b) {
           final aHas = a.lat != null && a.lng != null;
@@ -748,12 +748,14 @@ class PlacesService {
 
     try {
       final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      debugPrint('SearchBox status: ${res.statusCode}');
       if (res.statusCode != 200) {
         debugPrint('⚠️ Mapbox Search Box: ${res.statusCode} ${res.body}');
         return [];
       }
       final data = jsonDecode(res.body);
       final suggestions = data['suggestions'] as List? ?? [];
+      debugPrint('SearchBox results: ${suggestions.length} suggestions');
       return suggestions.map<PlaceSuggestion?>((s) {
         final name = s['name']?.toString() ?? '';
         final fullAddr = s['full_address']?.toString() ?? '';

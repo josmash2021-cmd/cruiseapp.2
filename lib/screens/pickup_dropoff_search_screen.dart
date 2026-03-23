@@ -355,16 +355,19 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
 
             // ── Suggestions list ──
             Expanded(
-              child: _suggestions.isEmpty
-                  ? _buildRecentPlaces(c)
-                  : ListView.builder(
-                      padding: EdgeInsets.zero,
-                      itemCount: _suggestions.length,
-                      itemBuilder: (context, idx) {
-                        final s = _suggestions[idx];
-                        return _buildSuggestionTile(c, s);
-                      },
-                    ),
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.65),
+                child: _suggestions.isEmpty
+                    ? _buildRecentPlaces(c)
+                    : ListView.builder(
+                        padding: EdgeInsets.zero,
+                        itemCount: _suggestions.length,
+                        itemBuilder: (context, idx) {
+                          final s = _suggestions[idx];
+                          return _buildSuggestionTile(c, s);
+                        },
+                      ),
+              ),
             ),
           ],
         ),
@@ -624,10 +627,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
+                  color: Colors.black.withValues(alpha: 0.75),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: Colors.white.withValues(alpha: 0.15),
                   ),
                 ),
                 child: ListTile(
@@ -636,7 +639,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: c.surface,
+                      color: Colors.white.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(item.icon, size: 20, color: c.textSecondary),
@@ -646,12 +649,12 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: c.textPrimary,
+                      color: Colors.white,
                     ),
                   ),
                   subtitle: Text(
                     item.subtitle,
-                    style: TextStyle(fontSize: 13, color: c.textTertiary),
+                    style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.6)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

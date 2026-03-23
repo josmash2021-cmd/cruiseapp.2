@@ -373,8 +373,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   }
 
   /// Render a combined pin + label bitmap as a single image.
-  /// The pin appears on the LEFT and the label box on the RIGHT (horizontal layout).
-  /// This places the pin at the route endpoint with label beside it.
+  /// When [labelOnLeft] is false: pin on LEFT, label on RIGHT (pickup default).
+  /// When [labelOnLeft] is true:  label on LEFT, pin on RIGHT (dropoff default).
+  /// The returned anchor always points to the pin tip so it lands on the coordinate.
   Future<(Uint8List, Offset, Uint8List)> _buildPinWithLabel({
     required String text,
     bool isPickup = true,
@@ -429,21 +430,28 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         : 0.0;
     final labelW = hPad + dotSize + gap + textPainter.width + etaW + hPad + 10;
     const labelH = 95.0;
-    const pinLabelGap = 12.0; // Gap between pin and label
+    const pinLabelGap = 12.0;
 
     // ── Total canvas ──
-    // Horizontal layout: pin on left, label on right
     final totalW = pinSize + pinLabelGap + labelW;
     final totalH = math.max(pinSize, labelH);
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, totalW, totalH));
 
-    // Position pin at left, vertically centered
-    final double pinX = 0;
+    // ── Layout positions depending on labelOnLeft ──
+    final double pinX;
+    final double labelX;
+    if (labelOnLeft) {
+      // Label on LEFT, pin on RIGHT
+      labelX = 0;
+      pinX = labelW + pinLabelGap;
+    } else {
+      // Pin on LEFT, label on RIGHT
+      pinX = 0;
+      labelX = pinSize + pinLabelGap;
+    }
     final double pinY = (totalH - pinSize) / 2;
-    // Position label to the right of pin, vertically centered
-    final double labelX = pinSize + pinLabelGap;
     final double labelY = (totalH - labelH) / 2;
 
     // ── Draw pin ──
@@ -501,10 +509,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final img = await picture.toImage(totalW.ceil(), totalH.ceil());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
 
-    // Anchor: pin tip is at (pinX + pinSize/2, pinY + pinSize) — normalized to image dims
-    // The pin tip should land exactly on the route endpoint
+    // Anchor: pin tip is at (pinX + pinSize/2, pinY + pinSize) — normalized
     final anchorX = (pinX + pinSize / 2) / totalW;
-    final anchorY = (pinY + pinSize) / totalH; // Pin tip is at bottom of pin
+    final anchorY = (pinY + pinSize) / totalH;
 
     final rawBytes = bytes!.buffer.asUint8List();
     return (rawBytes, Offset(anchorX, anchorY), rawBytes);
@@ -1108,25 +1115,33 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (_pickupAnnot != null) { try { await mgr.delete(_pickupAnnot!); } catch (_) {} _pickupAnnot = null; }
     if (s.pickup != null) {
       Uint8List? bytes;
+      Offset? anchor;
       if (_showPinLabels && _pickupPinWithLabel != null) {
         bytes = _pickupPinWithLabel!.$1;
+        anchor = _pickupPinWithLabel!.$2;
       } else if (_pickupPinOnly != null) {
         bytes = _pickupPinOnly!.$1;
       } else {
         bytes = _goldPinIcon;
       }
       if (bytes != null) {
-        // anchorX for pin+label: pin tip may not be at horizontal center.
-        // Use iconOffset to shift so pin tip lands exactly at the coordinate.
-        final Offset? anchor = (_showPinLabels && _pickupPinWithLabel != null)
-            ? _pickupPinWithLabel!.$2
-            : null;
+        // Decode image to get pixel dimensions for offset calculation
+        final decoded = await decodeImageFromList(bytes);
+        final imgW = decoded.width.toDouble();
+        final imgH = decoded.height.toDouble();
+        // iconOffset: pixel shift from CENTER anchor to pin tip
+        // pin tip is at (anchor.dx * imgW, anchor.dy * imgH)
+        // center is at (imgW/2, imgH/2)
+        // offset = pinTip - center (in screen px, scaled by iconSize)
+        final scale = 0.85;
+        final ox = anchor != null ? (0.5 - anchor.dx) * imgW * scale : 0.0;
+        final oy = anchor != null ? (0.5 - anchor.dy) * imgH * scale : -(imgH * scale * 0.5);
         _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
           image: bytes,
-          iconSize: 0.85,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: anchor != null ? [(0.5 - anchor.dx), 0.0] : [0.0, 0.0],
+          iconSize: scale,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+          iconOffset: [ox, oy],
         ));
       }
     }
@@ -1135,23 +1150,28 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (_dropoffAnnot != null) { try { await mgr.delete(_dropoffAnnot!); } catch (_) {} _dropoffAnnot = null; }
     if (s.dropoff != null) {
       Uint8List? bytes;
+      Offset? anchor;
       if (_showPinLabels && _dropoffPinWithLabel != null) {
         bytes = _dropoffPinWithLabel!.$1;
+        anchor = _dropoffPinWithLabel!.$2;
       } else if (_dropoffPinOnly != null) {
         bytes = _dropoffPinOnly!.$1;
       } else {
         bytes = _goldPinIcon;
       }
       if (bytes != null) {
-        final Offset? anchor2 = (_showPinLabels && _dropoffPinWithLabel != null)
-            ? _dropoffPinWithLabel!.$2
-            : null;
+        final decoded = await decodeImageFromList(bytes);
+        final imgW = decoded.width.toDouble();
+        final imgH = decoded.height.toDouble();
+        final scale = 0.85;
+        final ox = anchor != null ? (0.5 - anchor.dx) * imgW * scale : 0.0;
+        final oy = anchor != null ? (0.5 - anchor.dy) * imgH * scale : -(imgH * scale * 0.5);
         _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
           image: bytes,
-          iconSize: 0.85,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: anchor2 != null ? [(0.5 - anchor2.dx), 0.0] : [0.0, 0.0],
+          iconSize: scale,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+          iconOffset: [ox, oy],
         ));
       }
     }

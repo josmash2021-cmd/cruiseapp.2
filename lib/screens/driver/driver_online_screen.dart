@@ -4310,6 +4310,10 @@ Widget _navHeader() {
     Color acceptBg,
     Color borderC,
   ) {
+    const luxGold = Color(0xFFD4AF37);
+    const deepBlack = Color(0xFF0A0A0A);
+    const mutedGray = Color(0xFF9A9A9A);
+
     // Parse offer data
     final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 4.8;
     final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
@@ -4331,195 +4335,225 @@ Widget _navHeader() {
     final tripDistMi = tripDistKm * 0.621371;
 
     // Cache per offer so we don't re-fetch on every rebuild
-    final offerId = (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_${pickupLng}').toString();
-    final mapFuture = _offerMapUrlCache.putIfAbsent(
+    final offerId = (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_$pickupLng').toString();
+    _offerMapUrlCache.putIfAbsent(
       offerId,
       () => _buildOfferMapUrl(_pos!, pickupLL, dropoffLL),
     );
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            // Semi-transparent dark — almost transparent, floating glass look
-            color: const Color(0xFF0D0D0D).withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.09),
-              width: 1,
-            ),
-            boxShadow: [
-              // Deep 3D lift shadow
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.55),
-                blurRadius: 36,
-                spreadRadius: -4,
-                offset: const Offset(0, 14),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.25),
-                blurRadius: 10,
-                spreadRadius: -2,
-                offset: const Offset(0, 4),
-              ),
-            ],
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: deepBlack,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: luxGold.withValues(alpha: 0.10),
+          width: 1,
+        ),
+        boxShadow: [
+          // Gold-tinted 3D shadow
+          BoxShadow(
+            color: luxGold.withValues(alpha: 0.15),
+            blurRadius: 28,
+            spreadRadius: -4,
+            offset: const Offset(0, 10),
           ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.60),
+            blurRadius: 32,
+            spreadRadius: -2,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Header: person icon + "Cruise" + Exclusive badge + dismiss ──
+            Row(
               children: [
-                // ── Vehicle type pill (centered) ──
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.directions_car_rounded,
-                          color: Colors.white.withValues(alpha: 0.85), size: 15),
-                      const SizedBox(width: 6),
-                      Text(
-                        vehicleType,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                // ── Fare (large, centered) ──
-                Text(
-                  '\$${fare.toStringAsFixed(2)}',
-                  style: const TextStyle(
+                Icon(Icons.person_rounded,
+                    color: luxGold, size: 18),
+                const SizedBox(width: 6),
+                const Text(
+                  'Cruise',
+                  style: TextStyle(
                     color: Colors.white,
-                    fontSize: 44,
-                    fontWeight: FontWeight.w900,
-                    height: 1.0,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
                   ),
                 ),
-                const SizedBox(height: 8),
-
-                // ── Star rating ──
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.star_rounded, color: _gold, size: 14),
-                    const SizedBox(width: 4),
-                    Text(
-                      rating.toStringAsFixed(2),
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: luxGold.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: luxGold.withValues(alpha: 0.25),
+                      width: 0.5,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // ── Divider ──
-                Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
-                const SizedBox(height: 16),
-
-                // ── Pickup row: driver → pickup ──
-                _uberAddressRow(
-                  icon: Icons.circle,
-                  iconColor: Colors.white,
-                  iconSize: 9,
-                  topLine: '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
-                  bottomLine: pickupAddr,
-                  showConnector: true,
-                  darkMode: true,
-                ),
-                const SizedBox(height: 2),
-                // ── Dropoff row: pickup → dropoff ──
-                _uberAddressRow(
-                  icon: Icons.square_rounded,
-                  iconColor: Colors.white,
-                  iconSize: 9,
-                  topLine: '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
-                  bottomLine: dropoffAddr,
-                  showConnector: false,
-                  darkMode: true,
-                ),
-
-                const SizedBox(height: 20),
-
-                // ── Action buttons ──
-                Row(
-                  children: [
-                    // Reject
-                    Expanded(
-                      child: SizedBox(
-                        height: 50,
-                        child: OutlinedButton(
-                          onPressed: () => _rejectOffer(offer),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.18),
-                              width: 1.5,
-                            ),
-                            backgroundColor: Colors.white.withValues(alpha: 0.05),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child: Text(
-                            S.of(context).reject,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
+                  ),
+                  child: Text(
+                    vehicleType,
+                    style: const TextStyle(
+                      color: luxGold,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.4,
                     ),
-                    const SizedBox(width: 12),
-                    // Accept
-                    Expanded(
-                      flex: 2,
-                      child: SizedBox(
-                        height: 50,
-                        child: ElevatedButton(
-                          onPressed: () => _acceptOffer(offer),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _gold,
-                            foregroundColor: Colors.black,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child: Text(
-                            S.of(context).accept,
-                            style: const TextStyle(
-                              color: Colors.black,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => _rejectOffer(offer),
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      shape: BoxShape.circle,
                     ),
-                  ],
+                    child: Icon(Icons.close_rounded,
+                        color: Colors.white.withValues(alpha: 0.40), size: 15),
+                  ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 16),
+
+            // ── Fare (large, centered) ──
+            Text(
+              '\$${fare.toStringAsFixed(2)}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 40,
+                fontWeight: FontWeight.w900,
+                height: 1.0,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // ── Star rating ──
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.star_rounded, color: luxGold, size: 15),
+                const SizedBox(width: 4),
+                Text(
+                  rating.toStringAsFixed(2),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // ── Gold divider ──
+            Container(
+              height: 1,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    luxGold.withValues(alpha: 0.0),
+                    luxGold.withValues(alpha: 0.25),
+                    luxGold.withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Pickup row: driver → pickup ──
+            _uberAddressRow(
+              icon: Icons.circle,
+              iconColor: luxGold,
+              iconSize: 9,
+              topLine: '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
+              bottomLine: pickupAddr,
+              showConnector: true,
+              darkMode: true,
+            ),
+            const SizedBox(height: 2),
+            // ── Dropoff row: pickup → dropoff ──
+            _uberAddressRow(
+              icon: Icons.square_rounded,
+              iconColor: mutedGray,
+              iconSize: 9,
+              topLine: '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
+              bottomLine: dropoffAddr,
+              showConnector: false,
+              darkMode: true,
+            ),
+
+            // ── Long trip pill (conditional) ──
+            if (tripEta >= 45) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: luxGold.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: luxGold.withValues(alpha: 0.20),
+                    width: 0.5,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.route_rounded,
+                        color: luxGold, size: 14),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Long trip ($tripEta+ min)',
+                      style: const TextStyle(
+                        color: luxGold,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 18),
+
+            // ── Accept button (full-width gold) ──
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: () => _acceptOffer(offer),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: luxGold,
+                  foregroundColor: Colors.black,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: Text(
+                  S.of(context).accept,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -4539,7 +4573,7 @@ Widget _navHeader() {
         : const Color(0xFF666666);
     final mainColor = darkMode ? Colors.white : const Color(0xFF111111);
     final lineColor = darkMode
-        ? Colors.white.withValues(alpha: 0.20)
+        ? Colors.white.withValues(alpha: 0.15)
         : const Color(0xFFCCCCCC);
 
     return Row(

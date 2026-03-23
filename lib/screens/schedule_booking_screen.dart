@@ -251,6 +251,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
         geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLatLng!.longitude, _pickupLatLng!.latitude)),
         iconColor: const Color(0xFFE8C547).toARGB32(),
         iconSize: 1.2,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
       _markerAnnots.add(a);
     }
@@ -260,6 +261,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
         geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLatLng!.longitude, _dropoffLatLng!.latitude)),
         iconColor: const Color(0xFFEA4335).toARGB32(),
         iconSize: 1.2,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
       _markerAnnots.add(a);
     }

@@ -389,6 +389,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       geometry: geom,
       image: pinBytes,
       iconSize: 1.0,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
+      iconOffset: [0, 0],
     ));
   }
 
@@ -559,21 +561,41 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   }
 
   Future<Uint8List?> _buildDestPin() async {
-    const double s = 80;
+    const double w = 60;
+    const double h = 80;
     final rec = ui.PictureRecorder();
-    final c   = Canvas(rec, const Rect.fromLTWH(0, 0, s, s));
+    final c = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
+    const cx = w / 2;
+    const r = 18.0;
+    const headCY = r + 6;
+    const tipY = h;
+
+    // ── Teardrop path (tip at exact bottom) ──
+    final path = Path()
+      ..moveTo(cx - r, headCY)
+      ..arcTo(
+        Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
+        math.pi, -math.pi, false,
+      )
+      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 3, cx, tipY)
+      ..cubicTo(cx - r * 0.22, tipY - 3, cx - r, headCY + r, cx - r, headCY)
+      ..close();
 
     // Shadow
-    c.drawCircle(const Offset(s / 2, s / 2 + 3), 18,
+    c.drawPath(
+      path.shift(const Offset(0, 2)),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.35)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8));
-    // White bg
-    c.drawCircle(const Offset(s / 2, s / 2), 18, Paint()..color = Colors.white);
+        ..color = Colors.black.withValues(alpha: 0.30)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
+    // Gold teardrop fill
+    c.drawPath(path, Paint()..color = _gold);
+    // White head circle
+    c.drawCircle(const Offset(cx, headCY), r, Paint()..color = Colors.white);
     // Gold inner
-    c.drawCircle(const Offset(s / 2, s / 2), 12, Paint()..color = _gold);
+    c.drawCircle(const Offset(cx, headCY), r - 5, Paint()..color = _gold);
 
-    final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
+    final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
     return bytes?.buffer.asUint8List();
   }

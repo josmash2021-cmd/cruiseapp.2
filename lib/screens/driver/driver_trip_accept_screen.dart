@@ -463,6 +463,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         )),
         image: pickupBytes,
         iconSize: 1.0,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 0],
       ));
     }
 
@@ -475,6 +477,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         )),
         image: dropoffBytes,
         iconSize: 1.0,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 0],
       ));
     }
 
@@ -511,86 +515,70 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Future<Uint8List?> _buildDropoffPin() async => _buildGoldPin(isPickup: false);
 
   Future<Uint8List?> _buildGoldPin({required bool isPickup}) async {
-    const double size = 100;
+    const double w = 100;
+    const double h = 130;
     final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
-    const cx = size / 2;
-    const cy = size / 2;
-    const r = size * 0.38;
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
+    const cx = w / 2;
+    const r = 30.0;
+    const headCY = r + 8;
+    const tipY = h;
     const gold = Color(0xFFE8C547);
 
-    // Drop shadow
-    canvas.drawCircle(
-      const Offset(cx, cy + 2),
-      r + 3,
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.35)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
-    );
+    // ── Teardrop path (tip at exact bottom of canvas) ──
+    final path = Path()
+      ..moveTo(cx - r, headCY)
+      ..arcTo(
+        Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
+        math.pi, -math.pi, false,
+      )
+      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 4, cx, tipY)
+      ..cubicTo(cx - r * 0.22, tipY - 4, cx - r, headCY + r, cx - r, headCY)
+      ..close();
 
-    if (isPickup) {
-      // Gold circle for pickup
-      canvas.drawCircle(const Offset(cx, cy), r, Paint()..color = gold);
-      canvas.drawCircle(
-        const Offset(cx, cy),
-        r,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..color = Colors.white.withValues(alpha: 0.25),
-      );
-    } else {
-      // Gold rounded square for dropoff
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: const Offset(cx, cy),
-          width: r * 2,
-          height: r * 2,
-        ),
-        Radius.circular(r * 0.28),
-      );
-      canvas.drawRRect(rect, Paint()..color = gold);
-      canvas.drawRRect(
-        rect,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..color = Colors.white.withValues(alpha: 0.25),
-      );
-    }
-
-    // Inner highlight
-    canvas.drawCircle(
-      Offset(cx - r * 0.2, cy - r * 0.2),
-      r * 0.5,
+    // Shadow
+    canvas.drawPath(
+      path.shift(const Offset(0, 3)),
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.15)
+        ..color = Colors.black.withValues(alpha: 0.30)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
+    // Gold fill
+    canvas.drawPath(path, Paint()..color = gold);
+    // White border
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = Colors.white.withValues(alpha: 0.35),
+    );
+    // Highlight
+    canvas.drawCircle(
+      Offset(cx - r * 0.25, headCY - r * 0.25),
+      r * 0.4,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.25)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
 
-    // White center icon (simple dot for pickup, flag for dropoff)
-    final iconPaint = Paint()
-      ..color = Colors.white
-      ..isAntiAlias = true;
-    const s = size * 0.13;
-
+    // White center icon
+    final iconPaint = Paint()..color = Colors.white..isAntiAlias = true;
     if (isPickup) {
-      // White dot center for pickup
-      canvas.drawCircle(const Offset(cx, cy), s * 0.6, iconPaint);
+      canvas.drawCircle(const Offset(cx, headCY), r * 0.22, iconPaint);
     } else {
-      // Simple flag icon for dropoff
       final flagPath = Path()
-        ..moveTo(cx - s * 0.5, cy - s * 0.8)
-        ..lineTo(cx + s * 0.8, cy - s * 0.5)
-        ..lineTo(cx - s * 0.2, cy - s * 0.2)
-        ..lineTo(cx - s * 0.2, cy + s * 0.8)
-        ..lineTo(cx - s * 0.5, cy + s * 0.8)
+        ..moveTo(cx - r * 0.2, headCY - r * 0.35)
+        ..lineTo(cx + r * 0.35, headCY - r * 0.2)
+        ..lineTo(cx - r * 0.08, headCY - r * 0.05)
+        ..lineTo(cx - r * 0.08, headCY + r * 0.35)
+        ..lineTo(cx - r * 0.2, headCY + r * 0.35)
         ..close();
       canvas.drawPath(flagPath, iconPaint);
     }
 
     final picture = recorder.endRecording();
-    final img = await picture.toImage(size.toInt(), size.toInt());
+    final img = await picture.toImage(w.toInt(), h.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
     return byteData?.buffer.asUint8List();
   }

@@ -82,6 +82,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   StreamSubscription? _gpsSub;
   bool _muted = false;
   Uint8List? _arrowIconBytes;
+  Uint8List? _destPinBytes;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
   mapbox.PointAnnotation? _driverAnnot;
@@ -729,15 +730,47 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final dest = _sm.phase == TripPhase.onTrip || _sm.phase == TripPhase.arrivedDropoff
         ? widget.dropoffLatLng
         : widget.pickupLatLng;
+    _destPinBytes ??= await _buildDestPinBytes();
     if (_destAnnot == null) {
       _destAnnot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(dest.longitude, dest.latitude)),
+        image: _destPinBytes,
         iconSize: 1.0,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 0],
       ));
     } else {
       _destAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(dest.longitude, dest.latitude));
       await mgr.update(_destAnnot!);
     }
+  }
+
+  Future<Uint8List?> _buildDestPinBytes() async {
+    const double w = 60;
+    const double h = 80;
+    final rec = ui.PictureRecorder();
+    final c = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
+    const cx = w / 2;
+    const r = 18.0;
+    const headCY = r + 6;
+    const tipY = h;
+    // Teardrop path
+    final path = Path()
+      ..moveTo(cx - r, headCY)
+      ..arcTo(Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
+          math.pi, -math.pi, false)
+      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 3, cx, tipY)
+      ..cubicTo(cx - r * 0.22, tipY - 3, cx - r, headCY + r, cx - r, headCY)
+      ..close();
+    c.drawPath(path.shift(const Offset(0, 2)), Paint()
+      ..color = Colors.black.withValues(alpha: 0.30)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+    c.drawPath(path, Paint()..color = _gold);
+    c.drawCircle(const Offset(cx, headCY), r, Paint()..color = Colors.white);
+    c.drawCircle(const Offset(cx, headCY), r - 5, Paint()..color = _gold);
+    final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
+    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+    return bytes?.buffer.asUint8List();
   }
 
   Future<void> _updateRouteAnnotation() async {

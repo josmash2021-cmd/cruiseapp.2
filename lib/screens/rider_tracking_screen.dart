@@ -759,142 +759,120 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     required bool isPickup,
     String label = '',
   }) async {
-    const double size = 125;
+    const double w = 100;
+    const double h = 130;
     final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
-    const cx = size / 2;
-    const cy = size / 2;
-    const r = size * 0.38;
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
+    const cx = w / 2;
+    const r = 30.0;
+    const headCY = r + 8;
+    const tipY = h;
     const gold = Color(0xFFE8C547);
 
     final iconType = _detectPinIcon(label);
 
-    // Drop shadow
-    canvas.drawCircle(
-      const Offset(cx, cy + 2),
-      r + 3,
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.35)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
-    );
+    // ── Teardrop path (head + tail, tip at exact bottom) ──
+    final path = Path()
+      ..moveTo(cx - r, headCY)
+      ..arcTo(
+        Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
+        math.pi, -math.pi, false,
+      )
+      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 4, cx, tipY)
+      ..cubicTo(cx - r * 0.22, tipY - 4, cx - r, headCY + r, cx - r, headCY)
+      ..close();
 
-    if (isPickup) {
-      canvas.drawCircle(const Offset(cx, cy), r, Paint()..color = gold);
-      canvas.drawCircle(
-        const Offset(cx, cy),
-        r,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..color = Colors.white.withValues(alpha: 0.25),
-      );
-    } else {
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: const Offset(cx, cy),
-          width: r * 2,
-          height: r * 2,
-        ),
-        Radius.circular(r * 0.28),
-      );
-      canvas.drawRRect(rect, Paint()..color = gold);
-      canvas.drawRRect(
-        rect,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..color = Colors.white.withValues(alpha: 0.25),
-      );
-    }
-
-    // Inner highlight
-    canvas.drawCircle(
-      Offset(cx - r * 0.2, cy - r * 0.2),
-      r * 0.5,
+    // Shadow
+    canvas.drawPath(
+      path.shift(const Offset(0, 3)),
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.15)
+        ..color = Colors.black.withValues(alpha: 0.30)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
+    // Gold fill
+    canvas.drawPath(path, Paint()..color = gold);
+    // White border
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = Colors.white.withValues(alpha: 0.35),
+    );
+    // Specular highlight
+    canvas.drawCircle(
+      Offset(cx - r * 0.25, headCY - r * 0.25),
+      r * 0.4,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.25)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
 
-    // White contextual icon
+    // ── White icon inside head ──
     final iconPaint = Paint()
       ..color = Colors.white
       ..isAntiAlias = true;
-    const s = size * 0.13;
+    const s = r * 0.43;
+    const iy = headCY;
 
     switch (iconType) {
       case _PinIcon.house:
         final roofPath = Path()
-          ..moveTo(cx, cy - s * 1.1)
-          ..lineTo(cx - s * 1.0, cy - s * 0.15)
-          ..lineTo(cx + s * 1.0, cy - s * 0.15)
+          ..moveTo(cx, iy - s * 1.1)
+          ..lineTo(cx - s * 1.0, iy - s * 0.15)
+          ..lineTo(cx + s * 1.0, iy - s * 0.15)
           ..close();
         canvas.drawPath(roofPath, iconPaint);
         canvas.drawRect(
-          Rect.fromLTRB(
-            cx - s * 0.7,
-            cy - s * 0.15,
-            cx + s * 0.7,
-            cy + s * 0.8,
-          ),
+          Rect.fromLTRB(cx - s * 0.7, iy - s * 0.15, cx + s * 0.7, iy + s * 0.8),
           iconPaint,
         );
         canvas.drawRect(
-          Rect.fromLTRB(cx - s * 0.2, cy + s * 0.2, cx + s * 0.2, cy + s * 0.8),
+          Rect.fromLTRB(cx - s * 0.2, iy + s * 0.2, cx + s * 0.2, iy + s * 0.8),
           Paint()..color = gold,
         );
         break;
       case _PinIcon.store:
         canvas.drawRRect(
           RRect.fromRectAndRadius(
-            Rect.fromLTRB(
-              cx - s * 0.9,
-              cy - s * 0.9,
-              cx + s * 0.9,
-              cy - s * 0.2,
-            ),
+            Rect.fromLTRB(cx - s * 0.9, iy - s * 0.9, cx + s * 0.9, iy - s * 0.2),
             Radius.circular(s * 0.3),
           ),
           iconPaint,
         );
         canvas.drawRect(
-          Rect.fromLTRB(cx - s * 0.9, cy - s * 0.2, cx + s * 0.9, cy + s * 0.8),
+          Rect.fromLTRB(cx - s * 0.9, iy - s * 0.2, cx + s * 0.9, iy + s * 0.8),
           iconPaint,
         );
         canvas.drawRect(
-          Rect.fromLTRB(cx - s * 0.5, cy + s * 0.0, cx + s * 0.5, cy + s * 0.5),
+          Rect.fromLTRB(cx - s * 0.5, iy, cx + s * 0.5, iy + s * 0.5),
           Paint()..color = gold,
         );
         break;
       case _PinIcon.airplane:
         final planePath = Path()
-          ..moveTo(cx, cy - s * 1.1)
-          ..lineTo(cx - s * 0.15, cy - s * 0.6)
-          ..lineTo(cx - s * 1.0, cy - s * 0.1)
-          ..lineTo(cx - s * 0.15, cy - s * 0.15)
-          ..lineTo(cx - s * 0.15, cy + s * 0.5)
-          ..lineTo(cx - s * 0.55, cy + s * 0.9)
-          ..lineTo(cx - s * 0.15, cy + s * 0.75)
-          ..lineTo(cx, cy + s * 1.0)
-          ..lineTo(cx + s * 0.15, cy + s * 0.75)
-          ..lineTo(cx + s * 0.55, cy + s * 0.9)
-          ..lineTo(cx + s * 0.15, cy + s * 0.5)
-          ..lineTo(cx + s * 0.15, cy - s * 0.15)
-          ..lineTo(cx + s * 1.0, cy - s * 0.1)
-          ..lineTo(cx + s * 0.15, cy - s * 0.6)
+          ..moveTo(cx, iy - s * 1.1)
+          ..lineTo(cx - s * 0.15, iy - s * 0.6)
+          ..lineTo(cx - s * 1.0, iy - s * 0.1)
+          ..lineTo(cx - s * 0.15, iy - s * 0.15)
+          ..lineTo(cx - s * 0.15, iy + s * 0.5)
+          ..lineTo(cx - s * 0.55, iy + s * 0.9)
+          ..lineTo(cx - s * 0.15, iy + s * 0.75)
+          ..lineTo(cx, iy + s * 1.0)
+          ..lineTo(cx + s * 0.15, iy + s * 0.75)
+          ..lineTo(cx + s * 0.55, iy + s * 0.9)
+          ..lineTo(cx + s * 0.15, iy + s * 0.5)
+          ..lineTo(cx + s * 0.15, iy - s * 0.15)
+          ..lineTo(cx + s * 1.0, iy - s * 0.1)
+          ..lineTo(cx + s * 0.15, iy - s * 0.6)
           ..close();
         canvas.drawPath(planePath, iconPaint);
         break;
       case _PinIcon.person:
-        canvas.drawCircle(Offset(cx, cy - s * 0.5), s * 0.5, iconPaint);
+        canvas.drawCircle(Offset(cx, iy - s * 0.5), s * 0.5, iconPaint);
         canvas.drawRRect(
           RRect.fromRectAndCorners(
-            Rect.fromLTRB(
-              cx - s * 0.8,
-              cy + s * 0.15,
-              cx + s * 0.8,
-              cy + s * 0.9,
-            ),
+            Rect.fromLTRB(cx - s * 0.8, iy + s * 0.15, cx + s * 0.8, iy + s * 0.9),
             topLeft: Radius.circular(s * 0.8),
             topRight: Radius.circular(s * 0.8),
             bottomLeft: Radius.circular(s * 0.15),
@@ -906,7 +884,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     }
 
     final picture = recorder.endRecording();
-    final img = await picture.toImage(size.toInt(), size.toInt());
+    final img = await picture.toImage(w.toInt(), h.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
     return byteData!.buffer.asUint8List();
   }
@@ -1784,6 +1762,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
         image: _pickupPinBytes!,
         iconSize: 1.05,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 0],
       ));
     } catch (_) {}
 
@@ -1793,6 +1773,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         geometry: mapbox.Point(coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
         image: _dropoffPinBytes!,
         iconSize: 1.05,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 0],
       ));
     } catch (_) {}
 

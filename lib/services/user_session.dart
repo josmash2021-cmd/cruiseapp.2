@@ -176,6 +176,16 @@ class UserSession {
     return user != null && (user['firstName']?.isNotEmpty ?? false);
   }
 
+  /// Fast local-only auth check — no network calls.
+  /// Returns true if a JWT token AND a cached user session exist locally.
+  /// Used by splash screen for instant navigation without waiting for backend.
+  static Future<bool> isLoggedInLocal() async {
+    final token = await ApiService.getToken();
+    if (token == null) return false;
+    final user = await getUser();
+    return user != null && (user['firstName']?.isNotEmpty ?? false);
+  }
+
   /// Update a single field locally.
   static Future<void> updateField(String key, String value) async {
     final user = await getUser();

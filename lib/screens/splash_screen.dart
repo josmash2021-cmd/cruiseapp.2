@@ -1,4 +1,5 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:local_auth/local_auth.dart';
@@ -237,31 +238,29 @@ class _SplashScreenState extends State<SplashScreen>
   /// Computes which screen to navigate to. Runs in parallel with the full
   /// splash animation (started at the very beginning) so there is no
   /// black-screen gap after the splash fades out.
+  ///
+  /// Uses fast local-only auth check (no network calls) for instant routing.
+  /// Network-dependent checks (account status, driver approval, profile sync)
+  /// happen in the background after navigation.
   Future<Widget> _computeDestination(Future<void> initFuture) async {
-    // Wait for URL discovery before making any network calls
-    await initFuture;
-    final loggedIn = await UserSession.isLoggedIn();
-    if (!loggedIn) return const WelcomeScreen();
+    // Start the initFuture but don't block on it for local auth check
+    unawaited(initFuture);
 
-    // ── Check if dispatch blocked/deleted/deactivated account ──
-    try {
-      final status = await ApiService.getAccountStatus().timeout(
-        const Duration(seconds: 3),
-        onTimeout: () => 'active',
-      );
-      if (status == 'blocked' || status == 'deleted') {
-        await UserSession.logout();
-        return const WelcomeScreen();
-      }
-      if (status == 'deactivated') {
-        return const AccountDeactivatedScreen();
-      }
-    } catch (e) {
-      debugPrint('[SplashScreen] Account status check failed: $e');
+    // ── Fast path: check local session (no network) ──
+    final loggedIn = await UserSession.isLoggedInLocal();
+    if (!loggedIn) {
+      // No local session — wait for init then show welcome
+      await initFuture;
+      return const WelcomeScreen();
     }
 
+    // ── User has local session — route by cached role immediately ──
     final mode = await UserSession.getMode();
+
     if (mode == 'driver') {
+      await UserSession.initPhotoNotifier();
+      // Check driver approval with timeout — default to approved if slow
+      await initFuture;
       try {
         final approvalResult = await ApiService.getDriverApprovalStatus().timeout(
           const Duration(seconds: 3),
@@ -270,19 +269,35 @@ class _SplashScreenState extends State<SplashScreen>
         final vStatus =
             approvalResult['approval_status'] as String? ??
             approvalResult['status'] as String? ??
-            'none';
+            'approved';
         if (vStatus != 'approved') {
           return const DriverPendingReviewScreen();
         }
       } catch (e) {
         debugPrint('[SplashScreen] Driver approval check failed: $e');
       }
-      await UserSession.initPhotoNotifier();
+
+      // Fire background profile sync (no await)
+      unawaited(_backgroundProfileSync());
+
       return const DriverHomeScreen();
     } else {
       await UserSession.initPhotoNotifier();
+
+      // Fire background profile sync + account status check (no await)
+      unawaited(_backgroundProfileSync());
+
       return const HomeScreen();
     }
+  }
+
+  /// Syncs profile and checks account status in background after navigation.
+  /// If account is blocked/deactivated, the home screens' own periodic
+  /// status checks (every 30s) will handle the redirect.
+  Future<void> _backgroundProfileSync() async {
+    try {
+      await UserSession.isLoggedIn(); // full sync with backend
+    } catch (_) {}
   }
 
   @override

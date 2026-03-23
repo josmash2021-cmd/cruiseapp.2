@@ -86,6 +86,13 @@
 	<string>Cruise needs to save photos to your gallery.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Cruise needs the microphone for profile videos.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>telprompt</string>
+		<string>comgooglemaps</string>
+		<string>maps</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

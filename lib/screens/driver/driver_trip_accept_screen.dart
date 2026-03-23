@@ -14,6 +14,7 @@ import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
+import '../chat_screen.dart';
 import 'driver_nav_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -66,7 +67,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
 }
 
 class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   // ── Colours ──────────────────────────────────────────────────────────────
   static const _gold   = Color(0xFFD4A843);
   static const _bg     = Color(0xFF0A0A0A);
@@ -76,11 +77,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── State ─────────────────────────────────────────────────────────────────
   late final AnimationController _fadeCtrl;
   late final Animation<double>   _fadeAnim;
-  late final AnimationController _pulseCtrl;
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _annotMgr;
   mapbox.PolylineAnnotationManager? _polyMgr;
-  mapbox.ScreenCoordinate? _pickupPx;
 
   // ── Trip distance pickup→dropoff ─────────────────────────────────────────
   double get _tripKm {
@@ -104,16 +103,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       duration: const Duration(milliseconds: 420),
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat();
   }
 
   @override
   void dispose() {
     _fadeCtrl.dispose();
-    _pulseCtrl.dispose();
     super.dispose();
   }
 
@@ -229,8 +223,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     Color iconBg,
     Color iconColor,
     String label,
-    String address,
-  ) => Container(
+    String address, {
+    bool showChevron = false,
+  }) => Container(
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
       color: _card,
@@ -266,9 +261,133 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             ],
           ),
         ),
+        if (showChevron)
+          Icon(Icons.chevron_right_rounded,
+              color: Colors.white.withValues(alpha: 0.24), size: 22),
       ],
     ),
   );
+
+  // ── Chat ─────────────────────────────────────────────────────────────────
+  void _openChat() {
+    HapticFeedback.lightImpact();
+    Navigator.of(context).push(
+      slideFromRightRoute(ChatScreen(
+        recipientName: widget.riderName,
+        recipientPhone: widget.riderPhone,
+        tripId: widget.tripId,
+      )),
+    );
+  }
+
+  // ── Navigation app integration ───────────────────────────────────────────
+  void _showNavigationSheet({required bool isPickup}) {
+    final coords = isPickup ? widget.pickupLatLng : widget.dropoffLatLng;
+    final address = isPickup ? widget.pickupAddress : widget.dropoffAddress;
+    final bot = MediaQuery.of(context).padding.bottom;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, bot + 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(children: [
+              Icon(isPickup ? Icons.location_on_rounded : Icons.flag_rounded,
+                  color: _gold, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(address,
+                  style: const TextStyle(color: Colors.white, fontSize: 15,
+                      fontWeight: FontWeight.w700),
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+              ),
+            ]),
+            const SizedBox(height: 20),
+            _navOption(
+              icon: Icons.map_rounded,
+              label: 'Open in Apple Maps',
+              onTap: () {
+                Navigator.pop(context);
+                _openAppleMaps(coords);
+              },
+            ),
+            const SizedBox(height: 8),
+            _navOption(
+              icon: Icons.map_outlined,
+              label: 'Open in Google Maps',
+              onTap: () {
+                Navigator.pop(context);
+                _openGoogleMaps(coords);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _navOption({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(children: [
+        Container(
+          width: 38, height: 38,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: Colors.white70, size: 18),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Text(label,
+          style: const TextStyle(color: Colors.white, fontSize: 14,
+              fontWeight: FontWeight.w600))),
+        Icon(Icons.chevron_right_rounded,
+            color: Colors.white.withValues(alpha: 0.28), size: 18),
+      ]),
+    ),
+  );
+
+  Future<void> _openAppleMaps(LatLng coords) async {
+    final uri = Uri.parse(
+      'https://maps.apple.com/?daddr=${coords.latitude},${coords.longitude}');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _openGoogleMaps(LatLng coords) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1'
+      '&destination=${coords.latitude},${coords.longitude}');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
 
   // ── Safety / Help menus ───────────────────────────────────────────────────
   void _showSafetyMenu() {
@@ -496,18 +615,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       null, null,
     );
     ctrl.flyTo(cam, mapbox.MapAnimationOptions(duration: 600));
-
-    // Get pickup pixel position for pulsing overlay
-    await Future.delayed(const Duration(milliseconds: 750));
-    if (!mounted) return;
-    try {
-      final px = await ctrl.pixelForCoordinate(
-        mapbox.Point(coordinates: mapbox.Position(
-          widget.pickupLatLng.longitude, widget.pickupLatLng.latitude,
-        )),
-      );
-      if (mounted) setState(() => _pickupPx = px);
-    } catch (_) {}
   }
 
   // ── Pin builders (matching rider app gold theme) ──────────────────────────
@@ -691,7 +798,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       ),
                       _actionBtn(Icons.phone_rounded, 'Call', _call),
                       const SizedBox(width: 8),
-                      _actionBtn(Icons.message_rounded, 'Message', () {}),
+                      _actionBtn(Icons.message_rounded, 'Message', _openChat),
                     ],
                   ),
                 ],
@@ -722,23 +829,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           if (_map != null) await MapTheme.applyNavyGold(_map!);
                         },
                       ),
-                      // Pulsing ring overlay at pickup pixel position
-                      if (_pickupPx != null)
-                        AnimatedBuilder(
-                          animation: _pulseCtrl,
-                          builder: (_, __) => Positioned(
-                            left: _pickupPx!.x - 44,
-                            top:  _pickupPx!.y - 44,
-                            child: IgnorePointer(
-                              child: SizedBox(
-                                width: 88, height: 88,
-                                child: CustomPaint(
-                                  painter: _PulsePainter(_pulseCtrl.value),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
                       // ETA chip
                       Positioned(
                         top: 10, right: 10,
@@ -775,27 +865,35 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               ),
             ),
 
-            // ── Pickup address card ───────────────────────────────────────
+            // ── Pickup address card (tappable → navigation sheet) ─────────
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: _infoRow(
-                Icons.location_on_rounded,
-                Colors.white.withValues(alpha: 0.12),
-                Colors.white,
-                'Pickup',
-                widget.pickupAddress,
+              child: GestureDetector(
+                onTap: () => _showNavigationSheet(isPickup: true),
+                child: _infoRow(
+                  Icons.location_on_rounded,
+                  _gold.withValues(alpha: 0.15),
+                  _gold,
+                  'Pickup',
+                  widget.pickupAddress,
+                  showChevron: true,
+                ),
               ),
             ),
 
-            // ── Dropoff address card ──────────────────────────────────────
+            // ── Dropoff address card (tappable → navigation sheet) ────────
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-              child: _infoRow(
-                Icons.flag_rounded,
-                Colors.white.withValues(alpha: 0.12),
-                Colors.white,
-                'Dropoff',
-                widget.dropoffAddress,
+              child: GestureDetector(
+                onTap: () => _showNavigationSheet(isPickup: false),
+                child: _infoRow(
+                  Icons.flag_rounded,
+                  _gold.withValues(alpha: 0.15),
+                  _gold,
+                  'Dropoff',
+                  widget.dropoffAddress,
+                  showChevron: true,
+                ),
               ),
             ),
 
@@ -853,34 +951,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ),
     );
   }
-}
-
-// ─── Pulsing gold ring painter ────────────────────────────────────────────────
-class _PulsePainter extends CustomPainter {
-  final double t;
-  const _PulsePainter(this.t);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const color = Color(0xFFD4A843);
-    final center = Offset(size.width / 2, size.height / 2);
-    for (int i = 0; i < 3; i++) {
-      final phase  = (t + i / 3) % 1.0;
-      final radius = 22.0 + phase * 22.0;
-      final opacity = (1.0 - phase) * 0.45;
-      canvas.drawCircle(
-        center,
-        radius,
-        Paint()
-          ..color = color.withValues(alpha: opacity)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_PulsePainter old) => old.t != t;
 }
 
 // ─── Bottom-sheet item data class ─────────────────────────────────────────────

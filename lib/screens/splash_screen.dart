@@ -207,29 +207,27 @@ class _SplashScreenState extends State<SplashScreen>
     await Future.delayed(const Duration(milliseconds: 500));
     if (_disposed) return;
 
-    // Phase 3 — scale up + fade out (run in parallel with destination resolution)
-    final exitFuture = _exitCtrl.forward().orCancel.catchError((_) {});
-    
-    // ── CRITICAL: Navigate as soon as destination is ready, don't wait for exit animation ──
-    // This eliminates the black screen gap that appears when animation finishes first
+    // ── Wait for destination to be ready BEFORE starting exit animation ──
+    // This guarantees zero black-screen gap: destination is pre-resolved,
+    // so the navigator push is instant.
     final destination = await destinationFuture;
     if (_disposed || !mounted) return;
-    
-    // Wait just a tiny bit for exit animation to start (for smooth visual)
-    await Future.any([
-      Future.delayed(const Duration(milliseconds: 100)),
-      exitFuture,
-    ]);
+
+    // Phase 3 — scale up + fade out
+    _exitCtrl.forward().orCancel.catchError((_) {});
+
+    // Navigate almost immediately — the incoming screen fades IN while
+    // the splash fades OUT, overlapping perfectly with no black gap.
+    await Future.delayed(const Duration(milliseconds: 50));
     if (_disposed || !mounted) return;
 
-    // Instant transition - no black screen gap
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => destination,
-        transitionDuration: const Duration(milliseconds: 200),
+        transitionDuration: const Duration(milliseconds: 600),
         reverseTransitionDuration: Duration.zero,
         transitionsBuilder: (_, anim, __, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
           child: child,
         ),
       ),

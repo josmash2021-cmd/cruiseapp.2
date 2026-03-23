@@ -32,6 +32,7 @@ import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/gold_location_dot.dart';
 import 'scheduled_rides_screen.dart';
+import 'searching_driver_screen.dart';
 
 /// Main Uber-like ride request screen.
 ///
@@ -3030,6 +3031,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// Processes payment directly from the route preview sheet.
   /// Payment validation is bypassed — the selected method is informational.
   Future<void> _startRideDirectly(AppColors c, RideOption? option) async {
+    final nav = Navigator.of(context);
     setState(() => _isProcessingPayment = true);
     await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
@@ -3040,6 +3042,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       await _createScheduledTrip();
       return;
     }
+
+    // Show premium "Searching" animation before requesting the ride
+    await nav.push(searchingDriverRoute());
+    if (!mounted) return;
+
     _ctrl.requestRide();
   }
 

@@ -1877,7 +1877,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   // Ride options list — collapsible
                   AnimatedCrossFade(
                     firstChild: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -1915,7 +1915,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                 setState(() => _rideOptionsExpanded = true),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
+                                horizontal: 16,
                               ),
                               child: _buildRideOptionCard(c, option, true),
                             ),

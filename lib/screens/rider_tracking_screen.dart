@@ -201,18 +201,26 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final fsId = widget.firestoreTripId;
     if (fsId != null && fsId.isNotEmpty) {
       // Watch driver location in real time
-      _driverLocSub = TripFirestoreService.watchDriverLocation(fsId).listen((
-        ll,
-      ) {
-        if (!mounted || _phase == _TrackPhase.completed) return;
-        _onRealDriverLocation(ll);
-      });
+      _driverLocSub = TripFirestoreService.watchDriverLocation(fsId).listen(
+        (ll) {
+          if (!mounted || _phase == _TrackPhase.completed) return;
+          _onRealDriverLocation(ll);
+        },
+        onError: (error) {
+          debugPrint('[RiderTracking] Driver location listener error: $error');
+        },
+      );
 
       // Watch trip status changes
-      _tripStatusSub = TripFirestoreService.watchTrip(fsId).listen((data) {
-        if (!mounted || data == null) return;
-        _onTripStatusUpdate(data);
-      });
+      _tripStatusSub = TripFirestoreService.watchTrip(fsId).listen(
+        (data) {
+          if (!mounted || data == null) return;
+          _onTripStatusUpdate(data);
+        },
+        onError: (error) {
+          debugPrint('[RiderTracking] Trip status listener error: $error');
+        },
+      );
     }
 
     // Also poll backend status as fallback

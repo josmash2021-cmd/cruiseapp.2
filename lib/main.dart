@@ -20,6 +20,7 @@ import 'services/security_service.dart';
 import 'services/user_session.dart';
 import 'services/local_data_service.dart';
 import 'services/local_cache.dart';
+import 'services/map_cache_service.dart';
 import 'services/network_service.dart';
 import 'services/keep_alive_service.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -128,6 +129,9 @@ Future<void> heavyInit() async {
   NetworkService().init();
 
   await Future.wait([
+    // Initialize Mapbox offline tile cache
+    MapCacheService().init(),
+
     // Initialize profile photo notifier
     UserSession.initPhotoNotifier(),
 
@@ -195,6 +199,25 @@ Future<void> heavyInit() async {
       }
     }(),
   ]);
+
+  // Deferred cache cleanup — runs 10s after startup, non-blocking
+  Future.delayed(const Duration(seconds: 10), () {
+    MapCacheService().cleanIfNeeded();
+  });
+
+  // Pre-cache map tiles around last known driver location (if available)
+  final lastLat = LocalCache.get<double>('last_driver_lat');
+  final lastLng = LocalCache.get<double>('last_driver_lng');
+  if (lastLat != null && lastLng != null) {
+    MapCacheService().precacheArea(
+      regionId: 'startup_area',
+      lat: lastLat,
+      lng: lastLng,
+      minZoom: 12,
+      maxZoom: 15,
+      radiusKm: 3.0,
+    );
+  }
 }
 
 /// Smooth 60 fps scroll everywhere — iOS-style bouncing on all platforms.

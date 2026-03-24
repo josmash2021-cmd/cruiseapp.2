@@ -21,6 +21,8 @@ import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
+import '../../services/map_cache_service.dart';
+import '../../services/local_cache.dart';
 import '../../widgets/offline_banner.dart';
 import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
@@ -393,6 +395,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     await _locate();
     await _buildVehicleIcons();
     _goOnlineBackend();
+
+    // Pre-cache map tiles around driver's current area (silent background)
+    if (_pos != null) {
+      MapCacheService().precacheArea(
+        regionId: 'driver_area_${_driverId ?? 0}',
+        lat: _pos!.latitude,
+        lng: _pos!.longitude,
+        minZoom: 10,
+        maxZoom: 16,
+        radiusKm: 5.0,
+      );
+    }
+
     _startClock();
     _startPolling();
     _startPosStream();
@@ -888,6 +903,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       'ðŸŸ¢ Going online: driverId=$_driverId lat=${_pos?.latitude} lng=${_pos?.longitude}',
     );
     if (_pos == null) return;
+    // Save last known location for startup pre-caching
+    LocalCache.set('last_driver_lat', _pos!.latitude);
+    LocalCache.set('last_driver_lng', _pos!.longitude);
     ApiService.updateDriverLocation(
           driverId: _driverId!,
           lat: _pos!.latitude,
@@ -1579,6 +1597,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       if (pLat == 0 || pLng == 0 || dLat == 0 || dLng == 0) continue;
       final pickupLL  = LatLng(pLat, pLng);
       final dropoffLL = LatLng(dLat, dLng);
+      // Pre-cache map tiles for pickup + dropoff areas (silent background)
+      MapCacheService().precacheRoute(
+        offerId: oid,
+        pickupLat: pLat,
+        pickupLng: pLng,
+        dropoffLat: dLat,
+        dropoffLng: dLng,
+      );
       Future.wait([
         _fetchRoutePoints(_pos!, pickupLL),
         _fetchRoutePoints(pickupLL, dropoffLL),

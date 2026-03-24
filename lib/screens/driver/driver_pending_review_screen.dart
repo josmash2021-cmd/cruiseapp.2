@@ -9,6 +9,7 @@ import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../welcome_screen.dart';
+import 'driver_approved_screen.dart';
 import 'driver_home_screen.dart';
 import 'driver_signup_screen.dart';
 import '../../l10n/app_localizations.dart';
@@ -91,12 +92,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
       if (status == 'approved') {
         await LocalDataService.setDriverApprovalStatus('approved');
         if (!mounted) return;
-        setState(() => _status = 'approved');
-        _approvedCtrl.forward();
-        // Auto-navigate to DriverHomeScreen after brief animation
-        Future.delayed(const Duration(milliseconds: 1200), () {
-          if (mounted) _enterApp();
-        });
+        _goApproved();
         return;
       } else if (status == 'rejected') {
         final reason =
@@ -152,11 +148,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
         if (isApproved && _status != 'approved') {
           _pollTimer?.cancel();
           LocalDataService.setDriverApprovalStatus('approved');
-          setState(() => _status = 'approved');
-          _approvedCtrl.forward();
-          Future.delayed(const Duration(milliseconds: 1200), () {
-            if (mounted) _enterApp();
-          });
+          _goApproved();
           return;
         } else if (status == 'rejected' && _status != 'rejected') {
           _pollTimer?.cancel();
@@ -196,11 +188,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
       if (verified && _status != 'approved') {
         _pollTimer?.cancel();
         LocalDataService.setDriverApprovalStatus('approved');
-        setState(() => _status = 'approved');
-        _approvedCtrl.forward();
-        Future.delayed(const Duration(milliseconds: 1200), () {
-          if (mounted) _enterApp();
-        });
+        _goApproved();
       }
     }).catchError((_) {});
   }
@@ -220,12 +208,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           _pollTimer?.cancel();
           await LocalDataService.setDriverApprovalStatus('approved');
           if (!mounted) return;
-          setState(() => _status = 'approved');
-          _approvedCtrl.forward();
-          // Auto-navigate to DriverHomeScreen after brief animation
-          Future.delayed(const Duration(milliseconds: 1200), () {
-            if (mounted) _enterApp();
-          });
+          _goApproved();
         } else if (status == 'rejected') {
           _pollTimer?.cancel();
           final reason =
@@ -249,6 +232,31 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       slideFromRightRoute(const DriverHomeScreen()),
+      (_) => false,
+    );
+  }
+
+  /// Navigate to the premium cinematic approved screen.
+  void _goApproved() {
+    if (!mounted) return;
+    _pollTimer?.cancel();
+    _firestoreSubscription?.cancel();
+    Navigator.of(context).pushAndRemoveUntil(
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 600),
+        pageBuilder: (_, __, ___) => const DriverApprovedScreen(),
+        transitionsBuilder: (_, anim, __, child) {
+          return FadeTransition(
+            opacity: anim,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.95, end: 1.0).animate(
+                CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+              ),
+              child: child,
+            ),
+          );
+        },
+      ),
       (_) => false,
     );
   }

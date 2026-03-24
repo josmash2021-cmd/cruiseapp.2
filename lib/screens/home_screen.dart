@@ -3337,6 +3337,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           dropoffLabel: ride.dropoffLabel,
           tripId: ride.tripId,
           firestoreTripId: ride.firestoreTripId,
+          driverPhotoUrl: ride.driverPhotoUrl,
           onTripComplete: () {
             LocalDataService.clearActiveRide();
             Navigator.of(context).pop();

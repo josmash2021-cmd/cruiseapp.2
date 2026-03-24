@@ -47,6 +47,7 @@ class RiderTrackingScreen extends StatefulWidget {
     this.dropoffLabel = '',
     this.tripId,
     this.firestoreTripId,
+    this.driverPhotoUrl,
     this.onTripComplete,
   });
 
@@ -66,6 +67,7 @@ class RiderTrackingScreen extends StatefulWidget {
   final String dropoffLabel;
   final int? tripId;
   final String? firestoreTripId;
+  final String? driverPhotoUrl;
   final VoidCallback? onTripComplete;
 
   @override
@@ -85,6 +87,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   mapbox.PointAnnotation? _dropoffAnnot;
   mapbox.PolylineAnnotation? _fullRouteAnnot;
   mapbox.PolylineAnnotation? _remainingRouteAnnot;
+  mapbox.PolylineAnnotation? _routeCasingAnnot;
+  mapbox.PolylineAnnotation? _routeShineAnnot;
   final double _cameraBearing = 0;
   Uint8List? _pickupPinBytes;
   Uint8List? _dropoffPinBytes;
@@ -588,7 +592,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   // ── Navigation arrow mode (when centering/navigation active) ──
-  bool _navArrowMode = false;
+  final bool _navArrowMode = false;
   Uint8List? _arrowIconBytes;
   
   Future<void> _loadCarIcon() async {
@@ -1099,6 +1103,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       driverLat: _animPos.latitude,
       driverLng: _animPos.longitude,
       traveledMeters: _traveledM,
+      driverPhotoUrl: activeRide.driverPhotoUrl,
     );
 
     await LocalDataService.setActiveRide(updatedRide);
@@ -1271,19 +1276,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   void _recenter() {
-    setState(() {
-      _userMovedMap = false;
-      _navArrowMode = true; // Enable navigation arrow mode when centering
-    });
-    // Mostrar ruta completa con padding apropiado
+    setState(() => _userMovedMap = false);
     _updateCameraForRoute();
-    
-    // After 5 seconds, switch back to car mode automatically
-    Future.delayed(const Duration(seconds: 5), () {
-      if (mounted) {
-        setState(() => _navArrowMode = false);
-      }
-    });
   }
 
   double _hav(LatLng a, LatLng b) {
@@ -1436,6 +1430,18 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final brg = _bearing(pos, lookPos);
     return (pos, brg);
   }
+
+  Widget _driverInitial() => Container(
+    color: const Color(0xFF1A1F35),
+    child: Center(
+      child: Text(
+        widget.driverName.isNotEmpty ? widget.driverName[0].toUpperCase() : 'D',
+        style: const TextStyle(
+          color: Color(0xFFD4AF37), fontSize: 18, fontWeight: FontWeight.w700,
+        ),
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1616,35 +1622,69 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           // ROW 2 — Driver info
           Row(
             children: [
-              // Driver photo
-              Container(
-                width: 46, height: 46,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFFD4AF37), width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFD4AF37).withValues(alpha: 0.25),
-                      blurRadius: 8,
+              // Driver photo with verified badge
+              SizedBox(
+                width: 52, height: 58,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 48, height: 48,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFD4AF37), width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFD4AF37).withValues(alpha: 0.25),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: widget.driverPhotoUrl != null && widget.driverPhotoUrl!.isNotEmpty
+                            ? Image.network(
+                                widget.driverPhotoUrl!,
+                                width: 44, height: 44,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _driverInitial(),
+                              )
+                            : _driverInitial(),
+                      ),
                     ),
-                  ],
-                ),
-                child: ClipOval(
-                  child: Container(
-                    color: const Color(0xFF1A1F35),
-                    child: Center(
-                      child: Text(
-                        widget.driverName.isNotEmpty
-                            ? widget.driverName[0].toUpperCase()
-                            : 'D',
-                        style: const TextStyle(
-                          color: Color(0xFFD4AF37),
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
+                    Positioned(
+                      bottom: 0, left: 4, right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD4AF37),
+                          borderRadius: BorderRadius.circular(6),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.verified, color: Color(0xFF0A0E1A), size: 9),
+                            SizedBox(width: 1),
+                            Text(
+                              'Verified',
+                              style: TextStyle(
+                                color: Color(0xFF0A0E1A),
+                                fontSize: 7,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
               const SizedBox(width: 12),
@@ -1867,11 +1907,40 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   },
                 ),
               ),
-              // Recenter button
+              // Resume button (gold pill)
               if (_userMovedMap)
                 Positioned(
-                  bottom: 16, right: 16,
-                  child: _circleBtn(Icons.navigation_rounded, _recenter),
+                  bottom: 12, left: 0, right: 0,
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: _recenter,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F1223).withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.my_location_rounded, color: Color(0xFFD4AF37), size: 14),
+                            SizedBox(width: 6),
+                            Text('Resume', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -2032,22 +2101,39 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       ));
     } catch (_) {}
 
-    // Full route underline
+    // 4-layer gold gloss route
     final coords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final geom = mapbox.LineString(coordinates: coords);
+    // Layer 1: Soft outer glow
     try {
       _fullRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: coords),
-        lineColor: const Color(0xFF2A3A5A).toARGB32(),
-        lineWidth: 8.0, lineJoin: mapbox.LineJoin.ROUND,
+        geometry: geom,
+        lineColor: const Color(0xFFD4AF37).withValues(alpha: 0.15).toARGB32(),
+        lineWidth: 16.0, lineJoin: mapbox.LineJoin.ROUND,
       ));
     } catch (_) {}
-
-    // Active route line (blue)
+    // Layer 2: Mid glow (casing)
+    try {
+      _routeCasingAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geom,
+        lineColor: const Color(0xFFD4AF37).withValues(alpha: 0.25).toARGB32(),
+        lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    } catch (_) {}
+    // Layer 3: Main gold line
     try {
       _remainingRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: coords),
-        lineColor: const Color(0xFF5BA3F5).toARGB32(),
-        lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
+        geometry: geom,
+        lineColor: const Color(0xFFD4AF37).toARGB32(),
+        lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    } catch (_) {}
+    // Layer 4: Gloss shine highlight
+    try {
+      _routeShineAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geom,
+        lineColor: Colors.white.withValues(alpha: 0.25).toARGB32(),
+        lineWidth: 1.5, lineJoin: mapbox.LineJoin.ROUND,
       ));
     } catch (_) {}
   }

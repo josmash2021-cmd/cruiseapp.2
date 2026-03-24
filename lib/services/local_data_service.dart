@@ -641,6 +641,7 @@ class ActiveRideInfo {
   final double? driverLat;
   final double? driverLng;
   final double? traveledMeters;
+  final String? driverPhotoUrl;
 
   const ActiveRideInfo({
     required this.pickupLat,
@@ -665,6 +666,7 @@ class ActiveRideInfo {
     this.driverLat,
     this.driverLng,
     this.traveledMeters,
+    this.driverPhotoUrl,
   });
 
   Map<String, dynamic> toJson() => {
@@ -690,6 +692,7 @@ class ActiveRideInfo {
     'driverLat': driverLat,
     'driverLng': driverLng,
     'traveledMeters': traveledMeters,
+    'driverPhotoUrl': driverPhotoUrl,
   };
 
   static ActiveRideInfo fromJson(Map<String, dynamic> j) => ActiveRideInfo(
@@ -719,5 +722,6 @@ class ActiveRideInfo {
     driverLat: (j['driverLat'] as num?)?.toDouble(),
     driverLng: (j['driverLng'] as num?)?.toDouble(),
     traveledMeters: (j['traveledMeters'] as num?)?.toDouble(),
+    driverPhotoUrl: j['driverPhotoUrl'] as String?,
   );
 }

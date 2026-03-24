@@ -1372,6 +1372,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         routePoints: routePts,
         tripId: s.tripId,
         firestoreTripId: s.firestoreTripId,
+        driverPhotoUrl: s.driver?.photoUrl,
       ),
     );
 
@@ -1383,6 +1384,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           routePoints: s.route?.points,
           driverName: s.driver?.name ?? 'Driver',
           driverRating: s.driver?.rating ?? 4.9,
+          driverPhotoUrl: s.driver?.photoUrl,
           vehicleMake: s.driver?.vehicleMake ?? 'Toyota',
           vehicleModel: s.driver?.vehicleModel ?? 'Camry',
           vehicleColor: s.driver?.vehicleColor ?? 'White',

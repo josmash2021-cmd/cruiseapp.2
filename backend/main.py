@@ -1209,6 +1209,27 @@ async def sync_verifications_to_firestore(x_api_key: str = Header(default=""), d
             synced.append({"id": u.id, "error": str(e)})
     return {"ok": True, "synced": len(synced), "details": synced}
 
+
+@app.post("/admin/backfill-approved", dependencies=[Depends(_require_dispatch_auth)])
+async def backfill_approved_drivers(db: AsyncSession = Depends(get_db)):
+    """Backfill Firestore for ALL approved/rejected drivers whose Firestore docs may be missing."""
+    if not _HAS_FIRESTORE:
+        return {"ok": False, "message": "Firestore not available"}
+    result = await db.execute(
+        select(User).where(User.verification_status.in_(["approved", "rejected"]))
+    )
+    users = result.scalars().all()
+    fixed = []
+    for u in users:
+        action = "approve" if u.verification_status == "approved" else "reject"
+        reason = u.verification_reason
+        try:
+            firestore_sync.write_approval(u.id, action, reason=reason, role=u.role or "driver")
+            fixed.append({"id": u.id, "name": f"{u.first_name} {u.last_name}", "status": u.verification_status})
+        except Exception as e:
+            fixed.append({"id": u.id, "error": str(e)})
+    return {"ok": True, "fixed": len(fixed), "details": fixed}
+
 async def _require_admin(
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
@@ -2459,6 +2480,8 @@ async def verification_status(user: User = Depends(_get_current_user), db: Async
         "verification_status": db_user.verification_status or "none",
         "verification_reason": db_user.verification_reason,
         "is_verified": db_user.is_verified or False,
+        "status": db_user.verification_status or "none",
+        "approval_status": db_user.verification_status or "none",
     }
 
 @app.get("/auth/driver-approval-status", dependencies=[Depends(_verify_api_key)])
@@ -2488,6 +2511,7 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
     logging.info("Returning approval status for user %d: %s", db_user.id, db_user.verification_status)
     return {
         "status": db_user.verification_status or "none",
+        "approval_status": db_user.verification_status or "none",
         "reason": db_user.verification_reason,
         "photo_url": db_user.photo_url,
     }
@@ -2505,22 +2529,13 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     db_user.is_verified = True
     db_user.verified_at = datetime.now(timezone.utc)
     await db.commit()
-    # Also update Firestore
+    # Atomic batch write to ALL 3 Firestore collections
     if _HAS_FIRESTORE:
         try:
-            firestore_sync.update_field("verifications", user_id, "status", "approved")
-            firestore_sync.update_field("verifications", user_id, "driver_status", "approved")
-            firestore_sync.update_field("verifications", user_id, "approvalStatus", "approved")
-            firestore_sync.update_field("verifications", user_id, "isVerified", True)
-            firestore_sync.update_field("verifications", user_id, "isApproved", True)
-            firestore_sync.update_field("drivers", user_id, "verificationStatus", "approved")
-            firestore_sync.update_field("drivers", user_id, "isVerified", True)
-            firestore_sync.update_field("drivers", user_id, "isApproved", True)
-            firestore_sync.update_field("drivers", user_id, "driver_status", "approved")
-            firestore_sync.update_field("drivers", user_id, "status", "approved")
+            firestore_sync.write_approval(user_id, "approve")
         except Exception as e:
             logging.warning("Firestore approve sync failed: %s", e)
-    return {"ok": True, "message": f"Driver {user_id} approved"}
+    return {"ok": True, "message": f"Driver {user_id} approved", "status": "approved", "approval_status": "approved"}
 
 
 @app.post("/auth/dispatch-reject/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
@@ -2538,22 +2553,13 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
     db_user.verification_status = "rejected"
     db_user.verification_reason = reason
     await db.commit()
+    # Atomic batch write to ALL 3 Firestore collections
     if _HAS_FIRESTORE:
         try:
-            firestore_sync.update_field("verifications", user_id, "status", "rejected")
-            firestore_sync.update_field("verifications", user_id, "driver_status", "rejected")
-            firestore_sync.update_field("verifications", user_id, "approvalStatus", "rejected")
-            firestore_sync.update_field("verifications", user_id, "isVerified", False)
-            firestore_sync.update_field("verifications", user_id, "isApproved", False)
-            firestore_sync.update_field("verifications", user_id, "reason", reason)
-            firestore_sync.update_field("drivers", user_id, "status", "rejected")
-            firestore_sync.update_field("drivers", user_id, "driver_status", "rejected")
-            firestore_sync.update_field("drivers", user_id, "isVerified", False)
-            firestore_sync.update_field("drivers", user_id, "isApproved", False)
-            firestore_sync.update_field("drivers", user_id, "verificationReason", reason)
+            firestore_sync.write_approval(user_id, "reject", reason=reason)
         except Exception as e:
             logging.warning("Firestore reject sync failed: %s", e)
-    return {"ok": True, "message": f"Driver {user_id} rejected"}
+    return {"ok": True, "message": f"Driver {user_id} rejected", "status": "rejected", "approval_status": "rejected"}
 
 
 @app.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])
@@ -6515,37 +6521,15 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
 
     await db.commit()
 
-    # Sync to Firestore
+    # Sync to Firestore (atomic batch write to ALL 3 collections)
     if _HAS_FIRESTORE:
         try:
-            doc_id = f"sql_{user_id}"
-            collection = "drivers" if user.role == "driver" else "clients"
-            is_approved = action == "approve"
-            # Update verifications collection — write ALL fields cruise checks
-            firestore_sync._db.collection("verifications").document(doc_id).set({
-                "status": user.verification_status,
-                "driver_status": user.verification_status,
-                "approvalStatus": user.verification_status,
-                "verificationStatus": user.verification_status,
-                "isVerified": is_approved,
-                "isApproved": is_approved,
-                "reason": user.verification_reason,
-                "reviewedAt": firestore_sync._ts(),
-                "updated_at": firestore_sync._ts(),
-            }, merge=True)
-            # Update user collection (drivers/clients)
-            firestore_sync._db.collection(collection).document(doc_id).set({
-                "isVerified": is_approved,
-                "isApproved": is_approved,
-                "status": user.verification_status,
-                "driver_status": user.verification_status,
-                "approvalStatus": user.verification_status,
-                "verificationStatus": user.verification_status,
-                "verificationReason": user.verification_reason,
-                "lastUpdated": firestore_sync._ts(),
-                "updated_at": firestore_sync._ts(),
-            }, merge=True)
-            logging.info("Firestore verification sync OK for %s (action=%s)", doc_id, action)
+            firestore_sync.write_approval(
+                user_id=user_id,
+                action=action,
+                reason=user.verification_reason,
+                role=user.role or "driver",
+            )
         except Exception as e:
             logging.warning("Firestore verification sync failed: %s", e)
 
@@ -6554,6 +6538,8 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
         "user_id": user_id,
         "verification_status": user.verification_status,
         "is_verified": user.is_verified,
+        "status": user.verification_status,
+        "approval_status": user.verification_status,
     }
 
 

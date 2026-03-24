@@ -443,6 +443,48 @@ def update_field(collection: str, user_id: int, field: str, value):
         log.error("❌ Field update failed for %s in %s: %s", user_id, collection, e)
 
 
+def write_approval(user_id: int, action: str, reason: str = None,
+                   role: str = "driver"):
+    """Atomic batch write of approval/rejection to ALL 3 Firestore collections.
+
+    Writes to: verifications, drivers (or clients), and users.
+    Uses a Firestore batch so either ALL writes succeed or NONE do.
+    """
+    _ensure_init()
+    if _db is None:
+        log.warning("⚠️  write_approval skipped — _db is None")
+        return False
+    doc_id = f"sql_{user_id}"
+    is_approved = action == "approve"
+    status_str = "approved" if is_approved else "rejected"
+    ts = _ts()
+    payload = {
+        "status": status_str,
+        "driver_status": status_str,
+        "approvalStatus": status_str,
+        "verificationStatus": status_str,
+        "isVerified": is_approved,
+        "isApproved": is_approved,
+        "reason": reason,
+        "verificationReason": reason,
+        "reviewedAt": ts,
+        "updated_at": ts,
+        "lastUpdated": ts,
+    }
+    user_col = "drivers" if role == "driver" else "clients"
+    try:
+        batch = _db.batch()
+        batch.set(_db.collection("verifications").document(doc_id), payload, merge=True)
+        batch.set(_db.collection(user_col).document(doc_id), payload, merge=True)
+        batch.set(_db.collection("users").document(doc_id), payload, merge=True)
+        batch.commit()
+        log.info("✅ write_approval OK: %s/%s (action=%s)", user_col, doc_id, action)
+        return True
+    except Exception as e:
+        log.error("❌ write_approval FAILED for %s: %s", doc_id, e)
+        return False
+
+
 def get_account_status(user_id: int, collection: str = "clients") -> str:
     """Read account status from Firestore (dispatch may have blocked/deleted)."""
     _ensure_init()

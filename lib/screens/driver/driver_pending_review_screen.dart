@@ -247,25 +247,52 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
 
   /// Check the backend REST API once.
   Future<void> _checkApiOnce() async {
+    // Try primary endpoint
     try {
       final result = await ApiService.getDriverApprovalStatus();
       final status =
           result['approval_status'] as String? ??
           result['status'] as String? ??
           'pending';
-      debugPrint('[PendingReview] API status=$status');
+      debugPrint('[PendingReview] API driver-approval-status=$status');
       if (!mounted || _navigating) return;
       if (status == 'approved') {
         _handleApproved();
+        return;
       } else if (status == 'rejected') {
         final reason =
             result['rejection_reason'] as String? ??
             result['reason'] as String? ??
             S.of(context).applicationNotApproved;
         _handleRejected(reason);
+        return;
       }
     } catch (e) {
-      debugPrint('[PendingReview] API check error: $e');
+      debugPrint('[PendingReview] API driver-approval-status error: $e');
+    }
+    // Fallback: try secondary endpoint
+    if (_navigating || !mounted) return;
+    try {
+      final result2 = await ApiService.getVerificationStatus();
+      final status2 =
+          result2['approval_status'] as String? ??
+          result2['verification_status'] as String? ??
+          result2['status'] as String? ??
+          'pending';
+      debugPrint('[PendingReview] API verification-status=$status2');
+      if (!mounted || _navigating) return;
+      if (status2 == 'approved') {
+        _handleApproved();
+      } else if (status2 == 'rejected') {
+        final reason =
+            result2['rejection_reason'] as String? ??
+            result2['verification_reason'] as String? ??
+            result2['reason'] as String? ??
+            S.of(context).applicationNotApproved;
+        _handleRejected(reason);
+      }
+    } catch (e) {
+      debugPrint('[PendingReview] API verification-status error: $e');
     }
   }
 

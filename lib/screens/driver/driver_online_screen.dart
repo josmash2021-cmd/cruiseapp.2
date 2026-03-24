@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show File;
 import 'dart:math' as math;
@@ -139,8 +139,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Map<String, dynamic>? _previewingOffer;
   bool _offerRouteShown = false; // true after route draw completes
   AnimationController? _routePulseCtrl;
-  double _offerCardScale = 1.0;
-  bool _routePreviewActive = false;
+
+  // ── Pulse + ripple animation on card tap ──
+  AnimationController? _pulseCtrl;
+  Animation<double>? _pulseAnim;
+  AnimationController? _rippleCtrl;
+  bool _showRipple = false;
+  bool _isCardAnimating = false;
+  String? _animatingOfferId; // which card is pulsing
 
   // â”€â”€ Request data (for active trip after acceptance) â”€â”€
   Timer? _pollT;
@@ -289,6 +295,34 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     )..repeat();
     _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(_searchPulse);
 
+    // Pulse + ripple for offer card tap
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+    _pulseAnim = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 1.04)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 30,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.04, end: 0.97)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.97, end: 1.0)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 30,
+      ),
+    ]).animate(_pulseCtrl!);
+
+    _rippleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+
     _boot();
   }
 
@@ -311,6 +345,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _panelSheetCtrl.dispose();
     _earningsPageCtrl.dispose();
     _routePulseCtrl?.dispose();
+    _pulseCtrl?.dispose();
+    _rippleCtrl?.dispose();
     _map?.dispose();
     super.dispose();
   }
@@ -2451,7 +2487,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   /// Dynamic bottom padding for the GoogleMap based on active overlays
   double get _mapBottomPadding {
-    if (_routePreviewActive) return 380;
+    if (_previewingOffer != null) return 380;
     if (_phase == _Phase.searching && _pendingOffers.isNotEmpty) return 340;
     if (_phase == _Phase.enRouteToPickup) return 270;
     if (_phase == _Phase.arrivedAtPickup) return 290;
@@ -2479,6 +2515,28 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
   }
 
+  // ── Pulse + ripple card tap → route animation ──
+  Future<void> _onOfferCardTap(Map<String, dynamic> offer) async {
+    if (_isCardAnimating) return;
+    final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+    _isCardAnimating = true;
+
+    setState(() {
+      _showRipple = true;
+      _animatingOfferId = oid;
+    });
+    _pulseCtrl!.forward(from: 0);
+    _rippleCtrl!.forward(from: 0);
+
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (mounted) setState(() => _showRipple = false);
+    _rippleCtrl!.reset();
+    _isCardAnimating = false;
+
+    // Trigger route preview on map (reuses existing logic)
+    _previewOfferRoute(offer);
+  }
+
   // â"€â"€ Preview offer route on map â"€â"€
   Future<void> _previewOfferRoute(Map<String, dynamic> offer) async {
     final pickupLat  = (offer['pickup_lat']  as num?)?.toDouble() ?? 0;
@@ -2488,7 +2546,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final pickupLL  = LatLng(pickupLat,  pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
 
-    _routePreviewActive = true;
+    setState(() => _previewingOffer = offer);
     await _clearAllAnnotations();
 
     // Step 1: Draw polylines FIRST (rendered below pins)
@@ -2532,7 +2590,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       }
     }
 
-    // Route animation complete
+    // Mark route as shown (triggers card shrink animation)
+    if (mounted && _previewingOffer != null) {
+      setState(() => _offerRouteShown = true);
+    }
 
     // Fit camera to show all three points
     if (!mounted) return;
@@ -2540,7 +2601,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
 
     await Future.delayed(const Duration(milliseconds: 600));
-    if (mounted) {
+    if (mounted && _previewingOffer != null) {
       _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
     }
   }
@@ -2714,7 +2775,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     mapbox.PolylineAnnotation? glowAnnot;
 
     for (int step = 1; step <= steps; step++) {
-      if (!mounted || !_routePreviewActive) break;
+      if (!mounted || _previewingOffer == null) break;
       final end = (total * step / steps).ceil().clamp(2, total);
       final subset = pts.sublist(0, end);
       final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
@@ -2761,7 +2822,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   void _closePreview() {
     _routePulseCtrl?.stop();
-    _routePreviewActive = false;
     setState(() {
       _previewingOffer = null;
       _offerRouteShown = false;
@@ -3039,6 +3099,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   textMuted,
                   borderC,
                   shadowC,
+                ),
+              ),
+
+            // â”€â”€ X button to close preview (top-right) â”€â”€
+            if (_previewingOffer != null)
+              Positioned(
+                top: top + 10,
+                right: 16,
+                child: _fab(
+                  Icons.close_rounded,
+                  48,
+                  fabBg,
+                  fabBorder,
+                  fabIcon,
+                  _closePreview,
                 ),
               ),
 
@@ -3808,29 +3883,52 @@ Widget _navHeader() {
                     itemCount: _pendingOffers.length,
                     itemBuilder: (ctx, i) {
                       final offer = _pendingOffers[i];
-                      return GestureDetector(
-                        onTapDown: (_) => setState(() => _offerCardScale = 0.96),
-                        onTapUp: (_) {
-                          setState(() => _offerCardScale = 1.0);
-                          _previewOfferRoute(offer);
-                        },
-                        onTapCancel: () => setState(() => _offerCardScale = 1.0),
-                        child: AnimatedScale(
-                          scale: _offerCardScale,
-                          duration: const Duration(milliseconds: 120),
-                          curve: Curves.easeOut,
-                          child: _offerCard(
-                            offer,
-                            true,
-                            cCardBg,
-                            cCardBorder,
-                            cTextPrimary,
-                            cTextMuted,
-                            cRejectBg,
-                            cRejectText,
-                            acceptBg,
-                            cBorderC,
+                      final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+                      final isAnimating = _animatingOfferId == oid;
+                      Widget card = _offerCard(
+                          offer,
+                          true,
+                          cCardBg,
+                          cCardBorder,
+                          cTextPrimary,
+                          cTextMuted,
+                          cRejectBg,
+                          cRejectText,
+                          acceptBg,
+                          cBorderC,
+                        );
+                      // Wrap with pulse + ripple when this card is tapped
+                      if (isAnimating && _pulseAnim != null) {
+                        card = AnimatedBuilder(
+                          animation: _pulseAnim!,
+                          builder: (_, child) => Transform.scale(
+                            scale: _pulseAnim!.value,
+                            child: child,
                           ),
+                          child: card,
+                        );
+                      }
+                      return GestureDetector(
+                        onTap: () => _onOfferCardTap(offer),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            card,
+                            if (_showRipple && isAnimating && _rippleCtrl != null)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: AnimatedBuilder(
+                                    animation: _rippleCtrl!,
+                                    builder: (_, __) => CustomPaint(
+                                      painter: _OfferRipplePainter(
+                                        progress: _rippleCtrl!.value,
+                                        color: const Color(0xFFD4AF37),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       );
                     },
@@ -4442,40 +4540,25 @@ Widget _navHeader() {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFF0F0F0F),
-            Color(0xFF0A0A0A),
-          ],
-        ),
+        color: deepBlack,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: luxGold.withValues(alpha: 0.12),
+          color: luxGold.withValues(alpha: 0.10),
           width: 1,
         ),
         boxShadow: [
-          // Soft gold halo
+          // Gold-tinted 3D shadow
           BoxShadow(
-            color: luxGold.withValues(alpha: 0.08),
-            blurRadius: 20,
-            spreadRadius: -2,
-            offset: const Offset(0, 8),
-          ),
-          // Mid-depth dark shadow
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.50),
-            blurRadius: 30,
+            color: luxGold.withValues(alpha: 0.15),
+            blurRadius: 28,
             spreadRadius: -4,
-            offset: const Offset(0, 12),
+            offset: const Offset(0, 10),
           ),
-          // Deep far shadow
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.30),
-            blurRadius: 50,
-            spreadRadius: -6,
-            offset: const Offset(0, 22),
+            color: Colors.black.withValues(alpha: 0.60),
+            blurRadius: 32,
+            spreadRadius: -2,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
@@ -6903,4 +6986,26 @@ class _DriverRadarPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DriverRadarPainter old) => old.progress != progress;
+}
+
+/// Gold ripple ring that expands outward from center of offer card on tap.
+class _OfferRipplePainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  const _OfferRipplePainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius =
+        math.sqrt(size.width * size.width + size.height * size.height) / 2 + 40;
+    final paint = Paint()
+      ..color = color.withValues(alpha: (1 - progress) * 0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+    canvas.drawCircle(center, maxRadius * progress, paint);
+  }
+
+  @override
+  bool shouldRepaint(_OfferRipplePainter old) => old.progress != progress;
 }

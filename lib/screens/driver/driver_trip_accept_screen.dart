@@ -15,8 +15,6 @@ import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
-import '../../helpers/animated_route_drawer.dart';
-import '../../helpers/map_pin_painter.dart';
 import '../chat_screen.dart';
 import 'driver_nav_screen.dart';
 
@@ -565,8 +563,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
     _annotMgr = await ctrl.annotations.createPointAnnotationManager();
 
-    // Pickup pin (shared painter)
-    final pickupBytes = await MapPinPainter.buildAcceptPin(isPickup: true);
+    // Fetch real road route from OSRM; fall back to straight line only if network fails
+    final osrm = await _fetchOsrmRoute();
+    final coords = osrm ?? [
+      mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude),
+      mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude),
+    ];
+    await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: coords),
+      lineColor: _gold.toARGB32(),
+      lineWidth: 5.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    ));
+
+    // Pickup pin (white ring + gold inner)
+    final pickupBytes = await _buildPickupPin();
     if (pickupBytes != null) {
       await _annotMgr!.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(
@@ -579,8 +590,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ));
     }
 
-    // Dropoff pin (shared painter)
-    final dropoffBytes = await MapPinPainter.buildAcceptPin(isPickup: false);
+    // Dropoff pin (white ring + dark inner + white dot)
+    final dropoffBytes = await _buildDropoffPin();
     if (dropoffBytes != null) {
       await _annotMgr!.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(
@@ -607,28 +618,80 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       null, null,
     );
     ctrl.flyTo(cam, mapbox.MapAnimationOptions(duration: 600));
-
-    // Animated route drawing (smooth progressive line)
-    final osrm = await _fetchOsrmRoute();
-    if (!mounted) return;
-    final routeLatLngs = osrm != null
-        ? osrm.map((p) => LatLng(p.lat.toDouble(), p.lng.toDouble())).toList()
-        : [widget.pickupLatLng, widget.dropoffLatLng];
-    await AnimatedRouteDrawer.animateWithCasing(
-      manager: _polyMgr!,
-      points: routeLatLngs,
-      casingColor: const Color(0xFF1A1A2E).toARGB32(),
-      lineColor: _gold.toARGB32(),
-      mainWidth: 5.0,
-      casingWidth: 10.0,
-      stepMs: 8,
-      batchSize: 4,
-    );
   }
 
-  // ── Pin builders (delegated to shared MapPinPainter) ───────────────────
-  Future<Uint8List?> _buildPickupPin() => MapPinPainter.buildAcceptPin(isPickup: true);
-  Future<Uint8List?> _buildDropoffPin() => MapPinPainter.buildAcceptPin(isPickup: false);
+  // ── Pin builders (matching rider app gold theme) ──────────────────────────
+  Future<Uint8List?> _buildPickupPin() async => _buildGoldPin(isPickup: true);
+  Future<Uint8List?> _buildDropoffPin() async => _buildGoldPin(isPickup: false);
+
+  Future<Uint8List?> _buildGoldPin({required bool isPickup}) async {
+    const double w = 100;
+    const double h = 130;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
+    const cx = w / 2;
+    const r = 30.0;
+    const headCY = r + 8;
+    const tipY = h;
+    const gold = Color(0xFFE8C547);
+
+    // ── Teardrop path (tip at exact bottom of canvas) ──
+    final path = Path()
+      ..moveTo(cx - r, headCY)
+      ..arcTo(
+        Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
+        math.pi, -math.pi, false,
+      )
+      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 4, cx, tipY)
+      ..cubicTo(cx - r * 0.22, tipY - 4, cx - r, headCY + r, cx - r, headCY)
+      ..close();
+
+    // Shadow
+    canvas.drawPath(
+      path.shift(const Offset(0, 3)),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.30)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+    // Gold fill
+    canvas.drawPath(path, Paint()..color = gold);
+    // White border
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = Colors.white.withValues(alpha: 0.35),
+    );
+    // Highlight
+    canvas.drawCircle(
+      Offset(cx - r * 0.25, headCY - r * 0.25),
+      r * 0.4,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.25)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
+
+    // White center icon
+    final iconPaint = Paint()..color = Colors.white..isAntiAlias = true;
+    if (isPickup) {
+      canvas.drawCircle(const Offset(cx, headCY), r * 0.22, iconPaint);
+    } else {
+      final flagPath = Path()
+        ..moveTo(cx - r * 0.2, headCY - r * 0.35)
+        ..lineTo(cx + r * 0.35, headCY - r * 0.2)
+        ..lineTo(cx - r * 0.08, headCY - r * 0.05)
+        ..lineTo(cx - r * 0.08, headCY + r * 0.35)
+        ..lineTo(cx - r * 0.2, headCY + r * 0.35)
+        ..close();
+      canvas.drawPath(flagPath, iconPaint);
+    }
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(w.toInt(), h.toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData?.buffer.asUint8List();
+  }
 
   // ── BUILD ─────────────────────────────────────────────────────────────────
   @override

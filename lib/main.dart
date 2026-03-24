@@ -90,6 +90,10 @@ void main() async {
       // Init local Hive cache (fast, sync reads after this)
       await LocalCache.init();
 
+      // Limit in-memory image cache to prevent OOM on long sessions
+      PaintingBinding.instance.imageCache.maximumSizeBytes = 200 * 1024 * 1024; // 200 MB
+      PaintingBinding.instance.imageCache.maximumSize = 1000;
+
       MapboxOptions.setAccessToken(MapboxConfig.accessToken);
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       SystemChrome.setSystemUIOverlayStyle(

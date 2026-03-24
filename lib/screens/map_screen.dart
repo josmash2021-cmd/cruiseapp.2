@@ -3377,6 +3377,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                                   'assets/images/${ride.vehicle.toLowerCase()}.png',
                                   fit: BoxFit.contain,
                                   filterQuality: FilterQuality.high,
+                                  cacheWidth: 200,
                                   errorBuilder: (ctx, err, st) => Center(
                                     child: Text(
                                       ride.vehicle,
@@ -5356,7 +5357,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       ),
       child: Padding(
         padding: const EdgeInsets.all(6),
-        child: Image.asset('assets/images/google_g.png', fit: BoxFit.contain),
+        child: Image.asset('assets/images/google_g.png', fit: BoxFit.contain, cacheWidth: 80),
       ),
     );
   }
@@ -5376,6 +5377,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         child: Image.asset(
           'assets/images/paypal_logo.png',
           fit: BoxFit.contain,
+          cacheWidth: 80,
         ),
       ),
     );
@@ -5850,6 +5852,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                               'assets/images/${ride.vehicle.toLowerCase()}.png',
                               fit: BoxFit.contain,
                               filterQuality: FilterQuality.high,
+                              cacheWidth: 112,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -6549,6 +6552,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   height: 70,
                   fit: BoxFit.contain,
                   filterQuality: FilterQuality.high,
+                  cacheWidth: 200,
                   errorBuilder: (_, __, ___) => Icon(
                     Icons.directions_car_rounded,
                     size: 48,

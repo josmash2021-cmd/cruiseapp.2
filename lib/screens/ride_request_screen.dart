@@ -2317,6 +2317,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               filterQuality: FilterQuality.high,
               isAntiAlias: true,
               alignment: Alignment.center,
+              cacheWidth: 216,
               errorBuilder: (_, e, s) => Icon(
                 Icons.directions_car_rounded,
                 size: 36,
@@ -3633,6 +3634,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             child: Image.asset(
               'assets/images/google_g.png',
               fit: BoxFit.contain,
+              cacheWidth: 80,
             ),
           ),
         );
@@ -3650,6 +3652,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             child: Image.asset(
               'assets/images/paypal_logo.png',
               fit: BoxFit.contain,
+              cacheWidth: 80,
             ),
           ),
         );

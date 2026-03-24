@@ -508,6 +508,7 @@ class RideOptionsSheet extends StatelessWidget {
       fit: BoxFit.contain,
       filterQuality: FilterQuality.high,
       isAntiAlias: true,
+      cacheWidth: 200,
       errorBuilder: (ctx, err, st) => Icon(
         Icons.directions_car_rounded,
         color: isSelected ? _gold : Colors.white.withValues(alpha: 0.4),

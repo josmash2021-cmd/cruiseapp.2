@@ -882,12 +882,11 @@ class ApiService {
   static Future<Map<String, dynamic>> getVerificationStatus() async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await _client
-        .get(
-          Uri.parse('$_baseUrl/auth/verification-status'),
-          headers: _jsonHeaders(token),
-        )
-        .timeout(const Duration(seconds: 10));
+    final res = await _cachedGet(
+      Uri.parse('$_baseUrl/auth/verification-status'),
+      headers: _jsonHeaders(token),
+      cacheTtl: const Duration(seconds: 60),
+    );
     return _parse(res);
   }
 
@@ -895,12 +894,11 @@ class ApiService {
   static Future<Map<String, dynamic>> getDriverApprovalStatus() async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await _client
-        .get(
-          Uri.parse('$_baseUrl/auth/driver-approval-status'),
-          headers: _jsonHeaders(token),
-        )
-        .timeout(const Duration(seconds: 5));
+    final res = await _cachedGet(
+      Uri.parse('$_baseUrl/auth/driver-approval-status'),
+      headers: _jsonHeaders(token),
+      cacheTtl: const Duration(seconds: 60),
+    );
     return _parse(res);
   }
 
@@ -1235,9 +1233,11 @@ class ApiService {
   /// Get driver stats (acceptance rate, on-time rate, etc.) from backend.
   static Future<Map<String, dynamic>> getDriverStats(int driverId) async {
     final h = await _authHeaders();
-    final res = await _client
-        .get(Uri.parse('$_baseUrl/drivers/$driverId/stats'), headers: h)
-        .timeout(const Duration(seconds: 8));
+    final res = await _cachedGet(
+      Uri.parse('$_baseUrl/drivers/$driverId/stats'),
+      headers: h,
+      cacheTtl: const Duration(seconds: 30),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -1286,12 +1286,11 @@ class ApiService {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
 
-    final res = await _client
-        .get(
-          Uri.parse('$_baseUrl/drivers/earnings?period=$period'),
-          headers: _jsonHeaders(token),
-        )
-        .timeout(const Duration(seconds: 10));
+    final res = await _cachedGet(
+      Uri.parse('$_baseUrl/drivers/earnings?period=$period'),
+      headers: _jsonHeaders(token),
+      cacheTtl: const Duration(seconds: 30),
+    );
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
@@ -1397,9 +1396,11 @@ class ApiService {
   static Future<Map<String, dynamic>> getReferralCode() async {
     final token = await getToken();
     if (token == null) return {};
-    final res = await _client
-        .get(Uri.parse('$_baseUrl/auth/referral-code'), headers: _jsonHeaders(token))
-        .timeout(const Duration(seconds: 10));
+    final res = await _cachedGet(
+      Uri.parse('$_baseUrl/auth/referral-code'),
+      headers: _jsonHeaders(token),
+      cacheTtl: const Duration(minutes: 10),
+    );
     if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
     return {};
   }
@@ -1770,9 +1771,11 @@ class ApiService {
   /// Get the driver's vehicle info.
   static Future<Map<String, dynamic>?> getVehicle() async {
     final h = await _authHeaders();
-    final res = await _client
-        .get(Uri.parse('$_baseUrl/drivers/vehicle'), headers: h)
-        .timeout(const Duration(seconds: 8));
+    final res = await _cachedGet(
+      Uri.parse('$_baseUrl/drivers/vehicle'),
+      headers: h,
+      cacheTtl: const Duration(minutes: 5),
+    );
     final data = _parse(res);
     return data['vehicle'] as Map<String, dynamic>?;
   }
@@ -2036,9 +2039,11 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> getRiderPaymentMethods() async {
     final h = await _authHeaders();
-    final res = await _client
-        .get(Uri.parse('$_baseUrl/riders/payment-methods'), headers: h)
-        .timeout(const Duration(seconds: 10));
+    final res = await _cachedGet(
+      Uri.parse('$_baseUrl/riders/payment-methods'),
+      headers: h,
+      cacheTtl: const Duration(seconds: 30),
+    );
     final body = _parse(res);
     if (body is List) return (body as List).cast<Map<String, dynamic>>();
     return [];

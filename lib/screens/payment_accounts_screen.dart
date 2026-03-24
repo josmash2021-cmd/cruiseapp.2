@@ -514,7 +514,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(7),
-        child: Image.asset('assets/images/google_g.png', fit: BoxFit.contain),
+        child: Image.asset('assets/images/google_g.png', fit: BoxFit.contain, cacheWidth: 80),
       ),
     );
   }
@@ -533,6 +533,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
         child: Image.asset(
           'assets/images/paypal_logo.png',
           fit: BoxFit.contain,
+          cacheWidth: 80,
         ),
       ),
     );

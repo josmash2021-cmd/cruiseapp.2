@@ -1721,6 +1721,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         child: Image.asset(
                           'assets/images/logoapp.png',
                           fit: BoxFit.cover,
+                          cacheWidth: 96,
                           errorBuilder: (ctx, err, st) => Icon(
                             Icons.directions_car_rounded,
                             color: _gold,
@@ -2377,6 +2378,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               filterQuality: FilterQuality.high,
                               isAntiAlias: true,
                               alignment: Alignment.centerRight,
+                              cacheWidth: 300,
                               errorBuilder: (ctx, err, st) => Icon(
                                 Icons.directions_car_rounded,
                                 color: accent.withValues(alpha: 0.5),

@@ -629,7 +629,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
         ),
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: Image.asset('assets/images/google_g.png', fit: BoxFit.contain),
+          child: Image.asset('assets/images/google_g.png', fit: BoxFit.contain, cacheWidth: 80),
         ),
       );
     }
@@ -647,6 +647,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
           child: Image.asset(
             'assets/images/paypal_logo.png',
             fit: BoxFit.contain,
+            cacheWidth: 80,
           ),
         ),
       );
@@ -1034,6 +1035,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                                   child: Image.asset(
                                     'assets/images/${ride.vehicle.toLowerCase()}.png',
                                     fit: BoxFit.contain,
+                                    cacheWidth: 100,
                                     errorBuilder: (_, __, ___) => const Icon(
                                       Icons.directions_car_rounded,
                                       color: _gold,

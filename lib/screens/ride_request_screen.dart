@@ -128,6 +128,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   // ── Map interaction state ──
   bool _userMovedMap = false;
+
+  // ── Shake animation (disabled request button) ──
+  late AnimationController _shakeCtrl;
+  late Animation<double> _shakeAnim;
   bool _rideOptionsExpanded = true;
   bool _programmaticCam = false;
   final GoldLocationDot _goldDot = GoldLocationDot();
@@ -195,6 +199,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       begin: 1.0,
       end: 0.0,
     ).animate(CurvedAnimation(parent: _sheetCtrl, curve: Curves.easeOutCubic));
+
+    _shakeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _shakeAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: -8.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: -8.0, end: 8.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 8.0, end: -8.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: -8.0, end: 0.0), weight: 1),
+    ]).animate(_shakeCtrl);
 
     _ctrl.addListener(_onStateChange);
     // Wire in scheduled/airport params from widget
@@ -937,6 +952,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _searchStatusTimer?.cancel();
     _searchElapsedTimer?.cancel();
     _sheetCtrl.dispose();
+    _shakeCtrl.dispose();
     super.dispose();
   }
 
@@ -2121,63 +2137,86 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ),
                   const SizedBox(height: 10),
 
-                  // Start Ride button — processes payment directly
+                  // Start Ride button — disabled until ride selected
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: _isProcessingPayment
-                              ? LinearGradient(
-                                  colors: [
-                                    c.gold.withValues(alpha: 0.5),
-                                    c.goldLight.withValues(alpha: 0.5),
-                                  ],
-                                )
-                              : LinearGradient(colors: [c.gold, c.goldLight]),
-                          borderRadius: BorderRadius.circular(26),
-                        ),
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            foregroundColor: Colors.black,
-                            shape: RoundedRectangleBorder(
+                    child: AnimatedBuilder(
+                      animation: _shakeAnim,
+                      builder: (_, child) => Transform.translate(
+                        offset: Offset(_shakeAnim.value, 0),
+                        child: child,
+                      ),
+                      child: GestureDetector(
+                        onTap: option == null && !_isProcessingPayment
+                            ? () => _shakeCtrl.forward(from: 0)
+                            : null,
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                            decoration: BoxDecoration(
+                              gradient: option != null && !_isProcessingPayment
+                                  ? LinearGradient(colors: [c.gold, c.goldLight])
+                                  : null,
+                              color: option == null
+                                  ? const Color(0xFF2A2A2A)
+                                  : _isProcessingPayment
+                                      ? c.gold.withValues(alpha: 0.5)
+                                      : null,
                               borderRadius: BorderRadius.circular(26),
                             ),
-                          ),
-                          onPressed: _isProcessingPayment
-                              ? null
-                              : () => _startRideDirectly(c, option),
-                          child: _isProcessingPayment
-                              ? const SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                    color: Colors.black54,
-                                  ),
-                                )
-                              : FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Text(
-                                    option != null
-                                        ? S
-                                              .of(context)
-                                              .requestRideWithPrice(
-                                                option.priceEstimate
-                                                    .toStringAsFixed(2),
-                                              )
-                                        : S.of(context).requestRide,
-                                    maxLines: 1,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                foregroundColor: option != null
+                                    ? Colors.black
+                                    : Colors.white38,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(26),
                                 ),
+                              ),
+                              onPressed: option != null && !_isProcessingPayment
+                                  ? () => _startRideDirectly(c, option)
+                                  : null,
+                              child: _isProcessingPayment
+                                  ? const SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        color: Colors.black54,
+                                      ),
+                                    )
+                                  : AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 250),
+                                      child: FittedBox(
+                                        key: ValueKey(option?.id),
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          option != null
+                                              ? S
+                                                    .of(context)
+                                                    .requestRideWithPrice(
+                                                      option.priceEstimate
+                                                          .toStringAsFixed(2),
+                                                    )
+                                              : S.of(context).chooseRide,
+                                          maxLines: 1,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w700,
+                                            color: option != null
+                                                ? Colors.black
+                                                : Colors.white38,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -3562,13 +3601,21 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             borderRadius: BorderRadius.circular(10),
           ),
           child: Center(
-            child: Text(
-              '',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: size * 0.55,
-                fontFamily: '-apple-system',
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.apple, color: Colors.white, size: size * 0.5),
+                const SizedBox(width: 1),
+                Text(
+                  'Pay',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: size * 0.35,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
             ),
           ),
         );

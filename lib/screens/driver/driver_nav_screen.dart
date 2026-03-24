@@ -93,6 +93,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   mapbox.PointAnnotationManager? _pointMgr;
   mapbox.PolylineAnnotation? _routeAnnot;
   mapbox.PolylineAnnotation? _routeCasingAnnot;
+  mapbox.PolylineAnnotation? _routeGlowAnnot;
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
 
@@ -419,6 +420,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         .toList();
     final geom = mapbox.LineString(coordinates: coords);
 
+    if (_routeGlowAnnot != null) {
+      _routeGlowAnnot!.geometry = geom;
+      try { await mgr.update(_routeGlowAnnot!); } catch (_) {}
+    }
     if (_routeCasingAnnot != null) {
       _routeCasingAnnot!.geometry = geom;
       try { await mgr.update(_routeCasingAnnot!); } catch (_) {}
@@ -486,6 +491,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         .toList();
     final geom = mapbox.LineString(coordinates: coords);
 
+    if (_routeGlowAnnot != null) {
+      try { await mgr.delete(_routeGlowAnnot!); } catch (_) {}
+      _routeGlowAnnot = null;
+    }
     if (_routeCasingAnnot != null) {
       try { await mgr.delete(_routeCasingAnnot!); } catch (_) {}
       _routeCasingAnnot = null;
@@ -494,17 +503,23 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       try { await mgr.delete(_routeAnnot!); } catch (_) {}
       _routeAnnot = null;
     }
-    // Dark casing (border) – drawn first so it sits under the line
+    // Outer gold glow – drawn first (behind everything)
+    _routeGlowAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geom,
+      lineColor: const Color(0xFFF5C518).withValues(alpha: 0.18).toARGB32(),
+      lineWidth: 18.0,
+    ));
+    // Dark casing (border) – sits between glow and main line
     _routeCasingAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
       lineColor: const Color(0xFF1A1A2E).toARGB32(),
-      lineWidth: 14.0,
+      lineWidth: 12.0,
     ));
     // Golden route line on top
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
       lineColor: const Color(0xFFF5C518).toARGB32(),
-      lineWidth: 8.0,
+      lineWidth: 6.0,
     ));
   }
 
@@ -935,52 +950,53 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   Future<Uint8List?> _buildArrowIcon() async {
-    const double w = 80, h = 80;
+    const double w = 96, h = 96;
     final rec = ui.PictureRecorder();
     final c   = Canvas(rec, Rect.fromLTWH(0, 0, w, h));
     final cx  = w / 2;
     final cy  = h / 2;
 
-    // Golden glow underneath
-    c.drawCircle(
-      Offset(cx, cy),
-      32,
-      Paint()
-        ..color = const Color(0xFFF5C518).withValues(alpha: 0.25)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
-    );
-    // 3D fade shadow – large soft ellipse beneath the circle
+    // ── 3D elliptical ground shadow ──
+    // Outer soft ellipse (large, very transparent)
     c.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 7), width: 66, height: 22),
+      Rect.fromCenter(center: Offset(cx, cy + 10), width: 72, height: 20),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.38)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
+        ..color = Colors.black.withValues(alpha: 0.30)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
     );
+    // Mid ellipse (tighter, slightly darker)
     c.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 3), width: 48, height: 13),
+      Rect.fromCenter(center: Offset(cx, cy + 8), width: 52, height: 14),
       Paint()
         ..color = Colors.black.withValues(alpha: 0.22)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+    // Inner core ellipse (smallest, darkest center)
+    c.drawOval(
+      Rect.fromCenter(center: Offset(cx, cy + 6), width: 30, height: 8),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.15)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
     );
 
-    // White circle body
-    c.drawCircle(Offset(cx, cy), 22, Paint()..color = Colors.white);
+    // ── White circle body ──
+    c.drawCircle(Offset(cx, cy - 2), 22, Paint()..color = Colors.white);
 
-    // Gold ring border
+    // ── Gold ring border ──
     c.drawCircle(
-      Offset(cx, cy), 22,
+      Offset(cx, cy - 2), 22,
       Paint()
-        ..color = const Color(0xFFD4A843).withValues(alpha: 0.45)
+        ..color = const Color(0xFFD4A843).withValues(alpha: 0.50)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3.0,
     );
 
-    // Gold directional chevron (points UP – rotated with iconRotate)
+    // ── Gold directional chevron (points UP – rotated with iconRotate) ──
     final chevron = Path()
-      ..moveTo(cx,      cy - 13)
-      ..lineTo(cx + 8,  cy + 5)
-      ..lineTo(cx,      cy + 1)
-      ..lineTo(cx - 8,  cy + 5)
+      ..moveTo(cx,      cy - 15)
+      ..lineTo(cx + 8,  cy + 3)
+      ..lineTo(cx,      cy - 1)
+      ..lineTo(cx - 8,  cy + 3)
       ..close();
     c.drawPath(chevron, Paint()..color = const Color(0xFFD4A843));
 
@@ -989,76 +1005,81 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     return bytes?.buffer.asUint8List();
   }
 
+  /// Cruise-branded teardrop pin for destination (white tip).
   Future<Uint8List?> _buildDestPin() async {
-    const double w = 60;
-    const double h = 80;
-    final rec = ui.PictureRecorder();
-    final c = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
-    const cx = w / 2;
-    const r = 18.0;
-    const headCY = r + 6;
-    const tipY = h;
-
-    // ── Teardrop path (tip at exact bottom) ──
-    final path = Path()
-      ..moveTo(cx - r, headCY)
-      ..arcTo(
-        Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
-        math.pi, -math.pi, false,
-      )
-      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 3, cx, tipY)
-      ..cubicTo(cx - r * 0.22, tipY - 3, cx - r, headCY + r, cx - r, headCY)
-      ..close();
-
-    // Shadow
-    c.drawPath(
-      path.shift(const Offset(0, 2)),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
-    );
-    // Gold teardrop fill
-    c.drawPath(path, Paint()..color = _gold);
-    // White head circle
-    c.drawCircle(const Offset(cx, headCY), r, Paint()..color = Colors.white);
-    // Gold inner
-    c.drawCircle(const Offset(cx, headCY), r - 5, Paint()..color = _gold);
-
-    final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
+    return _buildCruiseTeardropPin(Colors.white);
   }
 
-  /// Build a pickup pin image (smaller gold circle with white ring).
+  /// Cruise-branded teardrop pin for pickup (gold tip).
   Future<Uint8List?> _buildPickupPin() async {
-    const double w = 48;
-    const double h = 64;
-    final rec = ui.PictureRecorder();
-    final c = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
-    const cx = w / 2;
-    const r = 14.0;
-    const headCY = r + 5;
-    const tipY = h;
+    return _buildCruiseTeardropPin(_gold);
+  }
 
+  /// Shared Cruise-branded teardrop pin matching CruiseMapPin style.
+  /// Navy→tipColor gradient fill, person avatar inside.
+  Future<Uint8List?> _buildCruiseTeardropPin(Color tipColor) async {
+    const double w = 72, h = 88;
+    final rec = ui.PictureRecorder();
+    final cv  = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
+    const cx  = w / 2;
+    const r   = w / 2; // radius of rounded top
+
+    // ── Teardrop path (matching CruiseMapPin _PinPainter) ──
     final path = Path()
-      ..moveTo(cx - r, headCY)
-      ..arcTo(
-        Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
-        math.pi, -math.pi, false,
-      )
-      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 3, cx, tipY)
-      ..cubicTo(cx - r * 0.22, tipY - 3, cx - r, headCY + r, cx - r, headCY)
+      ..moveTo(cx, h)                                          // tip
+      ..quadraticBezierTo(0, r + (h - r) * 0.35, 0, r)        // left curve
+      ..arcTo(Rect.fromLTWH(0, 0, w, w), math.pi, -math.pi, false) // top arc
+      ..quadraticBezierTo(w, r + (h - r) * 0.35, cx, h)       // right curve
       ..close();
 
-    c.drawPath(
-      path.shift(const Offset(0, 2)),
+    // Drop shadow
+    cv.drawPath(
+      path.shift(const Offset(0, 3)),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        ..color = Colors.black.withValues(alpha: 0.35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
-    c.drawPath(path, Paint()..color = Colors.white);
-    c.drawCircle(const Offset(cx, headCY), r, Paint()..color = Colors.white);
-    c.drawCircle(const Offset(cx, headCY), r - 4, Paint()..color = _gold);
+
+    // Gradient fill: navy top → tipColor at bottom
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [const Color(0xFF1A1F2E), tipColor],
+        stops: const [0.0, 0.85],
+      ).createShader(const Rect.fromLTWH(0, 0, w, h));
+    cv.drawPath(path, fillPaint);
+
+    // Subtle border
+    cv.drawPath(
+      path,
+      Paint()
+        ..color = tipColor.withValues(alpha: 0.45)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+
+    // ── Person avatar (navy circle + white icon) ──
+    const avatarR  = 22.0;
+    const avatarCy = 26.0;
+    // Navy bg circle
+    cv.drawCircle(const Offset(cx, avatarCy), avatarR,
+      Paint()..color = const Color(0xFF1A1F2E));
+    cv.drawCircle(const Offset(cx, avatarCy), avatarR,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.24)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0);
+
+    // Person icon (head + body)
+    final iconPaint = Paint()..color = Colors.white;
+    cv.drawCircle(const Offset(cx, avatarCy - 6), 7, iconPaint); // head
+    final bodyPath = Path()
+      ..moveTo(cx - 8, avatarCy + 14)
+      ..quadraticBezierTo(cx - 8, avatarCy + 2, cx, avatarCy + 2)
+      ..quadraticBezierTo(cx + 8, avatarCy + 2, cx + 8, avatarCy + 14)
+      ..close();
+    cv.drawPath(bodyPath, iconPaint);
 
     final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);

@@ -8,6 +8,7 @@ import '../config/mapbox_config.dart';
 import '../l10n/app_localizations.dart';
 import '../models/lat_lng.dart';
 import '../services/places_service.dart';
+import '../widgets/cruise_map_pin.dart';
 
 /// Full-screen map picker. User drags the map under a fixed center pin.
 /// Returns a Map with 'address' (String), 'lat' (double), 'lng' (double).
@@ -149,20 +150,25 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
             onMapIdleListener: _onMapIdle,
           ),
 
-          // Center pin
+          // Center pin — fixed while map moves underneath
           Center(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 36),
-              child: Icon(
-                Icons.location_on,
-                size: 48,
-                color: const Color(0xFFE8C547),
-                shadows: [
-                  Shadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 8,
-                  ),
-                ],
+            child: Transform.translate(
+              offset: const Offset(0, -36),
+              child: const CruiseMapPin(size: 56),
+            ),
+          ),
+
+          // Shadow dot on map under pin tip
+          Center(
+            child: Transform.translate(
+              offset: const Offset(0, 4),
+              child: Container(
+                width: 8,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.black38,
+                  borderRadius: BorderRadius.circular(4),
+                ),
               ),
             ),
           ),

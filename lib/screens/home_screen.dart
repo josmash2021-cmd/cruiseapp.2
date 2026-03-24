@@ -2069,7 +2069,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _buildFleetHeader() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
-      onTap: () => setState(() => _fleetExpanded = !_fleetExpanded),
+      onVerticalDragUpdate: (details) {
+        if (details.delta.dy < -6) {
+          setState(() => _fleetExpanded = true);
+        } else if (details.delta.dy > 6) {
+          setState(() => _fleetExpanded = false);
+        }
+      },
       behavior: HitTestBehavior.opaque,
       child: Row(
         children: [

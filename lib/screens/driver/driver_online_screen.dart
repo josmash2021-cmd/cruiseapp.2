@@ -3698,10 +3698,9 @@ Widget _navHeader() {
   ) {
     return GestureDetector(
       onVerticalDragUpdate: (d) {
-        // Detectar arrastre hacia arriba (dy negativo) para abrir el panel
+        // Detect swipe up (negative dy) to open the panel
         if (d.delta.dy < -3) _showOnlinePanel();
       },
-      onTap: _showOnlinePanel,
       behavior: HitTestBehavior.opaque,
       child: Container(
         decoration: BoxDecoration(
@@ -3818,80 +3817,65 @@ Widget _navHeader() {
                   ),
                 ),
               ),
-              // Status bar
-              GestureDetector(
-                onTap: _showOnlinePanel,
-                child: SizedBox(
-                  height: 44,
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 16),
-                      GestureDetector(
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          _showOnlinePanel();
-                        },
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: _gold, width: 1.5),
-                          ),
-                          child: ClipOval(
-                            child: _driverPhotoUrl != null && _driverPhotoUrl!.isNotEmpty
-                                ? (_driverPhotoUrl!.startsWith('http')
-                                    ? CachedNetworkImage(
-                                        imageUrl: _driverPhotoUrl!,
-                                        fit: BoxFit.cover,
-                                        fadeInDuration: const Duration(milliseconds: 200),
-                                        errorWidget: (_, __, ___) => Icon(
-                                          Icons.person_rounded,
-                                          color: textMuted,
-                                          size: 18,
-                                        ),
-                                      )
-                                    : Image.file(
-                                        File(_driverPhotoUrl!),
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Icon(
-                                          Icons.person_rounded,
-                                          color: textMuted,
-                                          size: 18,
-                                        ),
-                                      ))
-                                : Icon(
-                                    Icons.person_rounded,
-                                    color: textMuted,
-                                    size: 18,
-                                  ),
-                          ),
-                        ),
+              // Status bar — swipe on parent opens panel
+              SizedBox(
+                height: 44,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 16),
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _gold, width: 1.5),
                       ),
-                      const Spacer(),
-                      Text(
-                        S.of(context).findingTrips,
-                        style: TextStyle(
-                          color: textMuted,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      child: ClipOval(
+                        child: _driverPhotoUrl != null && _driverPhotoUrl!.isNotEmpty
+                            ? (_driverPhotoUrl!.startsWith('http')
+                                ? CachedNetworkImage(
+                                    imageUrl: _driverPhotoUrl!,
+                                    fit: BoxFit.cover,
+                                    fadeInDuration: const Duration(milliseconds: 200),
+                                    errorWidget: (_, __, ___) => Icon(
+                                      Icons.person_rounded,
+                                      color: textMuted,
+                                      size: 18,
+                                    ),
+                                  )
+                                : Image.file(
+                                    File(_driverPhotoUrl!),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Icon(
+                                      Icons.person_rounded,
+                                      color: textMuted,
+                                      size: 18,
+                                    ),
+                                  ))
+                            : Icon(
+                                Icons.person_rounded,
+                                color: textMuted,
+                                size: 18,
+                              ),
                       ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          _showOnlinePanel();
-                        },
-                        child: Icon(
-                          Icons.format_list_bulleted_rounded,
-                          color: textMuted,
-                          size: 22,
-                        ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      S.of(context).findingTrips,
+                      style: TextStyle(
+                        color: textMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(width: 16),
-                    ],
-                  ),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      Icons.format_list_bulleted_rounded,
+                      color: textMuted,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 16),
+                  ],
                 ),
               ),
             ],
@@ -6420,7 +6404,6 @@ Widget _navHeader() {
             children: [
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: _showOnlinePanel,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [

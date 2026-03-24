@@ -93,14 +93,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Smooth route draw ──
   Ticker? _routeDrawTicker;
-  mapbox.PolylineAnnotation? _segOneAnnot;
-  mapbox.PolylineAnnotation? _segOneGlow;
-  mapbox.PolylineAnnotation? _segTwoAnnot;
-  mapbox.PolylineAnnotation? _segTwoGlow;
+  mapbox.PolylineAnnotation? _routeMainAnnot;
+  mapbox.PolylineAnnotation? _routeGlowAnnot;
+  mapbox.PolylineAnnotation? _routeCasingAnnot;
+  mapbox.PolylineAnnotation? _routeShineAnnot;
   mapbox.PolylineAnnotation? _fullRouteGlow;
   AnimationController? _glowPulseCtrl;
-  List<LatLng> _fullSegOne = [];
-  List<LatLng> _fullSegTwo = [];
+  List<LatLng> _routePoints = [];
+
+  // ── Pin pop animation ──
+  late final AnimationController _pinPopCtrl;
+  late final Animation<double> _pinPopAnim;
+  final List<mapbox.PointAnnotation> _pinAnnots = [];
 
   // ── Trip distance pickup→dropoff ─────────────────────────────────────────
   double get _tripKm {
@@ -125,23 +129,37 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
 
-    // Tilt: flat (0°) → perspective (45°) over 1200ms
+    // Tilt: flat (0°) → perspective (55°) over 1200ms
     _tiltCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
-    _tiltAnim = Tween<double>(begin: 0.0, end: 45.0).animate(
+    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
       CurvedAnimation(parent: _tiltCtrl, curve: Curves.easeInOutCubic),
     );
+
+    // Pin pop: 0 → 1.15 → 0.95 → 1.0 (spring overshoot)
+    _pinPopCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _pinPopAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.01, end: 1.15), weight: 60),
+      TweenSequenceItem(tween: Tween(begin: 1.15, end: 0.95), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.0), weight: 20),
+    ]).animate(CurvedAnimation(parent: _pinPopCtrl, curve: Curves.easeOut));
   }
 
   @override
   void dispose() {
     _fadeCtrl.dispose();
     _tiltCtrl.dispose();
+    _pinPopCtrl.dispose();
     _glowPulseCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
+    _routePoints = [];
+    _pinAnnots.clear();
     super.dispose();
   }
 
@@ -623,97 +641,99 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return pts;
   }
 
+  /// Load route: prefer cached widget.routePoints, fallback to OSRM fetch
+  Future<List<LatLng>> _loadRoute() async {
+    // Use cached route from offer pre-fetch (instant, no straight-line bug)
+    if (widget.routePoints != null && widget.routePoints!.length >= 2) {
+      return widget.routePoints!;
+    }
+    // Fallback — fetch fresh pickup→dropoff only
+    return _fetchRoutePoints(widget.pickupLatLng, widget.dropoffLatLng);
+  }
+
   Future<void> _onMapReady(mapbox.MapboxMap ctrl) async {
     _map = ctrl;
     await MapTheme.applyNavyGold(ctrl);
     _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
     _annotMgr = await ctrl.annotations.createPointAnnotationManager();
 
-    // 1. Fetch both route segments in parallel
-    final segFutures = await Future.wait([
-      _fetchRoutePoints(widget.driverPos, widget.pickupLatLng),
-      _fetchRoutePoints(widget.pickupLatLng, widget.dropoffLatLng),
-    ]);
-    _fullSegOne = segFutures[0];
-    _fullSegTwo = segFutures[1];
+    // 1. Load route (cache-first — prevents straight-line bug)
+    _routePoints = await _loadRoute();
     if (!mounted) return;
 
-    // 2. Fit camera to show all three points
-    final allPts = [
-      mapbox.Point(coordinates: mapbox.Position(widget.driverPos.longitude, widget.driverPos.latitude)),
+    // 2. Build teardrop pins in parallel (don't place yet)
+    final pinResults = await Future.wait([
+      _buildTeardropPin(_gold),    // pickup — gold tip
+      _buildTeardropPin(Colors.white), // dropoff — white tip
+    ]);
+    if (!mounted) return;
+
+    // 3. Fit camera to show pickup + dropoff + route
+    final fitPts = [
       mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
       mapbox.Point(coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
     ];
     final cam = await ctrl.cameraForCoordinatesPadding(
-      allPts,
+      fitPts,
       mapbox.CameraOptions(),
-      mapbox.MbxEdgeInsets(top: 36, left: 36, bottom: 36, right: 36),
+      mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
       null, null,
     );
     ctrl.flyTo(cam, mapbox.MapAnimationOptions(duration: 600));
+    await Future.delayed(const Duration(milliseconds: 650));
+    if (!mounted) return;
 
-    // 3. Build & place teardrop pins (matching CruiseMapPin)
-    final pinResults = await Future.wait([
-      _buildTeardropPin(const Color(0xFF5BA3F5)), // driver — blue tip
-      _buildTeardropPin(_gold),                    // pickup — gold tip
-      _buildTeardropPin(Colors.white),             // dropoff — white tip
-    ]);
-    if (_annotMgr != null && mounted) {
+    // 4. Smooth tilt 0° → 55° (1200ms easeInOutCubic)
+    _tiltAnim.addListener(_applyMapTilt);
+    _tiltCtrl.forward(from: 0);
+
+    // 5. After 500ms of tilt → pop pins in
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+
+    _pinAnnots.clear();
+    if (_annotMgr != null) {
       if (pinResults[0] != null) {
-        await _annotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(
-            widget.driverPos.longitude, widget.driverPos.latitude)),
-          image: pinResults[0], iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
-        ));
-      }
-      if (pinResults[1] != null) {
-        await _annotMgr!.create(mapbox.PointAnnotationOptions(
+        final a = await _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(
             widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
-          image: pinResults[1], iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
+          image: pinResults[0], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
         ));
+        _pinAnnots.add(a);
       }
-      if (pinResults[2] != null) {
-        await _annotMgr!.create(mapbox.PointAnnotationOptions(
+      if (pinResults[1] != null) {
+        final a = await _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(
             widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
-          image: pinResults[2], iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
+          image: pinResults[1], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
         ));
+        _pinAnnots.add(a);
       }
     }
+    // Animate pin pop: 0.01 → 1.15 → 0.95 → 1.0
+    _pinPopAnim.addListener(_updatePinScale);
+    _pinPopCtrl.forward(from: 0);
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
 
-    // 4. Start tilt animation
-    _tiltCtrl.forward(from: 0);
-    _tiltAnim.addListener(_applyMapTilt);
-
-    // 5. Animate segment 1 (driver→pickup, gold, 900ms)
-    await _animateSegmentSmooth(
-      points: _fullSegOne,
-      color: _gold,
-      duration: const Duration(milliseconds: 900),
-      onAnnotCreated: (main, glow) {
-        _segOneAnnot = main;
-        _segOneGlow = glow;
-      },
+    // 6. Draw single gold gloss route animated (1000ms)
+    await _animateGoldRoute(
+      points: _routePoints,
+      duration: const Duration(milliseconds: 1000),
     );
     if (!mounted) return;
 
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    // 6. Animate segment 2 (pickup→dropoff, white, 700ms)
-    await _animateSegmentSmooth(
-      points: _fullSegTwo,
-      color: Colors.white,
-      duration: const Duration(milliseconds: 700),
-      onAnnotCreated: (main, glow) {
-        _segTwoAnnot = main;
-        _segTwoGlow = glow;
-      },
-    );
-    if (!mounted) return;
-
-    // 7. Start glow pulse
+    // 7. Start glow pulse on full route
     _startGlowPulse();
+  }
+
+  void _updatePinScale() {
+    if (_annotMgr == null || _pinAnnots.isEmpty) return;
+    final s = _pinPopAnim.value;
+    for (final pin in _pinAnnots) {
+      pin.iconSize = s;
+      _annotMgr!.update(pin);
+    }
   }
 
   void _applyMapTilt() {
@@ -751,12 +771,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     });
   }
 
-  /// Smooth 60fps progressive polyline draw using Ticker + easeInOutCubic
-  Future<void> _animateSegmentSmooth({
+  /// Smooth 60fps 4-layer gold gloss route draw using Ticker + easeInOutSine
+  Future<void> _animateGoldRoute({
     required List<LatLng> points,
-    required Color color,
     required Duration duration,
-    required void Function(mapbox.PolylineAnnotation?, mapbox.PolylineAnnotation?) onAnnotCreated,
   }) async {
     final polyMgr = _polyMgr;
     if (polyMgr == null || points.length < 2) return;
@@ -764,8 +782,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
     final totalMs = duration.inMilliseconds;
-    mapbox.PolylineAnnotation? mainAnnot;
-    mapbox.PolylineAnnotation? glowAnnot;
     int lastCount = 0;
 
     _routeDrawTicker?.stop();
@@ -778,7 +794,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       }
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeInOutCubic.transform(progress);
+      final eased = Curves.easeInOutSine.transform(progress);
       final count = (eased * points.length).round().clamp(2, points.length);
 
       if (count != lastCount) {
@@ -786,35 +802,55 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         final subset = points.sublist(0, count);
         final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         final geo = mapbox.LineString(coordinates: coords);
-        if (mainAnnot == null) {
-          glowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+
+        if (_routeGlowAnnot == null) {
+          // Layer 1: Soft outer glow
+          _routeGlowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
             geometry: geo,
-            lineColor: color.withValues(alpha: 0.20).toARGB32(),
-            lineWidth: 12.0,
+            lineColor: _gold.withValues(alpha: 0.15).toARGB32(),
+            lineWidth: 16.0,
             lineJoin: mapbox.LineJoin.ROUND,
           ));
-          mainAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+          // Layer 2: Mid glow (casing)
+          _routeCasingAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
             geometry: geo,
-            lineColor: color.toARGB32(),
+            lineColor: _gold.withValues(alpha: 0.25).toARGB32(),
+            lineWidth: 10.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+          // Layer 3: Main gold line
+          _routeMainAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo,
+            lineColor: _gold.toARGB32(),
             lineWidth: 5.0,
             lineJoin: mapbox.LineJoin.ROUND,
           ));
+          // Layer 4: Gloss shine highlight
+          _routeShineAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo,
+            lineColor: Colors.white.withValues(alpha: 0.25).toARGB32(),
+            lineWidth: 1.5,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
         } else {
-          mainAnnot!.geometry = geo;
-          await polyMgr.update(mainAnnot!);
-          if (glowAnnot != null) {
-            glowAnnot!.geometry = geo;
-            await polyMgr.update(glowAnnot!);
-          }
+          _routeGlowAnnot!.geometry = geo;
+          await polyMgr.update(_routeGlowAnnot!);
+          _routeCasingAnnot!.geometry = geo;
+          await polyMgr.update(_routeCasingAnnot!);
+          _routeMainAnnot!.geometry = geo;
+          await polyMgr.update(_routeMainAnnot!);
+          _routeShineAnnot!.geometry = geo;
+          await polyMgr.update(_routeShineAnnot!);
         }
       }
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
         final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         final fullGeo = mapbox.LineString(coordinates: fullCoords);
-        if (mainAnnot != null) { mainAnnot!.geometry = fullGeo; await polyMgr.update(mainAnnot!); }
-        if (glowAnnot != null) { glowAnnot!.geometry = fullGeo; await polyMgr.update(glowAnnot!); }
-        onAnnotCreated(mainAnnot, glowAnnot);
+        if (_routeGlowAnnot != null) { _routeGlowAnnot!.geometry = fullGeo; await polyMgr.update(_routeGlowAnnot!); }
+        if (_routeCasingAnnot != null) { _routeCasingAnnot!.geometry = fullGeo; await polyMgr.update(_routeCasingAnnot!); }
+        if (_routeMainAnnot != null) { _routeMainAnnot!.geometry = fullGeo; await polyMgr.update(_routeMainAnnot!); }
+        if (_routeShineAnnot != null) { _routeShineAnnot!.geometry = fullGeo; await polyMgr.update(_routeShineAnnot!); }
         if (!completer.isCompleted) completer.complete();
       }
     });
@@ -822,13 +858,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return completer.future;
   }
 
-  /// Gold glow pulse on full combined route after animation completes
+  /// Gold glow pulse on full route after animation completes
   void _startGlowPulse() {
     _glowPulseCtrl?.dispose();
-    final allPts = [..._fullSegOne, ..._fullSegTwo];
-    if (allPts.length < 2 || _polyMgr == null) return;
+    if (_routePoints.length < 2 || _polyMgr == null) return;
 
-    final coords = allPts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final coords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
     final geo = mapbox.LineString(coordinates: coords);
     _polyMgr!.create(mapbox.PolylineAnnotationOptions(
       geometry: geo,
@@ -844,7 +879,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _glowPulseCtrl!.addListener(() {
       final glow = _fullRouteGlow;
       if (glow == null || _polyMgr == null) return;
-      final alpha = (0.06 + _glowPulseCtrl!.value * 0.20).clamp(0.0, 1.0);
+      final alpha = (0.06 + _glowPulseCtrl!.value * 0.18).clamp(0.0, 1.0);
       glow.lineColor = _gold.withValues(alpha: alpha).toARGB32();
       glow.lineWidth = 14.0 + _glowPulseCtrl!.value * 4.0;
       _polyMgr!.update(glow);
@@ -852,8 +887,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   // ── Pin builders (matching CruiseMapPin teardrop from rider map) ──────────
-  Future<Uint8List?> _buildPickupPin() async => _buildTeardropPin(_gold);
-  Future<Uint8List?> _buildDropoffPin() async => _buildTeardropPin(Colors.white);
 
   /// Teardrop pin: navy→tipColor gradient, person avatar, border — matches CruiseMapPin
   Future<Uint8List?> _buildTeardropPin(Color tipColor) async {

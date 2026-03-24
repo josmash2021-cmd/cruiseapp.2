@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show File;
 import 'dart:math' as math;
@@ -139,6 +139,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Map<String, dynamic>? _previewingOffer;
   bool _offerRouteShown = false; // true after route draw completes
   AnimationController? _routePulseCtrl;
+  double _offerCardScale = 1.0;
+  bool _routePreviewActive = false;
 
   // â”€â”€ Request data (for active trip after acceptance) â”€â”€
   Timer? _pollT;
@@ -2486,7 +2488,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final pickupLL  = LatLng(pickupLat,  pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
 
-    setState(() => _previewingOffer = offer);
+    _routePreviewActive = true;
     await _clearAllAnnotations();
 
     // Step 1: Draw polylines FIRST (rendered below pins)
@@ -2530,10 +2532,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       }
     }
 
-    // Mark route as shown (triggers card shrink animation)
-    if (mounted && _previewingOffer != null) {
-      setState(() => _offerRouteShown = true);
-    }
+    // Route animation complete
 
     // Fit camera to show all three points
     if (!mounted) return;
@@ -2541,7 +2540,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
 
     await Future.delayed(const Duration(milliseconds: 600));
-    if (mounted && _previewingOffer != null) {
+    if (mounted) {
       _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
     }
   }
@@ -2715,7 +2714,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     mapbox.PolylineAnnotation? glowAnnot;
 
     for (int step = 1; step <= steps; step++) {
-      if (!mounted || _previewingOffer == null) break;
+      if (!mounted || !_routePreviewActive) break;
       final end = (total * step / steps).ceil().clamp(2, total);
       final subset = pts.sublist(0, end);
       final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
@@ -2762,6 +2761,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   void _closePreview() {
     _routePulseCtrl?.stop();
+    _routePreviewActive = false;
     setState(() {
       _previewingOffer = null;
       _offerRouteShown = false;
@@ -3027,8 +3027,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
             // â”€â”€ Stacked Ride Offer Cards (Spark-style) â”€â”€
             if (_phase == _Phase.searching &&
-                _pendingOffers.isNotEmpty &&
-                _previewingOffer == null)
+                _pendingOffers.isNotEmpty)
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -3040,41 +3039,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   textMuted,
                   borderC,
                   shadowC,
-                ),
-              ),
-
-            // â”€â”€ Route Preview Panel (when an offer is tapped) â”€â”€
-            if (_previewingOffer != null)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: AnimatedSlide(
-                  offset: _offerRouteShown ? const Offset(0, 0.02) : Offset.zero,
-                  duration: const Duration(milliseconds: 350),
-                  curve: Curves.easeOutCubic,
-                  child: AnimatedScale(
-                    scale: _offerRouteShown ? 0.95 : 1.0,
-                    duration: const Duration(milliseconds: 350),
-                    curve: Curves.easeOutCubic,
-                    alignment: Alignment.bottomCenter,
-                    child: _routePreviewPanel(isDark),
-                  ),
-                ),
-              ),
-
-            // â”€â”€ X button to close preview (top-right) â”€â”€
-            if (_previewingOffer != null)
-              Positioned(
-                top: top + 10,
-                right: 16,
-                child: _fab(
-                  Icons.close_rounded,
-                  48,
-                  fabBg,
-                  fabBorder,
-                  fabIcon,
-                  _closePreview,
                 ),
               ),
 
@@ -3845,18 +3809,28 @@ Widget _navHeader() {
                     itemBuilder: (ctx, i) {
                       final offer = _pendingOffers[i];
                       return GestureDetector(
-                        onTap: () => _previewOfferRoute(offer),
-                        child: _offerCard(
-                          offer,
-                          true,
-                          cCardBg,
-                          cCardBorder,
-                          cTextPrimary,
-                          cTextMuted,
-                          cRejectBg,
-                          cRejectText,
-                          acceptBg,
-                          cBorderC,
+                        onTapDown: (_) => setState(() => _offerCardScale = 0.96),
+                        onTapUp: (_) {
+                          setState(() => _offerCardScale = 1.0);
+                          _previewOfferRoute(offer);
+                        },
+                        onTapCancel: () => setState(() => _offerCardScale = 1.0),
+                        child: AnimatedScale(
+                          scale: _offerCardScale,
+                          duration: const Duration(milliseconds: 120),
+                          curve: Curves.easeOut,
+                          child: _offerCard(
+                            offer,
+                            true,
+                            cCardBg,
+                            cCardBorder,
+                            cTextPrimary,
+                            cTextMuted,
+                            cRejectBg,
+                            cRejectText,
+                            acceptBg,
+                            cBorderC,
+                          ),
                         ),
                       );
                     },
@@ -4468,25 +4442,40 @@ Widget _navHeader() {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: deepBlack,
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF0F0F0F),
+            Color(0xFF0A0A0A),
+          ],
+        ),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: luxGold.withValues(alpha: 0.10),
+          color: luxGold.withValues(alpha: 0.12),
           width: 1,
         ),
         boxShadow: [
-          // Gold-tinted 3D shadow
+          // Soft gold halo
           BoxShadow(
-            color: luxGold.withValues(alpha: 0.15),
-            blurRadius: 28,
-            spreadRadius: -4,
-            offset: const Offset(0, 10),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.60),
-            blurRadius: 32,
+            color: luxGold.withValues(alpha: 0.08),
+            blurRadius: 20,
             spreadRadius: -2,
+            offset: const Offset(0, 8),
+          ),
+          // Mid-depth dark shadow
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.50),
+            blurRadius: 30,
+            spreadRadius: -4,
             offset: const Offset(0, 12),
+          ),
+          // Deep far shadow
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.30),
+            blurRadius: 50,
+            spreadRadius: -6,
+            offset: const Offset(0, 22),
           ),
         ],
       ),

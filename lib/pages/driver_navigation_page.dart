@@ -793,7 +793,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     LatLng pos, {
     double? zoom,
     double bearing = 0,
-    double tilt = 60,
+    double tilt = 30,
   }) {
     // Dynamic zoom: parked=17.5 (closer), highway=15.0 (wider view)
     final speedZoom = 17.5 - (_currentSpeedMph / 80.0).clamp(0.0, 1.0) * 2.5;
@@ -853,7 +853,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
               cameraOptions: mapbox.CameraOptions(
                 center: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
                 zoom: 17.5,
-                pitch: 60,
+                pitch: 30,
                 bearing: _bearing,
               ),
               onMapCreated: (ctrl) async {

@@ -22,6 +22,8 @@ import '../../navigation/smooth_motion.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
+import '../../helpers/animated_route_drawer.dart';
+import '../../helpers/map_pin_painter.dart';
 import 'driver_safety_screen.dart';
 import 'driver_trip_accept_screen.dart';
 
@@ -140,6 +142,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   // ── Pickup pin (visible throughout trip) ──────────────────────────────────
   mapbox.PointAnnotation? _pickupAnnot;
+
+  // ── Animated route drawing ────────────────────────────────────────────────
+  bool _initialRouteAnimated = false;
+  CancellationToken? _routeAnimCancel;
 
   // ── Driver icon pulse ─────────────────────────────────────────────────────
   Timer? _iconPulseTimer;
@@ -481,10 +487,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Future<void> _updateRouteAnnotation() async {
     final mgr = _polyMgr;
     if (mgr == null || _routePts.length < 2) return;
-    final coords = _routePts
-        .map((p) => mapbox.Position(p.longitude, p.latitude))
-        .toList();
-    final geom = mapbox.LineString(coordinates: coords);
+
+    // Cancel any in-progress animation
+    _routeAnimCancel?.cancel();
 
     if (_routeCasingAnnot != null) {
       try { await mgr.delete(_routeCasingAnnot!); } catch (_) {}
@@ -494,18 +499,45 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       try { await mgr.delete(_routeAnnot!); } catch (_) {}
       _routeAnnot = null;
     }
-    // Dark casing (border) – drawn first so it sits under the line
-    _routeCasingAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: geom,
-      lineColor: const Color(0xFF1A1A2E).toARGB32(),
-      lineWidth: 14.0,
-    ));
-    // Golden route line on top
-    _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: geom,
-      lineColor: const Color(0xFFF5C518).toARGB32(),
-      lineWidth: 8.0,
-    ));
+
+    if (!_initialRouteAnimated) {
+      // First time: smooth progressive animation
+      _initialRouteAnimated = true;
+      _routeAnimCancel = CancellationToken();
+      final annots = await AnimatedRouteDrawer.animateWithCasing(
+        manager: mgr,
+        points: _routePts,
+        casingColor: const Color(0xFF1A1A2E).toARGB32(),
+        lineColor: const Color(0xFFF5C518).toARGB32(),
+        mainWidth: 8.0,
+        casingWidth: 14.0,
+        stepMs: 6,
+        batchSize: 3,
+        cancel: _routeAnimCancel,
+      );
+      if (annots.length >= 2) {
+        _routeCasingAnnot = annots[0];
+        _routeAnnot = annots[1];
+      } else if (annots.isNotEmpty) {
+        _routeAnnot = annots.last;
+      }
+    } else {
+      // Reroutes: instant redraw (no animation during active navigation)
+      final coords = _routePts
+          .map((p) => mapbox.Position(p.longitude, p.latitude))
+          .toList();
+      final geom = mapbox.LineString(coordinates: coords);
+      _routeCasingAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geom,
+        lineColor: const Color(0xFF1A1A2E).toARGB32(),
+        lineWidth: 14.0,
+      ));
+      _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geom,
+        lineColor: const Color(0xFFF5C518).toARGB32(),
+        lineWidth: 8.0,
+      ));
+    }
   }
 
   Future<void> _updateCarAnnotation(LatLng pos, double bearing) async {
@@ -575,7 +607,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   //  CAMERA
   // =========================================================================
 
-  void _animateCamera(LatLng pos, {double? zoom, double bearing = 0, double tilt = 60}) {
+  void _animateCamera(LatLng pos, {double? zoom, double bearing = 0, double tilt = 30}) {
     final speedZoom = 17.5 - (_currentSpeedMph / 80.0).clamp(0.0, 1.0) * 2.5;
     final z = zoom ?? speedZoom;
     // Lookahead offset
@@ -629,7 +661,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
         zoom: 17.5 - (_currentSpeedMph / 80.0).clamp(0.0, 1.0) * 2.5,
         bearing: _bearing,
-        pitch: 60,
+        pitch: 30,
       ),
       mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
     );
@@ -934,136 +966,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   //  CAR ICON (3D arrow with shadow)
   // =========================================================================
 
-  Future<Uint8List?> _buildArrowIcon() async {
-    const double w = 80, h = 80;
-    final rec = ui.PictureRecorder();
-    final c   = Canvas(rec, Rect.fromLTWH(0, 0, w, h));
-    final cx  = w / 2;
-    final cy  = h / 2;
+  Future<Uint8List?> _buildArrowIcon() => MapPinPainter.buildDriverDockPin();
 
-    // Golden glow underneath
-    c.drawCircle(
-      Offset(cx, cy),
-      32,
-      Paint()
-        ..color = const Color(0xFFF5C518).withValues(alpha: 0.25)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
-    );
-    // 3D fade shadow – large soft ellipse beneath the circle
-    c.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 7), width: 66, height: 22),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.38)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
-    );
-    c.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 3), width: 48, height: 13),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.22)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
-    );
+  Future<Uint8List?> _buildDestPin() => MapPinPainter.buildDropoffPin();
 
-    // White circle body
-    c.drawCircle(Offset(cx, cy), 22, Paint()..color = Colors.white);
-
-    // Gold ring border
-    c.drawCircle(
-      Offset(cx, cy), 22,
-      Paint()
-        ..color = const Color(0xFFD4A843).withValues(alpha: 0.45)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.0,
-    );
-
-    // Gold directional chevron (points UP – rotated with iconRotate)
-    final chevron = Path()
-      ..moveTo(cx,      cy - 13)
-      ..lineTo(cx + 8,  cy + 5)
-      ..lineTo(cx,      cy + 1)
-      ..lineTo(cx - 8,  cy + 5)
-      ..close();
-    c.drawPath(chevron, Paint()..color = const Color(0xFFD4A843));
-
-    final img   = await rec.endRecording().toImage(w.toInt(), h.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
-  }
-
-  Future<Uint8List?> _buildDestPin() async {
-    const double w = 60;
-    const double h = 80;
-    final rec = ui.PictureRecorder();
-    final c = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
-    const cx = w / 2;
-    const r = 18.0;
-    const headCY = r + 6;
-    const tipY = h;
-
-    // ── Teardrop path (tip at exact bottom) ──
-    final path = Path()
-      ..moveTo(cx - r, headCY)
-      ..arcTo(
-        Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
-        math.pi, -math.pi, false,
-      )
-      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 3, cx, tipY)
-      ..cubicTo(cx - r * 0.22, tipY - 3, cx - r, headCY + r, cx - r, headCY)
-      ..close();
-
-    // Shadow
-    c.drawPath(
-      path.shift(const Offset(0, 2)),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
-    );
-    // Gold teardrop fill
-    c.drawPath(path, Paint()..color = _gold);
-    // White head circle
-    c.drawCircle(const Offset(cx, headCY), r, Paint()..color = Colors.white);
-    // Gold inner
-    c.drawCircle(const Offset(cx, headCY), r - 5, Paint()..color = _gold);
-
-    final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
-  }
-
-  /// Build a pickup pin image (smaller gold circle with white ring).
-  Future<Uint8List?> _buildPickupPin() async {
-    const double w = 48;
-    const double h = 64;
-    final rec = ui.PictureRecorder();
-    final c = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
-    const cx = w / 2;
-    const r = 14.0;
-    const headCY = r + 5;
-    const tipY = h;
-
-    final path = Path()
-      ..moveTo(cx - r, headCY)
-      ..arcTo(
-        Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
-        math.pi, -math.pi, false,
-      )
-      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 3, cx, tipY)
-      ..cubicTo(cx - r * 0.22, tipY - 3, cx - r, headCY + r, cx - r, headCY)
-      ..close();
-
-    c.drawPath(
-      path.shift(const Offset(0, 2)),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-    );
-    c.drawPath(path, Paint()..color = Colors.white);
-    c.drawCircle(const Offset(cx, headCY), r, Paint()..color = Colors.white);
-    c.drawCircle(const Offset(cx, headCY), r - 4, Paint()..color = _gold);
-
-    final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
-  }
+  Future<Uint8List?> _buildPickupPin() => MapPinPainter.buildPickupPin();
 
   // =========================================================================
   //  BUILD
@@ -1163,13 +1070,15 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         center: mapbox.Point(
             coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
         zoom: 17.0,
-        pitch: 60.0,
+        pitch: 30.0,
         bearing: 0,
       ),
       onMapCreated: (ctrl) async {
         _map      = ctrl;
         _mapReady = true;
-        _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
+        _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager(
+          below: "road-label",
+        );
         _pointMgr = await ctrl.annotations.createPointAnnotationManager();
         _updateRouteAnnotation();
         _updateDestPin(widget.pickupLatLng);

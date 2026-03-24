@@ -64,12 +64,14 @@ class DriverNavScreen extends StatefulWidget {
 class _DriverNavScreenState extends State<DriverNavScreen>
     with SingleTickerProviderStateMixin {
   // ── Colours ──────────────────────────────────────────────────────────────
-  static const _navBg      = Color(0xFF15232C); // DoorDash dark teal header
+  static const _navBg      = Color(0xFF1A1E2E); // Dark navy header
   static const _navBgSub   = Color(0xFF0F1A20);
   static const _routeBlue  = Color(0xFF4A90E2);
   static const _gold        = Color(0xFFD4A843);
-  static const _bottomBg   = Color(0xFF111318);
+  static const _bottomBg   = Color(0xFF0A0A0A);
   static const _pillBlue   = Color(0xFF1A6EBB);
+  static const _etaGreen   = Color(0xFF27AE60);
+  static const _speedRed   = Color(0xFFE74C3C);
 
   // ── Navigation engine ────────────────────────────────────────────────────
   late final NavStateMachine _sm;
@@ -628,6 +630,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             // ── TOP HEADER ───────────────────────────────────────────────
             Positioned(top: 0, left: 0, right: 0, child: _buildNavHeader(top)),
 
+            // ── SPEED OVERLAY (left side, below header) ──────────────────
+            Positioned(
+              left: 16,
+              top: top + 110,
+              child: _buildSpeedOverlay(top + 110),
+            ),
+
             // ── RIGHT FAB COLUMN ─────────────────────────────────────────
             Positioned(
               right: 12,
@@ -868,35 +877,24 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 1. Route overview toggle
+        // 1. Recenter — resumes 3D chase mode
         _mapFab(
-          icon: Icons.layers_rounded,
-          onTap: () {
-            HapticFeedback.lightImpact();
-            setState(() {
-              _isOverview      = !_isOverview;
-              _cameraFollowing = !_isOverview;
-            });
-            if (_isOverview) {
-              final dest = _phase == TripPhase.onTrip
-                  ? widget.dropoffLatLng
-                  : widget.pickupLatLng;
-              _animateCameraOverview(_pos, dest);
-            } else {
-              _recenter();
-            }
-          },
-          active: _isOverview,
-        ),
-        const SizedBox(height: 10),
-        // 2. Re-center / compass — resumes 3D follow mode
-        _mapFab(
-          icon: Icons.navigation_rounded,
+          icon: Icons.gps_fixed_rounded,
           onTap: () {
             HapticFeedback.mediumImpact();
             _recenter();
           },
           active: _cameraFollowing && !_isOverview,
+        ),
+        const SizedBox(height: 10),
+        // 2. Mute toggle
+        _mapFab(
+          icon: _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+          onTap: () {
+            HapticFeedback.lightImpact();
+            setState(() => _isMuted = !_isMuted);
+          },
+          active: _isMuted,
         ),
         const SizedBox(height: 10),
         // 3. Safety shield
@@ -952,10 +950,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     final ap   = arr.hour >= 12 ? 'PM' : 'AM';
     final arrStr = '$h:$m $ap';
     final distStr = '${dist.toStringAsFixed(2)} mi';
-    final etaLabel = eta <= 2 ? 'Arriving soon' : '$eta min';
-
-    final maneuver = _navState?.currentManeuver ?? 'straight';
-    final mInfo    = NavigationService.getManeuverIcon(maneuver);
 
     return Container(
       color: _bottomBg,
@@ -983,72 +977,237 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                   }
                 },
                 child: SizedBox(
-                  width: 54,
+                  width: 50,
                   child: Icon(
                     _isOverview ? Icons.zoom_in_map_rounded : Icons.keyboard_arrow_up_rounded,
                     color: Colors.white.withValues(alpha: 0.75), size: 26),
                 ),
               ),
-              // Turn arrow
-              SizedBox(
-                width: 34,
-                child: Icon(mInfo.icon,
-                    color: Colors.white.withValues(alpha: 0.65), size: 22),
+              // Fork — upcoming steps panel
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  _showUpcomingSteps();
+                },
+                child: SizedBox(
+                  width: 42,
+                  child: Icon(Icons.alt_route_rounded,
+                      color: Colors.white.withValues(alpha: 0.75), size: 22),
+                ),
               ),
-              // ETA block (big number + sub-line)
+              // ETA block (green)
               Expanded(
-                child: eta <= 2
-                    ? Text('Arriving soon',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                        ))
-                    : Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('$eta min',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 26,
-                              fontWeight: FontWeight.w900,
-                              height: 1.0,
-                            )),
-                          const SizedBox(height: 2),
-                          Text('$distStr · $arrStr',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            )),
-                        ],
-                      ),
+                child: Center(
+                  child: eta <= 2
+                      ? const Text('Arriving soon',
+                          style: TextStyle(
+                            color: _etaGreen,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ))
+                      : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('$eta min',
+                              style: const TextStyle(
+                                color: _etaGreen,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                height: 1.0,
+                              )),
+                            const SizedBox(height: 2),
+                            Text('$distStr · $arrStr',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              )),
+                          ],
+                        ),
+                ),
               ),
               // Exit button
               GestureDetector(
                 onTap: _exitNav,
                 child: Container(
-                  height: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 22),
+                  margin: const EdgeInsets.only(right: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   decoration: BoxDecoration(
-                    border: Border(
-                        left: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.08))),
+                    color: const Color(0xFF1A1E2E),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Center(
-                    child: Text('Exit',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700)),
-                  ),
+                  child: const Text('Exit',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700)),
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  // =========================================================================
+  //  UPCOMING STEPS PANEL
+  // =========================================================================
+
+  void _showUpcomingSteps() {
+    final steps = _navService.remainingSteps;
+    if (steps.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1E2E),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        maxChildSize: 0.9,
+        minChildSize: 0.3,
+        expand: false,
+        builder: (ctx, scrollController) {
+          return Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.24),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Steps list
+              Expanded(
+                child: ListView.separated(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: steps.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(color: Colors.white.withValues(alpha: 0.08), height: 24),
+                  itemBuilder: (_, i) {
+                    final step = steps[i];
+                    final mInfo = NavigationService.getManeuverIcon(step.maneuver);
+                    return Row(
+                      children: [
+                        SizedBox(
+                          width: 56,
+                          child: Text(step.distanceText,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 13,
+                            )),
+                        ),
+                        const SizedBox(width: 12),
+                        Icon(mInfo.icon, color: Colors.white, size: 22),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            step.instruction.isNotEmpty
+                                ? step.instruction
+                                : step.streetName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              // Close button
+              Container(
+                width: double.infinity,
+                color: _bottomBg,
+                child: SafeArea(
+                  top: false,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Close',
+                      style: TextStyle(color: Colors.white, fontSize: 16)),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // =========================================================================
+  //  SPEED DISPLAY
+  // =========================================================================
+
+  Widget _buildSpeedOverlay(double topOffset) {
+    final speed = _currentSpeedMph.round();
+    // Simple speed limit estimate — 25 in urban, 65 on highway
+    final isHighSpeed = speed > 50;
+    final limit = isHighSpeed ? 65 : 25;
+    final isOver = speed > limit;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Speed limit sign
+        Container(
+          width: 44, height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.red, width: 3),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('MAX',
+                style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900,
+                    color: Colors.black, height: 1.0)),
+              Text('$limit',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900,
+                    color: Colors.black, height: 1.1)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Current speed
+        Container(
+          width: 44, height: 44,
+          decoration: BoxDecoration(
+            color: isOver ? _speedRed : const Color(0xFF1A1E2E),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 8, offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('$speed',
+                  style: const TextStyle(
+                    color: Colors.white, fontSize: 16,
+                    fontWeight: FontWeight.w900, height: 1.0)),
+                const Text('mph',
+                  style: TextStyle(
+                    color: Colors.white70, fontSize: 8,
+                    fontWeight: FontWeight.w600, height: 1.2)),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

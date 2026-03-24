@@ -134,6 +134,14 @@ class NavigationService {
 
   bool get isNavigating => _route != null;
 
+  /// Remaining steps from current position onwards.
+  List<NavStep> get remainingSteps {
+    final route = _route;
+    if (route == null) return [];
+    if (_currentStepIdx >= route.steps.length) return [];
+    return route.steps.sublist(_currentStepIdx);
+  }
+
   /// Update driver position and get the current navigation state.
   NavigationState? updatePosition(LatLng driverPos) {
     final route = _route;

@@ -15,6 +15,8 @@ import '../../navigation/nav_state_machine.dart';
 import '../../navigation/route_service.dart';
 import '../../navigation/route_snapper.dart';
 import '../../navigation/smooth_motion.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
 
@@ -62,7 +64,7 @@ class DriverNavScreen extends StatefulWidget {
 }
 
 class _DriverNavScreenState extends State<DriverNavScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // ── Colours ──────────────────────────────────────────────────────────────
   static const _navBg      = Color(0xFF1A1E2E); // Dark navy header
   static const _navBgSub   = Color(0xFF0F1A20);
@@ -120,6 +122,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // ── Car icon ──────────────────────────────────────────────────────────────
   Uint8List? _arrowBytes;
 
+  // ── Pulse animation (arrived-at-pickup button glow) ───────────────────────
+  AnimationController? _pulseCtrl;
+  late Animation<double> _pulseAnim;
+
   // ── GPS ───────────────────────────────────────────────────────────────────
   StreamSubscription<Position>? _gpsSub;
 
@@ -141,6 +147,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _motion = SmoothMotion(onTick: _onMotionTick);
     _motion.start(this);
     _motion.teleport(_pos, _bearing);
+
+    // Pulse animation for arrived-at-pickup button
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+    _pulseAnim = CurvedAnimation(parent: _pulseCtrl!, curve: Curves.easeInOut);
 
     // Load car icon
     _buildArrowIcon().then((b) {
@@ -176,6 +189,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   void dispose() {
     _gpsSub?.cancel();
     _reFollowTimer?.cancel();
+    _pulseCtrl?.dispose();
     _motion.dispose();
     super.dispose();
   }
@@ -271,9 +285,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       // Driver started the trip — fetch route to dropoff
       _fetchRoute(widget.dropoffLatLng);
       _updateDestPin(widget.dropoffLatLng);
-      _updateTripStatus('in_trip');
+      _updateTripStatus('rider_onboard',
+          extra: {'tripStartedAt': FieldValue.serverTimestamp()});
+      _showToast('Trip started — navigate to dropoff');
     } else if (phase == TripPhase.arrivedPickup) {
-      _updateTripStatus('arrived');
+      _updateTripStatus('arrived_pickup',
+          extra: {'driverArrivedAt': FieldValue.serverTimestamp()});
+      _showToast('Rider notified — waiting for boarding');
     } else if (phase == TripPhase.arrivedDropoff) {
       setState(() {
         _cameraFollowing = false;
@@ -310,12 +328,20 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   }
 
   // =========================================================================
-  //  API
+  //  API + FIRESTORE SYNC
   // =========================================================================
 
-  Future<void> _updateTripStatus(String status) async {
+  Future<void> _updateTripStatus(String status, {Map<String, dynamic>? extra}) async {
     try {
       await ApiService.updateTripStatus(tripId: widget.tripId, status: status);
+    } catch (_) {}
+    try {
+      final data = <String, dynamic>{'status': status};
+      if (extra != null) data.addAll(extra);
+      await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.tripId.toString())
+          .update(data);
     } catch (_) {}
   }
 
@@ -502,7 +528,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     HapticFeedback.heavyImpact();
     _sm.arriveAtDropoff();
     _sm.completeTrip();
-    await _updateTripStatus('completed');
+    await _updateTripStatus('completed',
+        extra: {'completedAt': FieldValue.serverTimestamp()});
     if (mounted) Navigator.of(context).pop('completed');
   }
 
@@ -1216,16 +1243,29 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   Widget _buildArrivedAtPickupCard() {
+    final ctrl = _pulseCtrl;
+    if (ctrl == null) return _arrivedAtPickupCardInner(0.5);
+    return AnimatedBuilder(
+      animation: _pulseAnim,
+      builder: (_, __) => _arrivedAtPickupCardInner(_pulseAnim.value),
+    );
+  }
+
+  Widget _arrivedAtPickupCardInner(double pulse) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF111318),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(
+            color: _gold.withValues(alpha: 0.12 + 0.20 * pulse)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.6),
             blurRadius: 24, offset: const Offset(0, -4)),
+          BoxShadow(
+            color: _gold.withValues(alpha: 0.06 + 0.12 * pulse),
+            blurRadius: 20 + 14 * pulse, spreadRadius: 2),
         ],
       ),
       child: Column(
@@ -1271,23 +1311,24 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               color: Colors.white.withValues(alpha: 0.5),
               fontSize: 13)),
           const SizedBox(height: 14),
-          // Start Ride button
+          // Start Ride button (gold)
           SizedBox(
             width: double.infinity,
             height: 50,
             child: ElevatedButton(
               onPressed: _startRide,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2E7D32),
-                foregroundColor: Colors.white,
+                backgroundColor: _gold,
+                foregroundColor: Colors.black,
                 elevation: 0,
+                shadowColor: _gold.withValues(alpha: 0.4),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),
               ),
               child: const Text('Start Ride',
                 style: TextStyle(
                   fontSize: 16, fontWeight: FontWeight.w800,
-                  color: Colors.white)),
+                  color: Colors.black)),
             ),
           ),
         ],
@@ -1478,8 +1519,46 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         ),
       );
 
+  // ── Toast notification ────────────────────────────────────────────────────
+  void _showToast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_rounded, color: _gold, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(msg,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                )),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFF1A1E2E),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   // ── "Arrived at Pickup" floating button (shown during toPickup phase) ─────
-  Widget _buildArrivedBtn() => GestureDetector(
+  Widget _buildArrivedBtn() {
+    final ctrl = _pulseCtrl;
+    if (ctrl == null) {
+      return _arrivedBtnInner(0.5);
+    }
+    return AnimatedBuilder(
+      animation: _pulseAnim,
+      builder: (_, __) => _arrivedBtnInner(_pulseAnim.value),
+    );
+  }
+
+  Widget _arrivedBtnInner(double pulse) => GestureDetector(
     onTap: _arrivedAtPickup,
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
@@ -1488,8 +1567,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2E7D32).withValues(alpha: 0.5),
-            blurRadius: 16,
+            color: const Color(0xFF2E7D32).withValues(alpha: 0.25 + 0.45 * pulse),
+            blurRadius: 14 + 18 * pulse,
             offset: const Offset(0, 4),
           ),
         ],
@@ -1510,3 +1589,4 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     ),
   );
 }
+

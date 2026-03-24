@@ -148,6 +148,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _isCardAnimating = false;
   String? _animatingOfferId; // which card is pulsing
 
+  // ── Smooth route draw + glow pulse ──
+  List<LatLng> _fullSegOne = [];
+  List<LatLng> _fullSegTwo = [];
+  mapbox.PolylineAnnotation? _fullRouteGlow;
+  AnimationController? _glowPulseCtrl;
+  Ticker? _routeDrawTicker;
+
   // â”€â”€ Request data (for active trip after acceptance) â”€â”€
   Timer? _pollT;
   String _riderName = '';
@@ -347,6 +354,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _routePulseCtrl?.dispose();
     _pulseCtrl?.dispose();
     _rippleCtrl?.dispose();
+    _glowPulseCtrl?.dispose();
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
     _map?.dispose();
     super.dispose();
   }
@@ -2370,28 +2380,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   Future<void> _clearRouteAnnotation() async {
+    _stopGlowPulse();
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null) return;
-    if (_routeAnnot != null) {
-      try { await polyMgr.delete(_routeAnnot!); } catch (_) {}
-      _routeAnnot = null;
+    for (final a in [_routeAnnot, _previewPickupAnnot, _previewDropoffAnnot,
+                      _previewPickupGlow, _previewDropoffGlow, _fullRouteGlow]) {
+      if (a != null) try { await polyMgr.delete(a); } catch (_) {}
     }
-    if (_previewPickupAnnot != null) {
-      try { await polyMgr.delete(_previewPickupAnnot!); } catch (_) {}
-      _previewPickupAnnot = null;
-    }
-    if (_previewDropoffAnnot != null) {
-      try { await polyMgr.delete(_previewDropoffAnnot!); } catch (_) {}
-      _previewDropoffAnnot = null;
-    }
-    if (_previewPickupGlow != null) {
-      try { await polyMgr.delete(_previewPickupGlow!); } catch (_) {}
-      _previewPickupGlow = null;
-    }
-    if (_previewDropoffGlow != null) {
-      try { await polyMgr.delete(_previewDropoffGlow!); } catch (_) {}
-      _previewDropoffGlow = null;
-    }
+    _routeAnnot = null;
+    _previewPickupAnnot = null;
+    _previewDropoffAnnot = null;
+    _previewPickupGlow = null;
+    _previewDropoffGlow = null;
+    _fullRouteGlow = null;
   }
 
   Future<void> _setPickupAnnotation() async {
@@ -2537,7 +2538,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _previewOfferRoute(offer);
   }
 
-  // â"€â"€ Preview offer route on map â"€â"€
+  // ── Preview offer route on map (smooth 60fps animation) ──
   Future<void> _previewOfferRoute(Map<String, dynamic> offer) async {
     final pickupLat  = (offer['pickup_lat']  as num?)?.toDouble() ?? 0;
     final pickupLng  = (offer['pickup_lng']  as num?)?.toDouble() ?? 0;
@@ -2547,62 +2548,265 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
 
     setState(() => _previewingOffer = offer);
+    _stopGlowPulse();
     await _clearAllAnnotations();
 
-    // Step 1: Draw polylines FIRST (rendered below pins)
-    await Future.wait([
-      _drawPreviewRoute(_pos!,    pickupLL,  'prev_to_pickup', _gold),
-      _drawPreviewRoute(pickupLL, dropoffLL, 'prev_trip',      _gold),
+    // 1. Fetch both route geometries in parallel
+    final routeFutures = await Future.wait([
+      _fetchRoutePoints(_pos!, pickupLL),
+      _fetchRoutePoints(pickupLL, dropoffLL),
     ]);
+    _fullSegOne = routeFutures[0];
+    _fullSegTwo = routeFutures[1];
 
-    // Step 2: Build and place pins AFTER polylines (pins render on top)
-    final results = await Future.wait([
-      _buildCruisePin(const Color(0xFF0D1B2A), const Color(0xFF5BA3F5), 26),
-      _buildCruisePin(const Color(0xFF0D1B2A), _gold, 26),
-      _buildCruisePin(Colors.white, const Color(0xFF0D1B2A), 26),
+    if (!mounted || _previewingOffer == null) return;
+
+    // 2. Fit camera to show all three points
+    _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
+
+    // 3. Build teardrop pins (matching CruiseMapPin) + place them
+    final pinResults = await Future.wait([
+      _buildTeardropPin(const Color(0xFF5BA3F5)), // driver — blue tip
+      _buildTeardropPin(_gold),                    // pickup — gold tip
+      _buildTeardropPin(Colors.white),             // dropoff — white tip
     ]);
-
     final pointMgr = _pointAnnotMgr;
     if (pointMgr != null && mounted) {
-      if (results[0] != null) {
+      if (pinResults[0] != null) {
         _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-          image: results[0],
-          iconSize: 1.0,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          image: pinResults[0], iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
         ));
       }
-      if (results[1] != null) {
+      if (pinResults[1] != null) {
         _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
-          image: results[1],
-          iconSize: 1.0,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          image: pinResults[1], iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
         ));
       }
-      if (results[2] != null) {
+      if (pinResults[2] != null) {
         _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
-          image: results[2],
-          iconSize: 1.0,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          image: pinResults[2], iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
         ));
       }
     }
 
-    // Mark route as shown (triggers card shrink animation)
+    // 4. Animate segment 1 smoothly (driver → pickup, gold, 900ms)
+    await _animateSegmentSmooth(
+      points: _fullSegOne,
+      color: _gold,
+      duration: const Duration(milliseconds: 900),
+      slotMain: (a) => _previewPickupAnnot = a,
+      slotGlow: (a) => _previewPickupGlow = a,
+    );
+    if (!mounted || _previewingOffer == null) return;
+
+    // 5. Brief pause between segments
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    // 6. Animate segment 2 smoothly (pickup → dropoff, white, 700ms)
+    await _animateSegmentSmooth(
+      points: _fullSegTwo,
+      color: Colors.white,
+      duration: const Duration(milliseconds: 700),
+      slotMain: (a) => _previewDropoffAnnot = a,
+      slotGlow: (a) => _previewDropoffGlow = a,
+    );
+    if (!mounted || _previewingOffer == null) return;
+
+    // 7. Start glow pulse on the full combined route
+    _startGlowPulse();
+
+    // 8. Mark route as shown
     if (mounted && _previewingOffer != null) {
       setState(() => _offerRouteShown = true);
     }
 
-    // Fit camera to show all three points
-    if (!mounted) return;
+    // 9. Re-fit camera for final framing
     await Future.delayed(const Duration(milliseconds: 200));
-    _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
-
-    await Future.delayed(const Duration(milliseconds: 600));
     if (mounted && _previewingOffer != null) {
       _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
+    }
+  }
+
+  /// Fetch route points from Google Directions → OSRM → straight line fallback
+  Future<List<LatLng>> _fetchRoutePoints(LatLng o, LatLng d) async {
+    List<LatLng>? pts;
+    // Google Directions API
+    try {
+      final uri = Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
+        'origin': '${o.latitude},${o.longitude}',
+        'destination': '${d.latitude},${d.longitude}',
+        'key': ApiKeys.webServices,
+        'mode': 'driving',
+      });
+      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['status'] == 'OK' && (data['routes'] as List).isNotEmpty) {
+          pts = _decodePoly(data['routes'][0]['overview_polyline']['points'] as String);
+        }
+      }
+    } catch (_) {}
+    // OSRM fallback
+    if (pts == null) {
+      try {
+        final path = '/route/v1/driving/${o.longitude},${o.latitude};${d.longitude},${d.latitude}';
+        final uri = Uri.https('router.project-osrm.org', path, {
+          'overview': 'full', 'geometries': 'polyline',
+        });
+        final res = await http.get(uri).timeout(const Duration(seconds: 10));
+        final data = jsonDecode(res.body);
+        if (data is Map<String, dynamic> && data['code']?.toString().toUpperCase() == 'OK') {
+          final routes = data['routes'] as List?;
+          if (routes != null && routes.isNotEmpty) {
+            pts = _decodePoly(routes[0]['geometry'] as String);
+          }
+        }
+      } catch (_) {}
+    }
+    // Straight line fallback
+    pts ??= List.generate(21, (i) {
+      final t = i / 20;
+      return LatLng(
+        o.latitude  + (d.latitude  - o.latitude)  * t,
+        o.longitude + (d.longitude - o.longitude) * t,
+      );
+    });
+    if (pts.isNotEmpty) { pts[0] = o; pts[pts.length - 1] = d; }
+    return pts;
+  }
+
+  /// Smooth 60fps progressive polyline draw using Ticker + easeInOutCubic
+  Future<void> _animateSegmentSmooth({
+    required List<LatLng> points,
+    required Color color,
+    required Duration duration,
+    required void Function(mapbox.PolylineAnnotation?) slotMain,
+    required void Function(mapbox.PolylineAnnotation?) slotGlow,
+  }) async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null || points.length < 2) return;
+
+    final completer = Completer<void>();
+    final stopwatch = Stopwatch()..start();
+    final totalMs = duration.inMilliseconds;
+
+    mapbox.PolylineAnnotation? mainAnnot;
+    mapbox.PolylineAnnotation? glowAnnot;
+    int lastCount = 0;
+
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = createTicker((_) async {
+      if (!mounted || _previewingOffer == null) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+
+      final elapsed = stopwatch.elapsedMilliseconds;
+      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
+      final eased = Curves.easeInOutCubic.transform(progress);
+      final count = (eased * points.length).round().clamp(2, points.length);
+
+      // Only update annotation when the visible point count changes
+      if (count != lastCount) {
+        lastCount = count;
+        final subset = points.sublist(0, count);
+        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        final geo = mapbox.LineString(coordinates: coords);
+
+        if (mainAnnot == null) {
+          // Create glow line (behind)
+          glowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo,
+            lineColor: color.withValues(alpha: 0.20).toARGB32(),
+            lineWidth: 12.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+          // Create main line (on top)
+          mainAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo,
+            lineColor: color.toARGB32(),
+            lineWidth: 5.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } else {
+          mainAnnot!.geometry = geo;
+          await polyMgr.update(mainAnnot!);
+          if (glowAnnot != null) {
+            glowAnnot!.geometry = geo;
+            await polyMgr.update(glowAnnot!);
+          }
+        }
+      }
+
+      if (progress >= 1.0) {
+        _routeDrawTicker?.stop();
+        // Ensure full line is drawn
+        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        final fullGeo = mapbox.LineString(coordinates: fullCoords);
+        if (mainAnnot != null) {
+          mainAnnot!.geometry = fullGeo;
+          await polyMgr.update(mainAnnot!);
+        }
+        if (glowAnnot != null) {
+          glowAnnot!.geometry = fullGeo;
+          await polyMgr.update(glowAnnot!);
+        }
+        slotMain(mainAnnot);
+        slotGlow(glowAnnot);
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+
+    _routeDrawTicker!.start();
+    return completer.future;
+  }
+
+  /// Start pulsing gold glow over the full combined route after animation completes
+  void _startGlowPulse() {
+    _stopGlowPulse();
+    final allPts = [..._fullSegOne, ..._fullSegTwo];
+    if (allPts.length < 2 || _polylineAnnotMgr == null) return;
+
+    final coords = allPts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final geo = mapbox.LineString(coordinates: coords);
+
+    // Create the pulsing glow annotation once
+    _polylineAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
+      geometry: geo,
+      lineColor: _gold.withValues(alpha: 0.10).toARGB32(),
+      lineWidth: 16.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    )).then((annot) {
+      _fullRouteGlow = annot;
+    });
+
+    _glowPulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
+    _glowPulseCtrl!.addListener(() {
+      final glow = _fullRouteGlow;
+      if (glow == null || _polylineAnnotMgr == null) return;
+      final alpha = (0.06 + _glowPulseCtrl!.value * 0.20).clamp(0.0, 1.0);
+      glow.lineColor = _gold.withValues(alpha: alpha).toARGB32();
+      glow.lineWidth = 14.0 + _glowPulseCtrl!.value * 4.0;
+      _polylineAnnotMgr!.update(glow);
+    });
+  }
+
+  /// Stop glow pulse and remove the full-route glow annotation
+  void _stopGlowPulse() {
+    _glowPulseCtrl?.stop();
+    _glowPulseCtrl?.dispose();
+    _glowPulseCtrl = null;
+    if (_fullRouteGlow != null && _polylineAnnotMgr != null) {
+      try { _polylineAnnotMgr!.delete(_fullRouteGlow!); } catch (_) {}
+      _fullRouteGlow = null;
     }
   }
 
@@ -2650,181 +2854,82 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     return bytes?.buffer.asUint8List();
   }
 
-  /// Cruise-branded pin: circle with accent chevron (V) and bottom pointer
-  Future<Uint8List?> _buildCruisePin(Color fill, Color accent, double radius) async {
-    final w = (radius * 2 + 12).roundToDouble();
-    final h = (radius * 2 + 24).roundToDouble(); // taller for pointer
+  /// Cruise-branded teardrop pin matching CruiseMapPin: navy→tipColor gradient,
+  /// person avatar at top, gold border, drop shadow. Renders to Uint8List for Mapbox.
+  Future<Uint8List?> _buildTeardropPin(Color tipColor) async {
+    const double w = 72;
+    const double h = 88;
+    const double r = w / 2; // radius of rounded top
+    const double cx = w / 2;
+
     final rec = ui.PictureRecorder();
-    final cv  = Canvas(rec, Rect.fromLTWH(0, 0, w, h));
-    final cx  = w / 2;
-    final cy  = radius + 4;
+    final cv = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
 
-    // Shadow
-    cv.drawCircle(Offset(cx, cy + 3), radius,
-        Paint()
-          ..color = Colors.black.withValues(alpha: 0.4)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
-
-    // Bottom pointer (sharp narrow triangle)
-    final pointerPath = Path()
-      ..moveTo(cx - 5, cy + radius - 2)
-      ..lineTo(cx, h - 1) // tip at very bottom of image
-      ..lineTo(cx + 5, cy + radius - 2)
+    // Teardrop path (matches CruiseMapPin _PinPainter exactly)
+    final path = Path()
+      ..moveTo(cx, h)
+      ..quadraticBezierTo(0, r + (h - r) * 0.35, 0, r)
+      ..arcTo(const Rect.fromLTWH(0, 0, w, w), math.pi, -math.pi, false)
+      ..quadraticBezierTo(w, r + (h - r) * 0.35, cx, h)
       ..close();
-    cv.drawPath(pointerPath, Paint()..color = fill);
 
-    // Main circle fill
-    cv.drawCircle(Offset(cx, cy), radius, Paint()..color = fill);
+    // Drop shadow
+    cv.drawShadow(path, Colors.black, 6, false);
 
-    // White border ring
-    cv.drawCircle(Offset(cx, cy), radius,
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.25)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0);
+    // Gradient fill: navy top → tipColor at bottom
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [const Color(0xFF1A1F2E), tipColor],
+        stops: const [0.0, 0.85],
+      ).createShader(const Rect.fromLTWH(0, 0, w, h));
+    cv.drawPath(path, fillPaint);
 
-    // Accent chevron (V) in center
-    final chevronPaint = Paint()
-      ..color = accent
+    // Subtle border in tipColor
+    cv.drawPath(path, Paint()
+      ..color = tipColor.withValues(alpha: 0.45)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    final chevronPath = Path()
-      ..moveTo(cx - 8, cy - 4)
-      ..lineTo(cx, cy + 5)
-      ..lineTo(cx + 8, cy - 4);
-    cv.drawPath(chevronPath, chevronPaint);
+      ..strokeWidth = 1.5);
 
-    final img   = await rec.endRecording().toImage(w.toInt(), h.toInt());
+    // Person avatar circle at top
+    const avatarR = 48.0 / 2;
+    const avatarCy = 8.0 + avatarR;
+    cv.drawCircle(const Offset(cx, avatarCy), avatarR, Paint()
+      ..color = const Color(0xFF1A1F2E));
+    cv.drawCircle(const Offset(cx, avatarCy), avatarR, Paint()
+      ..color = Colors.white.withValues(alpha: 0.24)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0);
+
+    // Person icon (simple head + body silhouette)
+    final iconPaint = Paint()..color = Colors.white..style = PaintingStyle.fill;
+    // Head
+    cv.drawCircle(const Offset(cx, avatarCy - 5), 6, iconPaint);
+    // Body
+    final bodyPath = Path()
+      ..moveTo(cx - 8, avatarCy + 14)
+      ..quadraticBezierTo(cx - 8, avatarCy + 2, cx, avatarCy + 2)
+      ..quadraticBezierTo(cx + 8, avatarCy + 2, cx + 8, avatarCy + 14)
+      ..close();
+    cv.drawPath(bodyPath, iconPaint);
+
+    final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
     return bytes?.buffer.asUint8List();
   }
 
-  Future<void> _drawPreviewRoute(LatLng o, LatLng d, String id, Color c) async {
-    List<LatLng>? pts;
-
-    // Try Google Directions API
-    try {
-      final uri =
-          Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
-            'origin': '${o.latitude},${o.longitude}',
-            'destination': '${d.latitude},${d.longitude}',
-            'key': ApiKeys.webServices,
-            'mode': 'driving',
-          });
-      final res = await http.get(uri).timeout(const Duration(seconds: 10));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        if (data['status'] == 'OK' && (data['routes'] as List).isNotEmpty) {
-          pts = _decodePoly(
-            data['routes'][0]['overview_polyline']['points'] as String,
-          );
-        }
-      }
-    } catch (_) {}
-
-    // Fallback: OSRM
-    if (pts == null) {
-      try {
-        final path =
-            '/route/v1/driving/${o.longitude},${o.latitude};${d.longitude},${d.latitude}';
-        final uri = Uri.https('router.project-osrm.org', path, {
-          'overview': 'full',
-          'geometries': 'polyline',
-        });
-        final res = await http.get(uri).timeout(const Duration(seconds: 10));
-        final data = jsonDecode(res.body);
-        if (data is Map<String, dynamic> &&
-            data['code']?.toString().toUpperCase() == 'OK') {
-          final routes = data['routes'] as List?;
-          if (routes != null && routes.isNotEmpty) {
-            pts = _decodePoly(routes[0]['geometry'] as String);
-          }
-        }
-      } catch (_) {}
-    }
-
-    // Last resort: straight line
-    pts ??= List.generate(21, (i) {
-      final t = i / 20;
-      return LatLng(
-        o.latitude + (d.latitude - o.latitude) * t,
-        o.longitude + (d.longitude - o.longitude) * t,
-      );
-    });
-
-    // Snap first and last points to exact pin coordinates
-    if (pts.isNotEmpty) {
-      pts[0] = o;
-      pts[pts.length - 1] = d;
-    }
-
-    await _addPreviewPolyline(pts, c);
-  }
-
-
-  Future<void> _addPreviewPolyline(List<LatLng> pts, Color c) async {
-    final polyMgr = _polylineAnnotMgr;
-    if (polyMgr == null || pts.length < 2) return;
-
-    // Progressive draw: add points in steps over ~600ms
-    const steps = 8;
-    final total = pts.length;
-    mapbox.PolylineAnnotation? annot;
-    mapbox.PolylineAnnotation? glowAnnot;
-
-    for (int step = 1; step <= steps; step++) {
-      if (!mounted || _previewingOffer == null) break;
-      final end = (total * step / steps).ceil().clamp(2, total);
-      final subset = pts.sublist(0, end);
-      final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-      final geo = mapbox.LineString(coordinates: coords);
-
-      if (annot == null) {
-        // First step: create glow line behind main line
-        glowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-          geometry: geo,
-          lineColor: c.withValues(alpha: 0.25).toARGB32(),
-          lineWidth: 12.0,
-          lineJoin: mapbox.LineJoin.ROUND,
-        ));
-        // Main line on top
-        annot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-          geometry: geo,
-          lineColor: c.toARGB32(),
-          lineWidth: 5.0,
-          lineJoin: mapbox.LineJoin.ROUND,
-        ));
-      } else {
-        // Update existing annotations with more points
-        annot.geometry = geo;
-        await polyMgr.update(annot);
-        if (glowAnnot != null) {
-          glowAnnot.geometry = geo;
-          await polyMgr.update(glowAnnot);
-        }
-      }
-      if (step < steps) {
-        await Future.delayed(const Duration(milliseconds: 75));
-      }
-    }
-
-    // Store in preview pickup slot first, then dropoff slot
-    if (_previewPickupAnnot == null) {
-      _previewPickupAnnot = annot;
-      _previewPickupGlow = glowAnnot;
-    } else {
-      _previewDropoffAnnot = annot;
-      _previewDropoffGlow = glowAnnot;
-    }
-  }
-
   void _closePreview() {
     _routePulseCtrl?.stop();
+    _stopGlowPulse();
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = null;
     setState(() {
       _previewingOffer = null;
       _offerRouteShown = false;
+      _fullSegOne = [];
+      _fullSegTwo = [];
     });
     _clearAllAnnotations();
     if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);

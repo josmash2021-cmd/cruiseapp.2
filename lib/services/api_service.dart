@@ -8,9 +8,11 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'security_service.dart';
 import 'firebase_storage_service.dart';
+import 'user_session.dart';
 import '../config/env.dart';
 
 /// Simple in-memory cache entry with TTL
@@ -956,8 +958,16 @@ class ApiService {
       unawaited(
         FirebaseStorageService.updateFirestorePhotoUrl(userId, url, role),
       );
+      // Also update Firebase Auth photoURL for cross-device consistency
+      unawaited(Future(() async {
+        try {
+          await FirebaseAuth.instance.currentUser?.updatePhotoURL(url);
+        } catch (_) {}
+      }));
       // Sync URL back to backend DB so /auth/me returns the correct photo_url
       unawaited(_syncPhotoUrlToBackend(url, token));
+      // Save URL locally so it's available on next app start / other devices
+      unawaited(UserSession.savePhotoUrl(url));
       return url;
     } catch (e) {
       debugPrint('[ApiService] Firebase Storage upload failed, using backend: $e');

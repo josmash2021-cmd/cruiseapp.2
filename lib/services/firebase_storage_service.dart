@@ -20,10 +20,10 @@ class FirebaseStorageService {
   }
 
   /// Upload a profile photo and return its permanent download URL.
+  /// Uses a stable path (user_<id>/profile.jpg) so re-uploads overwrite the old file.
   static Future<String> uploadProfilePhoto(String filePath, int userId) async {
     await _ensureAuth();
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final ref = _storage.ref('photos/user_$userId/profile_$ts.jpg');
+    final ref = _storage.ref('photos/user_$userId/profile.jpg');
     await ref.putFile(
       File(filePath),
       SettableMetadata(contentType: 'image/jpeg'),
@@ -63,6 +63,14 @@ class FirebaseStorageService {
       if (snap.docs.isNotEmpty) {
         await snap.docs.first.reference.update({'photoUrl': photoUrl});
       }
+      // Also save to 'users' collection (keyed by sqliteId) for cross-device sync
+      await _firestore
+          .collection('users')
+          .doc('sql_$userId')
+          .set({
+            'photoUrl': photoUrl,
+            'photoUpdatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('[FirebaseStorageService] updateFirestorePhotoUrl error: $e');
     }
@@ -107,6 +115,34 @@ class FirebaseStorageService {
         return 'insuranceUrl';
       default:
         return '${docType}Url';
+    }
+  }
+
+  /// Migrate photo from Firebase Auth to Firestore users collection.
+  /// Call once after login for existing users who have Auth photoURL
+  /// but no Firestore record yet.
+  static Future<void> syncAuthPhotoToFirestore(int userId) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final authPhotoUrl = user.photoURL;
+      if (authPhotoUrl == null || authPhotoUrl.isEmpty) return;
+
+      // Check if Firestore already has it
+      final doc =
+          await _firestore.collection('users').doc('sql_$userId').get();
+      final firestoreUrl = doc.data()?['photoUrl'] as String?;
+
+      // Only sync if Firestore is missing it
+      if (firestoreUrl == null || firestoreUrl.isEmpty) {
+        await _firestore.collection('users').doc('sql_$userId').set({
+          'photoUrl': authPhotoUrl,
+          'photoUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        debugPrint('[FirebaseStorageService] Synced Auth photo to Firestore');
+      }
+    } catch (e) {
+      debugPrint('[FirebaseStorageService] syncAuthPhotoToFirestore error: $e');
     }
   }
 }

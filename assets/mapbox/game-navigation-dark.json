@@ -79,7 +79,7 @@
         ["in", "class", "motorway", "trunk"]
       ],
       "paint": {
-        "line-color": "#1A3A5C",
+        "line-color": "#C8960A",
         "line-width": [
           "interpolate",
           ["exponential", 1.5],
@@ -148,7 +148,7 @@
         ["in", "class", "motorway", "trunk"]
       ],
       "paint": {
-        "line-color": "#2A4A6E",
+        "line-color": "#F5C842",
         "line-width": [
           "interpolate",
           ["exponential", 1.5],
@@ -222,7 +222,7 @@
         ["==", "structure", "bridge"]
       ],
       "paint": {
-        "line-color": "#3A5A7E",
+        "line-color": "#F5C842",
         "line-width": [
           "interpolate",
           ["exponential", 1.5],

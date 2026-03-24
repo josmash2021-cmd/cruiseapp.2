@@ -6,6 +6,7 @@ import '../../config/page_transitions.dart';
 import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
+import '../../widgets/user_profile_photo.dart';
 import '../splash_screen.dart';
 import '../help_screen.dart';
 import 'driver_vehicle_screen.dart';
@@ -64,17 +65,23 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     );
     _loadProfile();
     UserSession.photoNotifier.addListener(_onPhotoChanged);
+    UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
   }
 
   void _onPhotoChanged() {
     if (!mounted) return;
     final v = UserSession.photoNotifier.value;
-    if (v.isNotEmpty) setState(() => _photoUrl = v);
+    final url = UserSession.photoUrlNotifier.value;
+    setState(() {
+      if (v.isNotEmpty) _photoUrl = v;
+      if (url.isNotEmpty) _photoUrl = url;
+    });
   }
 
   @override
   void dispose() {
     UserSession.photoNotifier.removeListener(_onPhotoChanged);
+    UserSession.photoUrlNotifier.removeListener(_onPhotoChanged);
     _entranceCtrl.dispose();
     super.dispose();
   }
@@ -421,44 +428,12 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   width: 2,
                 ),
               ),
-              child: _resolvedPhotoUrl != null
-                  ? ClipOval(
-                      child: _resolvedPhotoUrl!.startsWith('http')
-                          ? Image.network(
-                              _resolvedPhotoUrl!,
-                              fit: BoxFit.cover,
-                              width: 60,
-                              height: 60,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.person_rounded,
-                                color: Colors.black,
-                                size: 30,
-                              ),
-                            )
-                          : Image.file(
-                              File(_resolvedPhotoUrl!),
-                              fit: BoxFit.cover,
-                              width: 60,
-                              height: 60,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.person_rounded,
-                                color: Colors.black,
-                                size: 30,
-                              ),
-                            ),
-                    )
-                  : Center(
-                      child: Text(
-                        (_profileLoaded && _driverName.isNotEmpty)
-                            ? _driverName[0].toUpperCase()
-                            : 'C',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
+              child: UserProfilePhoto(
+                photoUrl: _resolvedPhotoUrl,
+                photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
+                radius: 30,
+                fallbackName: _driverName,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(

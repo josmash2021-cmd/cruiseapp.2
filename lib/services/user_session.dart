@@ -16,10 +16,15 @@ class UserSession {
   static const _key = 'user_session_v1';
   static const _modeKey = 'cruise_app_mode'; // 'rider' or 'driver'
   static const _photoKey = 'cruise_profile_photo_path'; // survives logout
+  static const _photoUrlKey = 'cruise_profile_photo_url'; // remote URL
 
   /// Global notifier for profile photo path changes.
   /// Screens can listen to this to update in real time.
   static final ValueNotifier<String> photoNotifier = ValueNotifier<String>('');
+
+  /// Global notifier for the remote photo URL (Firebase Storage).
+  /// Persists across devices — used by UserProfilePhoto widget.
+  static final ValueNotifier<String> photoUrlNotifier = ValueNotifier<String>('');
 
   // ── Save / Read local cache ─────────────────────────
 
@@ -31,6 +36,7 @@ class UserSession {
     required String email,
     String? phone,
     String? photoPath,
+    String? photoUrl,
     String? gender,
     String? paymentMethod,
     String? password, // Accepted but NEVER persisted
@@ -54,6 +60,7 @@ class UserSession {
         'email': encEmail,
         'phone': encPhone,
         'photoPath': photoPath ?? '',
+        'photoUrl': photoUrl ?? '',
         'gender': gender ?? '',
         'paymentMethod': paymentMethod ?? '',
         // password is INTENTIONALLY omitted — never persisted (L7)
@@ -130,12 +137,17 @@ class UserSession {
               : '';
         }
         // Repopulate local cache right away with cached photo
+        final serverPhotoUrl = profile['photo_url']?.toString() ?? '';
+        // Also check persisted URL from previous session
+        final cachedUrl = existingUser?['photoUrl'] ?? prefs0.getString(_photoUrlKey) ?? '';
+        final resolvedUrl = serverPhotoUrl.isNotEmpty ? serverPhotoUrl : cachedUrl;
         await saveUser(
           firstName: profile['first_name']?.toString() ?? '',
           lastName: profile['last_name']?.toString() ?? '',
           email: profile['email']?.toString() ?? '',
           phone: profile['phone']?.toString() ?? '',
           photoPath: cachedPhotoPath,
+          photoUrl: resolvedUrl,
           gender: profile['gender']?.toString() ?? '',
           userId: int.tryParse(profile['id']?.toString() ?? ''),
           role: profile['role']?.toString() ?? 'rider',
@@ -143,8 +155,12 @@ class UserSession {
         if (cachedPhotoPath.isNotEmpty) {
           photoNotifier.value = cachedPhotoPath;
         }
+        // Broadcast remote URL immediately — CachedNetworkImage handles caching
+        if (resolvedUrl.isNotEmpty) {
+          photoUrlNotifier.value = resolvedUrl;
+          await prefs0.setString(_photoUrlKey, resolvedUrl);
+        }
         // Fire photo download in background — does not block navigation
-        final serverPhotoUrl = profile['photo_url']?.toString() ?? '';
         if (serverPhotoUrl.isNotEmpty) {
           unawaited(
             ApiService.downloadPhoto(serverPhotoUrl).then((path) async {
@@ -157,6 +173,7 @@ class UserSession {
                   email: profile['email']?.toString() ?? '',
                   phone: profile['phone']?.toString() ?? '',
                   photoPath: path,
+                  photoUrl: serverPhotoUrl,
                   gender: profile['gender']?.toString() ?? '',
                   userId: int.tryParse(profile['id']?.toString() ?? ''),
                   role: profile['role']?.toString() ?? 'rider',
@@ -223,13 +240,14 @@ class UserSession {
     await prefs.remove(_key);
     await prefs.remove(_modeKey);
     await prefs.remove('pending_password');
-    // Keep _photoKey so the same user sees their photo after re-login.
+    // Keep _photoKey and _photoUrlKey so the same user sees their photo after re-login.
     // Photo files are already isolated by userId in the filename (user_$userId.ext).
     await ApiService.clearToken();
     ApiService.clearUserCache();
     // Clear all user-specific data so accounts are fully independent
     await LocalDataService.clearAllUserData();
     photoNotifier.value = '';
+    photoUrlNotifier.value = '';
   }
 
   /// Temporarily save a password during registration flow.
@@ -290,8 +308,16 @@ class UserSession {
 
   /// Initialize the photo notifier from stored session (call once at startup).
   /// Falls back to persistent key, heals stale iOS paths, then downloads from server.
+  /// Also initializes photoUrlNotifier with the remote URL for CachedNetworkImage.
   static Future<void> initPhotoNotifier() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Initialize remote URL notifier first — available immediately for CachedNetworkImage
+    final user = await getUser();
+    final cachedUrl = user?['photoUrl'] ?? prefs.getString(_photoUrlKey) ?? '';
+    if (cachedUrl.isNotEmpty) {
+      photoUrlNotifier.value = cachedUrl;
+    }
 
     Future<bool> _tryPath(String p) async {
       if (p.isEmpty || kIsWeb) return false;
@@ -310,7 +336,6 @@ class UserSession {
       return false;
     }
 
-    final user = await getUser();
     if (await _tryPath(user?['photoPath'] ?? '')) return;
     if (await _tryPath(prefs.getString(_photoKey) ?? '')) return;
 
@@ -319,6 +344,10 @@ class UserSession {
       final me = await ApiService.getMe();
       final serverUrl = me?['photo_url'] as String?;
       if (serverUrl != null && serverUrl.isNotEmpty) {
+        // Broadcast URL immediately so CachedNetworkImage can show it
+        photoUrlNotifier.value = serverUrl;
+        await prefs.setString(_photoUrlKey, serverUrl);
+        await updateField('photoUrl', serverUrl);
         final localPath = await ApiService.downloadPhoto(serverUrl);
         if (localPath.isNotEmpty) {
           photoNotifier.value = localPath;
@@ -335,5 +364,21 @@ class UserSession {
   static Future<String> getPersistedPhotoPath() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_photoKey) ?? '';
+  }
+
+  /// Get the persisted remote photo URL (survives logout).
+  static Future<String> getPersistedPhotoUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_photoUrlKey) ?? '';
+  }
+
+  /// Save a remote photo URL after upload. Call this after uploading
+  /// to Firebase Storage so other devices can load it immediately.
+  static Future<void> savePhotoUrl(String url) async {
+    if (url.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_photoUrlKey, url);
+    await updateField('photoUrl', url);
+    photoUrlNotifier.value = url;
   }
 }

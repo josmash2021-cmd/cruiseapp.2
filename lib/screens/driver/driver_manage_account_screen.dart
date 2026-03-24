@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
+import '../../widgets/user_profile_photo.dart';
 import '../../config/page_transitions.dart';
 import '../privacy_screen.dart';
 import '../splash_screen.dart';
@@ -268,28 +269,17 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
                     onTap: _saving ? null : _pickPhoto,
                     child: Stack(
                       children: [
-                        CircleAvatar(
-                          radius: 54,
-                          backgroundColor: Colors.white12,
-                          backgroundImage: _localPhotoPath != null
-                              ? FileImage(File(_localPhotoPath!))
+                        UserProfilePhoto(
+                          photoUrl: _photoUrl != null && _photoUrl!.startsWith('http')
+                              ? _photoUrl
                               : (_photoUrl != null && _photoUrl!.isNotEmpty
-                                    ? NetworkImage(
-                                            _photoUrl!.startsWith('http')
-                                                ? _photoUrl!
-                                                : '${ApiService.publicBaseUrl}$_photoUrl',
-                                          )
-                                          as ImageProvider
-                                    : null),
-                          child:
-                              (_photoUrl == null || _photoUrl!.isEmpty) &&
-                                  _localPhotoPath == null
-                              ? const Icon(
-                                  Icons.person,
-                                  color: Colors.white38,
-                                  size: 48,
-                                )
-                              : null,
+                                  ? '${ApiService.publicBaseUrl}$_photoUrl'
+                                  : UserSession.photoUrlNotifier.value.isNotEmpty
+                                      ? UserSession.photoUrlNotifier.value
+                                      : null),
+                          photoPath: _localPhotoPath,
+                          radius: 54,
+                          fallbackName: fullName,
                         ),
                         Positioned(
                           bottom: 0,

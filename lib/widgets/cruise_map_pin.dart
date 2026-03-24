@@ -1,9 +1,11 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 
-/// Cruise-branded map pin: dark navy circle with a gold downward chevron (V)
-/// and a teardrop pointer. Subtly bounces up and down.
+/// Cruise-branded map pin: golden teardrop shape with a person avatar at top.
+/// The gradient runs from dark navy at the top to gold at the tip.
+/// Bounces gently while shown. Used as the fixed center overlay on the map picker.
 class CruiseMapPin extends StatefulWidget {
-  final double size;
+  final double size; // pin width; height is derived proportionally
   const CruiseMapPin({super.key, this.size = 56});
 
   @override
@@ -12,9 +14,6 @@ class CruiseMapPin extends StatefulWidget {
 
 class _CruiseMapPinState extends State<CruiseMapPin>
     with SingleTickerProviderStateMixin {
-  static const _navy = Color(0xFF0A0D1A);
-  static const _gold = Color(0xFFD4AF37);
-
   late final AnimationController _bounceCtrl;
   late final Animation<double> _bounceAnim;
 
@@ -39,120 +38,103 @@ class _CruiseMapPinState extends State<CruiseMapPin>
   @override
   Widget build(BuildContext context) {
     final s = widget.size;
+    // Preserve original 72×88 proportions
+    final pinW = s;
+    final pinH = s * (88 / 72);
+    final avatarSize = s * (48 / 72);
+    final avatarMarginTop = s * (8 / 72);
+    final iconSize = s * (28 / 72);
+
     return AnimatedBuilder(
       animation: _bounceAnim,
       builder: (_, child) =>
           Transform.translate(offset: Offset(0, _bounceAnim.value), child: child),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // ── Main circle ──
-          Container(
-            width: s,
-            height: s,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _navy,
-              border: Border.all(
-                color: _gold.withValues(alpha: 0.4),
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: _gold.withValues(alpha: 0.25),
-                  blurRadius: 16,
-                  spreadRadius: 2,
-                  offset: const Offset(0, 4),
-                ),
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.4),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+      child: SizedBox(
+        width: pinW,
+        height: pinH,
+        child: Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            // ── Teardrop pin shape (navy→gold gradient) ──
+            CustomPaint(
+              size: Size(pinW, pinH),
+              painter: _PinPainter(),
             ),
-            child: Center(
-              child: CustomPaint(
-                size: Size(s * 0.45, s * 0.35),
-                painter: _ChevronPainter(color: _gold),
+            // ── Person avatar circle at top of pin ──
+            Container(
+              width: avatarSize,
+              height: avatarSize,
+              margin: EdgeInsets.only(top: avatarMarginTop),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF1A1F2E),
+                border: Border.all(color: Colors.white24, width: 1),
+              ),
+              child: Icon(
+                Icons.person,
+                color: Colors.white,
+                size: iconSize,
               ),
             ),
-          ),
-
-          // ── Bottom pointer triangle ──
-          CustomPaint(
-            size: const Size(14, 8),
-            painter: _PinPointerPainter(
-              color: _navy,
-              borderColor: _gold.withValues(alpha: 0.4),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-//  Gold downward chevron (V shape)
+//  Teardrop pin shape: dark navy at top → golden yellow at sharp tip
 // ═════════════════════════════════════════════════════════════════════════
 
-class _ChevronPainter extends CustomPainter {
-  final Color color;
-  _ChevronPainter({required this.color});
-
+class _PinPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 3.0
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
+    final w = size.width;
+    final h = size.height;
+    final r = w / 2; // radius of the rounded top
+    final cx = w / 2;
 
-    final path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width / 2, size.height)
-      ..lineTo(size.width, 0);
+    // Teardrop path:
+    //  • Rounded top — semicircle arc from left equator edge to right equator edge
+    //  • Two quadratic bezier curves tapering to the sharp tip at the bottom
+    final path = Path();
+    path.moveTo(cx, h); // start at tip
+    // Left side curve: tip → left equator edge
+    path.quadraticBezierTo(0, r + (h - r) * 0.35, 0, r);
+    // Top arc: counter-clockwise from (0, r) through top centre to (w, r)
+    path.arcTo(
+      Rect.fromLTWH(0, 0, w, w),
+      pi,   // start: points left → (0, r)
+      -pi,  // sweep: −180° (counter-clockwise) → ends at (w, r)
+      false,
+    );
+    // Right side curve: right equator edge → tip
+    path.quadraticBezierTo(w, r + (h - r) * 0.35, cx, h);
+    path.close();
 
-    canvas.drawPath(path, paint);
+    // Drop shadow
+    canvas.drawShadow(path, Colors.black, 6, false);
+
+    // Gradient fill: navy top → golden tip
+    final fillPaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Color(0xFF1A1F2E), Color(0xFFF5C518)],
+        stops: [0.0, 0.85],
+      ).createShader(Rect.fromLTWH(0, 0, w, h))
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(path, fillPaint);
+
+    // Subtle gold border
+    final borderPaint = Paint()
+      ..color = const Color(0xFFF5C518).withValues(alpha: 0.45)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawPath(path, borderPaint);
   }
 
   @override
-  bool shouldRepaint(_ChevronPainter old) => old.color != color;
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-//  Bottom teardrop pointer
-// ═════════════════════════════════════════════════════════════════════════
-
-class _PinPointerPainter extends CustomPainter {
-  final Color color;
-  final Color borderColor;
-  _PinPointerPainter({required this.color, required this.borderColor});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Border triangle
-    canvas.drawPath(
-      Path()
-        ..moveTo(0, 0)
-        ..lineTo(size.width, 0)
-        ..lineTo(size.width / 2, size.height)
-        ..close(),
-      Paint()..color = borderColor,
-    );
-    // Fill triangle (inset)
-    canvas.drawPath(
-      Path()
-        ..moveTo(1.5, 0)
-        ..lineTo(size.width - 1.5, 0)
-        ..lineTo(size.width / 2, size.height - 1)
-        ..close(),
-      Paint()..color = color,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_PinPointerPainter old) => false;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

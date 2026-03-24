@@ -59,8 +59,8 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
       _PaymentOption(
         id: 'apple_pay',
         label: 'Apple Pay',
-        iconWidget: _AppleLogoWidget(size: 22, color: Colors.white),
-        iconColor: Colors.white,
+        iconWidget: const _AppleLogoWidget(),
+        iconColor: Colors.transparent, // badge provides its own black background
       ),
     _PaymentOption(
       id: 'credit_card',
@@ -421,95 +421,50 @@ class _PaymentOption {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Apple Logo Widget - Official Apple logo reproduction
+//  Apple Pay badge widget — black rounded-rect card with  + "Pay"
 // ─────────────────────────────────────────────────────────────────────────────
 class _AppleLogoWidget extends StatelessWidget {
-  final double size;
-  final Color color;
-
-  const _AppleLogoWidget({
-    required this.size,
-    required this.color,
-  });
+  const _AppleLogoWidget();
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: CustomPaint(
-        size: Size(size, size),
-        painter: _AppleLogoPainter(color: color),
+      child: Container(
+        width: 38,
+        height: 24,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Text(
+                '\uF8FF', // Apple logo glyph (renders on iOS via -apple-system font)
+                style: TextStyle(
+                  fontFamily: '-apple-system',
+                  color: Colors.white,
+                  fontSize: 13,
+                  height: 1.0,
+                ),
+              ),
+              SizedBox(width: 3),
+              Text(
+                'Pay',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
-}
-
-class _AppleLogoPainter extends CustomPainter {
-  final Color color;
-
-  _AppleLogoPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final path = Path();
-    
-    // Scale to fit
-    final s = size.width / 100;
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    
-    // Apple body (main shape)
-    // This is a simplified Apple logo path
-    path.moveTo(cx + 28 * s, cy - 35 * s);
-    
-    // Right side of apple
-    path.cubicTo(
-      cx + 45 * s, cy - 38 * s,
-      cx + 58 * s, cy - 25 * s,
-      cx + 58 * s, cy - 5 * s,
-    );
-    path.cubicTo(
-      cx + 58 * s, cy + 20 * s,
-      cx + 45 * s, cy + 35 * s,
-      cx + 35 * s, cy + 45 * s,
-    );
-    path.cubicTo(
-      cx + 28 * s, cy + 52 * s,
-      cx + 22 * s, cy + 52 * s,
-      cx + 15 * s, cy + 45 * s,
-    );
-    path.cubicTo(
-      cx + 5 * s, cy + 35 * s,
-      cx - 8 * s, cy + 20 * s,
-      cx - 8 * s, cy - 5 * s,
-    );
-    path.cubicTo(
-      cx - 8 * s, cy - 25 * s,
-      cx + 5 * s, cy - 38 * s,
-      cx + 28 * s, cy - 35 * s,
-    );
-    
-    // Leaf
-    path.moveTo(cx + 35 * s, cy - 35 * s);
-    path.cubicTo(
-      cx + 45 * s, cy - 55 * s,
-      cx + 60 * s, cy - 50 * s,
-      cx + 55 * s, cy - 38 * s,
-    );
-    path.cubicTo(
-      cx + 52 * s, cy - 30 * s,
-      cx + 42 * s, cy - 28 * s,
-      cx + 35 * s, cy - 35 * s,
-    );
-    
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

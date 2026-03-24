@@ -28,6 +28,7 @@ import 'driver_profile_photo_screen.dart';
 import '../../l10n/app_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
+import '../../widgets/user_profile_photo.dart';
 
 /// ═══════════════════════════════════════════════════════════════
 ///  CRUISE DRIVER HOME — Premium dashboard with map, stats, go-online
@@ -151,6 +152,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // Listen for photo updates from UserSession
     UserSession.photoNotifier.addListener(_onPhotoUpdated);
+    UserSession.photoUrlNotifier.addListener(_onPhotoUpdated);
 
     // Resolve driver ID for trip polling
     _resolveDriverId();
@@ -168,7 +170,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void _onPhotoUpdated() {
     if (mounted) {
       setState(() {
-        _photoUrl = UserSession.photoNotifier.value;
+        _photoUrl = UserSession.photoUrlNotifier.value.isNotEmpty
+            ? UserSession.photoUrlNotifier.value
+            : UserSession.photoNotifier.value;
       });
     }
   }
@@ -193,6 +197,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _accountStatusTimer?.cancel();
     _tripPollTimer?.cancel();
     UserSession.photoNotifier.removeListener(_onPhotoUpdated);
+    UserSession.photoUrlNotifier.removeListener(_onPhotoUpdated);
     super.dispose();
   }
 
@@ -782,31 +787,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     ),
                   ),
                   child: ClipOval(
-                    child: _photoUrl != null && _photoUrl!.isNotEmpty
-                        ? (_photoUrl!.startsWith('http')
-                            ? Image.network(
-                                _photoUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Icon(
-                                  Icons.person_rounded,
-                                  color: Colors.white.withValues(alpha: 0.6),
-                                  size: 20,
-                                ),
-                              )
-                            : Image.file(
-                                File(_photoUrl!),
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Icon(
-                                  Icons.person_rounded,
-                                  color: Colors.white.withValues(alpha: 0.6),
-                                  size: 20,
-                                ),
-                              ))
-                        : Icon(
-                            Icons.person_rounded,
-                            color: Colors.white.withValues(alpha: 0.6),
-                            size: 20,
-                          ),
+                    child: UserProfilePhoto(
+                      photoUrl: UserSession.photoUrlNotifier.value.isNotEmpty
+                          ? UserSession.photoUrlNotifier.value
+                          : (_photoUrl != null && _photoUrl!.startsWith('http') ? _photoUrl : null),
+                      photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
+                      radius: 18,
+                      fallbackName: _driverName,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),

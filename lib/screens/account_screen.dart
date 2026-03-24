@@ -7,6 +7,7 @@ import '../config/api_keys.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/animated_biometric_icon.dart';
+import '../widgets/user_profile_photo.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
@@ -47,11 +48,13 @@ class _AccountScreenState extends State<AccountScreen> {
     super.initState();
     _loadUser();
     UserSession.photoNotifier.addListener(_onPhotoChanged);
+    UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
   }
 
   @override
   void dispose() {
     UserSession.photoNotifier.removeListener(_onPhotoChanged);
+    UserSession.photoUrlNotifier.removeListener(_onPhotoChanged);
     super.dispose();
   }
 
@@ -133,6 +136,7 @@ class _AccountScreenState extends State<AccountScreen> {
     final lastName = _user?['lastName'] ?? '';
     final fullName = '$firstName $lastName'.trim();
     final photoPath = _user?['photoPath'] ?? '';
+    final photoUrl = _user?['photoUrl'] ?? UserSession.photoUrlNotifier.value;
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -196,7 +200,12 @@ class _AccountScreenState extends State<AccountScreen> {
                           ),
                         ),
                         child: ClipOval(
-                          child: _buildAvatar(photoPath, c),
+                          child: UserProfilePhoto(
+                            photoUrl: photoUrl,
+                            photoPath: photoPath,
+                            radius: 35,
+                            fallbackName: fullName,
+                          ),
                         ),
                       ),
                       if (_isVerified)

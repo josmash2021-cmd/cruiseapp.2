@@ -6,6 +6,7 @@ import '../../config/driver_colors.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
+import '../../widgets/user_profile_photo.dart';
 import 'driver_trip_history_screen.dart';
 
 /// Driver profile screen – Uber-style with stats cards, lifetime highlights, badges.
@@ -52,17 +53,23 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     super.initState();
     _loadProfileData();
     UserSession.photoNotifier.addListener(_onPhotoChanged);
+    UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
   }
 
   void _onPhotoChanged() {
     if (!mounted) return;
     final v = UserSession.photoNotifier.value;
-    if (v.isNotEmpty) setState(() => _photoUrl = v);
+    final url = UserSession.photoUrlNotifier.value;
+    setState(() {
+      if (v.isNotEmpty) _photoUrl = v;
+      if (url.isNotEmpty) _photoUrl = url;
+    });
   }
 
   @override
   void dispose() {
     UserSession.photoNotifier.removeListener(_onPhotoChanged);
+    UserSession.photoUrlNotifier.removeListener(_onPhotoChanged);
     super.dispose();
   }
 
@@ -465,19 +472,12 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                   border: Border.all(color: _tierColor, width: 3),
                 ),
                 child: ClipOval(
-                  child: _resolvedPhotoUrl != null
-                      ? (_resolvedPhotoUrl!.startsWith('http')
-                            ? Image.network(
-                                _resolvedPhotoUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _defaultAvatar(),
-                              )
-                            : Image.file(
-                                File(_resolvedPhotoUrl!),
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _defaultAvatar(),
-                              ))
-                      : _defaultAvatar(),
+                  child: UserProfilePhoto(
+                    photoUrl: _resolvedPhotoUrl,
+                    photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
+                    radius: 36,
+                    fallbackName: _name,
+                  ),
                 ),
               ),
               Positioned(
@@ -927,30 +927,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                 color: _gold.withValues(alpha: 0.2),
               ),
               child: _resolvedPhotoUrl != null
-                  ? ClipOval(
-                      child: _resolvedPhotoUrl!.startsWith('http')
-                          ? Image.network(
-                              _resolvedPhotoUrl!,
-                              fit: BoxFit.cover,
-                              width: 80,
-                              height: 80,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.person_rounded,
-                                color: _gold,
-                                size: 40,
-                              ),
-                            )
-                          : Image.file(
-                              File(_resolvedPhotoUrl!),
-                              fit: BoxFit.cover,
-                              width: 80,
-                              height: 80,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.person_rounded,
-                                color: _gold,
-                                size: 40,
-                              ),
-                            ),
+                  ? UserProfilePhoto(
+                      photoUrl: _resolvedPhotoUrl,
+                      photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
+                      radius: 40,
+                      fallbackName: _name,
                     )
                   : const Icon(Icons.person_rounded, color: _gold, size: 40),
             ),

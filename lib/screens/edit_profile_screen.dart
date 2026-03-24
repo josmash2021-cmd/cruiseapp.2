@@ -6,6 +6,7 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/user_session.dart';
+import '../widgets/user_profile_photo.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -23,6 +24,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _phoneCtrl = TextEditingController();
 
   String _photoPath = '';
+  String _photoUrl = '';
   String _gender = '';
   bool _loading = true;
   bool _saving = false;
@@ -51,6 +53,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _emailCtrl.text = user?['email'] ?? '';
       _phoneCtrl.text = user?['phone'] ?? '';
       _photoPath = user?['photoPath'] ?? '';
+      _photoUrl = user?['photoUrl'] ?? UserSession.photoUrlNotifier.value;
       _gender = user?['gender'] ?? '';
       _loading = false;
     });
@@ -319,44 +322,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                 width: 2,
                               ),
                             ),
-                            child: ClipOval(
-                              child:
-                                  _photoPath.isNotEmpty &&
-                                      !kIsWeb &&
-                                      File(_photoPath).existsSync()
-                                  ? Image.file(
-                                      File(_photoPath),
-                                      fit: BoxFit.cover,
-                                      width: 100,
-                                      height: 100,
-                                      gaplessPlayback: true,
-                                      frameBuilder:
-                                          (
-                                            context,
-                                            child,
-                                            frame,
-                                            wasSynchronouslyLoaded,
-                                          ) {
-                                            if (wasSynchronouslyLoaded) {
-                                              return child;
-                                            }
-                                            return AnimatedOpacity(
-                                              opacity: frame == null
-                                                  ? 0.0
-                                                  : 1.0,
-                                              duration: const Duration(
-                                                milliseconds: 300,
-                                              ),
-                                              curve: Curves.easeOutCubic,
-                                              child: child,
-                                            );
-                                          },
-                                    )
-                                  : Icon(
-                                      Icons.person_rounded,
-                                      size: 50,
-                                      color: c.textTertiary,
-                                    ),
+                            child: UserProfilePhoto(
+                              photoUrl: _photoUrl,
+                              photoPath: _photoPath,
+                              radius: 50,
+                              fallbackName: '${_firstNameCtrl.text} ${_lastNameCtrl.text}',
                             ),
                           ),
                           Positioned(

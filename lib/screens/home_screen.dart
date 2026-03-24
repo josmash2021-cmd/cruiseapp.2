@@ -40,6 +40,7 @@ import '../services/user_session.dart';
 import 'welcome_screen.dart';
 import 'account_deactivated_screen.dart';
 import '../widgets/gold_location_dot.dart';
+import '../widgets/user_profile_photo.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -93,6 +94,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   String _firstName = '';
   String _lastName = '';
   String? _photoPath;
+  String? _photoUrl;
 
   // Mini-map state
   mapbox.MapboxMap? _miniMapController;
@@ -270,6 +272,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       );
     });
     UserSession.photoNotifier.addListener(_onPhotoChanged);
+    UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
   }
 
   @override
@@ -287,6 +290,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     UserSession.photoNotifier.removeListener(_onPhotoChanged);
+    UserSession.photoUrlNotifier.removeListener(_onPhotoChanged);
     _sheetController.dispose();
     _miniDot.dispose();
     _locTicker?.dispose();
@@ -303,7 +307,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   void _onPhotoChanged() {
     if (!mounted) return;
-    setState(() => _photoPath = UserSession.photoNotifier.value);
+    setState(() {
+      _photoPath = UserSession.photoNotifier.value;
+      _photoUrl = UserSession.photoUrlNotifier.value;
+    });
   }
 
   // --- Service Zone support ---
@@ -831,6 +838,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _lastName = user['lastName'] ?? '';
         final path = user['photoPath'] ?? '';
         _photoPath = path.isNotEmpty ? path : null;
+        final url = user['photoUrl'] ?? UserSession.photoUrlNotifier.value;
+        _photoUrl = url.isNotEmpty ? url : null;
       }
     });
   }
@@ -1046,40 +1055,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ],
       ),
       child: ClipOval(
-        child: _photoPath != null && _photoPath!.isNotEmpty
-            ? (_photoPath!.startsWith('http')
-                ? Image.network(
-                    _photoPath!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Center(
-                      child: Text(initials,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700)),
-                    ),
-                  )
-                : Image.file(
-                    File(_photoPath!),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Center(
-                      child: Text(initials,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700)),
-                    ),
-                  ))
-            : Center(
-                child: Text(
-                  initials.isEmpty ? '?' : initials,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
+        child: UserProfilePhoto(
+          photoUrl: _photoUrl ?? UserSession.photoUrlNotifier.value,
+          photoPath: _photoPath,
+          radius: 22,
+          fallbackName: '$_firstName $_lastName',
+        ),
       ),
     );
   }

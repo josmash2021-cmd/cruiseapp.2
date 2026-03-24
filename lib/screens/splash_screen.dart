@@ -1,4 +1,6 @@
 ﻿import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -270,7 +272,15 @@ class _SplashScreenState extends State<SplashScreen>
       }
 
       if (cachedStatus == 'pending' || cachedStatus == 'rejected') {
-        // Not verified → show pending/review screen
+        // Quick Firestore check: driver may have been approved while app was closed
+        if (cachedStatus == 'pending') {
+          final liveStatus = await _quickFirestoreDriverCheck();
+          if (liveStatus == 'approved') {
+            await LocalDataService.setDriverApprovalStatus('approved');
+            unawaited(_backgroundProfileSync());
+            return const DriverHomeScreen();
+          }
+        }
         return const DriverPendingReviewScreen();
       }
 
@@ -307,6 +317,66 @@ class _SplashScreenState extends State<SplashScreen>
       return const HomeScreen();
     }
   }
+
+  /// Checks Firestore directly (one-time .get()) to see if this driver has
+  /// already been approved by dispatch — e.g. while the app was closed.
+  /// Returns 'approved', 'rejected', or 'pending'.
+  Future<String> _quickFirestoreDriverCheck() async {
+    try {
+      // Ensure Firebase Auth is active (Firestore rules require auth)
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+      final user = await UserSession.getUser();
+      final userIdStr = user?['userId'] as String?;
+      if (userIdStr == null || userIdStr.isEmpty) return 'pending';
+      final userIdInt = int.tryParse(userIdStr) ?? 0;
+      if (userIdInt <= 0) return 'pending';
+
+      final docId = 'sql_$userIdInt';
+
+      // Check drivers collection first (most reliable — dispatch writes here)
+      final driversDoc = await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(docId)
+          .get()
+          .timeout(const Duration(seconds: 4));
+      if (driversDoc.exists) {
+        final d = driversDoc.data() ?? {};
+        if (_isApprovedData(d)) return 'approved';
+        if (_isRejectedData(d)) return 'rejected';
+      }
+
+      // Fall back to verifications doc
+      final verDoc = await FirebaseFirestore.instance
+          .collection('verifications')
+          .doc(docId)
+          .get()
+          .timeout(const Duration(seconds: 4));
+      if (verDoc.exists) {
+        final d = verDoc.data() ?? {};
+        if (_isApprovedData(d)) return 'approved';
+        if (_isRejectedData(d)) return 'rejected';
+      }
+    } catch (e) {
+      debugPrint('[SplashScreen] Firestore driver check failed: $e');
+    }
+    return 'pending';
+  }
+
+  bool _isApprovedData(Map<String, dynamic> d) =>
+      d['driver_status'] == 'approved' ||
+      d['status'] == 'approved' ||
+      d['status'] == 'active' ||
+      d['isVerified'] == true ||
+      d['isApproved'] == true ||
+      d['verificationStatus'] == 'approved' ||
+      d['approvalStatus'] == 'approved';
+
+  bool _isRejectedData(Map<String, dynamic> d) =>
+      d['driver_status'] == 'rejected' ||
+      d['status'] == 'rejected' ||
+      d['approvalStatus'] == 'rejected';
 
   /// Syncs profile and checks account status in background after navigation.
   /// If account is blocked/deactivated, the home screens' own periodic

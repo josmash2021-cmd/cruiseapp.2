@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
@@ -32,6 +33,8 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
 
   Timer? _pollTimer;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _firestoreSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _driversSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _usersSubscription;
   String _status = 'pending'; // pending | approved | rejected
   String? _rejectionReason;
 
@@ -70,6 +73,8 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   void dispose() {
     _pollTimer?.cancel();
     _firestoreSubscription?.cancel();
+    _driversSubscription?.cancel();
+    _usersSubscription?.cancel();
     _pulseCtrl.dispose();
     _dotCtrl.dispose();
     _approvedCtrl.dispose();
@@ -82,6 +87,10 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     // Attach Firestore real-time listener first (instant — no polling delay)
     _attachFirestoreListener();
 
+    // Also do a one-shot .get() immediately — catches already-approved drivers
+    // who opened the app without any new Firestore write to trigger a change.
+    unawaited(_checkFirestoreNow());
+
     try {
       final result = await ApiService.getDriverApprovalStatus();
       final status =
@@ -91,6 +100,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
       if (!mounted) return;
       if (status == 'approved') {
         await LocalDataService.setDriverApprovalStatus('approved');
+        await _saveStatusToPrefs('approved');
         if (!mounted) return;
         _goApproved();
         return;
@@ -100,6 +110,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
             result['reason'] as String? ??
             S.of(context).applicationNotApproved;
         await LocalDataService.setDriverApprovalStatus('rejected');
+        await _saveStatusToPrefs('rejected');
         if (!mounted) return;
         setState(() {
           _status = 'rejected';
@@ -109,6 +120,81 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
       }
     } catch (_) {}
     _startPolling();
+  }
+
+  /// One-shot Firestore .get() on drivers and verifications docs.
+  /// Catches already-approved drivers on first open (no live change to trigger).
+  Future<void> _checkFirestoreNow() async {
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+      final user = await UserSession.getUser();
+      final userIdStr = user?['userId'] as String?;
+      if (userIdStr == null || userIdStr.isEmpty || !mounted) return;
+      final userIdInt = int.tryParse(userIdStr) ?? 0;
+      if (userIdInt <= 0) return;
+
+      final docId = 'sql_$userIdInt';
+
+      // Check drivers doc first
+      final driversDoc = await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(docId)
+          .get()
+          .timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      if (driversDoc.exists) {
+        final detected = _detectStatusFromData(driversDoc.data() ?? {});
+        if (detected == 'approved' && _status != 'approved') {
+          _pollTimer?.cancel();
+          LocalDataService.setDriverApprovalStatus('approved');
+          _saveStatusToPrefs('approved');
+          _goApproved();
+          return;
+        } else if (detected == 'rejected' && _status != 'rejected') {
+          _pollTimer?.cancel();
+          final d = driversDoc.data() ?? {};
+          final reason = d['reason'] as String? ??
+              d['verificationReason'] as String? ??
+              S.of(context).applicationNotApproved;
+          LocalDataService.setDriverApprovalStatus('rejected');
+          _saveStatusToPrefs('rejected');
+          if (mounted) setState(() { _status = 'rejected'; _rejectionReason = reason; });
+          return;
+        }
+      }
+
+      // Fall back to verifications doc
+      final verDoc = await FirebaseFirestore.instance
+          .collection('verifications')
+          .doc(docId)
+          .get()
+          .timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      if (verDoc.exists) {
+        final detected = _detectStatusFromData(verDoc.data() ?? {});
+        if (detected == 'approved' && _status != 'approved') {
+          _pollTimer?.cancel();
+          LocalDataService.setDriverApprovalStatus('approved');
+          _saveStatusToPrefs('approved');
+          _goApproved();
+          return;
+        } else if (detected == 'rejected' && _status != 'rejected') {
+          _pollTimer?.cancel();
+          final d = verDoc.data() ?? {};
+          final reason = d['reason'] as String? ??
+              d['verificationReason'] as String? ??
+              S.of(context).applicationNotApproved;
+          LocalDataService.setDriverApprovalStatus('rejected');
+          _saveStatusToPrefs('rejected');
+          if (mounted) setState(() { _status = 'rejected'; _rejectionReason = reason; });
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('[PendingReview] Firestore immediate check error: $e');
+    }
   }
 
   /// Attaches a Firestore query listener for verifications where userId matches.
@@ -130,7 +216,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     final userIdInt = int.tryParse(userId) ?? 0;
     if (userIdInt <= 0) return;
 
-    // Listen by query (works regardless of doc ID format)
+    // Listen by query on verifications collection (works regardless of doc ID format)
     _firestoreSubscription = FirebaseFirestore.instance
         .collection('verifications')
         .where('userId', isEqualTo: userIdInt)
@@ -139,23 +225,48 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
       if (!mounted) return;
       for (final doc in snapshot.docs) {
         final data = doc.data();
-        final status = data['status'] as String? ??
-            data['verificationStatus'] as String? ??
-            '';
-        final isApproved = status == 'approved' ||
+
+        // ── Debug prints ──────────────────────────────────────────────────
+        print('=== CRUISE LISTENER FIRED === (verifications)');
+        print('Full Firestore data: ${doc.data()}');
+        print('driver_status: ${data[\'driver_status\']}');
+        print('status: ${data[\'status\']}');
+        print('isVerified: ${data[\'isVerified\']}');
+        print('isApproved: ${data[\'isApproved\']}');
+        // ──────────────────────────────────────────────────────────────────
+
+        final status = data['status'] as String? ?? '';
+        final verificationStatus = data['verificationStatus'] as String? ?? '';
+        final driverStatus = data['driver_status'] as String? ?? '';
+        final approvalStatus = data['approvalStatus'] as String? ?? '';
+
+        final isApproved = driverStatus == 'approved' ||
+            status == 'approved' ||
+            status == 'active' ||
             data['isVerified'] == true ||
-            data['isApproved'] == true;
+            data['isApproved'] == true ||
+            verificationStatus == 'approved' ||
+            approvalStatus == 'approved';
+
+        final isRejected = driverStatus == 'rejected' ||
+            status == 'rejected' ||
+            (data['isApproved'] == false &&
+                (driverStatus.isNotEmpty || status == 'rejected' || approvalStatus == 'rejected')) ||
+            approvalStatus == 'rejected';
+
         if (isApproved && _status != 'approved') {
           _pollTimer?.cancel();
           LocalDataService.setDriverApprovalStatus('approved');
+          _saveStatusToPrefs('approved');
           _goApproved();
           return;
-        } else if (status == 'rejected' && _status != 'rejected') {
+        } else if (isRejected && _status != 'rejected') {
           _pollTimer?.cancel();
           final reason = data['reason'] as String? ??
               data['verificationReason'] as String? ??
               S.of(context).applicationNotApproved;
           LocalDataService.setDriverApprovalStatus('rejected');
+          _saveStatusToPrefs('rejected');
           setState(() {
             _status = 'rejected';
             _rejectionReason = reason;
@@ -163,34 +274,126 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           return;
         }
       }
+    }, onError: (e) {
+      debugPrint('[PendingReview] Firestore verifications listener error: $e');
+    });
 
-      // Also check the drivers collection directly (Dispatch writes here too)
-      if (snapshot.docs.isEmpty || _status == 'pending') {
-        _checkDriversCollection(userIdInt);
+    // Also attach real-time listeners on drivers and users collections
+    // (Dispatch writes isVerified/isApproved/verificationStatus there too)
+    _attachDriversListener(userIdInt);
+    _attachUsersListener(userIdInt);
+  }
+
+  /// Checks all relevant fields across a Firestore document snapshot.
+  /// Returns 'approved', 'rejected', or null.
+  String? _detectStatusFromData(Map<String, dynamic> data) {
+    // ── Debug prints ────────────────────────────────────────────────────────
+    print('=== CRUISE LISTENER FIRED ===');
+    print('Full Firestore data: $data');
+    print('driver_status: ${data[\'driver_status\']}');
+    print('status: ${data[\'status\']}');
+    print('isVerified: ${data[\'isVerified\']}');
+    print('isApproved: ${data[\'isApproved\']}');
+    // ────────────────────────────────────────────────────────────────────────
+
+    final driverStatus = data['driver_status'] as String? ?? '';
+    final status = data['status'] as String? ?? '';
+    final verificationStatus = data['verificationStatus'] as String? ?? '';
+    final approvalStatus = data['approvalStatus'] as String? ?? '';
+
+    if (driverStatus == 'approved' ||
+        status == 'approved' ||
+        status == 'active' ||
+        data['isVerified'] == true ||
+        data['isApproved'] == true ||
+        verificationStatus == 'approved' ||
+        approvalStatus == 'approved') {
+      return 'approved';
+    }
+    if (driverStatus == 'rejected' ||
+        status == 'rejected' ||
+        approvalStatus == 'rejected' ||
+        (data['isApproved'] == false && data['isVerified'] == false)) {
+      return 'rejected';
+    }
+    return null;
+  }
+
+  /// Real-time listener on drivers collection (Dispatch writes here on approve/reject)
+  void _attachDriversListener(int userIdInt) {
+    final docId = 'sql_$userIdInt';
+    _driversSubscription = FirebaseFirestore.instance
+        .collection('drivers')
+        .doc(docId)
+        .snapshots()
+        .listen((doc) {
+      if (!mounted || !doc.exists) return;
+      final data = doc.data() ?? {};
+      final detected = _detectStatusFromData(data);
+      if (detected == 'approved' && _status != 'approved') {
+        _pollTimer?.cancel();
+        LocalDataService.setDriverApprovalStatus('approved');
+        _saveStatusToPrefs('approved');
+        _goApproved();
+      } else if (detected == 'rejected' && _status != 'rejected') {
+        _pollTimer?.cancel();
+        final reason = data['verificationReason'] as String? ??
+            data['reason'] as String? ??
+            S.of(context).applicationNotApproved;
+        LocalDataService.setDriverApprovalStatus('rejected');
+        _saveStatusToPrefs('rejected');
+        setState(() {
+          _status = 'rejected';
+          _rejectionReason = reason;
+        });
       }
     }, onError: (e) {
-      debugPrint('[PendingReview] Firestore listener error: $e');
+      debugPrint('[PendingReview] Firestore drivers listener error: $e');
     });
   }
 
-  /// Fallback: check the drivers collection directly
-  void _checkDriversCollection(int userIdInt) {
+  /// Real-time listener on users collection (Dispatch also writes here)
+  void _attachUsersListener(int userIdInt) {
     final docId = 'sql_$userIdInt';
-    FirebaseFirestore.instance
-        .collection('drivers')
+    _usersSubscription = FirebaseFirestore.instance
+        .collection('users')
         .doc(docId)
-        .get()
-        .then((doc) {
+        .snapshots()
+        .listen((doc) {
       if (!mounted || !doc.exists) return;
       final data = doc.data() ?? {};
-      final verified = data['isVerified'] == true ||
-          data['verificationStatus'] == 'approved';
-      if (verified && _status != 'approved') {
+      final detected = _detectStatusFromData(data);
+      if (detected == 'approved' && _status != 'approved') {
         _pollTimer?.cancel();
         LocalDataService.setDriverApprovalStatus('approved');
+        _saveStatusToPrefs('approved');
         _goApproved();
+      } else if (detected == 'rejected' && _status != 'rejected') {
+        _pollTimer?.cancel();
+        final reason = data['verificationReason'] as String? ??
+            data['reason'] as String? ??
+            S.of(context).applicationNotApproved;
+        LocalDataService.setDriverApprovalStatus('rejected');
+        _saveStatusToPrefs('rejected');
+        setState(() {
+          _status = 'rejected';
+          _rejectionReason = reason;
+        });
       }
-    }).catchError((_) {});
+    }, onError: (e) {
+      debugPrint('[PendingReview] Firestore users listener error: $e');
+    });
+  }
+
+  /// Persists driver status to SharedPreferences so the app-level router
+  /// picks it up correctly after the next cold start.
+  Future<void> _saveStatusToPrefs(String status) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('driver_status', status);
+    } catch (e) {
+      debugPrint('[PendingReview] Failed to save driver_status to prefs: $e');
+    }
   }
 
   void _startPolling() {
@@ -207,6 +410,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
         if (status == 'approved') {
           _pollTimer?.cancel();
           await LocalDataService.setDriverApprovalStatus('approved');
+          await _saveStatusToPrefs('approved');
           if (!mounted) return;
           _goApproved();
         } else if (status == 'rejected') {
@@ -216,6 +420,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
               result['reason'] as String? ??
               S.of(context).applicationNotApproved;
           await LocalDataService.setDriverApprovalStatus('rejected');
+          await _saveStatusToPrefs('rejected');
           if (!mounted) return;
           setState(() {
             _status = 'rejected';
@@ -237,10 +442,15 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   }
 
   /// Navigate to the premium cinematic approved screen.
-  void _goApproved() {
+  void _goApproved() async {
     if (!mounted) return;
     _pollTimer?.cancel();
     _firestoreSubscription?.cancel();
+    _driversSubscription?.cancel();
+    _usersSubscription?.cancel();
+    // Brief delay to show success state before transitioning
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder<void>(
         transitionDuration: const Duration(milliseconds: 600),

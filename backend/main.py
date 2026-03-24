@@ -389,7 +389,7 @@ class DriverIncentive(Base):
     status = Column(String(20), default="active")  # active, completed, expired, claimed
     expires_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class SurgeZone(Base):
     __tablename__ = "surge_zones"
@@ -2123,7 +2123,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
         if key in updates:
             setattr(db_user, key, updates[key])
     if updates.get("is_verified") and not db_user.verified_at:
-        db_user.verified_at = datetime.now(timezone.utc)
+        db_user.verified_at = datetime.utcnow()
     await db.commit()
     await db.refresh(db_user)
 
@@ -2290,7 +2290,7 @@ async def delete_account(user: User = Depends(_get_current_user), db: AsyncSessi
     if not db_user:
         raise HTTPException(404, "User not found")
     db_user.status = "pending_deletion"
-    db_user.deletion_requested_at = datetime.now(timezone.utc)
+    db_user.deletion_requested_at = datetime.utcnow()
     await db.commit()
     # Notify dispatch app about the deletion request via Firestore
     if _HAS_FIRESTORE:
@@ -2486,7 +2486,7 @@ async def verification_status(user: User = Depends(_get_current_user), db: Async
                 if fs_status["status"] == "approved":
                     db_user.is_verified = True
                     if not db_user.verified_at:
-                        db_user.verified_at = datetime.now(timezone.utc)
+                        db_user.verified_at = datetime.utcnow()
                 await db.commit()
                 await db.refresh(db_user)
         except Exception as e:
@@ -2518,7 +2518,7 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
                 if fs_status["status"] == "approved":
                     db_user.is_verified = True
                     if not db_user.verified_at:
-                        db_user.verified_at = datetime.now(timezone.utc)
+                        db_user.verified_at = datetime.utcnow()
                 await db.commit()
         except Exception as e:
             logging.warning("Firestore driver approval sync failed: %s", e)
@@ -2550,7 +2550,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
         db_user.role = "driver"
     db_user.verification_status = "approved"
     db_user.is_verified = True
-    db_user.verified_at = datetime.now(timezone.utc)
+    db_user.verified_at = datetime.utcnow()
     await db.commit()
     logging.info("[DISPATCH-APPROVE] SQLite updated for user %d: status=approved, is_verified=True", user_id)
     # Atomic batch write to ALL 3 Firestore collections
@@ -2826,7 +2826,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     if not trip:
         raise HTTPException(404, "Trip not found")
     trip.status = status
-    trip.updated_at = datetime.now(timezone.utc)
+    trip.updated_at = datetime.utcnow()
     # Auto-calculate driver earnings and platform fee (40% platform / 60% driver)
     if status == "completed" and trip.fare and trip.fare > 0 and trip.driver_id:
         platform_rate = 0.40
@@ -2941,7 +2941,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     trip.status = "canceled"
     trip.cancel_reason = reason
     trip.cancellation_fee = cancellation_fee
-    trip.updated_at = datetime.now(timezone.utc)
+    trip.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(trip)
     if _HAS_FIRESTORE:
@@ -3264,7 +3264,7 @@ async def apply_referral_code(body: ApplyReferralIn, user: User = Depends(_get_c
         status="completed",
         referrer_bonus=10.0,
         referee_bonus=10.0,
-        completed_at=datetime.now(timezone.utc),
+        completed_at=datetime.utcnow(),
     )
     db_user.referred_by = referrer.id
     db.add(referral)

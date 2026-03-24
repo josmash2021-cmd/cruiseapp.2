@@ -41,6 +41,12 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   // holdStill fill progress (0..1)
   double _holdProgress = 0.0;
 
+  // Video recording state (starts at step 2)
+  bool _isRecording = false;
+
+  // Brightness detection for smart flash
+  double _lastBrightness = 1.0; // 0..1, default bright
+
   // ── Animation controllers ────────────────────────────────────────────────
   late final AnimationController _rotateCtrl;   // ring rotation 4s
   late final AnimationController _pulseCtrl;    // oval breathing 1.2s
@@ -147,6 +153,8 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     try {
       await _cam!.initialize();
       if (!mounted) return;
+      // Reset zoom to 1.0 — no digital zoom
+      try { await _cam!.setZoomLevel(1.0); } catch (_) {}
       await _cam!.startImageStream(_onFrame);
       setState(() => _camReady = true);
     } catch (_) {
@@ -165,6 +173,9 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   }
 
   Future<void> _processFrame(CameraImage img) async {
+    // Sample brightness from Y channel (YUV420) or first plane (BGRA)
+    _updateBrightness(img);
+
     final inputImage = _toInputImage(img);
     if (inputImage == null) return;
 
@@ -255,7 +266,21 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
         _step = _Step.values[_stepIndex];
       });
       _stepCtrl.forward();
+      // Start video recording at step 2 (turnRight, index 1)
+      if (_stepIndex == 1 && !_isRecording) {
+        _startRecording();
+      }
     });
+  }
+
+  /// Start video recording alongside image stream (best-effort).
+  Future<void> _startRecording() async {
+    try {
+      await _cam?.startVideoRecording();
+      _isRecording = true;
+    } catch (_) {
+      // Some platforms don't support simultaneous stream + recording
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -269,8 +294,15 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
 
     await Future.delayed(const Duration(milliseconds: 400));
 
-    // Stop image stream before taking picture
+    // Stop image stream before capture
     try { await _cam?.stopImageStream(); } catch (_) {}
+
+    // Smart flash: only enable torch if scene is dark (< 80/255 ≈ 0.31)
+    final isDark = _lastBrightness < 0.31;
+    if (isDark) {
+      try { await _cam?.setFlashMode(FlashMode.torch); } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
 
     String? photoPath;
     String? videoPath;
@@ -281,18 +313,61 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       photoPath = photo?.path;
     } catch (_) {}
 
-    // Record a short video clip
-    try {
-      await _cam?.startVideoRecording();
-      await Future.delayed(const Duration(seconds: 2));
-      final video = await _cam?.stopVideoRecording();
-      videoPath = video?.path;
-    } catch (_) {}
+    // Turn off flash immediately after capture
+    if (isDark) {
+      try { await _cam?.setFlashMode(FlashMode.off); } catch (_) {}
+    }
+
+    // Stop video recording (started at step 2)
+    if (_isRecording) {
+      try {
+        final video = await _cam?.stopVideoRecording();
+        videoPath = video?.path;
+        _isRecording = false;
+      } catch (_) {}
+    } else {
+      // Fallback: record a short clip if recording wasn't started earlier
+      try {
+        await _cam?.startVideoRecording();
+        await Future.delayed(const Duration(seconds: 2));
+        final video = await _cam?.stopVideoRecording();
+        videoPath = video?.path;
+      } catch (_) {}
+    }
 
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
 
     Navigator.of(context).pop({'photo': photoPath, 'video': videoPath});
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Brightness detection (smart flash)
+  // ─────────────────────────────────────────────────────────────────────────
+  void _updateBrightness(CameraImage img) {
+    if (img.planes.isEmpty) return;
+    final bytes = img.planes[0].bytes;
+    if (bytes.isEmpty) return;
+
+    // Sample center region of Y-plane (luminance) — every 50th pixel for speed
+    final w = img.width;
+    final h = img.height;
+    final cx = w ~/ 2, cy = h ~/ 2;
+    final halfW = math.min(50, w ~/ 4);
+    final halfH = math.min(50, h ~/ 4);
+    int sum = 0, count = 0;
+    for (var y = cy - halfH; y < cy + halfH; y += 5) {
+      for (var x = cx - halfW; x < cx + halfW; x += 5) {
+        final idx = y * w + x;
+        if (idx >= 0 && idx < bytes.length) {
+          sum += bytes[idx]; // Y value = luminance 0..255
+          count++;
+        }
+      }
+    }
+    if (count > 0) {
+      _lastBrightness = sum / count / 255.0; // normalize to 0..1
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -368,19 +443,21 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     );
   }
 
-  // ── Camera fill ───────────────────────────────────────────────────────────
+  // ── Camera fill (no Transform.scale zoom) ────────────────────────────────
   Widget _buildCameraFill() {
     final camCtrl = _cam!;
-    final previewAspect = camCtrl.value.aspectRatio;
-    return LayoutBuilder(builder: (_, constraints) {
-      final screenAspect = constraints.maxWidth / constraints.maxHeight;
-      double scale = previewAspect / screenAspect;
-      if (scale < 1) scale = 1 / scale;
-      return Transform.scale(
-        scale: scale,
-        child: Center(child: CameraPreview(camCtrl)),
-      );
-    });
+    final preview = camCtrl.value.previewSize;
+    if (preview == null) return const SizedBox.expand();
+    return SizedBox.expand(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: preview.height,
+          height: preview.width,
+          child: CameraPreview(camCtrl),
+        ),
+      ),
+    );
   }
 
   // ── Oval cutout ───────────────────────────────────────────────────────────
@@ -399,7 +476,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     );
   }
 
-  // ── Ring ──────────────────────────────────────────────────────────────────
+  // ── Ring (static, no rotation — wave fill) ────────────────────────────────
   Widget _buildRing() {
     return AnimatedBuilder(
       animation: Listenable.merge([_rotateCtrl, _pulseCtrl]),
@@ -407,7 +484,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
         return CustomPaint(
           painter: _FaceIDRingPainter(
             progress: _ringProgress,
-            rotation: _rotateCtrl.value,
+            wave: _rotateCtrl.value,      // used for shimmer, NOT rotation
             breathe: _pulseCtrl.value,
             allDone: _finishing,
             ovalW: _ovalW,
@@ -642,10 +719,10 @@ class _OvalCutoutPainter extends CustomPainter {
       old.ovalW != ovalW || old.ovalH != ovalH;
 }
 
-// ─── Face ID animated ring painter ─────────────────────────────────────────
+// ─── Face ID static ring painter with wave fill ────────────────────────────
 class _FaceIDRingPainter extends CustomPainter {
   final double progress;   // 0..1
-  final double rotation;   // 0..1 animation value
+  final double wave;       // 0..1 animation value (for shimmer, NOT rotation)
   final double breathe;    // 0..1 animation value
   final bool allDone;
   final double ovalW;
@@ -659,7 +736,7 @@ class _FaceIDRingPainter extends CustomPainter {
 
   const _FaceIDRingPainter({
     required this.progress,
-    required this.rotation,
+    required this.wave,
     required this.breathe,
     required this.allDone,
     required this.ovalW,
@@ -675,22 +752,17 @@ class _FaceIDRingPainter extends CustomPainter {
     final radiusX = ovalW / 2 + 10 + b * 3;
     final radiusY = ovalH / 2 + 10 + b * 4;
 
-    final rotationOffset = rotation * 2 * math.pi;
+    // NO rotation offset — ring is static
     final filledDashes = (progress * _dashCount).round();
-
     final degreesPerDash = 2 * math.pi / _dashCount;
 
+    // Wave shimmer position (travels along filled arc)
+    final wavePos = wave * filledDashes;
+
     for (var i = 0; i < _dashCount; i++) {
-      final angle = -math.pi / 2 + i * degreesPerDash + rotationOffset;
+      // Static angle — starts at top, goes clockwise
+      final angle = -math.pi / 2 + i * degreesPerDash;
       final isFilled = i < filledDashes;
-
-      // Point on the oval perimeter
-      final px = center.dx + radiusX * math.cos(angle);
-      final py = center.dy + radiusY * math.sin(angle);
-
-      // Tangent direction for dash orientation
-      final tpx = center.dx + (radiusX + 8) * math.cos(angle);
-      final tpy = center.dy + (radiusY + 8) * math.sin(angle);
 
       Color color;
       double strokeW;
@@ -699,16 +771,25 @@ class _FaceIDRingPainter extends CustomPainter {
         color = _green;
         strokeW = 3.0;
       } else if (isFilled) {
-        // Leading edge glow
+        // Check if this dash is at a step boundary (25%, 50%, 75%)
+        final isStepTick = (i == 20 || i == 40 || i == 60) && i < filledDashes;
+
+        // Leading edge glow dot
         final isLeading = i == filledDashes - 1;
         if (isLeading) {
-          final pulse = (math.sin(rotation * math.pi * 8) + 1) / 2;
+          // Pulsing bright leading dot
+          final pulse = (math.sin(wave * math.pi * 6) + 1) / 2;
           color = Color.lerp(_green, const Color(0xFF8EF5A5), pulse)!;
-          strokeW = 3.5;
+          strokeW = 4.0;
+        } else if (isStepTick) {
+          // Step ticks glow brighter
+          color = _green;
+          strokeW = 4.0;
         } else {
-          final dist = filledDashes - i;
-          final fade = (1 - dist / 8.0).clamp(0.3, 1.0);
-          color = _green.withValues(alpha: fade);
+          // Wave shimmer: bright band passing over filled dashes
+          final dist = (i - wavePos).abs();
+          final shimmer = (1.0 - dist / 8.0).clamp(0.0, 0.4);
+          color = Color.lerp(_green, const Color(0xFF8EF5A5), shimmer)!;
           strokeW = 3.0;
         }
       } else {
@@ -733,13 +814,25 @@ class _FaceIDRingPainter extends CustomPainter {
 
       // Glow on filled dashes
       if (isFilled && !allDone) {
+        final isLeading = i == filledDashes - 1;
         canvas.drawLine(
           Offset(innerX, innerY),
           Offset(outerX, outerY),
           Paint()
-            ..color = _green.withValues(alpha: 0.15)
-            ..strokeWidth = strokeW + 4
+            ..color = _green.withValues(alpha: isLeading ? 0.35 : 0.15)
+            ..strokeWidth = strokeW + (isLeading ? 6 : 4)
             ..strokeCap = StrokeCap.round
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, isLeading ? 6 : 4),
+        );
+      }
+
+      // Step tick glow (at 25%, 50%, 75% boundaries)
+      if (isFilled && !allDone && (i == 20 || i == 40 || i == 60)) {
+        canvas.drawCircle(
+          Offset((innerX + outerX) / 2, (innerY + outerY) / 2),
+          5,
+          Paint()
+            ..color = _green.withValues(alpha: 0.3)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
         );
       }
@@ -791,7 +884,7 @@ class _FaceIDRingPainter extends CustomPainter {
   @override
   bool shouldRepaint(_FaceIDRingPainter old) =>
       old.progress != progress ||
-      old.rotation != rotation ||
+      old.wave != wave ||
       old.breathe != breathe ||
       old.allDone != allDone;
 }

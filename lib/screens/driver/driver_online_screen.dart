@@ -60,6 +60,9 @@ class DriverOnlineScreen extends StatefulWidget {
   State<DriverOnlineScreen> createState() => _DriverOnlineScreenState();
 }
 
+/// Card accept animation states.
+enum _OfferAcceptState { normal, accepted, routing }
+
 enum _Phase {
   searching,
   rideRequest,
@@ -154,6 +157,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _showRipple = false;
   bool _isCardAnimating = false;
   String? _animatingOfferId; // which card is pulsing
+
+  // ── Accept card animation state ──
+  _OfferAcceptState _offerAcceptState = _OfferAcceptState.normal;
+  String? _acceptingCardId;
+  final Set<String> _tappedCardIds = {};
 
   // ── Smooth route draw + glow pulse ──
   List<LatLng> _fullSegOne = [];
@@ -1752,7 +1760,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   //  RIDE OFFER ACTIONS (Spark-style: persistent cards)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Future<void> _acceptOffer(Map<String, dynamic> r) async {
+    // Prevent double-tap
+    final oid = (r['offer_id'] ?? r['id'] ?? '').toString();
+    if (_offerAcceptState != _OfferAcceptState.normal) return;
+
     HapticFeedback.heavyImpact();
+
+    // ── PHASE 1: Fade to "Viaje Aceptado" ──
+    setState(() {
+      _acceptingCardId = oid;
+      _offerAcceptState = _OfferAcceptState.accepted;
+    });
+
     final offerId = r['offer_id'] as int?;
     final tripId = r['trip_id'] as int? ?? r['id'] as int?;
 
@@ -1766,9 +1785,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           );
         } catch (e) {
           if (mounted) _snack(S.of(context).tripNoLongerAvailable);
-          setState(
-            () => _pendingOffers.removeWhere((o) => o['offer_id'] == offerId),
-          );
+          setState(() {
+            _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
+            _offerAcceptState = _OfferAcceptState.normal;
+            _acceptingCardId = null;
+          });
           return;
         }
       } else if (tripId != null && _driverId != null) {
@@ -1776,9 +1797,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
         } catch (e) {
           if (mounted) _snack(S.of(context).tripNoLongerAvailable);
-          setState(
-            () => _pendingOffers.removeWhere((o) => o['trip_id'] == tripId),
-          );
+          setState(() {
+            _pendingOffers.removeWhere((o) => o['trip_id'] == tripId);
+            _offerAcceptState = _OfferAcceptState.normal;
+            _acceptingCardId = null;
+          });
           return;
         }
       }
@@ -1826,8 +1849,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _nearPickupNotified = false;
     _nearDropoffNotified = false;
 
-    // Push DoorDash-style trip accept screen
+    // ── PHASE 2: Wait for "Viaje Aceptado" to display ──
+    await Future.delayed(const Duration(milliseconds: 1200));
     if (!mounted) return;
+
+    // ── PHASE 3: Fade to "Enrutando..." ──
+    setState(() => _offerAcceptState = _OfferAcceptState.routing);
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+    // ── PHASE 4: Reset state and navigate ──
+    _offerAcceptState = _OfferAcceptState.normal;
+    _acceptingCardId = null;
+    _tappedCardIds.clear();
     final riderPhotoUrl = (r['rider_photo_url'] ?? r['photo_url'] ?? '') as String;
     final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 4.8;
     final result = await Navigator.of(context).push<String>(
@@ -2703,6 +2737,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _previewingOffer = offer;
       _showRipple = true;
       _animatingOfferId = oid;
+      _tappedCardIds.add(oid);
     });
     _stopGlowPulse();
     await _clearAllAnnotations();
@@ -4931,194 +4966,401 @@ Widget _navHeader() {
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, anim) =>
+              FadeTransition(opacity: anim, child: child),
+          child: _acceptingCardId == offerId &&
+                  _offerAcceptState == _OfferAcceptState.accepted
+              ? _buildAcceptedCardContent(pickupAddr)
+              : _acceptingCardId == offerId &&
+                      _offerAcceptState == _OfferAcceptState.routing
+                  ? _buildRoutingCardContent()
+                  : _buildNormalCardContent(
+                      offer: offer,
+                      offerId: offerId,
+                      fare: fare,
+                      rating: rating,
+                      vehicleType: vehicleType,
+                      etaToPickup: etaToPickup,
+                      distToPickupMi: distToPickupMi,
+                      pickupAddr: pickupAddr,
+                      tripEta: tripEta,
+                      tripDistMi: tripDistMi,
+                      dropoffAddr: dropoffAddr,
+                    ),
+        ),
+      ),
+    );
+  }
+
+  // ── Normal card content (default offer view) ──
+  Widget _buildNormalCardContent({
+    required Map<String, dynamic> offer,
+    required String offerId,
+    required double fare,
+    required double rating,
+    required String vehicleType,
+    required int etaToPickup,
+    required double distToPickupMi,
+    required String pickupAddr,
+    required int tripEta,
+    required double tripDistMi,
+    required String dropoffAddr,
+  }) {
+    const luxGold = Color(0xFFD4AF37);
+    const mutedGray = Color(0xFF9A9A9A);
+    final showStats = _tappedCardIds.contains(offerId);
+    final totalMins = etaToPickup + tripEta;
+    final totalMiles = distToPickupMi + tripDistMi;
+
+    return Column(
+      key: const ValueKey('normal'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ── Header: person icon + "Cruise" + Exclusive badge + dismiss ──
+        Row(
           children: [
-            // ── Header: person icon + "Cruise" + Exclusive badge + dismiss ──
-            Row(
-              children: [
-                Icon(Icons.person_rounded,
-                    color: luxGold, size: 18),
-                const SizedBox(width: 6),
-                const Text(
-                  'Cruise',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: luxGold.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: luxGold.withValues(alpha: 0.25),
-                      width: 0.5,
-                    ),
-                  ),
-                  child: Text(
-                    vehicleType,
-                    style: const TextStyle(
-                      color: luxGold,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.4,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => _rejectOffer(offer),
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(Icons.close_rounded,
-                        color: Colors.white.withValues(alpha: 0.40), size: 15),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // ── Fare (large, centered) ──
-            Text(
-              '\$${fare.toStringAsFixed(2)}',
-              style: const TextStyle(
+            const Icon(Icons.person_rounded, color: luxGold, size: 18),
+            const SizedBox(width: 6),
+            const Text(
+              'Cruise',
+              style: TextStyle(
                 color: Colors.white,
-                fontSize: 40,
-                fontWeight: FontWeight.w900,
-                height: 1.0,
-                letterSpacing: -0.5,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.3,
               ),
             ),
-            const SizedBox(height: 8),
-
-            // ── Star rating ──
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.star_rounded, color: luxGold, size: 15),
-                const SizedBox(width: 4),
-                Text(
-                  rating.toStringAsFixed(2),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // ── Gold divider ──
+            const SizedBox(width: 8),
             Container(
-              height: 1,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    luxGold.withValues(alpha: 0.0),
-                    luxGold.withValues(alpha: 0.25),
-                    luxGold.withValues(alpha: 0.0),
-                  ],
+                color: luxGold.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: luxGold.withValues(alpha: 0.25),
+                  width: 0.5,
+                ),
+              ),
+              child: Text(
+                vehicleType,
+                style: const TextStyle(
+                  color: luxGold,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-
-            // ── Pickup row: driver → pickup ──
-            _uberAddressRow(
-              icon: Icons.circle,
-              iconColor: luxGold,
-              iconSize: 9,
-              topLine: '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
-              bottomLine: pickupAddr,
-              showConnector: true,
-              darkMode: true,
-            ),
-            const SizedBox(height: 2),
-            // ── Dropoff row: pickup → dropoff ──
-            _uberAddressRow(
-              icon: Icons.square_rounded,
-              iconColor: mutedGray,
-              iconSize: 9,
-              topLine: '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
-              bottomLine: dropoffAddr,
-              showConnector: false,
-              darkMode: true,
-            ),
-
-            // ── Long trip pill (conditional) ──
-            if (tripEta >= 45) ...[
-              const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => _rejectOffer(offer),
+              child: Container(
+                width: 28,
+                height: 28,
                 decoration: BoxDecoration(
-                  color: luxGold.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: luxGold.withValues(alpha: 0.20),
-                    width: 0.5,
-                  ),
+                  color: Colors.white.withValues(alpha: 0.06),
+                  shape: BoxShape.circle,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.route_rounded,
-                        color: luxGold, size: 14),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Long trip ($tripEta+ min)',
-                      style: const TextStyle(
-                        color: luxGold,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 18),
-
-            // ── Accept button (full-width gold) ──
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: () => _acceptOffer(offer),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: luxGold,
-                  foregroundColor: Colors.black,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                child: Text(
-                  S.of(context).accept,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.3,
-                  ),
-                ),
+                child: Icon(Icons.close_rounded,
+                    color: Colors.white.withValues(alpha: 0.40), size: 15),
               ),
             ),
           ],
         ),
+        const SizedBox(height: 16),
+
+        // ── Fare (large, centered) ──
+        Text(
+          '\$${fare.toStringAsFixed(2)}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 40,
+            fontWeight: FontWeight.w900,
+            height: 1.0,
+            letterSpacing: -0.5,
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        // ── Star rating ──
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.star_rounded, color: luxGold, size: 15),
+            const SizedBox(width: 4),
+            Text(
+              rating.toStringAsFixed(2),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // ── Gold divider ──
+        Container(
+          height: 1,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                luxGold.withValues(alpha: 0.0),
+                luxGold.withValues(alpha: 0.25),
+                luxGold.withValues(alpha: 0.0),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // ── Pickup row: driver → pickup ──
+        _uberAddressRow(
+          icon: Icons.circle,
+          iconColor: luxGold,
+          iconSize: 9,
+          topLine: '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
+          bottomLine: pickupAddr,
+          showConnector: true,
+          darkMode: true,
+        ),
+        const SizedBox(height: 2),
+        // ── Dropoff row: pickup → dropoff ──
+        _uberAddressRow(
+          icon: Icons.square_rounded,
+          iconColor: mutedGray,
+          iconSize: 9,
+          topLine: '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
+          bottomLine: dropoffAddr,
+          showConnector: false,
+          darkMode: true,
+        ),
+
+        // ── Long trip pill (conditional) ──
+        if (tripEta >= 45) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: luxGold.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: luxGold.withValues(alpha: 0.20),
+                width: 0.5,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.route_rounded, color: luxGold, size: 14),
+                const SizedBox(width: 6),
+                Text(
+                  'Long trip ($tripEta+ min)',
+                  style: const TextStyle(
+                    color: luxGold,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        // ── Trip stats row (shown on card tap) ──
+        AnimatedSize(
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+          child: showStats
+              ? AnimatedOpacity(
+                  opacity: showStats ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 300),
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1F35),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: luxGold.withValues(alpha: 0.25),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildStatItem(
+                          icon: Icons.access_time_rounded,
+                          value: '$totalMins min',
+                          label: 'Tiempo total',
+                        ),
+                        Container(
+                          width: 1,
+                          height: 32,
+                          color: Colors.white.withValues(alpha: 0.1),
+                        ),
+                        _buildStatItem(
+                          icon: Icons.straighten_rounded,
+                          value: '${totalMiles.toStringAsFixed(1)} mi',
+                          label: 'Distancia total',
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+
+        const SizedBox(height: 18),
+
+        // ── Accept button (full-width gold) ──
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: () => _acceptOffer(offer),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: luxGold,
+              foregroundColor: Colors.black,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: Text(
+              S.of(context).accept,
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── "Viaje Aceptado" state ──
+  Widget _buildAcceptedCardContent(String pickupAddr) {
+    const luxGold = Color(0xFFD4AF37);
+    return SizedBox(
+      key: const ValueKey('accepted'),
+      height: 180,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.elasticOut,
+            builder: (_, scale, child) =>
+                Transform.scale(scale: scale, child: child),
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: luxGold.withValues(alpha: 0.15),
+                border: Border.all(color: luxGold, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: luxGold.withValues(alpha: 0.3),
+                    blurRadius: 20,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.check_rounded, color: luxGold, size: 32),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Viaje Aceptado',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            pickupAddr,
+            style: const TextStyle(color: Colors.white54, fontSize: 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
+    );
+  }
+
+  // ── "Enrutando..." state ──
+  Widget _buildRoutingCardContent() {
+    const luxGold = Color(0xFFD4AF37);
+    return SizedBox(
+      key: const ValueKey('routing'),
+      height: 180,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const _RoutingDotsAnimation(),
+          const SizedBox(height: 20),
+          const Text(
+            'Enrutando...',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Preparando tu ruta',
+            style: TextStyle(color: luxGold, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    const luxGold = Color(0xFFD4AF37);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: luxGold, size: 16),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -7468,5 +7710,63 @@ IconData _dropoffIconFor(_PlaceType type) {
     case _PlaceType.hotel:    return Icons.apartment_rounded;
     case _PlaceType.commerce: return Icons.storefront_rounded;
     case _PlaceType.home:     return Icons.home_rounded;
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  ROUTING DOTS ANIMATION — 3 bouncing gold dots for "Enrutando..." state
+// ═════════════════════════════════════════════════════════════════════════════
+class _RoutingDotsAnimation extends StatefulWidget {
+  const _RoutingDotsAnimation();
+  @override
+  State<_RoutingDotsAnimation> createState() => _RoutingDotsAnimationState();
+}
+
+class _RoutingDotsAnimationState extends State<_RoutingDotsAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(3, (i) {
+          final delay = i / 3;
+          final progress = ((_ctrl.value - delay) % 1.0).clamp(0.0, 1.0);
+          final scale = 0.6 + (math.sin(progress * math.pi) * 0.6);
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            child: Transform.scale(
+              scale: scale,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFFD4AF37),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
   }
 }

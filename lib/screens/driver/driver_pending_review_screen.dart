@@ -87,13 +87,18 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   // ═══════════════════════════════════════════════════════════════════════
 
   Future<void> _checkImmediateAndPoll() async {
-    // 1. Ensure Firebase Auth (Firestore rules require auth)
-    try {
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
+    // 1. Ensure Firebase Auth (Firestore rules require auth) — retry up to 3 times
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (FirebaseAuth.instance.currentUser == null) {
+          await FirebaseAuth.instance.signInAnonymously();
+          debugPrint('[PendingReview] Firebase Auth OK (attempt ${attempt + 1})');
+        }
+        break; // success
+      } catch (e) {
+        debugPrint('[PendingReview] Firebase Auth attempt ${attempt + 1} failed: $e');
+        if (attempt < 2) await Future<void>.delayed(const Duration(seconds: 2));
       }
-    } catch (e) {
-      debugPrint('[PendingReview] Firebase Auth failed: $e');
     }
 
     // 2. Get the user's SQL ID (used for doc IDs like "sql_42")

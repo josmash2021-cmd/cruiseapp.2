@@ -1030,6 +1030,18 @@ async def health():
         db_status = f"error: {str(e)[:80]}"
 
     firebase_status = "ok" if _HAS_FIRESTORE else "disabled"
+    # Check if Firestore is actually usable (credentials loaded)
+    firestore_usable = False
+    if _HAS_FIRESTORE:
+        try:
+            firestore_usable = firestore_sync._db is not None
+        except Exception:
+            pass
+    firebase_detail = {
+        "imported": _HAS_FIRESTORE,
+        "db_initialized": firestore_usable,
+        "status": "ok" if firestore_usable else ("imported_but_no_creds" if _HAS_FIRESTORE else "disabled"),
+    }
 
     uptime_s = int((datetime.now(timezone.utc) - _SERVER_START_TIME).total_seconds())
     uptime_str = f"{uptime_s // 3600}h {(uptime_s % 3600) // 60}m {uptime_s % 60}s"
@@ -1041,7 +1053,7 @@ async def health():
         "uptime": uptime_str,
         "uptime_seconds": uptime_s,
         "database": {"status": db_status, "latency_ms": db_latency_ms},
-        "firebase": firebase_status,
+        "firebase": firebase_detail,
         "watchdog": _watchdog_stats,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
@@ -2458,15 +2470,16 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
 
 @app.get("/auth/verification-status", dependencies=[Depends(_verify_api_key)])
 async def verification_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Check current verification status. Also syncs from Firestore if dispatch updated it."""
+    """Check current verification status. Always syncs from Firestore in case dispatch updated it."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    # Check Firestore for dispatch updates
-    if _HAS_FIRESTORE and db_user.verification_status == "pending":
+    # Always check Firestore for dispatch updates (dispatch writes directly to Firestore)
+    if _HAS_FIRESTORE and db_user.verification_status not in ("approved",):
         try:
             fs_status = firestore_sync.get_verification_status(db_user.id)
+            logging.info("Firestore verification check for user %d: %s (db=%s)", db_user.id, fs_status, db_user.verification_status)
             if fs_status and fs_status.get("status") in ("approved", "rejected"):
                 db_user.verification_status = fs_status["status"]
                 db_user.verification_reason = fs_status.get("reason")
@@ -2488,17 +2501,17 @@ async def verification_status(user: User = Depends(_get_current_user), db: Async
 
 @app.get("/auth/driver-approval-status", dependencies=[Depends(_verify_api_key)])
 async def driver_approval_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Return driver's approval/pending/rejected status."""
+    """Return driver's approval/pending/rejected status.  Always syncs from Firestore."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
 
-    # Honor Firestore dispatch override (admins can approve/reject manually)
-    if _HAS_FIRESTORE and db_user.verification_status == "pending":
+    # Always check Firestore — dispatch writes directly there even if backend call fails
+    if _HAS_FIRESTORE and db_user.verification_status not in ("approved",):
         try:
             fs_status = firestore_sync.get_verification_status(db_user.id)
-            logging.info("Firestore verification status for user %d: %s", db_user.id, fs_status)
+            logging.info("Firestore driver approval check for user %d: %s (db=%s)", db_user.id, fs_status, db_user.verification_status)
             if fs_status and fs_status.get("status") in ("approved", "rejected"):
                 db_user.verification_status = fs_status["status"]
                 db_user.verification_reason = fs_status.get("reason")
@@ -2522,21 +2535,33 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
 @app.post("/auth/dispatch-approve/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
 async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_db)):
     """Dispatch approves or rejects a driver directly via REST (no Firestore needed)."""
+    logging.info("[DISPATCH-APPROVE] Approving driver user_id=%d", user_id)
     from pydantic import BaseModel as _BM
     result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
     db_user = result.scalar_one_or_none()
     if not db_user:
-        raise HTTPException(404, "Driver not found")
+        logging.warning("[DISPATCH-APPROVE] Driver %d not found in DB — trying without role filter", user_id)
+        # Fallback: try without role filter (role may not be set yet for new accounts)
+        result2 = await db.execute(select(User).where(User.id == user_id))
+        db_user = result2.scalar_one_or_none()
+        if not db_user:
+            raise HTTPException(404, "Driver not found")
+        # Update role to driver if found
+        db_user.role = "driver"
     db_user.verification_status = "approved"
     db_user.is_verified = True
     db_user.verified_at = datetime.now(timezone.utc)
     await db.commit()
+    logging.info("[DISPATCH-APPROVE] SQLite updated for user %d: status=approved, is_verified=True", user_id)
     # Atomic batch write to ALL 3 Firestore collections
     if _HAS_FIRESTORE:
         try:
-            firestore_sync.write_approval(user_id, "approve")
+            ok = firestore_sync.write_approval(user_id, "approve")
+            logging.info("[DISPATCH-APPROVE] Firestore write_approval result: %s", ok)
         except Exception as e:
-            logging.warning("Firestore approve sync failed: %s", e)
+            logging.warning("[DISPATCH-APPROVE] Firestore approve sync failed: %s", e)
+    else:
+        logging.warning("[DISPATCH-APPROVE] _HAS_FIRESTORE=False — Firestore sync skipped")
     return {"ok": True, "message": f"Driver {user_id} approved", "status": "approved", "approval_status": "approved"}
 
 

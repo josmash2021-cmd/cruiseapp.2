@@ -410,6 +410,7 @@ def get_verification_status(user_id: int) -> dict:
     """Read verification decision from Firestore (dispatch may have approved/rejected)."""
     _ensure_init()
     if _db is None:
+        log.warning("⚠️  get_verification_status skipped — _db is None (no Firebase credentials)")
         return None
     doc_id = f"sql_{user_id}"
     try:
@@ -418,10 +419,13 @@ def get_verification_status(user_id: int) -> dict:
             data = doc.to_dict()
             # Dispatch may write to 'status' or 'verificationStatus'
             status = data.get("status") or data.get("verificationStatus") or "pending"
+            log.info("📖 Verification status for %s: %s (raw keys: %s)", doc_id, status, list(data.keys()))
             return {
                 "status": status,
                 "reason": data.get("reason") or data.get("verificationReason"),
             }
+        else:
+            log.info("📖 Verification doc %s does not exist in Firestore", doc_id)
     except Exception as e:
         log.error("❌ Verification status read failed for %d: %s", user_id, e)
     return None

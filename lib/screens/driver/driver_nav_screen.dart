@@ -129,6 +129,18 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // ── GPS ───────────────────────────────────────────────────────────────────
   StreamSubscription<Position>? _gpsSub;
 
+  // ── Periodic ETA refresh ──────────────────────────────────────────────────
+  Timer? _etaRefreshTimer;
+  bool   _isRerouting = false;
+
+  // ── Pickup pin (visible throughout trip) ──────────────────────────────────
+  mapbox.PointAnnotation? _pickupAnnot;
+
+  // ── Driver icon pulse ─────────────────────────────────────────────────────
+  Timer? _iconPulseTimer;
+  double _iconPulseScale = 1.2;
+  bool   _iconPulseUp    = true;
+
   // ── Phase ─────────────────────────────────────────────────────────────────
   TripPhase get _phase => _sm.phase;
 
@@ -183,12 +195,26 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
     // Start GPS
     _startGps();
+
+    // Periodic ETA refresh every 30 seconds
+    _etaRefreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _refreshEtaRoute(),
+    );
+
+    // Driver icon pulse glow (oscillate size)
+    _iconPulseTimer = Timer.periodic(
+      const Duration(milliseconds: 80),
+      (_) => _tickIconPulse(),
+    );
   }
 
   @override
   void dispose() {
     _gpsSub?.cancel();
     _reFollowTimer?.cancel();
+    _etaRefreshTimer?.cancel();
+    _iconPulseTimer?.cancel();
     _pulseCtrl?.dispose();
     _motion.dispose();
     super.dispose();
@@ -242,6 +268,23 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       });
     }
 
+    // Trim passed route segments
+    _trimRouteToPosition();
+
+    // Off-route auto-rerouting
+    if (nav != null && nav.isOffRoute && !_isRerouting) {
+      _isRerouting = true;
+      Future.delayed(const Duration(seconds: 2), () {
+        if (!mounted) return;
+        final dest = _phase == TripPhase.onTrip
+            ? widget.dropoffLatLng
+            : widget.pickupLatLng;
+        _fetchRoute(dest).then((_) {
+          if (mounted) _isRerouting = false;
+        });
+      });
+    }
+
     // Auto-proximity check for phase transitions
     _sm.checkProximity(raw);
 
@@ -285,6 +328,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       // Driver started the trip — fetch route to dropoff
       _fetchRoute(widget.dropoffLatLng);
       _updateDestPin(widget.dropoffLatLng);
+      // Keep pickup pin visible for reference
+      _updatePickupPin(widget.pickupLatLng);
       _updateTripStatus('rider_onboard',
           extra: {'tripStartedAt': FieldValue.serverTimestamp()});
       _showToast('Trip started — navigate to dropoff');
@@ -346,6 +391,85 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   }
 
   // =========================================================================
+  //  ROUTE TRIMMING
+  // =========================================================================
+
+  /// Trim route polyline to remove segments the driver has already passed.
+  void _trimRouteToPosition() {
+    if (_routePts.length < 3 || _lastSegIdx < 1) return;
+    // Keep a small buffer behind for visual smoothness
+    final trimTo = (_lastSegIdx - 1).clamp(0, _routePts.length - 2);
+    if (trimTo < 1) return;
+    _routePts = _routePts.sublist(trimTo);
+    _lastSegIdx = 1; // reset segment index relative to new list
+    _updateRouteSource();
+  }
+
+  /// Update just the polyline geometry without recreating annotations.
+  Future<void> _updateRouteSource() async {
+    final mgr = _polyMgr;
+    if (mgr == null || _routePts.length < 2) return;
+    final coords = _routePts
+        .map((p) => mapbox.Position(p.longitude, p.latitude))
+        .toList();
+    final geom = mapbox.LineString(coordinates: coords);
+
+    if (_routeCasingAnnot != null) {
+      _routeCasingAnnot!.geometry = geom;
+      try { await mgr.update(_routeCasingAnnot!); } catch (_) {}
+    }
+    if (_routeAnnot != null) {
+      _routeAnnot!.geometry = geom;
+      try { await mgr.update(_routeAnnot!); } catch (_) {}
+    }
+  }
+
+  // =========================================================================
+  //  PERIODIC ETA REFRESH
+  // =========================================================================
+
+  Future<void> _refreshEtaRoute() async {
+    if (!mounted || _isRerouting) return;
+    if (_phase == TripPhase.arrivedPickup ||
+        _phase == TripPhase.arrivedDropoff ||
+        _phase == TripPhase.completed) return;
+    final dest = _phase == TripPhase.onTrip
+        ? widget.dropoffLatLng
+        : widget.pickupLatLng;
+    final route = await RouteService.fetchNavRoute(origin: _pos, destination: dest);
+    if (!mounted || route == null) return;
+    setState(() {
+      _routePts        = List.of(route.overviewPolyline);
+      _lastSegIdx      = 0;
+      _distRemainingMi = route.totalDistanceMiles;
+      _etaMinutes      = route.totalDurationMinutes;
+    });
+    _navService.startNavigation(route);
+    _updateRouteAnnotation();
+  }
+
+  // =========================================================================
+  //  DRIVER ICON PULSE
+  // =========================================================================
+
+  void _tickIconPulse() {
+    if (!mounted) return;
+    final step = 0.008;
+    if (_iconPulseUp) {
+      _iconPulseScale += step;
+      if (_iconPulseScale >= 1.35) _iconPulseUp = false;
+    } else {
+      _iconPulseScale -= step;
+      if (_iconPulseScale <= 1.15) _iconPulseUp = true;
+    }
+    final mgr = _pointMgr;
+    final annot = _driverAnnot;
+    if (mgr == null || annot == null) return;
+    annot.iconSize = _iconPulseScale;
+    try { mgr.update(annot); } catch (_) {}
+  }
+
+  // =========================================================================
   //  MAP ANNOTATIONS
   // =========================================================================
 
@@ -368,14 +492,14 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     // Dark casing (border) – drawn first so it sits under the line
     _routeCasingAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
-      lineColor: const Color(0xFF0D2840).toARGB32(),
-      lineWidth: 18.0,
+      lineColor: const Color(0xFF1A1A2E).toARGB32(),
+      lineWidth: 14.0,
     ));
-    // Bright blue route line on top
+    // Golden route line on top
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
-      lineColor: const Color(0xFF4D9FFF).toARGB32(),
-      lineWidth: 13.0,
+      lineColor: const Color(0xFFF5C518).toARGB32(),
+      lineWidth: 8.0,
     ));
   }
 
@@ -422,11 +546,31 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     ));
   }
 
+  /// Show a persistent pickup pin (gold teardrop) at pickup location.
+  Future<void> _updatePickupPin(LatLng pickup) async {
+    final mgr = _pointMgr;
+    if (mgr == null) return;
+    if (_pickupAnnot != null) {
+      try { await mgr.delete(_pickupAnnot!); } catch (_) {}
+      _pickupAnnot = null;
+    }
+    final pinBytes = await _buildPickupPin();
+    if (pinBytes == null || !mounted) return;
+    _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(
+          coordinates: mapbox.Position(pickup.longitude, pickup.latitude)),
+      image: pinBytes,
+      iconSize: 1.0,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
+      iconOffset: [0, 0],
+    ));
+  }
+
   // =========================================================================
   //  CAMERA
   // =========================================================================
 
-  void _animateCamera(LatLng pos, {double? zoom, double bearing = 0, double tilt = 55}) {
+  void _animateCamera(LatLng pos, {double? zoom, double bearing = 0, double tilt = 60}) {
     final speedZoom = 17.5 - (_currentSpeedMph / 80.0).clamp(0.0, 1.0) * 2.5;
     final z = zoom ?? speedZoom;
     // Lookahead offset
@@ -446,12 +590,15 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     final lngDiff = (a.longitude - b.longitude).abs();
     final span = math.max(latDiff, lngDiff);
     final zoom = span > 0 ? (math.log(360 / span) / math.ln2).clamp(8.0, 14.5) : 13.0;
-    _map?.setCamera(mapbox.CameraOptions(
-      center: mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
-      zoom: zoom,
-      bearing: 0,
-      pitch: 0,
-    ));
+    _map?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
+        zoom: zoom,
+        bearing: 0,
+        pitch: 0,
+      ),
+      mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
+    );
   }
 
   void _onCameraMoveStarted() {
@@ -469,7 +616,18 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _isOverview      = false;
       _hasResumedOnce  = true;
     });
-    _animateCamera(_pos, bearing: _bearing, tilt: 55);
+    // Smooth flyTo transition back to follow mode
+    final ahead = _lookaheadPoint(_pos, _bearing, 30.0);
+    _map?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(
+            coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
+        zoom: 17.5 - (_currentSpeedMph / 80.0).clamp(0.0, 1.0) * 2.5,
+        bearing: _bearing,
+        pitch: 60,
+      ),
+      mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
+    );
   }
 
   LatLng _lookaheadPoint(LatLng o, double bearingDeg, double distM) {
@@ -549,6 +707,14 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     final cx  = w / 2;
     final cy  = h / 2;
 
+    // Golden glow underneath
+    c.drawCircle(
+      Offset(cx, cy),
+      32,
+      Paint()
+        ..color = const Color(0xFFF5C518).withValues(alpha: 0.25)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+    );
     // 3D fade shadow – large soft ellipse beneath the circle
     c.drawOval(
       Rect.fromCenter(center: Offset(cx, cy + 7), width: 66, height: 22),
@@ -623,6 +789,42 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     c.drawCircle(const Offset(cx, headCY), r, Paint()..color = Colors.white);
     // Gold inner
     c.drawCircle(const Offset(cx, headCY), r - 5, Paint()..color = _gold);
+
+    final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
+    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+    return bytes?.buffer.asUint8List();
+  }
+
+  /// Build a pickup pin image (smaller gold circle with white ring).
+  Future<Uint8List?> _buildPickupPin() async {
+    const double w = 48;
+    const double h = 64;
+    final rec = ui.PictureRecorder();
+    final c = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
+    const cx = w / 2;
+    const r = 14.0;
+    const headCY = r + 5;
+    const tipY = h;
+
+    final path = Path()
+      ..moveTo(cx - r, headCY)
+      ..arcTo(
+        Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
+        math.pi, -math.pi, false,
+      )
+      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 3, cx, tipY)
+      ..cubicTo(cx - r * 0.22, tipY - 3, cx - r, headCY + r, cx - r, headCY)
+      ..close();
+
+    c.drawPath(
+      path.shift(const Offset(0, 2)),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.30)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+    c.drawPath(path, Paint()..color = Colors.white);
+    c.drawCircle(const Offset(cx, headCY), r, Paint()..color = Colors.white);
+    c.drawCircle(const Offset(cx, headCY), r - 4, Paint()..color = _gold);
 
     final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
@@ -728,6 +930,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         _pointMgr = await ctrl.annotations.createPointAnnotationManager();
         _updateRouteAnnotation();
         _updateDestPin(widget.pickupLatLng);
+        // Show pickup pin throughout the trip
+        _updatePickupPin(widget.pickupLatLng);
       },
       onStyleLoadedListener: (_) async {
         if (_map != null) await MapTheme.applyNavyGold(_map!);
@@ -1177,9 +1381,17 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   Widget _buildSpeedOverlay(double topOffset) {
     final speed = _currentSpeedMph.round();
-    // Simple speed limit estimate — 25 in urban, 65 on highway
-    final isHighSpeed = speed > 50;
-    final limit = isHighSpeed ? 65 : 25;
+    // Dynamic speed limit: residential=25, city=35, highway=55, freeway=65
+    final int limit;
+    if (speed > 60) {
+      limit = 65;
+    } else if (speed > 40) {
+      limit = 55;
+    } else if (speed > 28) {
+      limit = 35;
+    } else {
+      limit = 25;
+    }
     final isOver = speed > limit;
 
     return Column(

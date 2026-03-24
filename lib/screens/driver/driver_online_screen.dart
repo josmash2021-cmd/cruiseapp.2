@@ -155,6 +155,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   AnimationController? _glowPulseCtrl;
   Ticker? _routeDrawTicker;
 
+  // ── Pre-fetched route cache (offerId → segments) ──
+  final Map<String, _CachedOfferRoute> _routeCache = {};
+
   // â”€â”€ Request data (for active trip after acceptance) â”€â”€
   Timer? _pollT;
   String _riderName = '';
@@ -1527,8 +1530,39 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         HapticFeedback.heavyImpact();
       }
       setState(() => _pendingOffers = offers);
+      _preFetchOfferRoutes(offers);
     } catch (e) {
       debugPrint('âŒ Poll error: $e');
+    }
+  }
+
+  /// Pre-fetch routes for incoming offers so they are cached before card tap.
+  void _preFetchOfferRoutes(List<Map<String, dynamic>> offers) {
+    if (_pos == null) return;
+    // Auto-evict entries older than 10 minutes
+    final now = DateTime.now();
+    _routeCache.removeWhere((_, v) => now.difference(v.cachedAt).inMinutes > 10);
+    for (final offer in offers) {
+      final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+      if (oid.isEmpty || _routeCache.containsKey(oid)) continue;
+      final pLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
+      final pLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
+      final dLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
+      final dLng = (offer['dropoff_lng'] as num?)?.toDouble() ?? 0;
+      if (pLat == 0 || pLng == 0 || dLat == 0 || dLng == 0) continue;
+      final pickupLL  = LatLng(pLat, pLng);
+      final dropoffLL = LatLng(dLat, dLng);
+      Future.wait([
+        _fetchRoutePoints(_pos!, pickupLL),
+        _fetchRoutePoints(pickupLL, dropoffLL),
+      ]).then((results) {
+        if (!mounted) return;
+        _routeCache[oid] = _CachedOfferRoute(
+          segOne: results[0],
+          segTwo: results[1],
+          cachedAt: DateTime.now(),
+        );
+      }).catchError((_) {});
     }
   }
 
@@ -1595,6 +1629,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     
     HapticFeedback.heavyImpact();
     setState(() => _pendingOffers = [simulatedOffer]);
+    _preFetchOfferRoutes([simulatedOffer]);
   }
 
   void _startClock() {
@@ -1684,6 +1719,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _tripEta = (_tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
 
     setState(() => _pendingOffers = []);
+    _routeCache.clear();
     _pollT?.cancel();
     _nearPickupNotified = false;
     _nearDropoffNotified = false;
@@ -1744,6 +1780,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     setState(() {
       _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
     });
+    if (offerId != null) _routeCache.remove(offerId.toString());
   }
 
   // â”€â”€ _accept and _decline removed — now using _acceptOffer / _rejectOffer â”€â”€
@@ -2551,13 +2588,20 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _stopGlowPulse();
     await _clearAllAnnotations();
 
-    // 1. Fetch both route geometries in parallel
-    final routeFutures = await Future.wait([
-      _fetchRoutePoints(_pos!, pickupLL),
-      _fetchRoutePoints(pickupLL, dropoffLL),
-    ]);
-    _fullSegOne = routeFutures[0];
-    _fullSegTwo = routeFutures[1];
+    // 1. Use pre-fetched cache if available, otherwise fetch now
+    final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+    final cached = _routeCache[oid];
+    if (cached != null) {
+      _fullSegOne = cached.segOne;
+      _fullSegTwo = cached.segTwo;
+    } else {
+      final routeFutures = await Future.wait([
+        _fetchRoutePoints(_pos!, pickupLL),
+        _fetchRoutePoints(pickupLL, dropoffLL),
+      ]);
+      _fullSegOne = routeFutures[0];
+      _fullSegTwo = routeFutures[1];
+    }
 
     if (!mounted || _previewingOffer == null) return;
 
@@ -7096,4 +7140,16 @@ class _OfferRipplePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_OfferRipplePainter old) => old.progress != progress;
+}
+
+/// Cached route segments for a pending offer.
+class _CachedOfferRoute {
+  final List<LatLng> segOne;
+  final List<LatLng> segTwo;
+  final DateTime cachedAt;
+  const _CachedOfferRoute({
+    required this.segOne,
+    required this.segTwo,
+    required this.cachedAt,
+  });
 }

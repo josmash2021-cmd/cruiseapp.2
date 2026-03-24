@@ -8,8 +8,8 @@ class MapTheme {
   static const String _navy       = '#0A1128';  // deep navy background
   static const String _navyLight  = '#0F1A36';  // slightly lighter for land
   static const String _navyWater  = '#070E22';  // darker for water
-  static const String _gold       = '#D4A843';  // gold — freeways / highways only
-  static const String _goldCase   = '#8B6F2E';  // casing for freeway edges
+  static const String _gold       = '#D4AF37';  // gold — freeways / highways only
+  static const String _goldCase   = '#B8960C';  // casing for freeway edges
   static const String _greyRoad   = '#2A2E3A';  // dark grey — primary/secondary streets
   static const String _greyMinor  = '#1E2128';  // darker grey — minor/local streets
   static const String _greyCase   = '#161820';  // casing for grey roads
@@ -252,8 +252,8 @@ class MapTheme {
   // Golden Roads — #C8973A on FREEWAYS / HIGHWAYS only
   // ════════════════════════════════════════════════════════════════════════
   static Future<void> applyGoldenRoads(mapbox.MapboxMap map) async {
-    const color = '#C8973A';
-    const casingColor = '#8B6F2E';
+    const color = '#D4AF37';
+    const casingColor = '#B8960C';
     // Motorway / trunk fill layers only — NO primary, secondary, street
     const fillLayers = [
       'road-motorway-trunk',

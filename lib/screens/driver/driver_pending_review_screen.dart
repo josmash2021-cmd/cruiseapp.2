@@ -333,8 +333,8 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
 
   /// Navigate to the premium cinematic approved screen.
   void _goApproved() async {
-    if (!mounted || _navigating) return;
-    _navigating = true;
+    if (!mounted) return;
+    // _navigating is already true (set by _handleApproved) — do NOT re-check it here.
     _pollTimer?.cancel();
     for (final sub in _subscriptions) {
       sub.cancel();

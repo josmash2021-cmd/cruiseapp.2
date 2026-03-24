@@ -188,6 +188,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   TimeOfDay? _scheduledTime;
   AirportSelection? _airportSelection;
   int _routeAnimationTicket = 0;
+  AnimationController? _routeShimmerCtrl;
+  bool _isCancelling = false;
   bool _planBodyVisible = false;
   double? _panelDragHeight;
   bool _isPanelDragging = false;
@@ -634,6 +636,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _rideLifecycleTimer?.cancel();
     _tripPollTimer?.cancel();
     _driverMotion?.dispose();
+    _routeShimmerCtrl?.removeListener(_onRouteShimmerTick);
+    _routeShimmerCtrl?.dispose();
     _glowController?.removeListener(_onGlowTick);
     _glowController?.dispose();
     _pickupFocus.removeListener(_handleAddressFocusChange);
@@ -2382,7 +2386,52 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Future<void> _animateRoutePolyline(List<LatLng> points, int ticket) async {
     if (!mounted || points.isEmpty) return;
     if (ticket != _routeAnimationTicket) return;
-    await _setRouteAnnotation(points);
+
+    // Stop any previous shimmer
+    _routeShimmerCtrl?.dispose();
+    _routeShimmerCtrl = null;
+
+    // Progressive draw over 1.5s
+    const totalMs = 1500;
+    const frameMs = 30;
+    final totalFrames = totalMs ~/ frameMs;
+    for (int f = 1; f <= totalFrames; f++) {
+      if (!mounted || ticket != _routeAnimationTicket) return;
+      final progress = Curves.easeInOut.transform(f / totalFrames);
+      final count = (points.length * progress).round().clamp(2, points.length);
+      await _setRouteAnnotation(points.sublist(0, count));
+      await Future.delayed(const Duration(milliseconds: frameMs));
+    }
+    // Ensure full route is drawn
+    if (mounted && ticket == _routeAnimationTicket) {
+      await _setRouteAnnotation(points);
+      _startRouteShimmer();
+    }
+  }
+
+  void _startRouteShimmer() {
+    _routeShimmerCtrl?.dispose();
+    _routeShimmerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _routeShimmerCtrl!.addListener(_onRouteShimmerTick);
+  }
+
+  void _onRouteShimmerTick() {
+    final mgr = _polylineAnnotMgr;
+    final annot = _routeAnnot;
+    if (mgr == null || annot == null) return;
+    final v = _routeShimmerCtrl?.value ?? 0.0;
+    // Pulse width between 4 and 8
+    annot.lineWidth = 4.0 + v * 4.0;
+    try { mgr.update(annot); } catch (_) {}
+  }
+
+  void _stopRouteShimmer() {
+    _routeShimmerCtrl?.removeListener(_onRouteShimmerTick);
+    _routeShimmerCtrl?.dispose();
+    _routeShimmerCtrl = null;
   }
 
   // Route line color: always gold for brand consistency
@@ -2405,10 +2454,84 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _clearRouteAnnotation() async {
+    _stopRouteShimmer();
     final mgr = _polylineAnnotMgr;
     if (mgr == null || _routeAnnot == null) return;
     try { await mgr.delete(_routeAnnot!); } catch (_) {}
     _routeAnnot = null;
+  }
+
+  Future<void> _cancelMatchingRide() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _c.mapSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Text(
+          S.of(context).stopSearchingQuestion,
+          style: TextStyle(
+            color: _c.textPrimary,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        content: Text(
+          S.of(context).stopSearchingConfirmation,
+          style: TextStyle(color: _c.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              S.of(context).keepRide,
+              style: TextStyle(color: _gold, fontWeight: FontWeight.w700),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              S.of(context).cancelButton,
+              style: const TextStyle(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _isCancelling = true);
+
+    // Cancel on backend
+    final tripId = _currentTripId;
+    if (tripId != null) {
+      try { await ApiService.cancelTrip(tripId); } catch (_) {}
+    }
+
+    // Cancel timers and listeners
+    _rideLifecycleTimer?.cancel();
+    _tripPollTimer?.cancel();
+
+    // Clean up map: route line and annotations
+    _stopRouteShimmer();
+    ++_routeAnimationTicket; // invalidate any in-progress drawing
+    await _clearRouteAnnotation();
+
+    if (!mounted) return;
+
+    setState(() {
+      _activeRoutePoints = [];
+      _rideProgress = 0;
+      _currentTripId = null;
+      _currentDriverId = null;
+      _isCancelling = false;
+    });
+
+    // Pop back to HomeScreen (MapScreen was pushed from HomeScreen)
+    Navigator.of(context).maybePop();
   }
 
   final int _glowFrameSkip = 0;
@@ -6256,25 +6379,28 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 width: double.infinity,
                 height: 52,
                 child: OutlinedButton(
-                  onPressed: () {
-                    _rideLifecycleTimer?.cancel();
-                    _tripPollTimer?.cancel();
-                    _setStage(RideStage.options);
-                  },
+                  onPressed: _isCancelling ? null : _cancelMatchingRide,
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: _c.border, width: 1.5),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: Text(
-                    S.of(context).cancelRide,
-                    style: TextStyle(
-                      color: _c.textSecondary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  child: _isCancelling
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white54,
+                            strokeWidth: 2,
+                          ))
+                      : Text(
+                          S.of(context).cancelRide,
+                          style: TextStyle(
+                            color: _c.textSecondary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                 ),
               ),
             ),

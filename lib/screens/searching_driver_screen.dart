@@ -2,12 +2,9 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 
-/// Premium cinematic screen shown after payment confirmation and before
-/// the "Looking for your driver…" bottom sheet.  Auto-pops after ≈3.2 s.
-///
-/// Features: floating gold dust particles, cinematic light sweep, rotating
-/// concentric rings with gold glow, floating car icon, shimmer text with
-/// animated dots, glowing gold progress bar, step indicator.
+/// Spectacular "Confirming your ride." screen with radar pulse rings,
+/// orbiting dots, floating particles, shimmer text, and a gleaming
+/// progress bar.  Auto-pops after exactly 4 seconds.
 class SearchingDriverScreen extends StatefulWidget {
   const SearchingDriverScreen({super.key});
 
@@ -17,99 +14,114 @@ class SearchingDriverScreen extends StatefulWidget {
 
 class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     with TickerProviderStateMixin {
-  // ── colours ──
-  static const _bg        = Color(0xFF0A0D1A);
-  static const _gold      = Color(0xFFD4AF37);
-  static const _goldLight = Color(0xFFFFE566);
-  static const _messages  = [
-    'Confirming your ride',
-    'Finding nearby drivers',
-    'Connecting you now',
-  ];
+  // ── constants ──
+  static const _bg   = Color(0xFF0A0D14);
+  static const _gold = Color(0xFFF5C518);
+  static const _goldEnd = Color(0xFFFFD700);
 
-  // ── animation controllers ──
-  late final AnimationController _particleCtrl;    // 6 s  – dust drift
-  late final AnimationController _pulseCtrl;       // 2 s  – ring pulse
-  late final AnimationController _rotateCtrl;      // 8 s  – ring rotation
-  late final AnimationController _glowCtrl;        // 1.5 s – inner glow
-  late final AnimationController _sweepCtrl;       // 2.5 s – light sweep
-  late final AnimationController _textShimmerCtrl; // 1.8 s – text shimmer
-  late final AnimationController _progressCtrl;    // 3 s  – progress bar
+  // ── controllers ──
+  late final AnimationController _radarCtrl;    // 2400 ms – radar pulse rings
+  late final AnimationController _glowCtrl;     // 1200 ms – car glow + scale
+  late final AnimationController _orbitCtrl;    // 3000 ms – orbiting dots
+  late final AnimationController _particleCtrl; // 4000 ms – floating particles
+  late final AnimationController _progressCtrl; // 4000 ms – progress bar (finite)
+  late final AnimationController _shimmerCtrl;  // 2000 ms – text shimmer
+  late final AnimationController _barGleamCtrl; // 1200 ms – progress bar gleam
 
-  int _msgIndex = 0;
-  int _dotCount = 0;
-  Timer? _msgTimer;
-  Timer? _dotTimer;
-  Timer? _navTimer;
+  // ── derived animations for 4 radar rings ──
+  late final Animation<double> _ring1, _ring2, _ring3, _ring4;
 
-  // ── particles ──
+  // ── particles (20 total) ──
   late final List<_Particle> _particles;
+  late final List<AnimationController> _twinkleControllers;
 
   @override
   void initState() {
     super.initState();
 
-    _particleCtrl = AnimationController(
-      vsync: this, duration: const Duration(seconds: 6))..repeat();
+    // ── 1. Radar pulse rings ──
+    _radarCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..repeat();
+    _ring1 = CurvedAnimation(parent: _radarCtrl, curve: const Interval(0.0,  1.0,  curve: Curves.easeOut));
+    _ring2 = CurvedAnimation(parent: _radarCtrl, curve: const Interval(0.25, 1.0,  curve: Curves.easeOut));
+    _ring3 = CurvedAnimation(parent: _radarCtrl, curve: const Interval(0.5,  1.0,  curve: Curves.easeOut));
+    _ring4 = CurvedAnimation(parent: _radarCtrl, curve: const Interval(0.75, 1.0,  curve: Curves.easeOut));
 
-    _pulseCtrl = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 2000))
-      ..repeat(reverse: true);
-
-    _rotateCtrl = AnimationController(
-      vsync: this, duration: const Duration(seconds: 8))..repeat();
-
+    // ── 2. Car glow pulse ──
     _glowCtrl = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 1500))
-      ..repeat(reverse: true);
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
 
-    _sweepCtrl = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 2500))..repeat();
+    // ── 3. Orbiting dots ──
+    _orbitCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    )..repeat();
 
-    _textShimmerCtrl = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
+    // ── 4. Particle drift ──
+    _particleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4000),
+    )..repeat();
 
-    _progressCtrl = AnimationController(
-      vsync: this, duration: const Duration(seconds: 3))..repeat();
-
-    // 18 floating gold dust particles
-    final rng = Random(42);
-    _particles = List.generate(18, (i) => _Particle(
+    final rng = Random(7);
+    _particles = List.generate(20, (_) => _Particle(
       x: rng.nextDouble(),
       y: rng.nextDouble(),
-      speed: 0.15 + rng.nextDouble() * 0.35,
-      size: 1.0 + rng.nextDouble() * 3.0,
+      size: 2.0 + rng.nextDouble() * 2.0,
+      driftSpeed: 0.02 + rng.nextDouble() * 0.04,
       phase: rng.nextDouble(),
     ));
 
-    // Cycle status text every 1.2 s
-    _msgTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
-      if (mounted) setState(() => _msgIndex = (_msgIndex + 1) % _messages.length);
+    // Individual twinkle controllers per particle
+    _twinkleControllers = List.generate(20, (i) {
+      final ms = 800 + rng.nextInt(1200);
+      return AnimationController(
+        vsync: this,
+        duration: Duration(milliseconds: ms),
+      )..repeat(reverse: true);
     });
 
-    // Animated dots 0→1→2→3→0
-    _dotTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (mounted) setState(() => _dotCount = (_dotCount + 1) % 4);
+    // ── 5. Progress bar (finite — exactly 4 s) ──
+    _progressCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4000),
+    );
+    _progressCtrl.forward();
+    _progressCtrl.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        Navigator.of(context).pop();
+      }
     });
 
-    // Auto-pop after 3.2 s
-    _navTimer = Timer(const Duration(milliseconds: 3200), () {
-      if (mounted) Navigator.of(context).pop();
-    });
+    // ── 6. Text shimmer ──
+    _shimmerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat();
+
+    // ── 7. Progress bar gleam sweep ──
+    _barGleamCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
   }
 
   @override
   void dispose() {
-    _particleCtrl.dispose();
-    _pulseCtrl.dispose();
-    _rotateCtrl.dispose();
+    _radarCtrl.dispose();
     _glowCtrl.dispose();
-    _sweepCtrl.dispose();
-    _textShimmerCtrl.dispose();
+    _orbitCtrl.dispose();
+    _particleCtrl.dispose();
     _progressCtrl.dispose();
-    _msgTimer?.cancel();
-    _dotTimer?.cancel();
-    _navTimer?.cancel();
+    _shimmerCtrl.dispose();
+    _barGleamCtrl.dispose();
+    for (final c in _twinkleControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -122,56 +134,93 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       backgroundColor: _bg,
       body: Stack(
         children: [
-          // Layer 1 — floating gold dust particles
+          // Background
+          Container(color: _bg),
+
+          // Floating particles layer
           Positioned.fill(
             child: AnimatedBuilder(
-              animation: _particleCtrl,
+              animation: Listenable.merge([_particleCtrl, ..._twinkleControllers]),
               builder: (_, __) => CustomPaint(
                 painter: _ParticlePainter(
                   particles: _particles,
-                  progress: _particleCtrl.value,
+                  drift: _particleCtrl.value,
+                  twinkleValues: _twinkleControllers.map((c) => c.value).toList(),
                   color: _gold,
                 ),
               ),
             ),
           ),
 
-          // Layer 2 — cinematic gold light sweep across top
-          Positioned(top: 0, left: 0, right: 0, child: _buildLightSweep()),
-
-          // Layer 3 — main content
-          SafeArea(
+          // Center content
+          Center(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const Spacer(flex: 2),
+                // Radar rings + orbit dots + car icon
+                SizedBox(
+                  width: 220,
+                  height: 220,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Radar pulse rings
+                      AnimatedBuilder(
+                        animation: _radarCtrl,
+                        builder: (_, __) => CustomPaint(
+                          size: const Size(220, 220),
+                          painter: _RadarRingsPainter(
+                            rings: [_ring1.value, _ring2.value, _ring3.value, _ring4.value],
+                            color: _gold,
+                          ),
+                        ),
+                      ),
+                      // Orbiting dots
+                      AnimatedBuilder(
+                        animation: _orbitCtrl,
+                        builder: (_, __) => CustomPaint(
+                          size: const Size(220, 220),
+                          painter: _OrbitDotsPainter(
+                            progress: _orbitCtrl.value,
+                            color: _gold,
+                          ),
+                        ),
+                      ),
+                      // Car icon with glow
+                      _buildCarIcon(),
+                    ],
+                  ),
+                ),
 
-                // Concentric rotating rings + floating car
-                _buildConcentricRings(),
+                const SizedBox(height: 48),
 
-                const Spacer(),
-
-                // Shimmer text with animated dots
+                // Shimmer text
                 _buildShimmerText(),
 
                 const SizedBox(height: 24),
 
-                // Gold progress bar with glow
+                // Progress bar
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 48),
-                  child: _buildGoldProgressBar(),
+                  child: _buildProgressBar(),
                 ),
-
-                const Spacer(flex: 2),
-
-                // Step indicator
-                Text('1 of 3',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.3),
-                    fontSize: 13,
-                  )),
-
-                const SizedBox(height: 24),
               ],
+            ),
+          ),
+
+          // Step indicator at bottom
+          Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Text(
+                '1 of 3',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  fontSize: 13,
+                ),
+              ),
             ),
           ),
         ],
@@ -180,160 +229,38 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  //  GOLD LIGHT SWEEP (top of screen)
+  //  CAR ICON WITH GLOW PULSE
   // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildLightSweep() {
+  Widget _buildCarIcon() {
     return AnimatedBuilder(
-      animation: _sweepCtrl,
+      animation: _glowCtrl,
       builder: (_, __) {
-        final v = _sweepCtrl.value;
-        return ShaderMask(
-          shaderCallback: (bounds) => LinearGradient(
-            colors: [
-              Colors.transparent,
-              _gold.withValues(alpha: 0.15),
-              _goldLight.withValues(alpha: 0.3),
-              _gold.withValues(alpha: 0.15),
-              Colors.transparent,
-            ],
-            stops: [
-              0.0,
-              (v - 0.1).clamp(0.0, 1.0),
-              v.clamp(0.0, 1.0),
-              (v + 0.1).clamp(0.0, 1.0),
-              1.0,
-            ],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ).createShader(bounds),
-          child: Container(height: 120, color: Colors.white),
-        );
-      },
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  //  CONCENTRIC ROTATING RINGS + FLOATING CAR
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildConcentricRings() {
-    return AnimatedBuilder(
-      animation: Listenable.merge([_pulseCtrl, _rotateCtrl, _glowCtrl]),
-      builder: (_, __) {
-        return SizedBox(
-          width: 260,
-          height: 260,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Outer ring — slow clockwise rotation + pulse
-              Transform.rotate(
-                angle: _rotateCtrl.value * 2 * pi,
-                child: Container(
-                  width: 220 + _pulseCtrl.value * 10,
-                  height: 220 + _pulseCtrl.value * 10,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _gold.withValues(
-                          alpha: 0.15 + _glowCtrl.value * 0.1),
-                      width: 1,
-                    ),
-                  ),
+        final g = _glowCtrl.value; // 0→1→0
+        final scale = 0.95 + g * 0.1;
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF0F1220),
+              border: Border.all(color: _gold.withValues(alpha: 0.5), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: _gold.withValues(alpha: 0.3 + g * 0.5),
+                  blurRadius: 18 + g * 14,
+                  spreadRadius: 2,
                 ),
-              ),
-
-              // Middle ring — counter-clockwise rotation
-              Transform.rotate(
-                angle: -_rotateCtrl.value * 2 * pi * 0.7,
-                child: Container(
-                  width: 155,
-                  height: 155,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _gold.withValues(
-                          alpha: 0.25 + _glowCtrl.value * 0.15),
-                      width: 1,
-                    ),
-                  ),
-                ),
-              ),
-
-              // Inner dark circle with pulsing gold glow
-              Container(
-                width: 90,
-                height: 90,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF0F1220),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _gold.withValues(
-                          alpha: 0.2 + _glowCtrl.value * 0.2),
-                      blurRadius: 20 + _glowCtrl.value * 15,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                  border: Border.all(
-                    color: _gold.withValues(alpha: 0.5),
-                    width: 1.5,
-                  ),
-                ),
-                // Floating car icon
-                child: Center(
-                  child: Transform.translate(
-                    offset: Offset(0, -3 + _glowCtrl.value * 6),
-                    child: Icon(
-                      Icons.directions_car,
-                      color: _gold,
-                      size: 36,
-                      shadows: [
-                        Shadow(
-                          color: _gold.withValues(alpha: 0.8),
-                          blurRadius: 12,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  //  SHIMMER TEXT + ANIMATED DOTS
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildShimmerText() {
-    return AnimatedBuilder(
-      animation: _textShimmerCtrl,
-      builder: (_, __) {
-        final v = _textShimmerCtrl.value;
-        return ShaderMask(
-          shaderCallback: (bounds) => LinearGradient(
-            colors: const [Colors.white54, Colors.white, Colors.white54],
-            stops: [
-              (v - 0.3).clamp(0.0, 1.0),
-              v.clamp(0.0, 1.0),
-              (v + 0.3).clamp(0.0, 1.0),
-            ],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ).createShader(bounds),
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
-            child: Text(
-              '${_messages[_msgIndex]}${'.' * _dotCount}',
-              key: ValueKey(_msgIndex),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w300,
-                letterSpacing: 1.2,
-              ),
+              ],
+            ),
+            child: Icon(
+              Icons.directions_car,
+              color: _gold,
+              size: 32,
+              shadows: [
+                Shadow(color: _gold.withValues(alpha: 0.8), blurRadius: 12),
+              ],
             ),
           ),
         );
@@ -342,34 +269,62 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  //  GOLD PROGRESS BAR WITH GLOW
+  //  SHIMMER TEXT
   // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildGoldProgressBar() {
+  Widget _buildShimmerText() {
     return AnimatedBuilder(
-      animation: _progressCtrl,
+      animation: _shimmerCtrl,
       builder: (_, __) {
-        return Container(
-          width: double.infinity,
-          height: 3,
-          decoration: BoxDecoration(
-            color: Colors.white10,
-            borderRadius: BorderRadius.circular(2),
+        final v = _shimmerCtrl.value;
+        return ShaderMask(
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              colors: const [
+                Colors.white70,
+                Colors.white,
+                Color(0xFFF5C518),
+                Colors.white,
+                Colors.white70,
+              ],
+              stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
+              begin: Alignment(v * 3 - 1.5, 0),
+              end: Alignment(v * 3 - 0.5, 0),
+            ).createShader(bounds);
+          },
+          child: const Text(
+            'Confirming your ride.',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w300,
+              letterSpacing: 0.5,
+            ),
           ),
-          child: FractionallySizedBox(
-            alignment: Alignment.centerLeft,
-            widthFactor: _progressCtrl.value,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(2),
-                gradient: const LinearGradient(
-                  colors: [_gold, _goldLight, _gold],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: _gold.withValues(alpha: 0.6),
-                    blurRadius: 6,
-                  ),
-                ],
+        );
+      },
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  PROGRESS BAR WITH GLEAM
+  // ═══════════════════════════════════════════════════════════════════════
+  Widget _buildProgressBar() {
+    return AnimatedBuilder(
+      animation: Listenable.merge([_progressCtrl, _barGleamCtrl]),
+      builder: (_, __) {
+        final fill = _progressCtrl.value;
+        final gleam = _barGleamCtrl.value;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: SizedBox(
+            width: double.infinity,
+            height: 3,
+            child: CustomPaint(
+              painter: _ProgressBarPainter(
+                fill: fill,
+                gleam: gleam,
+                goldStart: _gold,
+                goldEnd: _goldEnd,
               ),
             ),
           ),
@@ -383,7 +338,6 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
 //  ROUTE BUILDER
 // ═════════════════════════════════════════════════════════════════════════
 
-/// 3-D perspective flip entry + fade-out reverse.
 Route<void> searchingDriverRoute() {
   return PageRouteBuilder<void>(
     opaque: true,
@@ -416,51 +370,177 @@ Route<void> searchingDriverRoute() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
+//  RADAR PULSE RINGS PAINTER
+// ═════════════════════════════════════════════════════════════════════════
+
+class _RadarRingsPainter extends CustomPainter {
+  final List<double> rings; // 4 progress values 0→1
+  final Color color;
+  _RadarRingsPainter({required this.rings, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius = size.width / 2;
+    for (final v in rings) {
+      if (v <= 0) continue;
+      final radius = 30 + v * (maxRadius - 30);
+      final opacity = (0.6 * (1.0 - v)).clamp(0.0, 1.0);
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..color = color.withValues(alpha: opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RadarRingsPainter old) => true;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+//  ORBITING DOTS PAINTER
+// ═════════════════════════════════════════════════════════════════════════
+
+class _OrbitDotsPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  _OrbitDotsPainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    const orbitRadius = 55.0;
+    const dotRadius = 3.0;
+    final baseAngle = progress * 2 * pi;
+    final paint = Paint()..color = color;
+
+    for (int i = 0; i < 3; i++) {
+      final angle = baseAngle + i * (2 * pi / 3);
+      final dx = center.dx + cos(angle) * orbitRadius;
+      final dy = center.dy + sin(angle) * orbitRadius;
+      canvas.drawCircle(Offset(dx, dy), dotRadius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_OrbitDotsPainter old) => old.progress != progress;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+//  PROGRESS BAR PAINTER (fill + gleam)
+// ═════════════════════════════════════════════════════════════════════════
+
+class _ProgressBarPainter extends CustomPainter {
+  final double fill;
+  final double gleam;
+  final Color goldStart;
+  final Color goldEnd;
+  _ProgressBarPainter({
+    required this.fill,
+    required this.gleam,
+    required this.goldStart,
+    required this.goldEnd,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Track background
+    canvas.drawRRect(
+      RRect.fromLTRBR(0, 0, size.width, size.height, const Radius.circular(2)),
+      Paint()..color = Colors.white.withValues(alpha: 0.1),
+    );
+
+    if (fill <= 0) return;
+    final fillWidth = size.width * fill;
+
+    // Gold fill gradient
+    final fillRect = RRect.fromLTRBR(0, 0, fillWidth, size.height, const Radius.circular(2));
+    canvas.drawRRect(
+      fillRect,
+      Paint()
+        ..shader = LinearGradient(
+          colors: [goldStart, goldEnd],
+        ).createShader(Rect.fromLTWH(0, 0, fillWidth, size.height)),
+    );
+
+    // Gleam highlight sweeping across fill
+    final gleamCenter = gleam * fillWidth;
+    const gleamHalf = 30.0;
+    canvas.save();
+    canvas.clipRRect(fillRect);
+    canvas.drawRect(
+      Rect.fromLTWH(gleamCenter - gleamHalf, 0, gleamHalf * 2, size.height),
+      Paint()
+        ..shader = LinearGradient(
+          colors: [
+            Colors.white.withValues(alpha: 0.0),
+            Colors.white.withValues(alpha: 0.35),
+            Colors.white.withValues(alpha: 0.0),
+          ],
+        ).createShader(Rect.fromLTWH(
+            gleamCenter - gleamHalf, 0, gleamHalf * 2, size.height)),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_ProgressBarPainter old) =>
+      old.fill != fill || old.gleam != gleam;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
 //  PARTICLE MODEL + PAINTER
 // ═════════════════════════════════════════════════════════════════════════
 
 class _Particle {
   final double x;
   final double y;
-  final double speed;
   final double size;
+  final double driftSpeed;
   final double phase;
   const _Particle({
     required this.x,
     required this.y,
-    required this.speed,
     required this.size,
+    required this.driftSpeed,
     required this.phase,
   });
 }
 
 class _ParticlePainter extends CustomPainter {
   final List<_Particle> particles;
-  final double progress;
+  final double drift;
+  final List<double> twinkleValues;
   final Color color;
   _ParticlePainter({
     required this.particles,
-    required this.progress,
+    required this.drift,
+    required this.twinkleValues,
     required this.color,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final p in particles) {
-      final t = (progress * p.speed + p.phase) % 1.0;
-      final alpha = (sin(t * pi) * 0.5).clamp(0.0, 1.0);
+    for (int i = 0; i < particles.length; i++) {
+      final p = particles[i];
+      final tw = twinkleValues[i];
+      final alpha = 0.1 + tw * 0.3; // 0.1→0.4
       final dx = p.x * size.width;
-      final dy = (p.y - t * 0.2) % 1.0 * size.height;
+      final dy = ((p.y - drift * p.driftSpeed + p.phase) % 1.0) * size.height;
       canvas.drawCircle(
         Offset(dx, dy),
         p.size,
         Paint()
           ..color = color.withValues(alpha: alpha)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, p.size * 0.5),
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, p.size * 0.4),
       );
     }
   }
 
   @override
-  bool shouldRepaint(_ParticlePainter old) => old.progress != progress;
+  bool shouldRepaint(_ParticlePainter old) => true;
 }

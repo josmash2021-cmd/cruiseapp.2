@@ -5265,7 +5265,7 @@ Widget _navHeader() {
           // Rider info header with fare
           Row(
             children: [
-              _avatar(42),
+              _avatar(42, showBadge: true),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -5339,50 +5339,38 @@ Widget _navHeader() {
               children: [
                 Row(
                   children: [
-                    Container(
-                      width: 10, height: 10,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF34A853),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
+                    const Icon(Icons.location_on_rounded, color: _gold, size: 18),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _pickupAddr,
                         style: TextStyle(color: textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        maxLines: 3,
+                        softWrap: true,
                       ),
                     ),
                   ],
                 ),
                 Padding(
-                  padding: const EdgeInsets.only(left: 4),
+                  padding: const EdgeInsets.only(left: 8),
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Container(
                       width: 2, height: 16,
-                      color: textMuted.withValues(alpha: 0.3),
+                      color: _gold.withValues(alpha: 0.3),
                     ),
                   ),
                 ),
                 Row(
                   children: [
-                    Container(
-                      width: 10, height: 10,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFEA4335),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
+                    const Icon(Icons.flag_rounded, color: _gold, size: 18),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _dropoffAddr,
                         style: TextStyle(color: textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        maxLines: 3,
+                        softWrap: true,
                       ),
                     ),
                   ],
@@ -5498,14 +5486,8 @@ Widget _navHeader() {
               ),
               Row(
                 children: [
-                  Container(
-                    width: 8, height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF34C759),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
+                  const Icon(Icons.location_on_rounded, color: _gold, size: 20),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -5526,8 +5508,8 @@ Widget _navHeader() {
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          maxLines: 3,
+                          softWrap: true,
                         ),
                       ],
                     ),
@@ -5539,7 +5521,7 @@ Widget _navHeader() {
                         if (await canLaunchUrl(uri)) await launchUrl(uri);
                       }
                     },
-                    icon: Icon(Icons.phone, color: textPrimary, size: 22),
+                    icon: const Icon(Icons.phone, color: _gold, size: 22),
                     style: IconButton.styleFrom(
                       backgroundColor: isDark
                           ? Colors.white.withValues(alpha: 0.1)
@@ -5671,7 +5653,7 @@ Widget _navHeader() {
           const SizedBox(height: 12),
           Row(
             children: [
-              _avatar(50),
+              _avatar(50, showBadge: true),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -5846,9 +5828,11 @@ Widget _navHeader() {
                 ],
               ),
               const SizedBox(height: 16),
-              // Rider info - compact
+              // Rider info with avatar + badge
               Row(
                 children: [
+                  _avatar(42, showBadge: true),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -5863,14 +5847,12 @@ Widget _navHeader() {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          _dropoffAddr,
-                          style: TextStyle(
-                            color: textMuted,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
+                          _vehicleType,
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
@@ -5882,9 +5864,9 @@ Widget _navHeader() {
                         if (await canLaunchUrl(uri)) await launchUrl(uri);
                       }
                     },
-                    icon: Icon(
+                    icon: const Icon(
                       Icons.phone,
-                      color: textPrimary,
+                      color: _gold,
                       size: 22,
                     ),
                     style: IconButton.styleFrom(
@@ -5894,6 +5876,34 @@ Widget _navHeader() {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              // Dropoff address card — full text, gold icon
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1A1A1A) : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.flag_rounded, color: _gold, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _dropoffAddr,
+                        style: TextStyle(
+                          color: textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 3,
+                        softWrap: true,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
               // Navigate to dropoff button
@@ -6727,8 +6737,8 @@ Widget _navHeader() {
     );
   }
 
-  Widget _avatar(double s) {
-    return Container(
+  Widget _avatar(double s, {bool showBadge = false}) {
+    final circle = Container(
       width: s,
       height: s,
       decoration: BoxDecoration(
@@ -6745,6 +6755,38 @@ Widget _navHeader() {
           ),
         ),
       ),
+    );
+    if (!showBadge) return circle;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        circle,
+        Positioned(
+          bottom: -2,
+          right: -2,
+          child: Container(
+            width: s * 0.38,
+            height: s * 0.38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _gold,
+              border: Border.all(color: const Color(0xFF0A0A0A), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: _gold.withValues(alpha: 0.4),
+                  blurRadius: 6,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.check,
+              color: Colors.black,
+              size: s * 0.22,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

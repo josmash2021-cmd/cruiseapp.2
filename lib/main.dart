@@ -19,6 +19,8 @@ import 'services/notification_service.dart';
 import 'services/security_service.dart';
 import 'services/user_session.dart';
 import 'services/local_data_service.dart';
+import 'services/local_cache.dart';
+import 'services/network_service.dart';
 import 'services/keep_alive_service.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
@@ -84,6 +86,9 @@ void main() async {
       }
       await ApiService.init();
 
+      // Init local Hive cache (fast, sync reads after this)
+      await LocalCache.init();
+
       MapboxOptions.setAccessToken(MapboxConfig.accessToken);
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       SystemChrome.setSystemUIOverlayStyle(
@@ -119,6 +124,9 @@ Future<void> heavyInit() async {
   KeepAliveService.instance.start();
 
   // Run remaining init tasks in parallel — none depend on each other
+  // Initialize network connectivity listener (sync — no Future)
+  NetworkService().init();
+
   await Future.wait([
     // Initialize profile photo notifier
     UserSession.initPhotoNotifier(),

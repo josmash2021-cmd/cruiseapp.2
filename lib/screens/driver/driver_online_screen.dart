@@ -19,7 +19,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
+import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
+import '../../widgets/offline_banner.dart';
 import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
@@ -94,6 +96,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   mapbox.PolylineAnnotation? _previewDropoffGlow;
   LatLng? _pos;
   StreamSubscription<Position>? _posStream;
+  final _gpsService = GpsService();
+  DateTime _lastNavSetState = DateTime(0);
   bool _lastStyleDark = true;
   // Cache: offerId → Future<String> static map URL (with real routed polyline)
   final Map<String, Future<String>> _offerMapUrlCache = {};
@@ -351,6 +355,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _simTicker?.stop();
     _simTicker?.dispose();
     _posStream?.cancel();
+    _gpsService.stopTracking();
     _reFollowTimer?.cancel();
     _panelSheetCtrl.dispose();
     _earningsPageCtrl.dispose();
@@ -911,6 +916,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   //  DRIVER POSITION STREAM (smooth movement on map)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _startPosStream() {
+    // Start GpsService for Firebase RTDB uploads + presence
+    if (_driverId != null) {
+      _gpsService.startTracking(_driverId.toString());
+    }
+
     _posStream =
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
@@ -925,6 +935,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);
           _smoothMoveTo(snappedLL, _smoothedBearing);
+
+          // Feed GpsService for RTDB upload (800ms throttled)
+          _gpsService.updatePosition(newLL, pos.heading, pos.speed);
 
           // â”€â”€ Trim route behind driver (Google Maps style) â”€â”€
           _trimRouteBehindDriver(snappedLL);
@@ -944,10 +957,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             // Just update position & nav stats silently
             final dist = _hav(newLL, _dropoffLL);
             final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
-            setState(() {
-              _navDist = dist;
-              _navEta = eta;
-            });
+            _navDist = dist;
+            _navEta = eta;
+            final now = DateTime.now();
+            if (now.difference(_lastNavSetState).inMilliseconds > 500) {
+              _lastNavSetState = now;
+              setState(() {});
+            }
           } else if (_phase == _Phase.enRouteToPickup) {
             // TRIP: Uber-style 2.5D follow — tilt 55, zoom 17.5
             if (_cameraFollowing) {
@@ -962,11 +978,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             final progress = _distToPickup > 0
                 ? (1.0 - dist / _distToPickup).clamp(0.0, 1.0)
                 : 0.0;
-            setState(() {
-              _navDist = dist;
-              _navEta = eta;
-              _navProgress = progress;
-            });
+            _navDist = dist;
+            _navEta = eta;
+            _navProgress = progress;
+            final now1 = DateTime.now();
+            if (now1.difference(_lastNavSetState).inMilliseconds > 500) {
+              _lastNavSetState = now1;
+              setState(() {});
+            }
             // â”€â”€ Proximity detection: auto-arrive at pickup â”€â”€
             if (dist < 0.05) {
               // ~50 meters
@@ -986,11 +1005,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             final progress = _tripDist > 0
                 ? (1.0 - dist / _tripDist).clamp(0.0, 1.0)
                 : 0.0;
-            setState(() {
-              _navDist = dist;
-              _navEta = eta;
-              _navProgress = progress;
-            });
+            _navDist = dist;
+            _navEta = eta;
+            _navProgress = progress;
+            final now2 = DateTime.now();
+            if (now2.difference(_lastNavSetState).inMilliseconds > 500) {
+              _lastNavSetState = now2;
+              setState(() {});
+            }
             // â”€â”€ Proximity detection: auto-complete near dropoff â”€â”€
             if (dist < 0.05) {
               // ~50 meters
@@ -1543,6 +1565,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final now = DateTime.now();
     _routeCache.removeWhere((_, v) => now.difference(v.cachedAt).inMinutes > 10);
     for (final offer in offers) {
+      // Pre-warm rider photo so it's instant when card shows
+      final photoUrl = (offer['rider_photo_url'] ?? offer['photo_url'] ?? '') as String;
+      if (photoUrl.isNotEmpty) {
+        CachedNetworkImageProvider(photoUrl).resolve(const ImageConfiguration());
+      }
       final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
       if (oid.isEmpty || _routeCache.containsKey(oid)) continue;
       final pLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
@@ -3056,6 +3083,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         backgroundColor: bg,
         body: Stack(
           children: [
+            // Offline connectivity banner
+            const Positioned(
+              top: 0, left: 0, right: 0,
+              child: SafeArea(child: OfflineBanner()),
+            ),
+
+            // Offline connectivity banner
+            const Positioned(
+              top: 0, left: 0, right: 0,
+              child: SafeArea(child: OfflineBanner()),
+            ),
+
             // â”€â”€ Map â”€â”€
             _mapW(isDark),
 

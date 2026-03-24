@@ -42,6 +42,7 @@ import 'welcome_screen.dart';
 import 'account_deactivated_screen.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/user_profile_photo.dart';
+import '../widgets/offline_banner.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -858,6 +859,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       backgroundColor: const Color(0xFF07080D),
       body: Stack(
         children: [
+          // Offline connectivity banner
+          const Positioned(
+            top: 0, left: 0, right: 0,
+            child: SafeArea(child: OfflineBanner()),
+          ),
           // ── Full-screen map — scales back as sheet rises ──
           Positioned.fill(
             child: AnimatedBuilder(

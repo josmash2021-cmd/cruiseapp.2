@@ -18,6 +18,8 @@ import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/notification_service.dart';
 import '../services/trip_firestore_service.dart';
+import '../widgets/offline_banner.dart';
+import 'package:firebase_database/firebase_database.dart';
 import '../config/api_keys.dart';
 import 'chat_screen.dart';
 import 'help_screen.dart';
@@ -154,6 +156,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // ── Real-time tracking via Firestore ──
   StreamSubscription<LatLng>? _driverLocSub;
   StreamSubscription<Map<String, dynamic>?>? _tripStatusSub;
+  StreamSubscription? _rtdbDriverLocSub;
+  String? _rtdbDriverId;
   Timer? _statusPollTimer;
   Timer? _simTimer; // demo simulation timer
 
@@ -348,6 +352,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   /// Process trip status changes from Firestore.
   void _onTripStatusUpdate(Map<String, dynamic> data) {
+    // Start RTDB listener if we have a driverId
+    final did = data['driverId']?.toString();
+    if (did != null && did.isNotEmpty && _rtdbDriverId != did) {
+      _startRtdbDriverListener(did);
+    }
+
     final status = data['status']?.toString() ?? '';
     if (status == 'arrived' && _phase == _TrackPhase.arriving) {
       setState(() => _phase = _TrackPhase.arrived);
@@ -362,6 +372,24 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       LocalDataService.clearActiveRide();
       widget.onTripComplete?.call();
     }
+  }
+
+  /// Listen to driver GPS from Firebase RTDB for sub-200ms updates.
+  void _startRtdbDriverListener(String driverId) {
+    _rtdbDriverLocSub?.cancel();
+    _rtdbDriverId = driverId;
+    _rtdbDriverLocSub = FirebaseDatabase.instance
+        .ref('drivers/$driverId/location')
+        .onValue
+        .listen((event) {
+      if (!mounted || _phase == _TrackPhase.completed) return;
+      if (event.snapshot.value == null) return;
+      final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+      final lat = (data['lat'] as num?)?.toDouble();
+      final lng = (data['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null) return;
+      _onRealDriverLocation(LatLng(lat, lng));
+    }, onError: (_) {});
   }
 
   /// Start a simulation timer when there is no real Firestore trip
@@ -414,6 +442,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _camTimer?.cancel();
     _simTimer?.cancel();
     _driverLocSub?.cancel();
+    _rtdbDriverLocSub?.cancel();
     _tripStatusSub?.cancel();
     _statusPollTimer?.cancel();
     _etaPulse.dispose();
@@ -1436,6 +1465,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         backgroundColor: const Color(0xFF1A1A1A),
         body: Stack(
           children: [
+            // Offline connectivity banner
+            const Positioned(
+              top: 0, left: 0, right: 0,
+              child: SafeArea(child: OfflineBanner()),
+            ),
             RepaintBoundary(
               child: mapbox.MapWidget(
                 key: const ValueKey('rider-map'),

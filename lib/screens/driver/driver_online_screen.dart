@@ -315,21 +315,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Pulse + ripple for offer card tap
     _pulseCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 450),
+      duration: const Duration(milliseconds: 500),
     );
     _pulseAnim = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 1.04)
+        tween: Tween(begin: 1.0, end: 1.06)
             .chain(CurveTween(curve: Curves.easeOut)),
         weight: 30,
       ),
       TweenSequenceItem(
-        tween: Tween(begin: 1.04, end: 0.97)
+        tween: Tween(begin: 1.06, end: 0.96)
             .chain(CurveTween(curve: Curves.easeInOut)),
         weight: 40,
       ),
       TweenSequenceItem(
-        tween: Tween(begin: 0.97, end: 1.0)
+        tween: Tween(begin: 0.96, end: 1.0)
             .chain(CurveTween(curve: Curves.elasticOut)),
         weight: 30,
       ),
@@ -337,7 +337,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _rippleCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 800),
     );
 
     _boot();
@@ -1606,15 +1606,28 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         dropoffLat: dLat,
         dropoffLng: dLng,
       );
-      Future.wait([
-        _fetchRoutePoints(_pos!, pickupLL),
-        _fetchRoutePoints(pickupLL, dropoffLL),
+
+      // Pre-detect dropoff place type from address
+      final dropoffAddr = (offer['dropoff_address'] ?? '') as String;
+      final placeType = _detectPlaceType(dropoffAddr);
+
+      // Pre-build teardrop pins + fetch routes in parallel
+      Future.wait<Object?>([
+        _fetchRoutePoints(_pos!, pickupLL),                                         // [0] segOne
+        _fetchRoutePoints(pickupLL, dropoffLL),                                     // [1] segTwo
+        _buildTeardropPin(Colors.white, iconOverride: Icons.directions_car_rounded),// [2] driver pin
+        _buildTeardropPin(_gold, iconOverride: Icons.person_rounded),               // [3] pickup pin
+        _buildTeardropPin(Colors.white, iconOverride: _dropoffIconFor(placeType)),  // [4] dropoff pin
       ]).then((results) {
         if (!mounted) return;
         _routeCache[oid] = _CachedOfferRoute(
-          segOne: results[0],
-          segTwo: results[1],
+          segOne: results[0] as List<LatLng>,
+          segTwo: results[1] as List<LatLng>,
           cachedAt: DateTime.now(),
+          dropoffPlaceType: placeType,
+          driverPin: results[2] as Uint8List?,
+          pickupPin: results[3] as Uint8List?,
+          dropoffPin: results[4] as Uint8List?,
         );
       }).catchError((_) {});
     }
@@ -2609,30 +2622,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
   }
 
-  // ── Pulse + ripple card tap → route animation ──
+  // ── Cinematic offer card tap → full animation sequence ──
+  // Everything is pre-loaded: route, pins, place type, bounds.
+  // Zero network calls on tap.
   Future<void> _onOfferCardTap(Map<String, dynamic> offer) async {
     if (_isCardAnimating) return;
     final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
     _isCardAnimating = true;
 
-    setState(() {
-      _showRipple = true;
-      _animatingOfferId = oid;
-    });
-    _pulseCtrl!.forward(from: 0);
-    _rippleCtrl!.forward(from: 0);
-
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (mounted) setState(() => _showRipple = false);
-    _rippleCtrl!.reset();
-    _isCardAnimating = false;
-
-    // Trigger route preview on map (reuses existing logic)
-    _previewOfferRoute(offer);
-  }
-
-  // ── Preview offer route on map (smooth 60fps animation) ──
-  Future<void> _previewOfferRoute(Map<String, dynamic> offer) async {
     final pickupLat  = (offer['pickup_lat']  as num?)?.toDouble() ?? 0;
     final pickupLng  = (offer['pickup_lng']  as num?)?.toDouble() ?? 0;
     final dropoffLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
@@ -2640,17 +2637,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final pickupLL  = LatLng(pickupLat,  pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
 
-    setState(() => _previewingOffer = offer);
+    setState(() {
+      _previewingOffer = offer;
+      _showRipple = true;
+      _animatingOfferId = oid;
+    });
     _stopGlowPulse();
     await _clearAllAnnotations();
 
-    // 1. Use pre-fetched cache if available, otherwise fetch now
-    final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+    // Load from cache (pre-fetched on offer arrival)
     final cached = _routeCache[oid];
     if (cached != null) {
       _fullSegOne = cached.segOne;
       _fullSegTwo = cached.segTwo;
     } else {
+      // Fallback: fetch now (should be rare)
       final routeFutures = await Future.wait([
         _fetchRoutePoints(_pos!, pickupLL),
         _fetchRoutePoints(pickupLL, dropoffLL),
@@ -2658,76 +2659,241 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _fullSegOne = routeFutures[0];
       _fullSegTwo = routeFutures[1];
     }
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    if (!mounted || _previewingOffer == null) return;
+    // ── PHASE 1 (t=0ms): 3-ring gold ripple + card spring bounce ──
+    _pulseCtrl!.forward(from: 0);
+    _rippleCtrl!.forward(from: 0);
 
-    // 2. Fit camera to show all three points
+    // ── PHASE 2 (t=200ms): Smooth zoom out to show full route ──
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
     _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
 
-    // 3. Build teardrop pins (matching CruiseMapPin) + place them
-    final pinResults = await Future.wait([
-      _buildTeardropPin(const Color(0xFF5BA3F5)), // driver — blue tip
-      _buildTeardropPin(_gold),                    // pickup — gold tip
-      _buildTeardropPin(Colors.white),             // dropoff — white tip
-    ]);
-    final pointMgr = _pointAnnotMgr;
-    if (pointMgr != null && mounted) {
-      if (pinResults[0] != null) {
-        _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-          image: pinResults[0], iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
-        ));
-      }
-      if (pinResults[1] != null) {
-        _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
-          image: pinResults[1], iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
-        ));
-      }
-      if (pinResults[2] != null) {
-        _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
-          image: pinResults[2], iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
-        ));
-      }
+    // ── PHASE 3 (t=500ms): Pins pop in ──
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
+    if (mounted) setState(() => _showRipple = false);
+    _rippleCtrl!.reset();
+
+    // Place pins using pre-built images (or build now as fallback)
+    final dropoffAddr = (offer['dropoff_address'] ?? '') as String;
+    final placeType = cached?.dropoffPlaceType ?? _detectPlaceType(dropoffAddr);
+    Uint8List? driverPinImg = cached?.driverPin;
+    Uint8List? pickupPinImg = cached?.pickupPin;
+    Uint8List? dropoffPinImg = cached?.dropoffPin;
+    if (driverPinImg == null || pickupPinImg == null || dropoffPinImg == null) {
+      final pinResults = await Future.wait([
+        _buildTeardropPin(Colors.white, iconOverride: Icons.directions_car_rounded),
+        _buildTeardropPin(_gold, iconOverride: Icons.person_rounded),
+        _buildTeardropPin(Colors.white, iconOverride: _dropoffIconFor(placeType)),
+      ]);
+      driverPinImg ??= pinResults[0];
+      pickupPinImg ??= pinResults[1];
+      dropoffPinImg ??= pinResults[2];
     }
 
-    // 4. Animate segment 1 smoothly (driver → pickup, gold, 900ms)
-    await _animateSegmentSmooth(
-      points: _fullSegOne,
-      color: _gold,
-      duration: const Duration(milliseconds: 900),
-      slotMain: (a) => _previewPickupAnnot = a,
-      slotGlow: (a) => _previewPickupGlow = a,
-    );
-    if (!mounted || _previewingOffer == null) return;
+    final pointMgr = _pointAnnotMgr;
+    if (pointMgr != null && mounted) {
+      // Driver pin — car icon
+      if (driverPinImg != null) {
+        _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+          image: driverPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+        ));
+      }
+      // Pickup pin — person icon
+      if (pickupPinImg != null) {
+        _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
+          image: pickupPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+        ));
+      }
+      // Dropoff pin — smart icon
+      if (dropoffPinImg != null) {
+        _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
+          image: dropoffPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+        ));
+      }
 
-    // 5. Brief pause between segments
-    await Future.delayed(const Duration(milliseconds: 100));
+      // Animate pin pop: scale 0.01 → 1.2 → 0.9 → 1.0 over 600ms
+      await _animatePinPop();
+    }
 
-    // 6. Animate segment 2 smoothly (pickup → dropoff, white, 700ms)
-    await _animateSegmentSmooth(
-      points: _fullSegTwo,
-      color: Colors.white,
-      duration: const Duration(milliseconds: 700),
-      slotMain: (a) => _previewDropoffAnnot = a,
-      slotGlow: (a) => _previewDropoffGlow = a,
-    );
-    if (!mounted || _previewingOffer == null) return;
+    // ── PHASE 4 (t=700ms): Gold gloss route draws ──
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
+    final fullRoute = [..._fullSegOne, ..._fullSegTwo];
+    await _drawGoldGlossRoute(fullRoute);
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // 7. Start glow pulse on the full combined route
+    // ── PHASE 5: Glow pulse starts ──
     _startGlowPulse();
 
-    // 8. Mark route as shown
     if (mounted && _previewingOffer != null) {
       setState(() => _offerRouteShown = true);
     }
 
-    // 9. Re-fit camera for final framing
+    // Re-fit camera for final framing
     await Future.delayed(const Duration(milliseconds: 200));
     if (mounted && _previewingOffer != null) {
       _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
     }
+    _isCardAnimating = false;
+  }
+
+  /// Animate all preview pins from tiny → overshoot → settle (spring feel)
+  Future<void> _animatePinPop() async {
+    final pointMgr = _pointAnnotMgr;
+    if (pointMgr == null) return;
+    const totalMs = 600;
+    final stopwatch = Stopwatch()..start();
+    final completer = Completer<void>();
+
+    // Spring-like TweenSequence: 0→1.2→0.9→1.0
+    double springScale(double t) {
+      if (t < 0.6) {
+        // 0→1.2 with easeOutCubic
+        final p = (t / 0.6).clamp(0.0, 1.0);
+        return Curves.easeOutCubic.transform(p) * 1.2;
+      } else if (t < 0.8) {
+        // 1.2→0.9
+        final p = ((t - 0.6) / 0.2).clamp(0.0, 1.0);
+        return 1.2 - 0.3 * Curves.easeInOut.transform(p);
+      } else {
+        // 0.9→1.0
+        final p = ((t - 0.8) / 0.2).clamp(0.0, 1.0);
+        return 0.9 + 0.1 * Curves.elasticOut.transform(p);
+      }
+    }
+
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = createTicker((_) async {
+      if (!mounted) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      final elapsed = stopwatch.elapsedMilliseconds;
+      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
+      final scale = springScale(progress);
+
+      for (final annot in [_prevDriverAnnot, _prevPickupAnnot, _prevDropoffAnnot]) {
+        if (annot != null) {
+          annot.iconSize = scale;
+          try { await pointMgr.update(annot); } catch (_) {}
+        }
+      }
+
+      if (progress >= 1.0) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+    _routeDrawTicker!.start();
+    return completer.future;
+  }
+
+  /// Draw a single gold gloss route line with 4 layers (glow, mid, main, shine).
+  /// Progressive 60fps draw over 1 second with easeInOutSine.
+  Future<void> _drawGoldGlossRoute(List<LatLng> points) async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null || points.length < 2) return;
+
+    final completer = Completer<void>();
+    final stopwatch = Stopwatch()..start();
+    const totalMs = 1000;
+
+    // 4 annotation layers: outer glow, mid glow, main, shine
+    mapbox.PolylineAnnotation? outerGlow;
+    mapbox.PolylineAnnotation? midGlow;
+    mapbox.PolylineAnnotation? mainLine;
+    mapbox.PolylineAnnotation? shineLine;
+    int lastCount = 0;
+
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = createTicker((_) async {
+      if (!mounted || _previewingOffer == null) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+
+      final elapsed = stopwatch.elapsedMilliseconds;
+      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
+      final eased = Curves.easeInOutSine.transform(progress);
+      final count = (eased * points.length).round().clamp(2, points.length);
+
+      if (count != lastCount) {
+        lastCount = count;
+        final subset = points.sublist(0, count);
+        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        final geo = mapbox.LineString(coordinates: coords);
+
+        if (mainLine == null) {
+          // Create 4 layers bottom-to-top
+          outerGlow = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo,
+            lineColor: _gold.withValues(alpha: 0.15).toARGB32(),
+            lineWidth: 16.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+          midGlow = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo,
+            lineColor: _gold.withValues(alpha: 0.25).toARGB32(),
+            lineWidth: 10.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+          mainLine = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo,
+            lineColor: _gold.toARGB32(),
+            lineWidth: 5.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+          shineLine = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo,
+            lineColor: Colors.white.withValues(alpha: 0.30).toARGB32(),
+            lineWidth: 1.5,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } else {
+          for (final a in [outerGlow, midGlow, mainLine, shineLine]) {
+            if (a != null) {
+              a.geometry = geo;
+              try { await polyMgr.update(a); } catch (_) {}
+            }
+          }
+        }
+      }
+
+      if (progress >= 1.0) {
+        _routeDrawTicker?.stop();
+        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        final fullGeo = mapbox.LineString(coordinates: fullCoords);
+        for (final a in [outerGlow, midGlow, mainLine, shineLine]) {
+          if (a != null) {
+            a.geometry = fullGeo;
+            try { await polyMgr.update(a); } catch (_) {}
+          }
+        }
+        // Store main + outer glow for later cleanup
+        _previewPickupAnnot = mainLine;
+        _previewPickupGlow = outerGlow;
+        _previewDropoffAnnot = midGlow;
+        _previewDropoffGlow = shineLine;
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+
+    _routeDrawTicker!.start();
+    return completer.future;
+  }
+
+  // Keep _previewOfferRoute for backward compat (delegates to cinematic tap)
+  Future<void> _previewOfferRoute(Map<String, dynamic> offer) async {
+    return _onOfferCardTap(offer);
   }
 
   /// Fetch route points from Google Directions → OSRM → straight line fallback
@@ -2776,94 +2942,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
     if (pts.isNotEmpty) { pts[0] = o; pts[pts.length - 1] = d; }
     return pts;
-  }
-
-  /// Smooth 60fps progressive polyline draw using Ticker + easeInOutCubic
-  Future<void> _animateSegmentSmooth({
-    required List<LatLng> points,
-    required Color color,
-    required Duration duration,
-    required void Function(mapbox.PolylineAnnotation?) slotMain,
-    required void Function(mapbox.PolylineAnnotation?) slotGlow,
-  }) async {
-    final polyMgr = _polylineAnnotMgr;
-    if (polyMgr == null || points.length < 2) return;
-
-    final completer = Completer<void>();
-    final stopwatch = Stopwatch()..start();
-    final totalMs = duration.inMilliseconds;
-
-    mapbox.PolylineAnnotation? mainAnnot;
-    mapbox.PolylineAnnotation? glowAnnot;
-    int lastCount = 0;
-
-    _routeDrawTicker?.stop();
-    _routeDrawTicker?.dispose();
-    _routeDrawTicker = createTicker((_) async {
-      if (!mounted || _previewingOffer == null) {
-        _routeDrawTicker?.stop();
-        if (!completer.isCompleted) completer.complete();
-        return;
-      }
-
-      final elapsed = stopwatch.elapsedMilliseconds;
-      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeInOutCubic.transform(progress);
-      final count = (eased * points.length).round().clamp(2, points.length);
-
-      // Only update annotation when the visible point count changes
-      if (count != lastCount) {
-        lastCount = count;
-        final subset = points.sublist(0, count);
-        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        final geo = mapbox.LineString(coordinates: coords);
-
-        if (mainAnnot == null) {
-          // Create glow line (behind)
-          glowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo,
-            lineColor: color.withValues(alpha: 0.20).toARGB32(),
-            lineWidth: 12.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-          // Create main line (on top)
-          mainAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo,
-            lineColor: color.toARGB32(),
-            lineWidth: 5.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-        } else {
-          mainAnnot!.geometry = geo;
-          await polyMgr.update(mainAnnot!);
-          if (glowAnnot != null) {
-            glowAnnot!.geometry = geo;
-            await polyMgr.update(glowAnnot!);
-          }
-        }
-      }
-
-      if (progress >= 1.0) {
-        _routeDrawTicker?.stop();
-        // Ensure full line is drawn
-        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        final fullGeo = mapbox.LineString(coordinates: fullCoords);
-        if (mainAnnot != null) {
-          mainAnnot!.geometry = fullGeo;
-          await polyMgr.update(mainAnnot!);
-        }
-        if (glowAnnot != null) {
-          glowAnnot!.geometry = fullGeo;
-          await polyMgr.update(glowAnnot!);
-        }
-        slotMain(mainAnnot);
-        slotGlow(glowAnnot);
-        if (!completer.isCompleted) completer.complete();
-      }
-    });
-
-    _routeDrawTicker!.start();
-    return completer.future;
   }
 
   /// Start pulsing gold glow over the full combined route after animation completes
@@ -2955,8 +3033,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   /// Cruise-branded teardrop pin matching CruiseMapPin: navy→tipColor gradient,
-  /// person avatar at top, gold border, drop shadow. Renders to Uint8List for Mapbox.
-  Future<Uint8List?> _buildTeardropPin(Color tipColor) async {
+  /// icon at top, gold border, drop shadow. Renders to Uint8List for Mapbox.
+  /// [iconCode] renders a Material Icon codepoint; defaults to person silhouette.
+  Future<Uint8List?> _buildTeardropPin(Color tipColor, {IconData? iconOverride}) async {
     const double w = 72;
     const double h = 88;
     const double r = w / 2; // radius of rounded top
@@ -2992,7 +3071,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5);
 
-    // Person avatar circle at top
+    // Avatar circle at top
     const avatarR = 48.0 / 2;
     const avatarCy = 8.0 + avatarR;
     cv.drawCircle(const Offset(cx, avatarCy), avatarR, Paint()
@@ -3002,17 +3081,32 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0);
 
-    // Person icon (simple head + body silhouette)
-    final iconPaint = Paint()..color = Colors.white..style = PaintingStyle.fill;
-    // Head
-    cv.drawCircle(const Offset(cx, avatarCy - 5), 6, iconPaint);
-    // Body
-    final bodyPath = Path()
-      ..moveTo(cx - 8, avatarCy + 14)
-      ..quadraticBezierTo(cx - 8, avatarCy + 2, cx, avatarCy + 2)
-      ..quadraticBezierTo(cx + 8, avatarCy + 2, cx + 8, avatarCy + 14)
-      ..close();
-    cv.drawPath(bodyPath, iconPaint);
+    if (iconOverride != null) {
+      // Render Material Icon via TextPainter
+      final tp = TextPainter(
+        text: TextSpan(
+          text: String.fromCharCode(iconOverride.codePoint),
+          style: TextStyle(
+            fontSize: 22,
+            fontFamily: iconOverride.fontFamily,
+            package: iconOverride.fontPackage,
+            color: Colors.white,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(cv, Offset(cx - tp.width / 2, avatarCy - tp.height / 2));
+    } else {
+      // Person silhouette fallback
+      final iconPaint = Paint()..color = Colors.white..style = PaintingStyle.fill;
+      cv.drawCircle(const Offset(cx, avatarCy - 5), 6, iconPaint);
+      final bodyPath = Path()
+        ..moveTo(cx - 8, avatarCy + 14)
+        ..quadraticBezierTo(cx - 8, avatarCy + 2, cx, avatarCy + 2)
+        ..quadraticBezierTo(cx + 8, avatarCy + 2, cx + 8, avatarCy + 14)
+        ..close();
+      cv.drawPath(bodyPath, iconPaint);
+    }
 
     final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
@@ -7227,7 +7321,8 @@ class _DriverRadarPainter extends CustomPainter {
   bool shouldRepaint(_DriverRadarPainter old) => old.progress != progress;
 }
 
-/// Gold ripple ring that expands outward from center of offer card on tap.
+/// Professional 3-ring gold ripple wave that expands outward on offer card tap.
+/// Each ring starts at a different delay for a cascading wave effect.
 class _OfferRipplePainter extends CustomPainter {
   final double progress;
   final Color color;
@@ -7237,12 +7332,24 @@ class _OfferRipplePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final maxRadius =
-        math.sqrt(size.width * size.width + size.height * size.height) / 2 + 40;
+        math.sqrt(size.width * size.width + size.height * size.height) / 2 + 60;
+
+    _drawRing(canvas, center, maxRadius, progress, delay: 0.0,  opacity: 0.50);
+    _drawRing(canvas, center, maxRadius, progress, delay: 0.15, opacity: 0.35);
+    _drawRing(canvas, center, maxRadius, progress, delay: 0.30, opacity: 0.20);
+  }
+
+  void _drawRing(Canvas canvas, Offset center, double maxRadius,
+      double progress, {required double delay, required double opacity}) {
+    final adjusted = ((progress - delay) / (1.0 - delay)).clamp(0.0, 1.0);
+    if (adjusted <= 0) return;
+
+    final eased = Curves.easeOutCubic.transform(adjusted);
     final paint = Paint()
-      ..color = color.withValues(alpha: (1 - progress) * 0.35)
+      ..color = color.withValues(alpha: opacity * (1 - adjusted))
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-    canvas.drawCircle(center, maxRadius * progress, paint);
+      ..strokeWidth = 2.0;
+    canvas.drawCircle(center, maxRadius * eased, paint);
   }
 
   @override
@@ -7254,9 +7361,48 @@ class _CachedOfferRoute {
   final List<LatLng> segOne;
   final List<LatLng> segTwo;
   final DateTime cachedAt;
+  final _PlaceType dropoffPlaceType;
+  final Uint8List? driverPin;
+  final Uint8List? pickupPin;
+  final Uint8List? dropoffPin;
   const _CachedOfferRoute({
     required this.segOne,
     required this.segTwo,
     required this.cachedAt,
+    this.dropoffPlaceType = _PlaceType.home,
+    this.driverPin,
+    this.pickupPin,
+    this.dropoffPin,
   });
+}
+
+/// Place type for smart dropoff icon detection.
+enum _PlaceType { home, commerce, hotel, airport }
+
+_PlaceType _detectPlaceType(String address) {
+  final lower = address.toLowerCase();
+  bool has(List<String> kw) => kw.any((k) => lower.contains(k));
+
+  if (has(['airport', 'aeropuerto', 'intl', 'international', 'terminal'])) {
+    return _PlaceType.airport;
+  }
+  if (has(['hotel', 'inn', 'suites', 'resort', 'marriott', 'hilton',
+           'hyatt', 'holiday', 'motel', 'lodge'])) {
+    return _PlaceType.hotel;
+  }
+  if (has(['mall', 'plaza', 'center', 'centre', 'walmart', 'target',
+           'store', 'market', 'shop', 'restaurant', 'cafe', 'bar',
+           'gym', 'clinic', 'hospital', 'school', 'university'])) {
+    return _PlaceType.commerce;
+  }
+  return _PlaceType.home;
+}
+
+IconData _dropoffIconFor(_PlaceType type) {
+  switch (type) {
+    case _PlaceType.airport:  return Icons.local_airport_rounded;
+    case _PlaceType.hotel:    return Icons.apartment_rounded;
+    case _PlaceType.commerce: return Icons.storefront_rounded;
+    case _PlaceType.home:     return Icons.home_rounded;
+  }
 }

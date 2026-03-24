@@ -229,10 +229,10 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
         // ── Debug prints ──────────────────────────────────────────────────
         print('=== CRUISE LISTENER FIRED === (verifications)');
         print('Full Firestore data: ${doc.data()}');
-        print('driver_status: ${data[\'driver_status\']}');
-        print('status: ${data[\'status\']}');
-        print('isVerified: ${data[\'isVerified\']}');
-        print('isApproved: ${data[\'isApproved\']}');
+        print('driver_status: ${data["driver_status"]}');
+        print('status: ${data["status"]}');
+        print('isVerified: ${data["isVerified"]}');
+        print('isApproved: ${data["isApproved"]}');
         // ──────────────────────────────────────────────────────────────────
 
         final status = data['status'] as String? ?? '';
@@ -290,10 +290,10 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     // ── Debug prints ────────────────────────────────────────────────────────
     print('=== CRUISE LISTENER FIRED ===');
     print('Full Firestore data: $data');
-    print('driver_status: ${data[\'driver_status\']}');
-    print('status: ${data[\'status\']}');
-    print('isVerified: ${data[\'isVerified\']}');
-    print('isApproved: ${data[\'isApproved\']}');
+    print('driver_status: ${data["driver_status"]}');
+    print('status: ${data["status"]}');
+    print('isVerified: ${data["isVerified"]}');
+    print('isApproved: ${data["isApproved"]}');
     // ────────────────────────────────────────────────────────────────────────
 
     final driverStatus = data['driver_status'] as String? ?? '';

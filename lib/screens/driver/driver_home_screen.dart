@@ -206,17 +206,24 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (mgr == null || _currentLatLng == null) return;
     final bytes = _goldDot.currentBytes;
     if (bytes == null) return; // Dot not ready yet
-    
-    // Delete existing if position or icon changed
-    if (_myLocAnnot != null) {
-      try { await mgr.delete(_myLocAnnot!); } catch (_) {}
+
+    final point = mapbox.Point(
+      coordinates: mapbox.Position(
+        _currentLatLng!.longitude, _currentLatLng!.latitude));
+
+    if (_myLocAnnot == null) {
+      // First time: create the annotation once
+      _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: point,
+        image: bytes,
+        iconSize: 1.0,
+      ));
+    } else {
+      // Update existing — no delete/recreate, no duplicates
+      _myLocAnnot!.geometry = point;
+      _myLocAnnot!.image = bytes;
+      try { await mgr.update(_myLocAnnot!); } catch (_) {}
     }
-    
-    _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
-      image: bytes,
-      iconSize: 1.0,
-    ));
   }
 
   /// Re-sync the location dot annotation whenever the dot animation frame changes.
@@ -323,7 +330,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: LocationAccuracy.bestForNavigation,
           timeLimit: Duration(seconds: 15),
         ),
       );
@@ -335,26 +342,30 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
           zoom: 16, pitch: 0, bearing: 0,
         ),
-        mapbox.MapAnimationOptions(duration: 600),
+        mapbox.MapAnimationOptions(duration: 800),
       );
 
-      // ── Real-time GPS stream ──
+      // ── Real-time GPS stream (3m filter, best accuracy) ──
       _posStream?.cancel();
       _posStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 5,
+          accuracy: LocationAccuracy.bestForNavigation,
+          distanceFilter: 3,
         ),
       ).listen((p) {
         if (!mounted) return;
         final ll = LatLng(p.latitude, p.longitude);
         setState(() => _currentLatLng = ll);
         _updateMyLocAnnotation();
-        _mapController?.easeTo(
+        // Smooth 800ms flyTo — no jumps
+        _mapController?.flyTo(
           mapbox.CameraOptions(
             center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)),
+            zoom: 16.0,
+            pitch: 0.0,
+            bearing: 0.0,
           ),
-          mapbox.MapAnimationOptions(duration: 400),
+          mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
         );
       });
     } catch (_) {}
@@ -365,7 +376,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final results = await Future.wait([
       ApiService.getMe().catchError((_) => null),
       ApiService.getDriverEarnings(period: 'today').catchError((_) => <String, dynamic>{}),
-      ApiService.getNotifications().catchError((_) => <dynamic>[]),
+      ApiService.getNotifications().catchError((_) => <Map<String, dynamic>>[]),
     ]);
 
     if (!mounted) return;
@@ -613,6 +624,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final dc = DriverColors.of(context);
     return Scaffold(
       backgroundColor: dc.bg,
+      // Hide bottom nav completely when driver is online
+      bottomNavigationBar: _isStillOnline ? null : _buildBottomNav(dc),
       body: Stack(
         children: [
           // ── Full-screen map ──
@@ -1045,7 +1058,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final panelH =
         _panelCollapsedH + (_panelExpandedH - _panelCollapsedH) * _panelExtent;
 
-    return AnimatedContainer(
+    return GestureDetector(
+      // Consume taps so panel never opens on tap — swipe-only
+      onTap: () {},
+      child: AnimatedContainer(
       duration: _dragging ? Duration.zero : const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
       height: panelH + pad.bottom,
@@ -1291,7 +1307,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
           ],
         ),
-      );
+      ),    // close AnimatedContainer
+    );      // close GestureDetector
   }
 
   Widget _recommendItem(IconData icon, String label, VoidCallback onTap) {

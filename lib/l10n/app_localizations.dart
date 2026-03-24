@@ -2489,6 +2489,18 @@ class S {
   String get arrivalLabel => _es ? 'llegada' : 'arrival';
   String get remainingLabel => _es ? 'restante' : 'remaining';
   String get resumeNav => _es ? 'Reanudar' : 'Resume';
+
+  // ── Face Liveness Screen (new step keys) ──────────────────────────────────
+  String get centerYourFace =>
+      _es ? 'Centra tu rostro' : 'Center your face';
+  String get turnHeadRight =>
+      _es ? 'Gira la cabeza a la derecha' : 'Turn your head right';
+  String get turnHeadLeft =>
+      _es ? 'Gira la cabeza a la izquierda' : 'Turn your head left';
+  String get faceDetected =>
+      _es ? 'Rostro detectado' : 'Face detected';
+  String get positionYourFace =>
+      _es ? 'Coloca tu rostro en el óvalo' : 'Position your face in the oval';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

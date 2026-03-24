@@ -1,23 +1,20 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../l10n/app_localizations.dart';
 
-/// Apple Face ID–style biometric verification screen.
-///
-/// Two phases like the real Face ID setup:
-///   Phase 1: Position your face in the circle (center + blink)
-///   Phase 2: Move your head slowly to complete the circle (turn + smile)
-///
-/// Progress is shown as segmented tick marks around a circle,
-/// filling in green as each challenge passes.
-///
-/// Returns a map with 'photo' and 'video' paths, or null if cancelled.
+// ─── Step enum ──────────────────────────────────────────────────────────────
+enum _Step { center, turnRight, turnLeft, holdStill }
+
+// ─── Main Widget ────────────────────────────────────────────────────────────
+
+/// Premium iOS Face ID–style biometric verification.
+/// Returns `{'photo': path, 'video': path}` or `null` if cancelled.
 class FaceLivenessScreen extends StatefulWidget {
   const FaceLivenessScreen({super.key});
 
@@ -25,855 +22,591 @@ class FaceLivenessScreen extends StatefulWidget {
   State<FaceLivenessScreen> createState() => _FaceLivenessScreenState();
 }
 
-enum _Challenge { center, blink, turn, smile }
-
 class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     with TickerProviderStateMixin {
-  // Camera & ML Kit
+  // ── Camera / ML ──────────────────────────────────────────────────────────
   CameraController? _cam;
   FaceDetector? _detector;
   bool _camReady = false;
-  bool _detecting = false;
-  bool _capturing = false;
-  bool _allDone = false;
-  bool _recording = false;
+  bool _processing = false;
+  bool _finishing = false;
+  int _frameSkip = 0;
 
-  // Challenge state
-  int _challengeIndex = 0;
-  double _holdProgress = 0.0;
-  DateTime? _holdStart;
-  static const _holdMs = 1200;
-  int _frameCount = 0;
-  bool _blinkDetected = false; // Tracks blink event (eyes were closed)
-
-  // Total progress across all challenges (0..1)
-  double _totalProgress = 0.0;
-
-  // Phase tracking: phase 1 = center+blink, phase 2 = turn+smile
-  int get _phase => _challengeIndex < 2 ? 1 : 2;
-  bool _showPhase2Intro = false;
-
-  // Face detection state for background transition
+  // ── Step state ───────────────────────────────────────────────────────────
+  _Step _step = _Step.center;
   bool _faceDetected = false;
-  late AnimationController _bgCtrl;
+  double _ringProgress = 0.0; // 0..1 across all steps
+  int _stepIndex = 0;         // 0..3
 
-  // Animations
-  late AnimationController _successCtrl;
-  late AnimationController _scanCtrl;
-  late AnimationController _breatheCtrl;
+  // holdStill fill progress (0..1)
+  double _holdProgress = 0.0;
 
-  final _challenges = [
-    _Challenge.center,
-    _Challenge.blink,
-    _Challenge.turn,
-    _Challenge.smile,
+  // ── Animation controllers ────────────────────────────────────────────────
+  late final AnimationController _rotateCtrl;   // ring rotation 4s
+  late final AnimationController _pulseCtrl;    // oval breathing 1.2s
+  late final AnimationController _stepCtrl;     // step-text fade 0.3s
+  late final AnimationController _doneCtrl;     // completion burst 0.6s
+
+  // ── Colors ───────────────────────────────────────────────────────────────
+  static const _black   = Color(0xFF000000);
+  static const _gold    = Color(0xFFD4AF37);
+  static const _green   = Color(0xFF34C759);
+  static const _gray    = Color(0xFF282828);
+  static const _white   = Colors.white;
+
+  // ── Oval geometry ────────────────────────────────────────────────────────
+  static const double _ovalW = 270.0;
+  static const double _ovalH = 330.0;
+
+  // ── Step instructions (lazy, set after context ready) ────────────────────
+  List<String> get _instructions => [
+    S.of(context).centerYourFace,
+    S.of(context).turnHeadRight,
+    S.of(context).turnHeadLeft,
+    S.of(context).holdStill,
   ];
 
+  List<IconData> get _stepIcons => [
+    Icons.face_retouching_natural,
+    Icons.arrow_forward_rounded,
+    Icons.arrow_back_rounded,
+    Icons.lock_open_rounded,
+  ];
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Lifecycle
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
-    _bgCtrl = AnimationController(
+    _rotateCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
-    );
-    _scanCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(seconds: 4),
     )..repeat();
-    _breatheCtrl = AnimationController(
+    _pulseCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2800),
+      duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
-    _successCtrl = AnimationController(
+    _stepCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    )..forward();
+    _doneCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
     _initCamera();
   }
 
-  Future<void> _initCamera() async {
-    final status = await Permission.camera.request();
-    if (status.isPermanentlyDenied) {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text(S.of(ctx).cameraPermissionPermanentlyDenied),
-            content: Text(S.of(ctx).cameraPermissionPermanentlyDeniedMsg),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  Navigator.of(context).pop(null);
-                },
-                child: Text(S.of(ctx).cancel),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  openAppSettings();
-                },
-                child: Text(S.of(ctx).openSettings),
-              ),
-            ],
-          ),
-        );
-      }
-      return;
-    }
-    if (!status.isGranted) {
-      if (mounted) Navigator.of(context).pop(null);
-      return;
-    }
-    try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        if (mounted) Navigator.of(context).pop(null);
-        return;
-      }
-      final front = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.front,
-        orElse: () => cameras.first,
-      );
-
-      _detector = FaceDetector(
-        options: FaceDetectorOptions(
-          enableClassification: true,
-          enableLandmarks: false,
-          minFaceSize: 0.2,
-          performanceMode: FaceDetectorMode.fast,
-        ),
-      );
-
-      final ctrl = CameraController(
-        front,
-        ResolutionPreset.medium,
-        enableAudio: false,
-        imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.nv21
-            : ImageFormatGroup.bgra8888,
-      );
-
-      await ctrl.initialize();
-      if (!mounted) return;
-
-      _cam = ctrl;
-      setState(() => _camReady = true);
-      await ctrl.startImageStream(_onFrame);
-    } catch (e) {
-      debugPrint('[FaceLiveness] camera init error: $e');
-      if (mounted) Navigator.of(context).pop(null);
-    }
-  }
-
-  void _onFrame(CameraImage image) {
-    _frameCount++;
-    if (_frameCount % 4 != 0) return;
-    if (_detecting || _allDone || _showPhase2Intro || !mounted) return;
-    _detecting = true;
-    _processFrame(image).whenComplete(() => _detecting = false);
-  }
-
-  Future<void> _processFrame(CameraImage image) async {
-    final inputImage = _toInputImage(image);
-    if (inputImage == null) return;
-    try {
-      final faces = await _detector!.processImage(inputImage);
-      if (!mounted || _allDone) return;
-      if (faces.isEmpty) {
-        _setFaceDetected(false);
-        _resetHold();
-        return;
-      }
-      _setFaceDetected(true);
-      final face = faces.first;
-      if (_checkChallenge(_challenges[_challengeIndex], face)) {
-        _advanceHold();
-      } else {
-        _resetHold();
-      }
-    } catch (_) {}
-  }
-
-  bool _checkChallenge(_Challenge challenge, Face face) {
-    switch (challenge) {
-      case _Challenge.center:
-        final y = (face.headEulerAngleY ?? 0).abs();
-        final x = (face.headEulerAngleX ?? 0).abs();
-        final z = (face.headEulerAngleZ ?? 0).abs();
-        return y < 12 && x < 12 && z < 15;
-      case _Challenge.blink:
-        final leftEye = face.leftEyeOpenProbability ?? 1.0;
-        final rightEye = face.rightEyeOpenProbability ?? 1.0;
-        final eyesClosed = leftEye < 0.3 && rightEye < 0.3;
-        final eyesOpen = leftEye > 0.6 && rightEye > 0.6;
-        if (eyesClosed) _blinkDetected = true;
-        // Complete when eyes reopen after being closed (full blink cycle)
-        return _blinkDetected && eyesOpen;
-      case _Challenge.turn:
-        final y = (face.headEulerAngleY ?? 0).abs();
-        return y > 20;
-      case _Challenge.smile:
-        final smile = face.smilingProbability ?? 0.0;
-        return smile > 0.7;
-    }
-  }
-
-  void _advanceHold() {
-    _holdStart ??= DateTime.now();
-    final elapsed = DateTime.now().difference(_holdStart!).inMilliseconds;
-    // Blink is event-based — complete instantly once detected
-    final holdDuration = _challenges[_challengeIndex] == _Challenge.blink
-        ? 200
-        : _holdMs;
-    final chunkProgress = (elapsed / holdDuration).clamp(0.0, 1.0);
-    if (mounted) {
-      setState(() {
-        _holdProgress = chunkProgress;
-        // Total progress = completed challenges + current progress within this challenge
-        _totalProgress =
-            ((_challengeIndex + chunkProgress) / _challenges.length).clamp(
-              0.0,
-              1.0,
-            );
-      });
-    }
-    if (elapsed >= holdDuration) {
-      _nextChallenge();
-    }
-  }
-
-  void _resetHold() {
-    if (_holdStart != null || _holdProgress > 0) {
-      _holdStart = null;
-      if (mounted) {
-        setState(() {
-          _holdProgress = 0;
-          _totalProgress = (_challengeIndex / _challenges.length).clamp(
-            0.0,
-            1.0,
-          );
-        });
-      }
-    }
-  }
-
-  void _setFaceDetected(bool detected) {
-    if (_faceDetected == detected) return;
-    _faceDetected = detected;
-    if (detected) {
-      _bgCtrl.forward();
-    } else {
-      _bgCtrl.reverse();
-    }
-  }
-
-  void _nextChallenge() {
-    _holdStart = null;
-    if (_challengeIndex < _challenges.length - 1) {
-      final nextIdx = _challengeIndex + 1;
-      // Show phase 2 transition between phase 1 and 2
-      if (nextIdx == 2) {
-        setState(() {
-          _challengeIndex = nextIdx;
-          _holdProgress = 0;
-          _totalProgress = (nextIdx / _challenges.length).clamp(0.0, 1.0);
-          _showPhase2Intro = true;
-        });
-        Future.delayed(const Duration(milliseconds: 1500), () {
-          if (mounted) setState(() => _showPhase2Intro = false);
-        });
-      } else {
-        setState(() {
-          _challengeIndex = nextIdx;
-          _holdProgress = 0;
-          _totalProgress = (nextIdx / _challenges.length).clamp(0.0, 1.0);
-        });
-      }
-    } else {
-      _finish();
-    }
-  }
-
-  Future<void> _finish() async {
-    if (_capturing) return;
-    setState(() {
-      _capturing = true;
-      _allDone = true;
-      _holdProgress = 1.0;
-      _totalProgress = 1.0;
-    });
-
-    try {
-      await _cam?.stopImageStream();
-      await Future.delayed(const Duration(milliseconds: 200));
-      final photo = await _cam?.takePicture();
-
-      // Record a short verification video after challenges complete
-      String? videoPath;
-      try {
-        await _cam?.startVideoRecording();
-        _recording = true;
-      } catch (e) {
-        debugPrint('[FaceLiveness] video start error: $e');
-      }
-
-      await _successCtrl.forward();
-      await Future.delayed(const Duration(milliseconds: 2000));
-
-      if (_recording) {
-        try {
-          final videoFile = await _cam?.stopVideoRecording();
-          videoPath = videoFile?.path;
-        } catch (e) {
-          debugPrint('[FaceLiveness] video stop error: $e');
-        }
-        _recording = false;
-      }
-
-      if (mounted) {
-        Navigator.of(context).pop({'photo': photo?.path, 'video': videoPath});
-      }
-    } catch (e) {
-      debugPrint('[FaceLiveness] capture error: $e');
-      if (mounted) Navigator.of(context).pop(null);
-    }
-  }
-
-  InputImage? _toInputImage(CameraImage image) {
-    final camera = _cam?.description;
-    if (camera == null) return null;
-    final rotation = InputImageRotationValue.fromRawValue(
-      camera.sensorOrientation,
-    );
-    if (rotation == null) return null;
-    final format = InputImageFormatValue.fromRawValue(image.format.raw);
-    if (format == null) return null;
-    final Uint8List bytes;
-    if (image.planes.length == 1) {
-      bytes = image.planes[0].bytes;
-    } else {
-      final buf = BytesBuilder();
-      for (final plane in image.planes) {
-        buf.add(plane.bytes);
-      }
-      bytes = buf.toBytes();
-    }
-    return InputImage.fromBytes(
-      bytes: bytes,
-      metadata: InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: rotation,
-        format: format,
-        bytesPerRow: image.planes[0].bytesPerRow,
-      ),
-    );
-  }
-
   @override
   void dispose() {
-    _bgCtrl.dispose();
-    _scanCtrl.dispose();
-    _successCtrl.dispose();
-    _breatheCtrl.dispose();
-    _cam?.stopImageStream();
+    _rotateCtrl.dispose();
+    _pulseCtrl.dispose();
+    _stepCtrl.dispose();
+    _doneCtrl.dispose();
     _cam?.dispose();
     _detector?.close();
     super.dispose();
   }
 
-  // ─── Instruction text ──────────────────────────────────────────────────
-
-  String _instructionText(BuildContext context) {
-    if (_showPhase2Intro) {
-      return S.of(context).moveHeadSlowly;
+  // ─────────────────────────────────────────────────────────────────────────
+  // Camera init
+  // ─────────────────────────────────────────────────────────────────────────
+  Future<void> _initCamera() async {
+    final camStatus = await Permission.camera.request();
+    if (!mounted) return;
+    if (!camStatus.isGranted) {
+      Navigator.of(context).pop();
+      return;
     }
-    switch (_challenges[_challengeIndex]) {
-      case _Challenge.center:
-        return S.of(context).positionFaceInFrame;
-      case _Challenge.blink:
-        return S.of(context).blinkBothEyes;
-      case _Challenge.turn:
-        return S.of(context).moveHeadSlowly;
-      case _Challenge.smile:
-        return S.of(context).smileForPhoto;
+
+    _detector = FaceDetector(
+      options: FaceDetectorOptions(
+        enableClassification: true,
+        enableLandmarks: false,
+        minFaceSize: 0.2,
+        performanceMode: FaceDetectorMode.accurate,
+      ),
+    );
+
+    final cameras = await availableCameras();
+    final front = cameras.firstWhere(
+      (c) => c.lensDirection == CameraLensDirection.front,
+      orElse: () => cameras.first,
+    );
+
+    _cam = CameraController(
+      front,
+      ResolutionPreset.medium,
+      enableAudio: false,
+      imageFormatGroup: Platform.isAndroid
+          ? ImageFormatGroup.yuv420
+          : ImageFormatGroup.bgra8888,
+    );
+
+    try {
+      await _cam!.initialize();
+      if (!mounted) return;
+      await _cam!.startImageStream(_onFrame);
+      setState(() => _camReady = true);
+    } catch (_) {
+      if (mounted) Navigator.of(context).pop();
     }
   }
 
-  IconData _challengeIcon() {
-    switch (_challenges[_challengeIndex]) {
-      case _Challenge.center:
-        return Icons.center_focus_strong_rounded;
-      case _Challenge.blink:
-        return Icons.visibility_rounded;
-      case _Challenge.turn:
-        return Icons.rotate_left_rounded;
-      case _Challenge.smile:
-        return Icons.sentiment_very_satisfied_rounded;
+  // ─────────────────────────────────────────────────────────────────────────
+  // Frame processing
+  // ─────────────────────────────────────────────────────────────────────────
+  void _onFrame(CameraImage img) {
+    if (_processing || _finishing) return;
+    if (++_frameSkip % 2 != 0) return; // process every other frame
+    _processing = true;
+    _processFrame(img).whenComplete(() => _processing = false);
+  }
+
+  Future<void> _processFrame(CameraImage img) async {
+    final inputImage = _toInputImage(img);
+    if (inputImage == null) return;
+
+    List<Face> faces;
+    try {
+      faces = await _detector!.processImage(inputImage);
+    } catch (_) {
+      return;
+    }
+
+    if (!mounted) return;
+
+    if (faces.isEmpty) {
+      _setFaceDetected(false);
+      return;
+    }
+
+    _setFaceDetected(true);
+    _checkStep(faces.first);
+  }
+
+  void _setFaceDetected(bool v) {
+    if (_faceDetected != v) {
+      setState(() => _faceDetected = v);
     }
   }
 
-  // ─── Build ─────────────────────────────────────────────────────────────
+  void _checkStep(Face face) {
+    final yaw   = face.headEulerAngleY ?? 0.0;
+    final pitch = face.headEulerAngleX ?? 0.0;
 
+    switch (_step) {
+      case _Step.center:
+        if (yaw.abs() < 15 && pitch.abs() < 15) {
+          _advanceStep();
+        }
+        break;
+
+      case _Step.turnRight:
+        // Positive yaw = facing right from user's POV (actual right turn)
+        if (yaw > 22) {
+          _advanceStep();
+        }
+        break;
+
+      case _Step.turnLeft:
+        // Negative yaw = facing left from user's POV
+        if (yaw < -22) {
+          _advanceStep();
+        }
+        break;
+
+      case _Step.holdStill:
+        if (yaw.abs() < 12 && pitch.abs() < 12) {
+          // increment hold progress
+          final next = (_holdProgress + 0.04).clamp(0.0, 1.0);
+          if (next != _holdProgress) {
+            setState(() {
+              _holdProgress = next;
+              _ringProgress = (_stepIndex * 0.25) + next * 0.25;
+            });
+            if (next >= 1.0 && !_finishing) {
+              _captureAndComplete();
+            }
+          }
+        } else {
+          // decay progress if they move
+          final next = (_holdProgress - 0.03).clamp(0.0, 1.0);
+          if (next != _holdProgress) {
+            setState(() {
+              _holdProgress = next;
+              _ringProgress = (_stepIndex * 0.25) + next * 0.25;
+            });
+          }
+        }
+        break;
+    }
+  }
+
+  void _advanceStep() {
+    if (_finishing) return;
+    HapticFeedback.mediumImpact();
+    _stepCtrl.reverse().then((_) {
+      if (!mounted) return;
+      setState(() {
+        _stepIndex++;
+        _ringProgress = _stepIndex * 0.25;
+        _step = _Step.values[_stepIndex];
+      });
+      _stepCtrl.forward();
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Capture & complete
+  // ─────────────────────────────────────────────────────────────────────────
+  Future<void> _captureAndComplete() async {
+    _finishing = true;
+    HapticFeedback.heavyImpact();
+    setState(() => _ringProgress = 1.0);
+    _doneCtrl.forward();
+
+    await Future.delayed(const Duration(milliseconds: 400));
+
+    // Stop image stream before taking picture
+    try { await _cam?.stopImageStream(); } catch (_) {}
+
+    String? photoPath;
+    String? videoPath;
+
+    // Take still photo
+    try {
+      final photo = await _cam?.takePicture();
+      photoPath = photo?.path;
+    } catch (_) {}
+
+    // Record a short video clip
+    try {
+      await _cam?.startVideoRecording();
+      await Future.delayed(const Duration(seconds: 2));
+      final video = await _cam?.stopVideoRecording();
+      videoPath = video?.path;
+    } catch (_) {}
+
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+
+    Navigator.of(context).pop({'photo': photoPath, 'video': videoPath});
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // InputImage helper
+  // ─────────────────────────────────────────────────────────────────────────
+  InputImage? _toInputImage(CameraImage img) {
+    final cam = _cam;
+    if (cam == null) return null;
+    final rotation = InputImageRotationValue.fromRawValue(
+      cam.description.sensorOrientation,
+    );
+    if (rotation == null) return null;
+
+    final format = InputImageFormatValue.fromRawValue(img.format.raw);
+    if (format == null) return null;
+
+    if (img.planes.isEmpty) return null;
+
+    final plane = img.planes[0];
+    return InputImage.fromBytes(
+      bytes: plane.bytes,
+      metadata: InputImageMetadata(
+        size: Size(img.width.toDouble(), img.height.toDouble()),
+        rotation: rotation,
+        format: format,
+        bytesPerRow: plane.bytesPerRow,
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Build
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
-      body: _camReady && _cam != null ? _buildLive() : _buildLoading(),
+      backgroundColor: _black,
+      body: _camReady ? _buildLive() : _buildLoading(),
     );
   }
 
   Widget _buildLoading() {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFE8C547).withValues(alpha: 0.1),
-                border: Border.all(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.3),
-                  width: 2,
-                ),
-              ),
-              child: const Icon(
-                Icons.face_rounded,
-                color: Color(0xFFE8C547),
-                size: 40,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              S.of(context).initializingCamera,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0.3,
-              ),
-            ),
-            const SizedBox(height: 20),
-            const SizedBox(
-              width: 32,
-              height: 32,
-              child: CircularProgressIndicator(
-                color: Color(0xFFE8C547),
-                strokeWidth: 2.5,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return const Center(
+      child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
     );
   }
 
   Widget _buildLive() {
-    final mq = MediaQuery.of(context);
-    final topPad = mq.padding.top;
-    const circleRadius = 130.0;
-    final circleCenterY = topPad + 60 + circleRadius + 20;
-
-    return AnimatedBuilder(
-      animation: _bgCtrl,
-      builder: (context, _) {
-        final t = _bgCtrl.value;
-        final topColor = Color.lerp(
-          const Color(0xFF0A0A0A),
-          const Color(0xFF0A0A0A).withValues(alpha: 0.85),
-          t,
-        )!;
-
-        return Column(
-          children: [
-            // ── Top section: camera circle ──
-            Expanded(
-              flex: 58,
-              child: Container(
-                color: topColor,
-                child: Stack(
-                  children: [
-                    // Camera preview clipped to circle
-                    Positioned.fill(
-                      child: _buildCirclePreview(circleRadius, circleCenterY),
-                    ),
-                    // Tick marks overlay
-                    Positioned.fill(
-                      child: AnimatedBuilder(
-                        animation: Listenable.merge([_scanCtrl, _breatheCtrl]),
-                        builder: (_, __) => CustomPaint(
-                          painter: _FaceIDTickPainter(
-                            totalProgress: _totalProgress,
-                            allDone: _allDone,
-                            scanPosition: _scanCtrl.value,
-                            breathe: _breatheCtrl.value,
-                            circleRadius: circleRadius,
-                            circleCenterY: circleCenterY,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Close button
-                    Positioned(
-                      top: topPad + 8,
-                      left: 16,
-                      child: GestureDetector(
-                        onTap: () => Navigator.of(context).pop(null),
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.15),
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.close_rounded,
-                            color: Colors.white70,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Phase indicator badge
-                    if (!_allDone)
-                      Positioned(
-                        top: topPad + 14,
-                        right: 16,
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          child: Container(
-                            key: ValueKey('phase_$_phase'),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(
-                                0xFFE8C547,
-                              ).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: const Color(
-                                  0xFFE8C547,
-                                ).withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Text(
-                              '${_challengeIndex + 1} / ${_challenges.length}',
-                              style: const TextStyle(
-                                color: Color(0xFFE8C547),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-
-            // ── Bottom section: instructions ──
-            Expanded(
-              flex: 42,
-              child: Container(
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF141414),
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: _allDone
-                    ? _buildDoneSection()
-                    : _buildInstructionSection(),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildCirclePreview(double radius, double centerY) {
-    final camAspect = _cam!.value.aspectRatio;
-    final previewAspect = 1 / camAspect;
-    return AnimatedBuilder(
-      animation: _breatheCtrl,
-      builder: (context, _) {
-        // Subtle breathing pulse: 1.0 → 1.02 → 1.0
-        final breathe = Curves.easeInOut.transform(_breatheCtrl.value);
-        final pulseScale = 1.0 + breathe * 0.018;
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final w = constraints.maxWidth;
-            final h = constraints.maxHeight;
-            final screenAspect = w / h;
-            final scale = screenAspect > previewAspect
-                ? w / (h * previewAspect)
-                : h / (w / previewAspect);
-            return Transform.scale(
-              scale: pulseScale,
-              child: ClipPath(
-                clipper: _CircleClipper(
-                  center: Offset(w / 2, centerY),
-                  radius: radius,
-                ),
-                child: Transform.scale(
-                  scale: scale,
-                  child: Center(
-                    child: AspectRatio(
-                      aspectRatio: previewAspect,
-                      child: CameraPreview(_cam!),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildInstructionSection() {
-    const gold = Color(0xFFE8C547);
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        // Challenge icon with animated ring and glow
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 400),
-          switchInCurve: Curves.easeOutBack,
-          switchOutCurve: Curves.easeIn,
-          transitionBuilder: (child, animation) => ScaleTransition(
-            scale: animation,
-            child: FadeTransition(opacity: animation, child: child),
-          ),
-          child: AnimatedBuilder(
-            key: ValueKey('icon_${_challengeIndex}_$_showPhase2Intro'),
-            animation: _breatheCtrl,
-            builder: (context, _) {
-              final b = Curves.easeInOut.transform(_breatheCtrl.value);
-              final glowAlpha = 0.08 + b * 0.12;
-              return Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      gold.withValues(alpha: 0.15),
-                      gold.withValues(alpha: 0.03),
-                    ],
-                  ),
-                  border: Border.all(
-                    color: gold.withValues(alpha: 0.4),
-                    width: 1.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: gold.withValues(alpha: glowAlpha),
-                      blurRadius: 20,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  _showPhase2Intro
-                      ? Icons.swap_horiz_rounded
-                      : _challengeIcon(),
-                  color: gold,
-                  size: 30,
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 22),
+        // 1. Full-screen camera
+        _buildCameraFill(),
 
-        // Instruction text
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 350),
-          switchInCurve: Curves.easeOut,
-          child: Text(
-            _instructionText(context),
-            key: ValueKey('instr_${_challengeIndex}_$_showPhase2Intro'),
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 21,
-              fontWeight: FontWeight.w700,
-              height: 1.3,
-              letterSpacing: -0.3,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
+        // 2. Oval cutout overlay
+        _buildOvalOverlay(),
 
-        // Sub-instruction
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          child: Text(
-            _challenges[_challengeIndex] == _Challenge.blink
-                ? (_blinkDetected ? '' : '👁')
-                : '',
-            key: ValueKey('sub_${_challengeIndex}_$_blinkDetected'),
-            style: const TextStyle(color: Colors.white38, fontSize: 13),
-          ),
-        ),
-        const SizedBox(height: 22),
+        // 3. Face ID ring around the oval
+        _buildRing(),
 
-        // Challenge progress dots with smooth animation
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(_challenges.length, (i) {
-            final isActive = i == _challengeIndex;
-            final isDone = i < _challengeIndex || _allDone;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeOutCubic,
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              width: isActive ? 26 : 8,
-              height: 8,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                color: isDone
-                    ? const Color(0xFF34C759)
-                    : isActive
-                        ? gold
-                        : Colors.white.withValues(alpha: 0.12),
-                boxShadow: isDone
-                    ? [
-                        BoxShadow(
-                          color: const Color(0xFF34C759).withValues(alpha: 0.4),
-                          blurRadius: 6,
-                        ),
-                      ]
-                    : isActive
-                        ? [
-                            BoxShadow(
-                              color: gold.withValues(alpha: 0.3),
-                              blurRadius: 6,
-                            ),
-                          ]
-                        : null,
-              ),
-            );
-          }),
-        ),
-        const SizedBox(height: 32),
+        // 4. Step badge top-right
+        _buildStepBadge(),
 
-        // Restart button
-        GestureDetector(
-          onTap: () {
-            setState(() {
-              _challengeIndex = 0;
-              _holdProgress = 0;
-              _totalProgress = 0;
-              _holdStart = null;
-              _showPhase2Intro = false;
-              _blinkDetected = false;
-            });
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              color: Colors.white.withValues(alpha: 0.04),
-            ),
-            child: Text(
-              S.of(context).startOver,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
+        // 5. Back button top-left
+        _buildBackButton(),
+
+        // 6. Bottom instruction panel
+        _buildBottomPanel(),
+
+        // 7. Done burst overlay
+        if (_finishing) _buildDoneOverlay(),
       ],
     );
   }
 
-  Widget _buildDoneSection() {
+  // ── Camera fill ───────────────────────────────────────────────────────────
+  Widget _buildCameraFill() {
+    final camCtrl = _cam!;
+    final previewAspect = camCtrl.value.aspectRatio;
+    return LayoutBuilder(builder: (_, constraints) {
+      final screenAspect = constraints.maxWidth / constraints.maxHeight;
+      double scale = previewAspect / screenAspect;
+      if (scale < 1) scale = 1 / scale;
+      return Transform.scale(
+        scale: scale,
+        child: Center(child: CameraPreview(camCtrl)),
+      );
+    });
+  }
+
+  // ── Oval cutout ───────────────────────────────────────────────────────────
+  Widget _buildOvalOverlay() {
     return AnimatedBuilder(
-      animation: _successCtrl,
-      builder: (context, _) {
-        final t = _successCtrl.value.clamp(0.0, 1.0);
-        final scale = 0.6 + 0.4 * Curves.elasticOut.transform(t);
-        return Opacity(
-          opacity: t,
+      animation: _pulseCtrl,
+      builder: (_, __) {
+        final pulse = Curves.easeInOut.transform(_pulseCtrl.value);
+        return CustomPaint(
+          painter: _OvalCutoutPainter(
+            ovalW: _ovalW + pulse * 4,
+            ovalH: _ovalH + pulse * 5,
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Ring ──────────────────────────────────────────────────────────────────
+  Widget _buildRing() {
+    return AnimatedBuilder(
+      animation: Listenable.merge([_rotateCtrl, _pulseCtrl]),
+      builder: (_, __) {
+        return CustomPaint(
+          painter: _FaceIDRingPainter(
+            progress: _ringProgress,
+            rotation: _rotateCtrl.value,
+            breathe: _pulseCtrl.value,
+            allDone: _finishing,
+            ovalW: _ovalW,
+            ovalH: _ovalH,
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Step badge ────────────────────────────────────────────────────────────
+  Widget _buildStepBadge() {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 16,
+      right: 24,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: _gray.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _gold.withValues(alpha: 0.4), width: 1),
+        ),
+        child: Text(
+          '${_stepIndex + 1} / 4',
+          style: const TextStyle(
+            color: _gold,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Back button ───────────────────────────────────────────────────────────
+  Widget _buildBackButton() {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 12,
+      left: 16,
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).pop(),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: _gray.withValues(alpha: 0.7),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.close_rounded, color: _white, size: 20),
+        ),
+      ),
+    );
+  }
+
+  // ── Bottom panel ─────────────────────────────────────────────────────────
+  Widget _buildBottomPanel() {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0x00000000), Color(0xCC000000), Color(0xFF000000)],
+            stops: [0.0, 0.35, 1.0],
+          ),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          24, 60, 24, MediaQuery.of(context).padding.bottom + 40),
+        child: FadeTransition(
+          opacity: _stepCtrl,
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Transform.scale(
-                scale: scale,
-                child: Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        const Color(0xFF34C759).withValues(alpha: 0.2),
-                        const Color(0xFF34C759).withValues(alpha: 0.05),
-                      ],
-                    ),
-                    border: Border.all(
-                      color: const Color(0xFF34C759).withValues(alpha: 0.4),
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF34C759).withValues(alpha: 0.25),
-                        blurRadius: 24,
-                        spreadRadius: 4,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    color: Color(0xFF34C759),
-                    size: 44,
+              // Icon
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _gray,
+                  border: Border.all(
+                    color: _finishing ? _green : _gold,
+                    width: 1.5,
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                S.of(context).faceVerified,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
+                child: Icon(
+                  _finishing ? Icons.check_rounded : _stepIcons[_stepIndex],
+                  color: _finishing ? _green : _gold,
+                  size: 28,
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                S.of(context).capturingPhoto,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.45),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
+              const SizedBox(height: 16),
+              // Instruction text
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: Text(
+                  _finishing
+                      ? S.of(context).faceVerified
+                      : _instructions[_stepIndex],
+                  key: ValueKey(_finishing ? 'done' : _stepIndex),
+                  style: const TextStyle(
+                    color: _white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.3,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
+              const SizedBox(height: 6),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: Text(
+                  _finishing
+                      ? S.of(context).capturingPhoto
+                      : (_faceDetected
+                          ? S.of(context).faceDetected
+                          : S.of(context).positionYourFace),
+                  key: ValueKey(_finishing ? 'done_sub' : '${_stepIndex}_$_faceDetected'),
+                  style: TextStyle(
+                    color: _white.withValues(alpha: 0.5),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Progress dots
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(4, (i) {
+                  final done = i < _stepIndex || _finishing;
+                  final active = i == _stepIndex && !_finishing;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: active ? 24 : 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      color: done
+                          ? _green
+                          : active
+                              ? _gold
+                              : _gray,
+                    ),
+                  );
+                }),
+              ),
+
+              // Hold-still progress bar
+              if (_step == _Step.holdStill && !_finishing) ...[
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: _holdProgress,
+                    backgroundColor: _gray,
+                    valueColor: const AlwaysStoppedAnimation<Color>(_gold),
+                    minHeight: 4,
+                  ),
+                ),
+              ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Done overlay ──────────────────────────────────────────────────────────
+  Widget _buildDoneOverlay() {
+    return AnimatedBuilder(
+      animation: _doneCtrl,
+      builder: (_, __) {
+        final v = Curves.elasticOut.transform(_doneCtrl.value.clamp(0.0, 1.0));
+        return Center(
+          child: Transform.scale(
+            scale: v,
+            child: Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _green.withValues(alpha: 0.15),
+                border: Border.all(color: _green, width: 2),
+              ),
+              child: const Icon(
+                Icons.check_rounded,
+                color: _green,
+                size: 52,
+              ),
+            ),
           ),
         );
       },
@@ -881,69 +614,83 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   }
 }
 
-// ─── Circle clipper for camera preview ─────────────────────────────────────
-class _CircleClipper extends CustomClipper<Path> {
-  final Offset center;
-  final double radius;
-  _CircleClipper({required this.center, required this.radius});
+// ─── Oval cutout painter ────────────────────────────────────────────────────
+class _OvalCutoutPainter extends CustomPainter {
+  final double ovalW;
+  final double ovalH;
+  const _OvalCutoutPainter({required this.ovalW, required this.ovalH});
 
   @override
-  Path getClip(Size size) {
-    return Path()..addOval(Rect.fromCircle(center: center, radius: radius));
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height * 0.42);
+    final ovalRect = Rect.fromCenter(center: center, width: ovalW, height: ovalH);
+
+    final path = Path()
+      ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..addOval(ovalRect);
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = const Color(0xD9000000)
+        ..fillType = PathFillType.evenOdd,
+    );
   }
 
   @override
-  bool shouldReclip(_CircleClipper old) =>
-      old.center != center || old.radius != radius;
+  bool shouldRepaint(_OvalCutoutPainter old) =>
+      old.ovalW != ovalW || old.ovalH != ovalH;
 }
 
-// ─── Apple Face ID tick-mark painter with animated glow ────────────────────
-class _FaceIDTickPainter extends CustomPainter {
-  final double totalProgress;
+// ─── Face ID animated ring painter ─────────────────────────────────────────
+class _FaceIDRingPainter extends CustomPainter {
+  final double progress;   // 0..1
+  final double rotation;   // 0..1 animation value
+  final double breathe;    // 0..1 animation value
   final bool allDone;
-  final double scanPosition;
-  final double breathe;
-  final double circleRadius;
-  final double circleCenterY;
+  final double ovalW;
+  final double ovalH;
 
-  static const _tickCount = 72;
-  static const _green = Color(0xFF34C759);
-  static const _gray = Color(0xFF2A2A2A);
-  static const _gold = Color(0xFFE8C547);
+  static const _dashCount = 80;
+  static const _green     = Color(0xFF34C759);
+  static const _gold      = Color(0xFFD4AF37);
+  static const _goldBr    = Color(0xFFE8C547);
+  static const _gray      = Color(0xFF2A2A2A);
 
-  const _FaceIDTickPainter({
-    required this.totalProgress,
-    required this.allDone,
-    required this.scanPosition,
+  const _FaceIDRingPainter({
+    required this.progress,
+    required this.rotation,
     required this.breathe,
-    required this.circleRadius,
-    required this.circleCenterY,
+    required this.allDone,
+    required this.ovalW,
+    required this.ovalH,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, circleCenterY);
-    final outerR = circleRadius + 10;
-    final innerR = circleRadius - 1;
+    final center = Offset(size.width / 2, size.height * 0.42);
+    final b = Curves.easeInOut.transform(breathe);
 
-    final filledTicks = (totalProgress * _tickCount).floor();
-    final degreesPerTick = 360.0 / _tickCount;
+    // Padding around the oval
+    final radiusX = ovalW / 2 + 10 + b * 3;
+    final radiusY = ovalH / 2 + 10 + b * 4;
 
-    final leadingTick = filledTicks;
-    final scanTick = (scanPosition * _tickCount).floor() % _tickCount;
+    final rotationOffset = rotation * 2 * math.pi;
+    final filledDashes = (progress * _dashCount).round();
 
-    for (var i = 0; i < _tickCount; i++) {
-      final angleDeg = -90.0 + i * degreesPerTick;
-      final angleRad = angleDeg * math.pi / 180;
+    final degreesPerDash = 2 * math.pi / _dashCount;
 
-      final isFilled = i < filledTicks;
-      final isLeading = i == leadingTick && !allDone;
-      final isGlowTrail =
-          !allDone &&
-          i >= filledTicks - 6 &&
-          i < filledTicks &&
-          filledTicks > 0;
-      final isScanNear = !allDone && !isFilled && (i - scanTick).abs() < 8;
+    for (var i = 0; i < _dashCount; i++) {
+      final angle = -math.pi / 2 + i * degreesPerDash + rotationOffset;
+      final isFilled = i < filledDashes;
+
+      // Point on the oval perimeter
+      final px = center.dx + radiusX * math.cos(angle);
+      final py = center.dy + radiusY * math.sin(angle);
+
+      // Tangent direction for dash orientation
+      final tpx = center.dx + (radiusX + 8) * math.cos(angle);
+      final tpy = center.dy + (radiusY + 8) * math.sin(angle);
 
       Color color;
       double strokeW;
@@ -951,59 +698,46 @@ class _FaceIDTickPainter extends CustomPainter {
       if (allDone) {
         color = _green;
         strokeW = 3.0;
-      } else if (isLeading) {
-        // Pulso más suave y fluido
-        final pulse = (math.sin(scanPosition * math.pi * 3) + 1) / 2;
-        final smoothPulse = pulse * pulse * (3 - 2 * pulse); // Smoothstep
-        color = Color.lerp(_green, const Color(0xFF8EF5A5), smoothPulse)!;
-        strokeW = 3.5 + smoothPulse * 0.5;
-      } else if (isGlowTrail) {
-        final dist = (filledTicks - i).toDouble();
-        final fade = (1 - dist / 7).clamp(0.3, 1.0);
-        color = _green.withValues(alpha: fade);
-        strokeW = 3.0;
       } else if (isFilled) {
-        color = _green;
-        strokeW = 3.0;
-      } else if (isScanNear) {
-        // Efecto de ola más suave y amplio
-        final dist = (i - scanTick).abs().toDouble();
-        final waveInfluence = 1 - (dist / 8);
-        final wave = (math.sin(scanPosition * math.pi * 2 - dist * 0.3) + 1) / 2;
-        final smoothWave = wave * wave * (3 - 2 * wave); // Smoothstep
-        final shimmerAlpha = waveInfluence * smoothWave * 0.35;
-        color = _gold.withValues(alpha: shimmerAlpha.clamp(0.02, 0.35));
-        strokeW = 2.0 + shimmerAlpha * 1.5;
+        // Leading edge glow
+        final isLeading = i == filledDashes - 1;
+        if (isLeading) {
+          final pulse = (math.sin(rotation * math.pi * 8) + 1) / 2;
+          color = Color.lerp(_green, const Color(0xFF8EF5A5), pulse)!;
+          strokeW = 3.5;
+        } else {
+          final dist = filledDashes - i;
+          final fade = (1 - dist / 8.0).clamp(0.3, 1.0);
+          color = _green.withValues(alpha: fade);
+          strokeW = 3.0;
+        }
       } else {
         color = _gray;
         strokeW = 2.0;
       }
 
-      final p1 = Offset(
-        center.dx + outerR * math.cos(angleRad),
-        center.dy + outerR * math.sin(angleRad),
-      );
-      final p2 = Offset(
-        center.dx + innerR * math.cos(angleRad),
-        center.dy + innerR * math.sin(angleRad),
-      );
+      // Draw radial dash from inner to outer point
+      final innerX = center.dx + (radiusX - 6) * math.cos(angle);
+      final innerY = center.dy + (radiusY - 6) * math.sin(angle);
+      final outerX = center.dx + (radiusX + 2) * math.cos(angle);
+      final outerY = center.dy + (radiusY + 2) * math.sin(angle);
 
       canvas.drawLine(
-        p1,
-        p2,
+        Offset(innerX, innerY),
+        Offset(outerX, outerY),
         Paint()
           ..color = color
           ..strokeWidth = strokeW
           ..strokeCap = StrokeCap.round,
       );
 
-      // Glow effect for filled ticks
-      if ((isFilled || isLeading) && !allDone) {
+      // Glow on filled dashes
+      if (isFilled && !allDone) {
         canvas.drawLine(
-          p1,
-          p2,
+          Offset(innerX, innerY),
+          Offset(outerX, outerY),
           Paint()
-            ..color = _green.withValues(alpha: 0.12)
+            ..color = _green.withValues(alpha: 0.15)
             ..strokeWidth = strokeW + 4
             ..strokeCap = StrokeCap.round
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
@@ -1011,20 +745,23 @@ class _FaceIDTickPainter extends CustomPainter {
       }
     }
 
-    // All done: glowing green circle
+    // All done: glowing green oval ring
     if (allDone) {
-      canvas.drawCircle(
-        center,
-        circleRadius + 4,
+      final ovalRect = Rect.fromCenter(
+        center: center,
+        width: ovalW + 20,
+        height: ovalH + 20,
+      );
+      canvas.drawOval(
+        ovalRect,
         Paint()
           ..color = _green.withValues(alpha: 0.25)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 10.0
+          ..strokeWidth = 10
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
       );
-      canvas.drawCircle(
-        center,
-        circleRadius + 4,
+      canvas.drawOval(
+        ovalRect,
         Paint()
           ..color = _green
           ..style = PaintingStyle.stroke
@@ -1032,48 +769,29 @@ class _FaceIDTickPainter extends CustomPainter {
       );
     }
 
-    // Breathing outer glow ring
+    // Breathing glow ring
     if (!allDone) {
-      final b = Curves.easeInOut.transform(breathe);
-      final glowAlpha = 0.04 + b * 0.08;
-      canvas.drawCircle(
-        center,
-        circleRadius + 5,
-        Paint()
-          ..color = _gold.withValues(alpha: glowAlpha)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0 + b * 1.5
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      final glowAlpha = 0.05 + b * 0.1;
+      final ovalRect = Rect.fromCenter(
+        center: center,
+        width: ovalW + 22,
+        height: ovalH + 22,
       );
-    }
-
-    // Scanning shimmer arc (golden sweep)
-    if (!allDone) {
-      final scanAngle = scanPosition * 2 * math.pi - math.pi / 2;
-      final shimmerLength = math.pi / 3;
-      final shimmerPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..shader = SweepGradient(
-          center: Alignment.center,
-          startAngle: scanAngle - shimmerLength / 2,
-          endAngle: scanAngle + shimmerLength / 2,
-          colors: const [
-            Color(0x00E8C547),
-            Color(0x33E8C547),
-            Color(0x00E8C547),
-          ],
-          stops: const [0.0, 0.5, 1.0],
-          transform: GradientRotation(scanAngle - shimmerLength / 2),
-        ).createShader(Rect.fromCircle(center: center, radius: circleRadius));
-      canvas.drawCircle(center, circleRadius, shimmerPaint);
+      canvas.drawOval(
+        ovalRect,
+        Paint()
+          ..color = _goldBr.withValues(alpha: glowAlpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5 + b * 2
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+      );
     }
   }
 
   @override
-  bool shouldRepaint(_FaceIDTickPainter old) =>
-      old.totalProgress != totalProgress ||
-      old.allDone != allDone ||
-      old.scanPosition != scanPosition ||
-      old.breathe != breathe;
+  bool shouldRepaint(_FaceIDRingPainter old) =>
+      old.progress != progress ||
+      old.rotation != rotation ||
+      old.breathe != breathe ||
+      old.allDone != allDone;
 }

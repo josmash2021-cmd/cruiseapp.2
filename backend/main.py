@@ -2959,7 +2959,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # Apply $5 cancellation fee if driver was already en route and rider waited > 2 min
     cancellation_fee = 0.0
     if trip.status in ("driver_en_route", "arrived"):
-        minutes_elapsed = (datetime.now(timezone.utc) - trip.updated_at.replace(tzinfo=timezone.utc) if trip.updated_at else datetime.now(timezone.utc)).total_seconds() / 60 if trip.updated_at else 0
+        minutes_elapsed = (utc_now() - trip.updated_at).total_seconds() / 60 if trip.updated_at else 0
         if minutes_elapsed > 2:
             cancellation_fee = 5.0
     trip.status = "canceled"
@@ -8032,7 +8032,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("CRUISE BACKEND SERVER")
     print("=" * 60)
-    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Started at: {utc_now().strftime('%Y-%m-%d %H:%M:%S')} UTC")
     print("Server URL: http://0.0.0.0:8000")
     print("API Docs: http://localhost:8000/docs")
     print("=" * 60)

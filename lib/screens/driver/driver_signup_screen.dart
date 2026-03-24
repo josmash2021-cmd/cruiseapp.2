@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io' if (dart.library.html) 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../l10n/app_localizations.dart';
@@ -1722,7 +1723,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               clipBehavior: Clip.antiAlias,
               child: done
                   ? (kIsWeb
-                        ? Image.network(filePath, fit: BoxFit.cover)
+                        ? CachedNetworkImage(imageUrl: filePath, fit: BoxFit.cover, fadeInDuration: const Duration(milliseconds: 200))
                         : Image.file(File(filePath), fit: BoxFit.cover))
                   : Icon(icon, color: done ? _gold : Colors.white38, size: 22),
             ),

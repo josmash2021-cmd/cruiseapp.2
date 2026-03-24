@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' if (dart.library.html) 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:local_auth/local_auth.dart';
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
@@ -95,14 +96,16 @@ class _AccountScreenState extends State<AccountScreen> {
     final isUrl = photoPath.startsWith('http://') ||
         photoPath.startsWith('https://');
     if (kIsWeb || isUrl) {
-      return Image.network(
-        photoPath,
+      return CachedNetworkImage(
+        imageUrl: photoPath,
         fit: BoxFit.cover,
         width: 70,
         height: 70,
-        gaplessPlayback: true,
         key: ValueKey(photoPath),
-        errorBuilder: (_, __, ___) =>
+        fadeInDuration: const Duration(milliseconds: 200),
+        placeholder: (_, __) =>
+            Icon(Icons.person_rounded, size: 38, color: c.textTertiary),
+        errorWidget: (_, __, ___) =>
             Icon(Icons.person_rounded, size: 38, color: c.textTertiary),
       );
     }

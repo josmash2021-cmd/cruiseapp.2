@@ -63,9 +63,29 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
       parent: _entranceCtrl,
       curve: Curves.easeOutCubic,
     );
-    _loadProfile();
+    _loadCachedProfile(); // instant from SharedPreferences
+    _loadProfile();       // refresh from API in background
     UserSession.photoNotifier.addListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
+  }
+
+  /// Instant cache-first: populate name & photo from SharedPreferences
+  /// so the UI never shows a blank skeleton on revisit.
+  Future<void> _loadCachedProfile() async {
+    final user = await UserSession.getUser();
+    if (user != null && mounted && !_profileLoaded) {
+      final first = user['firstName'] ?? '';
+      final last = user['lastName'] ?? '';
+      final url = user['photoUrl'] ?? '';
+      if (first.isNotEmpty) {
+        setState(() {
+          _driverName = last.isNotEmpty
+              ? '$first ${last[0].toUpperCase()}.'
+              : first;
+          if (url.isNotEmpty) _photoUrl = url;
+        });
+      }
+    }
   }
 
   void _onPhotoChanged() {

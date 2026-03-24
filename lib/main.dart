@@ -118,67 +118,75 @@ Future<void> heavyInit() async {
   // Start keep-alive pings to prevent server sleep
   KeepAliveService.instance.start();
 
-  // Initialize profile photo notifier
-  await UserSession.initPhotoNotifier();
+  // Run remaining init tasks in parallel — none depend on each other
+  await Future.wait([
+    // Initialize profile photo notifier
+    UserSession.initPhotoNotifier(),
 
-  // ── Stripe ──
-  if (!kIsWeb && !ApiKeys.stripePublishableKey.contains('REPLACE')) {
-    try {
-      Stripe.publishableKey = ApiKeys.stripePublishableKey;
-      Stripe.merchantIdentifier = ApiKeys.stripeMerchantId;
-      await Stripe.instance.applySettings();
-    } catch (e) {
-      debugPrint('[Stripe] init failed: $e');
-    }
-  } else {
-    debugPrint('[Stripe] skipped — placeholder key detected');
-  }
+    // ── Stripe ──
+    () async {
+      if (!kIsWeb && !ApiKeys.stripePublishableKey.contains('REPLACE')) {
+        try {
+          Stripe.publishableKey = ApiKeys.stripePublishableKey;
+          Stripe.merchantIdentifier = ApiKeys.stripeMerchantId;
+          await Stripe.instance.applySettings();
+        } catch (e) {
+          debugPrint('[Stripe] init failed: $e');
+        }
+      } else {
+        debugPrint('[Stripe] skipped — placeholder key detected');
+      }
+    }(),
 
-  // ── Firebase (may already be initialized in main()) ──
-  try {
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-    }
-    try {
-      // Enable Crashlytics in release mode only
-      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(kReleaseMode);
+    // ── Firebase + Messaging ──
+    () async {
+      try {
+        if (Firebase.apps.isEmpty) {
+          await Firebase.initializeApp(
+            options: DefaultFirebaseOptions.currentPlatform,
+          );
+        }
+        try {
+          await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(kReleaseMode);
 
-      final messaging = FirebaseMessaging.instance;
-      await messaging.requestPermission(alert: true, badge: true, sound: true);
-      final fcmToken = await messaging.getToken();
-      debugPrint('[FCM] token: $fcmToken');
+          final messaging = FirebaseMessaging.instance;
+          await messaging.requestPermission(alert: true, badge: true, sound: true);
+          final fcmToken = await messaging.getToken();
+          debugPrint('[FCM] token: $fcmToken');
 
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        final title = message.notification?.title ?? 'Cruise';
-        final body = message.notification?.body ?? '';
-        final type = message.data['type'] as String? ?? 'general';
-        NotificationService.show(
-          id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          title: title,
-          body: body,
-          type: type,
-        );
-        LocalDataService.addNotification(
-          title: title,
-          message: body,
-          type: type,
-        );
-      });
-    } catch (e) {
-      debugPrint('[FCM] init error: $e');
-    }
-  } catch (e) {
-    debugPrint('[Firebase] init error: $e');
-  }
+          FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+            final title = message.notification?.title ?? 'Cruise';
+            final body = message.notification?.body ?? '';
+            final type = message.data['type'] as String? ?? 'general';
+            NotificationService.show(
+              id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+              title: title,
+              body: body,
+              type: type,
+            );
+            LocalDataService.addNotification(
+              title: title,
+              message: body,
+              type: type,
+            );
+          });
+        } catch (e) {
+          debugPrint('[FCM] init error: $e');
+        }
+      } catch (e) {
+        debugPrint('[Firebase] init error: $e');
+      }
+    }(),
 
-  // ── Local Notifications ──
-  try {
-    await NotificationService.init();
-  } catch (e) {
-    debugPrint('[NotificationService] init error: $e');
-  }
+    // ── Local Notifications ──
+    () async {
+      try {
+        await NotificationService.init();
+      } catch (e) {
+        debugPrint('[NotificationService] init error: $e');
+      }
+    }(),
+  ]);
 }
 
 /// Smooth 60 fps scroll everywhere — iOS-style bouncing on all platforms.

@@ -441,8 +441,15 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // finally resets it only when polling never started (any early-exit path).
     bool pollingStarted = false;
     try {
-      // Fix H5: connectivity check before hitting backend
-      if (!await ApiService.isOnline()) {
+      // Parallel: connectivity + userId check
+      final checks = await Future.wait([
+        ApiService.isOnline(),
+        ApiService.getCurrentUserId(),
+      ]);
+      final online = checks[0] as bool;
+      final userId = checks[1] as int?;
+
+      if (!online) {
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
           cancelReason: 'Sin conexión a internet. Verifica tu red e intenta de nuevo.',
@@ -450,8 +457,6 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
         return;
       }
-
-      final userId = await ApiService.getCurrentUserId();
       if (userId == null) {
         _state = _state.copyWith(phase: RiderPhase.cancelled);
         notifyListeners();

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -1502,7 +1503,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                     border: Border.all(color: _gold, width: 2),
                     image: widget.riderPhotoUrl.isNotEmpty
                         ? DecorationImage(
-                            image: NetworkImage(widget.riderPhotoUrl),
+                            image: CachedNetworkImageProvider(widget.riderPhotoUrl),
                             fit: BoxFit.cover,
                           )
                         : null,

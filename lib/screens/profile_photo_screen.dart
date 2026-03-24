@@ -1,6 +1,7 @@
 import 'dart:io' if (dart.library.html) 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
@@ -155,11 +156,12 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                 child: _photoPath != null
                     ? ClipOval(
                         child: kIsWeb
-                            ? Image.network(
-                                _photoPath!,
+                            ? CachedNetworkImage(
+                                imageUrl: _photoPath!,
                                 fit: BoxFit.cover,
                                 width: 140,
                                 height: 140,
+                                fadeInDuration: const Duration(milliseconds: 200),
                               )
                             : Image.file(
                                 File(_photoPath!),

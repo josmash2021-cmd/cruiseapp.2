@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -158,10 +159,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final init = widget.riderName.isNotEmpty ? widget.riderName[0].toUpperCase() : '?';
     if (widget.riderPhotoUrl.isNotEmpty) {
       return ClipOval(
-        child: Image.network(
-          widget.riderPhotoUrl,
+        child: CachedNetworkImage(
+          imageUrl: widget.riderPhotoUrl,
           width: 66, height: 66, fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _initialsCircle(init),
+          fadeInDuration: const Duration(milliseconds: 200),
+          placeholder: (_, __) => _initialsCircle(init),
+          errorWidget: (_, __, ___) => _initialsCircle(init),
         ),
       );
     }

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import '../models/lat_lng.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -406,7 +407,7 @@ class _DriverNavigationPanelState extends State<DriverNavigationPanel> {
               border: Border.all(color: DriverNavigationPanel._gold, width: 2),
               image: widget.riderPhotoUrl.isNotEmpty
                   ? DecorationImage(
-                      image: NetworkImage(widget.riderPhotoUrl),
+                      image: CachedNetworkImageProvider(widget.riderPhotoUrl),
                       fit: BoxFit.cover,
                     )
                   : null,

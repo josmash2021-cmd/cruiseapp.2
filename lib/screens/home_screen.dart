@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -1340,12 +1341,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
             child: hasPhoto
                 ? (kIsWeb
-                      ? Image.network(
-                          _photoPath!,
+                      ? CachedNetworkImage(
+                          imageUrl: _photoPath!,
                           fit: BoxFit.cover,
                           width: 44,
                           height: 44,
-                          gaplessPlayback: true,
+                          fadeInDuration: const Duration(milliseconds: 200),
                           key: ValueKey(_photoPath), // Force rebuild on path change
                         )
                       : Image.file(

@@ -4,6 +4,7 @@ import 'dart:io' show File;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -3696,10 +3697,11 @@ Widget _navHeader() {
                           child: ClipOval(
                             child: _driverPhotoUrl != null && _driverPhotoUrl!.isNotEmpty
                                 ? (_driverPhotoUrl!.startsWith('http')
-                                    ? Image.network(
-                                        _driverPhotoUrl!,
+                                    ? CachedNetworkImage(
+                                        imageUrl: _driverPhotoUrl!,
                                         fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Icon(
+                                        fadeInDuration: const Duration(milliseconds: 200),
+                                        errorWidget: (_, __, ___) => Icon(
                                           Icons.person_rounded,
                                           color: textMuted,
                                           size: 18,

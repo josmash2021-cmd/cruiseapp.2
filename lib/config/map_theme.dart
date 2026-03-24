@@ -16,8 +16,8 @@ class MapTheme {
   static const String _navy       = '#0A1128';  // deep navy background
   static const String _navyLight  = '#0F1A36';  // slightly lighter for land
   static const String _navyWater  = '#070E22';  // darker for water
-  static const String _gold       = '#F5C842';  // vivid gold — freeways / highways
-  static const String _goldCase   = '#C8960A';  // casing for freeway edges
+  static const String _gold       = '#D4AF37';  // gold — freeways / highways only
+  static const String _goldCase   = '#B8960C';  // dark gold casing for freeway edges
   static const String _greyRoad   = '#2A2E3A';  // dark grey — primary/secondary streets
   static const String _greyMinor  = '#1E2128';  // darker grey — minor/local streets
   static const String _greyCase   = '#161820';  // casing for grey roads

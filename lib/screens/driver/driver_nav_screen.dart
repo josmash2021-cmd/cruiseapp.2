@@ -7,6 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
 import '../../l10n/app_localizations.dart';
@@ -15,10 +18,11 @@ import '../../navigation/nav_state_machine.dart';
 import '../../navigation/route_service.dart';
 import '../../navigation/route_snapper.dart';
 import '../../navigation/smooth_motion.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-
+import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
+import 'driver_safety_screen.dart';
+import 'driver_trip_accept_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER NAV SCREEN  — DoorDash-style full navigation
@@ -691,9 +695,238 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     if (mounted) Navigator.of(context).pop('completed');
   }
 
-  void _exitNav() {
+  Future<void> _exitNav() async {
     HapticFeedback.lightImpact();
-    Navigator.of(context).pop('cancelled');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0F1621),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text('Exit navigation?',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          )),
+        content: const Text(
+          'You will return to the ride details screen. '
+          'You can restart navigation from there.',
+          style: TextStyle(
+            color: Colors.white60,
+            fontSize: 14,
+          )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel',
+              style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Exit',
+              style: TextStyle(
+                color: Color(0xFFF5C518),
+                fontWeight: FontWeight.bold,
+              )),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    // Cancel GPS stream before leaving
+    _gpsSub?.cancel();
+    _etaRefreshTimer?.cancel();
+    _iconPulseTimer?.cancel();
+
+    // Navigate back to ride detail screen (pushReplacement because
+    // DriverTripAcceptScreen used pushReplacement to get here)
+    Navigator.of(context).pushReplacement(
+      slideUpFadeRoute(
+        DriverTripAcceptScreen(
+          tripId:          widget.tripId,
+          riderName:       widget.riderName,
+          riderPhotoUrl:   widget.riderPhotoUrl,
+          riderRating:     widget.riderRating,
+          pickupLatLng:    widget.pickupLatLng,
+          dropoffLatLng:   widget.dropoffLatLng,
+          pickupAddress:   widget.pickupAddress,
+          dropoffAddress:  widget.dropoffAddress,
+          fare:            widget.fare,
+          vehicleType:     widget.vehicleType,
+          driverPos:       _pos,
+          distToPickupKm:  _distRemainingMi * 1.60934,
+          etaMinutes:      _etaMinutes,
+          routePoints:     _routePts,
+          riderPhone:      widget.riderPhone,
+        ),
+      ),
+    );
+  }
+
+  void _callRider() async {
+    if (widget.riderPhone.isEmpty) {
+      _showToast('No phone number available');
+      return;
+    }
+    final uri = Uri.parse('tel:${widget.riderPhone}');
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
+  }
+
+  void _messageRider() async {
+    if (widget.riderPhone.isEmpty) {
+      _showToast('No phone number available');
+      return;
+    }
+    final uri = Uri.parse('sms:${widget.riderPhone}');
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
+  }
+
+  void _showTripOptions() {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF111318),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.24),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Rider info
+              Row(
+                children: [
+                  _riderAvatar(size: 50),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(widget.riderName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            const Icon(Icons.star_rounded,
+                                color: _gold, size: 14),
+                            const SizedBox(width: 3),
+                            Text(widget.riderRating.toStringAsFixed(1),
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.7),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              // Action buttons
+              _tripOptionTile(
+                icon: Icons.phone_rounded,
+                label: 'Call Rider',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _callRider();
+                },
+              ),
+              _tripOptionTile(
+                icon: Icons.message_rounded,
+                label: 'Message Rider',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _messageRider();
+                },
+              ),
+              _tripOptionTile(
+                icon: Icons.wrong_location_rounded,
+                label: 'Report Wrong Address',
+                color: Colors.orange,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showToast('Address issue reported');
+                },
+              ),
+              _tripOptionTile(
+                icon: Icons.person_off_rounded,
+                label: 'Rider No-Show',
+                color: Colors.orange,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showToast('No-show reported');
+                  _updateTripStatus('rider_no_show');
+                },
+              ),
+              _tripOptionTile(
+                icon: Icons.cancel_rounded,
+                label: 'End Trip Early',
+                color: _speedRed,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _exitNav();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tripOptionTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color color = Colors.white,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600)),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.3), size: 20),
+          ],
+        ),
+      ),
+    );
   }
 
   // =========================================================================
@@ -880,6 +1113,15 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               right: 0,
               child: _buildBottomBar(bot),
             ),
+
+            // ── RESUME BUTTON (shown when user pans away) ─────────────
+            if (!_cameraFollowing && !_isOverview)
+              Positioned(
+                bottom: 80 + bot,
+                left: 0,
+                right: 0,
+                child: Center(child: _buildResumeButton()),
+              ),
 
             // ── PHASE OVERLAY (arrived / slide) ───────────────────────
             if (_nearPickup && _phase == TripPhase.toPickup)
@@ -1101,6 +1343,51 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   }
 
   // =========================================================================
+  //  RESUME BUTTON (appears when user pans away)
+  // =========================================================================
+
+  Widget _buildResumeButton() {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        _recenter();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1E28).withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: _gold.withValues(alpha: 0.5), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+            BoxShadow(
+              color: _gold.withValues(alpha: 0.12),
+              blurRadius: 16,
+            ),
+          ],
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.my_location_rounded, color: _gold, size: 18),
+            SizedBox(width: 8),
+            Text('Resume',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // =========================================================================
   //  RIGHT FAB COLUMN
   // =========================================================================
 
@@ -1131,7 +1418,18 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         // 3. Safety shield
         _mapFab(
           icon: Icons.shield_rounded,
-          onTap: () {},
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => DriverSafetyScreen(
+                tripId: widget.tripId,
+                riderName: widget.riderName,
+                riderPhone: widget.riderPhone,
+                pickupAddress: widget.pickupAddress,
+                dropoffAddress: widget.dropoffAddress,
+              ),
+            ));
+          },
         ),
       ],
     );
@@ -1226,6 +1524,14 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                       color: Colors.white.withValues(alpha: 0.75), size: 22),
                 ),
               ),
+              // Rider avatar — opens trip options
+              GestureDetector(
+                onTap: _showTripOptions,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: _riderAvatar(size: 34),
+                ),
+              ),
               // ETA block (green)
               Expanded(
                 child: Center(
@@ -1314,6 +1620,28 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 ),
               ),
               const SizedBox(height: 8),
+              // Header
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.alt_route_rounded, color: _gold, size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Directions',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800)),
+                    const Spacer(),
+                    Text('$_etaMinutes min · ${_distRemainingMi.toStringAsFixed(1)} mi',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
               // Steps list
               Expanded(
                 child: ListView.separated(
@@ -1325,32 +1653,55 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                   itemBuilder: (_, i) {
                     final step = steps[i];
                     final mInfo = NavigationService.getManeuverIcon(step.maneuver);
-                    return Row(
-                      children: [
-                        SizedBox(
-                          width: 56,
-                          child: Text(step.distanceText,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 13,
-                            )),
-                        ),
-                        const SizedBox(width: 12),
-                        Icon(mInfo.icon, color: Colors.white, size: 22),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            step.instruction.isNotEmpty
-                                ? step.instruction
-                                : step.streetName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
+                    final isCurrent = i == 0;
+                    return Container(
+                      padding: isCurrent
+                          ? const EdgeInsets.all(10)
+                          : EdgeInsets.zero,
+                      decoration: isCurrent
+                          ? BoxDecoration(
+                              color: _gold.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: _gold.withValues(alpha: 0.25)),
+                            )
+                          : null,
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 56,
+                            child: Text(step.distanceText,
+                              style: TextStyle(
+                                color: isCurrent
+                                    ? _gold
+                                    : Colors.white.withValues(alpha: 0.5),
+                                fontSize: 13,
+                                fontWeight: isCurrent
+                                    ? FontWeight.w700
+                                    : FontWeight.w400,
+                              )),
+                          ),
+                          const SizedBox(width: 12),
+                          Icon(mInfo.icon,
+                              color: isCurrent ? _gold : Colors.white,
+                              size: 22),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              step.instruction.isNotEmpty
+                                  ? step.instruction
+                                  : step.streetName,
+                              style: TextStyle(
+                                color: isCurrent ? Colors.white : Colors.white,
+                                fontSize: 15,
+                                fontWeight: isCurrent
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -1512,9 +1863,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 ),
               ),
               // Call + message
-              _compactBtn(Icons.phone_rounded, () {}),
+              _compactBtn(Icons.phone_rounded, _callRider),
               const SizedBox(width: 8),
-              _compactBtn(Icons.message_rounded, () {}),
+              _compactBtn(Icons.message_rounded, _messageRider),
             ],
           ),
           const SizedBox(height: 14),

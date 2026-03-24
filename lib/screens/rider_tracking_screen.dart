@@ -22,6 +22,7 @@ import '../widgets/offline_banner.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../config/api_keys.dart';
 import 'chat_screen.dart';
+import '../services/chat_service.dart';
 import 'help_screen.dart';
 import 'home_screen.dart';
 import 'rider_rating_screen.dart';
@@ -2034,25 +2035,63 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                                 ? widget.driverName[0].toUpperCase()
                                 : 'D',
                             tripId: widget.tripId,
+                            currentRole: 'rider',
                           ),
                         ),
                       ),
-                      child: Container(
-                        height: 48,
-                        padding: const EdgeInsets.symmetric(horizontal: 18),
-                        decoration: BoxDecoration(
-                          color: fieldBg,
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          S.of(context).typeMessage,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: textMuted,
-                            fontWeight: FontWeight.w400,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            height: 48,
+                            padding: const EdgeInsets.symmetric(horizontal: 18),
+                            decoration: BoxDecoration(
+                              color: fieldBg,
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              S.of(context).typeMessage,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: textMuted,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
                           ),
-                        ),
+                          if (widget.tripId != null)
+                            StreamBuilder<int>(
+                              stream: ChatService().unreadCountStream(
+                                rideId: widget.tripId.toString(),
+                                readerRole: 'rider',
+                              ),
+                              builder: (context, snap) {
+                                final count = snap.data ?? 0;
+                                if (count == 0) return const SizedBox.shrink();
+                                return Positioned(
+                                  right: -4,
+                                  top: -4,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFEF4444),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                                    child: Text(
+                                      count > 9 ? '9+' : '$count',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                        ],
                       ),
                     ),
                   ),

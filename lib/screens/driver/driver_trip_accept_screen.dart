@@ -365,6 +365,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         recipientName: widget.riderName,
         recipientPhone: widget.riderPhone,
         tripId: widget.tripId,
+        currentRole: 'driver',
       )),
     );
   }

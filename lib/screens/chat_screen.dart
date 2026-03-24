@@ -2,10 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../models/chat_message.dart';
 import '../services/api_service.dart';
+import '../services/chat_service.dart';
 import '../l10n/app_localizations.dart';
 
-/// Full-page chat screen used for both driver messaging and support chat.
+/// Full-page chat screen — real-time via Firebase RTDB for trip chats,
+/// REST API polling for support chat.
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
@@ -14,6 +17,8 @@ class ChatScreen extends StatefulWidget {
     this.isSupport = false,
     this.avatarInitial,
     this.tripId,
+    this.currentUserId,
+    this.currentRole,
   });
 
   final String recipientName;
@@ -21,6 +26,12 @@ class ChatScreen extends StatefulWidget {
   final bool isSupport;
   final String? avatarInitial;
   final int? tripId;
+
+  /// Current user's ID (as String). If null, resolved from ApiService.
+  final String? currentUserId;
+
+  /// 'driver' or 'rider'. If null, defaults to 'rider'.
+  final String? currentRole;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -31,11 +42,25 @@ class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
-  final List<_ChatMessage> _messages = [];
+  final _chat = ChatService();
+
+  String _myUserId = '';
+  String _myRole = 'rider';
+  String get _otherRole => _myRole == 'driver' ? 'rider' : 'driver';
+  String get _rideId => widget.tripId?.toString() ?? '';
+
+  bool _useRtdb = false; // true for trip chats, false for support
+
+  // ── Support-mode fallback (polling) ──
+  final List<_SupportMessage> _supportMessages = [];
   Timer? _pollTimer;
-  int? _myUserId;
-  bool _connectionError = false;
-  bool _isConnecting = true;
+  final bool _connectionError = false;
+
+  // ── Typing ──
+  Timer? _typingTimer;
+
+  // ── Auto-scroll tracking ──
+  int _lastMsgCount = 0;
 
   @override
   void initState() {
@@ -44,87 +69,97 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _initChat() async {
-    _myUserId = await ApiService.getCurrentUserId();
-    if (widget.tripId != null) {
-      await _fetchMessages();
-      // Poll every 3 seconds for new messages
-      _pollTimer = Timer.periodic(
-        const Duration(seconds: 3),
-        (_) => _fetchMessages(),
-      );
+    // Resolve user ID
+    if (widget.currentUserId != null) {
+      _myUserId = widget.currentUserId!;
+    } else {
+      final id = await ApiService.getCurrentUserId();
+      _myUserId = (id ?? 0).toString();
+    }
+    _myRole = widget.currentRole ?? 'rider';
+
+    // Decide mode: RTDB for trip chats, polling for support
+    if (!widget.isSupport && widget.tripId != null) {
+      _useRtdb = true;
+      // Mark existing messages as read when opening
+      _chat.markAsRead(rideId: _rideId, readerRole: _myRole);
     } else if (widget.isSupport) {
+      _useRtdb = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         final s = S.of(context);
-        _messages.add(
-          _ChatMessage(text: s.chatWelcome, isMe: false, time: DateTime.now()),
-        );
-        setState(() {});
-      });
-    }
-  }
-
-  Future<void> _fetchMessages() async {
-    if (widget.tripId == null) return;
-    try {
-      final msgs = await ApiService.getChatMessages(widget.tripId!);
-      if (!mounted) return;
-      setState(() {
-        _connectionError = false;
-        _isConnecting = false;
-        _messages.clear();
-        for (final m in msgs) {
-          _messages.add(
-            _ChatMessage(
-              text: (m['message'] ?? '') as String,
-              isMe: m['sender_id'] == _myUserId,
-              time:
-                  DateTime.tryParse((m['created_at'] ?? '') as String) ??
-                  DateTime.now(),
-            ),
+        setState(() {
+          _supportMessages.add(
+            _SupportMessage(text: s.chatWelcome, isMe: false, time: DateTime.now()),
           );
-        }
+        });
       });
-      _scrollToBottom();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _connectionError = true;
-        _isConnecting = false;
-      });
-      debugPrint('[ChatScreen] Error fetching messages: $e');
     }
+
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _typingTimer?.cancel();
+    // Stop typing indicator when leaving
+    if (_useRtdb) {
+      _chat.setTyping(rideId: _rideId, role: _myRole, isTyping: false);
+    }
     _controller.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
+  // ── Send ────────────────────────────────────────────────────────────────
+
   void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-    setState(() {
-      _messages.add(_ChatMessage(text: text, isMe: true, time: DateTime.now()));
-      _controller.clear();
-      _connectionError = false;
-    });
-    _scrollToBottom();
+    _controller.clear();
 
-    if (widget.tripId != null) {
-      try {
-        await ApiService.sendChatMessage(tripId: widget.tripId!, message: text);
-      } catch (e) {
-        if (!mounted) return;
-        setState(() => _connectionError = true);
-        debugPrint('[ChatScreen] Error sending message: $e');
+    if (_useRtdb) {
+      _chat.sendMessage(
+        rideId: _rideId,
+        senderId: _myUserId,
+        senderRole: _myRole,
+        text: text,
+      );
+    } else if (widget.isSupport) {
+      setState(() {
+        _supportMessages.add(
+          _SupportMessage(text: text, isMe: true, time: DateTime.now()),
+        );
+      });
+      _scrollToBottom();
+      // Support: also try API if tripId available
+      if (widget.tripId != null) {
+        try {
+          await ApiService.sendChatMessage(tripId: widget.tripId!, message: text);
+        } catch (_) {}
       }
     }
   }
+
+  // ── Typing indicator ──────────────────────────────────────────────────
+
+  void _onTextChanged(String text) {
+    if (!_useRtdb) return;
+    if (text.trim().isNotEmpty) {
+      _chat.setTyping(rideId: _rideId, role: _myRole, isTyping: true);
+      _typingTimer?.cancel();
+      _typingTimer = Timer(const Duration(seconds: 2), () {
+        _chat.setTyping(rideId: _rideId, role: _myRole, isTyping: false);
+      });
+    } else {
+      _typingTimer?.cancel();
+      _chat.setTyping(rideId: _rideId, role: _myRole, isTyping: false);
+    }
+  }
+
+  // ── Scroll ────────────────────────────────────────────────────────────
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -138,7 +173,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _callDriver() async {
+  void _callRecipient() async {
     HapticFeedback.mediumImpact();
     final phone = widget.recipientPhone;
     if (phone != null && phone.isNotEmpty) {
@@ -148,6 +183,8 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
   }
+
+  // ── Build ─────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -163,305 +200,357 @@ class _ChatScreenState extends State<ChatScreen> {
         body: Column(
           children: [
             // ── App bar ──
-            Container(
-              padding: EdgeInsets.only(
-                top: topPad + 8,
-                bottom: 12,
-                left: 8,
-                right: 8,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xFF161820),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  // Back button
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(
-                      Icons.arrow_back_rounded,
-                      color: Colors.white,
-                    ),
-                    splashRadius: 22,
-                  ),
-                  // Avatar
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: widget.isSupport
-                          ? _gold.withValues(alpha: 0.2)
-                          : Colors.white.withValues(alpha: 0.1),
-                      border: Border.all(
-                        color: widget.isSupport
-                            ? _gold.withValues(alpha: 0.4)
-                            : Colors.white.withValues(alpha: 0.2),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Center(
-                      child: widget.isSupport
-                          ? Icon(
-                              Icons.support_agent_rounded,
-                              size: 18,
-                              color: _gold,
-                            )
-                          : Text(
-                              widget.avatarInitial ??
-                                  widget.recipientName[0].toUpperCase(),
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                              ),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  // Name + status
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.isSupport
-                              ? s.cruiseSupport
-                              : widget.recipientName,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 1),
-                        Row(
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF4CAF50),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              widget.isSupport ? s.online : s.activeNow,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.white.withValues(alpha: 0.45),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Phone call button (only for driver chat)
-                  if (!widget.isSupport && widget.recipientPhone != null)
-                    IconButton(
-                      onPressed: _callDriver,
-                      icon: Icon(Icons.phone_rounded, color: _gold, size: 22),
-                      splashRadius: 22,
-                    ),
-                ],
-              ),
+            _buildAppBar(s, topPad),
+
+            // ── Messages ──
+            Expanded(
+              child: _useRtdb ? _buildRtdbMessages(s) : _buildSupportMessages(s),
             ),
 
-            // ── Messages list ──
-            Expanded(
-              child: Column(
-                children: [
-                  // Connection error banner
-                  if (_connectionError)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.wifi_off_rounded,
-                            color: const Color(0xFFEF4444),
-                            size: 18,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              S.of(context).connectionIssueRetrying,
-                              style: TextStyle(
-                                color: const Color(0xFFEF4444),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () => _fetchMessages(),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEF4444),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                S.of(context).retryLabel,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  Expanded(
-                    child: _messages.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.chat_bubble_outline_rounded,
-                                  size: 48,
-                                  color: Colors.white.withValues(alpha: 0.15),
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  s.writeToStart,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.3),
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView.builder(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            itemCount: _messages.length,
-                            itemBuilder: (context, index) {
-                              final msg = _messages[index];
-                              return _buildBubble(msg);
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            ),
+            // ── Typing indicator (RTDB only) ──
+            if (_useRtdb) _buildTypingIndicator(s),
 
             // ── Input bar ──
-            Container(
-              padding: EdgeInsets.only(
-                left: 12,
-                right: 8,
-                top: 8,
-                bottom: bottomPad > 0 ? 8 : safePad + 8,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xFF161820),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.08),
-                        ),
-                      ),
-                      child: TextField(
-                        controller: _controller,
-                        focusNode: _focusNode,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: widget.isSupport
-                              ? s.describeIssue
-                              : s.typeMessage,
-                          hintStyle: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.3),
-                            fontSize: 15,
-                          ),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                        ),
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _sendMessage(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: _sendMessage,
-                    child: Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: _gold,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.send_rounded,
-                        color: Colors.black,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildInputBar(s, bottomPad, safePad),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildBubble(_ChatMessage msg) {
-    final isMe = msg.isMe;
+  // ── App bar ──────────────────────────────────────────────────────────
+
+  Widget _buildAppBar(S s, double topPad) {
+    return Container(
+      padding: EdgeInsets.only(top: topPad + 8, bottom: 12, left: 8, right: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161820),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+            splashRadius: 22,
+          ),
+          // Avatar
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: widget.isSupport
+                  ? _gold.withValues(alpha: 0.2)
+                  : Colors.white.withValues(alpha: 0.1),
+              border: Border.all(
+                color: widget.isSupport
+                    ? _gold.withValues(alpha: 0.4)
+                    : Colors.white.withValues(alpha: 0.2),
+                width: 1.5,
+              ),
+            ),
+            child: Center(
+              child: widget.isSupport
+                  ? Icon(Icons.support_agent_rounded, size: 18, color: _gold)
+                  : Text(
+                      widget.avatarInitial ??
+                          widget.recipientName[0].toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Name + status
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.isSupport ? s.cruiseSupport : widget.recipientName,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF4CAF50),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      widget.isSupport ? s.online : s.activeNow,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.45),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (!widget.isSupport && widget.recipientPhone != null)
+            IconButton(
+              onPressed: _callRecipient,
+              icon: Icon(Icons.phone_rounded, color: _gold, size: 22),
+              splashRadius: 22,
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── RTDB messages (StreamBuilder) ────────────────────────────────────
+
+  Widget _buildRtdbMessages(S s) {
+    return StreamBuilder<List<ChatMessage>>(
+      stream: _chat.messagesStream(_rideId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: _gold),
+          );
+        }
+
+        final messages = snapshot.data ?? [];
+
+        // Auto-scroll when new messages arrive
+        if (messages.length != _lastMsgCount) {
+          _lastMsgCount = messages.length;
+          _scrollToBottom();
+          // Mark incoming messages as read
+          if (messages.isNotEmpty) {
+            _chat.markAsRead(rideId: _rideId, readerRole: _myRole);
+          }
+        }
+
+        if (messages.isEmpty) {
+          return _buildEmptyState(s);
+        }
+
+        return ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          itemCount: messages.length,
+          itemBuilder: (context, index) {
+            final msg = messages[index];
+            final isMe = msg.senderId == _myUserId;
+            final time = DateTime.fromMillisecondsSinceEpoch(msg.timestamp);
+            return _buildBubble(
+              text: msg.text,
+              isMe: isMe,
+              time: time,
+              isRead: msg.read,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ── Support messages (polling fallback) ──────────────────────────────
+
+  Widget _buildSupportMessages(S s) {
+    return Column(
+      children: [
+        if (_connectionError)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+            child: Row(
+              children: [
+                Icon(Icons.wifi_off_rounded, color: const Color(0xFFEF4444), size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    S.of(context).connectionIssueRetrying,
+                    style: TextStyle(
+                      color: const Color(0xFFEF4444),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: _supportMessages.isEmpty
+              ? _buildEmptyState(s)
+              : ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  itemCount: _supportMessages.length,
+                  itemBuilder: (context, index) {
+                    final msg = _supportMessages[index];
+                    return _buildBubble(
+                      text: msg.text,
+                      isMe: msg.isMe,
+                      time: msg.time,
+                      isRead: true,
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  // ── Empty state ─────────────────────────────────────────────────────
+
+  Widget _buildEmptyState(S s) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.chat_bubble_outline_rounded,
+            size: 48,
+            color: Colors.white.withValues(alpha: 0.15),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            s.writeToStart,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.3),
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Typing indicator ────────────────────────────────────────────────
+
+  Widget _buildTypingIndicator(S s) {
+    return StreamBuilder<bool>(
+      stream: _chat.typingStream(rideId: _rideId, otherRole: _otherRole),
+      builder: (context, snapshot) {
+        final isTyping = snapshot.data ?? false;
+        if (!isTyping) return const SizedBox.shrink();
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.only(left: 20, bottom: 4, top: 2),
+          child: Text(
+            '${widget.recipientName.split(' ').first} ${s.typing}',
+            style: TextStyle(
+              fontSize: 12,
+              fontStyle: FontStyle.italic,
+              color: Colors.white.withValues(alpha: 0.4),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Input bar ───────────────────────────────────────────────────────
+
+  Widget _buildInputBar(S s, double bottomPad, double safePad) {
+    return Container(
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 8,
+        top: 8,
+        bottom: bottomPad > 0 ? 8 : safePad + 8,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161820),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
+              child: TextField(
+                controller: _controller,
+                focusNode: _focusNode,
+                onChanged: _onTextChanged,
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+                decoration: InputDecoration(
+                  hintText: widget.isSupport ? s.describeIssue : s.typeMessage,
+                  hintStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.3),
+                    fontSize: 15,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                ),
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _sendMessage(),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _sendMessage,
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: const BoxDecoration(
+                color: _gold,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.send_rounded, color: Colors.black, size: 20),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Message bubble ──────────────────────────────────────────────────
+
+  Widget _buildBubble({
+    required String text,
+    required bool isMe,
+    required DateTime time,
+    required bool isRead,
+  }) {
     final timeStr =
-        '${msg.time.hour.toString().padLeft(2, '0')}:${msg.time.minute.toString().padLeft(2, '0')}';
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
-        mainAxisAlignment: isMe
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
+        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) ...[
@@ -506,7 +595,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    msg.text,
+                    text,
                     style: TextStyle(
                       fontSize: 14,
                       color: isMe ? Colors.black : Colors.white,
@@ -514,14 +603,30 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
                   const SizedBox(height: 3),
-                  Text(
-                    timeStr,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: isMe
-                          ? Colors.black.withValues(alpha: 0.45)
-                          : Colors.white.withValues(alpha: 0.3),
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        timeStr,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isMe
+                              ? Colors.black.withValues(alpha: 0.45)
+                              : Colors.white.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      // Read receipt checkmarks (only on sent messages)
+                      if (isMe && _useRtdb) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          isRead ? Icons.done_all_rounded : Icons.done_rounded,
+                          size: 14,
+                          color: isRead
+                              ? const Color(0xFF4FC3F7)
+                              : Colors.black.withValues(alpha: 0.4),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -534,10 +639,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-class _ChatMessage {
+/// Lightweight model for support-mode messages (polling fallback).
+class _SupportMessage {
   final String text;
   final bool isMe;
   final DateTime time;
 
-  _ChatMessage({required this.text, required this.isMe, required this.time});
+  _SupportMessage({required this.text, required this.isMe, required this.time});
 }

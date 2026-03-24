@@ -1081,6 +1081,7 @@ class S {
       : 'Hi! How can we help you today?';
   String get describeIssue =>
       _es ? 'Describe tu problema...' : 'Describe your issue...';
+  String get typing => _es ? 'escribiendo...' : 'typing...';
 
   // ── Inbox Screen ───────────────────────────────────────────────────────────
   String get welcomeToCruise =>

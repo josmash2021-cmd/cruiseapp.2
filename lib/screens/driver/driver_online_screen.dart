@@ -23,6 +23,7 @@ import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
 import '../../services/map_cache_service.dart';
 import '../../services/local_cache.dart';
+import '../../services/chat_service.dart';
 import '../../widgets/offline_banner.dart';
 import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
@@ -2059,6 +2060,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         tripId: _tripId!,
         stars: _stars,
       ).catchError((_) => <String, dynamic>{});
+      // Clean up RTDB chat node
+      ChatService().deleteChat(_tripId.toString());
     }
     _doneCtrl.reverse();
     Future.delayed(const Duration(milliseconds: 350), () {
@@ -5967,15 +5970,54 @@ Widget _navHeader() {
                 }
               }),
               const SizedBox(width: 8),
-              _actionBtn(Icons.chat_bubble_rounded, () {
-                Navigator.of(context).push(
-                  slideFromRightRoute(ChatScreen(
-                    recipientName: _riderName,
-                    recipientPhone: _riderPhone,
-                    tripId: _tripId,
-                  )),
-                );
-              }),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _actionBtn(Icons.chat_bubble_rounded, () {
+                    Navigator.of(context).push(
+                      slideFromRightRoute(ChatScreen(
+                        recipientName: _riderName,
+                        recipientPhone: _riderPhone,
+                        tripId: _tripId,
+                        currentUserId: _driverId?.toString(),
+                        currentRole: 'driver',
+                      )),
+                    );
+                  }),
+                  if (_tripId != null)
+                    StreamBuilder<int>(
+                      stream: ChatService().unreadCountStream(
+                        rideId: _tripId.toString(),
+                        readerRole: 'driver',
+                      ),
+                      builder: (context, snap) {
+                        final count = snap.data ?? 0;
+                        if (count == 0) return const SizedBox.shrink();
+                        return Positioned(
+                          right: -4,
+                          top: -4,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEF4444),
+                              shape: BoxShape.circle,
+                            ),
+                            constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                            child: Text(
+                              count > 9 ? '9+' : '$count',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 14),

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../forgot_password_screen.dart';
 import 'driver_signup_screen.dart';
@@ -101,6 +102,10 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
 
       // Check driver approval status
       final vStatus = user['verification_status'] as String? ?? 'none';
+      // Cache it locally so splash screen routes correctly on next restart
+      if (vStatus == 'approved' || vStatus == 'pending' || vStatus == 'rejected') {
+        await LocalDataService.setDriverApprovalStatus(vStatus);
+      }
       if (!mounted) return;
       setState(() => _loading = false);
 

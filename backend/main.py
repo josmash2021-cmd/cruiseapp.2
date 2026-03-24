@@ -2509,8 +2509,15 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     if _HAS_FIRESTORE:
         try:
             firestore_sync.update_field("verifications", user_id, "status", "approved")
+            firestore_sync.update_field("verifications", user_id, "driver_status", "approved")
+            firestore_sync.update_field("verifications", user_id, "approvalStatus", "approved")
+            firestore_sync.update_field("verifications", user_id, "isVerified", True)
+            firestore_sync.update_field("verifications", user_id, "isApproved", True)
             firestore_sync.update_field("drivers", user_id, "verificationStatus", "approved")
             firestore_sync.update_field("drivers", user_id, "isVerified", True)
+            firestore_sync.update_field("drivers", user_id, "isApproved", True)
+            firestore_sync.update_field("drivers", user_id, "driver_status", "approved")
+            firestore_sync.update_field("drivers", user_id, "status", "approved")
         except Exception as e:
             logging.warning("Firestore approve sync failed: %s", e)
     return {"ok": True, "message": f"Driver {user_id} approved"}
@@ -2534,7 +2541,16 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
     if _HAS_FIRESTORE:
         try:
             firestore_sync.update_field("verifications", user_id, "status", "rejected")
+            firestore_sync.update_field("verifications", user_id, "driver_status", "rejected")
+            firestore_sync.update_field("verifications", user_id, "approvalStatus", "rejected")
+            firestore_sync.update_field("verifications", user_id, "isVerified", False)
+            firestore_sync.update_field("verifications", user_id, "isApproved", False)
             firestore_sync.update_field("verifications", user_id, "reason", reason)
+            firestore_sync.update_field("drivers", user_id, "status", "rejected")
+            firestore_sync.update_field("drivers", user_id, "driver_status", "rejected")
+            firestore_sync.update_field("drivers", user_id, "isVerified", False)
+            firestore_sync.update_field("drivers", user_id, "isApproved", False)
+            firestore_sync.update_field("drivers", user_id, "verificationReason", reason)
         except Exception as e:
             logging.warning("Firestore reject sync failed: %s", e)
     return {"ok": True, "message": f"Driver {user_id} rejected"}
@@ -6504,19 +6520,32 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
         try:
             doc_id = f"sql_{user_id}"
             collection = "drivers" if user.role == "driver" else "clients"
-            # Update verifications collection
+            is_approved = action == "approve"
+            # Update verifications collection — write ALL fields cruise checks
             firestore_sync._db.collection("verifications").document(doc_id).set({
                 "status": user.verification_status,
+                "driver_status": user.verification_status,
+                "approvalStatus": user.verification_status,
+                "verificationStatus": user.verification_status,
+                "isVerified": is_approved,
+                "isApproved": is_approved,
                 "reason": user.verification_reason,
                 "reviewedAt": firestore_sync._ts(),
+                "updated_at": firestore_sync._ts(),
             }, merge=True)
-            # Update user collection
+            # Update user collection (drivers/clients)
             firestore_sync._db.collection(collection).document(doc_id).set({
-                "isVerified": user.is_verified,
+                "isVerified": is_approved,
+                "isApproved": is_approved,
+                "status": user.verification_status,
+                "driver_status": user.verification_status,
+                "approvalStatus": user.verification_status,
                 "verificationStatus": user.verification_status,
                 "verificationReason": user.verification_reason,
                 "lastUpdated": firestore_sync._ts(),
+                "updated_at": firestore_sync._ts(),
             }, merge=True)
+            logging.info("Firestore verification sync OK for %s (action=%s)", doc_id, action)
         except Exception as e:
             logging.warning("Firestore verification sync failed: %s", e)
 

@@ -1210,9 +1210,11 @@ async def sync_verifications_to_firestore(x_api_key: str = Header(default=""), d
     return {"ok": True, "synced": len(synced), "details": synced}
 
 
-@app.post("/admin/backfill-approved", dependencies=[Depends(_require_dispatch_auth)])
-async def backfill_approved_drivers(db: AsyncSession = Depends(get_db)):
+@app.post("/admin/backfill-approved")
+async def backfill_approved_drivers(x_api_key: str = Header(default=""), db: AsyncSession = Depends(get_db)):
     """Backfill Firestore for ALL approved/rejected drivers whose Firestore docs may be missing."""
+    if x_api_key != API_KEY:
+        raise HTTPException(403, "Forbidden")
     if not _HAS_FIRESTORE:
         return {"ok": False, "message": "Firestore not available"}
     result = await db.execute(

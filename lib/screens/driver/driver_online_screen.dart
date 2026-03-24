@@ -2451,7 +2451,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   /// Dynamic bottom padding for the GoogleMap based on active overlays
   double get _mapBottomPadding {
-    if (_previewingOffer != null) return 380;
+    if (_routePreviewActive) return 380;
     if (_phase == _Phase.searching && _pendingOffers.isNotEmpty) return 340;
     if (_phase == _Phase.enRouteToPickup) return 270;
     if (_phase == _Phase.arrivedAtPickup) return 290;

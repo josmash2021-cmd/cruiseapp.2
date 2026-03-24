@@ -25,6 +25,7 @@ import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
 import 'driver_safety_screen.dart';
 import 'driver_trip_accept_screen.dart';
+import 'driver_rate_rider_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER NAV SCREEN  — DoorDash-style full navigation
@@ -953,7 +954,30 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _sm.completeTrip();
     await _updateTripStatus('completed',
         extra: {'completedAt': FieldValue.serverTimestamp()});
-    if (mounted) Navigator.of(context).pop('completed');
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        pageBuilder: (_, anim, __) => DriverRateRiderScreen(
+          tripId: widget.tripId,
+          riderName: widget.riderName,
+          riderPhotoUrl: widget.riderPhotoUrl,
+          fare: widget.fare,
+        ),
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOutCubic),
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.08),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(
+              parent: anim, curve: Curves.easeOutCubic,
+            )),
+            child: child,
+          ),
+        ),
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
   }
 
   Future<void> _exitNav() async {
@@ -2223,7 +2247,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Slide to complete ride',
+          Text('Desliza para finalizar',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.65),
               fontSize: 13, fontWeight: FontWeight.w500)),
@@ -2278,7 +2302,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 child: AnimatedOpacity(
                   opacity: 1.0 - _slideVal,
                   duration: const Duration(milliseconds: 100),
-                  child: Text('Complete Trip  →',
+                  child: Text('Finalizar Viaje  →',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.55),
                       fontSize: 14, fontWeight: FontWeight.w600)),

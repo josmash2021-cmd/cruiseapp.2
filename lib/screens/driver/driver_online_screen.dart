@@ -260,6 +260,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _panelOpen = false;
   final _panelSheetCtrl = DraggableScrollableController();
 
+  // ── Finding trips bar visibility ──
+  bool _hideFindingBar = false;
+
   // -- Driver profile photo --
   String? _driverPhotoUrl;
 
@@ -528,16 +531,20 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
   }
 
-  /// Pre-render 24 frames of a pure golden dot (no profile photo).
+  /// Pre-render 24 frames of a pulsing golden dot with dual rings.
   Future<void> _buildGoldenDotFrames() async {
     const int frameCount = 24;
-    const double canvasSize = 140.0;
+    const double canvasSize = 160.0;
     final frames = <Uint8List>[];
 
     for (int i = 0; i < frameCount; i++) {
       final t = i / frameCount;
-      final pulseRadius = 40.0 + 20.0 * t;
-      final pulseAlpha = (0.35 * (1.0 - t)).clamp(0.0, 1.0);
+      final pulseRadius = 40.0 + 28.0 * t;
+      final pulseAlpha = (0.45 * (1.0 - t)).clamp(0.0, 1.0);
+      // Second outer ring offset by half a cycle
+      final t2 = (t + 0.5) % 1.0;
+      final pulse2Radius = 40.0 + 28.0 * t2;
+      final pulse2Alpha = (0.3 * (1.0 - t2)).clamp(0.0, 1.0);
 
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(
@@ -555,7 +562,24 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
       );
 
-      // Outer pulse ring (fading gold)
+      // Second outer pulse ring (fading gold, offset phase)
+      canvas.drawCircle(
+        center,
+        pulse2Radius,
+        Paint()
+          ..color = const Color(0xFFE8C547).withValues(alpha: pulse2Alpha * 0.25)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawCircle(
+        center,
+        pulse2Radius,
+        Paint()
+          ..color = const Color(0xFFE8C547).withValues(alpha: pulse2Alpha * 0.7)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+
+      // Primary outer pulse ring (fading gold)
       canvas.drawCircle(
         center,
         pulseRadius,
@@ -575,24 +599,24 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       // Gold outer ring (3D gradient)
       canvas.drawCircle(
         center,
-        18,
+        20,
         Paint()
           ..shader = ui.Gradient.radial(
             center.translate(-4, -4),
-            22,
+            24,
             [const Color(0xFFF5E27A), const Color(0xFFE8C547), const Color(0xFFB8941E)],
             [0.0, 0.5, 1.0],
           ),
       );
 
       // White inner dot
-      canvas.drawCircle(center, 9, Paint()..color = Colors.white);
+      canvas.drawCircle(center, 10, Paint()..color = Colors.white);
 
       // Specular highlight for 3D look
       canvas.drawCircle(
         center.translate(-3, -3),
         5,
-        Paint()..color = const Color(0x40FFFFFF),
+        Paint()..color = const Color(0x50FFFFFF),
       );
 
       final picture = recorder.endRecording();
@@ -612,9 +636,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _goldenDotTimer?.cancel();
     _goldenDotTimer = Timer.periodic(const Duration(milliseconds: 65), (_) {
       if (!mounted || _goldenDotFrames.isEmpty) return;
-      setState(() {
-        _goldenDotFrame = (_goldenDotFrame + 1) % _goldenDotFrames.length;
-      });
+      _goldenDotFrame = (_goldenDotFrame + 1) % _goldenDotFrames.length;
+      // Update the Mapbox annotation image to show the new frame
+      final annot = _goldDotAnnot;
+      final mgr = _pointAnnotMgr;
+      if (annot != null && mgr != null) {
+        annot.image = _goldenDotFrames[_goldenDotFrame];
+        mgr.update(annot).catchError((_) {});
+      }
     });
   }
 
@@ -1448,7 +1477,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _goldDotAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
         image: dotBytes,
-        iconSize: 0.7,
+        iconSize: 1.0,
       ));
     } else if (isNav) {
       // Remove dot annotation if switching to car
@@ -1570,7 +1599,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       if (offers.isNotEmpty && _pendingOffers.isEmpty) {
         HapticFeedback.heavyImpact();
       }
-      setState(() => _pendingOffers = offers);
+      final hadOffers = _pendingOffers.isNotEmpty;
+      setState(() {
+        _pendingOffers = offers;
+        // Hide finding bar when offers appear, show when all dismissed
+        if (offers.isNotEmpty && !hadOffers) _hideFindingBar = true;
+        if (offers.isEmpty && hadOffers) _hideFindingBar = false;
+      });
       _preFetchOfferRoutes(offers);
     } catch (e) {
       debugPrint('âŒ Poll error: $e');
@@ -1846,6 +1881,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     setState(() {
       _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
+      if (_pendingOffers.isEmpty) _hideFindingBar = false;
     });
     if (offerId != null) _routeCache.remove(offerId.toString());
   }
@@ -2093,6 +2129,32 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   void _goOffline() {
+    // Block going offline while an offer is visible
+    if (_pendingOffers.isNotEmpty || _previewingOffer != null) {
+      HapticFeedback.heavyImpact();
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Active Offer',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          ),
+          content: const Text(
+            'You have an active ride offer. Accept or dismiss it before going offline.',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK', style: TextStyle(color: Color(0xFFE8C547))),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     HapticFeedback.mediumImpact();
     _goOfflineBackend();
     Navigator.of(context).pop<Map<String, dynamic>>({
@@ -4230,53 +4292,63 @@ Widget _navHeader() {
                   ),
                 ),
               // â”€â”€ "Finding trips" bar at the bottom â”€â”€
-              GestureDetector(
-                onTap: _showGoOfflineSheet,
-                onVerticalDragUpdate: (details) {
-                  // Si arrastra hacia arriba (dy negativo), abre el sheet
-                  if (details.delta.dy < -5) {
-                    _showGoOfflineSheet();
-                  }
-                },
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111111),
-                    border: Border(
-                      top: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.06),
-                      ),
-                    ),
-                  ),
-                  child: SafeArea(
-                    top: false,
-                    child: SizedBox(
-                      height: 52,
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 16),
-                          Icon(
-                            Icons.tune_rounded,
-                            color: Colors.white.withValues(alpha: 0.5),
-                            size: 22,
-                          ),
-                          const Spacer(),
-                          Text(
-                            S.of(context).findingTrips,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+              ClipRect(
+                child: AnimatedSlide(
+                  offset: _hideFindingBar ? const Offset(0, 1) : Offset.zero,
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeInOut,
+                  child: AnimatedOpacity(
+                    opacity: _hideFindingBar ? 0.0 : 1.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: GestureDetector(
+                      onTap: _hideFindingBar ? null : _showGoOfflineSheet,
+                      onVerticalDragUpdate: _hideFindingBar ? null : (details) {
+                        if (details.delta.dy < -5) {
+                          _showGoOfflineSheet();
+                        }
+                      },
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF111111),
+                          border: Border(
+                            top: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.06),
                             ),
                           ),
-                          const Spacer(),
-                          Icon(
-                            Icons.format_list_bulleted_rounded,
-                            color: Colors.white.withValues(alpha: 0.5),
-                            size: 22,
+                        ),
+                        child: SafeArea(
+                          top: false,
+                          child: SizedBox(
+                            height: 52,
+                            child: Row(
+                              children: [
+                                const SizedBox(width: 16),
+                                Icon(
+                                  Icons.tune_rounded,
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  size: 22,
+                                ),
+                                const Spacer(),
+                                Text(
+                                  S.of(context).findingTrips,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.5),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Icon(
+                                  Icons.format_list_bulleted_rounded,
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  size: 22,
+                                ),
+                                const SizedBox(width: 16),
+                              ],
+                            ),
                           ),
-                          const SizedBox(width: 16),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -6647,57 +6719,49 @@ Widget _navHeader() {
             controller: scrollCtrl,
             padding: EdgeInsets.zero,
             children: [
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+              ListenableBuilder(
+                listenable: _searchPulseVal,
+                builder: (_, __) => SizedBox(
+                  height: 2,
+                  child: LinearProgressIndicator(
+                    value: null,
+                    backgroundColor: Colors.transparent,
+                    valueColor: AlwaysStoppedAnimation(
+                      _gold.withValues(alpha: 0.5),
+                    ),
+                    minHeight: 2,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _handle(isDark),
+              Icon(
+                Icons.keyboard_arrow_up_rounded,
+                color: textMuted.withValues(alpha: 0.5),
+                size: 18,
+              ),
+              SizedBox(
+                height: 40,
+                child: Row(
                   children: [
-                    ListenableBuilder(
-                      listenable: _searchPulseVal,
-                      builder: (_, __) => SizedBox(
-                        height: 2,
-                        child: LinearProgressIndicator(
-                          value: null,
-                          backgroundColor: Colors.transparent,
-                          valueColor: AlwaysStoppedAnimation(
-                            _gold.withValues(alpha: 0.5),
-                          ),
-                          minHeight: 2,
-                        ),
+                    const SizedBox(width: 16),
+                    Icon(Icons.tune_rounded, color: textMuted, size: 22),
+                    const Spacer(),
+                    Text(
+                      S.of(context).findingTrips,
+                      style: TextStyle(
+                        color: textMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    _handle(isDark),
+                    const Spacer(),
                     Icon(
-                      Icons.keyboard_arrow_up_rounded,
-                      color: textMuted.withValues(alpha: 0.5),
-                      size: 18,
+                      Icons.format_list_bulleted_rounded,
+                      color: textMuted,
+                      size: 22,
                     ),
-                    SizedBox(
-                      height: 40,
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 16),
-                          Icon(Icons.tune_rounded, color: textMuted, size: 22),
-                          const Spacer(),
-                          Text(
-                            S.of(context).findingTrips,
-                            style: TextStyle(
-                              color: textMuted,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const Spacer(),
-                          Icon(
-                            Icons.format_list_bulleted_rounded,
-                            color: textMuted,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 16),
-                        ],
-                      ),
-                    ),
+                    const SizedBox(width: 16),
                   ],
                 ),
               ),

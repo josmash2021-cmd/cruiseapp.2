@@ -624,8 +624,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final dc = DriverColors.of(context);
     return Scaffold(
       backgroundColor: dc.bg,
-      // Hide bottom nav completely when driver is online
-      bottomNavigationBar: _isStillOnline ? null : _buildBottomNav(dc),
       body: Stack(
         children: [
           // ── Full-screen map ──

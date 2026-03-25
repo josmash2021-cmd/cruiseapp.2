@@ -1109,9 +1109,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           _searchElapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
             if (mounted) setState(() => _searchElapsedSec++);
           });
-          // Fit route so user sees pickup → dropoff
+          // Fit route so user sees pickup → dropoff (preserve cinematic tilt)
           if (_ctrl.state.route != null) {
-            _fitRoute(_ctrl.state.route!.points);
+            _fitRoute(_ctrl.state.route!.points, preserveCamera: _cinematicDone);
           }
         }
         // SIMULATION MODE: Auto-assign a simulated driver after 2-4 seconds
@@ -1540,7 +1540,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // Labels always visible — no toggle behavior
   void _togglePinLabels() {}
 
-  void _fitRoute(List<LatLng> pts) {
+  void _fitRoute(List<LatLng> pts, {bool preserveCamera = false}) {
     if (pts.isEmpty || _mapCtrl == null) return;
     double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
     for (final p in pts) {
@@ -1555,7 +1555,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _mapCtrl!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
-      mapbox.CameraOptions(),
+      mapbox.CameraOptions(
+        pitch: preserveCamera ? 55.0 : null,
+        bearing: preserveCamera ? _randomBearing : null,
+      ),
       mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60),
       null, null,
     ).then((cam) {

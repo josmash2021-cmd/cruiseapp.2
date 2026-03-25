@@ -1129,8 +1129,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           _searchStatusTimer = Timer.periodic(const Duration(seconds: 3), (_) {
             if (mounted) {
               setState(() => _searchStatusIdx++);
-              // Re-trigger cinematic on each status change
-              _replayCinematicIfRouteAvailable();
             }
           });
           _searchElapsedTimer?.cancel();
@@ -1299,7 +1297,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   }
 
   /// Replay cinematic if route data is available (used by searching phase).
+  /// Only triggers if cinematic hasn't already played.
   void _replayCinematicIfRouteAvailable() {
+    if (_cinematicDone) return;
     final route = _ctrl.state.route;
     if (route == null || route.points.isEmpty) return;
     final pts = List<LatLng>.from(route.points);

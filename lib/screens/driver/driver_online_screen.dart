@@ -1005,7 +1005,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 1,
+            distanceFilter: 3,
           ),
         ).listen((pos) {
           if (!mounted) return;

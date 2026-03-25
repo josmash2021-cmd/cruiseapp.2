@@ -951,7 +951,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 1, // update every 1 meter for ultra-smooth tracking
+            distanceFilter: 3,
           ),
         ).listen((position) {
           if (!mounted) return;

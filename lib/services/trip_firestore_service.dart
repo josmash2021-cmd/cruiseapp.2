@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/lat_lng.dart';
@@ -59,8 +60,8 @@ class TripFirestoreService {
       'cancelledAt': null,
     });
 
-    // Back-fill the tripId field with the real Firestore ID
-    await docRef.update({'tripId': docRef.id});
+    // Back-fill the tripId field with the real Firestore ID (fire-and-forget)
+    unawaited(docRef.update({'tripId': docRef.id}));
     debugPrint('✅ Trip submitted to Firestore: ${docRef.id}');
     return docRef.id;
   }
@@ -92,13 +93,16 @@ class TripFirestoreService {
     String? driverId,
   }) async {
     try {
-      await _trips.doc(tripId).update({
+      // Batch write: single round-trip for all fields
+      final batch = _db.batch();
+      batch.update(_trips.doc(tripId), {
         'status': 'accepted',
         'driverId': driverId,
         'driverName': driverName,
         'driverPhone': driverPhone,
         'acceptedAt': FieldValue.serverTimestamp(),
       });
+      unawaited(batch.commit());
       debugPrint('🔄 Firestore synced: accepted (driver: $driverName)');
     } catch (e) {
       debugPrint('⚠️ Firestore sync (accepted) failed: $e');
@@ -108,10 +112,10 @@ class TripFirestoreService {
   /// Sync status: driver arrived at pickup.
   static Future<void> syncDriverArrived(String tripId) async {
     try {
-      await _trips.doc(tripId).update({
+      unawaited(_trips.doc(tripId).update({
         'status': 'driver_arrived',
         'driverArrivedAt': FieldValue.serverTimestamp(),
-      });
+      }));
       debugPrint('🔄 Firestore synced: driver_arrived');
     } catch (e) {
       debugPrint('⚠️ Firestore sync (driver_arrived) failed: $e');
@@ -121,10 +125,10 @@ class TripFirestoreService {
   /// Sync status: trip in progress (passenger picked up).
   static Future<void> syncTripStarted(String tripId) async {
     try {
-      await _trips.doc(tripId).update({
+      unawaited(_trips.doc(tripId).update({
         'status': 'in_progress',
         'startedAt': FieldValue.serverTimestamp(),
-      });
+      }));
       debugPrint('🔄 Firestore synced: in_progress');
     } catch (e) {
       debugPrint('⚠️ Firestore sync (in_progress) failed: $e');
@@ -134,10 +138,10 @@ class TripFirestoreService {
   /// Sync status: trip completed.
   static Future<void> syncTripCompleted(String tripId) async {
     try {
-      await _trips.doc(tripId).update({
+      unawaited(_trips.doc(tripId).update({
         'status': 'completed',
         'completedAt': FieldValue.serverTimestamp(),
-      });
+      }));
       debugPrint('🔄 Firestore synced: completed');
     } catch (e) {
       debugPrint('⚠️ Firestore sync (completed) failed: $e');
@@ -150,11 +154,11 @@ class TripFirestoreService {
     String reason = 'Cancelled',
   }) async {
     try {
-      await _trips.doc(tripId).update({
+      unawaited(_trips.doc(tripId).update({
         'status': 'cancelled',
         'cancelReason': reason,
         'cancelledAt': FieldValue.serverTimestamp(),
-      });
+      }));
       debugPrint('🔄 Firestore synced: cancelled');
     } catch (e) {
       debugPrint('⚠️ Firestore sync (cancelled) failed: $e');
@@ -175,7 +179,7 @@ class TripFirestoreService {
   ) async {
     final now = DateTime.now();
     if (_lastLocationWrite != null &&
-        now.difference(_lastLocationWrite!).inMilliseconds < 500) {
+        now.difference(_lastLocationWrite!).inMilliseconds < 1000) {
       return;
     }
     _lastLocationWrite = now;

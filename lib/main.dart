@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'config/smooth_transitions.dart';
 import 'config/page_transitions.dart';
@@ -81,6 +82,11 @@ void main() async {
       try {
         await Firebase.initializeApp(
           options: DefaultFirebaseOptions.currentPlatform,
+        );
+        // Firestore persistence: unlimited cache for instant offline reads
+        firestore.FirebaseFirestore.instance.settings = const firestore.Settings(
+          persistenceEnabled: true,
+          cacheSizeBytes: firestore.Settings.CACHE_SIZE_UNLIMITED,
         );
       } catch (e) {
         debugPrint('[Firebase] early init error: $e');

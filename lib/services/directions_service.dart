@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/lat_lng.dart';
@@ -31,6 +32,28 @@ class DirectionsService {
   final String apiKey;
   DirectionsService(this.apiKey);
 
+  // In-memory route cache: same origin+destination = instant hit
+  static final Map<String, RouteResult> _routeCache = {};
+  static final Map<String, Map<String, DistanceEstimate>> _distanceCache = {};
+  static const _cacheMaxAge = Duration(minutes: 5);
+  static final Map<String, DateTime> _cacheTimes = {};
+
+  /// Clear all cached routes (call on logout or location change)
+  static void clearCache() {
+    _routeCache.clear();
+    _distanceCache.clear();
+    _cacheTimes.clear();
+  }
+
+  String _cacheKey(LatLng a, LatLng b) =>
+      '${a.latitude.toStringAsFixed(4)},${a.longitude.toStringAsFixed(4)}->'
+      '${b.latitude.toStringAsFixed(4)},${b.longitude.toStringAsFixed(4)}';
+
+  bool _isCacheValid(String key) {
+    final t = _cacheTimes[key];
+    return t != null && DateTime.now().difference(t) < _cacheMaxAge;
+  }
+
   Future<Map<String, DistanceEstimate>> getDistanceEstimates({
     required LatLng origin,
     required List<LatLng> destinations,
@@ -50,7 +73,7 @@ class DirectionsService {
           'key': apiKey,
         });
 
-    final res = await http.get(uri);
+    final res = await http.get(uri).timeout(const Duration(seconds: 8));
     final data = jsonDecode(res.body);
     if (data['status'] != 'OK') return {};
 
@@ -96,12 +119,23 @@ class DirectionsService {
     required LatLng origin,
     required LatLng destination,
   }) async {
+    // Check route cache first (instant return)
+    final key = _cacheKey(origin, destination);
+    if (_routeCache.containsKey(key) && _isCacheValid(key)) {
+      return _routeCache[key]!;
+    }
+
     final data = await _requestDirectionsWithFallbacks(
       origin: origin,
       destination: destination,
     );
     if (data == null) {
-      return _requestOsrmRoute(origin: origin, destination: destination);
+      final osrm = await _requestOsrmRoute(origin: origin, destination: destination);
+      if (osrm != null) {
+        _routeCache[key] = osrm;
+        _cacheTimes[key] = DateTime.now();
+      }
+      return osrm;
     }
 
     final routes = data['routes'] as List?;
@@ -165,7 +199,7 @@ class DirectionsService {
 
     if (detailedPoints.isNotEmpty) {
       final anchored = _anchorRoutePoints(detailedPoints, origin, destination);
-      return RouteResult(
+      final result = RouteResult(
         points: anchored,
         distanceText: distanceText,
         distanceMeters: distanceMeters,
@@ -173,6 +207,9 @@ class DirectionsService {
         startAddress: startAddress,
         endAddress: endAddress,
       );
+      _routeCache[key] = result;
+      _cacheTimes[key] = DateTime.now();
+      return result;
     }
 
     final overview = route['overview_polyline'];
@@ -182,7 +219,7 @@ class DirectionsService {
     final decoded = _decodePolyline(points);
     final anchored = _anchorRoutePoints(decoded, origin, destination);
 
-    return RouteResult(
+    final result = RouteResult(
       points: anchored,
       distanceText: distanceText,
       distanceMeters: distanceMeters,
@@ -190,6 +227,9 @@ class DirectionsService {
       startAddress: startAddress,
       endAddress: endAddress,
     );
+    _routeCache[key] = result;
+    _cacheTimes[key] = DateTime.now();
+    return result;
   }
 
   Future<RouteResult?> _requestOsrmRoute({
@@ -206,7 +246,7 @@ class DirectionsService {
         'geometries': 'polyline',
       });
 
-      final res = await http.get(uri);
+      final res = await http.get(uri).timeout(const Duration(seconds: 6));
       final data = jsonDecode(res.body);
       if (data is! Map<String, dynamic>) return null;
       if (data['code']?.toString().toUpperCase() != 'OK') return null;
@@ -334,7 +374,7 @@ class DirectionsService {
           '/maps/api/directions/json',
           query,
         );
-        final res = await http.get(uri);
+        final res = await http.get(uri).timeout(const Duration(seconds: 8));
         final data = jsonDecode(res.body);
         if (data is Map<String, dynamic> && data['status'] == 'OK') {
           return data;

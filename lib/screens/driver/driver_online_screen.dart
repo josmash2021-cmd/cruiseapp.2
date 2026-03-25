@@ -289,7 +289,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // -- Earnings pill swipe --
   double _weeklyEarnings = 0;
   double _lastTripEarnings = 0;
-  final _earningsPageCtrl = PageController(initialPage: 1);
   int _earningsPage = 1; // 0=weekly, 1=today, 2=last trip
   double _currentSpeedMph = 0.0;
 
@@ -395,7 +394,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _gpsService.stopTracking();
     _reFollowTimer?.cancel();
     _panelSheetCtrl.dispose();
-    _earningsPageCtrl.dispose();
     _offerPageCtrl.dispose();
     _routePulseCtrl?.dispose();
     _pulseCtrl?.dispose();
@@ -3830,6 +3828,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         ? Colors.white.withValues(alpha: 0.2)
         : Colors.black.withValues(alpha: 0.15);
 
+    final amounts = [
+      '\$${_weeklyEarnings.toStringAsFixed(2)}',
+      '\$${_earnings.toStringAsFixed(2)}',
+      '\$${_lastTripEarnings.toStringAsFixed(2)}',
+    ];
+    final labels = [
+      S.of(context).thisWeek.toUpperCase(),
+      S.of(context).today.toUpperCase(),
+      S.of(context).lastTripLabel.toUpperCase(),
+    ];
+
     Widget pillPage(String amount, String label) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(20),
@@ -3888,33 +3897,35 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       );
     }
 
-    return SizedBox(
-      width: 160,
-      height: 52,
-      child: PageView(
-        controller: _earningsPageCtrl,
-        onPageChanged: (i) => setState(() => _earningsPage = i),
-        clipBehavior: Clip.none,
-        children: [
-          Center(
+    return GestureDetector(
+      onHorizontalDragEnd: (details) {
+        if (details.primaryVelocity == null) return;
+        if (details.primaryVelocity! < -200 && _earningsPage < 2) {
+          setState(() => _earningsPage++);
+        } else if (details.primaryVelocity! > 200 && _earningsPage > 0) {
+          setState(() => _earningsPage--);
+        }
+      },
+      child: SizedBox(
+        width: 160,
+        height: 52,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          reverseDuration: const Duration(milliseconds: 300),
+          switchInCurve: Curves.easeInOut,
+          switchOutCurve: Curves.easeInOut,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: child,
+          ),
+          child: Center(
+            key: ValueKey<int>(_earningsPage),
             child: pillPage(
-              '\$${_weeklyEarnings.toStringAsFixed(2)}',
-              S.of(context).thisWeek.toUpperCase(),
+              amounts[_earningsPage],
+              labels[_earningsPage],
             ),
           ),
-          Center(
-            child: pillPage(
-              '\$${_earnings.toStringAsFixed(2)}',
-              S.of(context).today.toUpperCase(),
-            ),
-          ),
-          Center(
-            child: pillPage(
-              '\$${_lastTripEarnings.toStringAsFixed(2)}',
-              S.of(context).lastTripLabel.toUpperCase(),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -140,7 +140,15 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const AdminHomeScreen()),
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => const AdminHomeScreen(),
+          transitionDuration: const Duration(milliseconds: 280),
+          reverseTransitionDuration: const Duration(milliseconds: 220),
+          transitionsBuilder: (_, anim, __, child) => FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+            child: child,
+          ),
+        ),
       );
     }
   }
@@ -1196,7 +1204,15 @@ class SettingsScreen extends StatelessWidget {
             onTap: () {
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
+                PageRouteBuilder(
+                  pageBuilder: (_, __, ___) => const AdminLoginScreen(),
+                  transitionDuration: const Duration(milliseconds: 280),
+                  reverseTransitionDuration: const Duration(milliseconds: 220),
+                  transitionsBuilder: (_, anim, __, child) => FadeTransition(
+                    opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+                    child: child,
+                  ),
+                ),
               );
             },
           ),

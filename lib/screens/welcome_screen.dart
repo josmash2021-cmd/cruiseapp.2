@@ -186,11 +186,9 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   const SizedBox(height: 36),
 
                   // Get started button
-                  SlideTransition(
-                    position: _btnSlide,
-                    child: FadeTransition(
-                      opacity: _btnFade,
-                      child: SizedBox(
+                  FadeTransition(
+                    opacity: _btnFade,
+                    child: SizedBox(
                         width: double.infinity,
                         height: 58,
                         child: ElevatedButton(
@@ -219,11 +217,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         ),
                       ),
                     ),
-                  ),
 
-                  const SizedBox(height: 16),
-
-                  // ── Already have an account? ──
                   FadeTransition(
                     opacity: _btnFade,
                     child: Center(

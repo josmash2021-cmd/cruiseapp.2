@@ -6717,8 +6717,8 @@ Widget _navHeader() {
       child: Container(
         color: overlayBg,
         child: Center(
-          child: ScaleTransition(
-            scale: _doneScale,
+          child: FadeTransition(
+            opacity: _doneScale,
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 24),
               padding: const EdgeInsets.all(24),

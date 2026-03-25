@@ -350,17 +350,13 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder<void>(
-        transitionDuration: const Duration(milliseconds: 600),
+        transitionDuration: const Duration(milliseconds: 280),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
         pageBuilder: (_, __, ___) => const DriverApprovedScreen(),
         transitionsBuilder: (_, anim, __, child) {
           return FadeTransition(
-            opacity: anim,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.95, end: 1.0).animate(
-                CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
-              ),
-              child: child,
-            ),
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+            child: child,
           );
         },
       ),
@@ -630,8 +626,8 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           const SizedBox(height: 40),
 
           // Big check icon
-          ScaleTransition(
-            scale: _approvedScale,
+          FadeTransition(
+            opacity: _approvedScale,
             child: Container(
               width: 110,
               height: 110,

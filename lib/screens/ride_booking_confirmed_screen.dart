@@ -87,8 +87,8 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
               const Spacer(),
 
               // Animated checkmark
-              ScaleTransition(
-                scale: _scaleAnim,
+              FadeTransition(
+                opacity: _fadeAnim,
                 child: Container(
                   width: 100,
                   height: 100,

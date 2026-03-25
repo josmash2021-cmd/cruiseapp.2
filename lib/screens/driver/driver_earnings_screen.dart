@@ -368,17 +368,11 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   const SizedBox(height: 14),
                   FadeTransition(
                     opacity: _listAnim,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0, 0.1),
-                        end: Offset.zero,
-                      ).animate(_listAnim),
-                      child: Column(
+                    child: Column(
                         children: _transactions
                             .map((t) => _transactionTile(t))
                             .toList(),
                       ),
-                    ),
                   ),
                   const SizedBox(height: 24),
                 ],

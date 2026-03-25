@@ -208,6 +208,7 @@ class _AccountScreenState extends State<AccountScreen> {
                             photoPath: photoPath,
                             radius: 35,
                             fallbackName: fullName,
+                            uid: _user?['userId'],
                           ),
                         ),
                       ),

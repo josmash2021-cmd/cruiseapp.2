@@ -3055,17 +3055,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                 children: [
                                   // Animated status message
                                   AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 350),
+                                    duration: const Duration(milliseconds: 280),
                                     transitionBuilder: (child, anim) =>
                                         FadeTransition(
-                                      opacity: anim,
-                                      child: SlideTransition(
-                                        position: Tween<Offset>(
-                                          begin: const Offset(0, 0.15),
-                                          end: Offset.zero,
-                                        ).animate(anim),
-                                        child: child,
+                                      opacity: CurvedAnimation(
+                                        parent: anim,
+                                        curve: Curves.easeInOut,
                                       ),
+                                      child: child,
                                     ),
                                     child: Text(
                                       statusMsg,
@@ -4324,20 +4321,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   const Spacer(),
 
                   // ── Driver info card ──
-                  SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 0.25),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(
+                  FadeTransition(
+                    opacity: CurvedAnimation(
                       parent: stagger,
-                      curve: const Interval(0.3, 0.7, curve: Curves.easeOutCubic),
-                    )),
-                    child: FadeTransition(
-                      opacity: CurvedAnimation(
-                        parent: stagger,
-                        curve: const Interval(0.3, 0.6),
-                      ),
-                      child: Container(
+                      curve: const Interval(0.3, 0.6),
+                    ),
+                    child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 28),
                         padding: const EdgeInsets.all(22),
                         decoration: BoxDecoration(
@@ -4451,27 +4440,18 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             ),
                           ],
                         ),
-                      ),
                     ),
                   ),
 
                   const SizedBox(height: 18),
 
-                  // ── ETA pill (bounce in) ──
-                  SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 0.4),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(
+                  // ── ETA pill (fade in) ──
+                  FadeTransition(
+                    opacity: CurvedAnimation(
                       parent: stagger,
-                      curve: const Interval(0.5, 0.85, curve: Curves.easeOutCubic),
-                    )),
-                    child: FadeTransition(
-                      opacity: CurvedAnimation(
-                        parent: stagger,
-                        curve: const Interval(0.5, 0.75),
-                      ),
-                      child: Container(
+                      curve: const Interval(0.5, 0.75),
+                    ),
+                    child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 18,
                           vertical: 10,
@@ -4495,7 +4475,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             ),
                           ),
                         ),
-                      ),
                     ),
                   ),
 

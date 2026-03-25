@@ -198,9 +198,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
-          child: SlideTransition(
-            position: _slideAnim,
-            child: Column(
+          child: Column(
               children: [
                 Expanded(
                   child: ListView(
@@ -551,7 +549,6 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
             ),
           ),
         ),
-      ),
     );
   }
 

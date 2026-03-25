@@ -1137,6 +1137,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           photoPath: _photoPath,
           radius: 22,
           fallbackName: '$_firstName $_lastName',
+          uid: UserSession.currentUid,
         ),
       ),
     );
@@ -1410,11 +1411,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ? (kIsWeb
                       ? CachedNetworkImage(
                           imageUrl: _photoPath!,
+                          cacheKey: UserSession.currentUid.isNotEmpty
+                              ? 'avatar_${UserSession.currentUid}'
+                              : null,
                           fit: BoxFit.cover,
                           width: 44,
                           height: 44,
                           fadeInDuration: const Duration(milliseconds: 200),
-                          key: ValueKey(_photoPath), // Force rebuild on path change
+                          key: ValueKey('${_photoPath}_${UserSession.currentUid}'),
                         )
                       : Image.file(
                           File(_photoPath!),
@@ -1423,7 +1427,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           height: 44,
                           cacheWidth: 200,
                           gaplessPlayback: true,
-                          key: ValueKey(_photoPath), // Force rebuild on path change
+                          key: ValueKey('${_photoPath}_${UserSession.currentUid}'),
                           frameBuilder:
                               (context, child, frame, wasSynchronouslyLoaded) {
                                 if (wasSynchronouslyLoaded) return child;
@@ -4106,23 +4110,17 @@ class _ScheduleBottomSheetState extends State<_ScheduleBottomSheet>
                     height: 320,
                     child: Stack(
                       children: [
-                        // Calendar (slides out left, fades out)
+                        // Calendar (fades out)
                         if (!_showingClock || _animCtrl.isAnimating)
-                          SlideTransition(
-                            position: _slideOut,
-                            child: FadeTransition(
-                              opacity: _fadeOut,
-                              child: _buildCalendar(),
-                            ),
+                          FadeTransition(
+                            opacity: _fadeOut,
+                            child: _buildCalendar(),
                           ),
-                        // Clock (slides in from right, fades in)
+                        // Clock (fades in)
                         if (_showingClock)
-                          SlideTransition(
-                            position: _slideIn,
-                            child: FadeTransition(
-                              opacity: _fadeIn,
-                              child: _buildTimePicker(),
-                            ),
+                          FadeTransition(
+                            opacity: _fadeIn,
+                            child: _buildTimePicker(),
                           ),
                       ],
                     ),
@@ -4443,16 +4441,10 @@ class _ScheduleBottomSheetState extends State<_ScheduleBottomSheet>
         ),
         const SizedBox(height: 6),
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 280),
           transitionBuilder: (child, anim) => FadeTransition(
-            opacity: anim,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.3),
-                end: Offset.zero,
-              ).animate(anim),
-              child: child,
-            ),
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+            child: child,
           ),
           child: Text(
             display,

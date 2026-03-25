@@ -327,6 +327,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               photoPath: _photoPath,
                               radius: 50,
                               fallbackName: '${_firstNameCtrl.text} ${_lastNameCtrl.text}',
+                              uid: UserSession.currentUid,
                             ),
                           ),
                           Positioned(

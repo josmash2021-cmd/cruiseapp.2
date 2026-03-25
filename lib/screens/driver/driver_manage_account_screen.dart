@@ -280,6 +280,7 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
                           photoPath: _localPhotoPath,
                           radius: 54,
                           fallbackName: fullName,
+                          uid: UserSession.currentUid,
                         ),
                         Positioned(
                           bottom: 0,

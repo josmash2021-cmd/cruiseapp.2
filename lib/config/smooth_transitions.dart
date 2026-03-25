@@ -19,205 +19,91 @@ class SmoothTransitions {
   static const Curve _spring = Cubic(0.175, 0.885, 0.32, 1.275);
 
   // ═══════════════════════════════════════════════════════════
-  // TRANSICIONES DE PÁGINA COMPLETAS
+  // TRANSICIONES DE PÁGINA COMPLETAS — pure fade only
   // ═══════════════════════════════════════════════════════════
 
-  /// Transición fade suave con slide (la más usada)
+  static const _fadeDuration = Duration(milliseconds: 280);
+  static const _fadeReverse = Duration(milliseconds: 220);
+
+  /// Smooth fade transition (replaces old slide+fade)
   static PageRouteBuilder<T> fadeSlide<T>({
     required Widget page,
     bool fromRight = true,
   }) {
     return PageRouteBuilder<T>(
-      transitionDuration: _smooth,
-      reverseTransitionDuration: _normal,
+      transitionDuration: _fadeDuration,
+      reverseTransitionDuration: _fadeReverse,
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final slideAnimation = Tween<Offset>(
-          begin: fromRight ? const Offset(0.08, 0) : const Offset(-0.08, 0),
-          end: Offset.zero,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: _easeOutExpo,
-        ));
-
-        final fadeAnimation = Tween<double>(
-          begin: 0.0,
-          end: 1.0,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
-        ));
-
-        final scaleAnimation = Tween<double>(
-          begin: 0.96,
-          end: 1.0,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: _easeOutQuart,
-        ));
-
         return FadeTransition(
-          opacity: fadeAnimation,
-          child: SlideTransition(
-            position: slideAnimation,
-            child: ScaleTransition(
-              scale: scaleAnimation,
-              child: child,
-            ),
-          ),
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+          child: child,
         );
       },
     );
   }
 
-  /// Transición scale con fade (para modales/dialogs)
+  /// Fade transition for modals/dialogs
   static PageRouteBuilder<T> scaleFade<T>(Widget page) {
     return PageRouteBuilder<T>(
-      transitionDuration: _smooth,
-      reverseTransitionDuration: _quick,
+      transitionDuration: _fadeDuration,
+      reverseTransitionDuration: _fadeReverse,
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final scaleAnimation = Tween<double>(
-          begin: 0.85,
-          end: 1.0,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: _spring,
-        ));
-
-        final fadeAnimation = Tween<double>(
-          begin: 0.0,
-          end: 1.0,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
-        ));
-
         return FadeTransition(
-          opacity: fadeAnimation,
-          child: ScaleTransition(
-            scale: scaleAnimation,
-            alignment: Alignment.center,
-            child: child,
-          ),
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+          child: child,
         );
       },
     );
   }
 
-  /// Transición slide vertical (para bottom sheets/full screen)
+  /// Fade transition for bottom sheets / full screen
   static PageRouteBuilder<T> slideUp<T>(Widget page) {
     return PageRouteBuilder<T>(
-      transitionDuration: _smooth,
-      reverseTransitionDuration: _normal,
+      transitionDuration: _fadeDuration,
+      reverseTransitionDuration: _fadeReverse,
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final slideAnimation = Tween<Offset>(
-          begin: const Offset(0, 0.15),
-          end: Offset.zero,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: _easeOutBack,
-        ));
-
-        final fadeAnimation = Tween<double>(
-          begin: 0.0,
-          end: 1.0,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: const Interval(0.0, 0.4, curve: Curves.easeOut),
-        ));
-
         return FadeTransition(
-          opacity: fadeAnimation,
-          child: SlideTransition(
-            position: slideAnimation,
-            child: child,
-          ),
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+          child: child,
         );
       },
     );
   }
 
-  /// Transición shared element (Hero-like para rutas)
+  /// Fade transition for shared element routes
   static PageRouteBuilder<T> sharedAxis<T>({
     required Widget page,
     Axis axis = Axis.horizontal,
   }) {
     return PageRouteBuilder<T>(
-      transitionDuration: _smooth,
-      reverseTransitionDuration: _normal,
+      transitionDuration: _fadeDuration,
+      reverseTransitionDuration: _fadeReverse,
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final isReversing = animation.status == AnimationStatus.reverse;
-
-        final slideAnimation = Tween<Offset>(
-          begin: axis == Axis.horizontal
-              ? (isReversing ? const Offset(-0.1, 0) : const Offset(0.1, 0))
-              : (isReversing ? const Offset(0, -0.1) : const Offset(0, 0.1)),
-          end: Offset.zero,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: _easeOutExpo,
-        ));
-
-        final fadeAnimation = Tween<double>(
-          begin: 0.0,
-          end: 1.0,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: const Interval(0.1, 0.8, curve: Curves.easeOut),
-        ));
-
         return FadeTransition(
-          opacity: fadeAnimation,
-          child: SlideTransition(
-            position: slideAnimation,
-            child: child,
-          ),
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+          child: child,
         );
       },
     );
   }
 
-  /// Transición circular reveal (para FAB a pantalla)
+  /// Fade transition for circular reveal
   static PageRouteBuilder<T> circularReveal<T>({
     required Widget page,
     required Offset center,
   }) {
     return PageRouteBuilder<T>(
-      transitionDuration: _dramatic,
-      reverseTransitionDuration: _smooth,
+      transitionDuration: _fadeDuration,
+      reverseTransitionDuration: _fadeReverse,
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final screenSize = MediaQuery.of(context).size;
-        final maxRadius = screenSize.shortestSide * 1.5;
-
-        final radiusAnimation = Tween<double>(
-          begin: 0.0,
-          end: maxRadius,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: _easeOutExpo,
-        ));
-
-        final fadeAnimation = Tween<double>(
-          begin: 0.0,
-          end: 1.0,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: const Interval(0.2, 0.8, curve: Curves.easeOut),
-        ));
-
-        return ClipPath(
-          clipper: _CircularRevealClipper(
-            center: center,
-            radius: radiusAnimation.value,
-          ),
-          child: FadeTransition(
-            opacity: fadeAnimation,
-            child: child,
-          ),
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+          child: child,
         );
       },
     );
@@ -416,12 +302,9 @@ class _ScaleInState extends State<_ScaleIn>
 
   @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _animation,
-      child: FadeTransition(
-        opacity: _animation,
-        child: widget.child,
-      ),
+    return FadeTransition(
+      opacity: _animation,
+      child: widget.child,
     );
   }
 }
@@ -468,12 +351,9 @@ class _SlideInUpState extends State<_SlideInUp>
 
   @override
   Widget build(BuildContext context) {
-    return SlideTransition(
-      position: _animation,
-      child: FadeTransition(
-        opacity: _controller,
-        child: widget.child,
-      ),
+    return FadeTransition(
+      opacity: _controller,
+      child: widget.child,
     );
   }
 }

@@ -477,6 +477,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                     photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
                     radius: 36,
                     fallbackName: _name,
+                    uid: UserSession.currentUid,
                   ),
                 ),
               ),
@@ -932,6 +933,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                       photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
                       radius: 40,
                       fallbackName: _name,
+                      uid: UserSession.currentUid,
                     )
                   : const Icon(Icons.person_rounded, color: _gold, size: 40),
             ),

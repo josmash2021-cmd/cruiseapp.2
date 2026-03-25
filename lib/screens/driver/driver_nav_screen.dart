@@ -964,18 +964,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           fare: widget.fare,
         ),
         transitionsBuilder: (_, anim, __, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOutCubic),
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 0.08),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: anim, curve: Curves.easeOutCubic,
-            )),
-            child: child,
-          ),
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+          child: child,
         ),
-        transitionDuration: const Duration(milliseconds: 500),
+        transitionDuration: const Duration(milliseconds: 280),
       ),
     );
   }
@@ -1748,13 +1740,19 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           icon: Icons.shield_rounded,
           onTap: () {
             HapticFeedback.mediumImpact();
-            Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => DriverSafetyScreen(
+            Navigator.of(context).push(PageRouteBuilder(
+              pageBuilder: (_, __, ___) => DriverSafetyScreen(
                 tripId: widget.tripId,
                 riderName: widget.riderName,
                 riderPhone: widget.riderPhone,
                 pickupAddress: widget.pickupAddress,
                 dropoffAddress: widget.dropoffAddress,
+              ),
+              transitionDuration: const Duration(milliseconds: 280),
+              reverseTransitionDuration: const Duration(milliseconds: 220),
+              transitionsBuilder: (_, anim, __, child) => FadeTransition(
+                opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+                child: child,
               ),
             ));
           },

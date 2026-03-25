@@ -356,10 +356,10 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
     return Row(
       children: [
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          transitionBuilder: (child, anim) => ScaleTransition(
-            scale: anim,
-            child: FadeTransition(opacity: anim, child: child),
+          duration: const Duration(milliseconds: 280),
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+            child: child,
           ),
           child: Icon(
             met ? Icons.check_circle_rounded : Icons.circle_outlined,

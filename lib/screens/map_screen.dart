@@ -2923,19 +2923,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                             curve: Curves.easeOut,
                           ),
                         ),
-                        child: SlideTransition(
-                          position:
-                              Tween<Offset>(
-                                begin: const Offset(0, 0.06),
-                                end: Offset.zero,
-                              ).animate(
-                                CurvedAnimation(
-                                  parent: animation,
-                                  curve: Curves.easeOutCubic,
-                                ),
-                              ),
-                          child: child,
-                        ),
+                        child: child,
                       );
                     },
                     child: _buildPanel(),

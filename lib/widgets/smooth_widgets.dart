@@ -388,10 +388,7 @@ class _SmoothFadeInState extends State<SmoothFadeIn>
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _fadeAnimation,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: widget.child,
-      ),
+      child: widget.child,
     );
   }
 }

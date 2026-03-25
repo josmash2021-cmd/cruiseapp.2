@@ -451,8 +451,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         opaque: false,
         pageBuilder: (ctx, anim1, anim2) =>
             DriverOnlineScreen(photoUrl: _photoUrl),
-        transitionDuration: const Duration(milliseconds: 600),
-        reverseTransitionDuration: const Duration(milliseconds: 450),
+        transitionDuration: const Duration(milliseconds: 280),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
           return FadeTransition(
             opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
@@ -518,8 +518,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         opaque: false,
         pageBuilder: (ctx, anim1, anim2) =>
             DriverOnlineScreen(photoUrl: _photoUrl),
-        transitionDuration: const Duration(milliseconds: 600),
-        reverseTransitionDuration: const Duration(milliseconds: 450),
+        transitionDuration: const Duration(milliseconds: 280),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
           return FadeTransition(
             opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
@@ -663,7 +663,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             left: 0,
             right: 0,
             child: Center(
-              child: ScaleTransition(scale: _fabScale, child: _buildGoButton()),
+              child: FadeTransition(opacity: _fabScale, child: _buildGoButton()),
             ),
           ),
 
@@ -747,24 +747,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 transitionDuration: const Duration(milliseconds: 350),
                 reverseTransitionDuration: const Duration(milliseconds: 300),
                 transitionsBuilder: (ctx2, anim, sa, child) {
-                  return SlideTransition(
-                    position:
-                        Tween<Offset>(
-                          begin: const Offset(-0.3, 0),
-                          end: Offset.zero,
-                        ).animate(
-                          CurvedAnimation(
-                            parent: anim,
-                            curve: Curves.easeOutCubic,
-                          ),
-                        ),
-                    child: FadeTransition(
-                      opacity: CurvedAnimation(
-                        parent: anim,
-                        curve: Curves.easeOut,
-                      ),
-                      child: child,
+                  return FadeTransition(
+                    opacity: CurvedAnimation(
+                      parent: anim,
+                      curve: Curves.easeInOut,
                     ),
+                    child: child,
                   );
                 },
               ),
@@ -805,6 +793,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
                       radius: 18,
                       fallbackName: _driverName,
+                      uid: UserSession.currentUid,
                     ),
                   ),
                 ),

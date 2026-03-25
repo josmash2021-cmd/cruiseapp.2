@@ -85,19 +85,13 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
   void _goToDriverHome() {
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder<void>(
-        transitionDuration: const Duration(milliseconds: 700),
+        transitionDuration: const Duration(milliseconds: 280),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
         pageBuilder: (_, __, ___) => const DriverHomeScreen(),
         transitionsBuilder: (_, anim, __, child) {
-          final curved = CurvedAnimation(
-            parent: anim,
-            curve: Curves.easeOutCubic,
-          );
-          return SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 1),
-              end: Offset.zero,
-            ).animate(curved),
-            child: FadeTransition(opacity: curved, child: child),
+          return FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+            child: child,
           );
         },
       ),
@@ -168,18 +162,13 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
 
                   const SizedBox(height: 40),
 
-                  // ── Sliding text ──
+                  // ── Fade text ──
                   FadeTransition(
-                    opacity: _textCtrl,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0, 0.3),
-                        end: Offset.zero,
-                      ).animate(CurvedAnimation(
-                        parent: _textCtrl,
-                        curve: Curves.easeOutCubic,
-                      )),
-                      child: Column(
+                    opacity: CurvedAnimation(
+                      parent: _textCtrl,
+                      curve: Curves.easeInOut,
+                    ),
+                    child: Column(
                         children: [
                           const Text(
                             "You're Approved!",
@@ -220,7 +209,6 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
                           ),
                         ],
                       ),
-                    ),
                   ),
                 ],
               ),

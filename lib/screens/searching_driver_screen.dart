@@ -341,30 +341,14 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
 Route<void> searchingDriverRoute() {
   return PageRouteBuilder<void>(
     opaque: true,
-    transitionDuration: const Duration(milliseconds: 600),
-    reverseTransitionDuration: const Duration(milliseconds: 400),
+    transitionDuration: const Duration(milliseconds: 280),
+    reverseTransitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (_, __, ___) => const SearchingDriverScreen(),
     transitionsBuilder: (_, anim, __, child) {
-      final isForward = anim.status == AnimationStatus.forward ||
-          anim.status == AnimationStatus.completed;
-      if (isForward) {
-        final curved =
-            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
-        return AnimatedBuilder(
-          animation: curved,
-          builder: (_, __) {
-            final angle = (1 - curved.value) * pi / 2;
-            return Transform(
-              alignment: Alignment.center,
-              transform: Matrix4.identity()
-                ..setEntry(3, 2, 0.001)
-                ..rotateX(angle),
-              child: Opacity(opacity: curved.value, child: child),
-            );
-          },
-        );
-      }
-      return FadeTransition(opacity: anim, child: child);
+      return FadeTransition(
+        opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+        child: child,
+      );
     },
   );
 }

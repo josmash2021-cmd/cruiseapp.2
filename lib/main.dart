@@ -272,7 +272,15 @@ class _UberCloneAppState extends State<UberCloneApp>
       await ApiService.clearToken();
       if (!alreadyOnAuth) {
         nav.pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const SplashScreen()),
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const SplashScreen(),
+            transitionDuration: const Duration(milliseconds: 280),
+            reverseTransitionDuration: const Duration(milliseconds: 220),
+            transitionsBuilder: (_, anim, __, child) => FadeTransition(
+              opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+              child: child,
+            ),
+          ),
           (_) => false,
         );
       }

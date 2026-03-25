@@ -453,6 +453,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                 photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
                 radius: 30,
                 fallbackName: _driverName,
+                uid: UserSession.currentUid,
               ),
             ),
             const SizedBox(width: 14),

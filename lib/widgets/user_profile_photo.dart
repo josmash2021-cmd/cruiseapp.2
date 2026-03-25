@@ -17,6 +17,8 @@ class UserProfilePhoto extends StatelessWidget {
   final String? photoPath;
   final double radius;
   final String? fallbackName;
+  /// User ID used as cache key — ensures photos never leak between accounts.
+  final String? uid;
 
   /// Custom cache manager with 30-day stale period for profile photos.
   static final _cacheManager = CacheManager(
@@ -27,12 +29,18 @@ class UserProfilePhoto extends StatelessWidget {
     ),
   );
 
+  /// Clear all cached profile photos — call on logout.
+  static Future<void> clearCache() async {
+    await _cacheManager.emptyCache();
+  }
+
   const UserProfilePhoto({
     super.key,
     this.photoUrl,
     this.photoPath,
     this.radius = 24,
     this.fallbackName,
+    this.uid,
   });
 
   @override
@@ -57,6 +65,7 @@ class UserProfilePhoto extends StatelessWidget {
         photoUrl!.startsWith('http')) {
       return CachedNetworkImage(
         imageUrl: photoUrl!,
+        cacheKey: uid != null ? 'photo_$uid' : null,
         width: radius * 2,
         height: radius * 2,
         fit: BoxFit.cover,

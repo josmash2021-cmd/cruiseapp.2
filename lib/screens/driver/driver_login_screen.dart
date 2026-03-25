@@ -254,9 +254,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
             Expanded(
               child: FadeTransition(
                 opacity: _fade,
-                child: SlideTransition(
-                  position: _slide,
-                  child: SingleChildScrollView(
+                child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 28),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -494,7 +492,6 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                       ],
                     ),
                   ),
-                ),
               ),
             ),
           ],

@@ -5321,13 +5321,67 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         border: Border.all(color: Colors.grey.shade700, width: 0.5),
       ),
       child: Center(
-        child: Text(
-          '\uF8FF Pay',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: size * 0.28,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.3,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.apple, color: Colors.white, size: size * 0.5),
+            const SizedBox(width: 2),
+            Text(
+              'Pay',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: size * 0.32,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Wide Apple Pay / Google Pay logo for payment rows (no extra text).
+  Widget _nativePayLogoWide(String id) {
+    if (id == 'apple_pay') {
+      return Container(
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        child: const Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.apple, color: Colors.white, size: 22),
+              SizedBox(width: 3),
+              Text('Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.5)),
+            ],
+          ),
+        ),
+      );
+    }
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      child: Center(
+        child: RichText(
+          text: const TextSpan(
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            children: [
+              TextSpan(text: 'G', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFEA4335))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFFBBC05))),
+              TextSpan(text: 'g', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'le ', style: TextStyle(color: Color(0xFF34A853))),
+              TextSpan(text: 'Pay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            ],
           ),
         ),
       ),
@@ -5456,32 +5510,36 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       ),
                       child: Row(
                         children: [
-                          info.logoWidget,
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  label,
-                                  style: TextStyle(
-                                    color: _c.textPrimary,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                if (!linked)
+                          if (id == 'apple_pay' || id == 'google_pay')
+                            Expanded(child: _nativePayLogoWide(id))
+                          else ...[    
+                            info.logoWidget,
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                                   Text(
-                                    S.of(context).notAdded,
-                                    style: const TextStyle(
-                                      color: Colors.white54,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
+                                    label,
+                                    style: TextStyle(
+                                      color: _c.textPrimary,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                              ],
+                                  if (!linked)
+                                    Text(
+                                      S.of(context).notAdded,
+                                      style: const TextStyle(
+                                        color: Colors.white54,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
-                          ),
+                          ],
                           if (linked && selected)
                             Icon(
                               Icons.check_circle_rounded,
@@ -6010,44 +6068,49 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         ),
                         child: Row(
                           children: [
-                            _paymentMethodInfo(
-                              _selectedPaymentMethod,
-                            ).logoWidget,
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _paymentMethodInfo(
-                                      _selectedPaymentMethod,
-                                    ).label,
-                                    style: TextStyle(
-                                      color: _c.textPrimary,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
+                            if (_selectedPaymentMethod == 'apple_pay' || _selectedPaymentMethod == 'google_pay')
+                              Expanded(child: _nativePayLogoWide(_selectedPaymentMethod))
+                            else ...[    
+                              _paymentMethodInfo(
+                                _selectedPaymentMethod,
+                              ).logoWidget,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _paymentMethodInfo(
+                                        _selectedPaymentMethod,
+                                      ).label,
+                                      style: TextStyle(
+                                        color: _c.textPrimary,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 1),
-                                  Text(
-                                    _linkedPaymentMethods.contains(
-                                          _selectedPaymentMethod,
-                                        )
-                                        ? S.of(context).tapToChange
-                                        : S.of(context).notAddedTapSetup,
-                                    style: TextStyle(
-                                      color:
-                                          _linkedPaymentMethods.contains(
+                                    const SizedBox(height: 1),
+                                    Text(
+                                      _linkedPaymentMethods.contains(
                                             _selectedPaymentMethod,
                                           )
-                                          ? _c.textTertiary
-                                          : Colors.white,
-                                      fontSize: 12,
+                                          ? S.of(context).tapToChange
+                                          : S.of(context).notAddedTapSetup,
+                                      style: TextStyle(
+                                        color:
+                                            _linkedPaymentMethods.contains(
+                                              _selectedPaymentMethod,
+                                            )
+                                            ? _c.textTertiary
+                                            : Colors.white,
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
+                            ],
+                            const SizedBox(width: 8),
                             Icon(
                               Icons.chevron_right_rounded,
                               color: _c.textTertiary,

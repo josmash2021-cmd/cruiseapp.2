@@ -329,30 +329,35 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
                         ),
                         child: Row(
                           children: [
-                            Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: opt.iconColor.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: opt.iconWidget ?? Icon(
-                                opt.icon,
-                                color: opt.iconColor,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Text(
-                                opt.label,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: c.textPrimary,
+                            if (opt.id == 'apple_pay' || opt.id == 'google_pay')
+                              Expanded(child: _nativePayLogoWide(opt.id))
+                            else ...[    
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: opt.iconColor.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: opt.iconWidget ?? Icon(
+                                  opt.icon,
+                                  color: opt.iconColor,
+                                  size: 20,
                                 ),
                               ),
-                            ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(
+                                  opt.label,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: c.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(width: 8),
                             Icon(
                               Icons.chevron_right_rounded,
                               color: c.chevron,
@@ -396,6 +401,52 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
                   ),
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _nativePayLogoWide(String id) {
+    if (id == 'apple_pay') {
+      return Container(
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        child: const Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.apple, color: Colors.white, size: 22),
+              SizedBox(width: 3),
+              Text('Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.5)),
+            ],
+          ),
+        ),
+      );
+    }
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      child: Center(
+        child: RichText(
+          text: const TextSpan(
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            children: [
+              TextSpan(text: 'G', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFEA4335))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFFBBC05))),
+              TextSpan(text: 'g', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'le ', style: TextStyle(color: Color(0xFF34A853))),
+              TextSpan(text: 'Pay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
             ],
           ),
         ),

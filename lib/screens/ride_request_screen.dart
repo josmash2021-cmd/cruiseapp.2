@@ -2442,18 +2442,23 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                         ),
                         child: Row(
                           children: [
-                            _paymentLogoWidget(_selectedPaymentMethod, 28),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _paymentLabel(_selectedPaymentMethod),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                            if (_selectedPaymentMethod == 'apple_pay' || _selectedPaymentMethod == 'google_pay')
+                              Expanded(child: _nativePayLogoWide(_selectedPaymentMethod))
+                            else ...[    
+                              _paymentLogoWidget(_selectedPaymentMethod, 28),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _paymentLabel(_selectedPaymentMethod),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
+                            const SizedBox(width: 8),
                             Icon(
                               Icons.chevron_right_rounded,
                               color: Colors.white.withValues(alpha: 0.4),
@@ -3338,33 +3343,38 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                         ),
                         child: Row(
                           children: [
-                            _paymentLogoWidget(_selectedPaymentMethod, 36),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _paymentLabel(_selectedPaymentMethod),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 1),
-                                  Text(
-                                    S.of(context).tapToChange,
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.4,
+                            if (_selectedPaymentMethod == 'apple_pay' || _selectedPaymentMethod == 'google_pay')
+                              Expanded(child: _nativePayLogoWide(_selectedPaymentMethod))
+                            else ...[    
+                              _paymentLogoWidget(_selectedPaymentMethod, 36),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _paymentLabel(_selectedPaymentMethod),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                      fontSize: 12,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: 1),
+                                    Text(
+                                      S.of(context).tapToChange,
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.4,
+                                        ),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
+                            ],
+                            const SizedBox(width: 8),
                             Icon(
                               Icons.chevron_right_rounded,
                               color: Colors.white.withValues(alpha: 0.4),
@@ -3767,23 +3777,27 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       ),
                       child: Row(
                         children: [
-                          _paymentLogoWidget(id, 36),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  label,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
+                          if (id == 'apple_pay' || id == 'google_pay')
+                            Expanded(child: _nativePayLogoWide(id))
+                          else ...[    
+                            _paymentLogoWidget(id, 36),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    label,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
+                          ],
                           if (selected)
                             Icon(
                               Icons.check_circle_rounded,
@@ -4064,6 +4078,53 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           ),
         );
     }
+  }
+
+  /// Official Apple Pay / Google Pay wide logo button (no extra text).
+  Widget _nativePayLogoWide(String id) {
+    if (id == 'apple_pay') {
+      return Container(
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        child: const Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.apple, color: Colors.white, size: 22),
+              SizedBox(width: 3),
+              Text('Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.5)),
+            ],
+          ),
+        ),
+      );
+    }
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      child: Center(
+        child: RichText(
+          text: const TextSpan(
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            children: [
+              TextSpan(text: 'G', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFEA4335))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFFBBC05))),
+              TextSpan(text: 'g', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'le ', style: TextStyle(color: Color(0xFF34A853))),
+              TextSpan(text: 'Pay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildDriverFoundOverlay(AppColors c) {

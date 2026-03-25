@@ -571,36 +571,40 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                             )
                           : null,
                     ),
-                    child: Row(
+    child: Row(
                       children: [
-                        _payLogo(id, 36),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                label,
-                                style: TextStyle(
-                                  color: c.textPrimary,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
+                        if (id == 'apple_pay' || id == 'google_pay')
+                          Expanded(child: _nativePayLogoWide(id))
+                        else ...[    
+                          _payLogo(id, 36),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  label,
+                                  style: TextStyle(
+                                    color: c.textPrimary,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                linked
-                                    ? S.of(context).readyLabel
-                                    : S.of(context).tapToSetUp,
-                                style: TextStyle(
-                                  color: linked
-                                      ? const Color(0xFF4CAF50)
-                                      : c.textSecondary,
-                                  fontSize: 12,
+                                Text(
+                                  linked
+                                      ? S.of(context).readyLabel
+                                      : S.of(context).tapToSetUp,
+                                  style: TextStyle(
+                                    color: linked
+                                        ? const Color(0xFF4CAF50)
+                                        : c.textSecondary,
+                                    fontSize: 12,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
+                        ],
                         if (selected)
                           const Icon(
                             Icons.check_circle_rounded,
@@ -704,6 +708,53 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
       return '${b[0].toUpperCase()}${b.substring(1)} •••• $_savedCardLast4';
     }
     return S.of(context).creditCardLabel2;
+  }
+
+  /// Official Apple Pay / Google Pay wide logo button (no extra text).
+  Widget _nativePayLogoWide(String id) {
+    if (id == 'apple_pay') {
+      return Container(
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        child: const Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.apple, color: Colors.white, size: 22),
+              SizedBox(width: 3),
+              Text('Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.5)),
+            ],
+          ),
+        ),
+      );
+    }
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      child: Center(
+        child: RichText(
+          text: const TextSpan(
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            children: [
+              TextSpan(text: 'G', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFEA4335))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFFBBC05))),
+              TextSpan(text: 'g', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'le ', style: TextStyle(color: Color(0xFF34A853))),
+              TextSpan(text: 'Pay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ── Airport ──────────────────────────────────────────────────────────
@@ -1181,39 +1232,44 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                           ),
                           child: Row(
                             children: [
-                              _payLogo(_selectedPaymentMethod, 34),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _payLabel,
-                                      style: TextStyle(
-                                        color: c.textPrimary,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
+                              if (_selectedPaymentMethod == 'apple_pay' || _selectedPaymentMethod == 'google_pay')
+                                Expanded(child: _nativePayLogoWide(_selectedPaymentMethod))
+                              else ...[    
+                                _payLogo(_selectedPaymentMethod, 34),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _payLabel,
+                                        style: TextStyle(
+                                          color: c.textPrimary,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
-                                    ),
-                                    Text(
-                                      _linkedPaymentMethods.contains(
-                                            _selectedPaymentMethod,
-                                          )
-                                          ? S.of(context).tapToChange
-                                          : S.of(context).notAddedTapToSetUp,
-                                      style: TextStyle(
-                                        color:
-                                            _linkedPaymentMethods.contains(
+                                      Text(
+                                        _linkedPaymentMethods.contains(
                                               _selectedPaymentMethod,
                                             )
-                                            ? c.textSecondary
-                                            : Colors.white,
-                                        fontSize: 12,
+                                            ? S.of(context).tapToChange
+                                            : S.of(context).notAddedTapToSetUp,
+                                        style: TextStyle(
+                                          color:
+                                              _linkedPaymentMethods.contains(
+                                                _selectedPaymentMethod,
+                                              )
+                                              ? c.textSecondary
+                                              : Colors.white,
+                                          fontSize: 12,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
+                              ],
+                              const SizedBox(width: 8),
                               Icon(
                                 Icons.chevron_right_rounded,
                                 color: c.textSecondary,

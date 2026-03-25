@@ -331,13 +331,12 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               const SizedBox(height: 10),
 
               // ── Google Pay (Android only) ──
-              if (Platform.isAndroid) ...[
-                _accountTile(
+              if (Platform.isAndroid) ...[                
+                _nativePayAccountTile(
                   c: c,
-                  logoWidget: _googlePayLogo(),
-                  label: _googlePayAvailable
-                      ? 'Google Pay'
-                      : S.of(context).googlePaySetUpInWallet,
+                  id: 'google_pay',
+                  available: _googlePayAvailable,
+                  unavailableHint: S.of(context).googlePaySetUpInWallet,
                   linked: _googlePayLinked,
                   onTap: _linkGooglePay,
                 ),
@@ -345,13 +344,12 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               ],
 
               // ── Apple Pay (iOS only) ──
-              if (Platform.isIOS) ...[
-                _accountTile(
+              if (Platform.isIOS) ...[                
+                _nativePayAccountTile(
                   c: c,
-                  logoWidget: _applePayLogo(),
-                  label: _applePayAvailable
-                      ? 'Apple Pay'
-                      : S.of(context).applePaySetUpInWallet,
+                  id: 'apple_pay',
+                  available: _applePayAvailable,
+                  unavailableHint: S.of(context).applePaySetUpInWallet,
                   linked: _applePayLinked,
                   onTap: _linkApplePay,
                 ),
@@ -599,8 +597,124 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
         color: Colors.black,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Center(
-        child: Icon(Icons.apple, color: Colors.white, size: 26),
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.apple, color: Colors.white, size: 18),
+            SizedBox(width: 2),
+            Text('Pay', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: -0.3)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Wide Apple Pay / Google Pay logo (no extra text outside).
+  Widget _nativePayLogoWide(String id) {
+    if (id == 'apple_pay') {
+      return Container(
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        child: const Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.apple, color: Colors.white, size: 22),
+              SizedBox(width: 3),
+              Text('Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.5)),
+            ],
+          ),
+        ),
+      );
+    }
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      child: Center(
+        child: RichText(
+          text: const TextSpan(
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            children: [
+              TextSpan(text: 'G', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFEA4335))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFFBBC05))),
+              TextSpan(text: 'g', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'le ', style: TextStyle(color: Color(0xFF34A853))),
+              TextSpan(text: 'Pay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Account tile for Apple Pay / Google Pay with wide logo, no text label.
+  Widget _nativePayAccountTile({
+    required AppColors c,
+    required String id,
+    required bool available,
+    required String unavailableHint,
+    required bool linked,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _nativePayLogoWide(id),
+                  if (!available)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        unavailableHint,
+                        style: TextStyle(fontSize: 11, color: c.textSecondary),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            if (linked)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  S.of(context).added,
+                  style: const TextStyle(color: Color(0xFFE8C547), fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _gold,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  S.of(context).addBtn,
+                  style: const TextStyle(color: Colors.black, fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

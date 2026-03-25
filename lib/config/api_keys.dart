@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'env.dart';
 
 class ApiKeys {
@@ -7,6 +8,11 @@ class ApiKeys {
   ///   - Application restriction: None (or Android/iOS app restrictions)
   ///   - API restriction: Places API, Geocoding API, Directions API, Distance Matrix API
   static const String webServices = Env.mapsServicesKey;
+
+  /// Platform-specific Google Places API keys
+  static const String _googlePlacesIOS = 'AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo';
+  static const String _googlePlacesAndroid = 'AIzaSyDs8MIOA8qk0JwxOkxd8rGxtAmVTeB7CF0';
+  static String get googlePlaces => Platform.isIOS ? _googlePlacesIOS : _googlePlacesAndroid;
 
   /// Stripe publishable key (pk_test_... or pk_live_...)
   /// Replace with your real key from https://dashboard.stripe.com/apikeys

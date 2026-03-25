@@ -6,6 +6,8 @@
 	<false/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>GMSApiKey</key>
+	<string>AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo</string>
 	<key>MBXAccessToken</key>
 	<string>pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w</string>
 	<key>CFBundleIcons</key>

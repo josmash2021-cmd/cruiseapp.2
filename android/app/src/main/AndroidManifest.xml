@@ -31,6 +31,10 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Google Places API Key -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDs8MIOA8qk0JwxOkxd8rGxtAmVTeB7CF0" />
         <!-- Mapbox Access Token -->
         <meta-data
             android:name="MAPBOX_ACCESS_TOKEN"

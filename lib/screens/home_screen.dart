@@ -973,58 +973,128 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // "Where to?" search bar floating over the map
+  // "Where to?" / "Ride in progress" search bar floating over the map
   Widget _buildWhereToBar() {
+    final active = _activeRide != null;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOutCubic,
+      height: 48,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1C22),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: active
+              ? _gold.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.08),
+          width: active ? 1.5 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: active
+                ? _gold.withValues(alpha: 0.10)
+                : Colors.black.withValues(alpha: 0.5),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 400),
+        switchInCurve: Curves.easeInOutCubic,
+        switchOutCurve: Curves.easeInOutCubic,
+        transitionBuilder: (child, anim) =>
+            FadeTransition(opacity: anim, child: child),
+        child: active ? _buildRideActiveContent() : _buildWhereToContent(),
+      ),
+    );
+  }
+
+  // Normal "Where to?" search bar content
+  Widget _buildWhereToContent() {
     return GestureDetector(
+      key: const ValueKey('where_to'),
       onTap: _openSearchThenRide,
-      child: Container(
-        height: 48,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1C22),
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.5),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            const SizedBox(width: 16),
-            Icon(Icons.search_rounded, color: Colors.white.withValues(alpha: 0.5), size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Where to?',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        children: [
+          const SizedBox(width: 16),
+          Icon(Icons.search_rounded,
+              color: Colors.white.withValues(alpha: 0.5), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Where to?',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
               ),
             ),
-            Container(
-              margin: const EdgeInsets.only(right: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: _gold.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.schedule_rounded, color: _gold, size: 14),
-                  const SizedBox(width: 4),
-                  Text('Now', style: TextStyle(color: _gold, fontSize: 13, fontWeight: FontWeight.w700)),
-                ],
+          ),
+          Container(
+            margin: const EdgeInsets.only(right: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _gold.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.schedule_rounded, color: _gold, size: 14),
+                const SizedBox(width: 4),
+                Text('Now',
+                    style: TextStyle(
+                        color: _gold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // "Ride in progress" content — same card, gold accent
+  Widget _buildRideActiveContent() {
+    return GestureDetector(
+      key: const ValueKey('ride_active'),
+      onTap: _resumeActiveRide,
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        children: [
+          const SizedBox(width: 10),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _gold.withValues(alpha: 0.15),
+              border: Border.all(color: _gold.withValues(alpha: 0.4)),
+            ),
+            child: const Icon(Icons.directions_car_rounded,
+                color: _gold, size: 16),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Ride in progress',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
               ),
             ),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: Icon(Icons.arrow_forward_ios_rounded,
+                color: _gold, size: 14),
+          ),
+        ],
       ),
     );
   }

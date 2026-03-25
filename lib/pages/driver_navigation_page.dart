@@ -90,6 +90,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
+  mapbox.PolylineAnnotation? _routeGlowAnnot;
+  mapbox.PolylineAnnotation? _routeCasingAnnot;
   double _currentSpeedMph = 0;
   DateTime? _lastAnnotUpdate;
 
@@ -779,14 +781,34 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final mgr = _polylineAnnotMgr;
     if (mgr == null || _displayRoutePts.length < 2) return;
     final coords = _displayRoutePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    if (_routeAnnot != null) {
-      try { await mgr.delete(_routeAnnot!); } catch (_) {}
-      _routeAnnot = null;
+    final geo = mapbox.LineString(coordinates: coords);
+    // Delete old layers
+    for (final a in [_routeGlowAnnot, _routeCasingAnnot, _routeAnnot]) {
+      if (a != null) { try { await mgr.delete(a); } catch (_) {} }
     }
+    _routeGlowAnnot = null;
+    _routeCasingAnnot = null;
+    _routeAnnot = null;
+    // Layer 1: Outer glow
+    _routeGlowAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geo,
+      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(),
+      lineWidth: 18.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    ));
+    // Layer 2: Inner glow
+    _routeCasingAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geo,
+      lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(),
+      lineWidth: 10.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    ));
+    // Layer 3: Main gold line
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
-      lineColor: const Color(0xFF5BA3F5).toARGB32(),
-      lineWidth: 7.0,
+      geometry: geo,
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 4.0,
+      lineJoin: mapbox.LineJoin.ROUND,
     ));
   }
 

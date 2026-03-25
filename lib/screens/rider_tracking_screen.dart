@@ -87,10 +87,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
-  mapbox.PolylineAnnotation? _fullRouteAnnot;
-  mapbox.PolylineAnnotation? _remainingRouteAnnot;
-  mapbox.PolylineAnnotation? _routeCasingAnnot;
-  mapbox.PolylineAnnotation? _routeShineAnnot;
+  mapbox.PolylineAnnotation? _fullRouteAnnot;      // outer glow (18px, diffused)
+  mapbox.PolylineAnnotation? _remainingRouteAnnot;  // main gold line (4px, sharp)
+  mapbox.PolylineAnnotation? _routeCasingAnnot;     // inner glow (10px, warm)
   mapbox.PolylineAnnotation? _approachAnnot; // dashed line driver→pickup
   final double _cameraBearing = 0;
   Uint8List? _pickupPinBytes;
@@ -2406,25 +2405,23 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Future<void> _createRouteLayers(mapbox.PolylineAnnotationManager mgr, mapbox.LineString geom) async {
+    // Layer 1: Outer glow — wide, diffused halo
     try { _fullRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
-      lineColor: const Color(0xFFD4AF37).withValues(alpha: 0.15).toARGB32(),
-      lineWidth: 16.0, lineJoin: mapbox.LineJoin.ROUND,
+      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(),
+      lineWidth: 18.0, lineJoin: mapbox.LineJoin.ROUND,
     )); } catch (_) {}
+    // Layer 2: Inner glow — warm transition
     try { _routeCasingAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
-      lineColor: const Color(0xFFD4AF37).withValues(alpha: 0.25).toARGB32(),
+      lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(),
       lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
     )); } catch (_) {}
+    // Layer 3: Main gold line — sharp, crisp
     try { _remainingRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
-      lineColor: const Color(0xFFD4AF37).toARGB32(),
-      lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
-    )); } catch (_) {}
-    try { _routeShineAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: geom,
-      lineColor: Colors.white.withValues(alpha: 0.25).toARGB32(),
-      lineWidth: 1.5, lineJoin: mapbox.LineJoin.ROUND,
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 4.0, lineJoin: mapbox.LineJoin.ROUND,
     )); } catch (_) {}
   }
 
@@ -2433,7 +2430,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       if (_fullRouteAnnot != null) mgr.update(_fullRouteAnnot!..geometry = geom);
       if (_routeCasingAnnot != null) mgr.update(_routeCasingAnnot!..geometry = geom);
       if (_remainingRouteAnnot != null) mgr.update(_remainingRouteAnnot!..geometry = geom);
-      if (_routeShineAnnot != null) mgr.update(_routeShineAnnot!..geometry = geom);
     } catch (_) {}
   }
 
@@ -2482,10 +2478,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
     final geom = mapbox.LineString(coordinates: remaining);
     try {
-      // Update only the 3 visible layers (casing, main, shine), keep glow as full route
+      // Update inner glow + main line (keep outer glow as full route)
       if (_routeCasingAnnot != null) mgr.update(_routeCasingAnnot!..geometry = geom);
       if (_remainingRouteAnnot != null) mgr.update(_remainingRouteAnnot!..geometry = geom);
-      if (_routeShineAnnot != null) mgr.update(_routeShineAnnot!..geometry = geom);
     } catch (_) {}
   }
 
@@ -2577,8 +2572,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final mgr = _polylineAnnotMgr;
     if (mgr == null || _fullRouteAnnot == null) return;
     final v = _glowPulseCtrl?.value ?? 0.0;
-    _fullRouteAnnot!.lineWidth = 14.0 + v * 6.0;
+    // Pulse outer glow width 16→22 and opacity 0.12→0.22
+    _fullRouteAnnot!.lineWidth = 16.0 + v * 6.0;
+    _fullRouteAnnot!.lineColor = const Color(0xFFFFD700).withValues(alpha: 0.12 + v * 0.10).toARGB32();
     try { mgr.update(_fullRouteAnnot!); } catch (_) {}
+    // Pulse inner glow opacity 0.20→0.32
+    if (_routeCasingAnnot != null) {
+      _routeCasingAnnot!.lineColor = const Color(0xFFFFE566).withValues(alpha: 0.20 + v * 0.12).toARGB32();
+      try { mgr.update(_routeCasingAnnot!); } catch (_) {}
+    }
   }
 
   Future<void> _updateAnnotations() async {

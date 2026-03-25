@@ -469,11 +469,28 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
     if (mgr == null || _route.length < 2) return;
 
     final coords = _route.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final geo = mapbox.LineString(coordinates: coords);
 
+    // Layer 1: Outer glow — wide, diffused halo
     await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
-      lineColor: const Color(0xFF5BA3F5).toARGB32(),
-      lineWidth: 8.0,
+      geometry: geo,
+      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(),
+      lineWidth: 18.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    ));
+    // Layer 2: Inner glow — warm transition
+    await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geo,
+      lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(),
+      lineWidth: 10.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    ));
+    // Layer 3: Main gold line — sharp, crisp
+    await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geo,
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 4.0,
+      lineJoin: mapbox.LineJoin.ROUND,
     ));
   }
 

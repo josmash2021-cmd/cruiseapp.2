@@ -89,11 +89,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   mapbox.PointAnnotation? _goldDotAnnot;
   mapbox.PointAnnotation? _userDotAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
-  // ── Gold gloss route layers ──
+  // ── Gold glow route layers ──
   mapbox.PolylineAnnotation? _routeGlowAnnot;
   mapbox.PolylineAnnotation? _routeCasingAnnot;
   mapbox.PolylineAnnotation? _routeMainAnnot;
-  mapbox.PolylineAnnotation? _routeShineAnnot;
   mapbox.PolylineAnnotation? _fullRouteGlow;
   // ── Cinematic animation ──
   AnimationController? _tiltCtrl;
@@ -1285,7 +1284,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (_routeGlowAnnot != null) { try { await polyMgr.delete(_routeGlowAnnot!); } catch (_) {} _routeGlowAnnot = null; }
       if (_routeCasingAnnot != null) { try { await polyMgr.delete(_routeCasingAnnot!); } catch (_) {} _routeCasingAnnot = null; }
       if (_routeMainAnnot != null) { try { await polyMgr.delete(_routeMainAnnot!); } catch (_) {} _routeMainAnnot = null; }
-      if (_routeShineAnnot != null) { try { await polyMgr.delete(_routeShineAnnot!); } catch (_) {} _routeShineAnnot = null; }
       if (_fullRouteGlow != null) { try { await polyMgr.delete(_fullRouteGlow!); } catch (_) {} _fullRouteGlow = null; }
       if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
     }
@@ -1512,22 +1510,18 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
         if (_routeGlowAnnot == null) {
           _routeGlowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: _gold.withValues(alpha: 0.15).toARGB32(), lineWidth: 16.0, lineJoin: mapbox.LineJoin.ROUND,
+            geometry: geo, lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(), lineWidth: 18.0, lineJoin: mapbox.LineJoin.ROUND,
           ));
           _routeCasingAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: _gold.withValues(alpha: 0.25).toARGB32(), lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
+            geometry: geo, lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(), lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
           ));
           _routeMainAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: _gold.toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
-          ));
-          _routeShineAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: Colors.white.withValues(alpha: 0.25).toARGB32(), lineWidth: 1.5, lineJoin: mapbox.LineJoin.ROUND,
+            geometry: geo, lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 4.0, lineJoin: mapbox.LineJoin.ROUND,
           ));
         } else {
           _routeGlowAnnot!.geometry = geo; await polyMgr.update(_routeGlowAnnot!);
           _routeCasingAnnot!.geometry = geo; await polyMgr.update(_routeCasingAnnot!);
           _routeMainAnnot!.geometry = geo; await polyMgr.update(_routeMainAnnot!);
-          _routeShineAnnot!.geometry = geo; await polyMgr.update(_routeShineAnnot!);
         }
       }
       if (progress >= 1.0) {
@@ -1537,7 +1531,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         if (_routeGlowAnnot != null) { _routeGlowAnnot!.geometry = fullGeo; await polyMgr.update(_routeGlowAnnot!); }
         if (_routeCasingAnnot != null) { _routeCasingAnnot!.geometry = fullGeo; await polyMgr.update(_routeCasingAnnot!); }
         if (_routeMainAnnot != null) { _routeMainAnnot!.geometry = fullGeo; await polyMgr.update(_routeMainAnnot!); }
-        if (_routeShineAnnot != null) { _routeShineAnnot!.geometry = fullGeo; await polyMgr.update(_routeShineAnnot!); }
         if (!completer.isCompleted) completer.complete();
       }
     });
@@ -1553,8 +1546,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final geo = mapbox.LineString(coordinates: coords);
     _polylineAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
       geometry: geo,
-      lineColor: _gold.withValues(alpha: 0.10).toARGB32(),
-      lineWidth: 16.0,
+      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.12).toARGB32(),
+      lineWidth: 18.0,
       lineJoin: mapbox.LineJoin.ROUND,
     )).then((a) => _fullRouteGlow = a);
 
@@ -1563,10 +1556,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _glowPulseCtrl!.addListener(() {
       final glow = _fullRouteGlow;
       if (glow == null || _polylineAnnotMgr == null) return;
-      final alpha = (0.06 + _glowPulseCtrl!.value * 0.18).clamp(0.0, 1.0);
-      glow.lineColor = _gold.withValues(alpha: alpha).toARGB32();
-      glow.lineWidth = 14.0 + _glowPulseCtrl!.value * 4.0;
+      final v = _glowPulseCtrl!.value;
+      glow.lineColor = const Color(0xFFFFD700).withValues(alpha: 0.12 + v * 0.10).toARGB32();
+      glow.lineWidth = 16.0 + v * 6.0;
       _polylineAnnotMgr!.update(glow);
+      if (_routeCasingAnnot != null) {
+        _routeCasingAnnot!.lineColor = const Color(0xFFFFE566).withValues(alpha: 0.20 + v * 0.12).toARGB32();
+        try { _polylineAnnotMgr!.update(_routeCasingAnnot!); } catch (_) {}
+      }
     });
   }
 
@@ -1581,7 +1578,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       _routeGlowAnnot!.geometry = geo; await mgr.update(_routeGlowAnnot!);
       _routeCasingAnnot?.geometry = geo; if (_routeCasingAnnot != null) await mgr.update(_routeCasingAnnot!);
       _routeMainAnnot?.geometry = geo; if (_routeMainAnnot != null) await mgr.update(_routeMainAnnot!);
-      _routeShineAnnot?.geometry = geo; if (_routeShineAnnot != null) await mgr.update(_routeShineAnnot!);
       return;
     }
     // Fallback: legacy single-color route
@@ -1589,8 +1585,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (points.isEmpty) return;
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
-      lineColor: _gold.toARGB32(),
-      lineWidth: 5.0,
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 4.0,
     ));
   }
 

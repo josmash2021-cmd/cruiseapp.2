@@ -96,7 +96,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   mapbox.PolylineAnnotation? _routeMainAnnot;
   mapbox.PolylineAnnotation? _routeGlowAnnot;
   mapbox.PolylineAnnotation? _routeCasingAnnot;
-  mapbox.PolylineAnnotation? _routeShineAnnot;
   mapbox.PolylineAnnotation? _fullRouteGlow;
   AnimationController? _glowPulseCtrl;
   List<LatLng> _routePoints = [];
@@ -795,32 +794,25 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         final geo = mapbox.LineString(coordinates: coords);
 
         if (_routeGlowAnnot == null) {
-          // Layer 1: Soft outer glow
+          // Layer 1: Outer glow — wide, diffused halo
           _routeGlowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
             geometry: geo,
-            lineColor: _gold.withValues(alpha: 0.15).toARGB32(),
-            lineWidth: 16.0,
+            lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(),
+            lineWidth: 18.0,
             lineJoin: mapbox.LineJoin.ROUND,
           ));
-          // Layer 2: Mid glow (casing)
+          // Layer 2: Inner glow — warm transition
           _routeCasingAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
             geometry: geo,
-            lineColor: _gold.withValues(alpha: 0.25).toARGB32(),
+            lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(),
             lineWidth: 10.0,
             lineJoin: mapbox.LineJoin.ROUND,
           ));
-          // Layer 3: Main gold line
+          // Layer 3: Main gold line — sharp, crisp
           _routeMainAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
             geometry: geo,
-            lineColor: _gold.toARGB32(),
-            lineWidth: 5.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-          // Layer 4: Gloss shine highlight
-          _routeShineAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo,
-            lineColor: Colors.white.withValues(alpha: 0.25).toARGB32(),
-            lineWidth: 1.5,
+            lineColor: const Color(0xFFFFD700).toARGB32(),
+            lineWidth: 4.0,
             lineJoin: mapbox.LineJoin.ROUND,
           ));
         } else {
@@ -830,8 +822,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           await polyMgr.update(_routeCasingAnnot!);
           _routeMainAnnot!.geometry = geo;
           await polyMgr.update(_routeMainAnnot!);
-          _routeShineAnnot!.geometry = geo;
-          await polyMgr.update(_routeShineAnnot!);
         }
       }
       if (progress >= 1.0) {
@@ -841,7 +831,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         if (_routeGlowAnnot != null) { _routeGlowAnnot!.geometry = fullGeo; await polyMgr.update(_routeGlowAnnot!); }
         if (_routeCasingAnnot != null) { _routeCasingAnnot!.geometry = fullGeo; await polyMgr.update(_routeCasingAnnot!); }
         if (_routeMainAnnot != null) { _routeMainAnnot!.geometry = fullGeo; await polyMgr.update(_routeMainAnnot!); }
-        if (_routeShineAnnot != null) { _routeShineAnnot!.geometry = fullGeo; await polyMgr.update(_routeShineAnnot!); }
         if (!completer.isCompleted) completer.complete();
       }
     });
@@ -858,8 +847,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final geo = mapbox.LineString(coordinates: coords);
     _polyMgr!.create(mapbox.PolylineAnnotationOptions(
       geometry: geo,
-      lineColor: _gold.withValues(alpha: 0.10).toARGB32(),
-      lineWidth: 16.0,
+      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.12).toARGB32(),
+      lineWidth: 18.0,
       lineJoin: mapbox.LineJoin.ROUND,
     )).then((a) => _fullRouteGlow = a);
 
@@ -870,10 +859,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _glowPulseCtrl!.addListener(() {
       final glow = _fullRouteGlow;
       if (glow == null || _polyMgr == null) return;
-      final alpha = (0.06 + _glowPulseCtrl!.value * 0.18).clamp(0.0, 1.0);
-      glow.lineColor = _gold.withValues(alpha: alpha).toARGB32();
-      glow.lineWidth = 14.0 + _glowPulseCtrl!.value * 4.0;
+      final v = _glowPulseCtrl!.value;
+      glow.lineColor = const Color(0xFFFFD700).withValues(alpha: 0.12 + v * 0.10).toARGB32();
+      glow.lineWidth = 16.0 + v * 6.0;
       _polyMgr!.update(glow);
+      // Pulse inner glow too
+      if (_routeCasingAnnot != null) {
+        _routeCasingAnnot!.lineColor = const Color(0xFFFFE566).withValues(alpha: 0.20 + v * 0.12).toARGB32();
+        try { _polyMgr!.update(_routeCasingAnnot!); } catch (_) {}
+      }
     });
   }
 

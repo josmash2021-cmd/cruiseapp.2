@@ -2630,7 +2630,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
       lineColor: c.toARGB32(),
-      lineWidth: 5.0,
+      lineWidth: 4.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
   }
@@ -2955,7 +2955,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     return completer.future;
   }
 
-  /// Draw a single gold gloss route line with 4 layers (glow, mid, main, shine).
+  /// Draw a single gold glow route line with 3 layers (outer glow, inner glow, main).
   /// Progressive 60fps draw over 1 second with easeInOutSine.
   Future<void> _drawGoldGlossRoute(List<LatLng> points) async {
     final polyMgr = _polylineAnnotMgr;
@@ -2965,11 +2965,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final stopwatch = Stopwatch()..start();
     const totalMs = 1000;
 
-    // 4 annotation layers: outer glow, mid glow, main, shine
+    // 3 annotation layers: outer glow, inner glow, main
     mapbox.PolylineAnnotation? outerGlow;
-    mapbox.PolylineAnnotation? midGlow;
+    mapbox.PolylineAnnotation? innerGlow;
     mapbox.PolylineAnnotation? mainLine;
-    mapbox.PolylineAnnotation? shineLine;
     int lastCount = 0;
 
     _routeDrawTicker?.stop();
@@ -2993,33 +2992,27 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         final geo = mapbox.LineString(coordinates: coords);
 
         if (mainLine == null) {
-          // Create 4 layers bottom-to-top
+          // Create 3 layers bottom-to-top
           outerGlow = await polyMgr.create(mapbox.PolylineAnnotationOptions(
             geometry: geo,
-            lineColor: _gold.withValues(alpha: 0.15).toARGB32(),
-            lineWidth: 16.0,
+            lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(),
+            lineWidth: 18.0,
             lineJoin: mapbox.LineJoin.ROUND,
           ));
-          midGlow = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+          innerGlow = await polyMgr.create(mapbox.PolylineAnnotationOptions(
             geometry: geo,
-            lineColor: _gold.withValues(alpha: 0.25).toARGB32(),
+            lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(),
             lineWidth: 10.0,
             lineJoin: mapbox.LineJoin.ROUND,
           ));
           mainLine = await polyMgr.create(mapbox.PolylineAnnotationOptions(
             geometry: geo,
-            lineColor: _gold.toARGB32(),
-            lineWidth: 5.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-          shineLine = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo,
-            lineColor: Colors.white.withValues(alpha: 0.30).toARGB32(),
-            lineWidth: 1.5,
+            lineColor: const Color(0xFFFFD700).toARGB32(),
+            lineWidth: 4.0,
             lineJoin: mapbox.LineJoin.ROUND,
           ));
         } else {
-          for (final a in [outerGlow, midGlow, mainLine, shineLine]) {
+          for (final a in [outerGlow, innerGlow, mainLine]) {
             if (a != null) {
               a.geometry = geo;
               try { await polyMgr.update(a); } catch (_) {}
@@ -3032,17 +3025,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _routeDrawTicker?.stop();
         final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         final fullGeo = mapbox.LineString(coordinates: fullCoords);
-        for (final a in [outerGlow, midGlow, mainLine, shineLine]) {
+        for (final a in [outerGlow, innerGlow, mainLine]) {
           if (a != null) {
             a.geometry = fullGeo;
             try { await polyMgr.update(a); } catch (_) {}
           }
         }
-        // Store main + outer glow for later cleanup
+        // Store for later cleanup
         _previewPickupAnnot = mainLine;
         _previewPickupGlow = outerGlow;
-        _previewDropoffAnnot = midGlow;
-        _previewDropoffGlow = shineLine;
+        _previewDropoffAnnot = innerGlow;
+        _previewDropoffGlow = null;
         if (!completer.isCompleted) completer.complete();
       }
     });
@@ -3116,8 +3109,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Create the pulsing glow annotation once
     _polylineAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
       geometry: geo,
-      lineColor: _gold.withValues(alpha: 0.10).toARGB32(),
-      lineWidth: 16.0,
+      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.12).toARGB32(),
+      lineWidth: 18.0,
       lineJoin: mapbox.LineJoin.ROUND,
     )).then((annot) {
       _fullRouteGlow = annot;
@@ -3130,9 +3123,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _glowPulseCtrl!.addListener(() {
       final glow = _fullRouteGlow;
       if (glow == null || _polylineAnnotMgr == null) return;
-      final alpha = (0.06 + _glowPulseCtrl!.value * 0.20).clamp(0.0, 1.0);
-      glow.lineColor = _gold.withValues(alpha: alpha).toARGB32();
-      glow.lineWidth = 14.0 + _glowPulseCtrl!.value * 4.0;
+      final v = _glowPulseCtrl!.value;
+      glow.lineColor = const Color(0xFFFFD700).withValues(alpha: 0.12 + v * 0.10).toARGB32();
+      glow.lineWidth = 16.0 + v * 6.0;
       _polylineAnnotMgr!.update(glow);
     });
   }

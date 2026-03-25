@@ -97,6 +97,17 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _pickupLabelRevealed = false;
   bool _dropoffLabelRevealed = false;
 
+  // ── Cinematic intro animation ──
+  AnimationController? _tiltCtrl;
+  Animation<double>? _tiltAnim;
+  AnimationController? _bearingCtrl;
+  Animation<double>? _bearingAnim;
+  AnimationController? _glowPulseCtrl;
+  double _randomBearing = 0;
+  double _cinematicPitch = 0;
+  double _cinematicBearing = 0;
+  bool _cinematicDone = false;
+
   // ── Car marker using GeoJSON source (correct approach for v10 SDK) ──
   Uint8List? _carIconBytes;
   Uint8List? _carShadowBytes; // Sombra difuminada
@@ -462,6 +473,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _simTimer?.cancel();
     _entranceTimer?.cancel();
     _routeDrawTicker?.dispose();
+    _tiltCtrl?.dispose();
+    _bearingCtrl?.dispose();
+    _glowPulseCtrl?.dispose();
     _driverLocSub?.cancel();
     _rtdbDriverLocSub?.cancel();
     _tripStatusSub?.cancel();
@@ -1389,7 +1403,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _map!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(mnLng, mnLat)),
        mapbox.Point(coordinates: mapbox.Position(mxLng, mxLat))],
-      mapbox.CameraOptions(bearing: 0.0, pitch: 0.0),
+      mapbox.CameraOptions(bearing: _cinematicBearing, pitch: _cinematicPitch),
       mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
       null, null,
     ).then((cam) {
@@ -1456,7 +1470,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _map!.cameraForCoordinatesPadding(
         [mapbox.Point(coordinates: mapbox.Position(_camSWLng, _camSWLat)),
          mapbox.Point(coordinates: mapbox.Position(_camNELng, _camNELat))],
-        mapbox.CameraOptions(),
+        mapbox.CameraOptions(bearing: _cinematicBearing, pitch: _cinematicPitch),
         mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
         null, null,
       ).then((cam) {
@@ -2300,8 +2314,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _addDropoffPin();
     }
 
-    // Animated 4-layer gold gloss route draw
-    _startAnimatedRouteDraw();
+    // Cinematic intro: tilt + bearing + route draw + glow
+    _startCinematicIntro();
 
     // Reveal pickup label after brief delay
     if (_pickupPinWithLabelBytes != null && !_pickupLabelRevealed) {
@@ -2420,6 +2434,77 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       if (_remainingRouteAnnot != null) mgr.update(_remainingRouteAnnot!..geometry = geom);
       if (_routeShineAnnot != null) mgr.update(_routeShineAnnot!..geometry = geom);
     } catch (_) {}
+  }
+
+  /// Cinematic map intro: fit → tilt 55° + random bearing → route draw → glow
+  Future<void> _startCinematicIntro() async {
+    if (_cinematicDone || _map == null) {
+      _startAnimatedRouteDraw();
+      return;
+    }
+    _cinematicDone = true;
+
+    final rng = math.Random();
+    final degrees = 5.0 + rng.nextDouble() * 10.0;
+    _randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
+
+    // 1. Fit camera flat first
+    _updateCameraForRoute();
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+
+    // 2. Tilt 0° → 55° + random bearing simultaneously (1200ms)
+    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+      CurvedAnimation(parent: _tiltCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _bearingAnim = Tween<double>(begin: 0.0, end: _randomBearing).animate(
+      CurvedAnimation(parent: _bearingCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _tiltAnim!.addListener(_applyCinematicCamera);
+    _tiltCtrl!.forward(from: 0);
+    _bearingCtrl!.forward(from: 0);
+
+    // 3. Route draw starts 500ms into tilt
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    _startAnimatedRouteDraw();
+
+    // 4. Set final camera values for ongoing tracking
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+    _cinematicPitch = 55.0;
+    _cinematicBearing = _randomBearing;
+
+    // 5. Glow pulse after route draw
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    _startGlowPulse();
+  }
+
+  void _applyCinematicCamera() {
+    if (_map == null || !mounted) return;
+    _map!.setCamera(mapbox.CameraOptions(
+      pitch: _tiltAnim?.value,
+      bearing: _bearingAnim?.value,
+    ));
+  }
+
+  void _startGlowPulse() {
+    _glowPulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
+    _glowPulseCtrl!.addListener(_onGlowTick);
+  }
+
+  void _onGlowTick() {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || _fullRouteAnnot == null) return;
+    final v = _glowPulseCtrl?.value ?? 0.0;
+    _fullRouteAnnot!.lineWidth = 14.0 + v * 6.0;
+    try { mgr.update(_fullRouteAnnot!); } catch (_) {}
   }
 
   Future<void> _updateAnnotations() async {

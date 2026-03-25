@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
@@ -131,6 +132,22 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
+  mapbox.PolylineAnnotation? _routeGlowAnnot;
+  mapbox.PolylineAnnotation? _routeCasingAnnot;
+  mapbox.PolylineAnnotation? _routeShineAnnot;
+
+  // ── Cinematic animation ──
+  AnimationController? _tiltCtrl;
+  Animation<double>? _tiltAnim;
+  AnimationController? _bearingCtrl;
+  Animation<double>? _bearingAnim;
+  AnimationController? _pinPopCtrl;
+  Animation<double>? _pinPopAnim;
+  AnimationController? _routeGlowPulseCtrl;
+  double _cinematicPitch = 0;
+  double _cinematicBearing = 0;
+  bool _cinematicDone = false;
+  Ticker? _routeDrawTicker;
 
   /// True when the Mapbox controller is ready.
   bool get _hasMapController => _mapController != null;
@@ -638,6 +655,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _driverMotion?.dispose();
     _routeShimmerCtrl?.removeListener(_onRouteShimmerTick);
     _routeShimmerCtrl?.dispose();
+    _routeDrawTicker?.dispose();
+    _tiltCtrl?.dispose();
+    _bearingCtrl?.dispose();
+    _pinPopCtrl?.dispose();
+    _routeGlowPulseCtrl?.dispose();
     _glowController?.removeListener(_onGlowTick);
     _glowController?.dispose();
     _pickupFocus.removeListener(_handleAddressFocusChange);
@@ -1231,7 +1253,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         .toList();
     final cam = await _mapController!.cameraForCoordinatesPadding(
       coords,
-      mapbox.CameraOptions(),
+      mapbox.CameraOptions(bearing: _cinematicBearing, pitch: _cinematicPitch),
       mapbox.MbxEdgeInsets(top: top, left: left, bottom: bottom, right: right),
       null, null,
     );
@@ -1707,7 +1729,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         _clearRouteAnnotation();
       });
 
-      await _animateRoutePolyline(route.points, animationTicket);
+      await _startCinematicRouteReveal(route.points, animationTicket);
     } else {
       _activeRoutePoints = [];
       DistanceEstimate? estimate;
@@ -2383,6 +2405,184 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     await _smoothCameraTransition(target, 16.4);
   }
 
+  Future<void> _startCinematicRouteReveal(List<LatLng> points, int ticket) async {
+    if (!mounted || points.isEmpty || ticket != _routeAnimationTicket) return;
+
+    // Stop previous shimmer/glow
+    _stopRouteShimmer();
+    _routeGlowPulseCtrl?.dispose();
+    _routeGlowPulseCtrl = null;
+
+    // 1. Fit camera flat first
+    await _fitBoundsInsets(points, 90, 70, _panelBottomInset(), 70);
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted || ticket != _routeAnimationTicket) return;
+
+    // 2. Tilt 0° → 55° + random bearing (1200ms)
+    final rng = math.Random();
+    final degrees = 5.0 + rng.nextDouble() * 10.0;
+    final randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
+
+    _tiltCtrl?.dispose();
+    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+      CurvedAnimation(parent: _tiltCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _bearingCtrl?.dispose();
+    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _bearingAnim = Tween<double>(begin: 0.0, end: randomBearing).animate(
+      CurvedAnimation(parent: _bearingCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _tiltAnim!.addListener(_applyCinematicCamera);
+    _tiltCtrl!.forward(from: 0);
+    _bearingCtrl!.forward(from: 0);
+
+    // 3. Pin pop at 500ms into tilt
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted || ticket != _routeAnimationTicket) return;
+    _startPinPop();
+
+    // 4. Gold route draw at 300ms more
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted || ticket != _routeAnimationTicket) return;
+    await _animateGoldRoute(points, const Duration(milliseconds: 1000));
+    if (!mounted || ticket != _routeAnimationTicket) return;
+
+    // 5. Save final camera values
+    _cinematicPitch = 55.0;
+    _cinematicBearing = randomBearing;
+    _cinematicDone = true;
+
+    // 6. Glow pulse
+    _startRouteGlowPulse();
+  }
+
+  void _applyCinematicCamera() {
+    if (_mapController == null || !mounted) return;
+    _mapController!.setCamera(mapbox.CameraOptions(
+      pitch: _tiltAnim?.value,
+      bearing: _bearingAnim?.value,
+    ));
+  }
+
+  void _startPinPop() {
+    _pinPopCtrl?.dispose();
+    _pinPopCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
+    _pinPopAnim = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.01, end: 1.15).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 60,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.15, end: 0.95).chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 20,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.95, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 20,
+      ),
+    ]).animate(_pinPopCtrl!);
+    _pinPopAnim!.addListener(_updatePinScales);
+    // Shrink pins before pop
+    _setPinScale(0.01);
+    _pinPopCtrl!.forward(from: 0);
+  }
+
+  void _updatePinScales() {
+    final s = _pinPopAnim?.value ?? 1.0;
+    _setPinScale(s);
+  }
+
+  void _setPinScale(double s) {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    if (_pickupAnnot != null) {
+      _pickupAnnot!.iconSize = s;
+      try { mgr.update(_pickupAnnot!); } catch (_) {}
+    }
+    if (_dropoffAnnot != null) {
+      _dropoffAnnot!.iconSize = s;
+      try { mgr.update(_dropoffAnnot!); } catch (_) {}
+    }
+  }
+
+  Future<void> _animateGoldRoute(List<LatLng> points, Duration duration) async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null || points.length < 2) return;
+
+    // Clear old single-color route
+    if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+
+    final completer = Completer<void>();
+    final stopwatch = Stopwatch()..start();
+    final totalMs = duration.inMilliseconds;
+    int lastCount = 0;
+
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = createTicker((_) async {
+      if (!mounted) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      final elapsed = stopwatch.elapsedMilliseconds;
+      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
+      final eased = Curves.easeInOutSine.transform(progress);
+      final count = (eased * points.length).round().clamp(2, points.length);
+
+      if (count != lastCount) {
+        lastCount = count;
+        final subset = points.sublist(0, count);
+        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        final geo = mapbox.LineString(coordinates: coords);
+
+        if (_routeGlowAnnot == null) {
+          try { _routeGlowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo, lineColor: _gold.withValues(alpha: 0.15).toARGB32(), lineWidth: 16.0, lineJoin: mapbox.LineJoin.ROUND,
+          )); } catch (_) {}
+          try { _routeCasingAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo, lineColor: _gold.withValues(alpha: 0.25).toARGB32(), lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
+          )); } catch (_) {}
+          try { _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo, lineColor: _gold.toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
+          )); } catch (_) {}
+          try { _routeShineAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo, lineColor: Colors.white.withValues(alpha: 0.25).toARGB32(), lineWidth: 1.5, lineJoin: mapbox.LineJoin.ROUND,
+          )); } catch (_) {}
+        } else {
+          if (_routeGlowAnnot != null) { _routeGlowAnnot!.geometry = geo; try { await polyMgr.update(_routeGlowAnnot!); } catch (_) {} }
+          if (_routeCasingAnnot != null) { _routeCasingAnnot!.geometry = geo; try { await polyMgr.update(_routeCasingAnnot!); } catch (_) {} }
+          if (_routeAnnot != null) { _routeAnnot!.geometry = geo; try { await polyMgr.update(_routeAnnot!); } catch (_) {} }
+          if (_routeShineAnnot != null) { _routeShineAnnot!.geometry = geo; try { await polyMgr.update(_routeShineAnnot!); } catch (_) {} }
+        }
+      }
+      if (progress >= 1.0) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+    _routeDrawTicker!.start();
+    return completer.future;
+  }
+
+  void _startRouteGlowPulse() {
+    _routeGlowPulseCtrl?.dispose();
+    _routeGlowPulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
+    _routeGlowPulseCtrl!.addListener(_onRouteGlowTick);
+  }
+
+  void _onRouteGlowTick() {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || _routeGlowAnnot == null) return;
+    final v = _routeGlowPulseCtrl?.value ?? 0.0;
+    _routeGlowAnnot!.lineWidth = 14.0 + v * 6.0;
+    try { mgr.update(_routeGlowAnnot!); } catch (_) {}
+  }
+
   Future<void> _animateRoutePolyline(List<LatLng> points, int ticket) async {
     if (!mounted || points.isEmpty) return;
     if (ticket != _routeAnimationTicket) return;
@@ -2455,10 +2655,24 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _clearRouteAnnotation() async {
     _stopRouteShimmer();
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = null;
+    _routeGlowPulseCtrl?.dispose();
+    _routeGlowPulseCtrl = null;
     final mgr = _polylineAnnotMgr;
-    if (mgr == null || _routeAnnot == null) return;
-    try { await mgr.delete(_routeAnnot!); } catch (_) {}
-    _routeAnnot = null;
+    if (mgr != null) {
+      if (_routeAnnot != null) { try { await mgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+      if (_routeGlowAnnot != null) { try { await mgr.delete(_routeGlowAnnot!); } catch (_) {} _routeGlowAnnot = null; }
+      if (_routeCasingAnnot != null) { try { await mgr.delete(_routeCasingAnnot!); } catch (_) {} _routeCasingAnnot = null; }
+      if (_routeShineAnnot != null) { try { await mgr.delete(_routeShineAnnot!); } catch (_) {} _routeShineAnnot = null; }
+    }
+    // Reset cinematic state so next route gets a fresh animation
+    _cinematicDone = false;
+    _cinematicPitch = 0;
+    _cinematicBearing = 0;
+    // Reset camera to flat
+    _mapController?.setCamera(mapbox.CameraOptions(pitch: 0, bearing: 0));
   }
 
   Future<void> _cancelMatchingRide() async {

@@ -264,7 +264,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       dropoffLabel: dropoffLabel,
       route: route,
       rideOptions: options,
-      selectedOption: options.isNotEmpty ? options.first : null,
+      selectedOption: null,
       phase: RiderPhase.previewRoute,
     );
     notifyListeners();
@@ -304,7 +304,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         phase: RiderPhase.previewRoute,
         route: result,
         rideOptions: options,
-        selectedOption: options.isNotEmpty ? options.first : null,
+        selectedOption: null,
       );
       notifyListeners();
     }

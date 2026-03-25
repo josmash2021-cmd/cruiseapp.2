@@ -798,6 +798,7 @@ class S {
       ? 'Toca para continuar tu viaje actual'
       : 'Tap to resume your current ride';
   String get chooseRide => _es ? 'Elige un viaje' : 'Choose a ride';
+  String get pickYourOption => _es ? 'Elige tu opción' : 'Pick your option';
   String get homeLabel => _es ? 'Casa' : 'Home';
   String get workLabel => _es ? 'Trabajo' : 'Work';
   String get addLabel => _es ? 'Agregar' : 'Add';

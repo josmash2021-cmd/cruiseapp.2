@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
@@ -86,6 +87,23 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   mapbox.PointAnnotation? _goldDotAnnot;
   mapbox.PointAnnotation? _userDotAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
+  // ── Gold gloss route layers ──
+  mapbox.PolylineAnnotation? _routeGlowAnnot;
+  mapbox.PolylineAnnotation? _routeCasingAnnot;
+  mapbox.PolylineAnnotation? _routeMainAnnot;
+  mapbox.PolylineAnnotation? _routeShineAnnot;
+  mapbox.PolylineAnnotation? _fullRouteGlow;
+  // ── Cinematic animation ──
+  AnimationController? _tiltCtrl;
+  Animation<double>? _tiltAnim;
+  AnimationController? _bearingCtrl;
+  Animation<double>? _bearingAnim;
+  AnimationController? _pinPopCtrl;
+  Animation<double>? _pinPopAnim;
+  AnimationController? _glowPulseCtrl;
+  Ticker? _routeDrawTicker;
+  double _randomBearing = 0;
+  bool _cinematicDone = false;
   LatLng? _center;
   LatLng? _userLocation;
   bool _mapReady = false;
@@ -953,6 +971,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _searchElapsedTimer?.cancel();
     _sheetCtrl.dispose();
     _shakeCtrl.dispose();
+    _tiltCtrl?.dispose();
+    _bearingCtrl?.dispose();
+    _pinPopCtrl?.dispose();
+    _glowPulseCtrl?.dispose();
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
     super.dispose();
   }
 
@@ -1211,20 +1235,216 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final pts = List<LatLng>.from(s.route!.points);
     if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
     if (pts.isNotEmpty && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
-    _updateRouteAnnotation(pts);
     _buildRouteMarkers();
+    if (!_cinematicDone) {
+      _cinematicDone = true;
+      _startCinematicSequence(pts);
+    } else {
+      _updateRouteAnnotation(pts);
+      _fitRoute(pts);
+    }
+  }
+
+  /// Cinematic map animation: fit → tilt 55° + random bearing → pin pop → gold route draw → glow
+  Future<void> _startCinematicSequence(List<LatLng> pts) async {
+    if (!mounted || _mapCtrl == null) return;
+
+    // Generate random bearing 5-15° left or right
+    final rng = math.Random();
+    final degrees = 5.0 + rng.nextDouble() * 10.0;
+    _randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
+
+    // 1. Fit camera to full route (flat, no tilt yet)
     _fitRoute(pts);
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+
+    // 2. Tilt 0° → 55° + bearing 0° → random, simultaneously (1200ms)
+    _tiltCtrl?.dispose();
+    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+      CurvedAnimation(parent: _tiltCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _bearingCtrl?.dispose();
+    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _bearingAnim = Tween<double>(begin: 0.0, end: _randomBearing).animate(
+      CurvedAnimation(parent: _bearingCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _tiltAnim!.addListener(_applyMapCamera);
+    _tiltCtrl!.forward(from: 0);
+    _bearingCtrl!.forward(from: 0);
+
+    // 3. Pin pop at 500ms into tilt
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    _startPinPop();
+
+    // 4. Gold route draws at 300ms after pins
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    await _animateGoldRoute(pts, const Duration(milliseconds: 1000));
+    if (!mounted) return;
+
+    // 5. Glow pulse after route complete
+    _startGlowPulse(pts);
+  }
+
+  void _applyMapCamera() {
+    if (_mapCtrl == null || !mounted) return;
+    _mapCtrl!.setCamera(mapbox.CameraOptions(
+      pitch: _tiltAnim?.value,
+      bearing: _bearingAnim?.value,
+    ));
+  }
+
+  void _startPinPop() {
+    _pinPopCtrl?.dispose();
+    _pinPopCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
+    _pinPopAnim = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.01, end: 1.15).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 60,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.15, end: 0.95).chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 20,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.95, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 20,
+      ),
+    ]).animate(_pinPopCtrl!);
+    _pinPopAnim!.addListener(_updatePinScales);
+    _pinPopCtrl!.forward(from: 0);
+  }
+
+  void _updatePinScales() {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    final s = _pinPopAnim?.value ?? 1.0;
+    if (_pickupAnnot != null) {
+      _pickupAnnot!.iconSize = s * 0.85;
+      mgr.update(_pickupAnnot!);
+    }
+    if (_dropoffAnnot != null) {
+      _dropoffAnnot!.iconSize = s * 0.85;
+      mgr.update(_dropoffAnnot!);
+    }
+  }
+
+  /// Animate 4-layer gold gloss route draw at 60fps
+  Future<void> _animateGoldRoute(List<LatLng> points, Duration duration) async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null || points.length < 2) return;
+
+    // Clear old single-color route if present
+    if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+
+    final completer = Completer<void>();
+    final stopwatch = Stopwatch()..start();
+    final totalMs = duration.inMilliseconds;
+    int lastCount = 0;
+
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = createTicker((_) async {
+      if (!mounted) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      final elapsed = stopwatch.elapsedMilliseconds;
+      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
+      final eased = Curves.easeInOutSine.transform(progress);
+      final count = (eased * points.length).round().clamp(2, points.length);
+
+      if (count != lastCount) {
+        lastCount = count;
+        final subset = points.sublist(0, count);
+        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        final geo = mapbox.LineString(coordinates: coords);
+
+        if (_routeGlowAnnot == null) {
+          _routeGlowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo, lineColor: _gold.withValues(alpha: 0.15).toARGB32(), lineWidth: 16.0, lineJoin: mapbox.LineJoin.ROUND,
+          ));
+          _routeCasingAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo, lineColor: _gold.withValues(alpha: 0.25).toARGB32(), lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
+          ));
+          _routeMainAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo, lineColor: _gold.toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
+          ));
+          _routeShineAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo, lineColor: Colors.white.withValues(alpha: 0.25).toARGB32(), lineWidth: 1.5, lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } else {
+          _routeGlowAnnot!.geometry = geo; await polyMgr.update(_routeGlowAnnot!);
+          _routeCasingAnnot!.geometry = geo; await polyMgr.update(_routeCasingAnnot!);
+          _routeMainAnnot!.geometry = geo; await polyMgr.update(_routeMainAnnot!);
+          _routeShineAnnot!.geometry = geo; await polyMgr.update(_routeShineAnnot!);
+        }
+      }
+      if (progress >= 1.0) {
+        _routeDrawTicker?.stop();
+        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        final fullGeo = mapbox.LineString(coordinates: fullCoords);
+        if (_routeGlowAnnot != null) { _routeGlowAnnot!.geometry = fullGeo; await polyMgr.update(_routeGlowAnnot!); }
+        if (_routeCasingAnnot != null) { _routeCasingAnnot!.geometry = fullGeo; await polyMgr.update(_routeCasingAnnot!); }
+        if (_routeMainAnnot != null) { _routeMainAnnot!.geometry = fullGeo; await polyMgr.update(_routeMainAnnot!); }
+        if (_routeShineAnnot != null) { _routeShineAnnot!.geometry = fullGeo; await polyMgr.update(_routeShineAnnot!); }
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+    _routeDrawTicker!.start();
+    return completer.future;
+  }
+
+  void _startGlowPulse(List<LatLng> points) {
+    _glowPulseCtrl?.dispose();
+    if (points.length < 2 || _polylineAnnotMgr == null) return;
+
+    final coords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final geo = mapbox.LineString(coordinates: coords);
+    _polylineAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
+      geometry: geo,
+      lineColor: _gold.withValues(alpha: 0.10).toARGB32(),
+      lineWidth: 16.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    )).then((a) => _fullRouteGlow = a);
+
+    _glowPulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000))
+      ..repeat(reverse: true);
+    _glowPulseCtrl!.addListener(() {
+      final glow = _fullRouteGlow;
+      if (glow == null || _polylineAnnotMgr == null) return;
+      final alpha = (0.06 + _glowPulseCtrl!.value * 0.18).clamp(0.0, 1.0);
+      glow.lineColor = _gold.withValues(alpha: alpha).toARGB32();
+      glow.lineWidth = 14.0 + _glowPulseCtrl!.value * 4.0;
+      _polylineAnnotMgr!.update(glow);
+    });
   }
 
   Future<void> _updateRouteAnnotation(List<LatLng> points) async {
     final mgr = _polylineAnnotMgr;
     if (mgr == null) return;
+    // Update gold gloss layers if they exist
+    if (_routeGlowAnnot != null) {
+      if (points.isEmpty) return;
+      final coords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+      final geo = mapbox.LineString(coordinates: coords);
+      _routeGlowAnnot!.geometry = geo; await mgr.update(_routeGlowAnnot!);
+      _routeCasingAnnot?.geometry = geo; if (_routeCasingAnnot != null) await mgr.update(_routeCasingAnnot!);
+      _routeMainAnnot?.geometry = geo; if (_routeMainAnnot != null) await mgr.update(_routeMainAnnot!);
+      _routeShineAnnot?.geometry = geo; if (_routeShineAnnot != null) await mgr.update(_routeShineAnnot!);
+      return;
+    }
+    // Fallback: legacy single-color route
     if (_routeAnnot != null) { try { await mgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
     if (points.isEmpty) return;
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
-      lineColor: const Color(0xFF5BA3F5).toARGB32(),
-      lineWidth: 4.0,
+      lineColor: _gold.toARGB32(),
+      lineWidth: 5.0,
     ));
   }
 
@@ -1268,7 +1488,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
 
-    const scale = 0.85;
+    // During cinematic, pins start tiny (pin pop will scale them up)
+    final scale = (!_cinematicDone || (_pinPopCtrl?.isAnimating ?? false)) ? 0.01 : 0.85;
 
     // Pickup marker
     if (_pickupAnnot != null) { try { await mgr.delete(_pickupAnnot!); } catch (_) {} _pickupAnnot = null; }
@@ -2205,7 +2426,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                                       option.priceEstimate
                                                           .toStringAsFixed(2),
                                                     )
-                                              : S.of(context).chooseRide,
+                                              : S.of(context).pickYourOption,
                                           maxLines: 1,
                                           style: TextStyle(
                                             fontSize: 16,

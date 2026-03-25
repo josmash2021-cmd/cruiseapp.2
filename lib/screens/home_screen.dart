@@ -1198,16 +1198,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 24),
 
-              // ── Active Ride Banner (if exists) ──
-              if (_activeRide != null) ...[
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildRideInProgressCard(),
-                ),
-                const SizedBox(height: 20),
-              ],
-
-              // ── Hero CTA ("Where to?") ──
+              // ── Hero CTA ("Where to?" / "Ride in progress") ── ONE card only
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: _buildHeroCTA(),
@@ -1523,14 +1514,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return 'Good evening';
   }
 
-  // ─── Hero CTA Card ───
+  // ─── Hero CTA Card — transforms between "Where to?" and "Ride in progress" ───
   Widget _buildHeroCTA() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final active = _activeRide != null;
     final verifyDisabled = !_isVerified;
     final zoneBlocked = !_serviceZoneActive && _activeServiceStates.isNotEmpty;
-    final disabled = verifyDisabled || zoneBlocked;
+    final disabled = !active && (verifyDisabled || zoneBlocked);
     return GestureDetector(
       onTap: () async {
+        if (active) {
+          _resumeActiveRide();
+          return;
+        }
         if (zoneBlocked) {
           showDialog<void>(
             context: context,
@@ -1575,14 +1571,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         listenable: _shimmerController,
         builder: (context, child) {
           final v = _shimmerController.value;
-          // Traveling glow around the border
-          final glowAngle = v * 2 * 3.14159265; // ignore: unused_local_variable
           return Opacity(
             opacity: disabled ? 0.55 : 1.0,
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeInOutCubic,
               height: 140,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: active
+                      ? _gold.withValues(alpha: 0.4)
+                      : Colors.transparent,
+                  width: active ? 1.5 : 0,
+                ),
               ),
               child: CustomPaint(
                 painter: disabled
@@ -1613,121 +1615,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     borderRadius: BorderRadius.circular(28),
                     boxShadow: [
                       BoxShadow(
-                        color: _gold.withValues(
-                          alpha: 0.06 + 0.08 * ((v * 3.14).clamp(0, 1)),
-                        ),
-                        blurRadius: 30 + 15 * v,
+                        color: active
+                            ? _gold.withValues(alpha: 0.15 + 0.1 * ((v * 3.14).clamp(0, 1)))
+                            : _gold.withValues(alpha: 0.06 + 0.08 * ((v * 3.14).clamp(0, 1))),
+                        blurRadius: active ? 20 + 10 * v : 30 + 15 * v,
                         offset: const Offset(0, 10),
                       ),
                     ],
                   ),
-                  child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        S.of(context).whereToQuestion,
-                                        style: TextStyle(
-                                          color: disabled
-                                              ? Colors.white.withValues(alpha: 0.25)
-                                              : isDark
-                                              ? Colors.white
-                                              : const Color(0xFF1C1C1E),
-                                          fontSize: 28,
-                                          fontWeight: FontWeight.w900,
-                                          letterSpacing: -1,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      if (disabled)
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              zoneBlocked
-                                                  ? Icons.location_off_rounded
-                                                  : Icons.lock_rounded,
-                                              color: Colors.white.withValues(alpha: 0.35),
-                                              size: 14,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Expanded(
-                                              child: Text(
-                                                zoneBlocked
-                                                    ? S.of(context).noDriversInState
-                                                    : S.of(context).verifyIdentityToRide,
-                                                style: TextStyle(
-                                                  color: Colors.white.withValues(alpha: 0.35),
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                                maxLines: 2,
-                                              ),
-                                            ),
-                                          ],
-                                        )
-                                      else ...[
-                                        const SizedBox(height: 4),
-                                        GestureDetector(
-                                          onTap: () {},
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              color: Colors.white.withValues(alpha: 0.06),
-                                              borderRadius: BorderRadius.circular(20),
-                                            ),
-                                            padding: const EdgeInsets.all(3),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                _nowLaterPill(
-                                                  'Now',
-                                                  Icons.bolt_rounded,
-                                                  _rideNow,
-                                                  () {
-                                                    if (!_rideNow) setState(() => _rideNow = true);
-                                                  },
-                                                ),
-                                                _nowLaterPill(
-                                                  'Later',
-                                                  Icons.schedule_rounded,
-                                                  !_rideNow,
-                                                  () {
-                                                    if (_rideNow) {
-                                                      setState(() => _rideNow = false);
-                                                      _showScheduleSheet();
-                                                    }
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.08),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: Colors.white.withValues(alpha: 0.10),
-                                    ),
-                                  ),
-                                  child: const Icon(
-                                    Icons.arrow_forward_ios_rounded,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                ),
-                              ],
-                            ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 400),
+                    switchInCurve: Curves.easeInOutCubic,
+                    switchOutCurve: Curves.easeInOutCubic,
+                    transitionBuilder: (child, anim) =>
+                        FadeTransition(opacity: anim, child: child),
+                    child: active
+                        ? _buildHeroRideInProgress()
+                        : _buildHeroWhereToContent(isDark, disabled, zoneBlocked),
+                  ),
                 ),
               ),
             ),
@@ -1737,106 +1642,180 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─── Ride in Progress Card ───
-  Widget _buildRideInProgressCard() {
-    return GestureDetector(
-      onTap: _resumeActiveRide,
-      child: ListenableBuilder(
-        listenable: _shimmerController,
-        builder: (context, child) {
-          final v = _shimmerController.value;
-          return Container(
-            height: 80,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: CustomPaint(
-              painter: _GlowBorderPainter(
-                progress: v,
-                gold: _gold,
-                goldLight: _goldLight,
-                isDark: true,
-              ),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1A1D24), Color(0xFF141720)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: _gold.withValues(alpha: 0.3)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _gold.withValues(
-                        alpha: 0.15 + 0.1 * ((v * 3.14).clamp(0, 1)),
-                      ),
-                      blurRadius: 20 + 10 * v,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+  // ─── "Where to?" content inside the hero card ───
+  Widget _buildHeroWhereToContent(bool isDark, bool disabled, bool zoneBlocked) {
+    return Row(
+      key: const ValueKey('hero_where_to'),
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                S.of(context).whereToQuestion,
+                style: TextStyle(
+                  color: disabled
+                      ? Colors.white.withValues(alpha: 0.25)
+                      : isDark
+                      ? Colors.white
+                      : const Color(0xFF1C1C1E),
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1,
                 ),
-                child: Row(
+              ),
+              const SizedBox(height: 8),
+              if (disabled)
+                Row(
                   children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Image.asset(
-                          'assets/images/logoapp.png',
-                          fit: BoxFit.cover,
-                          cacheWidth: 96,
-                          errorBuilder: (ctx, err, st) => Icon(
-                            Icons.directions_car_rounded,
-                            color: _gold,
-                            size: 24,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            S.of(context).rideInProgressTitle,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            S.of(context).rideInProgressSubtitle,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      color: _gold,
-                      size: 16,
+                      zoneBlocked
+                          ? Icons.location_off_rounded
+                          : Icons.lock_rounded,
+                      color: Colors.white.withValues(alpha: 0.35),
+                      size: 14,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        zoneBlocked
+                            ? S.of(context).noDriversInState
+                            : S.of(context).verifyIdentityToRide,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.35),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 2,
+                      ),
                     ),
                   ],
+                )
+              else ...[
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: () {},
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    padding: const EdgeInsets.all(3),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _nowLaterPill(
+                          'Now',
+                          Icons.bolt_rounded,
+                          _rideNow,
+                          () {
+                            if (!_rideNow) setState(() => _rideNow = true);
+                          },
+                        ),
+                        _nowLaterPill(
+                          'Later',
+                          Icons.schedule_rounded,
+                          !_rideNow,
+                          () {
+                            if (_rideNow) {
+                              setState(() => _rideNow = false);
+                              _showScheduleSheet();
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.10),
+            ),
+          ),
+          child: const Icon(
+            Icons.arrow_forward_ios_rounded,
+            color: Colors.white,
+            size: 16,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── "Ride in progress" content inside the hero card ───
+  Widget _buildHeroRideInProgress() {
+    return Row(
+      key: const ValueKey('hero_ride_active'),
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: _gold.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: _gold.withValues(alpha: 0.4),
+              width: 1,
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Image.asset(
+              'assets/images/logoapp.png',
+              fit: BoxFit.cover,
+              cacheWidth: 96,
+              errorBuilder: (ctx, err, st) => Icon(
+                Icons.directions_car_rounded,
+                color: _gold,
+                size: 24,
               ),
             ),
-          );
-        },
-      ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                S.of(context).rideInProgressTitle,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                S.of(context).rideInProgressSubtitle,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Icon(
+          Icons.arrow_forward_ios_rounded,
+          color: _gold,
+          size: 16,
+        ),
+      ],
     );
   }
 

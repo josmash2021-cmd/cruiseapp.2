@@ -597,15 +597,8 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
         color: Colors.black,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.apple, color: Colors.white, size: 18),
-            SizedBox(width: 2),
-            Text('Pay', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: -0.3)),
-          ],
-        ),
+      child: const Center(
+        child: Icon(Icons.apple, color: Colors.white, size: 22),
       ),
     );
   }
@@ -624,9 +617,9 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.apple, color: Colors.white, size: 22),
-              SizedBox(width: 3),
-              Text('Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.5)),
+              Icon(Icons.apple, color: Colors.white, size: 28),
+              SizedBox(width: 6),
+              Text('Apple Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.3)),
             ],
           ),
         ),

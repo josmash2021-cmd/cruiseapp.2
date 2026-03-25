@@ -421,9 +421,9 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.apple, color: Colors.white, size: 22),
-              SizedBox(width: 3),
-              Text('Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.5)),
+              Icon(Icons.apple, color: Colors.white, size: 28),
+              SizedBox(width: 6),
+              Text('Apple Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.3)),
             ],
           ),
         ),
@@ -491,21 +491,13 @@ class _AppleLogoWidget extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: const [
-              Text(
-                '\uF8FF', // Apple logo glyph (renders on iOS via -apple-system font)
-                style: TextStyle(
-                  fontFamily: '-apple-system',
-                  color: Colors.white,
-                  fontSize: 13,
-                  height: 1.0,
-                ),
-              ),
-              SizedBox(width: 3),
+              Icon(Icons.apple, color: Colors.white, size: 16),
+              SizedBox(width: 2),
               Text(
                 'Pay',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 10,
+                  fontSize: 9,
                   fontWeight: FontWeight.w600,
                   letterSpacing: -0.3,
                 ),

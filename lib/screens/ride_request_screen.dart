@@ -3959,12 +3959,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           mainAxisSize: MainAxisSize.min,
           children: const [
             Icon(Icons.apple, color: Colors.white, size: 22),
-            SizedBox(width: 2),
+            SizedBox(width: 4),
             Text(
-              'Pay',
+              'Apple Pay',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.w500,
                 letterSpacing: -0.3,
               ),
@@ -4097,22 +4097,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             borderRadius: BorderRadius.circular(10),
           ),
           child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.apple, color: Colors.white, size: size * 0.5),
-                const SizedBox(width: 1),
-                Text(
-                  'Pay',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: size * 0.35,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-              ],
-            ),
+            child: Icon(Icons.apple, color: Colors.white, size: size * 0.55),
           ),
         );
       case 'google_pay':
@@ -4246,9 +4231,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.apple, color: Colors.white, size: 22),
-              SizedBox(width: 3),
-              Text('Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.5)),
+              Icon(Icons.apple, color: Colors.white, size: 28),
+              SizedBox(width: 6),
+              Text('Apple Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.3)),
             ],
           ),
         ),

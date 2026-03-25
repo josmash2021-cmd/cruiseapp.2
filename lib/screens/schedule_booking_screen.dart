@@ -842,22 +842,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
           border: Border.all(color: Colors.grey.shade700, width: 0.5),
         ),
         child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.apple, color: Colors.white, size: size * 0.5),
-              const SizedBox(width: 1),
-              Text(
-                'Pay',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: size * 0.35,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ],
-          ),
+          child: Icon(Icons.apple, color: Colors.white, size: size * 0.55),
         ),
       );
     }
@@ -932,9 +917,9 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.apple, color: Colors.white, size: 22),
-              SizedBox(width: 3),
-              Text('Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.5)),
+              Icon(Icons.apple, color: Colors.white, size: 28),
+              SizedBox(width: 6),
+              Text('Apple Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.3)),
             ],
           ),
         ),

@@ -192,9 +192,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
-    // Car icon loading removed - no car markers on rider map
     // Load car PNG based on ride type
     _loadCarIcon();
+    _loadPins();
     _initFromPersistence();
     _interpTicker = createTicker((_) => _interpolate())..start();
     _startRealTimeTracking();
@@ -1929,7 +1929,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                     if (_map != null) await _applyDarkNavyGoldTheme(_map!);
                   },
                   onScrollListener: (_) {
-                    if (!_programmaticCam) setState(() => _userMovedMap = true);
+                    if (!_userMovedMap) setState(() => _userMovedMap = true);
                   },
                 ),
               ),

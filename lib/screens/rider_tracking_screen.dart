@@ -1170,14 +1170,20 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     }
 
     // Update map annotations directly — no setState needed (avoids 60fps widget rebuilds)
-    _updateCameraForRoute();
+    _throttleBoundsFit();
     _updateCarSmooth(); // fast path: only car GeoJSON
     _updateStaticAnnotationsOnce(); // slow path: pins + route, created once
   }
 
-  // ── Cámara con seguimiento ultra-fluido tipo "chase" del carro ──
-  double _camLat = 0.0;
-  double _camLng = 0.0;
+  // ── Camera: fit bounds to show full route (throttled, not every frame) ──
+  DateTime _lastBoundsFit = DateTime(2000);
+
+  void _throttleBoundsFit() {
+    final now = DateTime.now();
+    if (now.difference(_lastBoundsFit).inMilliseconds < 2000) return;
+    _lastBoundsFit = now;
+    _updateCameraForRoute();
+  }
   
   Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
     await MapTheme.applyNavyGold(ctrl);
@@ -1186,35 +1192,34 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void _updateCameraForRoute() {
     if (_map == null || _userMovedMap || _routePts.isEmpty) return;
     
-    // Inicializar cámara en la primera posición del carro
-    if (_camLat == 0.0 && _camLng == 0.0) {
-      _camLat = _animPos.latitude;
-      _camLng = _animPos.longitude;
+    // Fit bounds to show full route + driver + pins
+    final pts = <LatLng>[_animPos, widget.pickupLatLng];
+    if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.completed) {
+      pts.add(widget.dropoffLatLng);
+    }
+    // Include route extremes for a tight fit
+    for (final p in _routePts) {
+      pts.add(p);
     }
     
-    // Interpolación extremadamente suave hacia el carro (factor 0.04 = ultra-fluido)
-    final targetLat = _animPos.latitude;
-    final targetLng = _animPos.longitude;
+    double mnLat = pts[0].latitude, mxLat = pts[0].latitude;
+    double mnLng = pts[0].longitude, mxLng = pts[0].longitude;
+    for (final p in pts) {
+      mnLat = math.min(mnLat, p.latitude);
+      mxLat = math.max(mxLat, p.latitude);
+      mnLng = math.min(mnLng, p.longitude);
+      mxLng = math.max(mxLng, p.longitude);
+    }
     
-    _camLat = _camLat + (targetLat - _camLat) * 0.04;
-    _camLng = _camLng + (targetLng - _camLng) * 0.04;
-    
-    // Calcular zoom basado en distancia a destino para ver ruta completa
-    final distToDropoff = _hav(_animPos, widget.dropoffLatLng);
-    double zoom = 16.5;
-    if (distToDropoff > 2.0) zoom = 15.0;
-    if (distToDropoff > 5.0) zoom = 14.0;
-    if (distToDropoff > 10.0) zoom = 13.0;
-    
-    _programmaticCam = true;
-    // 2D north-up: pitch=0, bearing=0 so map stays flat and readable;
-    // only the car icon sprite rotates to show direction.
-    _map?.setCamera(mapbox.CameraOptions(
-      center: mapbox.Point(coordinates: mapbox.Position(_camLng, _camLat)),
-      zoom: zoom,
-      bearing: 0.0,
-      pitch: 0.0,
-    ));
+    _map!.cameraForCoordinatesPadding(
+      [mapbox.Point(coordinates: mapbox.Position(mnLng, mnLat)),
+       mapbox.Point(coordinates: mapbox.Position(mxLng, mxLat))],
+      mapbox.CameraOptions(bearing: 0.0, pitch: 0.0),
+      mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
+      null, null,
+    ).then((cam) {
+      if (mounted && _map != null) _map!.setCamera(cam);
+    });
   }
 
   /// Blend two bearings with smooth interpolation
@@ -1277,7 +1282,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         [mapbox.Point(coordinates: mapbox.Position(_camSWLng, _camSWLat)),
          mapbox.Point(coordinates: mapbox.Position(_camNELng, _camNELat))],
         mapbox.CameraOptions(),
-        mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: 420, right: 50),
+        mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
         null, null,
       ).then((cam) {
         if (mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 500));
@@ -1291,6 +1296,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   void _recenter() {
     setState(() => _userMovedMap = false);
+    _camInitialized = false; // force re-fit
     _updateCameraForRoute();
   }
 
@@ -1483,7 +1489,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             children: [
               const OfflineBanner(),
               _buildInfoPanel(),
-              Expanded(child: _buildMapCard()),
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.35,
+                child: _buildMapCard(),
+              ),
             ],
           ),
         ),

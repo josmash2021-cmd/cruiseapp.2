@@ -106,6 +106,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Ticker? _routeDrawTicker;
   double _randomBearing = 0;
   bool _cinematicDone = false;
+  bool _labelsRevealed = false;
+  AnimationController? _labelPopCtrl;
+  Animation<double>? _labelPopAnim;
   LatLng? _center;
   LatLng? _userLocation;
   bool _mapReady = false;
@@ -976,6 +979,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _tiltCtrl?.dispose();
     _bearingCtrl?.dispose();
     _pinPopCtrl?.dispose();
+    _labelPopCtrl?.dispose();
     _glowPulseCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -1260,6 +1264,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       _cinematicDone = true;
       _startCinematicSequence(pts);
     } else {
+      _labelsRevealed = true; // skip animation on subsequent route draws
       _updateRouteAnnotation(pts);
       _fitRoute(pts);
     }
@@ -1299,7 +1304,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (!mounted) return;
     _startPinPop();
 
-    // 4. Gold route draws at 300ms after pins
+    // 3b. Label bubbles unroll 400ms after pin pop starts
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+    _unrollLabels();
+
+    // 4. Gold route draws at 200ms after labels start
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
     await _animateGoldRoute(pts, const Duration(milliseconds: 1000));
@@ -1348,6 +1358,78 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     }
     if (_dropoffAnnot != null) {
       _dropoffAnnot!.iconSize = s * 0.85;
+      mgr.update(_dropoffAnnot!);
+    }
+  }
+
+  /// Swap pin-only bitmaps to pin+label bitmaps with a spring scale animation.
+  /// Creates the effect of address labels "unrolling" from the pin.
+  void _unrollLabels() {
+    if (_labelsRevealed) return;
+    _labelsRevealed = true;
+
+    // Swap annotations to pin+label bitmaps
+    _swapToLabelBitmaps();
+
+    // Spring animation: shrink slightly then pop to full size
+    _labelPopCtrl?.dispose();
+    _labelPopCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _labelPopAnim = TweenSequence<double>([
+      // Shrink from current scale to accommodate wider bitmap
+      TweenSequenceItem(
+        tween: Tween(begin: 0.40, end: 0.92)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 55,
+      ),
+      // Overshoot
+      TweenSequenceItem(
+        tween: Tween(begin: 0.92, end: 0.82)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 20,
+      ),
+      // Settle
+      TweenSequenceItem(
+        tween: Tween(begin: 0.82, end: 0.85)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 25,
+      ),
+    ]).animate(_labelPopCtrl!);
+    _labelPopAnim!.addListener(_updateLabelScales);
+    _labelPopCtrl!.forward(from: 0);
+  }
+
+  void _updateLabelScales() {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    final s = _labelPopAnim?.value ?? 0.85;
+    if (_pickupAnnot != null) {
+      _pickupAnnot!.iconSize = s;
+      mgr.update(_pickupAnnot!);
+    }
+    if (_dropoffAnnot != null) {
+      _dropoffAnnot!.iconSize = s;
+      mgr.update(_dropoffAnnot!);
+    }
+  }
+
+  Future<void> _swapToLabelBitmaps() async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+
+    // Swap pickup to pin+label
+    if (_pickupAnnot != null && _showPinLabels && _pickupPinWithLabel != null) {
+      _pickupAnnot!.image = _pickupPinWithLabel!.$1;
+      mgr.update(_pickupAnnot!);
+    }
+
+    // Swap dropoff to pin+label (200ms later for staggered effect)
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted) return;
+    if (_dropoffAnnot != null && _showPinLabels && _dropoffPinWithLabel != null) {
+      _dropoffAnnot!.image = _dropoffPinWithLabel!.$1;
       mgr.update(_dropoffAnnot!);
     }
   }
@@ -1508,14 +1590,15 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
 
-    // During cinematic, pins start tiny (pin pop will scale them up)
+    // During cinematic, pins start tiny and use pin-ONLY bitmaps (labels animate in later)
     final scale = (!_cinematicDone || (_pinPopCtrl?.isAnimating ?? false)) ? 0.01 : 0.85;
+    final useLabels = _labelsRevealed;
 
     // Pickup marker
     if (_pickupAnnot != null) { try { await mgr.delete(_pickupAnnot!); } catch (_) {} _pickupAnnot = null; }
     if (s.pickup != null) {
       Uint8List? bytes;
-      if (_showPinLabels && _pickupPinWithLabel != null) {
+      if (useLabels && _showPinLabels && _pickupPinWithLabel != null) {
         bytes = _pickupPinWithLabel!.$1;
       } else if (_pickupPinOnly != null) {
         bytes = _pickupPinOnly!.$1;
@@ -1537,7 +1620,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (_dropoffAnnot != null) { try { await mgr.delete(_dropoffAnnot!); } catch (_) {} _dropoffAnnot = null; }
     if (s.dropoff != null) {
       Uint8List? bytes;
-      if (_showPinLabels && _dropoffPinWithLabel != null) {
+      if (useLabels && _showPinLabels && _dropoffPinWithLabel != null) {
         bytes = _dropoffPinWithLabel!.$1;
       } else if (_dropoffPinOnly != null) {
         bytes = _dropoffPinOnly!.$1;

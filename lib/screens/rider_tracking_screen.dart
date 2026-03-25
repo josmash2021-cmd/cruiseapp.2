@@ -92,6 +92,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   final double _cameraBearing = 0;
   Uint8List? _pickupPinBytes;
   Uint8List? _dropoffPinBytes;
+  Uint8List? _pickupPinWithLabelBytes;
+  Uint8List? _dropoffPinWithLabelBytes;
+  bool _pickupLabelRevealed = false;
+  bool _dropoffLabelRevealed = false;
 
   // ── Car marker using GeoJSON source (correct approach for v10 SDK) ──
   Uint8List? _carIconBytes;
@@ -597,6 +601,19 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       isPickup: false,
       label: widget.dropoffLabel,
     );
+    // Build pin+label bitmap variants for animated label reveal
+    if (widget.pickupLabel.trim().isNotEmpty) {
+      _pickupPinWithLabelBytes = await _renderGoldPinWithLabel(
+        isPickup: true,
+        label: widget.pickupLabel,
+      );
+    }
+    if (widget.dropoffLabel.trim().isNotEmpty) {
+      _dropoffPinWithLabelBytes = await _renderGoldPinWithLabel(
+        isPickup: false,
+        label: widget.dropoffLabel,
+      );
+    }
     if (mounted) {
       setState(() {});
       // Force annotation update now that bytes are ready
@@ -941,6 +958,164 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final img = await picture.toImage(w.toInt(), h.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
     return byteData!.buffer.asUint8List();
+  }
+
+  /// Renders a gold pin + address label as a single combined bitmap.
+  /// The pin tip is at bottom-center for iconAnchor: BOTTOM.
+  Future<Uint8List> _renderGoldPinWithLabel({
+    required bool isPickup,
+    required String label,
+  }) async {
+    // Get the standalone pin bitmap
+    final pinBytes = await _renderGoldPin(isPickup: isPickup, label: label);
+    final codec = await ui.instantiateImageCodec(pinBytes);
+    final frame = await codec.getNextFrame();
+    final pinImg = frame.image;
+
+    // Truncate label
+    String displayLabel = label;
+    if (label.length > 20) {
+      int cut = (label.length * 0.5).round();
+      for (int i = cut; i >= 0; i--) {
+        if (label[i] == ',' || label[i] == ' ') { cut = i; break; }
+      }
+      displayLabel = '${label.substring(0, cut).trimRight()}\u2026';
+    }
+
+    const pinW = 100.0;
+    const pinH = 130.0;
+
+    // Measure label text
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: displayLabel,
+        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: Colors.white),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout(maxWidth: 450);
+
+    // Label box sizing
+    const hPad = 14.0;
+    const gap = 8.0;
+    const dotSize = 10.0;
+    final labelW = hPad + dotSize + gap + textPainter.width + hPad + 8;
+    const labelH = 70.0;
+    const pinLabelGap = 8.0;
+
+    // Pickup label on right, dropoff on left
+    final labelOnLeft = !isPickup;
+    final rawW = pinW + pinLabelGap + labelW;
+
+    double pinX, labelX;
+    if (labelOnLeft) {
+      labelX = 0;
+      pinX = labelW + pinLabelGap;
+    } else {
+      pinX = 0;
+      labelX = pinW + pinLabelGap;
+    }
+
+    // Pad canvas so pin tip is at bottom-center
+    final pinTipX = pinX + pinW / 2;
+    final leftMargin = pinTipX;
+    final rightMargin = rawW - pinTipX;
+    final maxM = math.max(leftMargin, rightMargin);
+    final leftPad = maxM - leftMargin;
+    final paddedW = 2 * maxM;
+
+    final adjPinX = pinX + leftPad;
+    final adjLabelX = labelX + leftPad;
+    final labelY = (pinH - labelH) / 2;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, paddedW, pinH));
+
+    // Draw the pre-rendered pin image
+    canvas.drawImage(pinImg, Offset(adjPinX, 0), Paint());
+
+    // Draw label box
+    final bgRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(adjLabelX, labelY, labelW, labelH),
+      const Radius.circular(10),
+    );
+    canvas.drawRRect(bgRect, Paint()..color = const Color(0xF01A1A1A));
+    canvas.drawRRect(
+      bgRect,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.10)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+
+    double x = adjLabelX + hPad;
+
+    // Color dot
+    canvas.drawCircle(
+      Offset(x + dotSize / 2, labelY + labelH / 2),
+      dotSize / 2,
+      Paint()..color = isPickup ? Colors.green : const Color(0xFFE8C547),
+    );
+    x += dotSize + gap;
+
+    // Address text
+    textPainter.paint(canvas, Offset(x, labelY + (labelH - textPainter.height) / 2));
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(paddedW.ceil(), pinH.toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
+  }
+
+  /// Reveal pickup label: swap bitmap + spring scale animation.
+  void _revealPickupLabel() {
+    if (_pickupLabelRevealed || _pickupAnnot == null || _pickupPinWithLabelBytes == null) return;
+    _pickupLabelRevealed = true;
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    try {
+      _pickupAnnot!.image = _pickupPinWithLabelBytes!;
+      mgr.update(_pickupAnnot!);
+    } catch (_) {}
+    _labelSpringAnimation(_pickupAnnot!);
+  }
+
+  /// Reveal dropoff label: swap bitmap + spring scale animation.
+  void _revealDropoffLabel() {
+    if (_dropoffLabelRevealed || _dropoffAnnot == null || _dropoffPinWithLabelBytes == null) return;
+    _dropoffLabelRevealed = true;
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    try {
+      _dropoffAnnot!.image = _dropoffPinWithLabelBytes!;
+      mgr.update(_dropoffAnnot!);
+    } catch (_) {}
+    _labelSpringAnimation(_dropoffAnnot!);
+  }
+
+  /// Spring scale animation for label reveal: 0.50 → 1.15 → 0.95 → 1.05 over 600ms.
+  void _labelSpringAnimation(mapbox.PointAnnotation annot) {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    const duration = 600;
+    final start = DateTime.now();
+    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      if (!mounted) { timer.cancel(); return; }
+      final elapsed = DateTime.now().difference(start).inMilliseconds;
+      final t = (elapsed / duration).clamp(0.0, 1.0);
+      double scale;
+      if (t < 0.5) {
+        scale = 0.50 + (1.15 - 0.50) * (t / 0.5);
+      } else if (t < 0.75) {
+        scale = 1.15 + (0.95 - 1.15) * ((t - 0.5) / 0.25);
+      } else {
+        scale = 0.95 + (1.05 - 0.95) * ((t - 0.75) / 0.25);
+      }
+      try {
+        mgr.update(annot..iconSize = scale);
+      } catch (_) {}
+      if (t >= 1.0) timer.cancel();
+    });
   }
 
   Future<void> _initRoute() async {
@@ -2127,6 +2302,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
     // Animated 4-layer gold gloss route draw
     _startAnimatedRouteDraw();
+
+    // Reveal pickup label after brief delay
+    if (_pickupPinWithLabelBytes != null && !_pickupLabelRevealed) {
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (!mounted) return;
+        _revealPickupLabel();
+      });
+    }
   }
 
   /// Add dropoff pin (called once when phase transitions to onTrip)
@@ -2168,7 +2351,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       try {
         _pointAnnotMgr!.update(_dropoffAnnot!..iconSize = scale);
       } catch (_) {}
-      if (t >= 1.0) timer.cancel();
+      if (t >= 1.0) {
+        timer.cancel();
+        // Reveal dropoff label after pin pop settles
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (!mounted) return;
+          _revealDropoffLabel();
+        });
+      }
     });
   }
 

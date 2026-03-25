@@ -192,12 +192,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final rn = widget.rideName.toLowerCase();
     final m = widget.vehicleModel.toLowerCase();
     if (rn.contains('vip') || rn.contains('suv') || rn.contains('suburban') || m.contains('suburban')) {
-      return 'assets/images/cruise_3.png';
+      return 'assets/images/car_suv.png';
     }
-    if (rn.contains('comfort') || rn.contains('camry') || rn.contains('fusion') || m.contains('fusion')) {
-      return 'assets/images/cruise_6.png';
+    if (rn.contains('sedan') || rn.contains('premium') || rn.contains('fusion') || m.contains('fusion')) {
+      return 'assets/images/car_sedan.png';
     }
-    return 'assets/images/cruise_7.png';
+    return 'assets/images/car_economy.png';
   }
 
   @override
@@ -644,11 +644,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     String carAsset;
     
     if (rideName.contains('vip') || rideName.contains('suv') || rideName.contains('suburban')) {
-      carAsset = 'assets/images/cruise_3.png';
-    } else if (rideName.contains('comfort') || rideName.contains('camry') || rideName.contains('fusion')) {
-      carAsset = 'assets/images/cruise_6.png';
+      carAsset = 'assets/images/car_suv.png';
+    } else if (rideName.contains('sedan') || rideName.contains('premium') || rideName.contains('fusion')) {
+      carAsset = 'assets/images/car_sedan.png';
     } else {
-      carAsset = 'assets/images/cruise_7.png';
+      carAsset = 'assets/images/car_economy.png';
     }
     
     try {
@@ -656,11 +656,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _carIconBytes = bytes.buffer.asUint8List();
       _currentCarType = carAsset;
     } catch (e) {
-      // Fallback to sedan if specific car not found
+      // Fallback to economy if specific car not found
       try {
-        final bytes = await rootBundle.load('assets/images/cruise_7.png');
+        final bytes = await rootBundle.load('assets/images/car_economy.png');
         _carIconBytes = bytes.buffer.asUint8List();
-        _currentCarType = 'assets/images/cruise_7.png';
+        _currentCarType = 'assets/images/car_economy.png';
       } catch (_) {}
     }
     

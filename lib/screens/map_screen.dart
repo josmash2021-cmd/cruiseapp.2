@@ -4790,6 +4790,29 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       }
     } catch (_) {}
 
+    // Mapbox Directions API fallback
+    try {
+      final mbxUrl = Uri.parse(
+        'https://api.mapbox.com/directions/v5/mapbox/driving/'
+        '${origin.longitude},${origin.latitude};${dest.longitude},${dest.latitude}'
+        '?geometries=geojson&overview=full&steps=false'
+        '&access_token=${MapboxConfig.accessToken}',
+      );
+      final mbxRes = await http.get(mbxUrl).timeout(const Duration(seconds: 8));
+      if (mbxRes.statusCode == 200) {
+        final mbxData = jsonDecode(mbxRes.body);
+        final mbxRoutes = mbxData['routes'] as List?;
+        if (mbxRoutes != null && mbxRoutes.isNotEmpty) {
+          final coords = mbxRoutes[0]['geometry']?['coordinates'] as List?;
+          if (coords != null && coords.isNotEmpty) {
+            return coords
+                .map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
+                .toList();
+          }
+        }
+      }
+    } catch (_) {}
+
     // Last resort: straight line
     return List.generate(21, (i) {
       final t = i / 20;

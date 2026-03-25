@@ -751,6 +751,30 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         }
       }
     } catch (_) {}
+    // Mapbox Directions API fallback
+    try {
+      final mbxUrl = Uri.parse(
+        'https://api.mapbox.com/directions/v5/mapbox/driving/'
+        '${o.longitude},${o.latitude};${d.longitude},${d.latitude}'
+        '?geometries=geojson&overview=full&steps=false'
+        '&access_token=${MapboxConfig.accessToken}',
+      );
+      final mbxRes = await http.get(mbxUrl).timeout(const Duration(seconds: 8));
+      if (mbxRes.statusCode == 200) {
+        final mbxData = jsonDecode(mbxRes.body);
+        final mbxRoutes = mbxData['routes'] as List?;
+        if (mbxRoutes != null && mbxRoutes.isNotEmpty) {
+          final coords = mbxRoutes[0]['geometry']?['coordinates'] as List?;
+          if (coords != null && coords.isNotEmpty) {
+            final pts = coords
+                .map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
+                .toList();
+            if (pts.isNotEmpty) { pts[0] = o; pts[pts.length - 1] = d; }
+            return pts;
+          }
+        }
+      }
+    } catch (_) {}
     // Straight line fallback
     return List.generate(21, (i) {
       final t = i / 20;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/lat_lng.dart';
+import '../config/mapbox_config.dart';
 
 class RouteResult {
   final List<LatLng> points;
@@ -130,12 +131,19 @@ class DirectionsService {
       destination: destination,
     );
     if (data == null) {
+      // Try OSRM first, then Mapbox Directions API
       final osrm = await _requestOsrmRoute(origin: origin, destination: destination);
       if (osrm != null) {
         _routeCache[key] = osrm;
         _cacheTimes[key] = DateTime.now();
+        return osrm;
       }
-      return osrm;
+      final mbx = await _requestMapboxRoute(origin: origin, destination: destination);
+      if (mbx != null) {
+        _routeCache[key] = mbx;
+        _cacheTimes[key] = DateTime.now();
+      }
+      return mbx;
     }
 
     final routes = data['routes'] as List?;
@@ -276,6 +284,48 @@ class DirectionsService {
       if (decoded.isEmpty) return null;
 
       final anchored = _anchorRoutePoints(decoded, origin, destination);
+      return RouteResult(
+        points: anchored,
+        distanceText: _metersToMilesText(distanceMeters),
+        distanceMeters: distanceMeters,
+        durationText: _durationTextFromSeconds(durationSeconds),
+        startAddress: '',
+        endAddress: '',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<RouteResult?> _requestMapboxRoute({
+    required LatLng origin,
+    required LatLng destination,
+  }) async {
+    try {
+      final url = Uri.parse(
+        'https://api.mapbox.com/directions/v5/mapbox/driving/'
+        '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
+        '?geometries=geojson&overview=full&steps=false'
+        '&access_token=${MapboxConfig.accessToken}',
+      );
+      final res = await http.get(url).timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      final routes = data['routes'] as List?;
+      if (routes == null || routes.isEmpty) return null;
+
+      final route = routes[0] as Map<String, dynamic>;
+      final coords = route['geometry']?['coordinates'] as List?;
+      if (coords == null || coords.isEmpty) return null;
+
+      final points = coords
+          .map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
+          .toList();
+
+      final distanceMeters = (route['distance'] as num?)?.toInt() ?? 0;
+      final durationSeconds = (route['duration'] as num?)?.toInt() ?? 0;
+
+      final anchored = _anchorRoutePoints(points, origin, destination);
       return RouteResult(
         points: anchored,
         distanceText: _metersToMilesText(distanceMeters),

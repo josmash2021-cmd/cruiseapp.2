@@ -109,6 +109,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   LatLng? _directTargetPos; // for GPS fallback: lerp target when off-route
   static const String _arrowImageId = 'arrow-image';
   bool _arrowImageAdded = false;
+  static const double _kCarScale = 0.06; // car PNG is ~940px; 0.06 → ~56dp on screen
 
   // ── Car entrance animation (transición de formación profesional) ──
   bool _carEntranceStarted = false;
@@ -117,6 +118,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   static const double _entranceDuration = 800.0; // ms
   DateTime? _entranceStartTime;
   Timer? _entranceTimer;
+
+  // ── Animated route draw ──
+  Ticker? _routeDrawTicker;
+  bool _routeDrawDone = false;
+  bool _dropoffPinAdded = false;
 
   _TrackPhase _phase = _TrackPhase.arriving;
   bool _greetingSent = false;
@@ -256,7 +262,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             if (mounted) setState(() => _phase = _TrackPhase.arrived);
           } else if (st == 'in_trip' &&
               (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
-            if (mounted) setState(() => _phase = _TrackPhase.onTrip);
+            if (mounted) {
+              setState(() => _phase = _TrackPhase.onTrip);
+              _addDropoffPin();
+            }
           }
         } catch (_) {}
       });
@@ -368,6 +377,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     } else if (status == 'in_trip' &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       setState(() => _phase = _TrackPhase.onTrip);
+      _addDropoffPin();
     } else if (status == 'completed' && _phase != _TrackPhase.completed) {
       LocalDataService.clearActiveRide();
       setState(() => _phase = _TrackPhase.completed);
@@ -422,6 +432,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       }
       if (_phase == _TrackPhase.arrived && progress > 0.06) {
         setState(() => _phase = _TrackPhase.onTrip);
+        _addDropoffPin();
       }
       if (_phase == _TrackPhase.onTrip && progress >= 0.98) {
         _simTimer?.cancel();
@@ -445,6 +456,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _interpTicker?.dispose();
     _camTimer?.cancel();
     _simTimer?.cancel();
+    _entranceTimer?.cancel();
+    _routeDrawTicker?.dispose();
     _driverLocSub?.cancel();
     _rtdbDriverLocSub?.cancel();
     _tripStatusSub?.cancel();
@@ -1029,6 +1042,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           _phase = _TrackPhase.arrived;
         case 'onTrip':
           _phase = _TrackPhase.onTrip;
+          _addDropoffPin();
         default:
           _phase = _TrackPhase.arriving;
       }
@@ -1855,22 +1869,34 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     return Container(
       color: const Color(0xFF0A0D1A),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFD4AF37).withValues(alpha: 0.12),
-                blurRadius: 20, spreadRadius: 2, offset: const Offset(0, 4),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 16, offset: const Offset(0, 8),
-              ),
-            ],
-          ),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            // Layer 1: Deep black
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.6),
+              blurRadius: 32, spreadRadius: 2, offset: const Offset(0, 16),
+            ),
+            // Layer 2: Mid soft
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 16, offset: const Offset(0, 8),
+            ),
+            // Layer 3: Gold accent glow
+            BoxShadow(
+              color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
+              blurRadius: 24, spreadRadius: 0, offset: const Offset(0, 4),
+            ),
+            // Layer 4: Top highlight
+            BoxShadow(
+              color: Colors.white.withValues(alpha: 0.04),
+              blurRadius: 8, offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
           child: Stack(
             children: [
               RepaintBoundary(
@@ -2025,19 +2051,19 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           await style.addSource(mapbox.GeoJsonSource(id: _carShadowSourceId, data: shadowGeo));
           await style.addLayer(mapbox.SymbolLayer(
             id: _carShadowLayerId, sourceId: _carShadowSourceId,
-            iconImage: _carShadowImageId, iconSize: 1.2,
-            iconAnchor: mapbox.IconAnchor.BOTTOM,
-            iconAllowOverlap: true, iconIgnorePlacement: true, iconOpacity: 0.6,
+            iconImage: _carShadowImageId, iconSize: 0.7,
+            iconAnchor: mapbox.IconAnchor.CENTER,
+            iconAllowOverlap: true, iconIgnorePlacement: true, iconOpacity: 0.5,
           ));
         }
         // Create car source + layer
         await style.addSource(mapbox.GeoJsonSource(id: _carSourceId, data: geoJson));
-        final scale = isArrow ? 1.0 : _carEntranceProgress.clamp(0.01, 1.0);
+        final scale = isArrow ? 1.0 : (_carEntranceProgress * _kCarScale).clamp(0.001, _kCarScale);
         await style.addLayer(mapbox.SymbolLayer(
           id: _carLayerId, sourceId: _carSourceId,
           iconImage: imageId,
           iconSize: scale,
-          iconOpacity: isArrow ? 1.0 : _carEntranceProgress,
+          iconOpacity: 1.0,
           iconRotate: isArrow ? 0.0 : brg,
           iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
           iconAllowOverlap: true, iconIgnorePlacement: true,
@@ -2053,7 +2079,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         if (layerExists) {
           await style.setStyleLayerProperty(_carLayerId, 'icon-image', imageId);
           await style.setStyleLayerProperty(_carLayerId, 'icon-rotate', isArrow ? 0.0 : brg);
-          final scale = isArrow ? 1.0 : _carEntranceProgress.clamp(0.01, 1.0);
+          final scale = isArrow ? 1.0 : (_carEntranceProgress * _kCarScale).clamp(0.001, _kCarScale);
           await style.setStyleLayerProperty(_carLayerId, 'icon-size', scale);
           try { await style.moveStyleLayer(_carLayerId, null); } catch (_) {}
         }
@@ -2079,7 +2105,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     if (_routePts.length < 2) return;
     _staticAnnotsDone = true; // mark before await to prevent double-creation
 
-    // Pickup pin
+    // Pickup pin — always visible
     try {
       _pickupAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
@@ -2090,51 +2116,115 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       ));
     } catch (_) {}
 
-    // Dropoff pin
+    // Dropoff pin — only when onTrip or later
+    if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.completed) {
+      _addDropoffPin();
+    }
+
+    // Animated 4-layer gold gloss route draw
+    _startAnimatedRouteDraw();
+  }
+
+  /// Add dropoff pin (called once when phase transitions to onTrip)
+  Future<void> _addDropoffPin() async {
+    if (_dropoffPinAdded) return;
+    final pointMgr = _pointAnnotMgr;
+    if (pointMgr == null || _dropoffPinBytes == null) return;
+    _dropoffPinAdded = true;
     try {
       _dropoffAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
         image: _dropoffPinBytes!,
-        iconSize: 1.05,
+        iconSize: 0.01,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
       ));
+      // Animate pin pop: 0.01 → 1.15 → 0.95 → 1.05 over 500ms
+      _animateDropoffPinPop();
     } catch (_) {}
+  }
 
-    // 4-layer gold gloss route
-    final coords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    final geom = mapbox.LineString(coordinates: coords);
-    // Layer 1: Soft outer glow
+  /// Pin pop spring animation for dropoff pin
+  void _animateDropoffPinPop() {
+    if (_dropoffAnnot == null || _pointAnnotMgr == null) return;
+    const duration = 500;
+    final start = DateTime.now();
+    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      if (!mounted) { timer.cancel(); return; }
+      final elapsed = DateTime.now().difference(start).inMilliseconds;
+      final t = (elapsed / duration).clamp(0.0, 1.0);
+      double scale;
+      if (t < 0.4) {
+        scale = 0.01 + (1.15 - 0.01) * (t / 0.4);
+      } else if (t < 0.7) {
+        scale = 1.15 + (0.95 - 1.15) * ((t - 0.4) / 0.3);
+      } else {
+        scale = 0.95 + (1.05 - 0.95) * ((t - 0.7) / 0.3);
+      }
+      try {
+        _pointAnnotMgr!.update(_dropoffAnnot!..iconSize = scale);
+      } catch (_) {}
+      if (t >= 1.0) timer.cancel();
+    });
+  }
+
+  /// Animated route draw: progressively reveals the 4-layer gold gloss route
+  void _startAnimatedRouteDraw() {
+    if (_routeDrawDone || _routePts.length < 2) return;
+    _routeDrawDone = true;
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null) return;
+
+    final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final totalPts = allCoords.length;
+    const drawDurationMs = 1000;
+    final startTime = DateTime.now();
+
+    // Create all 4 layers with just 2 initial points
+    final initGeom = mapbox.LineString(coordinates: allCoords.sublist(0, 2));
+    _createRouteLayers(polyMgr, initGeom);
+
+    _routeDrawTicker = createTicker((_) {
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      final t = (elapsed / drawDurationMs).clamp(0.0, 1.0);
+      final count = (2 + (totalPts - 2) * _easeOutCubic(t)).round().clamp(2, totalPts);
+      final geom = mapbox.LineString(coordinates: allCoords.sublist(0, count));
+      _updateRouteLayers(polyMgr, geom);
+      if (t >= 1.0) {
+        _routeDrawTicker?.stop();
+      }
+    })..start();
+  }
+
+  Future<void> _createRouteLayers(mapbox.PolylineAnnotationManager mgr, mapbox.LineString geom) async {
+    try { _fullRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geom,
+      lineColor: const Color(0xFFD4AF37).withValues(alpha: 0.15).toARGB32(),
+      lineWidth: 16.0, lineJoin: mapbox.LineJoin.ROUND,
+    )); } catch (_) {}
+    try { _routeCasingAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geom,
+      lineColor: const Color(0xFFD4AF37).withValues(alpha: 0.25).toARGB32(),
+      lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
+    )); } catch (_) {}
+    try { _remainingRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geom,
+      lineColor: const Color(0xFFD4AF37).toARGB32(),
+      lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
+    )); } catch (_) {}
+    try { _routeShineAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geom,
+      lineColor: Colors.white.withValues(alpha: 0.25).toARGB32(),
+      lineWidth: 1.5, lineJoin: mapbox.LineJoin.ROUND,
+    )); } catch (_) {}
+  }
+
+  void _updateRouteLayers(mapbox.PolylineAnnotationManager mgr, mapbox.LineString geom) {
     try {
-      _fullRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: geom,
-        lineColor: const Color(0xFFD4AF37).withValues(alpha: 0.15).toARGB32(),
-        lineWidth: 16.0, lineJoin: mapbox.LineJoin.ROUND,
-      ));
-    } catch (_) {}
-    // Layer 2: Mid glow (casing)
-    try {
-      _routeCasingAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: geom,
-        lineColor: const Color(0xFFD4AF37).withValues(alpha: 0.25).toARGB32(),
-        lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
-      ));
-    } catch (_) {}
-    // Layer 3: Main gold line
-    try {
-      _remainingRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: geom,
-        lineColor: const Color(0xFFD4AF37).toARGB32(),
-        lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
-      ));
-    } catch (_) {}
-    // Layer 4: Gloss shine highlight
-    try {
-      _routeShineAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: geom,
-        lineColor: Colors.white.withValues(alpha: 0.25).toARGB32(),
-        lineWidth: 1.5, lineJoin: mapbox.LineJoin.ROUND,
-      ));
+      if (_fullRouteAnnot != null) mgr.update(_fullRouteAnnot!..geometry = geom);
+      if (_routeCasingAnnot != null) mgr.update(_routeCasingAnnot!..geometry = geom);
+      if (_remainingRouteAnnot != null) mgr.update(_remainingRouteAnnot!..geometry = geom);
+      if (_routeShineAnnot != null) mgr.update(_routeShineAnnot!..geometry = geom);
     } catch (_) {}
   }
 

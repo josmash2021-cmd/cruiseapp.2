@@ -192,12 +192,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final rn = widget.rideName.toLowerCase();
     final m = widget.vehicleModel.toLowerCase();
     if (rn.contains('vip') || rn.contains('suv') || rn.contains('suburban') || m.contains('suburban')) {
-      return 'assets/images/car_suv.png';
+      return 'assets/images/cruise_3.png';
     }
     if (rn.contains('comfort') || rn.contains('camry') || rn.contains('fusion') || m.contains('fusion')) {
-      return 'assets/images/car_comfort.png';
+      return 'assets/images/cruise_6.png';
     }
-    return 'assets/images/car_sedan.png';
+    return 'assets/images/cruise_7.png';
   }
 
   @override
@@ -644,11 +644,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     String carAsset;
     
     if (rideName.contains('vip') || rideName.contains('suv') || rideName.contains('suburban')) {
-      carAsset = 'assets/images/car_suv.png';
+      carAsset = 'assets/images/cruise_3.png';
     } else if (rideName.contains('comfort') || rideName.contains('camry') || rideName.contains('fusion')) {
-      carAsset = 'assets/images/car_comfort.png';
+      carAsset = 'assets/images/cruise_6.png';
     } else {
-      carAsset = 'assets/images/car_sedan.png';
+      carAsset = 'assets/images/cruise_7.png';
     }
     
     try {
@@ -658,9 +658,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     } catch (e) {
       // Fallback to sedan if specific car not found
       try {
-        final bytes = await rootBundle.load('assets/images/car_sedan.png');
+        final bytes = await rootBundle.load('assets/images/cruise_7.png');
         _carIconBytes = bytes.buffer.asUint8List();
-        _currentCarType = 'assets/images/car_sedan.png';
+        _currentCarType = 'assets/images/cruise_7.png';
       } catch (_) {}
     }
     

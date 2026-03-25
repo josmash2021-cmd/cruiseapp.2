@@ -3575,7 +3575,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                                       : null,
                                 ),
                                 child: Image.asset(
-                                  'assets/images/${ride.vehicle.toLowerCase()}.png',
+                                  _rideCarAsset(ride.name),
                                   fit: BoxFit.contain,
                                   filterQuality: FilterQuality.high,
                                   cacheWidth: 200,
@@ -6718,15 +6718,18 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     );
   }
 
+  /// Maps ride name to Cruise-branded car image asset.
+  String _rideCarAsset(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('vip') || n.contains('suv') || n.contains('suburban')) return 'assets/images/cruise_3.png';
+    if (n.contains('comfort') || n.contains('fusion') || n.contains('economy')) return 'assets/images/cruise_6.png';
+    return 'assets/images/cruise_7.png';
+  }
+
   /// Driver info card shown when driver is found
   Widget _matchingDriverCard() {
     // Pick the right top-view car image based on ride type
-    final rn = _rides[_selectedRide].name.toLowerCase();
-    final carAsset = rn.contains('suv') || rn.contains('suburban')
-        ? 'assets/images/car_suv.png'
-        : rn.contains('comfort') || rn.contains('fusion')
-            ? 'assets/images/car_comfort.png'
-            : 'assets/images/car_sedan.png';
+    final carAsset = _rideCarAsset(_rides[_selectedRide].name);
 
     return Container(
       key: const ValueKey('driver'),

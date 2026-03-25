@@ -129,6 +129,14 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     super.dispose();
   }
 
+  /// Maps ride name to Cruise-branded car image asset.
+  static String _rideCarAsset(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('vip') || n.contains('suv') || n.contains('suburban')) return 'assets/images/cruise_3.png';
+    if (n.contains('comfort') || n.contains('fusion') || n.contains('economy')) return 'assets/images/cruise_6.png';
+    return 'assets/images/cruise_7.png';
+  }
+
   List<_RideOption> _defaultRides() => [
     _RideOption(
       name: 'VIP',
@@ -1261,7 +1269,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                                   width: 50,
                                   height: 36,
                                   child: Image.asset(
-                                    'assets/images/${ride.vehicle.toLowerCase()}.png',
+                                    _rideCarAsset(ride.name),
                                     fit: BoxFit.contain,
                                     cacheWidth: 100,
                                     errorBuilder: (_, __, ___) => const Icon(

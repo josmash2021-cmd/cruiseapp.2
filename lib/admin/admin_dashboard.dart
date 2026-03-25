@@ -136,7 +136,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   void _login() async {
     setState(() => _loading = true);
     // TODO: Implement actual auth
-    await Future.delayed(const Duration(seconds: 1));
     if (mounted) {
       Navigator.pushReplacement(
         context,
@@ -430,7 +429,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         ),
         // Map
         Expanded(
-          child: mapbox.MapWidget(
+          child: RepaintBoundary(
+            child: mapbox.MapWidget(
             styleUri: MapboxConfig.styleLight,
             cameraOptions: mapbox.CameraOptions(
               center: mapbox.Point(coordinates: mapbox.Position(_initialLng, _initialLat)),
@@ -447,6 +447,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                 await MapTheme.enablePOILayers(_mapController!);
               }
             },
+          ),
           ),
         ),
       ],

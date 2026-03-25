@@ -1105,20 +1105,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   height: 190,
                   child: Stack(
                     children: [
-                      mapbox.MapWidget(
-                        styleUri: MapboxConfig.styleDark,
-                        cameraOptions: mapbox.CameraOptions(
-                          center: mapbox.Point(coordinates: mapbox.Position(
-                            widget.pickupLatLng.longitude,
-                            widget.pickupLatLng.latitude,
-                          )),
-                          zoom: 13.5,
-                          pitch: 0,
+                      RepaintBoundary(
+                        child: mapbox.MapWidget(
+                          styleUri: MapboxConfig.styleDark,
+                          cameraOptions: mapbox.CameraOptions(
+                            center: mapbox.Point(coordinates: mapbox.Position(
+                              widget.pickupLatLng.longitude,
+                              widget.pickupLatLng.latitude,
+                            )),
+                            zoom: 13.5,
+                            pitch: 0,
+                          ),
+                          onMapCreated: _onMapReady,
+                          onStyleLoadedListener: (_) async {
+                            if (_map != null) await MapTheme.applyNavyGold(_map!);
+                          },
                         ),
-                        onMapCreated: _onMapReady,
-                        onStyleLoadedListener: (_) async {
-                          if (_map != null) await MapTheme.applyNavyGold(_map!);
-                        },
                       ),
                       // ETA chip
                       Positioned(

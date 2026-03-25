@@ -48,6 +48,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   List<PlaceSuggestion> _suggestions = [];
   bool _loading = false;
   Timer? _debounce;
+  List<FavoritePlace> _favorites = [];
 
   // Which field is active
   bool _editingPickup = false;
@@ -76,6 +77,12 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _dropoffFocus.requestFocus();
     });
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    final favs = await LocalDataService.getFavorites();
+    if (mounted) setState(() => _favorites = favs);
   }
 
   @override
@@ -526,8 +533,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           _pickupCtrl.text = pAddr;
         });
 
-        // Auto-open dropoff map after short delay
-        await Future.delayed(const Duration(milliseconds: 300));
+        // Auto-open dropoff map
         if (!mounted) return;
         final dropoffResult = await Navigator.of(context).push<Map<String, dynamic>>(
           slideFromRightRoute(
@@ -665,80 +671,75 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       ),
     ];
 
-    return FutureBuilder<List<FavoritePlace>>(
-      future: LocalDataService.getFavorites(),
-      builder: (context, snapshot) {
-        final favorites = snapshot.data ?? [];
-        final homeAddr = favorites
-            .where((f) => f.label.toLowerCase() == 'home')
-            .firstOrNull;
-        final workAddr = favorites
-            .where((f) => f.label.toLowerCase() == 'work')
-            .firstOrNull;
+    final favorites = _favorites;
+    final homeAddr = favorites
+        .where((f) => f.label.toLowerCase() == 'home')
+        .firstOrNull;
+    final workAddr = favorites
+        .where((f) => f.label.toLowerCase() == 'work')
+        .firstOrNull;
 
-        // Update subtitles if addresses are saved
-        if (homeAddr != null) {
-          quickItems[0] = _QuickPlace(
-            Icons.home_rounded,
-            S.of(context).homeLabel,
-            homeAddr.address,
-          );
-        }
-        if (workAddr != null) {
-          quickItems[1] = _QuickPlace(
-            Icons.work_rounded,
-            S.of(context).workLabel,
-            workAddr.address,
-          );
-        }
+    // Update subtitles if addresses are saved
+    if (homeAddr != null) {
+      quickItems[0] = _QuickPlace(
+        Icons.home_rounded,
+        S.of(context).homeLabel,
+        homeAddr.address,
+      );
+    }
+    if (workAddr != null) {
+      quickItems[1] = _QuickPlace(
+        Icons.work_rounded,
+        S.of(context).workLabel,
+        workAddr.address,
+      );
+    }
 
-        return ListView(
-          padding: const EdgeInsets.only(top: 8),
-          children: [
-            for (final item in quickItems)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    return ListView(
+      padding: const EdgeInsets.only(top: 8),
+      children: [
+        for (final item in quickItems)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.75),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.15),
+              ),
+            ),
+            child: ListTile(
+              onTap: () => _onQuickPlaceTap(item, homeAddr, workAddr),
+              leading: Container(
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.75),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.15),
-                  ),
+                  color: Colors.white.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: ListTile(
-                  onTap: () => _onQuickPlaceTap(item, homeAddr, workAddr),
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(item.icon, size: 20, color: c.textSecondary),
-                  ),
-                  title: Text(
-                    item.title,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  subtitle: Text(
-                    item.subtitle,
-                    style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.6)),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
+                child: Icon(item.icon, size: 20, color: c.textSecondary),
+              ),
+              title: Text(
+                item.title,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
                 ),
               ),
-          ],
-        );
-      },
+              subtitle: Text(
+                item.subtitle,
+                style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.6)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 6,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

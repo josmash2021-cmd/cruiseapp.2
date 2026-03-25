@@ -37,6 +37,7 @@ import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_inbox_screen.dart';
 import '../../services/map_launcher_service.dart';
+import '../../widgets/radial_shimmer_painter.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'driver_trip_accept_screen.dart';
 
@@ -157,6 +158,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _showRipple = false;
   bool _isCardAnimating = false;
   String? _animatingOfferId; // which card is pulsing
+
+  // ── Continuous radial gold shimmer on offer card ──
+  late AnimationController _shimmerCtrl;
+  bool _offerDetailsVisible = false;
 
   // ── Accept card animation state ──
   _OfferAcceptState _offerAcceptState = _OfferAcceptState.normal;
@@ -356,6 +361,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       duration: const Duration(milliseconds: 800),
     );
 
+    // Continuous radial shimmer ripple on offer cards
+    _shimmerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat();
+
+    // Fade in time/distance details after card settles
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) setState(() => _offerDetailsVisible = true);
+    });
+
     _boot();
   }
 
@@ -382,6 +398,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _routePulseCtrl?.dispose();
     _pulseCtrl?.dispose();
     _rippleCtrl?.dispose();
+    _shimmerCtrl.dispose();
     _glowPulseCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -4261,7 +4278,7 @@ Widget _navHeader() {
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOutCubic,
-              height: isCardExpanded ? 310 : 200,
+              height: isCardExpanded ? 380 : 226,
               child: PageView.builder(
                 controller: _offerPageCtrl,
                 onPageChanged: (index) {
@@ -5000,7 +5017,21 @@ Widget _navHeader() {
           ),
         ],
       ),
-      child: Padding(
+      child: Stack(
+        children: [
+          // Layer 1: Radial gold shimmer ripple behind content
+          Positioned.fill(
+            child: RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: _shimmerCtrl,
+                builder: (_, __) => CustomPaint(
+                  painter: RadialShimmerPainter(progress: _shimmerCtrl.value),
+                ),
+              ),
+            ),
+          ),
+          // Layer 2: Card content on top
+          Padding(
         padding: EdgeInsets.fromLTRB(16, isExpanded ? 14 : 12, 16, isExpanded ? 16 : 12),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 350),
@@ -5029,6 +5060,8 @@ Widget _navHeader() {
                       isExpanded: isExpanded,
                     ),
         ),
+          ),
+        ],
       ),
     );
   }
@@ -5158,7 +5191,31 @@ Widget _navHeader() {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+          // Total time + distance (fade in)
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeInOut,
+            opacity: _offerDetailsVisible ? 1.0 : 0.0,
+            child: Row(
+              children: [
+                const Icon(Icons.timer_outlined, color: luxGold, size: 12),
+                const SizedBox(width: 4),
+                Text(
+                  '$totalMins min',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 12),
+                const Icon(Icons.straighten_rounded, color: luxGold, size: 12),
+                const SizedBox(width: 4),
+                Text(
+                  '${totalMiles.toStringAsFixed(1)} mi',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
           // Compact accept button
           SizedBox(
             width: double.infinity,
@@ -5343,6 +5400,94 @@ Widget _navHeader() {
             ),
           ),
         ],
+
+        const SizedBox(height: 12),
+
+        // Total trip time + distance (fade in)
+        AnimatedOpacity(
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+          opacity: _offerDetailsVisible ? 1.0 : 0.0,
+          child: Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: luxGold.withValues(alpha: 0.20),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.timer_outlined, color: luxGold, size: 15),
+                      const SizedBox(width: 6),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$totalMins min',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Text(
+                            'Total time',
+                            style: TextStyle(color: Colors.white38, fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: luxGold.withValues(alpha: 0.20),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.straighten_rounded, color: luxGold, size: 15),
+                      const SizedBox(width: 6),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${totalMiles.toStringAsFixed(1)} mi',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Text(
+                            'Total distance',
+                            style: TextStyle(color: Colors.white38, fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
 
         const SizedBox(height: 12),
 

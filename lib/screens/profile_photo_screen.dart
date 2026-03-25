@@ -86,21 +86,19 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
   }
 
   void _advance() {
-    Future.delayed(const Duration(milliseconds: 250), () {
-      if (!mounted) return;
-      Navigator.of(context).push(
-        slideFromRightRoute(
-          ProfileReviewScreen(
-            firstName: widget.firstName,
-            lastName: widget.lastName,
-            email: widget.email,
-            phone: widget.phone,
-            paymentMethod: widget.paymentMethod,
-            photoPath: _photoPath,
-          ),
+    if (!mounted) return;
+    Navigator.of(context).push(
+      slideFromRightRoute(
+        ProfileReviewScreen(
+          firstName: widget.firstName,
+          lastName: widget.lastName,
+          email: widget.email,
+          phone: widget.phone,
+          paymentMethod: widget.paymentMethod,
+          photoPath: _photoPath,
         ),
-      );
-    });
+      ),
+    );
   }
 
   @override

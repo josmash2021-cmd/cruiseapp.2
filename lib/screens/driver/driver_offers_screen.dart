@@ -297,7 +297,8 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                       child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
                     ),
                   )
-                : mapbox.MapWidget(
+                : RepaintBoundary(
+                    child: mapbox.MapWidget(
                     styleUri: MapboxConfig.styleDark,
                     cameraOptions: mapbox.CameraOptions(
                       center: mapbox.Point(coordinates: mapbox.Position(_driverPos!.longitude, _driverPos!.latitude)),
@@ -307,6 +308,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                     onStyleLoadedListener: (_) async {
                       if (_map != null) await MapTheme.applyNavyGold(_map!);
                     },
+                  ),
                   ),
           ),
 

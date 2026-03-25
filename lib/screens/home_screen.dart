@@ -265,15 +265,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       const Duration(seconds: 30),
       (_) => _checkDriversOnline(),
     );
-    // Delay first poll to let JWT propagate on slow devices
-    Future.delayed(const Duration(seconds: 5), () {
-      if (!mounted) return;
-      _checkAccountStatus();
-      _accountStatusTimer = Timer.periodic(
-        const Duration(seconds: 30),
-        (_) => _checkAccountStatus(),
-      );
-    });
+    // Start account status polling immediately
+    _checkAccountStatus();
+    _accountStatusTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _checkAccountStatus(),
+    );
     UserSession.photoNotifier.addListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
   }
@@ -3235,8 +3232,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       return;
     }
     setState(() => _dockIndex = index);
-    // Small delay for visual feedback before navigation
-    await Future.delayed(const Duration(milliseconds: 200));
     if (!mounted) return;
     _executeDockAction(index);
   }

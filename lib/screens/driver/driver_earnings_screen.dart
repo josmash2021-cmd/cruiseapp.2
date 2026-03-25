@@ -98,7 +98,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
         _loading = false;
       });
       _chartCtrl.forward(from: 0);
-      Future.delayed(const Duration(milliseconds: 400), () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _listCtrl.forward(from: 0);
       });
     } catch (_) {

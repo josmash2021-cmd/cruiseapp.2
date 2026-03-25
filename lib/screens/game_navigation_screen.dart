@@ -487,7 +487,8 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
         children: [
           // ── MAPA 3D ──
           Positioned.fill(
-            child: mapbox.MapWidget(
+            child: RepaintBoundary(
+              child: mapbox.MapWidget(
               styleUri: MapboxConfig.styleNavigation,
               cameraOptions: mapbox.CameraOptions(
                 center: mapbox.Point(
@@ -513,6 +514,7 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
               onScrollListener: (_) {
                 // Usuario movió el mapa - opcional: pausar follow temporalmente
               },
+            ),
             ),
           ),
 

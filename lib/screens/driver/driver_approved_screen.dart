@@ -62,7 +62,7 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
     ));
 
     // Start text after checkmark finishes
-    Future.delayed(const Duration(milliseconds: 600), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _textCtrl.forward();
     });
 

@@ -27,6 +27,7 @@ import 'help_screen.dart';
 import 'home_screen.dart';
 import 'rider_rating_screen.dart';
 import '../l10n/app_localizations.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class RiderTrackingScreen extends StatefulWidget {
   const RiderTrackingScreen({
@@ -1822,11 +1823,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                       ),
                       child: ClipOval(
                         child: widget.driverPhotoUrl != null && widget.driverPhotoUrl!.isNotEmpty
-                            ? Image.network(
-                                widget.driverPhotoUrl!,
+                            ? CachedNetworkImage(
+                                imageUrl: widget.driverPhotoUrl!,
                                 width: 40, height: 40,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _driverInitial(),
+                                errorWidget: (_, __, ___) => _driverInitial(),
                               )
                             : _driverInitial(),
                       ),

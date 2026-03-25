@@ -140,15 +140,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _initLocation();
     _loadDriverData();
     _checkVerification();
-    // Delay first poll to let JWT propagate on slow devices
-    Future.delayed(const Duration(seconds: 5), () {
-      if (!mounted) return;
-      _checkAccountStatus();
-      _accountStatusTimer = Timer.periodic(
-        const Duration(seconds: 30),
-        (_) => _checkAccountStatus(),
-      );
-    });
+    // Start account status polling immediately
+    _checkAccountStatus();
+    _accountStatusTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _checkAccountStatus(),
+    );
 
     // Listen for photo updates from UserSession
     UserSession.photoNotifier.addListener(_onPhotoUpdated);
@@ -158,11 +155,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _resolveDriverId();
     _registerFcmToken();
 
-    // Delay entrance animations
-    Future.delayed(const Duration(milliseconds: 400), () {
+    // Entrance animations
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _statsCtrl.forward();
     });
-    Future.delayed(const Duration(milliseconds: 600), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _fabCtrl.forward();
     });
   }

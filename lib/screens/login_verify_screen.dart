@@ -101,7 +101,6 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
       );
     } else {
       // Email — local code comparison
-      await Future.delayed(const Duration(milliseconds: 500));
       isValid = code == widget.expectedCode;
     }
 

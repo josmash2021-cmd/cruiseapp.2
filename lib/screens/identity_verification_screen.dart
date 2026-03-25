@@ -43,6 +43,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   String? _rejectionReason;
   Timer? _pollTimer;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _firestoreSubscription;
+  Map<String, String>? _cachedUser;
 
   late AnimationController _pulseCtrl;
   late AnimationController _checkCtrl;
@@ -58,6 +59,12 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
+    _preloadUser();
+  }
+
+  Future<void> _preloadUser() async {
+    final u = await UserSession.getUser();
+    if (mounted) setState(() => _cachedUser = u);
   }
 
   @override
@@ -549,16 +556,13 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   //  Step 2 — Confirmed
   // ═══════════════════════════════════════════
   Widget _buildConfirmed(AppColors c) {
-    return FutureBuilder<Map<String, String>?>(
-      future: UserSession.getUser(),
-      builder: (context, snap) {
-        final user = snap.data;
-        final firstName = user?['firstName'] ?? '';
-        final lastName = user?['lastName'] ?? '';
-        final email = user?['email'] ?? '';
-        final phone = user?['phone'] ?? '';
+    final user = _cachedUser;
+    final firstName = user?['firstName'] ?? '';
+    final lastName = user?['lastName'] ?? '';
+    final email = user?['email'] ?? '';
+    final phone = user?['phone'] ?? '';
 
-        return Padding(
+    return Padding(
           key: const ValueKey(2),
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
@@ -711,8 +715,6 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
             ],
           ),
         );
-      },
-    );
   }
 
   // ═══════════════════════════════════════════

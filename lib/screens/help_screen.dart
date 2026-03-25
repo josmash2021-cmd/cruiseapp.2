@@ -1094,7 +1094,6 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     try {
       await ApiService.sendSupportMessage(_chatId!, text);
       // Immediately poll for bot reply
-      await Future.delayed(const Duration(milliseconds: 500));
       await _loadMessages();
     } catch (e) {
       debugPrint('[SupportChat] send error: $e');

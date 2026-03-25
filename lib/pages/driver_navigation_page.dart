@@ -848,7 +848,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         children: [
           // ── FULLSCREEN MAP ────────────────────────────────────────────────
           Positioned.fill(
-            child: mapbox.MapWidget(
+            child: RepaintBoundary(
+              child: mapbox.MapWidget(
               styleUri: MapboxConfig.styleNavigation,
               cameraOptions: mapbox.CameraOptions(
                 center: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
@@ -872,6 +873,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                 if (_map != null) await MapTheme.applyNavyGold(_map!);
               },
               onScrollListener: (_) => _onCameraMoveStarted(),
+            ),
             ),
           ),
 

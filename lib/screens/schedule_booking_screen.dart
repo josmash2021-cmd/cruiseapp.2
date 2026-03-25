@@ -752,13 +752,11 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                     Navigator.pop(ctx);
                     setState(() => _selectedPaymentMethod = id);
                     if (!linked) {
-                      Future.delayed(const Duration(milliseconds: 200), () {
-                        if (!mounted) return;
-                        Navigator.push(
-                          context,
-                          slideFromRightRoute(const PaymentAccountsScreen()),
-                        ).then((_) => _loadPayments());
-                      });
+                      if (!mounted) return;
+                      Navigator.push(
+                        context,
+                        slideFromRightRoute(const PaymentAccountsScreen()),
+                      ).then((_) => _loadPayments());
                     }
                   },
                   child: Container(

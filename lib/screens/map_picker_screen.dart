@@ -129,7 +129,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
       body: Stack(
         children: [
           // Map — Mapbox on both iOS and Android
-          mapbox.MapWidget(
+          RepaintBoundary(
+            child: mapbox.MapWidget(
             styleUri: MapboxConfig.styleDark,
             cameraOptions: mapbox.CameraOptions(
               center: mapbox.Point(coordinates: mapbox.Position(_center.longitude, _center.latitude)),
@@ -151,6 +152,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
             },
             onCameraChangeListener: _onCameraChanged,
             onMapIdleListener: _onMapIdle,
+          ),
           ),
 
           // Center pin — fixed while map moves underneath

@@ -102,7 +102,6 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
       isValid = await ApiService.verifyOtp(email: widget.email, code: code);
     } else {
       // Email — local code comparison
-      await Future.delayed(const Duration(milliseconds: 800));
       isValid = code == widget.expectedCode;
     }
 

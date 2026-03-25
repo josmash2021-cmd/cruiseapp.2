@@ -295,14 +295,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     // Off-route auto-rerouting
     if (nav != null && nav.isOffRoute && !_isRerouting) {
       _isRerouting = true;
-      Future.delayed(const Duration(seconds: 2), () {
-        if (!mounted) return;
-        final dest = _phase == TripPhase.onTrip
-            ? widget.dropoffLatLng
-            : widget.pickupLatLng;
-        _fetchRoute(dest).then((_) {
-          if (mounted) _isRerouting = false;
-        });
+      final dest = _phase == TripPhase.onTrip
+          ? widget.dropoffLatLng
+          : widget.pickupLatLng;
+      _fetchRoute(dest).then((_) {
+        if (mounted) _isRerouting = false;
       });
     }
 
@@ -1471,7 +1468,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   Widget _buildMap() {
-    return mapbox.MapWidget(
+    return RepaintBoundary(
+      child: mapbox.MapWidget(
       key: _mapKey,
       styleUri: MapboxConfig.styleNavigation,
       cameraOptions: mapbox.CameraOptions(
@@ -1499,6 +1497,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         if (_map != null) await MapTheme.applyNavyGold(_map!);
       },
       onScrollListener: (_) => _onCameraMoveStarted(),
+    ),
     );
   }
 

@@ -95,7 +95,6 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
     }
 
     if (id == 'credit_card') {
-      await Future.delayed(const Duration(milliseconds: 200));
       if (!mounted) return;
       final result = await Navigator.of(context).push<String>(
         slideFromRightRoute(
@@ -136,7 +135,6 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
               await LocalDataService.linkPaymentMethod('google_pay');
               if (!mounted) return;
               _showSetupSnack(S.of(context).googlePayLinked);
-              await Future.delayed(const Duration(milliseconds: 400));
               if (!mounted) return;
               _goToNextScreen(id);
             },
@@ -144,7 +142,6 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
         );
       } else {
         _showSetupSnack(S.of(context).googlePayNotSetUp);
-        await Future.delayed(const Duration(milliseconds: 600));
         if (!mounted) return;
         _goToNextScreen(id);
       }
@@ -162,7 +159,6 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
               await LocalDataService.linkPaymentMethod('apple_pay');
               if (!mounted) return;
               _showSetupSnack(S.of(context).applePayLinked);
-              await Future.delayed(const Duration(milliseconds: 400));
               if (!mounted) return;
               _goToNextScreen(id);
             },
@@ -170,7 +166,6 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
         );
       } else {
         _showSetupSnack(S.of(context).applePayNotSetUp);
-        await Future.delayed(const Duration(milliseconds: 600));
         if (!mounted) return;
         _goToNextScreen(id);
       }
@@ -179,7 +174,6 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
 
     if (id == 'cruise_cash') {
       _showSetupSnack(S.of(context).cruiseCashActivated);
-      await Future.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
       _goToNextScreen(id);
       return;
@@ -242,7 +236,6 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
     if (approved == true) {
       await LocalDataService.linkPaymentMethod('paypal');
       _showSetupSnack(paypalLinkedMsg);
-      await Future.delayed(const Duration(milliseconds: 400));
       if (!mounted) return;
       _goToNextScreen('paypal');
     } else {

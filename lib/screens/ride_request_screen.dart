@@ -1109,7 +1109,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           );
           if (match != null) {
             _ctrl.selectRideOption(match);
-            Future.delayed(const Duration(milliseconds: 250), () {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) setState(() => _rideOptionsExpanded = false);
             });
           }
@@ -3496,7 +3496,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     setState(() => _isProcessingPayment = true);
 
     // Simulate payment processing (always succeeds for testing)
-    await Future.delayed(const Duration(milliseconds: 800));
     if (!mounted) return;
 
     setSheetState(() => _isProcessingPayment = false);
@@ -3516,7 +3515,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Future<void> _startRideDirectly(AppColors c, RideOption? option) async {
     final nav = Navigator.of(context);
     setState(() => _isProcessingPayment = true);
-    await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     setState(() => _isProcessingPayment = false);
     if (widget.applyPromo) await LocalDataService.setPromoUsed();

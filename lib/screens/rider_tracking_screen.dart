@@ -1672,14 +1672,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.light,
         child: Scaffold(
-          backgroundColor: Colors.black,
+          backgroundColor: const Color(0xFF111318),
           appBar: _buildAppBar(),
           body: Column(
             children: [
               const OfflineBanner(),
               _buildInfoPanel(),
               SizedBox(
-                height: MediaQuery.of(context).size.height * 0.35,
+                height: MediaQuery.of(context).size.height * 0.45,
                 child: _buildMapCard(),
               ),
             ],
@@ -1704,7 +1704,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         statusLabel = s.youHaveArrived;
     }
     return AppBar(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF111318),
       elevation: 0,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: 20),
@@ -1763,7 +1763,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     ].where((v) => v.isNotEmpty).join(' ');
 
     return Container(
-      color: Colors.black,
+      color: const Color(0xFF111318),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1981,7 +1981,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1A),
+                          color: const Color(0xFF161A21),
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
                         ),
@@ -2048,7 +2048,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       child: Container(
         width: 44, height: 44,
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
+          color: const Color(0xFF1E222B),
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
@@ -2060,36 +2060,36 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // ── Map Card (bottom — expanded) ──
   Widget _buildMapCard() {
     return Container(
-      color: Colors.black,
+      color: const Color(0xFF111318),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
-            // Layer 1: Deep black
+            // Layer 1: Deep bottom shadow
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.6),
-              blurRadius: 32, spreadRadius: 2, offset: const Offset(0, 16),
+              blurRadius: 32, spreadRadius: 4, offset: const Offset(0, 16),
             ),
-            // Layer 2: Mid soft
+            // Layer 2: Mid shadow
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 16, offset: const Offset(0, 8),
+              blurRadius: 16, spreadRadius: 2, offset: const Offset(0, 8),
             ),
             // Layer 3: Gold accent glow
             BoxShadow(
-              color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
-              blurRadius: 24, spreadRadius: 0, offset: const Offset(0, 4),
+              color: const Color(0xFFD4AF37).withValues(alpha: 0.15),
+              blurRadius: 24, spreadRadius: 2, offset: const Offset(0, 4),
             ),
-            // Layer 4: Top highlight
+            // Layer 4: Gold edge glow
             BoxShadow(
-              color: Colors.white.withValues(alpha: 0.04),
-              blurRadius: 8, offset: const Offset(0, -2),
+              color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
+              blurRadius: 40, spreadRadius: 4,
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           child: Stack(
             children: [
               RepaintBoundary(

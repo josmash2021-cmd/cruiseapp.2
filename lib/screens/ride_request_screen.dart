@@ -2470,49 +2470,35 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ),
                   const SizedBox(height: 6),
 
-                  // Payment Method card — gold border
+                  // Payment Method — solid gold fill
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: GestureDetector(
                       onTap: () => _showPaymentMethodPicker(c, option),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
+                      child: Container(
+                        width: double.infinity,
+                        height: 52,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF111318),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: const Color(0xFFD4AF37),
-                            width: 1.5,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
-                              blurRadius: 12,
-                              spreadRadius: 1,
-                            ),
-                          ],
+                          color: const Color(0xFFFFD700),
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        child: Row(
+                        child: const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Text(
+                            Text(
                               'Payment Method',
                               style: TextStyle(
-                                color: Color(0xFFD4AF37),
+                                color: Colors.white,
                                 fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.3,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.2,
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            const Icon(
-                              Icons.arrow_forward_ios_rounded,
-                              color: Color(0xFFD4AF37),
-                              size: 14,
+                            SizedBox(width: 6),
+                            Icon(
+                              Icons.chevron_right,
+                              color: Colors.white,
+                              size: 18,
                             ),
                           ],
                         ),
@@ -2521,7 +2507,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ),
                   const SizedBox(height: 10),
 
-                  // Request Ride button — black gloss with payment logo
+                  // Request Ride button — flat 2D, gold border
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: AnimatedBuilder(
@@ -2536,45 +2522,18 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             : option == null && !_isProcessingPayment
                                 ? () => _shakeCtrl.forward(from: 0)
                                 : null,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
+                        child: Container(
                           width: double.infinity,
                           height: 56,
                           decoration: BoxDecoration(
-                            gradient: option != null && !_isProcessingPayment
-                                ? const LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Color(0xFF2A2A2A),
-                                      Color(0xFF0A0A0A),
-                                    ],
-                                  )
-                                : null,
-                            color: option != null && !_isProcessingPayment
-                                ? null
-                                : const Color(0xFF1A1F35),
+                            color: const Color(0xFF0D0D0D),
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
                               color: option != null
-                                  ? Colors.white.withValues(alpha: 0.1)
-                                  : Colors.white.withValues(alpha: 0.05),
-                              width: 1,
+                                  ? const Color(0xFFFFD700)
+                                  : const Color(0xFFFFD700).withValues(alpha: 0.3),
+                              width: 1.5,
                             ),
-                            boxShadow: option != null && !_isProcessingPayment
-                                ? [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.5),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                    BoxShadow(
-                                      color: Colors.white.withValues(alpha: 0.05),
-                                      blurRadius: 1,
-                                      offset: const Offset(0, -1),
-                                    ),
-                                  ]
-                                : [],
                           ),
                           child: _isProcessingPayment
                               ? const Center(
@@ -2591,10 +2550,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                   padding: const EdgeInsets.symmetric(horizontal: 20),
                                   child: Row(
                                     children: [
-                                      // LEFT — Payment logo
                                       _buildPaymentLogo(),
                                       const SizedBox(width: 12),
-                                      // CENTER — Text + price
                                       Expanded(
                                         child: AnimatedSwitcher(
                                           duration: const Duration(milliseconds: 300),

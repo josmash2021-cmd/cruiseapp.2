@@ -704,9 +704,21 @@ class _TripCard extends StatelessWidget {
     if (status == 'canceled') {
       color = const Color(0xFFFF5252);
       label = 'Canceled';
+    } else if (status == 'completed') {
+      color = Colors.white54;
+      label = 'Completed';
     } else if (isPast) {
       color = Colors.white38;
       label = 'Expired';
+    } else if (status == 'driver_en_route' || status == 'arrived') {
+      color = const Color(0xFF2ECC71);
+      label = '✓ Driver Assigned';
+    } else if (status == 'in_trip') {
+      color = const Color(0xFFE8C547);
+      label = '🚗 In Progress';
+    } else if (status == 'scheduled' || status == 'requested') {
+      color = Colors.orange;
+      label = '⏳ Pending Driver';
     } else {
       color = const Color(0xFF4CAF50);
       label = 'Upcoming';

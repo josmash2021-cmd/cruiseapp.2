@@ -3621,6 +3621,40 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
         except Exception as e:
             logging.error("Firestore sync on accept_offer failed: %s", e)
 
+    # ── Push + SMS notification to rider when driver accepts ──
+    if trip:
+        try:
+            rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider = rider_result.scalar_one_or_none()
+            drv_result2 = await db.execute(select(User).where(User.id == driver_id))
+            drv2 = drv_result2.scalar_one_or_none()
+            driver_display = f"{drv2.first_name} {drv2.last_name}" if drv2 else "Your driver"
+
+            # Push notification via FCM
+            if rider and rider.fcm_token:
+                _send_fcm_push(
+                    rider.fcm_token,
+                    title="Driver Assigned! 🚗",
+                    body=f"Your scheduled ride has a driver. {driver_display} will arrive on time.",
+                    data={"type": "scheduled_confirmed", "trip_id": str(trip.id)},
+                )
+
+            # SMS via Twilio
+            if rider and rider.phone and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER:
+                try:
+                    from twilio.rest import Client as TwilioClient
+                    twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+                    twilio_client.messages.create(
+                        to=rider.phone,
+                        from_=TWILIO_PHONE_NUMBER,
+                        body=f"Cruise: Your ride has been confirmed! {driver_display} will be your driver. Open the app for details.",
+                    )
+                    logging.info("[SMS] Scheduled ride confirmation sent to %s", rider.phone[-4:])
+                except Exception as sms_err:
+                    logging.warning("[SMS] Failed to send scheduled confirmation: %s", sms_err)
+        except Exception as notif_err:
+            logging.warning("[Notify] Failed to notify rider on accept: %s", notif_err)
+
     return {"status": "accepted", "trip": _trip_dict(trip) if trip else None}
 
 @app.post("/dispatch/driver/reject", dependencies=[Depends(_verify_api_key)])

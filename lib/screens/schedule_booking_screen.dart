@@ -27,6 +27,7 @@ import '../services/user_session.dart';
 import 'airport_terminal_sheet.dart';
 import 'payment_accounts_screen.dart';
 import 'scheduled_rides_screen.dart';
+import 'ride_booking_confirmed_screen.dart';
 import '../widgets/gold_pin_renderer.dart';
 
 class ScheduleBookingScreen extends StatefulWidget {
@@ -659,11 +660,21 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
         ),
       );
 
-      // Pop all the way back and go to scheduled rides
+      // Pop all the way back and show booking confirmation
+      final fareVal = fare;
+      final vehicleTypeName = _rides[_selectedRide].name;
       Navigator.of(context).popUntil((r) => r.isFirst);
-      Navigator.of(
-        context,
-      ).push(slideFromRightRoute(const ScheduledRidesScreen()));
+      Navigator.of(context).push(
+        slideFromRightRoute(
+          RideBookingConfirmedScreen(
+            scheduledAt: widget.scheduledAt,
+            pickupAddress: _pickupAddress,
+            dropoffAddress: _dropoffAddress,
+            vehicleType: vehicleTypeName,
+            fare: fareVal,
+          ),
+        ),
+      );
     } catch (e) {
       if (mounted) _showErr(S.of(context).failedToBook('$e'));
     } finally {

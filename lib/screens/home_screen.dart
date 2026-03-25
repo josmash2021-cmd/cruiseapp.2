@@ -4268,7 +4268,7 @@ class _ScheduleBottomSheetState extends State<_ScheduleBottomSheet>
         colorScheme: widget.isDark
             ? ColorScheme.dark(
                 primary: _gold,
-                onPrimary: Colors.black,
+                onPrimary: Colors.white,
                 surface: _bg,
                 onSurface: Colors.white,
               )

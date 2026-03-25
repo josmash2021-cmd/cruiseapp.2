@@ -1127,16 +1127,18 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           _searchElapsedSec = 0;
           _searchStatusTimer?.cancel();
           _searchStatusTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-            if (mounted) setState(() => _searchStatusIdx++);
+            if (mounted) {
+              setState(() => _searchStatusIdx++);
+              // Re-trigger cinematic on each status change
+              _replayCinematicIfRouteAvailable();
+            }
           });
           _searchElapsedTimer?.cancel();
           _searchElapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
             if (mounted) setState(() => _searchElapsedSec++);
           });
-          // Fit route so user sees pickup → dropoff (preserve cinematic tilt)
-          if (_ctrl.state.route != null) {
-            _fitRoute(_ctrl.state.route!.points, preserveCamera: _cinematicDone);
-          }
+          // Trigger cinematic sequence on searching phase open
+          _replayCinematicIfRouteAvailable();
         }
         // SIMULATION MODE: Auto-assign a simulated driver after 2-4 seconds
         if (_isSimulationMode && _simulatedDriverTimer == null) {
@@ -1294,6 +1296,20 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (_mapCtrl != null) {
       _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: 0, bearing: 0));
     }
+  }
+
+  /// Replay cinematic if route data is available (used by searching phase).
+  void _replayCinematicIfRouteAvailable() {
+    final route = _ctrl.state.route;
+    if (route == null || route.points.isEmpty) return;
+    final pts = List<LatLng>.from(route.points);
+    final s = _ctrl.state;
+    if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
+    if (pts.isNotEmpty && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
+    _showPinLabels = true;
+    _buildRouteMarkers();
+    _resetCinematic();
+    _startCinematicSequence(pts);
   }
 
   /// Cinematic map animation: fit → tilt 55° + random bearing → pin pop → gold route draw → glow
@@ -1681,8 +1697,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
     final screenH = MediaQuery.of(context).size.height;
-    // bottom panel occupies ~45% of screen — push route into the upper portion
-    final bottomPad = screenH * 0.42;
+    final phase = _ctrl.state.phase;
+    // Searching card is ~200px; route preview sheet is ~45%
+    final bottomPad = (phase == RiderPhase.requesting || phase == RiderPhase.searchingDriver)
+        ? screenH * 0.28
+        : screenH * 0.42;
     _mapCtrl!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],

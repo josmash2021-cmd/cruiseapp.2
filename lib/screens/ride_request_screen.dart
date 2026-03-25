@@ -57,6 +57,7 @@ class RideRequestScreen extends StatefulWidget {
   final String? initialPickupLabel;
   final String? initialDropoffLabel;
   final RouteResult? preloadedRoute;
+  final String? initialRideId;
   const RideRequestScreen({
     super.key,
     this.fastRide = false,
@@ -70,6 +71,7 @@ class RideRequestScreen extends StatefulWidget {
     this.initialPickupLabel,
     this.initialDropoffLabel,
     this.preloadedRoute,
+    this.initialRideId,
   });
 
   @override
@@ -1080,6 +1082,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   // ── State updates from controller ──
 
+  bool _didAutoSelectRide = false;
+
   void _onStateChange() {
     if (!mounted) return;
     final s = _ctrl.state;
@@ -1090,6 +1094,22 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _fetchingRoute = false;
         _drawRoute();
         _sheetCtrl.forward();
+        // Auto-select ride option from home screen card tap
+        if (!_didAutoSelectRide &&
+            widget.initialRideId != null &&
+            s.rideOptions.isNotEmpty) {
+          _didAutoSelectRide = true;
+          final match = s.rideOptions.cast<RideOption?>().firstWhere(
+            (o) => o!.id == widget.initialRideId,
+            orElse: () => null,
+          );
+          if (match != null) {
+            _ctrl.selectRideOption(match);
+            Future.delayed(const Duration(milliseconds: 250), () {
+              if (mounted) setState(() => _rideOptionsExpanded = false);
+            });
+          }
+        }
         break;
       case RiderPhase.requesting:
       case RiderPhase.searchingDriver:

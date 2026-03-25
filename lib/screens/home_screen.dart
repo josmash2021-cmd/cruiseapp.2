@@ -2348,12 +2348,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         );
 
         // ── Static card — no AnimatedBuilder wrapper ──
+        // Map tier → ride option ID for pre-selection
+        final rideId = isVIP ? 'suburban' : isPremium ? 'camry' : 'fusion';
         return Padding(
           padding: EdgeInsets.only(
             bottom: idx < 2 ? 16 : 0,
           ),
           child: GestureDetector(
-            onTap: _openSearchThenRide,
+            onTap: () => _openSearchThenRide(rideId: rideId),
             child: Container(
               constraints: const BoxConstraints(minHeight: 130),
               clipBehavior: Clip.antiAlias,
@@ -2778,7 +2780,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     LocalDataService.incrementDestinationUsage(address);
     Navigator.of(context)
         .push(
-          slideUpFadeRoute(RideRequestScreen(initialDropoffAddress: address)),
+          scaleExpandRoute(RideRequestScreen(initialDropoffAddress: address)),
         )
         .then((_) {
           if (mounted) _loadSavedData();
@@ -2787,7 +2789,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   /// Open the search screen (photo 3) directly, then push RideRequestScreen
   /// with the pickup/dropoff results pre-filled.
-  Future<void> _openSearchThenRide() async {
+  Future<void> _openSearchThenRide({String? rideId}) async {
     if (_activeRide != null) {
       _resumeActiveRide();
       return;
@@ -2848,7 +2850,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         : dropoffDetails.address;
 
     await Navigator.of(context).push(
-      slideUpFadeRoute(
+      scaleExpandRoute(
         RideRequestScreen(
           initialPickupDetails: effectivePickup,
           initialDropoffDetails: dropoffDetails,
@@ -2856,6 +2858,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           initialDropoffLabel: effectiveDropoffLabel,
           initialDropoffAddress: effectiveDropoffLabel,
           preloadedRoute: preloadedRoute,
+          initialRideId: rideId,
         ),
       ),
     );
@@ -3381,7 +3384,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (!mounted) return;
     LocalDataService.incrementDestinationUsage(query);
     Navigator.of(context).push(
-      slideFromRightRoute(RideRequestScreen(initialDropoffAddress: query)),
+      scaleExpandRoute(RideRequestScreen(initialDropoffAddress: query)),
     );
   }
 

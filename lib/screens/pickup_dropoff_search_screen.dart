@@ -346,6 +346,23 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
               ),
             ),
 
+            // ── API key warning (debug only) ──
+            if (!_placesService.isKeyValid)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                child: const Text(
+                  'Google Places API key not set.\n'
+                  'Add your key in lib/config/env.dart → mapsServicesKey',
+                  style: TextStyle(
+                    color: Color(0xFFE8C547),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+
             // ── Loading bar ──
             if (_loading)
               LinearProgressIndicator(

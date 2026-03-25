@@ -106,6 +106,12 @@ class PlacesService {
   final String apiKey;
   PlacesService(this.apiKey);
 
+  /// True when the key looks like a real Google API key.
+  bool get isKeyValid =>
+      apiKey.isNotEmpty &&
+      apiKey != 'YOUR_GOOGLE_SERVICES_KEY' &&
+      apiKey.startsWith('AIza');
+
   // ─── Session token management ──────────────────────────────────────
 
   static final _uuid = Uuid();
@@ -234,6 +240,15 @@ class PlacesService {
     final cleanInput = input.trim();
     if (cleanInput.isEmpty) return [];
 
+    if (!isKeyValid) {
+      debugPrint(
+        '\u26a0\ufe0f Places autocomplete: API key is empty or invalid. '
+        'Set your Google API key in lib/config/env.dart (mapsServicesKey). '
+        'Current key: "${apiKey.isEmpty ? "(empty)" : apiKey.substring(0, (apiKey.length).clamp(0, 8))}..."',
+      );
+      return [];
+    }
+
     final seq = ++_autocompleteSeq;
     final hasLocation = latitude != null && longitude != null;
 
@@ -314,20 +329,29 @@ class PlacesService {
     );
 
     try {
+      debugPrint('\ud83d\udd0d Places: fetching "$input"${types != null ? ' (types=$types)' : ''}');
       final res = await http.get(uri).timeout(const Duration(seconds: 5));
-      if (res.statusCode != 200) return [];
+      if (res.statusCode != 200) {
+        debugPrint('\u274c Places HTTP ${res.statusCode}');
+        return [];
+      }
       final data = jsonDecode(res.body);
+      final status = data['status'] as String? ?? '';
 
-      if (data['status'] == 'REQUEST_DENIED') {
+      if (status == 'REQUEST_DENIED') {
         debugPrint(
-          '⚠️ Google Places Autocomplete: REQUEST_DENIED — '
+          '\u26a0\ufe0f Google Places Autocomplete: REQUEST_DENIED — '
           '${data['error_message'] ?? 'check API key restrictions'}',
         );
         return [];
       }
-      if (data['status'] != 'OK' && data['status'] != 'ZERO_RESULTS') return [];
+      if (status != 'OK' && status != 'ZERO_RESULTS') {
+        debugPrint('\u26a0\ufe0f Places API status: $status');
+        return [];
+      }
 
       final predictions = data['predictions'] as List? ?? [];
+      debugPrint('\u2705 Places: ${predictions.length} results for "$input"');
       return predictions
           .map<PlaceSuggestion?>((p) {
             final description = p['description']?.toString() ?? '';

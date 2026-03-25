@@ -20,6 +20,10 @@ class UserProfilePhoto extends StatelessWidget {
   /// User ID used as cache key — ensures photos never leak between accounts.
   final String? uid;
 
+  /// When true, skips the outer CircleAvatar wrapper (used inside VerifiedAvatar
+  /// which provides its own border).
+  final bool noBorder;
+
   /// Custom cache manager with 30-day stale period for profile photos.
   static final _cacheManager = CacheManager(
     Config(
@@ -41,10 +45,18 @@ class UserProfilePhoto extends StatelessWidget {
     this.radius = 24,
     this.fallbackName,
     this.uid,
+    this.noBorder = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (noBorder) {
+      return SizedBox(
+        width: radius * 2,
+        height: radius * 2,
+        child: _buildContent(),
+      );
+    }
     return CircleAvatar(
       radius: radius,
       backgroundColor: const Color(0xFF1A1A1A),
@@ -110,8 +122,8 @@ class UserProfilePhoto extends StatelessWidget {
         child: Text(
           text,
           style: TextStyle(
-            color: const Color(0xFFD4AF37),
-            fontSize: radius * 0.7,
+            color: const Color(0xFFFFD700),
+            fontSize: radius * 0.75,
             fontWeight: FontWeight.bold,
           ),
         ),

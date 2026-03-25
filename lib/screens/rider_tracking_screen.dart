@@ -28,6 +28,7 @@ import 'home_screen.dart';
 import 'rider_rating_screen.dart';
 import '../l10n/app_localizations.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../widgets/verified_avatar.dart';
 
 class RiderTrackingScreen extends StatefulWidget {
   const RiderTrackingScreen({
@@ -1804,48 +1805,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           Row(
             children: [
               // Driver photo with verified badge
-              SizedBox(
-                width: 48, height: 54,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: 44, height: 44,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFFD4AF37), width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFFD4AF37).withValues(alpha: 0.25),
-                            blurRadius: 8,
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: widget.driverPhotoUrl != null && widget.driverPhotoUrl!.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: widget.driverPhotoUrl!,
-                                width: 40, height: 40,
-                                fit: BoxFit.cover,
-                                errorWidget: (_, __, ___) => _driverInitial(),
-                              )
-                            : _driverInitial(),
-                      ),
-                    ),
-                    Positioned(
-                      bottom: -2, right: -2,
-                      child: Container(
-                        width: 16, height: 16,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFFD4AF37),
-                          border: Border.all(color: Colors.black, width: 1.5),
-                        ),
-                        child: const Icon(Icons.check_rounded, color: Colors.black, size: 10),
-                      ),
-                    ),
-                  ],
-                ),
+              VerifiedAvatar(
+                photoUrl: widget.driverPhotoUrl,
+                radius: 22,
+                fallbackName: widget.driverName,
+                isVerified: true,
               ),
               const SizedBox(width: 10),
               // Name + rating
@@ -2881,29 +2845,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                     ),
                   ),
                   // Driver avatar
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.1),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        width: 2,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        widget.driverName.isNotEmpty
-                            ? widget.driverName[0].toUpperCase()
-                            : 'D',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
+                  VerifiedAvatar(
+                    photoUrl: widget.driverPhotoUrl,
+                    radius: 22,
+                    fallbackName: widget.driverName,
+                    isVerified: true,
                   ),
                 ],
               ),

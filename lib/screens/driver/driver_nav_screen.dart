@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
+import '../../widgets/verified_avatar.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
@@ -2363,20 +2364,12 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   Widget _riderAvatar({double size = 46}) {
-    final init = widget.riderName.isNotEmpty
-        ? widget.riderName[0].toUpperCase() : '?';
-    if (widget.riderPhotoUrl.isNotEmpty) {
-      return ClipOval(
-        child: CachedNetworkImage(
-          imageUrl: widget.riderPhotoUrl,
-          width: size, height: size, fit: BoxFit.cover,
-          fadeInDuration: const Duration(milliseconds: 200),
-          placeholder: (_, __) => _initCircle(init, size),
-          errorWidget: (_, __, ___) => _initCircle(init, size),
-        ),
-      );
-    }
-    return _initCircle(init, size);
+    return VerifiedAvatar(
+      photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
+      radius: size / 2,
+      fallbackName: widget.riderName,
+      isVerified: true,
+    );
   }
 
   Widget _initCircle(String init, double size) => Container(

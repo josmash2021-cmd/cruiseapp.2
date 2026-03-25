@@ -19,6 +19,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
+import '../../widgets/verified_avatar.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
 import '../../services/map_cache_service.dart';
@@ -4296,41 +4297,11 @@ Widget _navHeader() {
                 child: Row(
                   children: [
                     const SizedBox(width: 16),
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: _gold, width: 1.5),
-                      ),
-                      child: ClipOval(
-                        child: _driverPhotoUrl != null && _driverPhotoUrl!.isNotEmpty
-                            ? (_driverPhotoUrl!.startsWith('http')
-                                ? CachedNetworkImage(
-                                    imageUrl: _driverPhotoUrl!,
-                                    fit: BoxFit.cover,
-                                    fadeInDuration: const Duration(milliseconds: 200),
-                                    errorWidget: (_, __, ___) => Icon(
-                                      Icons.person_rounded,
-                                      color: textMuted,
-                                      size: 18,
-                                    ),
-                                  )
-                                : Image.file(
-                                    File(_driverPhotoUrl!),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Icon(
-                                      Icons.person_rounded,
-                                      color: textMuted,
-                                      size: 18,
-                                    ),
-                                  ))
-                            : Icon(
-                                Icons.person_rounded,
-                                color: textMuted,
-                                size: 18,
-                              ),
-                      ),
+                    VerifiedAvatar(
+                      photoUrl: widget.photoUrl,
+                      radius: 15,
+                      fallbackName: null,
+                      isVerified: false,
                     ),
                     const Spacer(),
                     Text(

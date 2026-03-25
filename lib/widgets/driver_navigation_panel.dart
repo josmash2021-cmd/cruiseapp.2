@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
+import 'verified_avatar.dart';
 import '../models/lat_lng.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -399,23 +400,11 @@ class _DriverNavigationPanelState extends State<DriverNavigationPanel> {
       child: Row(
         children: [
           // Avatar del rider
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: DriverNavigationPanel._gold, width: 2),
-              image: widget.riderPhotoUrl.isNotEmpty
-                  ? DecorationImage(
-                      image: CachedNetworkImageProvider(widget.riderPhotoUrl),
-                      fit: BoxFit.cover,
-                    )
-                  : null,
-              color: DriverNavigationPanel._cardBorder,
-            ),
-            child: widget.riderPhotoUrl.isEmpty
-                ? const Icon(Icons.person, color: Colors.white54, size: 22)
-                : null,
+          VerifiedAvatar(
+            photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
+            radius: 22,
+            fallbackName: widget.riderName,
+            isVerified: true,
           ),
           const SizedBox(width: 12),
           // Nombre y dirección

@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../../config/page_transitions.dart';
+import '../../widgets/verified_avatar.dart';
 import 'driver_online_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -190,32 +191,11 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
 
   // ── Avatar ────────────────────────────────────────────────────────────────
   Widget _buildAvatar() {
-    final init = widget.riderName.isNotEmpty
-        ? widget.riderName[0].toUpperCase()
-        : '?';
-    return Container(
-      width: 88, height: 88,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: _gold, width: 2.5),
-        boxShadow: [
-          BoxShadow(
-            color: _gold.withValues(alpha: 0.30),
-            blurRadius: 16, spreadRadius: 2,
-          ),
-        ],
-      ),
-      child: ClipOval(
-        child: widget.riderPhotoUrl.isNotEmpty
-            ? CachedNetworkImage(
-                imageUrl: widget.riderPhotoUrl,
-                width: 83, height: 83, fit: BoxFit.cover,
-                fadeInDuration: const Duration(milliseconds: 200),
-                placeholder: (_, __) => _initialsFill(init),
-                errorWidget: (_, __, ___) => _initialsFill(init),
-              )
-            : _initialsFill(init),
-      ),
+    return VerifiedAvatar(
+      photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
+      radius: 44,
+      fallbackName: widget.riderName,
+      isVerified: true,
     );
   }
 

@@ -29,6 +29,7 @@ import '../../l10n/app_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/user_profile_photo.dart';
+import '../../widgets/verified_avatar.dart';
 
 /// ═══════════════════════════════════════════════════════════════
 ///  CRUISE DRIVER HOME — Premium dashboard with map, stats, go-online
@@ -771,28 +772,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             child: Row(
               children: [
                 // Avatar with gold border
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.08),
-                    border: Border.all(
-                      color: _gold,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: ClipOval(
-                    child: UserProfilePhoto(
-                      photoUrl: UserSession.photoUrlNotifier.value.isNotEmpty
-                          ? UserSession.photoUrlNotifier.value
-                          : (_photoUrl != null && _photoUrl!.startsWith('http') ? _photoUrl : null),
-                      photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
-                      radius: 18,
-                      fallbackName: _driverName,
-                      uid: UserSession.currentUid,
-                    ),
-                  ),
+                VerifiedAvatar(
+                  photoUrl: UserSession.photoUrlNotifier.value.isNotEmpty
+                      ? UserSession.photoUrlNotifier.value
+                      : (_photoUrl != null && _photoUrl!.startsWith('http') ? _photoUrl : null),
+                  photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
+                  radius: 18,
+                  fallbackName: _driverName,
+                  uid: UserSession.currentUid,
+                  isVerified: _isVerified,
                 ),
                 const SizedBox(width: 10),
                 Expanded(

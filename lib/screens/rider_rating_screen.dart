@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/verified_avatar.dart';
 import 'home_screen.dart';
 
 /// Full-screen post-ride rating page.
@@ -328,29 +329,10 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                       ),
                     ),
                     // Driver avatar
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: 0.1),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          width: 2,
-                        ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          widget.driverName.isNotEmpty
-                              ? widget.driverName[0].toUpperCase()
-                              : 'D',
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
+                    VerifiedAvatar(
+                      radius: 24,
+                      fallbackName: widget.driverName,
+                      isVerified: true,
                     ),
                   ],
                 ),

@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
+import '../widgets/verified_avatar.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../config/mapbox_config.dart';
@@ -1498,22 +1499,11 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
             child: Row(
               children: [
                 // Avatar
-                Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: _gold, width: 2),
-                    image: widget.riderPhotoUrl.isNotEmpty
-                        ? DecorationImage(
-                            image: CachedNetworkImageProvider(widget.riderPhotoUrl),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                    color: const Color(0xFF2A2F42),
-                  ),
-                  child: widget.riderPhotoUrl.isEmpty
-                      ? const Icon(Icons.person, color: _textSecondary, size: 20)
-                      : null,
+                VerifiedAvatar(
+                  photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
+                  radius: 20,
+                  fallbackName: widget.riderName,
+                  isVerified: true,
                 ),
                 const SizedBox(width: 10),
                 // Name + rating

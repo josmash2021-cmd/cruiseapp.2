@@ -6,7 +6,8 @@ import 'package:flutter/material.dart';
 /// Bounces gently while shown. Used as the fixed center overlay on the map picker.
 class CruiseMapPin extends StatefulWidget {
   final double size; // pin width; height is derived proportionally
-  const CruiseMapPin({super.key, this.size = 56});
+  final IconData icon; // avatar icon inside pin circle
+  const CruiseMapPin({super.key, this.size = 56, this.icon = Icons.person});
 
   @override
   State<CruiseMapPin> createState() => _CruiseMapPinState();
@@ -71,7 +72,7 @@ class _CruiseMapPinState extends State<CruiseMapPin>
                 border: Border.all(color: Colors.white24, width: 1),
               ),
               child: Icon(
-                Icons.person,
+                widget.icon,
                 color: Colors.white,
                 size: iconSize,
               ),

@@ -15,7 +15,10 @@ import '../widgets/cruise_map_pin.dart';
 class MapPickerScreen extends StatefulWidget {
   final double? initialLat;
   final double? initialLng;
-  const MapPickerScreen({super.key, this.initialLat, this.initialLng});
+  /// When true the pin shows a person icon and button says "Confirm Pickup".
+  /// When false (default) pin shows a location icon and button says "Confirm Dropoff".
+  final bool isPickup;
+  const MapPickerScreen({super.key, this.initialLat, this.initialLng, this.isPickup = false});
 
   @override
   State<MapPickerScreen> createState() => _MapPickerScreenState();
@@ -154,7 +157,10 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
           Center(
             child: Transform.translate(
               offset: const Offset(0, -36),
-              child: const CruiseMapPin(size: 56),
+              child: CruiseMapPin(
+                size: 56,
+                icon: widget.isPickup ? Icons.person : Icons.location_on_rounded,
+              ),
             ),
           ),
 
@@ -190,6 +196,33 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                   Icons.arrow_back_rounded,
                   color: c.textPrimary,
                   size: 22,
+                ),
+              ),
+            ),
+          ),
+
+          // Context hint pill
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: c.bg.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: _gold.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Text(
+                  widget.isPickup ? s.setPickupOnMap : s.setDropoffOnMap,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -302,7 +335,9 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                           ),
                           onPressed: _loading ? null : _confirm,
                           child: Text(
-                            s.confirmLocation,
+                            widget.isPickup
+                                ? s.confirmPickupLocation
+                                : s.confirmDropoffLocation,
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,

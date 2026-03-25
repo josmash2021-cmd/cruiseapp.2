@@ -1107,6 +1107,14 @@ class S {
       _es ? 'Buscando dirección...' : 'Finding address...';
   String get confirmLocation =>
       _es ? 'Confirmar ubicación' : 'Confirm Location';
+  String get confirmPickupLocation =>
+      _es ? 'Confirmar punto de recogida' : 'Confirm Pickup Location';
+  String get confirmDropoffLocation =>
+      _es ? 'Confirmar destino' : 'Confirm Dropoff Location';
+  String get setPickupOnMap =>
+      _es ? 'Mueve el mapa para elegir recogida' : 'Move map to set pickup location';
+  String get setDropoffOnMap =>
+      _es ? 'Mueve el mapa para elegir destino' : 'Move map to set dropoff location';
 
   // ── Payment Method Screen ──────────────────────────────────────────────────
   String get howWouldYouLikeToPay =>

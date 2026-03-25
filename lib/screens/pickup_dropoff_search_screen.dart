@@ -488,37 +488,82 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   ) async {
     // ── Choose on map ──
     if (item.title == S.of(context).chooseOnMap) {
-      final result = await Navigator.of(context).push<Map<String, dynamic>>(
-        slideFromRightRoute(
-          MapPickerScreen(
-            initialLat: widget.initialPickupLat,
-            initialLng: widget.initialPickupLng,
+      if (_editingPickup) {
+        // ── Pickup field active → pick pickup first, then auto-open dropoff ──
+        final pickupResult = await Navigator.of(context).push<Map<String, dynamic>>(
+          slideFromRightRoute(
+            MapPickerScreen(
+              initialLat: widget.initialPickupLat,
+              initialLng: widget.initialPickupLng,
+              isPickup: true,
+            ),
           ),
-        ),
-      );
-      if (result == null || !mounted) return;
-      final addr = result['address'] as String;
-      final lat = result['lat'] as double;
-      final lng = result['lng'] as double;
-      
-      // Build pickup details from initial location (null if no coordinates)
-      final PlaceDetails? pickupDetails =
-          (widget.initialPickupLat != null && widget.initialPickupLng != null)
-              ? PlaceDetails(
-                  address: widget.initialPickupText,
-                  lat: widget.initialPickupLat!,
-                  lng: widget.initialPickupLng!,
-                )
-              : null;
-      final dropoffDetails = PlaceDetails(address: addr, lat: lat, lng: lng);
-      
-      // Return results and let parent navigate to RideRequestScreen
-      Navigator.of(context).pop({
-        'pickup': pickupDetails,
-        'dropoff': dropoffDetails,
-        'pickupLabel': widget.initialPickupText,
-        'dropoffLabel': addr,
-      });
+        );
+        if (pickupResult == null || !mounted) return;
+        final pAddr = pickupResult['address'] as String;
+        final pLat = pickupResult['lat'] as double;
+        final pLng = pickupResult['lng'] as double;
+        setState(() {
+          _pickupDetails = PlaceDetails(address: pAddr, lat: pLat, lng: pLng);
+          _pickupLabel = pAddr;
+          _pickupCtrl.text = pAddr;
+        });
+
+        // Auto-open dropoff map after short delay
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
+        final dropoffResult = await Navigator.of(context).push<Map<String, dynamic>>(
+          slideFromRightRoute(
+            MapPickerScreen(
+              initialLat: widget.initialPickupLat,
+              initialLng: widget.initialPickupLng,
+              isPickup: false,
+            ),
+          ),
+        );
+        if (dropoffResult == null || !mounted) return;
+        final dAddr = dropoffResult['address'] as String;
+        final dLat = dropoffResult['lat'] as double;
+        final dLng = dropoffResult['lng'] as double;
+        setState(() {
+          _dropoffDetails = PlaceDetails(address: dAddr, lat: dLat, lng: dLng);
+          _dropoffLabel = dAddr;
+          _dropoffCtrl.text = dAddr;
+        });
+        _returnResults();
+      } else {
+        // ── Dropoff field active → pick dropoff only ──
+        final result = await Navigator.of(context).push<Map<String, dynamic>>(
+          slideFromRightRoute(
+            MapPickerScreen(
+              initialLat: widget.initialPickupLat,
+              initialLng: widget.initialPickupLng,
+              isPickup: false,
+            ),
+          ),
+        );
+        if (result == null || !mounted) return;
+        final addr = result['address'] as String;
+        final lat = result['lat'] as double;
+        final lng = result['lng'] as double;
+        setState(() {
+          _dropoffDetails = PlaceDetails(address: addr, lat: lat, lng: lng);
+          _dropoffLabel = addr;
+          _dropoffCtrl.text = addr;
+        });
+
+        // If pickup already set, return results immediately
+        if (_pickupDetails != null) {
+          _returnResults();
+        } else {
+          // Switch to pickup field
+          setState(() {
+            _editingPickup = true;
+            _editingDropoff = false;
+          });
+          _pickupFocus.requestFocus();
+        }
+      }
       return;
     }
 

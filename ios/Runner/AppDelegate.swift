@@ -1,6 +1,5 @@
 import Flutter
 import UIKit
-import GooglePlaces
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -8,7 +7,6 @@ import GooglePlaces
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    GMSPlacesClient.provideAPIKey("AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo")
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

@@ -1,6 +1,7 @@
 ﻿import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -26,6 +27,7 @@ import '../services/user_session.dart';
 import 'airport_terminal_sheet.dart';
 import 'payment_accounts_screen.dart';
 import 'scheduled_rides_screen.dart';
+import '../widgets/gold_pin_renderer.dart';
 
 class ScheduleBookingScreen extends StatefulWidget {
   final DateTime scheduledAt;
@@ -105,6 +107,10 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
   bool _isBooking = false;
   bool _isLoadingRoute = false;
 
+  // Pre-rendered gold teardrop pin bytes
+  Uint8List? _pickupPinBytes;
+  Uint8List? _dropoffPinBytes;
+
   @override
   void initState() {
     super.initState();
@@ -112,6 +118,12 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     _rides = _defaultRides();
     _pickupFocus.addListener(() => setState(() {}));
     _dropoffFocus.addListener(() => setState(() {}));
+    _buildPinBytes();
+  }
+
+  Future<void> _buildPinBytes() async {
+    _pickupPinBytes = await GoldPinRenderer.render(isPickup: true);
+    _dropoffPinBytes = await GoldPinRenderer.render(isPickup: false);
   }
 
   @override
@@ -302,22 +314,22 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     if (_routeGlowAnnot != null) { try { await polyMgr.delete(_routeGlowAnnot!); } catch (_) {} _routeGlowAnnot = null; }
     if (_routeCasingAnnot != null) { try { await polyMgr.delete(_routeCasingAnnot!); } catch (_) {} _routeCasingAnnot = null; }
     if (_routeShineAnnot != null) { try { await polyMgr.delete(_routeShineAnnot!); } catch (_) {} _routeShineAnnot = null; }
-    // Pickup marker
-    if (_pickupLatLng != null) {
+    // Pickup marker — gold teardrop with person icon
+    if (_pickupLatLng != null && _pickupPinBytes != null) {
       final a = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLatLng!.longitude, _pickupLatLng!.latitude)),
-        iconColor: const Color(0xFFE8C547).toARGB32(),
-        iconSize: 1.2,
+        image: _pickupPinBytes!,
+        iconSize: 1.0,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
       _markerAnnots.add(a);
     }
-    // Dropoff marker
-    if (_dropoffLatLng != null) {
+    // Dropoff marker — gold teardrop with destination icon
+    if (_dropoffLatLng != null && _dropoffPinBytes != null) {
       final a = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLatLng!.longitude, _dropoffLatLng!.latitude)),
-        iconColor: const Color(0xFFEA4335).toARGB32(),
-        iconSize: 1.2,
+        image: _dropoffPinBytes!,
+        iconSize: 1.0,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
       _markerAnnots.add(a);

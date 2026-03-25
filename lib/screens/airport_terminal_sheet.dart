@@ -40,8 +40,101 @@ class AirportSelection {
   });
 }
 
-/// Common US airports
+/// Common US airports (50 major airports)
 const List<AirportInfo> _commonAirports = [
+  // ─── ALABAMA ───
+  AirportInfo(
+    code: 'BHM',
+    name: 'Birmingham-Shuttlesworth Intl',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Arrivals Level 1 - Rideshare Pickup', 'Cell Phone Lot'],
+    flatRateSurcharge: 4.0,
+  ),
+  AirportInfo(
+    code: 'HSV',
+    name: 'Huntsville International',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Ground Level - Rideshare Zone'],
+    flatRateSurcharge: 4.0,
+  ),
+  AirportInfo(
+    code: 'MOB',
+    name: 'Mobile Regional Airport',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Arrivals - Curbside Pickup'],
+    flatRateSurcharge: 4.0,
+  ),
+  // ─── ARIZONA ───
+  AirportInfo(
+    code: 'PHX',
+    name: 'Phoenix Sky Harbor International',
+    terminals: ['Terminal 3', 'Terminal 4'],
+    pickupZones: ['Rideshare Pickup - 44th St Station'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── CALIFORNIA ───
+  AirportInfo(
+    code: 'LAX',
+    name: 'Los Angeles International',
+    terminals: [
+      'Terminal 1', 'Terminal 2', 'Terminal 3', 'Terminal 4',
+      'Terminal 5', 'Terminal 6', 'Terminal 7', 'Tom Bradley Intl',
+    ],
+    pickupZones: ['LAX-it Rideshare Lot'],
+    flatRateSurcharge: 6.0,
+  ),
+  AirportInfo(
+    code: 'SFO',
+    name: 'San Francisco International',
+    terminals: ['Terminal 1', 'Terminal 2', 'Terminal 3', 'International Terminal'],
+    pickupZones: ['Domestic Parking Garage Level 5', 'International Terminal G'],
+    flatRateSurcharge: 6.0,
+  ),
+  AirportInfo(
+    code: 'SAN',
+    name: 'San Diego International',
+    terminals: ['Terminal 1', 'Terminal 2'],
+    pickupZones: ['Transportation Plaza - Rideshare'],
+    flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'SJC',
+    name: 'San José Mineta International',
+    terminals: ['Terminal A', 'Terminal B'],
+    pickupZones: ['Ground Level - Rideshare Zone'],
+    flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'OAK',
+    name: 'Oakland International',
+    terminals: ['Terminal 1', 'Terminal 2'],
+    pickupZones: ['Rideshare Pickup - Ground Level'],
+    flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'SMF',
+    name: 'Sacramento International',
+    terminals: ['Terminal A', 'Terminal B'],
+    pickupZones: ['Ground Transportation - Rideshare'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── COLORADO ───
+  AirportInfo(
+    code: 'DEN',
+    name: 'Denver International',
+    terminals: ['Jeppesen Terminal'],
+    pickupZones: ['Level 5 East - Rideshare', 'Level 5 West - Rideshare'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── CONNECTICUT ───
+  AirportInfo(
+    code: 'BDL',
+    name: 'Bradley International',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Ground Level - Rideshare Pickup'],
+    flatRateSurcharge: 4.0,
+  ),
+  // ─── FLORIDA ───
   AirportInfo(
     code: 'MIA',
     name: 'Miami International Airport',
@@ -61,80 +154,285 @@ const List<AirportInfo> _commonAirports = [
     flatRateSurcharge: 5.0,
   ),
   AirportInfo(
+    code: 'MCO',
+    name: 'Orlando International',
+    terminals: ['Terminal A', 'Terminal B', 'Terminal C'],
+    pickupZones: ['Ground Transportation Level 1 - Rideshare'],
+    flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'TPA',
+    name: 'Tampa International',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Level 1 - Blue Express Curbside'],
+    flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'JAX',
+    name: 'Jacksonville International',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Lower Level - Rideshare Zone'],
+    flatRateSurcharge: 4.0,
+  ),
+  AirportInfo(
+    code: 'RSW',
+    name: 'Southwest Florida International',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Ground Level - Rideshare Pickup'],
+    flatRateSurcharge: 4.0,
+  ),
+  // ─── GEORGIA ───
+  AirportInfo(
+    code: 'ATL',
+    name: 'Hartsfield-Jackson Atlanta Intl',
+    terminals: ['Domestic Terminal N', 'Domestic Terminal S', 'International Terminal'],
+    pickupZones: ['Ground Transportation - Rideshare Island F'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── ILLINOIS ───
+  AirportInfo(
+    code: 'ORD',
+    name: "Chicago O'Hare International",
+    terminals: ['Terminal 1', 'Terminal 2', 'Terminal 3', 'Terminal 5 (Intl)'],
+    pickupZones: ['Lower Level - Rideshare Pickup'],
+    flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'MDW',
+    name: 'Chicago Midway International',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Arrivals - Rideshare Zone'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── INDIANA ───
+  AirportInfo(
+    code: 'IND',
+    name: 'Indianapolis International',
+    terminals: ['Col. H. Weir Cook Terminal'],
+    pickupZones: ['Ground Transportation - Rideshare Zone'],
+    flatRateSurcharge: 4.0,
+  ),
+  // ─── KENTUCKY ───
+  AirportInfo(
+    code: 'CVG',
+    name: 'Cincinnati/Northern Kentucky Intl',
+    terminals: ['Terminal 1', 'Terminal 2', 'Terminal 3'],
+    pickupZones: ['Ground Level - Rideshare Pickup'],
+    flatRateSurcharge: 4.0,
+  ),
+  // ─── LOUISIANA ───
+  AirportInfo(
+    code: 'MSY',
+    name: 'Louis Armstrong New Orleans Intl',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Level 1 - Rideshare Zone'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── MARYLAND ───
+  AirportInfo(
+    code: 'BWI',
+    name: 'Baltimore/Washington Intl',
+    terminals: ['Terminal A', 'Terminal B', 'Terminal C', 'Terminal D', 'Terminal E'],
+    pickupZones: ['Lower Level - Rideshare Pickup'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── MASSACHUSETTS ───
+  AirportInfo(
+    code: 'BOS',
+    name: 'Boston Logan International',
+    terminals: ['Terminal A', 'Terminal B', 'Terminal C', 'Terminal E'],
+    pickupZones: ['Central Parking Garage - Rideshare Level 1'],
+    flatRateSurcharge: 6.0,
+  ),
+  // ─── MICHIGAN ───
+  AirportInfo(
+    code: 'DTW',
+    name: 'Detroit Metropolitan Wayne County',
+    terminals: ['McNamara Terminal', 'North Terminal'],
+    pickupZones: ['Ground Level - Rideshare Zone'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── MINNESOTA ───
+  AirportInfo(
+    code: 'MSP',
+    name: 'Minneapolis-Saint Paul Intl',
+    terminals: ['Terminal 1 (Lindbergh)', 'Terminal 2 (Humphrey)'],
+    pickupZones: ['Level 1 Ground Transport - Rideshare'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── MISSOURI ───
+  AirportInfo(
+    code: 'STL',
+    name: 'St. Louis Lambert International',
+    terminals: ['Terminal 1', 'Terminal 2'],
+    pickupZones: ['Lower Level - Rideshare Zone'],
+    flatRateSurcharge: 4.0,
+  ),
+  AirportInfo(
+    code: 'MCI',
+    name: 'Kansas City International',
+    terminals: ['New Terminal'],
+    pickupZones: ['Level 1 - Rideshare Pickup Area'],
+    flatRateSurcharge: 4.0,
+  ),
+  // ─── NEVADA ───
+  AirportInfo(
+    code: 'LAS',
+    name: 'Harry Reid International',
+    terminals: ['Terminal 1', 'Terminal 3'],
+    pickupZones: ['Level 2M - Rideshare Pickup'],
+    flatRateSurcharge: 6.0,
+  ),
+  // ─── NEW JERSEY ───
+  AirportInfo(
+    code: 'EWR',
+    name: 'Newark Liberty International',
+    terminals: ['Terminal A', 'Terminal B', 'Terminal C'],
+    pickupZones: ['Arrivals - Rideshare Pickup P4'],
+    flatRateSurcharge: 7.0,
+  ),
+  // ─── NEW YORK ───
+  AirportInfo(
     code: 'JFK',
     name: 'John F. Kennedy International',
-    terminals: [
-      'Terminal 1',
-      'Terminal 2',
-      'Terminal 4',
-      'Terminal 5',
-      'Terminal 7',
-      'Terminal 8',
-    ],
+    terminals: ['Terminal 1', 'Terminal 2', 'Terminal 4', 'Terminal 5', 'Terminal 7', 'Terminal 8'],
     pickupZones: ['Arrivals - Rideshare Pickup', 'Terminal Curbside'],
     flatRateSurcharge: 8.0,
   ),
   AirportInfo(
-    code: 'LAX',
-    name: 'Los Angeles International',
-    terminals: [
-      'Terminal 1',
-      'Terminal 2',
-      'Terminal 3',
-      'Terminal 4',
-      'Terminal 5',
-      'Terminal 6',
-      'Terminal 7',
-      'Tom Bradley Intl',
-    ],
-    pickupZones: ['LAX-it Rideshare Lot'],
-    flatRateSurcharge: 6.0,
+    code: 'LGA',
+    name: 'LaGuardia Airport',
+    terminals: ['Terminal A', 'Terminal B', 'Terminal C'],
+    pickupZones: ['Arrivals Level - Rideshare Zone'],
+    flatRateSurcharge: 7.0,
   ),
+  // ─── NORTH CAROLINA ───
   AirportInfo(
-    code: 'ORD',
-    name: "Chicago O'Hare International",
-    terminals: ['Terminal 1', 'Terminal 2', 'Terminal 3', 'Terminal 5'],
-    pickupZones: ['Rideshare Pickup - Lower Level'],
+    code: 'CLT',
+    name: 'Charlotte Douglas International',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Lower Level - Rideshare Pickup Zone'],
     flatRateSurcharge: 5.0,
   ),
   AirportInfo(
-    code: 'ATL',
-    name: 'Hartsfield-Jackson Atlanta Intl',
-    terminals: [
-      'Domestic Terminal N',
-      'Domestic Terminal S',
-      'International Terminal',
-    ],
-    pickupZones: ['Ground Transportation - Rideshare'],
+    code: 'RDU',
+    name: 'Raleigh-Durham International',
+    terminals: ['Terminal 1', 'Terminal 2'],
+    pickupZones: ['Arrivals - Rideshare Zone'],
+    flatRateSurcharge: 4.0,
+  ),
+  // ─── OHIO ───
+  AirportInfo(
+    code: 'CMH',
+    name: 'John Glenn Columbus International',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Ground Level - Rideshare Pickup'],
+    flatRateSurcharge: 4.0,
+  ),
+  // ─── OREGON ───
+  AirportInfo(
+    code: 'PDX',
+    name: 'Portland International',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Lower Level - Rideshare Island'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── PENNSYLVANIA ───
+  AirportInfo(
+    code: 'PHL',
+    name: 'Philadelphia International',
+    terminals: ['Terminal A', 'Terminal B', 'Terminal C', 'Terminal D', 'Terminal E', 'Terminal F'],
+    pickupZones: ['Arrivals - Rideshare Zone A'],
     flatRateSurcharge: 5.0,
   ),
   AirportInfo(
-    code: 'SFO',
-    name: 'San Francisco International',
-    terminals: [
-      'Terminal 1',
-      'Terminal 2',
-      'Terminal 3',
-      'International Terminal',
-    ],
-    pickupZones: [
-      'Domestic Parking Garage Level 5',
-      'International Terminal G',
-    ],
-    flatRateSurcharge: 6.0,
+    code: 'PIT',
+    name: 'Pittsburgh International',
+    terminals: ['Airside Terminal'],
+    pickupZones: ['Ground Level - Rideshare Pickup'],
+    flatRateSurcharge: 4.0,
   ),
+  // ─── TENNESSEE ───
+  AirportInfo(
+    code: 'BNA',
+    name: 'Nashville International',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Level 1 - Rideshare Zone'],
+    flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'MEM',
+    name: 'Memphis International',
+    terminals: ['Terminal A', 'Terminal B'],
+    pickupZones: ['Ground Level - Rideshare Pickup'],
+    flatRateSurcharge: 4.0,
+  ),
+  // ─── TEXAS ───
   AirportInfo(
     code: 'DFW',
     name: 'Dallas/Fort Worth International',
-    terminals: [
-      'Terminal A',
-      'Terminal B',
-      'Terminal C',
-      'Terminal D',
-      'Terminal E',
-    ],
-    pickupZones: ['Rideshare Zone - Lower Level'],
+    terminals: ['Terminal A', 'Terminal B', 'Terminal C', 'Terminal D', 'Terminal E'],
+    pickupZones: ['Lower Level - Rideshare Zone'],
     flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'IAH',
+    name: 'George Bush Intercontinental',
+    terminals: ['Terminal A', 'Terminal B', 'Terminal C', 'Terminal D', 'Terminal E'],
+    pickupZones: ['Arrivals Level - Rideshare Pickup'],
+    flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'HOU',
+    name: 'William P. Hobby Airport',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Lower Level - Rideshare Zone'],
+    flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'DAL',
+    name: 'Dallas Love Field',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Lower Level - Rideshare Pickup'],
+    flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'AUS',
+    name: 'Austin-Bergstrom International',
+    terminals: ['Barbara Jordan Terminal'],
+    pickupZones: ['Ground Transportation - Rideshare Zone'],
+    flatRateSurcharge: 5.0,
+  ),
+  AirportInfo(
+    code: 'SAT',
+    name: 'San Antonio International',
+    terminals: ['Terminal A', 'Terminal B'],
+    pickupZones: ['Lower Level - Rideshare Zone'],
+    flatRateSurcharge: 4.0,
+  ),
+  // ─── UTAH ───
+  AirportInfo(
+    code: 'SLC',
+    name: 'Salt Lake City International',
+    terminals: ['Main Terminal'],
+    pickupZones: ['Level 1 - Rideshare Pickup'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── VIRGINIA ───
+  AirportInfo(
+    code: 'DCA',
+    name: 'Ronald Reagan Washington National',
+    terminals: ['Terminal A', 'Terminal B', 'Terminal C'],
+    pickupZones: ['Arrivals Level - Rideshare Zone'],
+    flatRateSurcharge: 5.0,
+  ),
+  // ─── WASHINGTON ───
+  AirportInfo(
+    code: 'SEA',
+    name: 'Seattle-Tacoma International',
+    terminals: ['North Terminal', 'South Terminal'],
+    pickupZones: ['3rd Floor Parking Garage - Rideshare'],
+    flatRateSurcharge: 6.0,
   ),
 ];
 

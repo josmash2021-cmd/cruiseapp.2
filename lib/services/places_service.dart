@@ -1,10 +1,16 @@
 import 'dart:convert';
 import 'dart:math' show sin, cos, sqrt, atan2, pi;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show IconData, Icons;
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
-import '../config/mapbox_config.dart';
+
+// ─── Place type enum for smart icons ─────────────────────────────────
+
+enum PlaceType { airport, hotel, hospital, education, commerce, home }
+
+// ─── Models (same interface — all screens keep working) ──────────────
 
 class PlaceSuggestion {
   final String description;
@@ -13,6 +19,7 @@ class PlaceSuggestion {
   final double? lng;
   final double? distanceMiles;
   final String? etaText;
+  final List<String> types;
   PlaceSuggestion({
     required this.description,
     required this.placeId,
@@ -20,6 +27,7 @@ class PlaceSuggestion {
     this.lng,
     this.distanceMiles,
     this.etaText,
+    this.types = const [],
   });
 
   PlaceSuggestion copyWith({
@@ -29,6 +37,7 @@ class PlaceSuggestion {
     double? lng,
     double? distanceMiles,
     String? etaText,
+    List<String>? types,
   }) {
     return PlaceSuggestion(
       description: description ?? this.description,
@@ -37,7 +46,44 @@ class PlaceSuggestion {
       lng: lng ?? this.lng,
       distanceMiles: distanceMiles ?? this.distanceMiles,
       etaText: etaText ?? this.etaText,
+      types: types ?? this.types,
     );
+  }
+
+  /// Detect place type from Google Places type tags.
+  PlaceType get placeType {
+    if (types.contains('airport')) return PlaceType.airport;
+    if (types.contains('lodging') || types.contains('hotel')) {
+      return PlaceType.hotel;
+    }
+    if (types.contains('hospital') || types.contains('health')) {
+      return PlaceType.hospital;
+    }
+    if (types.contains('university') || types.contains('school')) {
+      return PlaceType.education;
+    }
+    if (types.contains('shopping_mall') || types.contains('store')) {
+      return PlaceType.commerce;
+    }
+    return PlaceType.home;
+  }
+
+  /// Smart icon based on place type.
+  IconData get icon {
+    switch (placeType) {
+      case PlaceType.airport:
+        return Icons.local_airport_rounded;
+      case PlaceType.hotel:
+        return Icons.hotel_rounded;
+      case PlaceType.hospital:
+        return Icons.local_hospital_rounded;
+      case PlaceType.education:
+        return Icons.school_rounded;
+      case PlaceType.commerce:
+        return Icons.storefront_rounded;
+      case PlaceType.home:
+        return Icons.location_on_rounded;
+    }
   }
 }
 
@@ -48,23 +94,19 @@ class PlaceDetails {
   PlaceDetails({required this.address, required this.lat, required this.lng});
 }
 
-/// Production-ready Places service with Uber-like autocomplete behavior.
-/// Uses a sequence counter to discard stale results when the user types quickly.
+/// Google Places–powered service.
 ///
-/// Uses Google Places Autocomplete as primary provider with:
-/// - No type restrictions (full address + establishment coverage)
-/// - Session tokens (billing optimization — bundles keystrokes into one charge)
-/// - Location bias (not restriction) for proximity ranking
-/// - No country/referrer restrictions
-/// - Nominatim + Photon as supplementary providers for extra coverage
+/// - Autocomplete: Google Places Autocomplete (full coverage — airports,
+///   hotels, hospitals, universities, malls, businesses, addresses).
+/// - Details: Google Place Details (place_id → coordinates).
+/// - Geocode / Reverse Geocode: Google Geocoding API + native fallback.
+/// - Session tokens for billing optimization ($0.017/session).
+/// - No country restriction (worldwide coverage).
 class PlacesService {
   final String apiKey;
   PlacesService(this.apiKey);
 
   // ─── Session token management ──────────────────────────────────────
-  // A session token groups autocomplete keystrokes + the final place
-  // details call into a single billing session ($0.017 instead of
-  // $0.00283 × N keystrokes).  Reset after user selects a result.
 
   static final _uuid = Uuid();
   String _sessionToken = _uuid.v4();
@@ -84,14 +126,12 @@ class PlacesService {
     final clean = address.trim();
     if (clean.isEmpty) return null;
 
-    // Google Geocoding first (most comprehensive)
     try {
       final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
         'address': clean,
         'key': apiKey,
-        'components': 'country:US',
       });
-      final res = await http.get(uri);
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
       final data = jsonDecode(res.body);
       if (data['status'] == 'OK') {
         final results = data['results'] as List?;
@@ -111,14 +151,6 @@ class PlacesService {
       }
     } catch (_) {}
 
-    // Nominatim fallback (free, reliable)
-    final nominatim = await _geocodeWithNominatim(clean);
-    if (nominatim != null) return nominatim;
-
-    // Photon fallback
-    final photon = await _geocodeWithPhoton(clean);
-    if (photon != null) return photon;
-
     return null;
   }
 
@@ -128,7 +160,6 @@ class PlacesService {
     required double lat,
     required double lng,
   }) async {
-    // Run native geocoder and Google API in parallel — first good result wins.
     String? parseNative(List<geo.Placemark> placemarks) {
       if (placemarks.isEmpty) return null;
       final p = placemarks.first;
@@ -150,7 +181,7 @@ class PlacesService {
       return parts.isNotEmpty ? parts.join(', ') : null;
     }
 
-    // 1) Parallel: native + Google (both fast, no dependency on each other)
+    // Parallel: native + Google
     try {
       final both = await Future.wait([
         geo.placemarkFromCoordinates(lat, lng)
@@ -175,9 +206,7 @@ class PlacesService {
             .catchError((_) => null),
       ]);
 
-      // Native result preferred (no network round-trip)
       if (both[0] != null && (both[0] as String).isNotEmpty) {
-        debugPrint('✅ Native geocode: ${both[0]}');
         return both[0] as String;
       }
       if (both[1] != null && (both[1] as String).isNotEmpty) {
@@ -185,26 +214,16 @@ class PlacesService {
       }
     } catch (_) {}
 
-    // 2) Fallback: Nominatim only (skip Photon to save a round-trip)
-    try {
-      final nominatim = await _reverseWithNominatim(lat: lat, lng: lng);
-      if (nominatim != null && nominatim.isNotEmpty) return nominatim;
-    } catch (_) {}
-
     return null;
   }
 
   // ─── Autocomplete (text → list of suggestions) ────────────────────
   //
-  // Uber-like behavior:
-  //  • Google Places as PRIMARY source (full address database)
-  //  • No type restrictions → addresses + businesses + POIs
+  // Google Places Autocomplete — full worldwide coverage:
+  //  • No type restriction → addresses + businesses + POIs
   //  • Session tokens → cost optimization
-  //  • Location bias → proximity ranking without geographic restriction
-  //  • Nominatim + Photon as SUPPLEMENTARY sources
-  //  • No country restriction on Google (worldwide coverage)
+  //  • Location bias → proximity ranking
 
-  // Fix 3: sequence counter — discard results from superseded requests
   int _autocompleteSeq = 0;
 
   Future<List<PlaceSuggestion>> autocomplete(
@@ -215,92 +234,43 @@ class PlacesService {
     final cleanInput = input.trim();
     if (cleanInput.isEmpty) return [];
 
-    final seq = ++_autocompleteSeq; // Capture this request's sequence number
+    final seq = ++_autocompleteSeq;
     final hasLocation = latitude != null && longitude != null;
 
     try {
-      // ── Run ALL providers in parallel for maximum coverage & speed ──
+      // Run two Google requests in parallel: all types + geocode-only
       final allResults = await Future.wait([
-        // [0] Google Places — ALL types (businesses, POIs, airports, addresses)
-        _searchWithGoogleAutocomplete(
-          cleanInput,
-          lat: latitude,
-          lon: longitude,
-        ).catchError((_) => <PlaceSuggestion>[]),
-        // [1] Google Places — GEOCODE type (residential addresses, streets)
-        _searchWithGoogleAutocomplete(
-          cleanInput,
-          lat: latitude,
-          lon: longitude,
-          types: 'geocode',
-        ).catchError((_) => <PlaceSuggestion>[]),
-        // [2] Google Places — ADDRESS type (exact street addresses, house numbers)
-        _searchWithGoogleAutocomplete(
-          cleanInput,
-          lat: latitude,
-          lon: longitude,
-          types: 'address',
-        ).catchError((_) => <PlaceSuggestion>[]),
-        // [3] Nominatim (OSM — good for residential addresses)
-        _searchWithNominatim(cleanInput).catchError((_) => <PlaceSuggestion>[]),
-        // [4] Photon (OSM — proximity-biased, good for nearby addresses)
-        _searchWithPhoton(
-          cleanInput,
-          lat: latitude,
-          lon: longitude,
-        ).catchError((_) => <PlaceSuggestion>[]),
-        // [5] Mapbox Search Box API (full address coverage)
-        _searchWithMapboxSearchBox(
-          cleanInput,
-          lat: latitude,
-          lon: longitude,
-        ).catchError((_) => <PlaceSuggestion>[]),
-        // [6] Mapbox Geocoding v5 (supplementary coverage)
-        _searchWithMapboxGeocoding(
-          cleanInput,
-          lat: latitude,
-          lon: longitude,
-        ).catchError((_) => <PlaceSuggestion>[]),
+        // [0] All types (businesses, POIs, airports, hotels, etc.)
+        _googleAutocomplete(cleanInput, lat: latitude, lon: longitude)
+            .catchError((_) => <PlaceSuggestion>[]),
+        // [1] Geocode type (residential addresses, streets)
+        _googleAutocomplete(cleanInput, lat: latitude, lon: longitude, types: 'geocode')
+            .catchError((_) => <PlaceSuggestion>[]),
       ]);
 
-      // Discard stale results
       if (seq != _autocompleteSeq) return [];
 
-      // Merge: Mapbox Search Box first (best address coverage),
-      // then Mapbox Geocoding v5, then Google address results,
-      // then OSM fallbacks.
+      // Merge: all-types first (businesses, airports), then geocode (addresses)
       final merged = <PlaceSuggestion>[];
-      merged.addAll(allResults[5]); // Mapbox Search Box (primary — full address DB)
-      merged.addAll(allResults[6]); // Mapbox Geocoding v5 (supplementary)
-      merged.addAll(allResults[2]); // Google address (exact street addresses)
-      merged.addAll(allResults[1]); // Google geocode (residential, streets)
-      merged.addAll(allResults[0]); // Google all types (businesses, POIs)
+      merged.addAll(allResults[0]);
+      merged.addAll(allResults[1]);
 
-      // Sort OSM results by proximity if location available
-      final osmCandidates = <PlaceSuggestion>[];
-      osmCandidates.addAll(allResults[3]); // Nominatim
-      osmCandidates.addAll(allResults[4]); // Photon
-      if (hasLocation && osmCandidates.isNotEmpty) {
-        osmCandidates.sort((a, b) {
-          final aHas = a.lat != null && a.lng != null;
-          final bHas = b.lat != null && b.lng != null;
-          if (!aHas && !bHas) return 0;
-          if (!aHas) return 1;
-          if (!bHas) return -1;
-          final aDist = _haversineDistance(latitude, longitude, a.lat!, a.lng!);
-          final bDist = _haversineDistance(latitude, longitude, b.lat!, b.lng!);
-          return aDist.compareTo(bDist);
-        });
+      // Enrich with distance if user location available
+      if (hasLocation) {
+        for (int i = 0; i < merged.length; i++) {
+          final s = merged[i];
+          if (s.lat != null && s.lng != null) {
+            final dist = _haversineDistance(latitude, longitude, s.lat!, s.lng!);
+            final miles = dist * 0.621371;
+            merged[i] = s.copyWith(distanceMiles: miles);
+          }
+        }
       }
-      merged.addAll(osmCandidates);
 
-      // Geocoding fallback: if Google returned few results, try direct geocode
-      // to catch addresses not indexed by Places Autocomplete.
-      final googleCount =
-          allResults[0].length + allResults[1].length + allResults[2].length;
-      if (googleCount < 3) {
+      // Geocoding fallback: if very few results, try direct geocode
+      if (allResults[0].length + allResults[1].length < 3) {
         try {
-          final geocoded = await _geocodeFallback(cleanInput, latitude: latitude, longitude: longitude);
+          final geocoded = await _geocodeFallback(cleanInput);
           if (seq == _autocompleteSeq && geocoded.isNotEmpty) {
             merged.addAll(geocoded);
           }
@@ -314,26 +284,18 @@ class PlacesService {
     }
   }
 
-  // ─── Google Places Autocomplete (production-ready) ─────────────────
-  //
-  // Configuration:
-  //  • 'components=country:us' → restrict to US addresses
-  //  • Session tokens → billing optimization ($0.017/session)
-  //  • Location + 80km radius → proximity ranking centered on user
-  //  • Optional 'types' → narrow by category (geocode, address, etc.)
-  //  • No strictbounds → location is a BIAS not a restriction
+  // ─── Google Places Autocomplete ────────────────────────────────────
 
-  Future<List<PlaceSuggestion>> _searchWithGoogleAutocomplete(
+  Future<List<PlaceSuggestion>> _googleAutocomplete(
     String input, {
     double? lat,
     double? lon,
-    String? types, // e.g. 'geocode' for addresses, 'establishment' for businesses
+    String? types,
   }) async {
     final params = <String, String>{
       'input': input,
       'key': apiKey,
       'sessiontoken': _sessionToken,
-      'components': 'country:us',
     };
     if (types != null && types.isNotEmpty) {
       params['types'] = types;
@@ -371,7 +333,12 @@ class PlacesService {
             final description = p['description']?.toString() ?? '';
             final placeId = p['place_id']?.toString() ?? '';
             if (description.isEmpty || placeId.isEmpty) return null;
-            return PlaceSuggestion(description: description, placeId: placeId);
+            final placeTypes = List<String>.from(p['types'] as List? ?? []);
+            return PlaceSuggestion(
+              description: description,
+              placeId: placeId,
+              types: placeTypes,
+            );
           })
           .whereType<PlaceSuggestion>()
           .toList();
@@ -384,26 +351,18 @@ class PlacesService {
   // ─── Place Details ─────────────────────────────────────────────────
 
   Future<PlaceDetails?> details(String placeId) async {
-    // Handle embedded-coordinate placeIds from Nominatim/Photon/exact/Mapbox geocoding
-    for (final prefix in ['exact:', 'osm:', 'photon:', 'mapbox:']) {
-      if (placeId.startsWith(prefix)) {
-        final raw = placeId.substring(prefix.length);
-        final parts = raw.split(',');
-        if (parts.length == 2) {
-          final lat = double.tryParse(parts[0]);
-          final lng = double.tryParse(parts[1]);
-          if (lat != null && lng != null) {
-            return PlaceDetails(address: '', lat: lat, lng: lng);
-          }
+    // Handle legacy embedded-coordinate placeIds (exact:lat,lng)
+    if (placeId.startsWith('exact:')) {
+      final raw = placeId.substring('exact:'.length);
+      final parts = raw.split(',');
+      if (parts.length == 2) {
+        final lat = double.tryParse(parts[0]);
+        final lng = double.tryParse(parts[1]);
+        if (lat != null && lng != null) {
+          return PlaceDetails(address: '', lat: lat, lng: lng);
         }
-        return null;
       }
-    }
-
-    // Handle Mapbox Search Box suggestions (retrieve by mapbox_id)
-    if (placeId.startsWith('mapbox_id:')) {
-      final mapboxId = placeId.substring('mapbox_id:'.length);
-      return _mapboxRetrieve(mapboxId);
+      return null;
     }
 
     // Google Place Details — include session token to bundle billing
@@ -411,16 +370,15 @@ class PlacesService {
       final uri =
           Uri.https('maps.googleapis.com', '/maps/api/place/details/json', {
             'place_id': placeId,
-            'fields': 'geometry,formatted_address',
+            'fields': 'geometry,formatted_address,name,types',
             'key': apiKey,
             'sessiontoken': _sessionToken,
           });
-      final res = await http.get(uri);
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
       final data = jsonDecode(res.body);
       if (data['status'] == 'OK') {
         final r = data['result'];
         final loc = r['geometry']['location'];
-        // Reset session after successful details fetch (end of billing session)
         resetSession();
         return PlaceDetails(
           address: r['formatted_address'] ?? '',
@@ -432,263 +390,12 @@ class PlacesService {
     return null;
   }
 
-  // ─── Nominatim Search ──────────────────────────────────────────────
-
-  Future<List<PlaceSuggestion>> _searchWithNominatim(String input) async {
-    final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
-      'q': input,
-      'format': 'jsonv2',
-      'limit': '10',
-      'addressdetails': '1',
-      'countrycodes': 'us',
-    });
-
-    try {
-      final res = await http.get(uri, headers: _nominatimHeaders());
-      if (res.statusCode != 200) return [];
-      final data = jsonDecode(res.body);
-      if (data is! List) return [];
-
-      return data
-          .map((item) {
-            final lat = double.tryParse(item['lat']?.toString() ?? '');
-            final lng = double.tryParse(item['lon']?.toString() ?? '');
-            if (lat == null || lng == null) return null;
-
-            final addr = item['address'] as Map<String, dynamic>?;
-            String description;
-            if (addr != null) {
-              description = _buildNominatimAddress(
-                addr,
-                fallback: item['display_name']?.toString() ?? input,
-              );
-            } else {
-              description = item['display_name']?.toString() ?? input;
-            }
-
-            return PlaceSuggestion(
-              description: description,
-              placeId: 'osm:$lat,$lng',
-              lat: lat,
-              lng: lng,
-            );
-          })
-          .whereType<PlaceSuggestion>()
-          .toList();
-    } catch (_) {
-      return [];
-    }
-  }
-
-  // ─── Photon Search ─────────────────────────────────────────────────
-
-  Future<List<PlaceSuggestion>> _searchWithPhoton(
-    String input, {
-    double? lat,
-    double? lon,
-  }) async {
-    final params = <String, String>{
-      'q': input,
-      'limit': '10',
-      'lang': 'en',
-      // No osm_tag filter — returns all types: addresses, streets, POIs, businesses
-      'bbox': '-179.15,-14.55,-64.55,71.39',
-    };
-    if (lat != null && lon != null) {
-      params['lat'] = '$lat';
-      params['lon'] = '$lon';
-    }
-    final uri = Uri.https('photon.komoot.io', '/api', params);
-
-    try {
-      final res = await http.get(uri);
-      if (res.statusCode != 200) return [];
-      final data = jsonDecode(res.body);
-      final features = data['features'] as List?;
-      if (features == null) return [];
-
-      return features
-          .map((item) {
-            final geometry = item['geometry'];
-            final coordinates = geometry?['coordinates'] as List?;
-            if (coordinates == null || coordinates.length < 2) return null;
-
-            final lng = (coordinates[0] as num?)?.toDouble();
-            final lat = (coordinates[1] as num?)?.toDouble();
-            if (lat == null || lng == null) return null;
-
-            final properties = item['properties'];
-
-            final houseNumber = properties?['housenumber']?.toString() ?? '';
-            final street = properties?['street']?.toString() ?? '';
-            final name = properties?['name']?.toString() ?? '';
-            final city = properties?['city']?.toString() ?? '';
-            final state = properties?['state']?.toString() ?? '';
-            final postcode = properties?['postcode']?.toString() ?? '';
-
-            final parts = <String>[];
-            if (houseNumber.isNotEmpty && street.isNotEmpty) {
-              parts.add('$houseNumber $street');
-            } else if (street.isNotEmpty) {
-              parts.add(street);
-            } else if (name.isNotEmpty) {
-              parts.add(name);
-            }
-            if (city.isNotEmpty) parts.add(city);
-            if (state.isNotEmpty) parts.add(_abbreviateState(state));
-            if (postcode.isNotEmpty) parts.add(postcode);
-            final description = parts.isEmpty ? input : parts.join(', ');
-
-            return PlaceSuggestion(
-              description: description,
-              placeId: 'photon:$lat,$lng',
-              lat: lat,
-              lng: lng,
-            );
-          })
-          .whereType<PlaceSuggestion>()
-          .toList();
-    } catch (_) {
-      return [];
-    }
-  }
-
-  // ─── Nominatim Reverse Geocode ─────────────────────────────────────
-
-  Future<String?> _reverseWithNominatim({
-    required double lat,
-    required double lng,
-  }) async {
-    final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
-      'lat': '$lat',
-      'lon': '$lng',
-      'format': 'jsonv2',
-      'addressdetails': '1',
-    });
-
-    try {
-      final res = await http.get(uri, headers: _nominatimHeaders());
-      if (res.statusCode != 200) return null;
-      final data = jsonDecode(res.body);
-
-      final addr = data['address'] as Map<String, dynamic>?;
-      if (addr != null) {
-        final clean = _buildNominatimAddress(
-          addr,
-          fallback: data['display_name']?.toString(),
-        );
-        if (clean.isNotEmpty) return clean;
-      }
-
-      return data['display_name']?.toString();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  // ─── Nominatim Geocode ─────────────────────────────────────────────
-
-  Future<PlaceDetails?> _geocodeWithNominatim(String input) async {
-    final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
-      'q': input,
-      'format': 'jsonv2',
-      'limit': '1',
-      'addressdetails': '1',
-      'countrycodes': 'us',
-    });
-
-    try {
-      final res = await http.get(uri, headers: _nominatimHeaders());
-      if (res.statusCode != 200) return null;
-      final data = jsonDecode(res.body);
-      if (data is! List || data.isEmpty) return null;
-      final first = data.first;
-      final lat = double.tryParse(first['lat']?.toString() ?? '');
-      final lng = double.tryParse(first['lon']?.toString() ?? '');
-      if (lat == null || lng == null) return null;
-
-      final addr = first['address'] as Map<String, dynamic>?;
-      String address;
-      if (addr != null) {
-        address = _buildNominatimAddress(
-          addr,
-          fallback: first['display_name']?.toString() ?? input,
-        );
-      } else {
-        address = first['display_name']?.toString() ?? input;
-      }
-
-      return PlaceDetails(address: address, lat: lat, lng: lng);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  // ─── Photon Geocode ────────────────────────────────────────────────
-
-  Future<PlaceDetails?> _geocodeWithPhoton(String input) async {
-    final uri = Uri.https('photon.komoot.io', '/api', {
-      'q': input,
-      'limit': '1',
-      'lang': 'en',
-    });
-
-    try {
-      final res = await http.get(uri);
-      if (res.statusCode != 200) return null;
-      final data = jsonDecode(res.body);
-      final features = data['features'] as List?;
-      if (features == null || features.isEmpty) return null;
-
-      final first = features.first;
-      final coordinates = first['geometry']?['coordinates'] as List?;
-      if (coordinates == null || coordinates.length < 2) return null;
-
-      final lng = (coordinates[0] as num?)?.toDouble();
-      final lat = (coordinates[1] as num?)?.toDouble();
-      if (lat == null || lng == null) return null;
-
-      final props = first['properties'];
-      final houseNumber = props?['housenumber']?.toString() ?? '';
-      final street = props?['street']?.toString() ?? '';
-      final name = props?['name']?.toString() ?? '';
-      final city = props?['city']?.toString() ?? '';
-      final state = props?['state']?.toString() ?? '';
-      final postcode = props?['postcode']?.toString() ?? '';
-
-      final parts = <String>[];
-      if (houseNumber.isNotEmpty && street.isNotEmpty) {
-        parts.add('$houseNumber $street');
-      } else if (street.isNotEmpty) {
-        parts.add(street);
-      } else if (name.isNotEmpty) {
-        parts.add(name);
-      }
-      if (city.isNotEmpty) parts.add(city);
-      if (state.isNotEmpty) parts.add(_abbreviateState(state));
-      if (postcode.isNotEmpty) parts.add(postcode);
-
-      return PlaceDetails(
-        address: parts.isEmpty ? input : parts.join(', '),
-        lat: lat,
-        lng: lng,
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
   // ─── Geocoding Fallback (for sparse autocomplete) ──────────────────
 
-  Future<List<PlaceSuggestion>> _geocodeFallback(
-    String query, {
-    double? latitude,
-    double? longitude,
-  }) async {
+  Future<List<PlaceSuggestion>> _geocodeFallback(String query) async {
     final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
       'address': query,
       'key': apiKey,
-      'components': 'country:US',
     });
     try {
       final res = await http.get(uri).timeout(const Duration(seconds: 5));
@@ -718,186 +425,7 @@ class PlacesService {
     }
   }
 
-  // ─── Mapbox Search Box API (full address coverage) ─────────────────
-
-  String _mapboxSessionToken = _uuid.v4();
-
-  Future<List<PlaceSuggestion>> _searchWithMapboxSearchBox(
-    String input, {
-    double? lat,
-    double? lon,
-  }) async {
-    final params = <String, String>{
-      'q': input,
-      'country': 'US',
-      'types': 'address,street,place,neighborhood,postcode',
-      'language': 'en',
-      'limit': '10',
-      'session_token': _mapboxSessionToken,
-      'access_token': MapboxConfig.accessToken,
-    };
-    if (lat != null && lon != null) {
-      params['proximity'] = '$lon,$lat';
-    }
-
-    final uri = Uri.https(
-      'api.mapbox.com',
-      '/search/searchbox/v1/suggest',
-      params,
-    );
-
-    try {
-      final res = await http.get(uri).timeout(const Duration(seconds: 5));
-      debugPrint('SearchBox status: ${res.statusCode}');
-      if (res.statusCode != 200) {
-        debugPrint('⚠️ Mapbox Search Box: ${res.statusCode} ${res.body}');
-        return [];
-      }
-      final data = jsonDecode(res.body);
-      final suggestions = data['suggestions'] as List? ?? [];
-      debugPrint('SearchBox results: ${suggestions.length} suggestions');
-      return suggestions.map<PlaceSuggestion?>((s) {
-        final name = s['name']?.toString() ?? '';
-        final fullAddr = s['full_address']?.toString() ?? '';
-        final placeFmt = s['place_formatted']?.toString() ?? '';
-        final mapboxId = s['mapbox_id']?.toString() ?? '';
-        if (mapboxId.isEmpty) return null;
-
-        final description = fullAddr.isNotEmpty
-            ? fullAddr
-            : (placeFmt.isNotEmpty ? '$name, $placeFmt' : name);
-        if (description.isEmpty) return null;
-
-        return PlaceSuggestion(
-          description: description,
-          placeId: 'mapbox_id:$mapboxId',
-        );
-      }).whereType<PlaceSuggestion>().toList();
-    } catch (e) {
-      debugPrint('⚠️ Mapbox Search Box error: $e');
-      return [];
-    }
-  }
-
-  // ─── Mapbox Search Box Retrieve (get coordinates from mapbox_id) ───
-
-  Future<PlaceDetails?> _mapboxRetrieve(String mapboxId) async {
-    final uri = Uri.https(
-      'api.mapbox.com',
-      '/search/searchbox/v1/retrieve/$mapboxId',
-      {
-        'session_token': _mapboxSessionToken,
-        'access_token': MapboxConfig.accessToken,
-      },
-    );
-
-    try {
-      final res = await http.get(uri).timeout(const Duration(seconds: 5));
-      if (res.statusCode != 200) return null;
-      final data = jsonDecode(res.body);
-      final features = data['features'] as List?;
-      if (features == null || features.isEmpty) return null;
-
-      final feature = features[0];
-      final coords = feature['geometry']?['coordinates'] as List?;
-      if (coords == null || coords.length < 2) return null;
-
-      final props = feature['properties'] as Map<String, dynamic>? ?? {};
-      final fullAddr = props['full_address']?.toString() ??
-          props['name']?.toString() ??
-          '';
-
-      // Reset Mapbox session after retrieval (end of session)
-      _mapboxSessionToken = _uuid.v4();
-
-      return PlaceDetails(
-        address: fullAddr,
-        lat: (coords[1] as num).toDouble(),
-        lng: (coords[0] as num).toDouble(),
-      );
-    } catch (e) {
-      debugPrint('⚠️ Mapbox Retrieve error: $e');
-      return null;
-    }
-  }
-
-  // ─── Mapbox Geocoding v5 (supplementary coverage) ──────────────────
-
-  Future<List<PlaceSuggestion>> _searchWithMapboxGeocoding(
-    String input, {
-    double? lat,
-    double? lon,
-  }) async {
-    final params = <String, String>{
-      'country': 'US',
-      'types': 'address,place,neighborhood,postcode',
-      'language': 'en',
-      'limit': '5',
-      'access_token': MapboxConfig.accessToken,
-    };
-    if (lat != null && lon != null) {
-      params['proximity'] = '$lon,$lat';
-    }
-
-    final uri = Uri.https(
-      'api.mapbox.com',
-      '/geocoding/v5/mapbox.places/${Uri.encodeComponent(input)}.json',
-      params,
-    );
-
-    try {
-      final res = await http.get(uri).timeout(const Duration(seconds: 5));
-      if (res.statusCode != 200) return [];
-      final data = jsonDecode(res.body);
-      final features = data['features'] as List? ?? [];
-      return features.map<PlaceSuggestion?>((f) {
-        final placeName = f['place_name']?.toString() ?? '';
-        final coords = f['geometry']?['coordinates'] as List?;
-        if (placeName.isEmpty || coords == null || coords.length < 2) {
-          return null;
-        }
-        final lng = (coords[0] as num).toDouble();
-        final lat = (coords[1] as num).toDouble();
-        return PlaceSuggestion(
-          description: placeName,
-          placeId: 'mapbox:$lat,$lng',
-          lat: lat,
-          lng: lng,
-        );
-      }).whereType<PlaceSuggestion>().toList();
-    } catch (e) {
-      debugPrint('⚠️ Mapbox Geocoding v5 error: $e');
-      return [];
-    }
-  }
-
   // ─── Helpers ───────────────────────────────────────────────────────
-
-  String _buildNominatimAddress(Map<String, dynamic> addr, {String? fallback}) {
-    final houseNumber = addr['house_number']?.toString() ?? '';
-    final road = addr['road']?.toString() ?? '';
-    final city =
-        addr['city']?.toString() ??
-        addr['town']?.toString() ??
-        addr['village']?.toString() ??
-        addr['hamlet']?.toString() ??
-        '';
-    final state = addr['state']?.toString() ?? '';
-    final postcode = addr['postcode']?.toString() ?? '';
-
-    final parts = <String>[];
-    if (houseNumber.isNotEmpty && road.isNotEmpty) {
-      parts.add('$houseNumber $road');
-    } else if (road.isNotEmpty) {
-      parts.add(road);
-    }
-    if (city.isNotEmpty) parts.add(city);
-    if (state.isNotEmpty) parts.add(_abbreviateState(state));
-    if (postcode.isNotEmpty) parts.add(postcode);
-
-    if (parts.isNotEmpty) return parts.join(', ');
-    return fallback ?? '';
-  }
 
   double _haversineDistance(
     double lat1,
@@ -915,13 +443,6 @@ class PlacesService {
             sin(dLon / 2) *
             sin(dLon / 2);
     return r * 2 * atan2(sqrt(a), sqrt(1 - a));
-  }
-
-  Map<String, String> _nominatimHeaders() {
-    if (kIsWeb) {
-      return const {'Accept-Language': 'en'};
-    }
-    return const {'User-Agent': 'cruise_app/1.0', 'Accept-Language': 'en'};
   }
 
   String _normalize(String value) {
@@ -951,62 +472,4 @@ class PlacesService {
     }
     return out;
   }
-
-  static String _abbreviateState(String state) {
-    return _stateAbbreviations[state] ?? state;
-  }
-
-  static const _stateAbbreviations = <String, String>{
-    'Alabama': 'AL',
-    'Alaska': 'AK',
-    'Arizona': 'AZ',
-    'Arkansas': 'AR',
-    'California': 'CA',
-    'Colorado': 'CO',
-    'Connecticut': 'CT',
-    'Delaware': 'DE',
-    'Florida': 'FL',
-    'Georgia': 'GA',
-    'Hawaii': 'HI',
-    'Idaho': 'ID',
-    'Illinois': 'IL',
-    'Indiana': 'IN',
-    'Iowa': 'IA',
-    'Kansas': 'KS',
-    'Kentucky': 'KY',
-    'Louisiana': 'LA',
-    'Maine': 'ME',
-    'Maryland': 'MD',
-    'Massachusetts': 'MA',
-    'Michigan': 'MI',
-    'Minnesota': 'MN',
-    'Mississippi': 'MS',
-    'Missouri': 'MO',
-    'Montana': 'MT',
-    'Nebraska': 'NE',
-    'Nevada': 'NV',
-    'New Hampshire': 'NH',
-    'New Jersey': 'NJ',
-    'New Mexico': 'NM',
-    'New York': 'NY',
-    'North Carolina': 'NC',
-    'North Dakota': 'ND',
-    'Ohio': 'OH',
-    'Oklahoma': 'OK',
-    'Oregon': 'OR',
-    'Pennsylvania': 'PA',
-    'Rhode Island': 'RI',
-    'South Carolina': 'SC',
-    'South Dakota': 'SD',
-    'Tennessee': 'TN',
-    'Texas': 'TX',
-    'Utah': 'UT',
-    'Vermont': 'VT',
-    'Virginia': 'VA',
-    'Washington': 'WA',
-    'West Virginia': 'WV',
-    'Wisconsin': 'WI',
-    'Wyoming': 'WY',
-    'District of Columbia': 'DC',
-  };
 }

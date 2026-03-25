@@ -1290,8 +1290,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
                             child: Row(
                               children: [
                                 Icon(
-                                  Icons.location_on_outlined,
-                                  color: c.textSecondary,
+                                  s.icon,
+                                  color: const Color(0xFFD4AF37),
                                   size: 18,
                                 ),
                                 const SizedBox(width: 12),

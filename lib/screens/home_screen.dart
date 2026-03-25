@@ -4695,8 +4695,8 @@ class _AddressAutocompleteSheetState extends State<_AddressAutocompleteSheet> {
                             border: Border.all(color: c.border),
                           ),
                           child: Icon(
-                            Icons.location_on_rounded,
-                            color: c.textSecondary,
+                            s.icon,
+                            color: const Color(0xFFD4AF37),
                             size: 20,
                           ),
                         ),

@@ -457,9 +457,9 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                Icons.location_on_rounded,
+                s.icon,
                 size: 18,
-                color: c.textSecondary,
+                color: const Color(0xFFD4AF37),
               ),
             ),
             const SizedBox(width: 14),
@@ -900,8 +900,8 @@ class _PlacesAutocompleteSheetState extends State<_PlacesAutocompleteSheet> {
                             border: Border.all(color: c.border),
                           ),
                           child: Icon(
-                            Icons.location_on_rounded,
-                            color: c.textSecondary,
+                            s.icon,
+                            color: const Color(0xFFD4AF37),
                             size: 20,
                           ),
                         ),

@@ -3133,22 +3133,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       separatorBuilder: (_, index) => Divider(height: 1, color: _c.divider),
       itemBuilder: (context, index) {
         final s = _suggestions[index];
-        final hasCoords = s.lat != null && s.lng != null;
-        final isLocal =
-            s.placeId.startsWith('exact:') ||
-            s.placeId.startsWith('osm:') ||
-            s.placeId.startsWith('photon:');
-        final isGoogle = !isLocal && !hasCoords;
 
-        // Choose icon based on result type
-        IconData icon;
-        if (isLocal) {
-          icon = Icons.location_on;
-        } else if (isGoogle) {
-          icon = Icons.place;
-        } else {
-          icon = Icons.place_outlined;
-        }
+        // Smart icon from Google Places type tags
+        final icon = s.icon;
 
         // Build subtitle
         String? subtitle;
@@ -3165,7 +3152,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           dense: true,
           leading: Icon(
             icon,
-            color: isLocal ? _gold : _c.textTertiary,
+            color: _gold,
             size: 18,
           ),
           title: Text(

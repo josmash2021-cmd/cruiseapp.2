@@ -6,6 +6,8 @@ import 'package:geocoding/geocoding.dart' as geo;
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
+import '../config/mapbox_config.dart';
+
 // ─── Place type enum for smart icons ─────────────────────────────────
 
 enum PlaceType { airport, hotel, hospital, education, commerce, home }
@@ -240,6 +242,32 @@ class PlacesService {
     final cleanInput = input.trim();
     if (cleanInput.isEmpty) return [];
 
+    final seq = ++_autocompleteSeq;
+    final hasLocation = latitude != null && longitude != null;
+
+    // ── Primary: Mapbox Geocoding v5 ──
+    try {
+      final mapboxResults = await _mapboxAutocomplete(
+        cleanInput, lat: latitude, lon: longitude,
+      );
+      if (seq != _autocompleteSeq) return [];
+      if (mapboxResults.isNotEmpty) {
+        final enriched = <PlaceSuggestion>[];
+        for (final s in mapboxResults) {
+          if (hasLocation && s.lat != null && s.lng != null) {
+            final dist = _haversineDistance(latitude, longitude, s.lat!, s.lng!);
+            enriched.add(s.copyWith(distanceMiles: dist * 0.621371));
+          } else {
+            enriched.add(s);
+          }
+        }
+        return _dedupeByDescription(enriched).take(25).toList();
+      }
+    } catch (e) {
+      debugPrint('\u26a0\ufe0f Mapbox autocomplete failed, trying Google: $e');
+    }
+
+    // ── Fallback: Google Places ──
     if (!isKeyValid) {
       debugPrint(
         '\u26a0\ufe0f Places autocomplete: API key is empty or invalid. '
@@ -249,28 +277,21 @@ class PlacesService {
       return [];
     }
 
-    final seq = ++_autocompleteSeq;
-    final hasLocation = latitude != null && longitude != null;
-
     try {
       // Run two Google requests in parallel: all types + geocode-only
       final allResults = await Future.wait([
-        // [0] All types (businesses, POIs, airports, hotels, etc.)
         _googleAutocomplete(cleanInput, lat: latitude, lon: longitude)
             .catchError((_) => <PlaceSuggestion>[]),
-        // [1] Geocode type (residential addresses, streets)
         _googleAutocomplete(cleanInput, lat: latitude, lon: longitude, types: 'geocode')
             .catchError((_) => <PlaceSuggestion>[]),
       ]);
 
       if (seq != _autocompleteSeq) return [];
 
-      // Merge: all-types first (businesses, airports), then geocode (addresses)
       final merged = <PlaceSuggestion>[];
       merged.addAll(allResults[0]);
       merged.addAll(allResults[1]);
 
-      // Enrich with distance if user location available
       if (hasLocation) {
         for (int i = 0; i < merged.length; i++) {
           final s = merged[i];
@@ -282,7 +303,6 @@ class PlacesService {
         }
       }
 
-      // Geocoding fallback: if very few results, try direct geocode
       if (allResults[0].length + allResults[1].length < 3) {
         try {
           final geocoded = await _geocodeFallback(cleanInput);
@@ -297,6 +317,83 @@ class PlacesService {
     } catch (_) {
       return [];
     }
+  }
+
+  // ─── Mapbox Geocoding v5 Autocomplete ─────────────────────────────
+
+  Future<List<PlaceSuggestion>> _mapboxAutocomplete(
+    String input, {
+    double? lat,
+    double? lon,
+  }) async {
+    final token = MapboxConfig.accessToken;
+    if (token.isEmpty) return [];
+
+    final encoded = Uri.encodeComponent(input);
+    final params = <String, String>{
+      'access_token': token,
+      'autocomplete': 'true',
+      'limit': '5',
+      'language': 'en',
+    };
+    if (lat != null && lon != null) {
+      params['proximity'] = '$lon,$lat';
+    }
+
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/geocoding/v5/mapbox.places/$encoded.json',
+      params,
+    );
+
+    debugPrint('\ud83d\udd0d Mapbox geocoding: "$input"');
+    final res = await http.get(uri).timeout(const Duration(seconds: 5));
+    if (res.statusCode != 200) {
+      debugPrint('\u274c Mapbox geocoding HTTP ${res.statusCode}');
+      return [];
+    }
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final features = data['features'] as List? ?? [];
+    debugPrint('\u2705 Mapbox: ${features.length} results for "$input"');
+
+    return features.map<PlaceSuggestion?>((f) {
+      final placeName = f['place_name']?.toString() ?? '';
+      final shortName = f['text']?.toString() ?? '';
+      if (placeName.isEmpty) return null;
+      final coords = f['geometry']?['coordinates'] as List?;
+      final lng = (coords != null && coords.length >= 2)
+          ? (coords[0] as num).toDouble() : null;
+      final lat = (coords != null && coords.length >= 2)
+          ? (coords[1] as num).toDouble() : null;
+      final placeId = f['id']?.toString() ?? '';
+      // Detect place types from Mapbox types array
+      final rawTypes = (f['place_type'] as List?)?.cast<String>() ?? <String>[];
+      final types = <String>[];
+      for (final t in rawTypes) {
+        if (t == 'poi') types.add('establishment');
+        if (t == 'address') types.add('street_address');
+        if (t == 'place') types.add('locality');
+        if (t == 'region') types.add('administrative_area_level_1');
+      }
+      // Check properties.category for place type hints
+      final category = (f['properties']?['category'] ?? '').toString().toLowerCase();
+      if (category.contains('airport')) types.add('airport');
+      if (category.contains('hotel') || category.contains('lodging')) types.add('lodging');
+      if (category.contains('hospital') || category.contains('medical')) types.add('hospital');
+      if (category.contains('school') || category.contains('university')) types.add('university');
+      if (category.contains('shop') || category.contains('store') || category.contains('mall')) types.add('store');
+
+      return PlaceSuggestion(
+        description: placeName,
+        placeId: lat != null && lng != null
+            ? 'mapbox:$lat,$lng:$placeName'
+            : placeId,
+        lat: lat,
+        lng: lng,
+        types: types,
+      );
+    }).whereType<PlaceSuggestion>().toList();
   }
 
   // ─── Google Places Autocomplete ────────────────────────────────────
@@ -384,6 +481,24 @@ class PlacesService {
         final lng = double.tryParse(parts[1]);
         if (lat != null && lng != null) {
           return PlaceDetails(address: '', lat: lat, lng: lng);
+        }
+      }
+      return null;
+    }
+
+    // Handle Mapbox placeIds (mapbox:lat,lng:address)
+    if (placeId.startsWith('mapbox:')) {
+      final raw = placeId.substring('mapbox:'.length);
+      final firstComma = raw.indexOf(',');
+      if (firstComma > 0) {
+        final secondColon = raw.indexOf(':', firstComma);
+        final latStr = raw.substring(0, firstComma);
+        final lngStr = secondColon > 0 ? raw.substring(firstComma + 1, secondColon) : raw.substring(firstComma + 1);
+        final address = secondColon > 0 ? raw.substring(secondColon + 1) : '';
+        final lat = double.tryParse(latStr);
+        final lng = double.tryParse(lngStr);
+        if (lat != null && lng != null) {
+          return PlaceDetails(address: address, lat: lat, lng: lng);
         }
       }
       return null;

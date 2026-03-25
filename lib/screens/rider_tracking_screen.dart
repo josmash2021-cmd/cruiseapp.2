@@ -91,6 +91,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   mapbox.PolylineAnnotation? _remainingRouteAnnot;
   mapbox.PolylineAnnotation? _routeCasingAnnot;
   mapbox.PolylineAnnotation? _routeShineAnnot;
+  mapbox.PolylineAnnotation? _approachAnnot; // dashed line driver→pickup
   final double _cameraBearing = 0;
   Uint8List? _pickupPinBytes;
   Uint8List? _dropoffPinBytes;
@@ -98,14 +99,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Uint8List? _dropoffPinWithLabelBytes;
   bool _pickupLabelRevealed = false;
   bool _dropoffLabelRevealed = false;
+  bool _pickupPopping = false; // pickup pin pop-out in progress
+  bool _showPickupPin = true; // hide after pop-out completes
+  DateTime _lastRouteErase = DateTime(2000); // throttle route erase updates
 
   // ── Cinematic intro animation ──
-  AnimationController? _tiltCtrl;
-  Animation<double>? _tiltAnim;
-  AnimationController? _bearingCtrl;
-  Animation<double>? _bearingAnim;
   AnimationController? _glowPulseCtrl;
-  double _randomBearing = 0;
   double _cinematicPitch = 0;
   double _cinematicBearing = 0;
   bool _cinematicDone = false;
@@ -282,6 +281,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             if (mounted) {
               setState(() => _phase = _TrackPhase.onTrip);
               _addDropoffPin();
+              _popOutPickupPin();
             }
           }
         } catch (_) {}
@@ -395,6 +395,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       setState(() => _phase = _TrackPhase.onTrip);
       _addDropoffPin();
+      _popOutPickupPin();
     } else if (status == 'completed' && _phase != _TrackPhase.completed) {
       LocalDataService.clearActiveRide();
       setState(() => _phase = _TrackPhase.completed);
@@ -450,6 +451,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       if (_phase == _TrackPhase.arrived && progress > 0.06) {
         setState(() => _phase = _TrackPhase.onTrip);
         _addDropoffPin();
+        _popOutPickupPin();
       }
       if (_phase == _TrackPhase.onTrip && progress >= 0.98) {
         _simTimer?.cancel();
@@ -475,8 +477,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _simTimer?.cancel();
     _entranceTimer?.cancel();
     _routeDrawTicker?.dispose();
-    _tiltCtrl?.dispose();
-    _bearingCtrl?.dispose();
     _glowPulseCtrl?.dispose();
     _driverLocSub?.cancel();
     _rtdbDriverLocSub?.cancel();
@@ -1364,6 +1364,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _throttleBoundsFit();
     _updateCarSmooth(); // fast path: only car GeoJSON
     _updateStaticAnnotationsOnce(); // slow path: pins + route, created once
+    _eraseRouteBehindCar(); // progressive route erase (throttled internally)
+    _updateApproachLine(); // dashed approach line driver→pickup
   }
 
   // ── Camera: fit bounds to show full route (throttled, not every frame) ──
@@ -1405,7 +1407,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _map!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(mnLng, mnLat)),
        mapbox.Point(coordinates: mapbox.Position(mxLng, mxLat))],
-      mapbox.CameraOptions(bearing: _cinematicBearing, pitch: _cinematicPitch),
+      mapbox.CameraOptions(bearing: 0, pitch: 0),
       mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
       null, null,
     ).then((cam) {
@@ -1472,7 +1474,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _map!.cameraForCoordinatesPadding(
         [mapbox.Point(coordinates: mapbox.Position(_camSWLng, _camSWLat)),
          mapbox.Point(coordinates: mapbox.Position(_camNELng, _camNELat))],
-        mapbox.CameraOptions(bearing: _cinematicBearing, pitch: _cinematicPitch),
+        mapbox.CameraOptions(bearing: 0, pitch: 0),
         mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
         null, null,
       ).then((cam) {
@@ -2343,6 +2345,38 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     });
   }
 
+  /// Pop-out animation for the pickup pin when driver picks up rider.
+  /// Grows to 1.6x then shrinks to 0 and removes the annotation.
+  void _popOutPickupPin() {
+    if (_pickupPopping || _pickupAnnot == null || _pointAnnotMgr == null) return;
+    _pickupPopping = true;
+    const duration = 600;
+    final start = DateTime.now();
+    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      if (!mounted) { timer.cancel(); return; }
+      final elapsed = DateTime.now().difference(start).inMilliseconds;
+      final t = (elapsed / duration).clamp(0.0, 1.0);
+      double scale;
+      if (t < 0.35) {
+        // Grow: 1.05 → 1.6
+        scale = 1.05 + (1.6 - 1.05) * (t / 0.35);
+      } else {
+        // Shrink: 1.6 → 0
+        final st = (t - 0.35) / 0.65;
+        scale = 1.6 * (1.0 - st * st); // ease-in shrink
+      }
+      try {
+        _pointAnnotMgr!.update(_pickupAnnot!..iconSize = math.max(scale, 0.01));
+      } catch (_) {}
+      if (t >= 1.0) {
+        timer.cancel();
+        _showPickupPin = false;
+        try { _pointAnnotMgr!.delete(_pickupAnnot!); } catch (_) {}
+        _pickupAnnot = null;
+      }
+    });
+  }
+
   /// Animated route draw: progressively reveals the 4-layer gold gloss route
   void _startAnimatedRouteDraw() {
     if (_routeDrawDone || _routePts.length < 2) return;
@@ -2403,7 +2437,105 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     } catch (_) {}
   }
 
-  /// Cinematic map intro: fit → tilt 55° + random bearing → route draw → glow
+  /// Erase the route behind the car: update remaining-route layers to show
+  /// only the portion ahead of the current driver position.
+  void _eraseRouteBehindCar() {
+    final now = DateTime.now();
+    if (now.difference(_lastRouteErase).inMilliseconds < 500) return;
+    _lastRouteErase = now;
+
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || _segDist.isEmpty || _routePts.length < 2) return;
+    if (_remainingRouteAnnot == null) return;
+
+    final dist = _traveledM;
+    if (dist <= 0) return; // nothing to erase yet
+
+    // Binary search for the segment the driver is on
+    int lo = 0, hi = _segDist.length - 1;
+    while (lo < hi - 1) {
+      final mid = (lo + hi) >> 1;
+      if (_segDist[mid] <= dist) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+
+    // Interpolate exact position on current segment
+    final segLen = _segDist[hi] - _segDist[lo];
+    final t = segLen > 0.01 ? ((dist - _segDist[lo]) / segLen).clamp(0.0, 1.0) : 0.0;
+    final a = _routePts[lo];
+    final b = _routePts[hi];
+    final curLat = a.latitude + (b.latitude - a.latitude) * t;
+    final curLng = a.longitude + (b.longitude - a.longitude) * t;
+
+    // Build remaining coords: interpolated current point + all points ahead
+    final remaining = <mapbox.Position>[
+      mapbox.Position(curLng, curLat),
+      ...List.generate(
+        _routePts.length - hi,
+        (i) => mapbox.Position(_routePts[hi + i].longitude, _routePts[hi + i].latitude),
+      ),
+    ];
+    if (remaining.length < 2) return;
+
+    final geom = mapbox.LineString(coordinates: remaining);
+    try {
+      // Update only the 3 visible layers (casing, main, shine), keep glow as full route
+      if (_routeCasingAnnot != null) mgr.update(_routeCasingAnnot!..geometry = geom);
+      if (_remainingRouteAnnot != null) mgr.update(_remainingRouteAnnot!..geometry = geom);
+      if (_routeShineAnnot != null) mgr.update(_routeShineAnnot!..geometry = geom);
+    } catch (_) {}
+  }
+
+  /// Thin faint approach line from driver to pickup when phase = arriving
+  /// and driver is more than 200m away. Removed on arrival.
+  DateTime _lastApproachUpdate = DateTime(2000);
+  bool _approachLineRemoved = false;
+  void _updateApproachLine() {
+    // Throttle: update every 500ms
+    final now = DateTime.now();
+    if (now.difference(_lastApproachUpdate).inMilliseconds < 500) return;
+    _lastApproachUpdate = now;
+
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null) return;
+
+    // Only show during arriving phase, when driver is far from pickup
+    final distToPickup = _hav(_animPos, widget.pickupLatLng) * 1609.34; // meters
+    final shouldShow = _phase == _TrackPhase.arriving && distToPickup > 200;
+
+    if (!shouldShow) {
+      // Remove existing approach line
+      if (_approachAnnot != null && !_approachLineRemoved) {
+        _approachLineRemoved = true;
+        try { mgr.delete(_approachAnnot!); } catch (_) {}
+        _approachAnnot = null;
+      }
+      return;
+    }
+
+    final geom = mapbox.LineString(coordinates: [
+      mapbox.Position(_animPos.longitude, _animPos.latitude),
+      mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude),
+    ]);
+
+    if (_approachAnnot == null) {
+      // Create approach line: thin, faint gold, dashed feel via low opacity
+      mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geom,
+        lineColor: const Color(0xFFD4AF37).withValues(alpha: 0.35).toARGB32(),
+        lineWidth: 2.5,
+        lineJoin: mapbox.LineJoin.ROUND,
+      )).then((annot) { _approachAnnot = annot; }).catchError((_) {});
+    } else {
+      try { mgr.update(_approachAnnot!..geometry = geom); } catch (_) {}
+    }
+  }
+
+  /// Map intro: fit camera flat → animated route draw → glow pulse.
+  /// Always top-down (pitch=0, bearing=0) — no cinematic tilt.
   Future<void> _startCinematicIntro() async {
     if (_cinematicDone || _map == null) {
       _startAnimatedRouteDraw();
@@ -2411,51 +2543,26 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     }
     _cinematicDone = true;
 
-    final rng = math.Random();
-    final degrees = 5.0 + rng.nextDouble() * 10.0;
-    _randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
+    // Keep camera flat always
+    _cinematicPitch = 0;
+    _cinematicBearing = 0;
 
-    // 1. Fit camera flat first
+    // 1. Fit camera flat
     _updateCameraForRoute();
     await Future.delayed(const Duration(milliseconds: 700));
     if (!mounted) return;
 
-    // 2. Tilt 0° → 55° + random bearing simultaneously (1200ms)
-    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
-    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
-      CurvedAnimation(parent: _tiltCtrl!, curve: Curves.easeInOutCubic),
-    );
-    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
-    _bearingAnim = Tween<double>(begin: 0.0, end: _randomBearing).animate(
-      CurvedAnimation(parent: _bearingCtrl!, curve: Curves.easeInOutCubic),
-    );
-    _tiltAnim!.addListener(_applyCinematicCamera);
-    _tiltCtrl!.forward(from: 0);
-    _bearingCtrl!.forward(from: 0);
-
-    // 3. Route draw starts 500ms into tilt
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
+    // 2. Animated route draw
     _startAnimatedRouteDraw();
 
-    // 4. Set final camera values for ongoing tracking
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-    _cinematicPitch = 55.0;
-    _cinematicBearing = _randomBearing;
-
-    // 5. Glow pulse after route draw
-    await Future.delayed(const Duration(milliseconds: 300));
+    // 3. Glow pulse after route draw
+    await Future.delayed(const Duration(milliseconds: 1300));
     if (!mounted) return;
     _startGlowPulse();
   }
 
   void _applyCinematicCamera() {
-    if (_map == null || !mounted) return;
-    _map!.setCamera(mapbox.CameraOptions(
-      pitch: _tiltAnim?.value,
-      bearing: _bearingAnim?.value,
-    ));
+    // No-op: camera stays top-down always
   }
 
   void _startGlowPulse() {

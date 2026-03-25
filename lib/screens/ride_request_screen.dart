@@ -2423,46 +2423,49 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ),
                   const SizedBox(height: 6),
 
-                  // Inline payment method row
+                  // Payment Method card — gold border
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: GestureDetector(
                       onTap: () => _showPaymentMethodPicker(c, option),
-                      child: Container(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+                          horizontal: 16,
+                          vertical: 14,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(14),
+                          color: const Color(0xFF111318),
+                          borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: c.gold.withValues(alpha: 0.15),
+                            color: const Color(0xFFD4AF37),
+                            width: 1.5,
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
+                              blurRadius: 12,
+                              spreadRadius: 1,
+                            ),
+                          ],
                         ),
                         child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            if (_selectedPaymentMethod == 'apple_pay' || _selectedPaymentMethod == 'google_pay')
-                              Expanded(child: _nativePayLogoWide(_selectedPaymentMethod))
-                            else ...[    
-                              _paymentLogoWidget(_selectedPaymentMethod, 28),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  _paymentLabel(_selectedPaymentMethod),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                            const Text(
+                              'Payment Method',
+                              style: TextStyle(
+                                color: Color(0xFFD4AF37),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.3,
                               ),
-                            ],
+                            ),
                             const SizedBox(width: 8),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              color: Colors.white.withValues(alpha: 0.4),
-                              size: 20,
+                            const Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              color: Color(0xFFD4AF37),
+                              size: 14,
                             ),
                           ],
                         ),
@@ -2471,7 +2474,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ),
                   const SizedBox(height: 10),
 
-                  // Start Ride button — disabled until ride selected
+                  // Request Ride button — black gloss with payment logo
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: AnimatedBuilder(
@@ -2481,76 +2484,93 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                         child: child,
                       ),
                       child: GestureDetector(
-                        onTap: option == null && !_isProcessingPayment
-                            ? () => _shakeCtrl.forward(from: 0)
-                            : null,
-                        child: SizedBox(
+                        onTap: option != null && !_isProcessingPayment
+                            ? () => _startRideDirectly(c, option)
+                            : option == null && !_isProcessingPayment
+                                ? () => _shakeCtrl.forward(from: 0)
+                                : null,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
                           width: double.infinity,
-                          height: 52,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeInOut,
-                            decoration: BoxDecoration(
-                              gradient: option != null && !_isProcessingPayment
-                                  ? LinearGradient(colors: [c.gold, c.goldLight])
-                                  : null,
-                              color: option == null
-                                  ? const Color(0xFF2A2A2A)
-                                  : _isProcessingPayment
-                                      ? c.gold.withValues(alpha: 0.5)
-                                      : null,
-                              borderRadius: BorderRadius.circular(26),
+                          height: 56,
+                          decoration: BoxDecoration(
+                            gradient: option != null && !_isProcessingPayment
+                                ? const LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Color(0xFF2A2A2A),
+                                      Color(0xFF0A0A0A),
+                                    ],
+                                  )
+                                : null,
+                            color: option != null && !_isProcessingPayment
+                                ? null
+                                : const Color(0xFF1A1F35),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: option != null
+                                  ? Colors.white.withValues(alpha: 0.1)
+                                  : Colors.white.withValues(alpha: 0.05),
+                              width: 1,
                             ),
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.transparent,
-                                shadowColor: Colors.transparent,
-                                foregroundColor: option != null
-                                    ? Colors.black
-                                    : Colors.white38,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(26),
-                                ),
-                              ),
-                              onPressed: option != null && !_isProcessingPayment
-                                  ? () => _startRideDirectly(c, option)
-                                  : null,
-                              child: _isProcessingPayment
-                                  ? const SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        color: Colors.black54,
-                                      ),
-                                    )
-                                  : AnimatedSwitcher(
-                                      duration: const Duration(milliseconds: 250),
-                                      child: FittedBox(
-                                        key: ValueKey(option?.id),
-                                        fit: BoxFit.scaleDown,
-                                        child: Text(
-                                          option != null
-                                              ? S
-                                                    .of(context)
-                                                    .requestRideWithPrice(
-                                                      option.priceEstimate
-                                                          .toStringAsFixed(2),
-                                                    )
-                                              : S.of(context).pickYourOption,
-                                          maxLines: 1,
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w700,
-                                            color: option != null
-                                                ? Colors.black
-                                                : Colors.white38,
+                            boxShadow: option != null && !_isProcessingPayment
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.5),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                    BoxShadow(
+                                      color: Colors.white.withValues(alpha: 0.05),
+                                      blurRadius: 1,
+                                      offset: const Offset(0, -1),
+                                    ),
+                                  ]
+                                : [],
+                          ),
+                          child: _isProcessingPayment
+                              ? const Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                )
+                              : Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                                  child: Row(
+                                    children: [
+                                      // LEFT — Payment logo
+                                      _buildPaymentLogo(),
+                                      const SizedBox(width: 12),
+                                      // CENTER — Text + price
+                                      Expanded(
+                                        child: AnimatedSwitcher(
+                                          duration: const Duration(milliseconds: 300),
+                                          child: Text(
+                                            option != null
+                                                ? 'Request Ride · \$${option.priceEstimate.toStringAsFixed(2)}'
+                                                : S.of(context).pickYourOption,
+                                            key: ValueKey(option?.id),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: option != null
+                                                  ? Colors.white
+                                                  : Colors.white38,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w700,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                            ),
-                          ),
+                                    ],
+                                  ),
+                                ),
                         ),
                       ),
                     ),
@@ -3881,6 +3901,91 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     }
     await _loadLinkedPayments();
     if (mounted) _showPaymentSheet(c, option);
+  }
+
+  // ── Payment logo for Request Ride button ──
+
+  Widget _buildPaymentLogo() {
+    switch (_selectedPaymentMethod) {
+      case 'apple_pay':
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.apple, color: Colors.white, size: 22),
+            SizedBox(width: 2),
+            Text(
+              'Pay',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ],
+        );
+      case 'google_pay':
+        return RichText(
+          text: const TextSpan(
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            children: [
+              TextSpan(text: 'G', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFEA4335))),
+              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFFBBC05))),
+              TextSpan(text: 'g', style: TextStyle(color: Color(0xFF4285F4))),
+              TextSpan(text: 'le', style: TextStyle(color: Color(0xFF34A853))),
+            ],
+          ),
+        );
+      case 'paypal':
+        return Container(
+          width: 28,
+          height: 28,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Color(0xFF003087),
+          ),
+          child: const Center(
+            child: Text(
+              'P',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        );
+      case 'credit_card':
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.credit_card_rounded,
+              color: Colors.white70,
+              size: 22,
+            ),
+            if (_savedCardLast4 != null) ...[
+              const SizedBox(width: 6),
+              Text(
+                '••••$_savedCardLast4',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ],
+        );
+      default:
+        return const Icon(
+          Icons.payment_rounded,
+          color: Colors.white38,
+          size: 22,
+        );
+    }
   }
 
   Future<void> _openPaymentAccountsAndReturn(

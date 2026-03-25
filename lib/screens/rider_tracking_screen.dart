@@ -1452,7 +1452,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   Widget _driverInitial() => Container(
-    color: const Color(0xFF1A1F35),
+    color: const Color(0xFF1A1A1A),
     child: Center(
       child: Text(
         widget.driverName.isNotEmpty ? widget.driverName[0].toUpperCase() : 'D',
@@ -1483,7 +1483,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.light,
         child: Scaffold(
-          backgroundColor: const Color(0xFF0A0D1A),
+          backgroundColor: Colors.black,
           appBar: _buildAppBar(),
           body: Column(
             children: [
@@ -1515,7 +1515,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         statusLabel = s.youHaveArrived;
     }
     return AppBar(
-      backgroundColor: const Color(0xFF0F1223),
+      backgroundColor: Colors.black,
       elevation: 0,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: 20),
@@ -1574,7 +1574,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     ].where((v) => v.isNotEmpty).join(' ');
 
     return Container(
-      color: const Color(0xFF0F1223),
+      color: Colors.black,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1612,27 +1612,31 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               const SizedBox(width: 12),
               // ETA badge
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1A1F35),
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
-                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Column(
                   children: [
                     Text(
                       '$_etaMinutes',
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: Colors.black,
                         fontSize: 22,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                     const Text(
                       'min',
-                      style: TextStyle(color: Colors.white54, fontSize: 11),
+                      style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -1675,35 +1679,26 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                       ),
                     ),
                     Positioned(
-                      bottom: 0, left: 4, right: 4,
+                      bottom: -2, right: -2,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        width: 18,
+                        height: 18,
                         decoration: BoxDecoration(
+                          shape: BoxShape.circle,
                           color: const Color(0xFFD4AF37),
-                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.black, width: 1.5),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.3),
-                              blurRadius: 4,
+                              color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
+                              blurRadius: 6,
+                              spreadRadius: 1,
                             ),
                           ],
                         ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.verified, color: Color(0xFF0A0E1A), size: 9),
-                            SizedBox(width: 1),
-                            Text(
-                              'Verified',
-                              style: TextStyle(
-                                color: Color(0xFF0A0E1A),
-                                fontSize: 7,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                          ],
+                        child: const Icon(
+                          Icons.check_rounded,
+                          color: Colors.black,
+                          size: 11,
                         ),
                       ),
                     ),
@@ -1797,7 +1792,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1A1F35),
+                          color: const Color(0xFF1A1A1A),
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
                         ),
@@ -1864,7 +1859,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       child: Container(
         width: 44, height: 44,
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1F35),
+          color: const Color(0xFF1A1A1A),
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
@@ -1876,7 +1871,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // ── Map Card (bottom — expanded) ──
   Widget _buildMapCard() {
     return Container(
-      color: const Color(0xFF0A0D1A),
+      color: Colors.black,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Container(
         decoration: BoxDecoration(
@@ -1952,7 +1947,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF0F1223).withValues(alpha: 0.92),
+                          color: Colors.black.withValues(alpha: 0.92),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: const Color(0xFFD4AF37).withValues(alpha: 0.4),

@@ -1260,13 +1260,39 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
     if (pts.isNotEmpty && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
     _buildRouteMarkers();
-    if (!_cinematicDone) {
-      _cinematicDone = true;
-      _startCinematicSequence(pts);
-    } else {
-      _labelsRevealed = true; // skip animation on subsequent route draws
-      _updateRouteAnnotation(pts);
-      _fitRoute(pts);
+    // Always replay cinematic — reset state and re-trigger
+    _resetCinematic();
+    _startCinematicSequence(pts);
+  }
+
+  /// Reset all cinematic animation state so sequence can replay from scratch.
+  Future<void> _resetCinematic() async {
+    _cinematicDone = false;
+    _labelsRevealed = false;
+
+    // Stop running controllers
+    _tiltCtrl?.stop();
+    _bearingCtrl?.stop();
+    _pinPopCtrl?.stop();
+    _labelPopCtrl?.stop();
+    _routeDrawTicker?.stop();
+    _glowPulseCtrl?.dispose();
+    _glowPulseCtrl = null;
+
+    // Clear existing route annotations so they redraw fresh
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr != null) {
+      if (_routeGlowAnnot != null) { try { await polyMgr.delete(_routeGlowAnnot!); } catch (_) {} _routeGlowAnnot = null; }
+      if (_routeCasingAnnot != null) { try { await polyMgr.delete(_routeCasingAnnot!); } catch (_) {} _routeCasingAnnot = null; }
+      if (_routeMainAnnot != null) { try { await polyMgr.delete(_routeMainAnnot!); } catch (_) {} _routeMainAnnot = null; }
+      if (_routeShineAnnot != null) { try { await polyMgr.delete(_routeShineAnnot!); } catch (_) {} _routeShineAnnot = null; }
+      if (_fullRouteGlow != null) { try { await polyMgr.delete(_fullRouteGlow!); } catch (_) {} _fullRouteGlow = null; }
+      if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+    }
+
+    // Reset camera to flat so tilt animates from 0°
+    if (_mapCtrl != null) {
+      _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: 0, bearing: 0));
     }
   }
 
@@ -1317,6 +1343,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
     // 5. Glow pulse after route complete
     _startGlowPulse(pts);
+
+    _cinematicDone = true;
   }
 
   void _applyMapCamera() {

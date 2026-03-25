@@ -1570,8 +1570,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
     final screenH = MediaQuery.of(context).size.height;
-    // bottom panel occupies ~50% of screen — push route into the upper half
-    final bottomPad = screenH * 0.52;
+    // bottom panel occupies ~45% of screen — push route into the upper portion
+    final bottomPad = screenH * 0.42;
     _mapCtrl!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
@@ -1946,7 +1946,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       case RiderPhase.previewRoute:
       case RiderPhase.selectingRide:
         final screenH = MediaQuery.of(context).size.height;
-        final h = (screenH * 0.60).clamp(340.0, 480.0);
+        final h = (screenH * 0.45).clamp(320.0, 420.0);
         return h + bottomPad;
       case RiderPhase.requesting:
       case RiderPhase.searchingDriver:
@@ -2136,7 +2136,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
         : s.selectedOption;
     final screenH = MediaQuery.of(context).size.height;
-    final sheetH = (screenH * 0.60).clamp(340.0, 480.0) + bottomPad;
+    final sheetH = (screenH * 0.45).clamp(320.0, 420.0) + bottomPad;
 
     return Positioned(
       left: 0,

@@ -564,9 +564,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
   }
 
-  /// Pre-render 24 frames of a pulsing golden dot with dual rings.
+  /// Pre-render 36 frames of a pulsing golden dot with dual rings.
   Future<void> _buildGoldenDotFrames() async {
-    const int frameCount = 24;
+    const int frameCount = 36;
     const double canvasSize = 160.0;
     final frames = <Uint8List>[];
 
@@ -667,7 +667,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   void _startGoldenDotAnimation() {
     _goldenDotTimer?.cancel();
-    _goldenDotTimer = Timer.periodic(const Duration(milliseconds: 65), (_) {
+    _goldenDotTimer = Timer.periodic(const Duration(milliseconds: 45), (_) {
       if (!mounted || _goldenDotFrames.isEmpty) return;
       _goldenDotFrame = (_goldenDotFrame + 1) % _goldenDotFrames.length;
       // Update the Mapbox annotation image to show the new frame
@@ -1020,22 +1020,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           // Feed GpsService for RTDB upload (800ms throttled)
           _gpsService.updatePosition(newLL, pos.heading, pos.speed);
 
-          // â”€â”€ Trim route behind driver (Google Maps style) â”€â”€
           _trimRouteBehindDriver(snappedLL);
 
-          // â”€â”€ Phase-aware camera following â”€â”€
-          if (_phase == _Phase.searching) {
-            // IDLE: stable top-down view, no tilt, no bearing follow (Uber style)
-            _map?.flyTo(
-              mapbox.CameraOptions(
-                center: mapbox.Point(coordinates: mapbox.Position(newLL.longitude, newLL.latitude)),
-                zoom: 15.5, bearing: 0, pitch: 0,
-              ),
-              mapbox.MapAnimationOptions(duration: 400),
-            );
-          } else if (_phase == _Phase.routeSummary) {
-            // Route summary: keep overview, don't follow driver
-            // Just update position & nav stats silently
+          // Phase-specific nav stats (camera handled by _onDriverAnimTick)
+          if (_phase == _Phase.routeSummary) {
             final dist = _hav(newLL, _dropoffLL);
             final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
             _navDist = dist;
@@ -1046,14 +1034,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               setState(() {});
             }
           } else if (_phase == _Phase.enRouteToPickup) {
-            // TRIP: Uber-style 2.5D follow — tilt 55, zoom 17.5
-            if (_cameraFollowing) {
-              _cameraBearing = _smoothedBearing; // proactive update for sprites
-              _animateToPosition(newLL, zoom: 17.5, bearing: _smoothedBearing, tilt: 55);
-            }
-            // Update turn-by-turn nav state
             _updateNavState(newLL);
-            // Update nav stats
             final dist = _hav(newLL, _pickupLL);
             final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
             final progress = _distToPickup > 0
@@ -1067,20 +1048,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               _lastNavSetState = now1;
               setState(() {});
             }
-            // â”€â”€ Proximity detection: auto-arrive at pickup â”€â”€
             if (dist < 0.05) {
-              // ~50 meters
               _onNearPickup();
             }
           } else if (_phase == _Phase.inTrip) {
-            // TRIP: Uber-style 2.5D follow — tilt 55, zoom 17.5
-            if (_cameraFollowing) {
-              _cameraBearing = _smoothedBearing; // proactive update for sprites
-              _animateToPosition(newLL, zoom: 17.5, bearing: _smoothedBearing, tilt: 55);
-            }
-            // Update turn-by-turn nav state
             _updateNavState(newLL);
-            // Update nav stats
             final dist = _hav(newLL, _dropoffLL);
             final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
             final progress = _tripDist > 0
@@ -1094,9 +1066,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               _lastNavSetState = now2;
               setState(() {});
             }
-            // â”€â”€ Proximity detection: auto-complete near dropoff â”€â”€
             if (dist < 0.05) {
-              // ~50 meters
               _onNearDropoff();
             }
           }
@@ -1458,26 +1428,38 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _animFrom.longitude + (_animTo.longitude - _animFrom.longitude) * t;
     _pos = LatLng(lat, lng);
 
-    // Super smooth bearing interpolation — gradual turn, no snap
+    // Super smooth bearing interpolation
     double diff = _targetHeading - _heading;
-    // Normalize to [-180, 180]
     while (diff > 180) { diff -= 360; }
     while (diff < -180) { diff += 360; }
-    // Use smoother interpolation factor for fluid rotation
     _heading += diff * (t * 0.25).clamp(0.0, 1.0);
 
-    // Update camera bearing for chase-cam during navigation
+    // Unified camera following (single source of truth for all phases)
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
-    if (isNav && _cameraFollowing) {
+    if (_phase == _Phase.searching) {
+      // Searching: smooth top-down follow using lerped position
+      _map?.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+              coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+          zoom: 15.5,
+          bearing: 0,
+          pitch: 0,
+        ),
+        mapbox.MapAnimationOptions(duration: 800),
+      );
+    } else if (isNav && _cameraFollowing) {
+      // Navigation: 2.5D chase cam using lerped position + bearing
       _cameraBearing = _heading;
       _map?.flyTo(
         mapbox.CameraOptions(
-          center: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-          zoom: 18.0,
+          center: mapbox.Point(
+              coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+          zoom: 17.5,
           bearing: _heading,
-          pitch: 60,
+          pitch: 55,
         ),
-        mapbox.MapAnimationOptions(duration: 400),
+        mapbox.MapAnimationOptions(duration: 600),
       );
     }
 
@@ -3602,8 +3584,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   duration: const Duration(milliseconds: 350),
                   curve: Curves.easeInOut,
                   opacity: _showAcceptedBottomCard ? 1.0 : 0.0,
-                  child: Container(
-                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                  child: SafeArea(
+                    top: false,
+                    child: Container(
+                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
                       color: const Color(0xFF0A0A0A),
@@ -3680,6 +3664,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         _buildAcceptLoadingDots(),
                       ],
                     ),
+                  ),
                   ),
                 ),
               ),

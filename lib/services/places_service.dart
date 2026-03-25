@@ -333,11 +333,17 @@ class PlacesService {
     final params = <String, String>{
       'access_token': token,
       'autocomplete': 'true',
-      'limit': '5',
+      'limit': '10',
       'language': 'en',
+      'fuzzyMatch': 'true',
+      'types': 'country,region,postcode,district,place,locality,neighborhood,address,poi',
+      'routing': 'true',
     };
     if (lat != null && lon != null) {
       params['proximity'] = '$lon,$lat';
+      // ~55 km bounding box around user to prioritise nearby results
+      params['bbox'] =
+          '${lon - 0.5},${lat - 0.5},${lon + 0.5},${lat + 0.5}';
     }
 
     final uri = Uri.https(

@@ -220,6 +220,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   int? _currentDriverId;
   String? _firestoreTripId;
   double _rideProgress = 0;
+  double _carImageAspectRatio = 2.0; // default 2:1 until loaded
   LatLng? _driverPosition;
   LatLng? _prevDriverPosition; // for smooth interpolation
   double _driverBearing = 0; // bearing toward destination
@@ -474,6 +475,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _loadPinIcons();
     // Car icon loading removed - no car markers on rider map
     _buildGoldDotFrames();
+    // Precache car images for the ride progress bar
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      for (final a in [
+        'assets/images/cruise_3.png',
+        'assets/images/cruise_6.png',
+        'assets/images/cruise_7.png',
+      ]) {
+        precacheImage(AssetImage(a), context);
+      }
+    });
     _initLocation();
     _applyStartupIntent();
     _loadLinkedPayments();
@@ -4269,6 +4281,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             });
 
             _setStage(RideStage.riding);
+            // Load car image dimensions for progress bar
+            if (_rides.isNotEmpty && _selectedRide < _rides.length) {
+              _loadCarImageInfo(_rideCarAsset(_rides[_selectedRide].name));
+            }
             await LocalDataService.addNotification(
               title: S.of(context).driverAssignedTitle,
               message: S
@@ -6728,6 +6744,110 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     return 'assets/images/cruise_7.png';
   }
 
+  /// Load actual pixel dimensions of car image and compute aspect ratio.
+  Future<void> _loadCarImageInfo(String assetPath) async {
+    final provider = AssetImage(assetPath);
+    final stream = provider.resolve(
+      ImageConfiguration(devicePixelRatio: MediaQuery.of(context).devicePixelRatio),
+    );
+    final completer = Completer<ui.Image>();
+    late ImageStreamListener listener;
+    listener = ImageStreamListener((ImageInfo info, bool _) {
+      completer.complete(info.image);
+      stream.removeListener(listener);
+    });
+    stream.addListener(listener);
+    final img = await completer.future;
+    if (mounted) {
+      setState(() {
+        _carImageAspectRatio = img.width / img.height;
+      });
+    }
+  }
+
+  // ── Progress bar constants ──
+  static const double _carHeight = 28.0;
+
+  double _carWidth(double aspectRatio) {
+    return (_carHeight * aspectRatio).clamp(32.0, 56.0);
+  }
+
+  /// Gold ride progress bar with car image at the tip of the fill.
+  Widget _buildRideProgressBar(double progress, String rideName) {
+    final carAsset = _rideCarAsset(rideName);
+    final carW = _carWidth(_carImageAspectRatio);
+    const barH = 8.0;
+    const carH = _carHeight;
+    const totalH = carH + 4.0; // car + small gap above bar
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: LayoutBuilder(
+        builder: (_, constraints) {
+          final barWidth = constraints.maxWidth;
+          final filledWidth = barWidth * progress.clamp(0.0, 1.0);
+          // Center of car aligns with tip of gold fill
+          final carX = (filledWidth - carW / 2).clamp(0.0, barWidth - carW);
+
+          return SizedBox(
+            height: totalH,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // Bar track at bottom
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    height: barH,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2A2A2A),
+                      borderRadius: BorderRadius.circular(barH / 2),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(barH / 2),
+                      child: FractionallySizedBox(
+                        widthFactor: progress.clamp(0.0, 1.0),
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Color(0xFFFFC200),
+                                Color(0xFFFFD700),
+                                Color(0xFFFFE566),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Car image at tip — bottom of car sits on top of bar
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 600),
+                  curve: Curves.easeInOut,
+                  left: carX,
+                  bottom: barH,
+                  child: Image.asset(
+                    carAsset,
+                    width: carW,
+                    height: carH,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    isAntiAlias: true,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   /// Accent color per ride type.
   Color _rideAccentColor(String name) {
     final n = name.toLowerCase();
@@ -7039,7 +7159,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _handle(),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+
+            // Ride progress bar with car at tip
+            if (isInTrip)
+              _buildRideProgressBar(_rideProgress, rideName),
+            const SizedBox(height: 10),
 
             // Route visual row
             Padding(

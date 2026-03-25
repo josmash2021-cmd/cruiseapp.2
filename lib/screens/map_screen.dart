@@ -7752,4 +7752,4 @@ class _RoadPerspectivePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RoadPerspectivePainter old) => old.isSelected != isSelected || old.color != color;
-}t)
+}

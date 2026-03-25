@@ -1654,6 +1654,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   @override
   Widget build(BuildContext context) {
+    final topPad = MediaQuery.of(context).padding.top;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -1673,14 +1675,63 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         value: SystemUiOverlayStyle.light,
         child: Scaffold(
           backgroundColor: const Color(0xFF111318),
-          appBar: _buildAppBar(),
-          body: Column(
+          body: Stack(
             children: [
-              const OfflineBanner(),
-              _buildInfoPanel(),
-              SizedBox(
-                height: MediaQuery.of(context).size.height * 0.45,
-                child: _buildMapCard(),
+              // LAYER 1: Full-screen map
+              Positioned.fill(child: _buildFullScreenMap()),
+              // LAYER 2: Back button
+              Positioned(
+                top: topPad + 10,
+                left: 16,
+                child: GestureDetector(
+                  onTap: () {
+                    _saveRideState();
+                    Navigator.of(context).pushAndRemoveUntil(
+                      PageRouteBuilder(
+                        pageBuilder: (_, __, ___) => const HomeScreen(),
+                        transitionsBuilder: (_, a, __, child) =>
+                            FadeTransition(opacity: a, child: child),
+                        transitionDuration: const Duration(milliseconds: 300),
+                      ),
+                      (_) => false,
+                    );
+                  },
+                  child: Container(
+                    width: 40, height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A1A).withValues(alpha: 0.9),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.4),
+                          blurRadius: 12,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: 18),
+                  ),
+                ),
+              ),
+              // LAYER 3: Driver info card (top)
+              Positioned(
+                top: topPad + 10,
+                left: 60,
+                right: 16,
+                child: _buildDriverCard(),
+              ),
+              // LAYER 4: Destination box (bottom)
+              Positioned(
+                bottom: bottomPad + 16,
+                left: 16,
+                right: 16,
+                child: _buildDestinationBox(),
+              ),
+              // Offline banner
+              Positioned(
+                top: topPad,
+                left: 0,
+                right: 0,
+                child: const OfflineBanner(),
               ),
             ],
           ),
@@ -1689,8 +1740,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     );
   }
 
-  // ── AppBar ──
-  PreferredSizeWidget _buildAppBar() {
+  // ── Driver info card (floats at top) ──
+  Widget _buildDriverCard() {
     final s = S.of(context);
     String statusLabel;
     switch (_phase) {
@@ -1703,58 +1754,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       case _TrackPhase.completed:
         statusLabel = s.youHaveArrived;
     }
-    return AppBar(
-      backgroundColor: const Color(0xFF111318),
-      elevation: 0,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: 20),
-        onPressed: () {
-          _saveRideState();
-          Navigator.of(context).pushAndRemoveUntil(
-            PageRouteBuilder(
-              pageBuilder: (_, __, ___) => const HomeScreen(),
-              transitionsBuilder: (_, a, __, child) =>
-                  FadeTransition(opacity: a, child: child),
-              transitionDuration: const Duration(milliseconds: 300),
-            ),
-            (_) => false,
-          );
-        },
-      ),
-      title: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 8, height: 8,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Color(0xFFD4AF37),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              statusLabel,
-              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-      centerTitle: true,
-    );
-  }
-
-  // ── Info Panel (top — fixed) ──
-  Widget _buildInfoPanel() {
-    final s = S.of(context);
-    final destAddr = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.completed
-        ? (widget.dropoffLabel.trim().isNotEmpty ? widget.dropoffLabel : s.destinationLabel)
-        : (widget.pickupLabel.trim().isNotEmpty ? widget.pickupLabel : s.pickupLocation);
-    final statusTag = _phase == _TrackPhase.arrived
-        ? s.yourDriverArrivedExcl
-        : (_phase == _TrackPhase.onTrip ? s.onTripToDestination : s.meetDriverAtPickup);
 
     final vehicleLabel = [
       widget.vehicleColor,
@@ -1763,89 +1762,54 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     ].where((v) => v.isNotEmpty).join(' ');
 
     return Container(
-      color: const Color(0xFF111318),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(14),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ROW 1 — Destination + ETA
+          // Status label
           Row(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      statusTag,
-                      style: const TextStyle(
-                        color: Color(0xFFD4AF37),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      destAddr,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+              Container(
+                width: 8, height: 8,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFFD4AF37),
                 ),
               ),
-              const SizedBox(width: 12),
-              // ETA badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      '$_etaMinutes',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const Text(
-                      'min',
-                      style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
-                    ),
-                  ],
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  statusLabel,
+                  style: const TextStyle(color: Color(0xFFD4AF37), fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.6),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Container(height: 1, color: Colors.white.withValues(alpha: 0.07)),
-          const SizedBox(height: 12),
-          // ROW 2 — Driver info
+          const SizedBox(height: 10),
+          // Driver row
           Row(
             children: [
               // Driver photo with verified badge
               SizedBox(
-                width: 52, height: 58,
+                width: 48, height: 54,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
                     Container(
-                      width: 48, height: 48,
+                      width: 44, height: 44,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(color: const Color(0xFFD4AF37), width: 2),
@@ -1860,7 +1824,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                         child: widget.driverPhotoUrl != null && widget.driverPhotoUrl!.isNotEmpty
                             ? Image.network(
                                 widget.driverPhotoUrl!,
-                                width: 44, height: 44,
+                                width: 40, height: 40,
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => _driverInitial(),
                               )
@@ -1870,31 +1834,19 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                     Positioned(
                       bottom: -2, right: -2,
                       child: Container(
-                        width: 18,
-                        height: 18,
+                        width: 16, height: 16,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: const Color(0xFFD4AF37),
                           border: Border.all(color: Colors.black, width: 1.5),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
-                              blurRadius: 6,
-                              spreadRadius: 1,
-                            ),
-                          ],
                         ),
-                        child: const Icon(
-                          Icons.check_rounded,
-                          color: Colors.black,
-                          size: 11,
-                        ),
+                        child: const Icon(Icons.check_rounded, color: Colors.black, size: 10),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               // Name + rating
               Expanded(
                 child: Column(
@@ -1902,15 +1854,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   children: [
                     Text(
                       widget.driverName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 2),
                     Row(
                       children: [
                         const Icon(Icons.star_rounded, color: Color(0xFFD4AF37), size: 14),
@@ -1924,7 +1872,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   ],
                 ),
               ),
-              // Plate + model
+              // Plate + vehicle
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -1940,25 +1888,25 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                           : '---',
                       style: const TextStyle(
                         color: Colors.black,
-                        fontSize: 14,
+                        fontSize: 13,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 1.5,
+                        letterSpacing: 1.2,
                       ),
                     ),
                   ),
                   if (vehicleLabel.isNotEmpty) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
                       vehicleLabel,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10),
                     ),
                   ],
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          // ROW 3 — Chat + Call + More
+          const SizedBox(height: 10),
+          // Action row: chat + call + more
           Row(
             children: [
               Expanded(
@@ -1979,9 +1927,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                     clipBehavior: Clip.none,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF161A21),
+                          color: const Color(0xFF262626),
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
                         ),
@@ -2024,12 +1972,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 ),
               ),
               const SizedBox(width: 8),
-              _buildPanelIconButton(
-                icon: Icons.phone_rounded,
-                onTap: () {},
-              ),
+              _buildCardIconBtn(icon: Icons.phone_rounded, onTap: () {}),
               const SizedBox(width: 8),
-              _buildPanelIconButton(
+              _buildCardIconBtn(
                 icon: Icons.more_horiz_rounded,
                 onTap: _phase == _TrackPhase.onTrip
                     ? _showCancelOnTripDialog
@@ -2042,129 +1987,186 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     );
   }
 
-  Widget _buildPanelIconButton({required IconData icon, required VoidCallback onTap}) {
+  Widget _buildCardIconBtn({required IconData icon, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 44, height: 44,
+        width: 40, height: 40,
         decoration: BoxDecoration(
-          color: const Color(0xFF1E222B),
+          color: const Color(0xFF262626),
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
-        child: Icon(icon, color: Colors.white60, size: 20),
+        child: Icon(icon, color: Colors.white60, size: 18),
       ),
     );
   }
 
-  // ── Map Card (bottom — expanded) ──
-  Widget _buildMapCard() {
+  // ── Destination + ETA box (floats at bottom) ──
+  Widget _buildDestinationBox() {
+    final s = S.of(context);
+    final destAddr = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.completed
+        ? (widget.dropoffLabel.trim().isNotEmpty ? widget.dropoffLabel : s.destinationLabel)
+        : (widget.pickupLabel.trim().isNotEmpty ? widget.pickupLabel : s.pickupLocation);
+    final statusTag = _phase == _TrackPhase.arrived
+        ? s.yourDriverArrivedExcl
+        : (_phase == _TrackPhase.onTrip ? s.onTripToDestination : s.meetDriverAtPickup);
+
     return Container(
-      color: const Color(0xFF111318),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            // Layer 1: Deep bottom shadow
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.6),
-              blurRadius: 32, spreadRadius: 4, offset: const Offset(0, 16),
-            ),
-            // Layer 2: Mid shadow
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 16, spreadRadius: 2, offset: const Offset(0, 8),
-            ),
-            // Layer 3: Gold accent glow
-            BoxShadow(
-              color: const Color(0xFFD4AF37).withValues(alpha: 0.15),
-              blurRadius: 24, spreadRadius: 2, offset: const Offset(0, 4),
-            ),
-            // Layer 4: Gold edge glow
-            BoxShadow(
-              color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
-              blurRadius: 40, spreadRadius: 4,
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Stack(
-            children: [
-              RepaintBoundary(
-                child: mapbox.MapWidget(
-                  key: const ValueKey('rider-map'),
-                  styleUri: MapboxConfig.styleDark,
-                  cameraOptions: mapbox.CameraOptions(
-                    center: mapbox.Point(
-                      coordinates: mapbox.Position(
-                        widget.pickupLatLng.longitude,
-                        widget.pickupLatLng.latitude,
-                      ),
-                    ),
-                    zoom: 14.0, pitch: 0.0,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  statusTag,
+                  style: const TextStyle(
+                    color: Color(0xFFD4AF37),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
                   ),
-                  textureView: true,
-                  onMapCreated: (ctrl) async {
-                    _map = ctrl;
-                    ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-                    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-                    ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-                    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                    _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
-                      below: 'road-label',
-                    );
-                    _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                    _updateAnnotations();
-                  },
-                  onStyleLoadedListener: (_) async {
-                    if (_map != null) await _applyDarkNavyGoldTheme(_map!);
-                  },
-                  onScrollListener: (_) {
-                    if (!_userMovedMap) setState(() => _userMovedMap = true);
-                  },
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  destAddr,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // ETA badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$_etaMinutes',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Text(
+                  'min',
+                  style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Full-screen Map ──
+  Widget _buildFullScreenMap() {
+    return Stack(
+      children: [
+        RepaintBoundary(
+          child: mapbox.MapWidget(
+            key: const ValueKey('rider-map'),
+            styleUri: MapboxConfig.styleDark,
+            cameraOptions: mapbox.CameraOptions(
+              center: mapbox.Point(
+                coordinates: mapbox.Position(
+                  widget.pickupLatLng.longitude,
+                  widget.pickupLatLng.latitude,
                 ),
               ),
-              // Resume button (gold pill)
-              if (_userMovedMap)
-                Positioned(
-                  bottom: 12, left: 0, right: 0,
-                  child: Center(
-                    child: GestureDetector(
-                      onTap: _recenter,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.92),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
-                            width: 1,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.3),
-                              blurRadius: 8,
-                            ),
-                          ],
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.my_location_rounded, color: Color(0xFFD4AF37), size: 14),
-                            SizedBox(width: 6),
-                            Text('Resume', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+              zoom: 14.0, pitch: 0.0,
+            ),
+            textureView: true,
+            onMapCreated: (ctrl) async {
+              _map = ctrl;
+              ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+              ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+              ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+              ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+              _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+                below: 'road-label',
+              );
+              _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+              _updateAnnotations();
+            },
+            onStyleLoadedListener: (_) async {
+              if (_map != null) await _applyDarkNavyGoldTheme(_map!);
+            },
+            onScrollListener: (_) {
+              if (!_userMovedMap) setState(() => _userMovedMap = true);
+            },
           ),
         ),
-      ),
+        // Resume button (gold pill)
+        if (_userMovedMap)
+          Positioned(
+            bottom: 12, left: 0, right: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: _recenter,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.my_location_rounded, color: Color(0xFFD4AF37), size: 14),
+                      SizedBox(width: 6),
+                      Text('Resume', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 

@@ -137,7 +137,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // â”€â”€ Pending ride offers (stacked cards, Spark-style) â”€â”€
   List<Map<String, dynamic>> _pendingOffers = [];
-  bool _offersExpanded = true;
+  // _offersExpanded removed — cards always visible via PageView
 
   // â”€â”€ Simulation Mode â”€â”€
   bool _isSimulationMode = false;
@@ -271,6 +271,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // ── Finding trips bar visibility ──
   bool _hideFindingBar = false;
 
+  // ── Offer PageView swipe state ──
+  final _offerPageCtrl = PageController(viewportFraction: 0.92);
+  int _currentOfferIndex = 0;
+  final Set<String> _expandedOfferIds = {};
+
   // -- Driver profile photo --
   String? _driverPhotoUrl;
 
@@ -373,6 +378,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _reFollowTimer?.cancel();
     _panelSheetCtrl.dispose();
     _earningsPageCtrl.dispose();
+    _offerPageCtrl.dispose();
     _routePulseCtrl?.dispose();
     _pulseCtrl?.dispose();
     _rippleCtrl?.dispose();
@@ -1610,11 +1616,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       final hadOffers = _pendingOffers.isNotEmpty;
       setState(() {
         _pendingOffers = offers;
+        _currentOfferIndex = _currentOfferIndex.clamp(0, offers.length - 1);
         // Hide finding bar when offers appear, show when all dismissed
         if (offers.isNotEmpty && !hadOffers) _hideFindingBar = true;
         if (offers.isEmpty && hadOffers) _hideFindingBar = false;
       });
       _preFetchOfferRoutes(offers);
+      // Auto-trigger cinematic route preview when first offer arrives
+      if (offers.isNotEmpty && !hadOffers) {
+        _autoTriggerRoutePreview(offers.first);
+      }
     } catch (e) {
       debugPrint('âŒ Poll error: $e');
     }
@@ -1766,7 +1777,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     HapticFeedback.heavyImpact();
 
-    // ── PHASE 1: Fade to "Viaje Aceptado" ──
+    // Immediately mark as accepted (visual feedback)
     setState(() {
       _acceptingCardId = oid;
       _offerAcceptState = _OfferAcceptState.accepted;
@@ -1775,7 +1786,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final offerId = r['offer_id'] as int?;
     final tripId = r['trip_id'] as int? ?? r['id'] as int?;
 
-    // Accept this offer via API (skip for simulated offers)
+    // Accept via API (fire-and-forget for speed, catch errors)
     if (!_isSimulationMode) {
       if (offerId != null && _driverId != null) {
         try {
@@ -1845,20 +1856,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     setState(() => _pendingOffers = []);
     _routeCache.clear();
+    _expandedOfferIds.clear();
     _pollT?.cancel();
     _nearPickupNotified = false;
     _nearDropoffNotified = false;
 
-    // ── PHASE 2: Wait for "Viaje Aceptado" to display ──
-    await Future.delayed(const Duration(milliseconds: 1200));
-    if (!mounted) return;
-
-    // ── PHASE 3: Fade to "Enrutando..." ──
-    setState(() => _offerAcceptState = _OfferAcceptState.routing);
-    await Future.delayed(const Duration(milliseconds: 800));
-    if (!mounted) return;
-
-    // ── PHASE 4: Reset state and navigate ──
+    // ── Navigate immediately — no artificial delay ──
     _offerAcceptState = _OfferAcceptState.normal;
     _acceptingCardId = null;
     _tappedCardIds.clear();
@@ -2715,6 +2718,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       null, null,
     ).then((cam) {
       if (mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
+    });
+  }
+
+  /// Auto-trigger cinematic route preview when first offer arrives.
+  /// Uses the same logic as card tap but runs automatically.
+  void _autoTriggerRoutePreview(Map<String, dynamic> offer) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _pendingOffers.isEmpty) return;
+      _onOfferCardTap(offer);
     });
   }
 
@@ -4208,124 +4220,146 @@ Widget _navHeader() {
     final cBorderC = Colors.white.withValues(alpha: 0.06);
     final acceptBg = _gold;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      constraints: BoxConstraints(
-        maxHeight: _offersExpanded
-            ? MediaQuery.of(context).size.height * 0.65
-            : 64,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+    final safeIdx = _currentOfferIndex.clamp(0, (_pendingOffers.length - 1).clamp(0, 999));
+    final currentOid = _pendingOffers.isNotEmpty
+        ? (_pendingOffers[safeIdx]['offer_id'] ?? _pendingOffers[safeIdx]['id'] ?? '').toString()
+        : '';
+    final isCardExpanded = _expandedOfferIds.contains(currentOid);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
               // â”€â”€ Tappable header: handle + title + chevron â”€â”€
-              GestureDetector(
-                onTap: () => setState(() => _offersExpanded = !_offersExpanded),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 10),
-                      Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            S.of(context).ridesAvailable(_pendingOffers.length),
-                            style: const TextStyle(
-                              color: _gold,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          AnimatedRotation(
-                            turns: _offersExpanded ? 0.5 : 0,
-                            duration: const Duration(milliseconds: 300),
-                            child: const Icon(
-                              Icons.keyboard_arrow_up_rounded,
-                              color: _gold,
-                              size: 20,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                    ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  Text(
+                    S.of(context).ridesAvailable(_pendingOffers.length),
+                    style: const TextStyle(
+                      color: _gold,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ),
-              // â”€â”€ Scrollable card list (hidden when collapsed) â”€â”€
-              if (_offersExpanded)
-                Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    itemCount: _pendingOffers.length,
-                    itemBuilder: (ctx, i) {
-                      final offer = _pendingOffers[i];
-                      final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
-                      final isAnimating = _animatingOfferId == oid;
-                      Widget card = _offerCard(
-                          offer,
-                          true,
-                          cCardBg,
-                          cCardBorder,
-                          cTextPrimary,
-                          cTextMuted,
-                          cRejectBg,
-                          cRejectText,
-                          acceptBg,
-                          cBorderC,
-                        );
-                      // Wrap with pulse + ripple when this card is tapped
-                      if (isAnimating && _pulseAnim != null) {
-                        card = AnimatedBuilder(
-                          animation: _pulseAnim!,
-                          builder: (_, child) => Transform.scale(
-                            scale: _pulseAnim!.value,
-                            child: child,
-                          ),
-                          child: card,
-                        );
-                      }
-                      return GestureDetector(
-                        onTap: () => _onOfferCardTap(offer),
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            card,
-                            if (_showRipple && isAnimating && _rippleCtrl != null)
-                              Positioned.fill(
-                                child: IgnorePointer(
-                                  child: AnimatedBuilder(
-                                    animation: _rippleCtrl!,
-                                    builder: (_, __) => CustomPaint(
-                                      painter: _OfferRipplePainter(
-                                        progress: _rippleCtrl!.value,
-                                        color: const Color(0xFFD4AF37),
-                                      ),
+            ),
+            // ── Horizontal swipeable offer cards ──
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              height: isCardExpanded ? 310 : 200,
+              child: PageView.builder(
+                controller: _offerPageCtrl,
+                onPageChanged: (index) {
+                  setState(() => _currentOfferIndex = index);
+                  HapticFeedback.selectionClick();
+                  if (index < _pendingOffers.length) {
+                    _autoTriggerRoutePreview(_pendingOffers[index]);
+                  }
+                },
+                itemCount: _pendingOffers.length,
+                itemBuilder: (ctx, i) {
+                  final offer = _pendingOffers[i];
+                  final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+                  final isAnimating = _animatingOfferId == oid;
+                  Widget card = _offerCard(
+                    offer,
+                    true,
+                    cCardBg,
+                    cCardBorder,
+                    cTextPrimary,
+                    cTextMuted,
+                    cRejectBg,
+                    cRejectText,
+                    acceptBg,
+                    cBorderC,
+                  );
+                  if (isAnimating && _pulseAnim != null) {
+                    card = AnimatedBuilder(
+                      animation: _pulseAnim!,
+                      builder: (_, child) => Transform.scale(
+                        scale: _pulseAnim!.value,
+                        child: child,
+                      ),
+                      child: card,
+                    );
+                  }
+                  return GestureDetector(
+                    onTap: () {
+                      final id = oid;
+                      setState(() {
+                        if (_expandedOfferIds.contains(id)) {
+                          _expandedOfferIds.remove(id);
+                        } else {
+                          _expandedOfferIds.add(id);
+                        }
+                      });
+                      _onOfferCardTap(offer);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          card,
+                          if (_showRipple && isAnimating && _rippleCtrl != null)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: AnimatedBuilder(
+                                  animation: _rippleCtrl!,
+                                  builder: (_, __) => CustomPaint(
+                                    painter: _OfferRipplePainter(
+                                      progress: _rippleCtrl!.value,
+                                      color: const Color(0xFFD4AF37),
                                     ),
                                   ),
                                 ),
                               ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            // ── Page indicator dots ──
+            if (_pendingOffers.length > 1)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(_pendingOffers.length, (i) {
+                    final active = i == _currentOfferIndex;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width: active ? 18 : 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: active ? _gold : Colors.white.withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    );
+                  }),
                 ),
+              ),
+              // â”€â”€ Scrollable card list (hidden when collapsed) â”€â”€
+
               // â”€â”€ "Finding trips" bar at the bottom â”€â”€
               ClipRect(
                 child: AnimatedSlide(
@@ -4390,7 +4424,6 @@ Widget _navHeader() {
                 ),
               ),
             ],
-          ),
     );
   }
 
@@ -4882,7 +4915,9 @@ Widget _navHeader() {
       // Subsample to ≤100 points so URL stays within Mapbox's 8192-char limit
       final step = allPts.length > 100 ? (allPts.length / 100).ceil() : 1;
       final sampled = <List<double>>[];
-      for (int k = 0; k < allPts.length; k += step) sampled.add(allPts[k]);
+      for (int k = 0; k < allPts.length; k += step) {
+        sampled.add(allPts[k]);
+      }
       if (sampled.last != allPts.last) sampled.add(allPts.last);
       final coords = sampled.map((p) => '${p[0].toStringAsFixed(5)},${p[1].toStringAsFixed(5)}').join(';');
       pathOverlay = 'path-4+3b82f6-1($coords)';
@@ -4939,8 +4974,10 @@ Widget _navHeader() {
       () => _buildOfferMapUrl(_pos!, pickupLL, dropoffLL),
     );
 
+    final isExpanded = _expandedOfferIds.contains(offerId);
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: deepBlack,
         borderRadius: BorderRadius.circular(22),
@@ -4949,23 +4986,22 @@ Widget _navHeader() {
           width: 1,
         ),
         boxShadow: [
-          // Gold-tinted 3D shadow
           BoxShadow(
-            color: luxGold.withValues(alpha: 0.15),
-            blurRadius: 28,
+            color: luxGold.withValues(alpha: 0.12),
+            blurRadius: 20,
             spreadRadius: -4,
-            offset: const Offset(0, 10),
+            offset: const Offset(0, 8),
           ),
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.60),
-            blurRadius: 32,
+            color: Colors.black.withValues(alpha: 0.50),
+            blurRadius: 24,
             spreadRadius: -2,
-            offset: const Offset(0, 12),
+            offset: const Offset(0, 10),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
+        padding: EdgeInsets.fromLTRB(16, isExpanded ? 14 : 12, 16, isExpanded ? 16 : 12),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 350),
           switchInCurve: Curves.easeOutCubic,
@@ -4990,6 +5026,7 @@ Widget _navHeader() {
                       tripEta: tripEta,
                       tripDistMi: tripDistMi,
                       dropoffAddr: dropoffAddr,
+                      isExpanded: isExpanded,
                     ),
         ),
       ),
@@ -5009,18 +5046,154 @@ Widget _navHeader() {
     required int tripEta,
     required double tripDistMi,
     required String dropoffAddr,
+    required bool isExpanded,
   }) {
     const luxGold = Color(0xFFD4AF37);
     const mutedGray = Color(0xFF9A9A9A);
-    final showStats = _tappedCardIds.contains(offerId);
     final totalMins = etaToPickup + tripEta;
     final totalMiles = distToPickupMi + tripDistMi;
 
+    // ── COMPACT LAYOUT (collapsed card, ~200px) ──
+    if (!isExpanded) {
+      return Column(
+        key: const ValueKey('compact'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Row 1: Fare + vehicle badge + rating + dismiss
+          Row(
+            children: [
+              Text(
+                '\$${fare.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  height: 1.0,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: luxGold.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: luxGold.withValues(alpha: 0.25),
+                    width: 0.5,
+                  ),
+                ),
+                child: Text(
+                  vehicleType,
+                  style: const TextStyle(
+                    color: luxGold,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.star_rounded, color: luxGold, size: 13),
+              const SizedBox(width: 2),
+              Text(
+                rating.toStringAsFixed(1),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => _rejectOffer(offer),
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.close_rounded,
+                      color: Colors.white.withValues(alpha: 0.40), size: 14),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Compact pickup/dropoff
+          Row(
+            children: [
+              const Icon(Icons.circle, color: luxGold, size: 7),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '$etaToPickup min · $pickupAddr',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Icon(Icons.square_rounded, color: mutedGray, size: 7),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '$tripEta min · $dropoffAddr',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Compact accept button
+          SizedBox(
+            width: double.infinity,
+            height: 42,
+            child: ElevatedButton(
+              onPressed: () => _acceptOffer(offer),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: luxGold,
+                foregroundColor: Colors.black,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                S.of(context).accept,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // ── EXPANDED LAYOUT (full details, ~310px) ──
     return Column(
-      key: const ValueKey('normal'),
+      key: const ValueKey('expanded'),
       mainAxisSize: MainAxisSize.min,
       children: [
-        // ── Header: person icon + "Cruise" + Exclusive badge + dismiss ──
+        // Header row
         Row(
           children: [
             const Icon(Icons.person_rounded, color: luxGold, size: 18),
@@ -5071,27 +5244,25 @@ Widget _navHeader() {
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
 
-        // ── Fare (large, centered) ──
-        Text(
-          '\$${fare.toStringAsFixed(2)}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 40,
-            fontWeight: FontWeight.w900,
-            height: 1.0,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 8),
-
-        // ── Star rating ──
+        // Fare + rating inline
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            Text(
+              '\$${fare.toStringAsFixed(2)}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 32,
+                fontWeight: FontWeight.w900,
+                height: 1.0,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(width: 12),
             const Icon(Icons.star_rounded, color: luxGold, size: 15),
-            const SizedBox(width: 4),
+            const SizedBox(width: 3),
             Text(
               rating.toStringAsFixed(2),
               style: const TextStyle(
@@ -5102,9 +5273,9 @@ Widget _navHeader() {
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
 
-        // ── Gold divider ──
+        // Gold divider
         Container(
           height: 1,
           decoration: BoxDecoration(
@@ -5117,9 +5288,9 @@ Widget _navHeader() {
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
 
-        // ── Pickup row: driver → pickup ──
+        // Pickup row
         _uberAddressRow(
           icon: Icons.circle,
           iconColor: luxGold,
@@ -5130,7 +5301,7 @@ Widget _navHeader() {
           darkMode: true,
         ),
         const SizedBox(height: 2),
-        // ── Dropoff row: pickup → dropoff ──
+        // Dropoff row
         _uberAddressRow(
           icon: Icons.square_rounded,
           iconColor: mutedGray,
@@ -5141,11 +5312,11 @@ Widget _navHeader() {
           darkMode: true,
         ),
 
-        // ── Long trip pill (conditional) ──
+        // Long trip pill
         if (tripEta >= 45) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
             decoration: BoxDecoration(
               color: luxGold.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(20),
@@ -5173,56 +5344,12 @@ Widget _navHeader() {
           ),
         ],
 
-        // ── Trip stats row (shown on card tap) ──
-        AnimatedSize(
-          duration: const Duration(milliseconds: 350),
-          curve: Curves.easeOutCubic,
-          child: showStats
-              ? AnimatedOpacity(
-                  opacity: showStats ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 300),
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 12, bottom: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1F35),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: luxGold.withValues(alpha: 0.25),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildStatItem(
-                          icon: Icons.access_time_rounded,
-                          value: '$totalMins min',
-                          label: 'Tiempo total',
-                        ),
-                        Container(
-                          width: 1,
-                          height: 32,
-                          color: Colors.white.withValues(alpha: 0.1),
-                        ),
-                        _buildStatItem(
-                          icon: Icons.straighten_rounded,
-                          value: '${totalMiles.toStringAsFixed(1)} mi',
-                          label: 'Distancia total',
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : const SizedBox.shrink(),
-        ),
+        const SizedBox(height: 12),
 
-        const SizedBox(height: 18),
-
-        // ── Accept button (full-width gold) ──
+        // Accept button
         SizedBox(
           width: double.infinity,
-          height: 52,
+          height: 46,
           child: ElevatedButton(
             onPressed: () => _acceptOffer(offer),
             style: ElevatedButton.styleFrom(

@@ -89,8 +89,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ── Map-first draggable sheet ──
   final DraggableScrollableController _sheetController = DraggableScrollableController();
   final GlobalKey _mapKey = GlobalKey();
-  static const double _kMinSheet = 0.13;
-  static const double _kMaxSheet = 1.0;
+  static const double _kMinSheet = 0.42;
+  static const double _kMidSheet = 0.72;
+  static const double _kMaxSheet = 0.92;
 
   // User profile data
   String _firstName = '';
@@ -900,15 +901,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
 
           // ── Draggable bottom sheet ──
-          DraggableScrollableSheet(
-            controller: _sheetController,
-            initialChildSize: _kMinSheet,
-            minChildSize: _kMinSheet,
-            maxChildSize: _kMaxSheet,
-            snap: true,
-            snapSizes: const [_kMinSheet, _kMaxSheet],
-            builder: (ctx, scrollCtrl) =>
-                _buildSheet(scrollCtrl, bottomPad),
+          RepaintBoundary(
+            child: DraggableScrollableSheet(
+              controller: _sheetController,
+              initialChildSize: _kMinSheet,
+              minChildSize: _kMinSheet,
+              maxChildSize: _kMaxSheet,
+              snap: true,
+              snapSizes: const [_kMinSheet, _kMidSheet, _kMaxSheet],
+              snapAnimationDuration: const Duration(milliseconds: 380),
+              builder: (ctx, scrollCtrl) =>
+                  _buildSheet(scrollCtrl, bottomPad),
+            ),
           ),
 
         ],
@@ -1121,8 +1125,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       builder: (context, child) {
         double size = _kMinSheet;
         try { size = _sheetController.size; } catch (_) {}
-        final frac = ((size - 0.85) / 0.15).clamp(0.0, 1.0);
-        final r = 30.0 * (1.0 - frac);
+        final frac = ((size - 0.85) / (_kMaxSheet - 0.85)).clamp(0.0, 1.0);
+        final r = 28.0 * (1.0 - frac);
         final topExtra = frac * topPad;
         return DecoratedBox(
           decoration: BoxDecoration(
@@ -1138,10 +1142,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.vertical(top: Radius.circular(r)),
-            child: SingleChildScrollView(
+            child: CustomScrollView(
               controller: sc,
-              physics: const ClampingScrollPhysics(),
-              child: Column(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              slivers: [
+                SliverToBoxAdapter(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // ── Top safe-area spacer when fully expanded ──
@@ -1163,14 +1170,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               // ── Greeting row (always visible in collapsed state) ──
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: _buildTopBar(),
+                child: RepaintBoundary(child: _buildTopBar()),
               ),
               const SizedBox(height: 24),
 
               // ── Hero CTA ("Where to?" / "Ride in progress") ── ONE card only
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: _buildHeroCTA(),
+                child: RepaintBoundary(child: _buildHeroCTA()),
               ),
 
               const SizedBox(height: 28),
@@ -1178,7 +1185,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               // ── Circular action buttons ──
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: _buildCircularActions(),
+                child: RepaintBoundary(child: _buildCircularActions()),
               ),
 
               const SizedBox(height: 36),
@@ -1253,7 +1260,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   _buildDockNav(context, botPad),
                   SizedBox(height: botPad + 12),
                 ],
-              ),
+              )),
+              ],
             ),
           ),
         );

@@ -1,4 +1,5 @@
 ﻿import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -75,7 +76,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
   List<_RideOption> _rides = [];
 
   // Payment
-  String _selectedPaymentMethod = 'google_pay';
+  String _selectedPaymentMethod = Platform.isIOS ? 'apple_pay' : 'google_pay';
   Set<String> _linkedPaymentMethods = {};
   String? _savedCardLast4;
   String? _savedCardBrand;
@@ -491,7 +492,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
         ? '${_savedCardBrand![0].toUpperCase()}${_savedCardBrand!.substring(1)} •••• $_savedCardLast4'
         : S.of(context).creditOrDebitCard;
     final methods = [
-      ('google_pay', 'Google Pay'),
+      if (Platform.isIOS) ('apple_pay', 'Apple Pay'),
+      if (Platform.isAndroid) ('google_pay', 'Google Pay'),
       ('credit_card', creditLabel),
       ('paypal', 'PayPal'),
     ];
@@ -618,6 +620,35 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
   }
 
   Widget _payLogo(String id, double size) {
+    if (id == 'apple_pay') {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.grey.shade700, width: 0.5),
+        ),
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.apple, color: Colors.white, size: size * 0.5),
+              const SizedBox(width: 1),
+              Text(
+                'Pay',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: size * 0.35,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (id == 'google_pay') {
       return Container(
         width: size,
@@ -665,6 +696,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen> {
   }
 
   String get _payLabel {
+    if (_selectedPaymentMethod == 'apple_pay') return 'Apple Pay';
     if (_selectedPaymentMethod == 'google_pay') return 'Google Pay';
     if (_selectedPaymentMethod == 'paypal') return 'PayPal';
     if (_savedCardLast4 != null && _savedCardBrand != null) {

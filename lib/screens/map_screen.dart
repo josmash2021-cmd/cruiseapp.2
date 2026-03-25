@@ -5181,8 +5181,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final walletLabel = isIOS ? 'Apple Pay' : 'Google Pay';
     final walletLogo = isIOS ? _applePayLogoWidget(36) : _googlePayLogoWidget(36);
     switch (id) {
+      case 'apple_pay':
+        return (label: 'Apple Pay', logoWidget: _applePayLogoWidget(36));
       case 'google_pay':
-        return (label: walletLabel, logoWidget: walletLogo);
+        return (label: 'Google Pay', logoWidget: _googlePayLogoWidget(36));
       case 'credit_card':
         if (_savedCardLast4 != null && _savedCardBrand != null) {
           return (
@@ -5377,7 +5379,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         : S.of(context).creditOrDebitCard;
     final isIOS = Platform.isIOS;
     final methods = [
-      ('google_pay', isIOS ? 'Apple Pay' : 'Google Pay'),
+      if (isIOS) ('apple_pay', 'Apple Pay'),
+      if (!isIOS) ('google_pay', 'Google Pay'),
       ('credit_card', creditLabel),
       ('paypal', 'PayPal'),
     ];

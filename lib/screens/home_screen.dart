@@ -42,6 +42,7 @@ import 'welcome_screen.dart';
 import 'account_deactivated_screen.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/user_profile_photo.dart';
+import '../widgets/verified_avatar.dart';
 import '../widgets/offline_banner.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -1115,31 +1116,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // Small avatar pill for the FAB area
   Widget _buildAvatarChip() {
-    final initials = '${_firstName.isNotEmpty ? _firstName[0] : ''}${_lastName.isNotEmpty ? _lastName[0] : ''}'.toUpperCase();
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: const Color(0xFF1A1A1A).withValues(alpha: 0.92),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipOval(
-        child: UserProfilePhoto(
-          photoUrl: _photoUrl ?? UserSession.photoUrlNotifier.value,
-          photoPath: _photoPath,
-          radius: 22,
-          fallbackName: '$_firstName $_lastName',
-          uid: UserSession.currentUid,
-        ),
-      ),
+    return VerifiedAvatar(
+      photoUrl: _photoUrl ?? UserSession.photoUrlNotifier.value,
+      photoPath: _photoPath,
+      radius: 22,
+      fallbackName: '$_firstName $_lastName',
+      uid: UserSession.currentUid,
+      isVerified: _isVerified,
     );
   }
 
@@ -1390,65 +1373,88 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ).push(slideFromRightRoute(const AccountScreen()));
             _loadSavedData();
           },
-          child: Container(
-            width: 44,
-            height: 44,
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              gradient: hasPhoto
-                  ? null
-                  : const LinearGradient(colors: [_gold, _goldLight]),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: _gold.withValues(alpha: 0.35),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  gradient: hasPhoto
+                      ? null
+                      : const LinearGradient(colors: [_gold, _goldLight]),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: _gold.withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: hasPhoto
-                ? (kIsWeb
-                      ? CachedNetworkImage(
-                          imageUrl: _photoPath!,
-                          cacheKey: UserSession.currentUid.isNotEmpty
-                              ? 'avatar_${UserSession.currentUid}'
-                              : null,
-                          fit: BoxFit.cover,
-                          width: 44,
-                          height: 44,
-                          fadeInDuration: const Duration(milliseconds: 200),
-                          key: ValueKey('${_photoPath}_${UserSession.currentUid}'),
-                        )
-                      : Image.file(
-                          File(_photoPath!),
-                          fit: BoxFit.cover,
-                          width: 44,
-                          height: 44,
-                          cacheWidth: 200,
-                          gaplessPlayback: true,
-                          key: ValueKey('${_photoPath}_${UserSession.currentUid}'),
-                          frameBuilder:
-                              (context, child, frame, wasSynchronouslyLoaded) {
-                                if (wasSynchronouslyLoaded) return child;
-                                return AnimatedOpacity(
-                                  opacity: frame == null ? 0.0 : 1.0,
-                                  duration: const Duration(milliseconds: 150),
-                                  curve: Curves.easeOutCubic,
-                                  child: child,
-                                );
-                              },
-                        ))
-                : Center(
-                    child: Text(
-                      displayInitial,
-                      style: const TextStyle(
-                        color: Colors.black87,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
+                child: hasPhoto
+                    ? (kIsWeb
+                          ? CachedNetworkImage(
+                              imageUrl: _photoPath!,
+                              cacheKey: UserSession.currentUid.isNotEmpty
+                                  ? 'avatar_${UserSession.currentUid}'
+                                  : null,
+                              fit: BoxFit.cover,
+                              width: 44,
+                              height: 44,
+                              fadeInDuration: const Duration(milliseconds: 200),
+                              key: ValueKey('${_photoPath}_${UserSession.currentUid}'),
+                            )
+                          : Image.file(
+                              File(_photoPath!),
+                              fit: BoxFit.cover,
+                              width: 44,
+                              height: 44,
+                              cacheWidth: 200,
+                              gaplessPlayback: true,
+                              key: ValueKey('${_photoPath}_${UserSession.currentUid}'),
+                              frameBuilder:
+                                  (context, child, frame, wasSynchronouslyLoaded) {
+                                    if (wasSynchronouslyLoaded) return child;
+                                    return AnimatedOpacity(
+                                      opacity: frame == null ? 0.0 : 1.0,
+                                      duration: const Duration(milliseconds: 150),
+                                      curve: Curves.easeOutCubic,
+                                      child: child,
+                                    );
+                                  },
+                            ))
+                    : Center(
+                        child: Text(
+                          displayInitial,
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+              ),
+              if (_isVerified)
+                Positioned(
+                  bottom: -1,
+                  right: -1,
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFFFD700),
+                      border: Border.all(
+                        color: Theme.of(context).scaffoldBackgroundColor,
+                        width: 1.5,
                       ),
                     ),
+                    child: const Icon(Icons.check, color: Colors.black, size: 9),
                   ),
+                ),
+            ],
           ),
         ),
       ],

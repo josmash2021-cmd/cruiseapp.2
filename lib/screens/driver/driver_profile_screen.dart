@@ -5,6 +5,7 @@ import '../../config/page_transitions.dart';
 import '../../config/driver_colors.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/user_profile_photo.dart';
 import 'driver_trip_history_screen.dart';
@@ -47,11 +48,13 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   String _journeyDuration = '0 mo';
 
   bool _loading = true;
+  bool _isVerified = false;
 
   @override
   void initState() {
     super.initState();
     _loadProfileData();
+    _loadVerifiedState();
     UserSession.photoNotifier.addListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
   }
@@ -71,6 +74,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     UserSession.photoNotifier.removeListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.removeListener(_onPhotoChanged);
     super.dispose();
+  }
+
+  Future<void> _loadVerifiedState() async {
+    final v = await LocalDataService.isIdentityVerified();
+    if (v && mounted) setState(() => _isVerified = true);
   }
 
   Future<void> _loadProfileData() async {
@@ -506,6 +514,24 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                   ),
                 ),
               ),
+              if (_isVerified)
+                Positioned(
+                  bottom: -1,
+                  right: -1,
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFFFD700),
+                      border: Border.all(
+                        color: Theme.of(context).scaffoldBackgroundColor,
+                        width: 2,
+                      ),
+                    ),
+                    child: const Icon(Icons.check, color: Colors.black, size: 15),
+                  ),
+                ),
             ],
           ),
           const SizedBox(width: 16),
@@ -524,22 +550,6 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                         letterSpacing: 0.5,
                       ),
                     ),
-                    if (_resolvedPhotoUrl != null &&
-                        _resolvedPhotoUrl!.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF1DA1F2),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.check,
-                          color: Colors.white,
-                          size: 14,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
                 const SizedBox(height: 8),

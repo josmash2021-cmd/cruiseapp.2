@@ -5,8 +5,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/page_transitions.dart';
 import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
+import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/user_profile_photo.dart';
+import '../../widgets/verified_avatar.dart';
 import '../splash_screen.dart';
 import '../help_screen.dart';
 import 'driver_vehicle_screen.dart';
@@ -48,6 +50,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   String? _photoUrl;
   String? _dispatchPassword;
   bool _profileLoaded = false;
+  bool _isVerified = false;
 
   late AnimationController _entranceCtrl;
   late Animation<double> _entranceAnim;
@@ -65,6 +68,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     );
     _loadCachedProfile(); // instant from SharedPreferences
     _loadProfile();       // refresh from API in background
+    _loadVerifiedState();
     UserSession.photoNotifier.addListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
   }
@@ -160,6 +164,11 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         _profileLoaded = true;
       });
     }
+  }
+
+  Future<void> _loadVerifiedState() async {
+    final v = await LocalDataService.isIdentityVerified();
+    if (v && mounted) setState(() => _isVerified = true);
   }
 
   @override
@@ -437,24 +446,13 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         child: Row(
           children: [
             // Avatar
-            Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(colors: [_gold, _goldLight]),
-                border: Border.all(
-                  color: _gold.withValues(alpha: 0.4),
-                  width: 2,
-                ),
-              ),
-              child: UserProfilePhoto(
+            VerifiedAvatar(
                 photoUrl: _resolvedPhotoUrl,
                 photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
                 radius: 30,
                 fallbackName: _driverName,
                 uid: UserSession.currentUid,
-              ),
+                isVerified: _isVerified,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -483,21 +481,6 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                                 ),
                               ),
                       ),
-                      if (_photoUrl != null && _photoUrl!.isNotEmpty) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF1DA1F2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.check,
-                            color: Colors.white,
-                            size: 12,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                   const SizedBox(height: 6),

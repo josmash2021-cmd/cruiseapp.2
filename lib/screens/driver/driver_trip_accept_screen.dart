@@ -236,31 +236,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               : _initialsFill(init),
           ),
         ),
-        // Gold "Verified" badge at bottom
+        // Gold verified badge at bottom-right
         Positioned(
-          bottom: -4, left: 0, right: 0,
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: _gold,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.40),
-                  blurRadius: 4,
-                )],
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.verified, size: 10, color: Colors.black),
-                  SizedBox(width: 2),
-                  Text('Verified',
-                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700,
-                      color: Colors.black)),
-                ],
+          bottom: -1,
+          right: -1,
+          child: Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _gold,
+              border: Border.all(
+                color: const Color(0xFF0A0A0A),
+                width: 2,
               ),
             ),
+            child: const Icon(Icons.check, color: Colors.black, size: 13),
           ),
         ),
       ],

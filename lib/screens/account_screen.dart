@@ -9,6 +9,7 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/animated_biometric_icon.dart';
 import '../widgets/user_profile_photo.dart';
+import '../widgets/verified_avatar.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
@@ -188,57 +189,13 @@ class _AccountScreenState extends State<AccountScreen> {
                     ),
                   ),
                   // Profile photo with verified badge
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
-                        width: 70,
-                        height: 70,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: c.surface,
-                          border: Border.all(
-                            color: _gold.withValues(alpha: 0.4),
-                            width: 2,
-                          ),
-                        ),
-                        child: ClipOval(
-                          child: UserProfilePhoto(
-                            photoUrl: photoUrl,
-                            photoPath: photoPath,
-                            radius: 35,
-                            fallbackName: fullName,
-                            uid: _user?['userId'],
-                          ),
-                        ),
-                      ),
-                      if (_isVerified)
-                        Positioned(
-                          bottom: -2,
-                          right: -2,
-                          child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: c.bg,
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.all(1),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: const Color(
-                                  0xFFE8C547,
-                                ).withValues(alpha: 0.15),
-                              ),
-                              child: const Icon(
-                                Icons.verified_rounded,
-                                color: Color(0xFFE8C547),
-                                size: 18,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
+                  VerifiedAvatar(
+                    photoUrl: photoUrl,
+                    photoPath: photoPath,
+                    radius: 35,
+                    fallbackName: fullName,
+                    uid: _user?['userId'],
+                    isVerified: _isVerified,
                   ),
                 ],
               ),

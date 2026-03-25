@@ -5540,16 +5540,6 @@ Widget _navHeader() {
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                const Icon(Icons.verified_rounded, color: _gold, size: 13),
-                                const SizedBox(width: 3),
-                                const Text(
-                                  'Verified',
-                                  style: TextStyle(
-                                    color: _gold, fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
                               ],
                             ),
                           ],

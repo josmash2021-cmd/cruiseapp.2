@@ -3530,127 +3530,157 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   itemBuilder: (context, i) {
                     final ride = _rides[i];
                     final selected = i == _selectedRide;
+                    final accent = _rideAccentColor(ride.name);
+                    final badgeInfo = _rideBadgeInfo(ride.name);
+
                     return BouncingButton(
                       scaleFactor: 0.96,
                       onPressed: () => setState(() => _selectedRide = i),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 250),
                         curve: Curves.easeOutCubic,
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        height: 140,
                         decoration: BoxDecoration(
-                          color: selected ? _c.surface : Colors.transparent,
+                          color: selected ? const Color(0xFF1A1F2E) : const Color(0xFF111318),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: selected ? _gold : _c.border.withValues(alpha: 0.5),
+                            color: selected ? accent.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.07),
                             width: selected ? 1.5 : 1.0,
                           ),
                           boxShadow: selected
-                              ? [
-                                  BoxShadow(
-                                    color: _gold.withValues(alpha: 0.08),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 4),
-                                  )
-                                ]
+                              ? [BoxShadow(color: accent.withValues(alpha: 0.15), blurRadius: 16, spreadRadius: 1)]
                               : null,
                         ),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 84,
-                              height: 52,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: _c.isDark
-                                      ? RadialGradient(
-                                          colors: [
-                                            Colors.white.withValues(alpha: selected ? 0.18 : 0.10),
-                                            Colors.white.withValues(alpha: selected ? 0.06 : 0.02),
-                                            Colors.transparent,
-                                          ],
-                                          stops: const [0.0, 0.55, 1.0],
-                                          radius: 0.8,
-                                        )
-                                      : null,
-                                ),
-                                child: Image.asset(
-                                  _rideCarAsset(ride.name),
-                                  fit: BoxFit.contain,
-                                  filterQuality: FilterQuality.high,
-                                  cacheWidth: 200,
-                                  errorBuilder: (ctx, err, st) => Center(
-                                    child: Text(
-                                      ride.vehicle,
-                                      style: TextStyle(
-                                        color: _c.textSecondary,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Row(
+                            children: [
+                              // LEFT — Info section
+                              Expanded(
+                                flex: 5,
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(
-                                        ride.name,
-                                        style: TextStyle(
-                                          color: _c.textPrimary,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 18,
+                                      // Badge
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: badgeInfo.$3,
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(badgeInfo.$2, color: badgeInfo.$4, size: 11),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              badgeInfo.$1,
+                                              style: TextStyle(color: badgeInfo.$4, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                      if (ride.promoted) ...[
-                                        const SizedBox(width: 6),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 1,
+                                      // Title + description
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _rideDescription(ride.name),
+                                            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, height: 1.25),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                          decoration: BoxDecoration(
-                                            color: _gold.withValues(alpha: 0.2),
-                                            borderRadius: BorderRadius.circular(
-                                              20,
-                                            ),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            _rideFeatures(ride.name),
+                                            style: TextStyle(color: accent.withValues(alpha: 0.75), fontSize: 11, fontWeight: FontWeight.w500),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                          child: Text(
-                                            S.of(context).fasterTag,
-                                            style: const TextStyle(
-                                              color: _gold,
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ],
                                   ),
-                                  Text(
-                                    ride.eta,
-                                    style: TextStyle(
-                                      color: _c.textSecondary,
-                                      fontSize: 14,
+                                ),
+                              ),
+                              // RIGHT — Car + road
+                              Expanded(
+                                flex: 4,
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    // 3D road perspective
+                                    Positioned.fill(
+                                      child: CustomPaint(
+                                        painter: _RoadPerspectivePainter(color: accent, isSelected: selected),
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                    // Car image floating above road
+                                    Positioned(
+                                      bottom: 12,
+                                      left: -8,
+                                      right: 4,
+                                      child: Transform(
+                                        alignment: Alignment.center,
+                                        transform: Matrix4.identity()
+                                          ..setEntry(3, 2, 0.001)
+                                          ..rotateY(-0.15),
+                                        child: Image.asset(
+                                          _rideCarAsset(ride.name),
+                                          height: 75,
+                                          fit: BoxFit.contain,
+                                          filterQuality: FilterQuality.high,
+                                          cacheWidth: 240,
+                                          errorBuilder: (_, __, ___) => Icon(
+                                            Icons.directions_car_rounded,
+                                            size: 48,
+                                            color: _c.textSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    // Price top-right
+                                    Positioned(
+                                      top: 12,
+                                      right: 12,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            ride.price,
+                                            style: TextStyle(color: accent, fontSize: 16, fontWeight: FontWeight.w800),
+                                          ),
+                                          const Text(
+                                            'est. fare',
+                                            style: TextStyle(color: Colors.white38, fontSize: 10),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Checkmark when selected
+                                    if (selected)
+                                      Positioned(
+                                        bottom: 12,
+                                        right: 12,
+                                        child: Container(
+                                          width: 22,
+                                          height: 22,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: accent,
+                                          ),
+                                          child: const Icon(Icons.check_rounded, color: Colors.black, size: 14),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            Text(
-                              ride.price,
-                              style: TextStyle(
-                                color: _c.textPrimary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 21,
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -6726,6 +6756,38 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     return 'assets/images/cruise_7.png';
   }
 
+  /// Accent color per ride type.
+  Color _rideAccentColor(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('vip')) return const Color(0xFFD4AF37);
+    if (n.contains('comfort')) return const Color(0xFF2ECC71);
+    return Colors.white;
+  }
+
+  /// Badge info: (label, icon, bgColor, textColor)
+  (String, IconData, Color, Color) _rideBadgeInfo(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('vip')) return ('VIP', Icons.star_rounded, const Color(0xFFD4AF37), Colors.black);
+    if (n.contains('comfort')) return ('COMFORT', Icons.eco_rounded, const Color(0xFF1A3A2A), const Color(0xFF2ECC71));
+    return ('PREMIUM', Icons.diamond_rounded, const Color(0xFF2A2F45), Colors.white);
+  }
+
+  /// Card description per ride type.
+  String _rideDescription(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('vip')) return 'Luxury SUV with premium amenities';
+    if (n.contains('comfort')) return 'Reliable ride at great value';
+    return 'Elegant sedan for any occasion';
+  }
+
+  /// Card features per ride type.
+  String _rideFeatures(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('vip')) return 'Spacious • Leather • Snacks & Drinks';
+    if (n.contains('comfort')) return 'Clean • Safe • Efficient';
+    return 'Comfort • Climate • Charger';
+  }
+
   /// Driver info card shown when driver is found
   Widget _matchingDriverCard() {
     // Pick the right top-view car image based on ride type
@@ -7624,4 +7686,70 @@ class _AnimatedSearchTextState extends State<_AnimatedSearchText> {
   }
 }
 
-// Map styles are now in config/map_styles.dart (MapStyles.dark / MapStyles.light)
+// Map styles are now in config/map_styles.dart (MapStyles.dark / MapStyles.ligh
+
+/// 3D perspective road painted under ride card car images.
+class _RoadPerspectivePainter extends CustomPainter {
+  final Color color;
+  final bool isSelected;
+
+  _RoadPerspectivePainter({required this.color, required this.isSelected});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Road surface (trapezoid)
+    final roadPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          const Color(0xFF1A1A2E).withValues(alpha: 0.0),
+          const Color(0xFF0D0D1A).withValues(alpha: 0.8),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    final roadPath = Path()
+      ..moveTo(size.width * 0.2, size.height * 0.3)
+      ..lineTo(size.width * 0.8, size.height * 0.3)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(roadPath, roadPaint);
+
+    // Center dashes (perspective)
+    final dashPaint = Paint()
+      ..color = color.withValues(alpha: isSelected ? 0.4 : 0.15)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    for (int i = 0; i < 4; i++) {
+      final t = i / 4.0;
+      final nextT = (i + 0.5) / 4.0;
+      final y1 = size.height * 0.35 + (size.height * 0.65 * t);
+      final y2 = size.height * 0.35 + (size.height * 0.65 * nextT);
+      canvas.drawLine(Offset(size.width * 0.5, y1), Offset(size.width * 0.5, y2), dashPaint);
+    }
+
+    // Edge lines
+    final edgePaint = Paint()
+      ..color = color.withValues(alpha: isSelected ? 0.3 : 0.1)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(Offset(size.width * 0.1, size.height * 0.3), Offset(0, size.height), edgePaint);
+    canvas.drawLine(Offset(size.width * 0.9, size.height * 0.3), Offset(size.width, size.height), edgePaint);
+
+    // Glow when selected
+    if (isSelected) {
+      final glowPaint = Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(0, 0.5),
+          radius: 0.8,
+          colors: [color.withValues(alpha: 0.15), color.withValues(alpha: 0.0)],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), glowPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RoadPerspectivePainter old) => old.isSelected != isSelected || old.color != color;
+}t)

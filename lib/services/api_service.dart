@@ -616,7 +616,7 @@ class ApiService {
         Uri.parse('$_baseUrl/auth/check-exists'),
         headers: _jsonHeaders(),
         body: jsonEncode(payload),
-      );
+      ).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
         return body['exists'] == true;

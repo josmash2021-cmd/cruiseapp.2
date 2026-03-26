@@ -80,7 +80,7 @@ class EmailService {
             'code': code,
           },
         }),
-      );
+      ).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
         debugPrint('✅ Verification code sent to $toEmail');

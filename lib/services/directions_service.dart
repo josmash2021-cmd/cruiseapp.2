@@ -177,30 +177,41 @@ class DirectionsService {
 
     debugPrint('[Route] Fetching route: origin=${origin.latitude},${origin.longitude} → dest=${destination.latitude},${destination.longitude}');
 
-    final data = await _requestDirectionsWithFallbacks(
+    // Launch all three providers in PARALLEL — take the first success
+    final googleFuture = _requestDirectionsWithFallbacks(
       origin: origin,
       destination: destination,
-    );
-    if (data == null) {
-      debugPrint('[Route] Google Directions failed, trying OSRM…');
-      // Try OSRM first, then Mapbox Directions API
-      final osrm = await _requestOsrmRoute(origin: origin, destination: destination);
-      if (osrm != null) {
-        debugPrint('[Route] OSRM returned ${osrm.points.length} points. First: ${osrm.points.first} Last: ${osrm.points.last}');
-        _routeCache[key] = osrm;
-        _cacheTimes[key] = DateTime.now();
-        return osrm;
-      }
-      debugPrint('[Route] OSRM failed, trying Mapbox…');
-      final mbx = await _requestMapboxRoute(origin: origin, destination: destination);
-      if (mbx != null) {
-        debugPrint('[Route] Mapbox returned ${mbx.points.length} points. First: ${mbx.points.first} Last: ${mbx.points.last}');
-        _routeCache[key] = mbx;
-        _cacheTimes[key] = DateTime.now();
-      }
-      return mbx;
-    }
+    ).then((data) {
+      if (data == null) return null;
+      return _parseGoogleRoute(data, origin, destination);
+    }).timeout(const Duration(seconds: 8), onTimeout: () => null);
 
+    final osrmFuture = _requestOsrmRoute(origin: origin, destination: destination)
+        .timeout(const Duration(seconds: 8), onTimeout: () => null);
+
+    final mapboxFuture = _requestMapboxRoute(origin: origin, destination: destination)
+        .timeout(const Duration(seconds: 8), onTimeout: () => null);
+
+    // Wait for all, take the first non-null result (prefer Google > OSRM > Mapbox)
+    final results = await Future.wait([googleFuture, osrmFuture, mapboxFuture]);
+    final result = results[0] ?? results[1] ?? results[2];
+
+    if (result != null) {
+      debugPrint('[Route] Got route with ${result.points.length} points');
+      _routeCache[key] = result;
+      _cacheTimes[key] = DateTime.now();
+      return result;
+    }
+    debugPrint('[Route] All providers failed');
+    return null;
+  }
+
+  /// Parse a Google Directions JSON response into a RouteResult.
+  RouteResult? _parseGoogleRoute(
+    Map<String, dynamic> data,
+    LatLng origin,
+    LatLng destination,
+  ) {
     final routes = data['routes'] as List?;
     if (routes == null || routes.isEmpty) return null;
 
@@ -264,7 +275,7 @@ class DirectionsService {
       final validated = _validatePoints(detailedPoints);
       final anchored = _anchorRoutePoints(validated, origin, destination);
       debugPrint('[Route] Google steps → ${anchored.length} points. First: ${anchored.first} Last: ${anchored.last}');
-      final result = RouteResult(
+      return RouteResult(
         points: anchored,
         distanceText: distanceText,
         distanceMeters: distanceMeters,
@@ -272,9 +283,6 @@ class DirectionsService {
         startAddress: startAddress,
         endAddress: endAddress,
       );
-      _routeCache[key] = result;
-      _cacheTimes[key] = DateTime.now();
-      return result;
     }
 
     final overview = route['overview_polyline'];
@@ -286,7 +294,7 @@ class DirectionsService {
     final anchored = _anchorRoutePoints(validated, origin, destination);
     debugPrint('[Route] Google overview → ${anchored.length} points. First: ${anchored.first} Last: ${anchored.last}');
 
-    final result = RouteResult(
+    return RouteResult(
       points: anchored,
       distanceText: distanceText,
       distanceMeters: distanceMeters,
@@ -294,9 +302,6 @@ class DirectionsService {
       startAddress: startAddress,
       endAddress: endAddress,
     );
-    _routeCache[key] = result;
-    _cacheTimes[key] = DateTime.now();
-    return result;
   }
 
   Future<RouteResult?> _requestOsrmRoute({

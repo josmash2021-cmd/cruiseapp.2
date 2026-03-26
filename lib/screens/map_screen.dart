@@ -185,7 +185,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   // Gold animated location dot
   final GoldLocationDot _goldDot = GoldLocationDot();
-  mapbox.PointAnnotation? _goldDotAnnot;
 
   /// Toggle state for the recenter (my_location) button.
   /// false = next tap centers on pickup at default zoom
@@ -396,8 +395,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (!mounted) return;
     // Refresh annotations with new icon bytes
     if (_currentPosition != null) _setPickupAnnotation(_currentPosition!);
-  }
-
   }
 
   Future<void> _applyStartupIntent() async {

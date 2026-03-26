@@ -169,6 +169,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // ── Route loading: hide idle state while route is being fetched ──
   bool _fetchingRoute = false;
 
+  // ── Options loaded: tracks when ride options are ready (max 1s shimmer) ──
+  bool _optionsLoaded = false;
+  Timer? _shimmerTimeoutTimer;
+
   // ── Price shimmer while waiting for real route ──
   late AnimationController _priceShimmerCtrl;
 
@@ -227,6 +231,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat();
+
+    // Max 1 second shimmer timeout — force show options after 1s
+    _shimmerTimeoutTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted && !_optionsLoaded) {
+        setState(() => _optionsLoaded = true);
+      }
+    });
 
     _shakeCtrl = AnimationController(
       vsync: this,
@@ -982,6 +993,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   @override
   void dispose() {
+    _shimmerTimeoutTimer?.cancel();
     _searchMapTimer?.cancel();
     _splashTimer?.cancel();
     _simulatedDriverTimer?.cancel();
@@ -1129,6 +1141,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         if (s.route != null && s.route!.points.length > 2) {
           _fetchingRoute = false;
           _drawRoute();
+        }
+        // Mark options as loaded when rideOptions arrive
+        if (s.rideOptions.isNotEmpty && !_optionsLoaded) {
+          _shimmerTimeoutTimer?.cancel();
+          setState(() => _optionsLoaded = true);
         }
         // Auto-select ride option from home screen card tap
         if (!_didAutoSelectRide &&
@@ -2509,113 +2526,130 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ),
                   const SizedBox(height: 6),
 
-                  // Payment Method — dark gray fill
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: GestureDetector(
-                      onTap: () => _showPaymentMethodPicker(c, option),
-                      child: Container(
-                        width: double.infinity,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF2A2A2A),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Payment Method',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.2,
-                              ),
-                            ),
-                            SizedBox(width: 6),
-                            Icon(
-                              Icons.chevron_right,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Request Ride button — flat 2D, gold border
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: AnimatedBuilder(
-                      animation: _shakeAnim,
-                      builder: (_, child) => Transform.translate(
-                        offset: Offset(_shakeAnim.value, 0),
-                        child: child,
-                      ),
-                      child: GestureDetector(
-                        onTap: option != null && !_isProcessingPayment
-                            ? () => _startRideDirectly(c, option)
-                            : option == null && !_isProcessingPayment
-                                ? () => _shakeCtrl.forward(from: 0)
-                                : null,
-                        child: Container(
-                          width: double.infinity,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0D0D0D),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: option != null
-                                  ? const Color(0xFFFFD700)
-                                  : const Color(0xFFFFD700).withValues(alpha: 0.3),
-                              width: 1.5,
-                            ),
-                          ),
-                          child: _isProcessingPayment
-                              ? const Center(
-                                  child: SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                )
-                              : Padding(
+                  // Payment Method + Request Ride buttons — hidden during shimmer, fade in when ready
+                  AnimatedOpacity(
+                    opacity: _optionsLoaded ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      child: _optionsLoaded
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Payment Method — dark gray fill
+                                Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                                  child: Row(
-                                    children: [
-                                      _buildPaymentLogo(),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: AnimatedSwitcher(
-                                          duration: const Duration(milliseconds: 300),
-                                          child: Text(
-                                            option != null
-                                                ? 'Pay · \$${option.priceEstimate.toStringAsFixed(2)}'
-                                                : S.of(context).pickYourOption,
-                                            key: ValueKey(option?.id),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
+                                  child: GestureDetector(
+                                    onTap: () => _showPaymentMethodPicker(c, option),
+                                    child: Container(
+                                      width: double.infinity,
+                                      height: 52,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF2A2A2A),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      child: const Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            'Payment Method',
                                             style: TextStyle(
-                                              color: option != null
-                                                  ? Colors.white
-                                                  : Colors.white38,
-                                              fontSize: 16,
+                                              color: Colors.white,
+                                              fontSize: 15,
                                               fontWeight: FontWeight.w700,
+                                              letterSpacing: 0.2,
                                             ),
                                           ),
-                                        ),
+                                          SizedBox(width: 6),
+                                          Icon(
+                                            Icons.chevron_right,
+                                            color: Colors.white,
+                                            size: 18,
+                                          ),
+                                        ],
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ),
-                        ),
-                      ),
+                                const SizedBox(height: 10),
+
+                                // Request Ride button — flat 2D, gold border
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                                  child: AnimatedBuilder(
+                                    animation: _shakeAnim,
+                                    builder: (_, child) => Transform.translate(
+                                      offset: Offset(_shakeAnim.value, 0),
+                                      child: child,
+                                    ),
+                                    child: GestureDetector(
+                                      onTap: option != null && !_isProcessingPayment
+                                          ? () => _startRideDirectly(c, option)
+                                          : option == null && !_isProcessingPayment
+                                              ? () => _shakeCtrl.forward(from: 0)
+                                              : null,
+                                      child: Container(
+                                        width: double.infinity,
+                                        height: 56,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF0D0D0D),
+                                          borderRadius: BorderRadius.circular(14),
+                                          border: Border.all(
+                                            color: option != null
+                                                ? const Color(0xFFFFD700)
+                                                : const Color(0xFFFFD700).withValues(alpha: 0.3),
+                                            width: 1.5,
+                                          ),
+                                        ),
+                                        child: _isProcessingPayment
+                                            ? const Center(
+                                                child: SizedBox(
+                                                  width: 24,
+                                                  height: 24,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2.5,
+                                                    color: Colors.white70,
+                                                  ),
+                                                ),
+                                              )
+                                            : Padding(
+                                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                                child: Row(
+                                                  children: [
+                                                    _buildPaymentLogo(),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: AnimatedSwitcher(
+                                                        duration: const Duration(milliseconds: 300),
+                                                        child: Text(
+                                                          option != null
+                                                              ? 'Pay · \$${option.priceEstimate.toStringAsFixed(2)}'
+                                                              : S.of(context).pickYourOption,
+                                                          key: ValueKey(option?.id),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: TextStyle(
+                                                            color: option != null
+                                                                ? Colors.white
+                                                                : Colors.white38,
+                                                            fontSize: 16,
+                                                            fontWeight: FontWeight.w700,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : const SizedBox.shrink(),
                     ),
                   ),
                   const SizedBox(height: 8),

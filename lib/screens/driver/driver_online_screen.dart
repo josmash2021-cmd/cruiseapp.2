@@ -5037,7 +5037,7 @@ Widget _navHeader() {
         color: deepBlack,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: const Color(0xFFFFD700).withValues(alpha: 0.25),
+          color: const Color(0xFFE8C547).withValues(alpha: 0.25),
           width: 1,
         ),
       ),
@@ -5089,7 +5089,8 @@ Widget _navHeader() {
     required String dropoffAddr,
     required bool isExpanded,
   }) {
-    const luxGold = Color(0xFFD4AF37);
+    const goldAccent = Color(0xFFE8C547);
+    const rejectRed = Color(0xFFE53935);
     final totalMins = etaToPickup + tripEta;
     final totalMiles = distToPickupMi + tripDistMi;
 
@@ -5097,170 +5098,206 @@ Widget _navHeader() {
       key: const ValueKey('compact'),
       mainAxisSize: MainAxisSize.min,
       children: [
-        // ROW 1: Service badge + Price + Rating
+        // ── ROW 1: Rating (left) · Comfort badge (center) · X reject (right) ──
         Row(
           children: [
-            // Service badge
+            // Rating badge
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: const Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.white12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: goldAccent.withValues(alpha: 0.2)),
               ),
-              child: Text(
-                vehicleType.toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () => _rejectOffer(offer),
-              child: Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.close_rounded,
-                    color: Colors.white.withValues(alpha: 0.40), size: 13),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.star_rounded, color: goldAccent, size: 14),
+                  const SizedBox(width: 3),
+                  Text(
+                    rating.toStringAsFixed(1),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
             ),
             const Spacer(),
-            // Price
-            Text(
-              '\$${fare.toStringAsFixed(2)}',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
+            // Service tier badge (Comfort/VIP/Premium/Economy)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: goldAccent.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.directions_car_rounded, size: 14, color: goldAccent),
+                  const SizedBox(width: 6),
+                  Text(
+                    vehicleType,
+                    style: const TextStyle(
+                      color: goldAccent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            // Rating + est. fare
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.star, color: Color(0xFFFFD700), size: 12),
-                    const SizedBox(width: 2),
-                    Text(
-                      rating.toStringAsFixed(1),
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ],
+            const Spacer(),
+            // X Reject button — RED
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                _rejectOffer(offer);
+              },
+              child: Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF2A2A2A),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close, color: rejectRed, size: 16),
                 ),
-                const Text(
-                  'est. fare',
-                  style: TextStyle(color: Colors.white24, fontSize: 10),
-                ),
-              ],
+              ),
             ),
           ],
         ),
 
         const SizedBox(height: 10),
 
-        // ROW 2: Pickup + Dropoff in dark box
+        // ── ROW 2: Price (centered) + Tips label ──
+        Text(
+          '\$${fare.toStringAsFixed(2)}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 30,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          '+ Tips',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.4),
+            fontSize: 13,
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // ── ROW 3: Route indicator (gold ● line ■ with addresses) ──
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: const Color(0xFF1A1A1A),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Column(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Pickup
-              Row(
-                children: [
-                  Container(
-                    width: 8, height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFFFD700),
-                      shape: BoxShape.circle,
+              // Gold ● | ■ indicator column
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Column(
+                  children: [
+                    // Gold filled circle (pickup)
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                        color: goldAccent,
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
-                          style: const TextStyle(color: Colors.white38, fontSize: 10),
-                        ),
-                        Text(
-                          pickupAddr,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                    // Gold vertical line
+                    Container(
+                      width: 2,
+                      height: 44,
+                      color: goldAccent.withValues(alpha: 0.4),
                     ),
-                  ),
-                ],
-              ),
-              // Connector
-              const Padding(
-                padding: EdgeInsets.only(left: 3),
-                child: SizedBox(
-                  height: 8,
-                  child: VerticalDivider(color: Colors.white12, width: 8),
+                    // Gold filled square (dropoff)
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: goldAccent,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              // Dropoff
-              Row(
-                children: [
-                  Container(
-                    width: 8, height: 8,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.white38, width: 1.5),
-                      borderRadius: BorderRadius.circular(2),
+              const SizedBox(width: 10),
+              // Address details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Pickup info
+                    Text(
+                      '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 10,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
-                          style: const TextStyle(color: Colors.white38, fontSize: 10),
-                        ),
-                        Text(
-                          dropoffAddr,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                    const SizedBox(height: 2),
+                    Text(
+                      pickupAddr,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    // Dropoff info
+                    Text(
+                      '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 10,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      dropoffAddr,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
 
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
 
-        // ROW 3: Time + Miles chips
+        // ── ROW 4: Time + Miles chips (20% smaller) ──
         Row(
           children: [
             Expanded(child: _buildOfferChip(
@@ -5268,7 +5305,7 @@ Widget _navHeader() {
               value: '$totalMins min',
               label: 'Total time',
             )),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Expanded(child: _buildOfferChip(
               icon: Icons.straighten_rounded,
               value: '${totalMiles.toStringAsFixed(1)} mi',
@@ -5277,16 +5314,16 @@ Widget _navHeader() {
           ],
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
 
-        // ACCEPT BUTTON
+        // ── ROW 5: Accept button — GOLD ──
         GestureDetector(
           onTap: () => _acceptOffer(offer),
           child: Container(
             width: double.infinity,
             height: 50,
             decoration: BoxDecoration(
-              color: const Color(0xFFFFD700),
+              color: goldAccent,
               borderRadius: BorderRadius.circular(14),
             ),
             child: Center(
@@ -5305,23 +5342,24 @@ Widget _navHeader() {
     );
   }
 
-  /// Chip widget for time/distance display on offer card.
+  /// Chip widget for time/distance display on offer card (compact).
   Widget _buildOfferChip({
     required IconData icon,
     required String value,
     required String label,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: const Color(0xFFFFD700), size: 14),
-          const SizedBox(width: 6),
+          Icon(icon, color: const Color(0xFFE8C547), size: 12),
+          const SizedBox(width: 5),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -5329,13 +5367,13 @@ Widget _navHeader() {
                 value,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 13,
+                  fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               Text(
                 label,
-                style: const TextStyle(color: Colors.white38, fontSize: 10),
+                style: const TextStyle(color: Colors.white38, fontSize: 9),
               ),
             ],
           ),

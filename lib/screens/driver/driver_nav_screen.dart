@@ -107,6 +107,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   // ── Route ─────────────────────────────────────────────────────────────────
   List<LatLng> _routePts = [];
+  /// Immutable pickup → dropoff route passed back when exiting navigation.
+  List<LatLng> _pickupDropoffRoute = [];
 
   // ── Cinematic route animation ─────────────────────────────────────────────
   List<LatLng> _animatedRoute  = [];
@@ -203,6 +205,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     if (widget.routePoints != null && widget.routePoints!.length > 1) {
       _routePts = List.of(widget.routePoints!);
     }
+
+    // Fetch the immutable pickup→dropoff route for later when exiting nav
+    _fetchPickupDropoffRoute();
 
     // Overview mode: don't follow camera yet
     if (widget.startWithOverview) {
@@ -373,6 +378,19 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
   //  ROUTE
   // =========================================================================
+
+  /// Fetch the pickup→dropoff route once and store it.
+  /// This route is passed back when exiting navigation (never mutated).
+  Future<void> _fetchPickupDropoffRoute() async {
+    final route = await RouteService.fetchNavRoute(
+      origin: widget.pickupLatLng,
+      destination: widget.dropoffLatLng,
+    );
+    if (!mounted) return;
+    if (route != null) {
+      _pickupDropoffRoute = List.of(route.overviewPolyline);
+    }
+  }
 
   Future<void> _fetchRoute(LatLng dest) async {
     final route = await RouteService.fetchNavRoute(origin: _pos, destination: dest);
@@ -994,7 +1012,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           driverPos:       _pos,
           distToPickupKm:  _distRemainingMi * 1.60934,
           etaMinutes:      _etaMinutes,
-          routePoints:     _routePts,
+          routePoints:     _pickupDropoffRoute,
           riderPhone:      widget.riderPhone,
         ),
       ),
@@ -1632,16 +1650,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           active: _isMuted,
         ),
         const SizedBox(height: 10),
-        // 5. Music controls
-        _mapFab(
-          icon: Icons.music_note_rounded,
-          onTap: () {
-            HapticFeedback.lightImpact();
-            _showMusicSheet();
-          },
-        ),
-        const SizedBox(height: 10),
-        // 6. Safety shield
+        // 5. Safety shield
         _mapFab(
           icon: Icons.shield_rounded,
           onTap: () {
@@ -1695,51 +1704,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               size: 20),
         ),
       );
-
-  /// Bottom sheet for music/DJ controls.
-  void _showMusicSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF14171F),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Music Controls',
-                style: TextStyle(
-                  color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 20),
-              _musicSheetRow(Icons.library_music_rounded, 'Open Spotify',
-                () { Navigator.pop(context); }),
-              const Divider(color: Colors.white24, height: 1),
-              _musicSheetRow(Icons.skip_next_rounded, 'Next Track',
-                () { Navigator.pop(context); }),
-              const Divider(color: Colors.white24, height: 1),
-              _musicSheetRow(_isMuted ? Icons.volume_off : Icons.volume_up,
-                _isMuted ? 'Unmute' : 'Mute', () {
-                  setState(() => _isMuted = !_isMuted);
-                  Navigator.pop(context);
-                }),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _musicSheetRow(IconData icon, String label, VoidCallback onTap) {
-    return ListTile(
-      leading: Icon(icon, color: Colors.white70, size: 24),
-      title: Text(label, style: const TextStyle(color: Colors.white, fontSize: 16)),
-      onTap: onTap,
-    );
-  }
 
   // =========================================================================
   //  BOTTOM BAR (DoorDash style)

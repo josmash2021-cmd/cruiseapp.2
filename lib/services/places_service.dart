@@ -183,8 +183,16 @@ class PlacesService {
         }
       }
       if (p.locality != null && p.locality!.isNotEmpty) parts.add(p.locality!);
+      // State + ZIP in one part: "CA 90210"
+      final stateZip = <String>[];
       if (p.administrativeArea != null && p.administrativeArea!.isNotEmpty) {
-        parts.add(p.administrativeArea!);
+        stateZip.add(p.administrativeArea!);
+      }
+      if (p.postalCode != null && p.postalCode!.isNotEmpty) {
+        stateZip.add(p.postalCode!);
+      }
+      if (stateZip.isNotEmpty) {
+        parts.add(stateZip.join(' '));
       }
       return parts.isNotEmpty ? parts.join(', ') : null;
     }

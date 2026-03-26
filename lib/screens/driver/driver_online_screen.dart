@@ -304,7 +304,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _driverAnim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 400), // Short duration for smooth interpolation
     );
     _driverAnim.addListener(_onDriverAnimTick);
 
@@ -995,7 +995,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 3,
+            distanceFilter: 1, // 1 meter for maximum smooth movement
           ),
         ).listen((pos) {
           if (!mounted) return;
@@ -4018,51 +4018,38 @@ Widget _navHeader() {
         if (d.delta.dy < -3) _showOnlinePanel();
       },
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        decoration: BoxDecoration(
-          color: surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-          border: Border(top: BorderSide(color: borderC)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Progress indicator line - CLIPPED to stay inside
-              ClipRect(
-                child: ListenableBuilder(
-                  listenable: _searchPulseVal,
-                  builder: (_, __) {
-                    return SizedBox(
-                      height: 2,
-                      width: double.infinity,
-                      child: LinearProgressIndicator(
-                        value: null,
-                        backgroundColor: Colors.transparent,
-                        valueColor: AlwaysStoppedAnimation(
-                          _gold.withValues(alpha: 0.5),
-                        ),
-                        minHeight: 2,
+      child: ListenableBuilder(
+        listenable: _searchPulseVal,
+        builder: (_, __) => CustomPaint(
+          foregroundPainter: _SearchingBorderPainter(
+            progress: _searchPulseVal.value,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+              border: Border(top: BorderSide(color: borderC)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 2), // Spacer for border glow
+                  // Drag handle
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 4),
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: textMuted.withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(2),
                       ),
-                    );
-                  },
-                ),
-              ),
-              // Drag handle
-              Padding(
-                padding: const EdgeInsets.only(top: 10, bottom: 4),
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: textMuted.withValues(alpha: 0.25),
-                    borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-              ),
-              // Practice Mode toggle — always visible
-              GestureDetector(
+                  // Practice Mode toggle — always visible
+                  GestureDetector(
                 onTap: () {
                   HapticFeedback.mediumImpact();
                   setState(() => _isSimulationMode = !_isSimulationMode);
@@ -4166,6 +4153,8 @@ Widget _navHeader() {
               ),
             ],
           ),
+        ),
+      ),
         ),
       ),
     );
@@ -7851,4 +7840,100 @@ class _RoutingDotsAnimationState extends State<_RoutingDotsAnimation>
       ),
     );
   }
+}
+
+/// Paints an animated gold glow segment that follows the rounded top border
+/// of the "Finding trips" panel, creating a premium search animation effect.
+class _SearchingBorderPainter extends CustomPainter {
+  final double progress; // 0.0 → 1.0, loops continuously
+  static const double _borderRadius = 18.0;
+  static const Color _gold = Color(0xFFD4AF37);
+  static const Color _goldLight = Color(0xFFF5E6A3);
+
+  _SearchingBorderPainter({required this.progress});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Build path for the top portion of the rounded rect (pill-shaped top)
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndCorners(
+      rect,
+      topLeft: const Radius.circular(_borderRadius),
+      topRight: const Radius.circular(_borderRadius),
+    );
+
+    // Subtle base border — always visible
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0
+        ..isAntiAlias = true
+        ..color = _gold.withValues(alpha: 0.08),
+    );
+
+    // Build the border path from the RRect
+    final borderPath = Path()..addRRect(rrect);
+    final metricsList = borderPath.computeMetrics().toList();
+    if (metricsList.isEmpty) return;
+    final pm = metricsList.first;
+    final total = pm.length;
+
+    const glowFraction = 0.18; // 18% of perimeter
+    final glowLen = total * glowFraction;
+    final headDist = (progress * total) % total;
+
+    // Divide glow tail into steps for the fade gradient
+    const steps = 36;
+    final stepLen = glowLen / steps;
+
+    for (int k = 0; k < steps; k++) {
+      final t = 1.0 - k / steps; // 1.0 at head → 0.0 at tail
+      final fadeAlpha = t * t * (3 - 2 * t); // smoothstep
+      if (fadeAlpha < 0.02) continue;
+
+      final segEnd = (headDist - k * stepLen + total) % total;
+      final segStart = (segEnd - stepLen + total) % total;
+
+      // extractPath handles wrapping
+      final Path seg;
+      if (segStart <= segEnd) {
+        seg = pm.extractPath(segStart, segEnd);
+      } else {
+        seg = pm.extractPath(segStart, total)
+          ..addPath(pm.extractPath(0, segEnd), Offset.zero);
+      }
+
+      // Bright stroke
+      canvas.drawPath(
+        seg,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..isAntiAlias = true
+          ..color = Color.lerp(_gold, _goldLight, t)!
+              .withValues(alpha: fadeAlpha * 0.9),
+      );
+
+      // Soft outer glow halo (every other step for perf)
+      if (k % 2 == 0) {
+        canvas.drawPath(
+          seg,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 8
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round
+            ..isAntiAlias = true
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6)
+            ..color = _goldLight.withValues(alpha: fadeAlpha * 0.25),
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SearchingBorderPainter old) => old.progress != progress;
 }

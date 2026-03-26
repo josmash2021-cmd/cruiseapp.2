@@ -170,7 +170,7 @@ class TripFirestoreService {
   /// Throttle tracker so we don't write to Firestore more than once per 500 ms.
   static DateTime? _lastLocationWrite;
 
-  /// Write driver's current GPS position to the trip document (~2 Hz max).
+  /// Write driver's current GPS position to the trip document (~0.5 Hz).
   static Future<void> syncDriverLocation(
     String tripId,
     double lat,
@@ -179,7 +179,7 @@ class TripFirestoreService {
   ) async {
     final now = DateTime.now();
     if (_lastLocationWrite != null &&
-        now.difference(_lastLocationWrite!).inMilliseconds < 3000) {
+        now.difference(_lastLocationWrite!).inMilliseconds < 2000) {
       return;
     }
     _lastLocationWrite = now;

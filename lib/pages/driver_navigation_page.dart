@@ -293,11 +293,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         (_lastCameraUpdate == null ||
             now.difference(_lastCameraUpdate!).inMilliseconds > 16)) {
       _lastCameraUpdate = now;
-      // Locked nav camera: 55° tilt, zoom 17.5, follows driver heading
+      // Offset center ahead of driver so pin appears in the lower third
+      final ahead = _lookaheadPoint(pos, bearing, 120);
       _map?.flyTo(
         mapbox.CameraOptions(
           center: mapbox.Point(
-              coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+              coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
           zoom: 17.5,
           bearing: bearing,
           pitch: 55,
@@ -352,9 +353,10 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
 
   /// Jump directly to locked nav position (no animation). Used on re-entry.
   void _jumpToNavPosition() {
+    final ahead = _lookaheadPoint(_pos, _bearing, 120);
     _map?.setCamera(mapbox.CameraOptions(
       center: mapbox.Point(
-          coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+          coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
       zoom: 17.5,
       bearing: _bearing,
       pitch: 55,
@@ -400,11 +402,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     );
     await Future.delayed(const Duration(milliseconds: 1600));
 
-    // ── Phase 5: Final zoom to nav position (1s) ──
+    // ── Phase 5: Final zoom to nav position with lookahead (1s) ──
+    final ahead = _lookaheadPoint(_pos, _bearing, 120);
     _map?.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
-            coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+            coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
         zoom: 17.5,
         bearing: _bearing,
         pitch: 55,
@@ -421,6 +424,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
 
   Future<void> _zoomToShowRoute() async {
     if (_routePts.isEmpty) return;
+    // Update route annotation so it's visible in the overview
+    _updateRouteAnnotation();
     final all = [..._routePts, _pos];
     double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
     for (final p in all) {
@@ -429,21 +434,38 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       if (p.longitude < minLng) minLng = p.longitude;
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
+    // Use coordinateBounds for proper fit with padding
+    try {
+      final cam = await _map?.cameraForCoordinateBounds(
+        mapbox.CoordinateBounds(
+          southwest: mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+          northeast: mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
+          infiniteBounds: false,
+        ),
+        mapbox.MbxEdgeInsets(top: 140, left: 50, bottom: 120, right: 50),
+        0, // bearing
+        0, // pitch
+        null,
+        null,
+      );
+      if (cam != null) {
+        _map?.setCamera(cam);
+        return;
+      }
+    } catch (_) {}
+    // Fallback: manual zoom calculation
     final midLat = (minLat + maxLat) / 2;
     final midLng = (minLng + maxLng) / 2;
     final span = math.max(maxLat - minLat, maxLng - minLng);
     final zoom = span > 0
         ? (math.log(360 / span) / math.ln2).clamp(8.0, 14.5)
         : 13.0;
-    // Phase 1: instant setCamera for overview (0ms)
     _map?.setCamera(mapbox.CameraOptions(
       center: mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
       zoom: zoom,
       bearing: 0,
       pitch: 0,
     ));
-    // Update route annotation so it's visible in the overview
-    _updateRouteAnnotation();
   }
 
   /// Draw route progressively at 60fps via Ticker (1.5s, easeInOut).
@@ -1056,11 +1078,12 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       _cameraFollowing = true;
       _hasResumedOnce = true;
     });
-    // Smooth flyTo back to 55° tilt locked nav camera (800ms)
+    // Offset ahead so driver pin sits in lower third
+    final ahead = _lookaheadPoint(_pos, _bearing, 120);
     _map?.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
-            coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+            coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
         zoom: 17.5,
         bearing: _bearing,
         pitch: 55,
@@ -1189,6 +1212,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final mq = MediaQuery.of(context);
     final top = mq.padding.top;
     final bot = mq.padding.bottom;
+    final screenH = mq.size.height;
+    final bottomPanelH = math.max(140.0, screenH * 0.18) + bot;
 
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
@@ -1266,15 +1291,15 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
             ),
 
           // ── SPEED LIMIT SIGN (bottom-left above ETA bar) ──────────────────
-          Positioned(bottom: 172 + bot, left: 14, child: _speedLimitSign()),
+          Positioned(bottom: bottomPanelH + 16, left: 14, child: _speedLimitSign()),
 
           // ── RIGHT FLOATING BUTTON STACK ───────────────────────────────────
-          Positioned(right: 14, bottom: 192 + bot, child: _rightFabStack()),
+          Positioned(right: 14, bottom: bottomPanelH + 36, child: _rightFabStack()),
 
           // ── RECENTER BUTTON ───────────────────────────────────────────────
           if (!_cameraFollowing)
             Positioned(
-              bottom: 290 + bot,
+              bottom: bottomPanelH + 130,
               left: _hasResumedOnce ? 80 : 0,
               right: _hasResumedOnce ? null : 0,
               child: _hasResumedOnce

@@ -364,10 +364,12 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     });
     _updateCarAnnotation(pos, bearing);
     if (_cameraFollowing && !_isOverview) {
+      // Offset center ahead of driver so pin appears in the lower third
+      final ahead = _lookaheadPoint(pos, bearing, 120);
       _map?.flyTo(
         mapbox.CameraOptions(
           center: mapbox.Point(
-              coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+              coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
           zoom: _navZoom,
           bearing: bearing,
           pitch: _navTilt,
@@ -540,9 +542,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   /// Jump directly to locked nav position (no animation). Used on re-entry.
   void _jumpToNavPosition() {
+    final ahead = _lookaheadPoint(_pos, _bearing, 120);
     _map?.setCamera(mapbox.CameraOptions(
       center: mapbox.Point(
-          coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+          coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
       zoom: _navZoom,
       bearing: _bearing,
       pitch: _navTilt,
@@ -592,11 +595,12 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     );
     await Future.delayed(const Duration(milliseconds: 1600));
 
-    // ── Phase 5: Final zoom to nav position (1s) ──
+    // ── Phase 5: Final zoom to nav position with lookahead (1s) ──
+    final ahead = _lookaheadPoint(_pos, _bearing, 120);
     _map?.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
-            coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+            coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
         zoom: _navZoom,
         bearing: _bearing,
         pitch: _navTilt,
@@ -614,6 +618,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   Future<void> _zoomToShowRoute() async {
     if (_routePts.isEmpty) return;
+    // Update route annotation so it's visible in the overview
+    _updateRouteAnnotation();
     final all = [..._routePts, _pos];
     double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
     for (final p in all) {
@@ -622,19 +628,36 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       if (p.longitude < minLng) minLng = p.longitude;
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
+    // Use coordinateBounds for proper fit with generalized padding
+    try {
+      final cam = await _map?.cameraForCoordinateBounds(
+        mapbox.CoordinateBounds(
+          southwest: mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+          northeast: mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
+          infiniteBounds: false,
+        ),
+        mapbox.MbxEdgeInsets(top: 140, left: 50, bottom: 120, right: 50),
+        0, // bearing
+        0, // pitch
+        null,
+        null,
+      );
+      if (cam != null) {
+        _map?.setCamera(cam);
+        return;
+      }
+    } catch (_) {}
+    // Fallback: manual zoom calculation
     final midLat = (minLat + maxLat) / 2;
     final midLng = (minLng + maxLng) / 2;
     final span = math.max(maxLat - minLat, maxLng - minLng);
     final zoom = span > 0 ? (math.log(360 / span) / math.ln2).clamp(8.0, 14.5) : 13.0;
-    // Phase 1: instant setCamera for overview (0ms)
     _map?.setCamera(mapbox.CameraOptions(
       center: mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
       zoom: zoom,
       bearing: 0,
       pitch: 0,
     ));
-    // Update route annotation so it's visible in the overview
-    _updateRouteAnnotation();
   }
 
   /// Calculate bearing between two points (degrees).
@@ -935,11 +958,12 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _isOverview      = false;
       _hasResumedOnce  = true;
     });
-    // Smooth flyTo transition back to 55° tilt locked nav camera
+    // Offset ahead so driver pin sits in lower third
+    final ahead = _lookaheadPoint(_pos, _bearing, 120);
     _map?.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
-            coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+            coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
         zoom: _navZoom,
         bearing: _bearing,
         pitch: _navTilt,
@@ -1328,6 +1352,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       statusBarIconBrightness: Brightness.light,
     ));
 
+    final screenH = mq.size.height;
+    final bottomBarH = math.max(60.0, screenH * 0.08) + bot;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (did, _) { if (!did) _exitNav(); },
@@ -1351,7 +1378,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             // ── RIGHT FAB COLUMN ─────────────────────────────────────────
             Positioned(
               right: 12,
-              bottom: 90 + bot + 10,
+              bottom: bottomBarH + 16,
               child: _buildRightFabs(),
             ),
 
@@ -1366,7 +1393,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             // ── RESUME BUTTON (shown when user pans away) ─────────────
             if (!_cameraFollowing && !_isOverview)
               Positioned(
-                bottom: 80 + bot,
+                bottom: bottomBarH + 8,
                 left: 0,
                 right: 0,
                 child: Center(child: _buildResumeButton()),
@@ -1375,20 +1402,20 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             // ── PHASE OVERLAY (arrived / slide) ───────────────────────
             if (_nearPickup && _phase == TripPhase.toPickup)
               Positioned(
-                bottom: 90 + bot + 10,
+                bottom: bottomBarH + 16,
                 right: 12,
                 child: _buildArrivedBtn(),
               ),
             if (_phase == TripPhase.arrivedPickup)
               Positioned(
-                bottom: 90 + bot,
+                bottom: bottomBarH + 8,
                 left: 12,
                 right: 12,
                 child: _buildArrivedAtPickupCard(),
               ),
             if (_phase == TripPhase.arrivedDropoff)
               Positioned(
-                bottom: 90 + bot,
+                bottom: bottomBarH + 8,
                 left: 12,
                 right: 12,
                 child: _buildSlideToComplete(),

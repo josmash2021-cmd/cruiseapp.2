@@ -46,7 +46,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             return TripHistoryItem(
               pickup: t['pickup_address']?.toString() ?? '',
               dropoff: t['dropoff_address']?.toString() ?? '',
-              rideName: t['vehicle_type']?.toString() ?? 'Economy',
+              rideName: t['vehicle_type']?.toString() ?? 'Comfort',
               price:
                   '\$${((t['fare'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
               miles:

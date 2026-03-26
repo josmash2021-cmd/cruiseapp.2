@@ -381,7 +381,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       RideOption(
         id: 'suburban',
         name: 'VIP',
-        description: 'Spacious • Leather • Wi-Fi',
+        description: 'Spacious • Leather • Snacks & Drinks',
         priceEstimate: _round(surgedBase * 2.20),
         etaMinutes: 5 + math.Random().nextInt(8),
         icon: '🚐',
@@ -400,7 +400,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       ),
       RideOption(
         id: 'fusion',
-        name: 'Economy',
+        name: 'Comfort',
         description: 'Clean • Safe • Efficient',
         priceEstimate: _round(surgedBase),
         etaMinutes: 3 + math.Random().nextInt(5),

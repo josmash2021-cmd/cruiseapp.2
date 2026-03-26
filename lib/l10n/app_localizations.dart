@@ -1378,7 +1378,7 @@ class S {
   String get chooseARide => _es ? 'Elige un viaje' : 'Choose a ride';
   String get bestBadge => _es ? 'MEJOR' : 'BEST';
   String get premiumBadge => 'PREMIUM';
-  String get economyBadge => _es ? 'ECONÓMICO' : 'ECONOMY';
+  String get economyBadge => _es ? 'CONFORT' : 'COMFORT';
   String get comfortBadge => 'COMFORT';
   String get requestRideBtn => _es ? 'Solicitar viaje' : 'Request Ride';
   String get lookingForRide => _es ? 'Buscando conductor' : 'Looking for ride';
@@ -1521,7 +1521,7 @@ class S {
       _es ? 'Solicitar viaje · \$$price' : 'Request Ride · \$$price';
   String get requestRide => _es ? 'Solicitar viaje' : 'Request Ride';
   String get premiumTier => 'PREMIUM';
-  String get economyTier => 'ECONOMY';
+  String get economyTier => 'COMFORT';
   String get comfortTier => 'COMFORT';
   String get paymentLabel => _es ? 'Pago' : 'Payment';
   String get tapToChange => _es ? 'Toca para cambiar' : 'Tap to change';

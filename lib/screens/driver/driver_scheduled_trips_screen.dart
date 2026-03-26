@@ -248,7 +248,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
     final pickup = trip['pickup_address'] as String? ?? '';
     final dropoff = trip['dropoff_address'] as String? ?? '';
     final fare = (trip['fare'] as num?)?.toDouble();
-    final vehicleType = trip['vehicle_type'] as String? ?? 'Economy';
+    final vehicleType = trip['vehicle_type'] as String? ?? 'Comfort';
     final terminal = trip['terminal'] as String?;
     final airportCode = trip['airport_code'] as String?;
     final pickupZone = trip['pickup_zone'] as String?;

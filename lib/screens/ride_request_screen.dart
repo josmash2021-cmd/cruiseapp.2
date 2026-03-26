@@ -2378,7 +2378,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       ),
                       behavior: HitTestBehavior.opaque,
                       child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          const Spacer(),
                           Text(
                             widget.fastRide
                                 ? S.of(context).fastRideLabel
@@ -2708,13 +2710,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final String tierLabel;
     if (isSuv) {
       tierColor = const Color(0xFFE8C547);
-      tierLabel = 'PREMIUM';
+      tierLabel = 'VIP';
     } else if (isFusion) {
       tierColor = const Color(0xFF4A9EFF);
-      tierLabel = 'ECONOMY';
+      tierLabel = 'COMFORT';
     } else {
       tierColor = const Color(0xFF6FCF97);
-      tierLabel = 'COMFORT';
+      tierLabel = 'PREMIUM';
     }
 
     return AnimatedContainer(
@@ -2775,39 +2777,25 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Name + tier badge
-                Row(
-                  children: [
-                    Text(
-                      opt.name,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: -0.2,
-                      ),
+                // Tier badge (serves as the name)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: tierColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Text(
+                    tierLabel,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: tierColor,
+                      letterSpacing: 0.8,
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: tierColor.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      child: Text(
-                        tierLabel,
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          color: tierColor,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
                 const SizedBox(height: 2),
                 // Description

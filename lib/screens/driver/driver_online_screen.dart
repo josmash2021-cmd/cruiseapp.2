@@ -232,8 +232,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // -- Golden animated dot --
   List<Uint8List> _goldenDotFrames = [];
-  int _goldenDotFrame = 0;
+  final int _goldenDotFrame = 0;
   Timer? _goldenDotTimer;
+  Uint8List? _goldPinBytes;
 
   // -- Turn-by-turn navigation --
   final NavigationService _navService = NavigationService();
@@ -540,6 +541,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     await _loadDriverPhoto();
     await _buildGoldenDotFrames();
     _startGoldenDotAnimation();
+    _goldPinBytes = await renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true);
     if (mounted) setState(() {});
   }
 
@@ -662,17 +664,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   void _startGoldenDotAnimation() {
     _goldenDotTimer?.cancel();
-    _goldenDotTimer = Timer.periodic(const Duration(milliseconds: 45), (_) {
-      if (!mounted || _goldenDotFrames.isEmpty) return;
-      _goldenDotFrame = (_goldenDotFrame + 1) % _goldenDotFrames.length;
-      // Update the Mapbox annotation image to show the new frame
-      final annot = _goldDotAnnot;
-      final mgr = _pointAnnotMgr;
-      if (annot != null && mgr != null) {
-        annot.image = _goldenDotFrames[_goldenDotFrame];
-        mgr.update(annot).catchError((_) {});
-      }
-    });
+    // Gold pin is static — no frame animation needed
   }
 
   /// Renders a top-down car marker with proper car silhouette using Canvas.
@@ -1471,23 +1463,24 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _phase == _Phase.inTrip ||
         _phase == _Phase.routeSummary;
 
-    if (!isNav && _goldenDotFrames.isNotEmpty) {
-      // Remove car annotation if switching to dot
+    if (!isNav && _goldPinBytes != null) {
+      // Remove car annotation if switching to gold pin
       if (_carAnnot != null) {
         try { await pointMgr.delete(_carAnnot!); } catch (_) {}
         _carAnnot = null;
       }
-      final dotBytes = _goldenDotFrames[_goldenDotFrame % _goldenDotFrames.length];
       if (_goldDotAnnot != null) {
         try {
-          await pointMgr.update(_goldDotAnnot!..geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)));
+          _goldDotAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
+          await pointMgr.update(_goldDotAnnot!);
         } catch (_) { _goldDotAnnot = null; }
       }
       if (_pos == null) return;
       _goldDotAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-        image: dotBytes,
+        image: _goldPinBytes!,
         iconSize: 1.0,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
     } else if (isNav) {
       // Remove dot annotation if switching to car
@@ -5050,7 +5043,7 @@ Widget _navHeader() {
               ),
             ),
             const Spacer(),
-            // Service tier badge (Comfort/VIP/Premium/Economy)
+            // Service tier badge (Comfort/VIP/Premium)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(

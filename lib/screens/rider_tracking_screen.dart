@@ -1715,7 +1715,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               // LAYER 3: Driver info card (top)
               Positioned(
                 top: topPad + 10,
-                left: 60,
+                left: 16,
                 right: 16,
                 child: _buildDriverCard(),
               ),

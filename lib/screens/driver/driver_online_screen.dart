@@ -2462,13 +2462,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               final mod = mv['modifier']?.toString() ?? '';
               String maneuver;
               if (type == 'turn') {
-                if (mod == 'left') maneuver = 'turn-left';
-                else if (mod == 'right') maneuver = 'turn-right';
-                else if (mod == 'slight left') maneuver = 'turn-slight-left';
-                else if (mod == 'slight right') maneuver = 'turn-slight-right';
-                else if (mod == 'sharp left') maneuver = 'turn-sharp-left';
-                else if (mod == 'sharp right') maneuver = 'turn-sharp-right';
-                else maneuver = 'straight';
+                if (mod == 'left') {
+                  maneuver = 'turn-left';
+                } else if (mod == 'right') {
+                  maneuver = 'turn-right';
+                } else if (mod == 'slight left') {
+                  maneuver = 'turn-slight-left';
+                } else if (mod == 'slight right') {
+                  maneuver = 'turn-slight-right';
+                } else if (mod == 'sharp left') {
+                  maneuver = 'turn-sharp-left';
+                } else if (mod == 'sharp right') {
+                  maneuver = 'turn-sharp-right';
+                } else {
+                  maneuver = 'straight';
+                }
               } else if (type == 'merge') {
                 maneuver = 'merge';
               } else if (type == 'fork') {

@@ -9,6 +9,10 @@ class AppColors {
 
   const AppColors._({required this.brightness});
 
+  /// Static gold constant — use when BuildContext is unavailable.
+  static const Color kGold = Color(0xFFE8C547);
+  static const Color kGoldLight = Color(0xFFF5D990);
+
   factory AppColors.of(BuildContext context) {
     return AppColors._(brightness: Theme.of(context).brightness);
   }

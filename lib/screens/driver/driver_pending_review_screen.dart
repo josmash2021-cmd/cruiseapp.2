@@ -114,7 +114,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
 
     // 2. Get the user's SQL ID (used for doc IDs like "sql_42")
     final user = await UserSession.getUser();
-    final userIdStr = user?['userId'] as String? ?? '';
+    final userIdStr = user?['userId'] ?? '';
     final userIdInt = int.tryParse(userIdStr) ?? 0;
 
     debugPrint('[PendingReview] userId=$userIdStr userIdInt=$userIdInt');

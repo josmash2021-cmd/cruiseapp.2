@@ -328,7 +328,7 @@ class _SplashScreenState extends State<SplashScreen>
         await FirebaseAuth.instance.signInAnonymously();
       }
       final user = await UserSession.getUser();
-      final userIdStr = user?['userId'] as String?;
+      final userIdStr = user?['userId'];
       if (userIdStr == null || userIdStr.isEmpty) return 'pending';
       final userIdInt = int.tryParse(userIdStr) ?? 0;
       if (userIdInt <= 0) return 'pending';

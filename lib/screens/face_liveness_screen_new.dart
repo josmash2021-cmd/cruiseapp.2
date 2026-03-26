@@ -633,14 +633,14 @@ class _OvalCutoutPainter extends CustomPainter {
     final ovalRect = Rect.fromCenter(center: center, width: ovalW, height: ovalH);
 
     final path = Path()
+      ..fillType = PathFillType.evenOdd
       ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
       ..addOval(ovalRect);
 
     canvas.drawPath(
       path,
       Paint()
-        ..color = const Color(0xD9000000)
-        ..fillType = PathFillType.evenOdd,
+        ..color = const Color(0xD9000000),
     );
   }
 

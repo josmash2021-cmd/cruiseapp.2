@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 /// Pin icon types for contextual display inside the gold pin.
-enum GoldPinIcon { none, person, house, store, airplane }
+enum GoldPinIcon { none, person, house, store, airplane, car }
 
 /// Detects the appropriate contextual icon from an address label.
 GoldPinIcon detectPinIcon(String label) {
@@ -204,6 +204,21 @@ Future<Uint8List> renderGoldPinBytes({
         iconPaint,
       );
       break;
+    case GoldPinIcon.car:
+      final tp = TextPainter(
+        text: TextSpan(
+          text: String.fromCharCode(Icons.directions_car_rounded.codePoint),
+          style: TextStyle(
+            fontSize: s * 2.8,
+            fontFamily: Icons.directions_car_rounded.fontFamily,
+            package: Icons.directions_car_rounded.fontPackage,
+            color: Colors.white,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(cx - tp.width / 2, iy - tp.height / 2));
+      break;
     case GoldPinIcon.none:
       // White circle in center
       canvas.drawCircle(const Offset(cx, iy), s * 0.7, iconPaint);
@@ -374,6 +389,21 @@ void drawGoldPinAt(
       break;
     case GoldPinIcon.none:
       canvas.drawCircle(Offset(cx, cy), s * 0.7, iconPaint);
+      break;
+    case GoldPinIcon.car:
+      final tp = TextPainter(
+        text: TextSpan(
+          text: String.fromCharCode(Icons.directions_car_rounded.codePoint),
+          style: TextStyle(
+            fontSize: s * 2.8,
+            fontFamily: Icons.directions_car_rounded.fontFamily,
+            package: Icons.directions_car_rounded.fontPackage,
+            color: Colors.white,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(cx - tp.width / 2, cy - tp.height / 2));
       break;
   }
 }

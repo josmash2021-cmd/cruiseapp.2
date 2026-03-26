@@ -170,6 +170,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final Set<String> _tappedCardIds = {};
   bool _showAcceptedBottomCard = false;
   String _acceptedPickupAddr = '';
+  bool _isAcceptPressed = false;
 
   // ── Smooth route draw ──
   List<LatLng> _fullSegOne = [];
@@ -540,7 +541,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _navCarIconBytes = await CarIconLoader.loadUberBytes();
     await _loadDriverPhoto();
     await _goldDot.build(() { if (mounted) _updateDriverAnnotation(); });
-    _goldPinBytes = await renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true);
+    _goldPinBytes = await renderGoldPinBytes(icon: GoldPinIcon.car, isPickup: true);
     if (mounted) setState(() {});
   }
 
@@ -1582,7 +1583,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       Future.wait<Object?>([
         _fetchRoutePoints(_pos!, pickupLL),                                         // [0] segOne
         _fetchRoutePoints(pickupLL, dropoffLL),                                     // [1] segTwo
-        renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true),               // [2] driver pos pin
+        renderGoldPinBytes(icon: GoldPinIcon.car, isPickup: true),               // [2] driver pos pin
         renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true),               // [3] pickup pin
         renderGoldPinBytes(icon: _goldPinIconFor(placeType), isPickup: false),      // [4] dropoff pin
       ]).then((results) {
@@ -4878,7 +4879,7 @@ Widget _navHeader() {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: deepBlack,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: const Color(0xFFE8C547).withValues(alpha: 0.25),
           width: 1,
@@ -4983,7 +4984,7 @@ Widget _navHeader() {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.directions_car_rounded, size: 14, color: goldAccent),
+                  const Icon(Icons.person_rounded, size: 14, color: goldAccent),
                   const SizedBox(width: 6),
                   Text(
                     vehicleType,
@@ -5063,26 +5064,35 @@ Widget _navHeader() {
                   children: [
                     // Gold filled circle (pickup)
                     Container(
-                      width: 9,
-                      height: 9,
+                      width: 10,
+                      height: 10,
                       decoration: const BoxDecoration(
-                        color: goldAccent,
+                        color: Color(0xFFD4A843),
                         shape: BoxShape.circle,
                       ),
                     ),
+                    const SizedBox(height: 4),
                     // Gold vertical line
                     Container(
                       width: 2,
-                      height: 30,
-                      color: goldAccent.withValues(alpha: 0.4),
+                      height: 22,
+                      color: const Color(0xFFD4A843).withValues(alpha: 0.4),
                     ),
-                    // Gold filled square (dropoff)
+                    const SizedBox(height: 4),
+                    // Black square with gold shadow (dropoff)
                     Container(
-                      width: 9,
-                      height: 9,
+                      width: 10,
+                      height: 10,
                       decoration: BoxDecoration(
-                        color: goldAccent,
+                        color: Colors.black,
                         borderRadius: BorderRadius.circular(2),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x55D4A843),
+                            blurRadius: 6,
+                            spreadRadius: 1,
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -5161,25 +5171,42 @@ Widget _navHeader() {
           ],
         ),
 
+        const SizedBox(height: 4),
+
+        // ── Divider ──
+        Container(
+          height: 0.5,
+          color: const Color(0xFF333333),
+        ),
+
         const SizedBox(height: 6),
 
         // ── ROW 5: Accept button — GOLD — ALWAYS VISIBLE ──
         GestureDetector(
-          onTap: () => _acceptOffer(offer),
-          child: Container(
-            width: double.infinity,
-            height: 48,
-            decoration: BoxDecoration(
-              color: goldAccent,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Center(
-              child: Text(
-                S.of(context).accept,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
+          onTapDown: (_) => setState(() => _isAcceptPressed = true),
+          onTapUp: (_) {
+            setState(() => _isAcceptPressed = false);
+            _acceptOffer(offer);
+          },
+          onTapCancel: () => setState(() => _isAcceptPressed = false),
+          child: AnimatedScale(
+            scale: _isAcceptPressed ? 0.97 : 1.0,
+            duration: const Duration(milliseconds: 100),
+            child: Container(
+              width: double.infinity,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD4A843),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Text(
+                  S.of(context).accept,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),

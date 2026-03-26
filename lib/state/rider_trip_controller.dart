@@ -296,6 +296,25 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final origin = LatLng(_state.pickup!.lat, _state.pickup!.lng);
     final dest = LatLng(_state.dropoff!.lat, _state.dropoff!.lng);
 
+    // Show ride options IMMEDIATELY with estimated prices (straight-line distance)
+    final estMiles = _haversineDistanceMiles(origin, dest);
+    final estMins = (estMiles / 0.5).clamp(5, 120).toDouble(); // ~30mph avg
+    final estRoute = RouteResult(
+      points: [origin, dest],
+      distanceText: '${estMiles.toStringAsFixed(1)} mi',
+      distanceMeters: (estMiles * 1609.344).round(),
+      durationText: '${estMins.round()} min',
+      startAddress: _state.pickupLabel,
+      endAddress: _state.dropoffLabel,
+    );
+    final estOptions = _generateRideOptions(estRoute);
+    _state = _state.copyWith(
+      phase: RiderPhase.previewRoute,
+      rideOptions: estOptions,
+      selectedOption: null,
+    );
+    notifyListeners();
+
     // Fetch surge multiplier for pickup location
     try {
       final surgeData = await ApiService.getCurrentSurge(
@@ -320,9 +339,26 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         rideOptions: options,
         selectedOption: null,
       );
-      notifyListeners();
+    } else {
+      // Route fetch failed — keep estimated prices but set route to estimated
+      // so UI knows loading is done (route != null signals done)
+      _state = _state.copyWith(route: estRoute);
     }
+    notifyListeners();
   }
+
+  /// Haversine straight-line distance in miles.
+  double _haversineDistanceMiles(LatLng a, LatLng b) {
+    const r = 3958.8; // Earth radius in miles
+    final dLat = _deg2rad(b.latitude - a.latitude);
+    final dLng = _deg2rad(b.longitude - a.longitude);
+    final x = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_deg2rad(a.latitude)) * math.cos(_deg2rad(b.latitude)) *
+        math.sin(dLng / 2) * math.sin(dLng / 2);
+    return 2 * r * math.atan2(math.sqrt(x), math.sqrt(1 - x));
+  }
+
+  double _deg2rad(double d) => d * math.pi / 180;
 
   static bool _isAirport(String label) {
     final l = label.toLowerCase();

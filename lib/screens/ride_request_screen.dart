@@ -1106,9 +1106,16 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     switch (s.phase) {
       case RiderPhase.previewRoute:
       case RiderPhase.selectingRide:
-        _fetchingRoute = false;
-        _drawRoute();
+        // Show bottom sheet immediately (even with estimated prices)
         _sheetCtrl.forward();
+        // Place markers + draw polyline only when real route is available
+        if (s.route != null) {
+          _fetchingRoute = false;
+          _drawRoute();
+        } else {
+          // Estimated state: place markers but no polyline yet
+          _placeMarkersOnly();
+        }
         // Auto-select ride option from home screen card tap
         if (!_didAutoSelectRide &&
             widget.initialRideId != null &&
@@ -1549,6 +1556,35 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 5.0,
     ));
+  }
+
+  /// Place pickup/dropoff markers immediately and fit camera, even before route loads.
+  Future<void> _placeMarkersOnly() async {
+    final s = _ctrl.state;
+    if (s.pickup == null || s.dropoff == null) return;
+    final mgr = _pointAnnotMgr;
+    if (mgr == null || _goldPinIcon == null) return;
+
+    // Simple gold pin for pickup
+    _pickupAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
+      image: _goldPinIcon!,
+      iconSize: 0.85,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
+    ));
+    // Simple gold pin for dropoff
+    _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
+      image: _goldPinIcon!,
+      iconSize: 0.85,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
+    ));
+    // Fit camera to show both markers
+    _fitRoute([
+      LatLng(s.pickup!.lat, s.pickup!.lng),
+      LatLng(s.dropoff!.lat, s.dropoff!.lng),
+    ]);
+    if (mounted) setState(() {});
   }
 
   Future<void> _buildRouteMarkers() async {
@@ -2535,7 +2571,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                           duration: const Duration(milliseconds: 300),
                                           child: Text(
                                             option != null
-                                                ? 'Request Ride · \$${option.priceEstimate.toStringAsFixed(2)}'
+                                                ? 'Request Ride · ${_ctrl.state.route == null ? "~" : ""}\$${option.priceEstimate.toStringAsFixed(2)}'
                                                 : S.of(context).pickYourOption,
                                             key: ValueKey(option?.id),
                                             maxLines: 1,
@@ -2754,7 +2790,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '\$${opt.priceEstimate.toStringAsFixed(2)}',
+                '${_ctrl.state.route == null ? "~" : ""}\$${opt.priceEstimate.toStringAsFixed(2)}',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w900,
@@ -3202,7 +3238,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   void _showPaymentSheet(AppColors c, RideOption? option) {
     final price = option != null
-        ? '\$${option.priceEstimate.toStringAsFixed(2)}'
+        ? '${_ctrl.state.route == null ? "~" : ""}\$${option.priceEstimate.toStringAsFixed(2)}'
         : '';
 
     showModalBottomSheet(

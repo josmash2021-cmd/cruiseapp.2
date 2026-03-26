@@ -51,7 +51,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   // Brand colors — premium shiny gold
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFFBE47A);
@@ -232,6 +232,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _shimmerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3000),
@@ -295,7 +296,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _driverCheckTimer?.cancel();
+      _accountStatusTimer?.cancel();
+      _countdownTimer?.cancel();
+    } else if (state == AppLifecycleState.resumed) {
+      _checkDriversOnline();
+      _driverCheckTimer = Timer.periodic(
+        const Duration(seconds: 30),
+        (_) => _checkDriversOnline(),
+      );
+      _checkAccountStatus();
+      _accountStatusTimer = Timer.periodic(
+        const Duration(seconds: 30),
+        (_) => _checkAccountStatus(),
+      );
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     UserSession.photoNotifier.removeListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.removeListener(_onPhotoChanged);
     _sheetController.dispose();

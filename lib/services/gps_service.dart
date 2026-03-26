@@ -37,9 +37,9 @@ class GpsService {
 
     _activeDriverId = driverId;
 
-    // Upload to Firebase every 800 ms
+    // Upload to Firebase every 2 s (throttled from 800 ms)
     _uploadTimer = Timer.periodic(
-      const Duration(milliseconds: 800),
+      const Duration(milliseconds: 2000),
       (_) => _uploadToFirebase(),
     );
 

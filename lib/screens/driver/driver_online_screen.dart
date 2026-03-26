@@ -76,7 +76,7 @@ enum _Phase {
 }
 
 class _DriverOnlineScreenState extends State<DriverOnlineScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   // â”€â”€ Brand â”€â”€
   static const _gold = Color(0xFFD4A843);
   static const _goldLight = Color(0xFFF5D990);
@@ -290,6 +290,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Apply initial position from home screen (avoids white flash)
     if (widget.initialPos != null) {
       _pos = widget.initialPos!;
@@ -358,7 +359,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _pollT?.cancel();
+      _clock?.cancel();
+      _goldenDotTimer?.cancel();
+    } else if (state == AppLifecycleState.resumed) {
+      _startPolling();
+      _startClock();
+      _startGoldenDotAnimation();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _driverAnim.removeListener(_onDriverAnimTick);
     _driverAnim.dispose();
     _reqCtrl.dispose();
@@ -1556,7 +1571,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _startPolling() {
     _pollT?.cancel();
-    _pollT = Timer.periodic(const Duration(seconds: 3), (_) {
+    _pollT = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || _phase != _Phase.searching) return;
       _poll();
     });

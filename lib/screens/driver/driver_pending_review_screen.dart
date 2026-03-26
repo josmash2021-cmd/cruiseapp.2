@@ -27,7 +27,7 @@ class DriverPendingReviewScreen extends StatefulWidget {
 }
 
 class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
   static const _green = Color(0xFF4CAF50);
 
@@ -45,6 +45,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _pulseCtrl = AnimationController(
       vsync: this,
@@ -69,7 +70,17 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _pollTimer?.cancel();
+    } else if (state == AppLifecycleState.resumed) {
+      _checkImmediateAndPoll();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     for (final sub in _subscriptions) {
       sub.cancel();

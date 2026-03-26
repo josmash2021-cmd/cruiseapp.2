@@ -24,7 +24,9 @@ import '../../navigation/route_snapper.dart';
 import '../../navigation/smooth_motion.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
+import '../../services/gps_service.dart';
 import '../../services/navigation_service.dart';
+import '../../services/trip_firestore_service.dart';
 import 'driver_safety_screen.dart';
 import 'driver_trip_accept_screen.dart';
 import 'driver_rate_rider_screen.dart';
@@ -146,6 +148,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   // ── GPS ───────────────────────────────────────────────────────────────────
   StreamSubscription<Position>? _gpsSub;
+  final _gpsService = GpsService();
+  int? _driverId;
 
   // ── Periodic ETA refresh ──────────────────────────────────────────────────
   Timer? _etaRefreshTimer;
@@ -221,6 +225,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     // Start GPS
     _startGps();
 
+    // Start GpsService for real-time position sync to Firebase (rider tracking)
+    _initGpsService();
+
     // Periodic ETA refresh every 30 seconds
     _etaRefreshTimer = Timer.periodic(
       const Duration(seconds: 30),
@@ -237,6 +244,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   @override
   void dispose() {
     _gpsSub?.cancel();
+    _gpsService.stopTracking();
     _reFollowTimer?.cancel();
     _etaRefreshTimer?.cancel();
     _iconPulseTimer?.cancel();
@@ -246,6 +254,18 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _pulseCtrl?.dispose();
     _motion.dispose();
     super.dispose();
+  }
+
+  // =========================================================================
+  //  GPS SERVICE (real-time position sync to Firebase)
+  // =========================================================================
+
+  Future<void> _initGpsService() async {
+    final userId = await ApiService.getCurrentUserId();
+    if (userId != null) {
+      _driverId = userId;
+      _gpsService.startTracking(userId.toString());
+    }
   }
 
   // =========================================================================
@@ -264,7 +284,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _gpsSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 2,
+          distanceFilter: 1, // 1 meter for maximum smooth movement
         ),
       ).listen(_onGps);
     } catch (_) {}
@@ -321,6 +341,15 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         setState(() => _nearPickup = true);
       }
     }
+
+    // Sync position to Firebase (GpsService → RTDB, TripFirestoreService → Firestore)
+    _gpsService.updatePosition(raw, p.heading, p.speed);
+    TripFirestoreService.syncDriverLocation(
+      widget.tripId.toString(),
+      raw.latitude,
+      raw.longitude,
+      bearing,
+    );
   }
 
   // =========================================================================

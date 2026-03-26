@@ -21,7 +21,9 @@ import '../navigation/route_snapper.dart';
 import '../navigation/route_service.dart';
 import '../navigation/smooth_motion.dart';
 import '../services/api_service.dart';
+import '../services/gps_service.dart';
 import '../services/navigation_service.dart';
+import '../services/trip_firestore_service.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/driver_action_panel.dart';
 import '../widgets/gold_pin_renderer.dart';
@@ -84,6 +86,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   int _etaMinutes = 0;
 
   StreamSubscription? _gpsSub;
+  final _gpsService = GpsService();
+  int? _driverId;
   bool _muted = false;
   Uint8List? _arrowIconBytes;
   Uint8List? _destPinBytes;
@@ -152,11 +156,23 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       const Duration(seconds: 30),
       (_) => _refreshEtaRoute(),
     );
+
+    // Start GpsService for real-time position sync to Firebase (rider tracking)
+    _initGpsService();
+  }
+
+  Future<void> _initGpsService() async {
+    final userId = await ApiService.getCurrentUserId();
+    if (userId != null) {
+      _driverId = userId;
+      _gpsService.startTracking(userId.toString());
+    }
   }
 
   @override
   void dispose() {
     _gpsSub?.cancel();
+    _gpsService.stopTracking();
     _reFollowTimer?.cancel();
     _etaRefreshTimer?.cancel();
     _routeDrawTicker?.stop();
@@ -230,6 +246,17 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       _reroute(dest).then((_) {
         if (mounted) _isRerouting = false;
       });
+    }
+
+    // Sync position to Firebase (GpsService → RTDB, TripFirestoreService → Firestore)
+    _gpsService.updatePosition(raw, rawBearing, _currentSpeedMph / 2.23694);
+    if (widget.tripId.isNotEmpty) {
+      TripFirestoreService.syncDriverLocation(
+        widget.tripId,
+        raw.latitude,
+        raw.longitude,
+        snap.bearingDeg,
+      );
     }
   }
 

@@ -23,6 +23,9 @@ import asyncio
 from typing import Optional, List
 from dotenv import load_dotenv
 
+# Support chat AI cache & health monitoring
+from support_cache import find_cached_response, add_natural_variation, claude_health
+
 load_dotenv()  # Load .env file (gitignored)
 
 import base64
@@ -382,6 +385,22 @@ class SupportMessage(Base):
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class ActionRequest(Base):
+    __tablename__ = "action_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    chat_id = Column(Integer, ForeignKey("support_chats.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_name = Column(String(200), nullable=False)
+    user_type = Column(String(20), default="rider")
+    agent_name = Column(String(100), nullable=False)
+    action_type = Column(String(50), nullable=False)  # refund, promo, cancel_trip, update_profile, reset_payment, extend_deadline, safety_report
+    details = Column(Text, nullable=True)  # JSON
+    status = Column(String(30), default="pending_admin")  # pending_admin, approved, rejected, expired
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(String(200), nullable=True)
+    admin_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class Notification(Base):
     __tablename__ = "notifications"
     id = Column(Integer, primary_key=True, index=True)
@@ -625,6 +644,7 @@ async def _migrate_postgres(conn):
         ("users", "privacy_ads", "BOOLEAN DEFAULT FALSE"),
         ("users", "terms_accepted_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "privacy_accepted_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "auth_provider", "VARCHAR(20) DEFAULT 'password'"),
         ("trips", "cancel_reason", "TEXT"),
         ("trips", "notes", "TEXT"),
         ("trips", "pickup_zone", "TEXT"),

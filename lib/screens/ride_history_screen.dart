@@ -26,7 +26,17 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
   }
 
   Future<void> _load() async {
-    // Try backend first for persistent history
+    // Show cached trips instantly (cache-first)
+    final localTrips = await LocalDataService.getTripHistory();
+    if (!mounted) return;
+    if (localTrips.isNotEmpty) {
+      setState(() {
+        _trips = localTrips;
+        _loading = false;
+      });
+    }
+
+    // Refresh from backend in background
     try {
       final userId = await ApiService.getCurrentUserId();
       if (userId != null) {
@@ -61,13 +71,8 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
       debugPrint('[RideHistory] backend fallback to local: $e');
     }
 
-    // Fallback to local storage
-    final trips = await LocalDataService.getTripHistory();
     if (!mounted) return;
-    setState(() {
-      _trips = trips;
-      _loading = false;
-    });
+    setState(() => _loading = false);
   }
 
   @override

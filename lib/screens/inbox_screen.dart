@@ -150,7 +150,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
   static const _gold = Color(0xFFE8C547);
 
   List<AppNotificationItem> _notifications = [];
-  bool _loading = true;
+  bool _loading = false;
 
   @override
   void initState() {

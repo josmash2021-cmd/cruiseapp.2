@@ -115,9 +115,15 @@ class _DriverAnalyticsScreenState extends State<DriverAnalyticsScreen> {
 
   Future<void> _load() async {
     try {
-      final today = await ApiService.getDriverEarnings(period: 'today');
-      final week = await ApiService.getDriverEarnings(period: 'week');
-      final month = await ApiService.getDriverEarnings(period: 'month');
+      // Parallelize all 3 period fetches (was sequential — 3 round-trips)
+      final results = await Future.wait([
+        ApiService.getDriverEarnings(period: 'today'),
+        ApiService.getDriverEarnings(period: 'week'),
+        ApiService.getDriverEarnings(period: 'month'),
+      ]);
+      final today = results[0];
+      final week = results[1];
+      final month = results[2];
       if (!mounted) return;
       setState(() {
         _todayEarnings = (today['total'] as num?)?.toDouble() ?? 0;

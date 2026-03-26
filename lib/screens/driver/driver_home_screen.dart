@@ -15,6 +15,7 @@ import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../welcome_screen.dart';
 import '../account_deactivated_screen.dart';
 import 'driver_earnings_screen.dart';
@@ -370,7 +371,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Future<void> _loadDriverData() async {
-    // Fire all 3 requests in parallel — reduces Railway latency from 3 round-trips to 1
+    // Cache-first: show last-known data instantly
+    final prefs = await SharedPreferences.getInstance();
+    final cachedName = prefs.getString('driver_cached_name');
+    final cachedEarnings = prefs.getDouble('driver_cached_earnings');
+    final cachedTrips = prefs.getInt('driver_cached_trips');
+    if (cachedName != null && mounted) {
+      setState(() {
+        _driverName = cachedName;
+        _todayEarnings = cachedEarnings ?? 0.0;
+        _todayTrips = cachedTrips ?? 0;
+      });
+    }
+
+    // Background refresh from API
     final results = await Future.wait([
       ApiService.getMe().catchError((_) => null),
       ApiService.getDriverEarnings(period: 'today').catchError((_) => <String, dynamic>{}),
@@ -405,6 +419,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       _todayHours = (earnings['online_hours'] as num?)?.toDouble() ?? 0.0;
       _unreadCount = notifs.where((n) => n['is_read'] != true).length;
     });
+
+    // Update local cache
+    prefs.setString('driver_cached_name', _driverName);
+    prefs.setDouble('driver_cached_earnings', _todayEarnings);
+    prefs.setInt('driver_cached_trips', _todayTrips);
   }
 
   // ═══════════════════════════════════════════════════

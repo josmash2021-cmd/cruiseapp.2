@@ -1,7 +1,9 @@
 import 'dart:math';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
 import '../../l10n/app_localizations.dart';
 
@@ -69,42 +71,59 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   }
 
   Future<void> _fetchEarnings() async {
+    final period = _periodKeys[_selectedPeriod];
+    final cacheKey = 'driver_earnings_$period';
+
+    // Cache-first: show last-known earnings instantly
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString(cacheKey);
+    if (cached != null && _loading) {
+      try {
+        final data = jsonDecode(cached) as Map<String, dynamic>;
+        _applyEarningsData(data);
+      } catch (_) {}
+    }
+
     setState(() => _loading = true);
     try {
-      final data = await ApiService.getDriverEarnings(
-        period: _periodKeys[_selectedPeriod],
-      );
+      final data = await ApiService.getDriverEarnings(period: period);
       if (!mounted) return;
-      setState(() {
-        _total = (data['total'] as num?)?.toDouble() ?? 0.0;
-        _tripsCount = (data['trips_count'] as num?)?.toInt() ?? 0;
-        _onlineHours = (data['online_hours'] as num?)?.toDouble() ?? 0.0;
-        _tipsTotal = (data['tips_total'] as num?)?.toDouble() ?? 0.0;
-        _dailyEarnings =
-            (data['daily_earnings'] as List<dynamic>?)
-                ?.map((e) => (e as num).toDouble())
-                .toList() ??
-            [0, 0, 0, 0, 0, 0, 0];
-        _dayLabels =
-            (data['day_labels'] as List<dynamic>?)
-                ?.map((e) => e.toString())
-                .toList() ??
-            ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        _transactions =
-            (data['transactions'] as List<dynamic>?)
-                ?.map((e) => Map<String, dynamic>.from(e as Map))
-                .toList() ??
-            [];
-        _loading = false;
-      });
+      _applyEarningsData(data);
       _chartCtrl.forward(from: 0);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _listCtrl.forward(from: 0);
       });
+      // Update cache
+      prefs.setString(cacheKey, jsonEncode(data));
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
     }
+  }
+
+  void _applyEarningsData(Map<String, dynamic> data) {
+    setState(() {
+      _total = (data['total'] as num?)?.toDouble() ?? 0.0;
+      _tripsCount = (data['trips_count'] as num?)?.toInt() ?? 0;
+      _onlineHours = (data['online_hours'] as num?)?.toDouble() ?? 0.0;
+      _tipsTotal = (data['tips_total'] as num?)?.toDouble() ?? 0.0;
+      _dailyEarnings =
+          (data['daily_earnings'] as List<dynamic>?)
+              ?.map((e) => (e as num).toDouble())
+              .toList() ??
+          [0, 0, 0, 0, 0, 0, 0];
+      _dayLabels =
+          (data['day_labels'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      _transactions =
+          (data['transactions'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [];
+      _loading = false;
+    });
   }
 
   Future<void> _fetchPayoutData() async {

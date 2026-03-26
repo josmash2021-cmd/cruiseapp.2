@@ -42,7 +42,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Map<String, String>? _user;
   List<FavoritePlace> _favorites = [];
-  bool _loading = true;
+  bool _loading = false;
   bool _isVerified = false;
 
   @override

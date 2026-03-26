@@ -26,7 +26,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String _photoPath = '';
   String _photoUrl = '';
   String _gender = '';
-  bool _loading = true;
+  bool _loading = false;
   bool _saving = false;
 
   @override

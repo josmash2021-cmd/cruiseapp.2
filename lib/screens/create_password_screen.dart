@@ -3,6 +3,7 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/user_session.dart';
+import '../services/analytics_service.dart';
 import 'name_screen.dart';
 
 /// Screen shown during registration — after verifying the code.
@@ -100,6 +101,7 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
 
     // Save password for later use during profile save
     await UserSession.savePendingPassword(pass);
+    AnalyticsService.instance.logSignUp(widget.registeredWithEmail ? 'email' : 'phone');
 
     if (!mounted) return;
     Navigator.of(context).push(

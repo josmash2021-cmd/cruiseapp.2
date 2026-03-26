@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 
 import '../config/app_theme.dart';
 import '../services/api_service.dart';
+import '../services/analytics_service.dart';
 
 class PromoCodeScreen extends StatefulWidget {
   const PromoCodeScreen({super.key});
@@ -114,6 +115,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
         _loading = false;
       });
       _save();
+      AnalyticsService.instance.logPromoApplied(code);
       _showSnack(msg);
     } on ApiException catch (e) {
       setState(() => _loading = false);

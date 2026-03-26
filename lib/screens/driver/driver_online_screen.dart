@@ -25,6 +25,7 @@ import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
 import '../../services/map_cache_service.dart';
 import '../../services/local_cache.dart';
+import '../../services/analytics_service.dart';
 import '../../services/chat_service.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/gold_location_dot.dart';
@@ -858,6 +859,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         )
         .then((_) {
           debugPrint('âœ… Driver online successfully');
+          AnalyticsService.instance.logDriverOnline();
         })
         .catchError((e) {
           debugPrint('âŒ Failed to go online: $e');
@@ -866,6 +868,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   void _goOfflineBackend() {
     if (_driverId == null || _pos == null) return;
+    AnalyticsService.instance.logDriverOffline();
     ApiService.updateDriverLocation(
       driverId: _driverId!,
       lat: _pos!.latitude,

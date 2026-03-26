@@ -8,7 +8,10 @@ import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/email_service.dart';
 import '../services/sms_service.dart';
+import '../services/google_auth_service.dart';
+import '../services/apple_auth_service.dart';
 import 'login_password_screen.dart';
+import 'home_screen.dart';
 import 'verify_code_screen.dart';
 import 'terms_conditions_screen.dart';
 
@@ -51,6 +54,36 @@ class _LoginScreenState extends State<LoginScreen> {
       _inputCtrl.clear();
       _canContinue = false;
     });
+  }
+
+  bool _socialLoading = false;
+
+  Future<void> _signInWithGoogle() async {
+    if (_socialLoading) return;
+    setState(() => _socialLoading = true);
+    final ok = await GoogleAuthService.instance.signIn();
+    if (!mounted) return;
+    setState(() => _socialLoading = false);
+    if (ok) {
+      Navigator.of(context).pushAndRemoveUntil(
+        slideFromRightRoute(const HomeScreen()),
+        (_) => false,
+      );
+    }
+  }
+
+  Future<void> _signInWithApple() async {
+    if (_socialLoading) return;
+    setState(() => _socialLoading = true);
+    final ok = await AppleAuthService.instance.signIn();
+    if (!mounted) return;
+    setState(() => _socialLoading = false);
+    if (ok) {
+      Navigator.of(context).pushAndRemoveUntil(
+        slideFromRightRoute(const HomeScreen()),
+        (_) => false,
+      );
+    }
   }
 
   bool _isValidEmail(String text) {
@@ -540,6 +573,72 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
+
+              const SizedBox(height: 16),
+
+              // ── Google Sign-In ──
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: c.textPrimary,
+                    side: BorderSide(color: c.border, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                  ),
+                  onPressed: _socialLoading ? null : _signInWithGoogle,
+                  icon: Image.asset(
+                    'assets/images/google_logo.png',
+                    width: 22,
+                    height: 22,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.g_mobiledata,
+                      size: 28,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                  label: const Text(
+                    'Continue with Google',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ── Apple Sign-In (iOS / macOS only) ──
+              if (AppleAuthService.instance.isAvailable)
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: c.textPrimary,
+                      side: BorderSide(color: c.border, width: 1.5),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                    ),
+                    onPressed: _socialLoading ? null : _signInWithApple,
+                    icon: Icon(
+                      Icons.apple,
+                      size: 24,
+                      color: c.textPrimary,
+                    ),
+                    label: const Text(
+                      'Continue with Apple',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
 
               const Spacer(),
 

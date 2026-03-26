@@ -6,6 +6,7 @@ import '../models/lat_lng.dart';
 
 import '../models/ride_offer.dart';
 import '../services/api_service.dart';
+import '../services/analytics_service.dart';
 
 /// Controller that polls the backend for pending ride offers and exposes
 /// them via a [ValueNotifier] so the UI rebuilds automatically.
@@ -79,6 +80,7 @@ class OffersController {
         offerId: int.parse(offerId),
         driverId: id,
       );
+      AnalyticsService.instance.logRideAccepted();
 
       // Find the offer in our local list to get its details
       final offer = offersNotifier.value.firstWhere(
@@ -110,6 +112,7 @@ class OffersController {
 
   /// Reject an offer — removes it locally and notifies the backend with reason.
   void rejectOffer(String offerId, {String? reason}) {
+    AnalyticsService.instance.logRideDeclined();
     offersNotifier.value =
         offersNotifier.value.where((o) => o.offerId != offerId).toList();
     _rejectOnBackend(offerId, reason: reason);

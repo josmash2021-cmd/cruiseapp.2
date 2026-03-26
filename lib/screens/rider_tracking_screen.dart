@@ -17,6 +17,7 @@ import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
+import '../services/analytics_service.dart';
 import '../services/notification_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../widgets/offline_banner.dart';
@@ -618,6 +619,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   await ApiService.cancelTrip(widget.tripId!);
                 } catch (_) {}
               }
+              AnalyticsService.instance.logRideCancelled('user_cancelled', false);
               // Clean up all map annotations before navigating away
               await _cleanupMapAnnotations();
               if (!mounted) return;

@@ -1,3 +1,9 @@
+val localProperties = java.util.Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.inputStream().use { localProperties.load(it) }
+}
+
 allprojects {
     repositories {
         google()
@@ -6,7 +12,10 @@ allprojects {
             url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
             credentials {
                 username = "mapbox"
-                password = "pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w"
+                password = localProperties.getProperty("MAPBOX_DOWNLOADS_TOKEN")
+                    ?: providers.gradleProperty("MAPBOX_DOWNLOADS_TOKEN").orNull
+                    ?: System.getenv("MAPBOX_DOWNLOADS_TOKEN")
+                    ?: ""
             }
             authentication {
                 create<BasicAuthentication>("basic")

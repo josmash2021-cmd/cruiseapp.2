@@ -6,6 +6,7 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 import '../services/payment_service.dart';
+import '../services/analytics_service.dart';
 import 'credit_card_screen.dart';
 import 'paypal_checkout_screen.dart';
 import 'profile_photo_screen.dart';
@@ -118,6 +119,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
         await LocalDataService.linkPaymentMethod('credit_card');
         await LocalDataService.saveCreditCardLast4(last4);
         await LocalDataService.saveCreditCardBrand(brand);
+        AnalyticsService.instance.logPaymentAdded('credit_card');
         if (!mounted) return;
         _goToNextScreen(result);
       }

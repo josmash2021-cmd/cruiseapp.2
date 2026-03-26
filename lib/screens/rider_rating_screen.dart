@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../services/analytics_service.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/verified_avatar.dart';
 import 'home_screen.dart';
@@ -136,6 +137,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
         );
       } catch (_) {}
     }
+    AnalyticsService.instance.logRideCompleted('', widget.fare, 0, 0);
 
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(

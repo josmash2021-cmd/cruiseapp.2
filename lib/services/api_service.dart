@@ -712,6 +712,40 @@ class ApiService {
     }
   }
 
+  /// Authenticate via Google or Apple OAuth token.
+  static Future<Map<String, dynamic>> socialAuth({
+    required String provider,
+    required String idToken,
+    String? firstName,
+    String? lastName,
+    String? photoUrl,
+    String role = 'rider',
+  }) async {
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/social'),
+          headers: _jsonHeaders(),
+          body: jsonEncode({
+            'provider': provider,
+            'id_token': idToken,
+            if (firstName != null) 'first_name': firstName,
+            if (lastName != null) 'last_name': lastName,
+            if (photoUrl != null) 'photo_url': photoUrl,
+            'role': role,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    final data = _parse(res);
+    final token = data['access_token'] as String;
+    await _saveToken(token);
+    if (data['refresh_token'] != null) {
+      await _saveRefreshToken(data['refresh_token'] as String);
+    }
+    _cachedUser = data['user'] as Map<String, dynamic>?;
+    return data;
+  }
+
   /// Get the current user's profile (requires valid JWT).
   /// Returns user map or `null` if the token is invalid/expired.
   static Future<Map<String, dynamic>?> getMe() async {

@@ -10,6 +10,7 @@ import '../services/email_service.dart';
 import '../services/local_data_service.dart';
 import '../services/sms_service.dart';
 import '../services/user_session.dart';
+import '../services/analytics_service.dart';
 import '../l10n/app_localizations.dart';
 import 'login_verify_screen.dart';
 import 'forgot_password_screen.dart';
@@ -293,6 +294,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       if (!mounted) return;
 
       final loginToken = loginResult['login_token'] as String;
+      AnalyticsService.instance.logLogin('password');
       final email = loginResult['email'] as String?;
       final phone = loginResult['phone'] as String?;
 

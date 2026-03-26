@@ -49,7 +49,7 @@ class GoldLocationDot {
         center,
         outerR,
         Paint()
-          ..color = _gold.withValues(alpha: outerAlpha)
+          ..color = Colors.white.withValues(alpha: outerAlpha)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
       );
 
@@ -58,15 +58,25 @@ class GoldLocationDot {
         center,
         _dotR * 1.3,
         Paint()
-          ..color = _gold.withValues(alpha: 0.15)
+          ..color = Colors.white.withValues(alpha: 0.15)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
       );
 
-      // ── Layer 3: The dot itself (subtle brightness pulse) ──
-      final dotAlpha = 0.85 + 0.15 * (1.0 - pulse);
+      // ── Layer 3: White border ring ──
       canvas.drawCircle(
         center,
         _dotR,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5,
+      );
+
+      // ── Layer 4: Gold center fill (subtle brightness pulse) ──
+      final dotAlpha = 0.85 + 0.15 * (1.0 - pulse);
+      canvas.drawCircle(
+        center,
+        _dotR - 1.5,
         Paint()..color = _gold.withValues(alpha: dotAlpha),
       );
 

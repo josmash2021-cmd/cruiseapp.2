@@ -117,6 +117,9 @@ class RiderTripState {
   // Cancel reason from dispatch
   final String? cancelReason;
 
+  // Route fetch failed — show retry
+  final bool routeFetchFailed;
+
   const RiderTripState({
     this.phase = RiderPhase.idle,
     this.pickup,
@@ -135,6 +138,7 @@ class RiderTripState {
     this.tripId,
     this.firestoreTripId,
     this.cancelReason,
+    this.routeFetchFailed = false,
   });
 
   RiderTripState copyWith({
@@ -155,6 +159,7 @@ class RiderTripState {
     int? tripId,
     String? firestoreTripId,
     String? cancelReason,
+    bool? routeFetchFailed,
   }) {
     return RiderTripState(
       phase: phase ?? this.phase,
@@ -174,6 +179,7 @@ class RiderTripState {
       tripId: tripId ?? this.tripId,
       firestoreTripId: firestoreTripId ?? this.firestoreTripId,
       cancelReason: cancelReason ?? this.cancelReason,
+      routeFetchFailed: routeFetchFailed ?? this.routeFetchFailed,
     );
   }
 }
@@ -251,6 +257,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _tryFetchRoute();
   }
 
+  /// Retry fetching the route after a failure.
+  void retryFetchRoute() => _tryFetchRoute();
+
   /// Set a pre-fetched route directly without triggering a network request.
   void setPreloadedRoute({
     required PlaceDetails pickup,
@@ -296,69 +305,49 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final origin = LatLng(_state.pickup!.lat, _state.pickup!.lng);
     final dest = LatLng(_state.dropoff!.lat, _state.dropoff!.lng);
 
-    // Show ride options IMMEDIATELY with estimated prices (straight-line distance)
-    final estMiles = _haversineDistanceMiles(origin, dest);
-    final estMins = (estMiles / 0.5).clamp(5, 120).toDouble(); // ~30mph avg
-    final estRoute = RouteResult(
-      points: [origin, dest],
-      distanceText: '${estMiles.toStringAsFixed(1)} mi',
-      distanceMeters: (estMiles * 1609.344).round(),
-      durationText: '${estMins.round()} min',
-      startAddress: _state.pickupLabel,
-      endAddress: _state.dropoffLabel,
-    );
-    final estOptions = _generateRideOptions(estRoute);
+    // Show ride options sheet IMMEDIATELY — prices will shimmer until real route arrives
     _state = _state.copyWith(
       phase: RiderPhase.previewRoute,
-      rideOptions: estOptions,
+      rideOptions: const [],
       selectedOption: null,
+      routeFetchFailed: false,
     );
     notifyListeners();
 
-    // Fetch surge multiplier for pickup location
+    // Fetch surge + route in PARALLEL (not sequential)
+    late final RouteResult? routeResult;
     try {
-      final surgeData = await ApiService.getCurrentSurge(
-        _state.pickup!.lat,
-        _state.pickup!.lng,
-      );
-      _surgeMultiplier = (surgeData['surge_multiplier'] as num?)?.toDouble() ?? 1.0;
+      final results = await Future.wait([
+        // Surge multiplier
+        ApiService.getCurrentSurge(_state.pickup!.lat, _state.pickup!.lng)
+            .timeout(const Duration(seconds: 5))
+            .catchError((_) => <String, dynamic>{'surge_multiplier': 1.0}),
+        // Real route from Directions API
+        _directions.getRoute(origin: origin, destination: dest),
+      ]);
+
+      _surgeMultiplier = ((results[0] as Map<String, dynamic>)['surge_multiplier'] as num?)?.toDouble() ?? 1.0;
+      routeResult = results[1] as RouteResult?;
     } catch (_) {
       _surgeMultiplier = 1.0;
+      routeResult = null;
     }
 
-    final result = await _directions.getRoute(
-      origin: origin,
-      destination: dest,
-    );
-
-    if (result != null) {
-      final options = _generateRideOptions(result);
+    if (routeResult != null) {
+      final options = _generateRideOptions(routeResult);
       _state = _state.copyWith(
         phase: RiderPhase.previewRoute,
-        route: result,
+        route: routeResult,
         rideOptions: options,
         selectedOption: null,
+        routeFetchFailed: false,
       );
     } else {
-      // Route fetch failed — keep estimated prices but set route to estimated
-      // so UI knows loading is done (route != null signals done)
-      _state = _state.copyWith(route: estRoute);
+      // Route failed — signal UI to show retry
+      _state = _state.copyWith(routeFetchFailed: true);
     }
     notifyListeners();
   }
-
-  /// Haversine straight-line distance in miles.
-  double _haversineDistanceMiles(LatLng a, LatLng b) {
-    const r = 3958.8; // Earth radius in miles
-    final dLat = _deg2rad(b.latitude - a.latitude);
-    final dLng = _deg2rad(b.longitude - a.longitude);
-    final x = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_deg2rad(a.latitude)) * math.cos(_deg2rad(b.latitude)) *
-        math.sin(dLng / 2) * math.sin(dLng / 2);
-    return 2 * r * math.atan2(math.sqrt(x), math.sqrt(1 - x));
-  }
-
-  double _deg2rad(double d) => d * math.pi / 180;
 
   static bool _isAirport(String label) {
     final l = label.toLowerCase();

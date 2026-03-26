@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../config/mapbox_config.dart';
 import '../../config/page_transitions.dart';
 import '../../models/lat_lng.dart';
 import '../../widgets/verified_avatar.dart';
@@ -115,13 +117,33 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
   Widget build(BuildContext context) {
     final bottomPad = MediaQuery.of(context).padding.bottom;
 
+    // Mapbox static map URL for blurred background
+    final mapUrl = 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
+        '${widget.pickupLatLng.lng},${widget.pickupLatLng.lat},14,0/600x800@2x'
+        '?access_token=${MapboxConfig.accessToken}';
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
         backgroundColor: _bg,
         body: FadeTransition(
           opacity: _fadeAnim,
-          child: SafeArea(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Blurred static map background
+              Image.network(
+                mapUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const ColoredBox(color: _bg),
+              ),
+              // Blur + dark overlay
+              BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                child: Container(color: Colors.black.withValues(alpha: 0.65)),
+              ),
+              // Content
+              SafeArea(
             child: Column(
               children: [
                 const Spacer(flex: 2),
@@ -252,26 +274,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                             ],
                           ),
                         ),
-                        // Fare badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: _gold.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: _gold.withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: Text(
-                            '\$${widget.fare.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              color: _gold,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ),
+
                       ],
                     ),
                   ),
@@ -333,6 +336,8 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                 ),
               ],
             ),
+          ),
+            ],
           ),
         ),
       ),

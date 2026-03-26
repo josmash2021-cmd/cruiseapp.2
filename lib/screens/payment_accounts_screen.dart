@@ -349,11 +349,10 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
 
               // ── Google Pay (Android only) ──
               if (Platform.isAndroid) ...[                
-                _nativePayAccountTile(
+                _accountTile(
                   c: c,
-                  id: 'google_pay',
-                  available: _googlePayAvailable,
-                  unavailableHint: S.of(context).googlePaySetUpInWallet,
+                  logoWidget: _googlePayLogo(),
+                  label: 'Google Pay',
                   linked: _googlePayLinked,
                   onTap: _linkGooglePay,
                 ),
@@ -362,11 +361,10 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
 
               // ── Apple Pay (iOS only) ──
               if (Platform.isIOS) ...[                
-                _nativePayAccountTile(
+                _accountTile(
                   c: c,
-                  id: 'apple_pay',
-                  available: _applePayAvailable,
-                  unavailableHint: S.of(context).applePaySetUpInWallet,
+                  logoWidget: _applePayLogo(),
+                  label: 'Apple Pay',
                   linked: _applePayLinked,
                   onTap: _linkApplePay,
                 ),
@@ -573,12 +571,12 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: const Color(0xFF6B7280).withValues(alpha: 0.12),
+          color: const Color(0xFF4285F4).withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(12),
         ),
         child: const Icon(
           Icons.credit_card_rounded,
-          color: Color(0xFF6B7280),
+          color: Color(0xFF4285F4),
           size: 22,
         ),
       );

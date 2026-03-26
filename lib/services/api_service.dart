@@ -2124,6 +2124,35 @@ class ApiService {
   }
 
   // ═══════════════════════════════════════════════════════
+  //  STRIPE PAYMENT INTENT
+  // ═══════════════════════════════════════════════════════
+
+  /// Create a Stripe PaymentIntent for authorizing a ride payment.
+  /// Returns the full response map with client_secret, payment_intent_id, etc.
+  static Future<Map<String, dynamic>> createPaymentIntent({
+    required int amountCents,
+    String currency = 'usd',
+    String? paymentMethodId,
+    int? tripId,
+  }) async {
+    final h = await _authHeaders();
+    final body = <String, dynamic>{
+      'amount': amountCents,
+      'currency': currency,
+    };
+    if (paymentMethodId != null) body['payment_method_id'] = paymentMethodId;
+    if (tripId != null) body['trip_id'] = tripId;
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/payments/create-intent'),
+          headers: {...h, 'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  // ═══════════════════════════════════════════════════════
   //  REFUNDS
   // ═══════════════════════════════════════════════════════
 

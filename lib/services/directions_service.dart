@@ -118,6 +118,52 @@ class DirectionsService {
     );
   }
 
+  /// Get raw OSRM response with steps for turn-by-turn fallback.
+  Future<Map<String, dynamic>?> getRawOsrmResponse({
+    required LatLng origin,
+    required LatLng destination,
+  }) async {
+    try {
+      final path =
+          '/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
+      final uri = Uri.https('router.project-osrm.org', path, {
+        'overview': 'full',
+        'alternatives': 'false',
+        'steps': 'true',
+        'geometries': 'polyline',
+      });
+      final res = await http.get(uri).timeout(const Duration(seconds: 6));
+      final data = jsonDecode(res.body);
+      if (data is! Map<String, dynamic>) return null;
+      if (data['code']?.toString().toUpperCase() != 'OK') return null;
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Get raw Mapbox response with steps for turn-by-turn fallback.
+  Future<Map<String, dynamic>?> getRawMapboxResponse({
+    required LatLng origin,
+    required LatLng destination,
+  }) async {
+    try {
+      final url = Uri.parse(
+        'https://api.mapbox.com/directions/v5/mapbox/driving/'
+        '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
+        '?geometries=geojson&overview=full&steps=true'
+        '&access_token=${MapboxConfig.accessToken}',
+      );
+      final res = await http.get(url).timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      if (data is! Map<String, dynamic>) return null;
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<RouteResult?> getRoute({
     required LatLng origin,
     required LatLng destination,
@@ -263,7 +309,7 @@ class DirectionsService {
       final uri = Uri.https('router.project-osrm.org', path, {
         'overview': 'full',
         'alternatives': 'true',
-        'steps': 'false',
+        'steps': 'true',
         'geometries': 'polyline',
       });
 
@@ -320,7 +366,7 @@ class DirectionsService {
       final url = Uri.parse(
         'https://api.mapbox.com/directions/v5/mapbox/driving/'
         '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
-        '?geometries=geojson&overview=full&steps=false'
+        '?geometries=geojson&overview=full&steps=true'
         '&access_token=${MapboxConfig.accessToken}',
       );
       debugPrint('[Route] Mapbox request URL: $url');

@@ -92,6 +92,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   mapbox.PolylineAnnotation? _routeAnnot;
   double _currentSpeedMph = 0;
   DateTime? _lastAnnotUpdate;
+  bool _isRerouting = false;
+  Timer? _etaRefreshTimer;
 
   static const _navy = Color(0xFF0A2463);
   static const _green = Color(0xFF34A853);
@@ -129,12 +131,19 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         widget.routePoints ?? _makeStraightRoute(_pos, widget.pickupLatLng);
     _displayRoutePts = List.of(_routePts);
     _buildRouteOnInit();
+
+    // Periodic ETA refresh every 30 seconds
+    _etaRefreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _refreshEtaRoute(),
+    );
   }
 
   @override
   void dispose() {
     _gpsSub?.cancel();
     _reFollowTimer?.cancel();
+    _etaRefreshTimer?.cancel();
     _motion.dispose();
     _sm.dispose();
     _map?.dispose();
@@ -193,6 +202,14 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       _etaMinutes =
           _navState?.etaMinutes ?? (dM / 500 / 60).ceil().clamp(1, 99);
     });
+
+    // Auto-reroute when off-route
+    if (_navState != null && _navState!.isOffRoute && !_isRerouting) {
+      _isRerouting = true;
+      _reroute(dest).then((_) {
+        if (mounted) _isRerouting = false;
+      });
+    }
   }
 
   void _trimRouteBehind(int segIdx) {
@@ -259,6 +276,45 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       _snapIdx = 0;
       setState(() {});
     }
+  }
+
+  /// Re-fetch route from current position when driver goes off-route.
+  Future<void> _reroute(LatLng dest) async {
+    final route = await RouteService.fetchNavRoute(origin: _pos, destination: dest);
+    if (!mounted || route == null) return;
+    setState(() {
+      _routePts = route.overviewPolyline;
+      _displayRoutePts = List.of(_routePts);
+      _snapIdx = 0;
+      _distRemainingMi = route.totalDistanceMiles;
+      _etaMinutes = route.totalDurationMinutes;
+    });
+    _navService.startNavigation(route);
+    _updateRouteAnnotation();
+  }
+
+  /// Periodic ETA refresh — re-fetch route every 30 seconds for fresh data.
+  Future<void> _refreshEtaRoute() async {
+    if (!mounted || _isRerouting) return;
+    if (_sm.phase == TripPhase.arrivedPickup ||
+        _sm.phase == TripPhase.arrivedDropoff ||
+        _sm.phase == TripPhase.completed) {
+      return;
+    }
+    final dest = _sm.phase == TripPhase.onTrip
+        ? widget.dropoffLatLng
+        : widget.pickupLatLng;
+    final route = await RouteService.fetchNavRoute(origin: _pos, destination: dest);
+    if (!mounted || route == null) return;
+    setState(() {
+      _routePts = route.overviewPolyline;
+      _displayRoutePts = List.of(_routePts);
+      _snapIdx = 0;
+      _distRemainingMi = route.totalDistanceMiles;
+      _etaMinutes = route.totalDurationMinutes;
+    });
+    _navService.startNavigation(route);
+    _updateRouteAnnotation();
   }
 
   // =========================================================================

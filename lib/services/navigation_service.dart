@@ -368,6 +368,251 @@ class NavigationService {
     );
   }
 
+  /// Build a NavRoute from an OSRM API response.
+  static NavRoute? fromOsrmResponse(Map<String, dynamic> data) {
+    final routes = data['routes'] as List?;
+    if (routes == null || routes.isEmpty) return null;
+
+    final route = routes[0] as Map<String, dynamic>;
+    final legs = route['legs'] as List?;
+    if (legs == null || legs.isEmpty) return null;
+
+    final totalDist = (route['distance'] as num?)?.toDouble() ?? 0;
+    final totalDur = (route['duration'] as num?)?.toInt() ?? 0;
+
+    // Decode overview polyline
+    final geometry = route['geometry']?.toString();
+    final overviewPoly = (geometry != null && geometry.isNotEmpty)
+        ? _decodePolyline(geometry)
+        : <LatLng>[];
+
+    // Parse steps from all legs
+    final steps = <NavStep>[];
+    for (final leg in legs) {
+      final rawSteps = (leg as Map<String, dynamic>)['steps'] as List? ?? [];
+      for (final s in rawSteps) {
+        final m = s as Map<String, dynamic>;
+        final maneuverData = m['maneuver'] as Map<String, dynamic>? ?? {};
+        final name = (m['name'] as String?) ?? '';
+        final distM = (m['distance'] as num?)?.toDouble() ?? 0;
+        final durS = (m['duration'] as num?)?.toInt() ?? 0;
+
+        // OSRM maneuver types → Google-compatible maneuver strings
+        final type = (maneuverData['type'] as String?) ?? 'new name';
+        final modifier = (maneuverData['modifier'] as String?) ?? '';
+        final maneuver = _osrmManeuverToGoogle(type, modifier);
+
+        // Build instruction text
+        final instruction = _osrmInstruction(type, modifier, name);
+
+        // Start/end location from maneuver
+        final loc = maneuverData['location'] as List?;
+        final startLat = loc != null && loc.length >= 2
+            ? (loc[1] as num).toDouble() : 0.0;
+        final startLng = loc != null && loc.length >= 2
+            ? (loc[0] as num).toDouble() : 0.0;
+
+        // Per-step polyline
+        final stepGeom = m['geometry']?.toString();
+        final stepPoly = (stepGeom != null && stepGeom.isNotEmpty)
+            ? _decodePolyline(stepGeom)
+            : <LatLng>[];
+
+        final endLoc = stepPoly.isNotEmpty ? stepPoly.last : LatLng(startLat, startLng);
+
+        steps.add(NavStep(
+          instruction: instruction,
+          maneuver: maneuver,
+          distanceMeters: distM,
+          durationSeconds: durS,
+          streetName: name,
+          startLocation: LatLng(startLat, startLng),
+          endLocation: endLoc,
+          polyline: stepPoly,
+        ));
+      }
+    }
+
+    if (overviewPoly.isEmpty && steps.isNotEmpty) {
+      // Build overview from step polylines
+      for (final step in steps) {
+        overviewPoly.addAll(step.polyline);
+      }
+    }
+
+    return NavRoute(
+      overviewPolyline: overviewPoly,
+      steps: steps,
+      totalDistanceMeters: totalDist,
+      totalDurationSeconds: totalDur,
+      startAddress: '',
+      endAddress: '',
+    );
+  }
+
+  /// Build a NavRoute from a Mapbox Directions API response.
+  static NavRoute? fromMapboxResponse(Map<String, dynamic> data) {
+    final routes = data['routes'] as List?;
+    if (routes == null || routes.isEmpty) return null;
+
+    final route = routes[0] as Map<String, dynamic>;
+    final legs = route['legs'] as List?;
+    if (legs == null || legs.isEmpty) return null;
+
+    final totalDist = (route['distance'] as num?)?.toDouble() ?? 0;
+    final totalDur = (route['duration'] as num?)?.toInt() ?? 0;
+
+    // Decode overview polyline (Mapbox uses GeoJSON)
+    final overviewPoly = <LatLng>[];
+    final geom = route['geometry'];
+    if (geom is Map<String, dynamic>) {
+      final coords = geom['coordinates'] as List?;
+      if (coords != null) {
+        for (final c in coords) {
+          overviewPoly.add(LatLng(
+            (c[1] as num).toDouble(),
+            (c[0] as num).toDouble(),
+          ));
+        }
+      }
+    }
+
+    // Parse steps from all legs
+    final steps = <NavStep>[];
+    for (final leg in legs) {
+      final rawSteps = (leg as Map<String, dynamic>)['steps'] as List? ?? [];
+      for (final s in rawSteps) {
+        final m = s as Map<String, dynamic>;
+        final maneuverData = m['maneuver'] as Map<String, dynamic>? ?? {};
+        final name = (m['name'] as String?) ?? '';
+        final distM = (m['distance'] as num?)?.toDouble() ?? 0;
+        final durS = (m['duration'] as num?)?.toInt() ?? 0;
+
+        // Mapbox maneuver instruction
+        final instruction = (maneuverData['instruction'] as String?) ?? name;
+        final type = (maneuverData['type'] as String?) ?? '';
+        final modifier = (maneuverData['modifier'] as String?) ?? '';
+        final maneuver = _mapboxManeuverToGoogle(type, modifier);
+
+        // Location
+        final loc = maneuverData['location'] as List?;
+        final startLat = loc != null && loc.length >= 2
+            ? (loc[1] as num).toDouble() : 0.0;
+        final startLng = loc != null && loc.length >= 2
+            ? (loc[0] as num).toDouble() : 0.0;
+
+        // Per-step polyline (Mapbox GeoJSON)
+        final stepPoly = <LatLng>[];
+        final stepGeom = m['geometry'];
+        if (stepGeom is Map<String, dynamic>) {
+          final coords = stepGeom['coordinates'] as List?;
+          if (coords != null) {
+            for (final c in coords) {
+              stepPoly.add(LatLng(
+                (c[1] as num).toDouble(),
+                (c[0] as num).toDouble(),
+              ));
+            }
+          }
+        }
+
+        final endLoc = stepPoly.isNotEmpty ? stepPoly.last : LatLng(startLat, startLng);
+
+        steps.add(NavStep(
+          instruction: instruction,
+          maneuver: maneuver,
+          distanceMeters: distM,
+          durationSeconds: durS,
+          streetName: name,
+          startLocation: LatLng(startLat, startLng),
+          endLocation: endLoc,
+          polyline: stepPoly,
+        ));
+      }
+    }
+
+    return NavRoute(
+      overviewPolyline: overviewPoly,
+      steps: steps,
+      totalDistanceMeters: totalDist,
+      totalDurationSeconds: totalDur,
+      startAddress: '',
+      endAddress: '',
+    );
+  }
+
+  /// Convert OSRM maneuver type+modifier to Google-compatible maneuver string.
+  static String _osrmManeuverToGoogle(String type, String modifier) {
+    switch (type) {
+      case 'turn':
+        if (modifier.contains('left')) return modifier.contains('sharp') ? 'turn-sharp-left' : modifier.contains('slight') ? 'turn-slight-left' : 'turn-left';
+        if (modifier.contains('right')) return modifier.contains('sharp') ? 'turn-sharp-right' : modifier.contains('slight') ? 'turn-slight-right' : 'turn-right';
+        if (modifier == 'straight') return 'straight';
+        return 'straight';
+      case 'merge':
+        return 'merge';
+      case 'on ramp':
+      case 'off ramp':
+        return modifier.contains('left') ? 'ramp-left' : 'ramp-right';
+      case 'fork':
+        return modifier.contains('left') ? 'fork-left' : 'fork-right';
+      case 'roundabout':
+      case 'rotary':
+        return 'roundabout-left';
+      case 'continue':
+        if (modifier.contains('left')) return 'turn-slight-left';
+        if (modifier.contains('right')) return 'turn-slight-right';
+        return 'straight';
+      case 'depart':
+      case 'arrive':
+      case 'new name':
+        return 'straight';
+      case 'end of road':
+        return modifier.contains('left') ? 'turn-left' : 'turn-right';
+      default:
+        return 'straight';
+    }
+  }
+
+  /// Convert Mapbox maneuver type+modifier to Google-compatible maneuver string.
+  static String _mapboxManeuverToGoogle(String type, String modifier) {
+    // Mapbox uses same conventions as OSRM
+    return _osrmManeuverToGoogle(type, modifier);
+  }
+
+  /// Build human-readable instruction from OSRM maneuver data.
+  static String _osrmInstruction(String type, String modifier, String name) {
+    final street = name.isNotEmpty ? ' onto $name' : '';
+    switch (type) {
+      case 'turn':
+        if (modifier.contains('left')) return 'Turn ${modifier.replaceAll(' ', '-')}$street';
+        if (modifier.contains('right')) return 'Turn ${modifier.replaceAll(' ', '-')}$street';
+        return 'Continue$street';
+      case 'merge':
+        return 'Merge$street';
+      case 'on ramp':
+        return 'Take the ramp$street';
+      case 'off ramp':
+        return 'Take the exit$street';
+      case 'fork':
+        return 'Keep ${modifier.contains('left') ? 'left' : 'right'}$street';
+      case 'roundabout':
+      case 'rotary':
+        return 'Enter roundabout$street';
+      case 'depart':
+        return 'Head$street';
+      case 'arrive':
+        return 'Arrive at destination';
+      case 'new name':
+      case 'continue':
+        return 'Continue$street';
+      case 'end of road':
+        return 'Turn ${modifier.contains('left') ? 'left' : 'right'}$street';
+      default:
+        return 'Continue$street';
+    }
+  }
+
   static List<LatLng> _decodePolyline(String enc) {
     final pts = <LatLng>[];
     int i = 0, lat = 0, lng = 0;

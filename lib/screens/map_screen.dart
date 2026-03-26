@@ -40,6 +40,7 @@ import '../services/api_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
 import '../widgets/bouncing_button.dart';
+import '../widgets/gold_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
 import 'pickup_dropoff_search_screen.dart';
 
@@ -207,6 +208,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   bool _planBodyVisible = false;
   double? _panelDragHeight;
   bool _isPanelDragging = false;
+  double _lastPanelVelocity = 0;
   bool _optionsExpanded = true;
   bool _isAddressFieldFocused = false;
   bool _isResolvingLocation = false;
@@ -271,161 +273,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     ),
   ];
 
+  /// Builds a gold teardrop pin using the shared GoldPinRenderer.
   Future<Uint8List> _buildGoldPin({
     bool withHouse = false,
     bool isPickup = true,
   }) async {
-    return _buildGoldPinBytes(withHouse: withHouse, isPickup: isPickup);
+    return GoldPinRenderer.render(withHouse: withHouse, isPickup: isPickup);
   }
 
-  /// Renders a 3D teardrop-style map pin as raw PNG bytes.
-  /// The TIP of the pin is at the BOTTOM CENTER of the image.
-  /// Use iconAnchor: BOTTOM so the tip aligns with the map coordinate.
-  Future<Uint8List> _buildGoldPinBytes({
-    bool withHouse = false,
-    bool isPickup = true,
-  }) async {
-    final byteRecorder = ui.PictureRecorder();
-    // Larger canvas: 120x140 — extra height for the tail below the bulb
-    const double w = 120;
-    const double h = 140;
-    final canvas = Canvas(byteRecorder, const Rect.fromLTWH(0, 0, w, h));
-
-    const cx = w / 2;
-    const bulbR = 42.0;       // bulb radius
-    const bulbCy = 50.0;      // center of bulb (upper portion)
-    const tipY = h - 6.0;     // tip of the tail (near bottom of canvas)
-
-    // ── 1. Drop shadow (elongated ellipse below the whole pin) ──
-    canvas.drawOval(
-      Rect.fromCenter(center: const Offset(cx, tipY + 2), width: 28, height: 8),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-
-    // ── 2. Tail (teardrop triangle pointing down) ──
-    final tail = Path()
-      ..moveTo(cx - 18, bulbCy + bulbR * 0.55)
-      ..quadraticBezierTo(cx - 6, tipY - 10, cx, tipY)
-      ..quadraticBezierTo(cx + 6, tipY - 10, cx + 18, bulbCy + bulbR * 0.55)
-      ..close();
-    canvas.drawPath(tail, Paint()..color = _pinColor);
-
-    // ── 3. Outer glow ring behind bulb ──
-    canvas.drawCircle(
-      const Offset(cx, bulbCy),
-      bulbR + 4,
-      Paint()
-        ..color = _pinColor.withValues(alpha: 0.25)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-
-    // ── 4. Main bulb fill (gradient from bright gold to darker gold) ──
-    final bulbGrad = Paint()
-      ..shader = ui.Gradient.radial(
-        const Offset(cx - bulbR * 0.25, bulbCy - bulbR * 0.25),
-        bulbR * 1.2,
-        [const Color(0xFFFFF0A0), _pinColor, const Color(0xFFB8900A)],
-        [0.0, 0.5, 1.0],
-      );
-    canvas.drawCircle(const Offset(cx, bulbCy), bulbR, bulbGrad);
-
-    // ── 5. 3D highlight — bright top-left specular ──
-    canvas.drawCircle(
-      Offset(cx - bulbR * 0.28, bulbCy - bulbR * 0.28),
-      bulbR * 0.38,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.45)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
-    // Small sharp specular dot
-    canvas.drawCircle(
-      Offset(cx - bulbR * 0.22, bulbCy - bulbR * 0.22),
-      bulbR * 0.12,
-      Paint()..color = Colors.white.withValues(alpha: 0.75),
-    );
-
-    // ── 6. Outer border ring ──
-    canvas.drawCircle(
-      const Offset(cx, bulbCy),
-      bulbR,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
-        ..color = Colors.white.withValues(alpha: 0.40),
-    );
-
-    // ── 7. White icon inside bulb ──
-    final iconPaint = Paint()
-      ..color = Colors.white
-      ..isAntiAlias = true;
-    final iconShadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.18)
-      ..isAntiAlias = true;
-
-    if (withHouse) {
-      // House icon
-      final hs = bulbR * 0.40;
-      final iconCy = bulbCy + hs * 0.15;
-      // Shadow offset
-      final roofS = Path()
-        ..moveTo(cx + 1, iconCy - hs * 1.05 + 1)
-        ..lineTo(cx - hs + 1, iconCy - hs * 0.05 + 1)
-        ..lineTo(cx + hs + 1, iconCy - hs * 0.05 + 1)
-        ..close();
-      canvas.drawPath(roofS, iconShadowPaint);
-      final roof = Path()
-        ..moveTo(cx, iconCy - hs * 1.05)
-        ..lineTo(cx - hs, iconCy - hs * 0.05)
-        ..lineTo(cx + hs, iconCy - hs * 0.05)
-        ..close();
-      canvas.drawPath(roof, iconPaint);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTRB(cx - hs * 0.65, iconCy - hs * 0.05, cx + hs * 0.65, iconCy + hs * 0.85),
-          Radius.circular(hs * 0.1),
-        ),
-        iconPaint,
-      );
-    } else if (!isPickup) {
-      // Destination flag / square pin icon
-      final s = bulbR * 0.35;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(cx, bulbCy), width: s * 2, height: s * 2),
-          Radius.circular(s * 0.25),
-        ),
-        iconShadowPaint..color = Colors.black.withValues(alpha: 0.18),
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(cx - 1, bulbCy - 1), width: s * 2, height: s * 2),
-          Radius.circular(s * 0.25),
-        ),
-        iconPaint,
-      );
-    } else {
-      // Person icon for pickup
-      final s = bulbR * 0.38;
-      canvas.drawCircle(Offset(cx, bulbCy - s * 0.52), s * 0.42, iconPaint);
-      canvas.drawRRect(
-        RRect.fromRectAndCorners(
-          Rect.fromLTRB(cx - s * 0.75, bulbCy + s * 0.02, cx + s * 0.75, bulbCy + s * 0.85),
-          topLeft: Radius.circular(s * 0.75),
-          topRight: Radius.circular(s * 0.75),
-          bottomLeft: Radius.circular(s * 0.12),
-          bottomRight: Radius.circular(s * 0.12),
-        ),
-        iconPaint,
-      );
-    }
-
-    final pic = byteRecorder.endRecording();
-    final img = await pic.toImage(w.toInt(), h.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    return byteData!.buffer.asUint8List();
-  }
 
   Future<void> _setPickupAnnotation(LatLng position) async {
     final mgr = _pointAnnotMgr;
@@ -532,8 +387,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _loadPinIcons() async {
-    _goldPinIconBytes = await _buildGoldPinBytes(isPickup: true);
-    _dropoffPinIconBytes = await _buildGoldPinBytes(
+    _goldPinIconBytes = await _buildGoldPin(isPickup: true);
+    _dropoffPinIconBytes = await _buildGoldPin(
       withHouse: true,
       isPickup: false,
     );
@@ -2869,14 +2724,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   _panelDragHeight = nextHeight.clamp(minHeight, maxHeight);
                 });
               },
-              onVerticalDragEnd: (_) {
-                _handlePanelDragEnd(context);
+              onVerticalDragEnd: (details) {
+                _handlePanelDragEnd(context, details.primaryVelocity ?? 0);
               },
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(26),
                 child: AnimatedContainer(
-                  duration: _panelDurationForStage(),
-                  curve: Curves.easeInOutCubicEmphasized,
+                  duration: _panelDurationForStage(velocity: _lastPanelVelocity),
+                  curve: Curves.easeOut,
                   height: _currentPanelHeight(context),
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 280),
@@ -2906,34 +2761,41 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     );
   }
 
-  Duration _panelDurationForStage() {
+  Duration _panelDurationForStage({double velocity = 0}) {
     if (_isPanelDragging) {
       return Duration.zero;
     }
 
+    // Velocity-aware: faster fling → shorter animation
+    if (velocity.abs() > 1500) return const Duration(milliseconds: 150);
+    if (velocity.abs() > 700) return const Duration(milliseconds: 220);
+
     switch (_stage) {
       case RideStage.pin:
-        return const Duration(milliseconds: 320);
+        return const Duration(milliseconds: 280);
       case RideStage.plan:
-        return const Duration(milliseconds: 380);
+        return const Duration(milliseconds: 320);
       case RideStage.loading:
       case RideStage.options:
       case RideStage.confirmPickup:
       case RideStage.payment:
       case RideStage.riding:
-        return const Duration(milliseconds: 340);
+        return const Duration(milliseconds: 300);
       case RideStage.matching:
-        return const Duration(milliseconds: 420);
+        return const Duration(milliseconds: 350);
     }
   }
 
-  void _handlePanelDragEnd(BuildContext context) {
+  void _handlePanelDragEnd(BuildContext context, double velocity) {
+    _lastPanelVelocity = velocity;
     final screenHeight = MediaQuery.of(context).size.height;
     final draggedHeight = _panelDragHeight ?? _panelHeightForStage(context);
+    const flingThreshold = 700.0;
 
     if (_stage == RideStage.pin) {
       final openThreshold = screenHeight * 0.40;
-      if (draggedHeight >= openThreshold) {
+      // Fast upward fling or dragged past threshold → open
+      if (velocity < -flingThreshold || draggedHeight >= openThreshold) {
         _setStage(RideStage.plan);
         return;
       }
@@ -2941,7 +2803,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
     if (_stage == RideStage.plan) {
       final collapseThreshold = screenHeight * 0.33;
-      if (draggedHeight <= collapseThreshold) {
+      // Fast downward fling or dragged below threshold → collapse
+      if (velocity > flingThreshold || draggedHeight <= collapseThreshold) {
         Navigator.of(context).maybePop();
         return;
       }
@@ -2952,8 +2815,15 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       final expandedH = (442 + bottomInset).clamp(390.0, screenHeight * 0.62);
       final collapsedH = (270 + bottomInset).clamp(240.0, screenHeight * 0.45);
       final midpoint = (expandedH + collapsedH) / 2;
+      // Fast fling overrides position threshold
+      final bool expand;
+      if (velocity.abs() > flingThreshold) {
+        expand = velocity < 0; // swipe up = expand
+      } else {
+        expand = draggedHeight >= midpoint;
+      }
       setState(() {
-        _optionsExpanded = draggedHeight >= midpoint;
+        _optionsExpanded = expand;
         _isPanelDragging = false;
         _panelDragHeight = null;
       });

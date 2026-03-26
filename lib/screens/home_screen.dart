@@ -948,7 +948,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
               maxChildSize: _kMaxSheet,
               snap: true,
               snapSizes: const [_kMinSheet, _kMaxSheet],
-              snapAnimationDuration: const Duration(milliseconds: 350),
+              // No snapAnimationDuration — let Flutter use velocity-aware defaults
               builder: (ctx, scrollCtrl) =>
                   _buildSheet(scrollCtrl, bottomPad),
             ),

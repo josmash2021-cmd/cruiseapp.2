@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/verified_avatar.dart';
+import '../../widgets/gold_map_pin.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
@@ -155,6 +156,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Timer? _iconPulseTimer;
   double _iconPulseScale = 1.6;
   bool   _iconPulseUp    = true;
+
+  // ── Dest pin pop animation ────────────────────────────────────────────────
+  Timer? _destPinAnimTimer;
+  double _destPinScale = 0.0;
 
   // ── Phase ─────────────────────────────────────────────────────────────────
   TripPhase get _phase => _sm.phase;
@@ -468,22 +473,26 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   //  CINEMATIC ROUTE ANIMATION
   // =========================================================================
 
-  /// Full cinematic entry: top-down → route draw → 45° tilt → 62° follow.
+  /// Full cinematic entry: top-down → route draw → 45° tilt → 65° follow.
   Future<void> _startCinematicEntry() async {
     if (_routePts.length < 2 || _cinematicDone) return;
     _cinematicDone = true;
+    await _runCinematicSequence();
+  }
 
+  /// Cinematic camera sequence reused for initial entry AND Start Ride.
+  /// Top-down (0°) → route fill → 45° behind driver → pause → 65° chase.
+  Future<void> _runCinematicSequence() async {
     // 1. Zoom out to top-down overview (pitch 0°)
     await _zoomToShowRoute();
     await Future.delayed(const Duration(milliseconds: 400));
 
-    // 2. Animated route draw (1.5s, 60fps)
+    // 2. Animated route draw (1.5s, easeInOut)
     await _drawRouteAnimated();
-    await Future.delayed(const Duration(milliseconds: 200));
 
-    // 3. Intermediate tilt: fly to 45° with mid-zoom
-    final midZoom = (_navZoom - 2.0).clamp(13.0, 16.0);
-    final midCenter = _offsetLatLng(_pos, _bearing, midZoom, _pinOffsetRatio * 0.5);
+    // 3. Transition to 45° behind driver (1.5s, easeInOut)
+    final midZoom = (_navZoom - 1.5).clamp(14.0, 16.5);
+    final midCenter = _offsetLatLng(_pos, _bearing, midZoom, _pinOffsetRatio);
     _map?.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
@@ -492,11 +501,14 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         bearing: _bearing,
         pitch: 45,
       ),
-      mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
+      mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
     );
-    await Future.delayed(const Duration(milliseconds: 900));
+    await Future.delayed(const Duration(milliseconds: 1600));
 
-    // 4. Final tilt: fly to 62° chase-camera follow mode
+    // 4. Pause 0.5s at 45°
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    // 5. Settle to 65° chase-camera (1s, smooth)
     _zoomBackToDriver();
   }
 
@@ -526,7 +538,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     await Future.delayed(const Duration(milliseconds: 900));
   }
 
-  void _zoomBackToDriver() {
+  Future<void> _zoomBackToDriver() async {
     setState(() {
       _cameraFollowing = true;
       _isOverview = false;
@@ -542,6 +554,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       ),
       mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
     );
+    await Future.delayed(const Duration(milliseconds: 1100));
   }
 
   /// Draw route progressively at 60fps using a Ticker.
@@ -561,7 +574,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         return;
       }
       final progress = (stopwatch.elapsedMilliseconds / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeInOutSine.transform(progress);
+      final eased = Curves.easeInOut.transform(progress);
       final count = (eased * _routePts.length).round().clamp(1, _routePts.length);
       _animatedRoute = _routePts.sublist(0, count);
       _updateRouteAnnotationAnimated(_animatedRoute);
@@ -739,9 +752,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   //  CAMERA
   // =========================================================================
 
-  // Navigation camera: 62° tilt, zoom 17, pin at upper 35% of screen
+  // Navigation camera: 65° tilt, zoom 17, pin at lower third of screen
   static const double _navZoom = 17.0;
-  static const double _navTilt = 62.0;
+  static const double _navTilt = 65.0;
   static const double _pinOffsetRatio = 0.35;
 
   void _animateCamera(LatLng pos, {double? zoom, double bearing = 0, double tilt = _navTilt}) {
@@ -808,7 +821,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _isOverview      = false;
       _hasResumedOnce  = true;
     });
-    // Smooth flyTo transition back to 62° tilt chase-camera
+    // Smooth flyTo transition back to 65° tilt chase-camera
     final offsetCenter = _offsetLatLng(_pos, _bearing, _navZoom, _pinOffsetRatio);
     _map?.flyTo(
       mapbox.CameraOptions(
@@ -868,7 +881,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _startRideSwitching = true;
     _sm.beginTrip(); // triggers _onPhaseChanged(TripPhase.onTrip)
 
-    // ── Cinematic route switch: fade old → fetch new → animate draw ──
+    // ── Cinematic route switch: fade old → fetch new → full cinematic ──
     await _fadeOutRoute();
 
     // Fetch dropoff route
@@ -885,11 +898,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       });
       _navService.startNavigation(route);
 
-      // Fly out to show new route, then animated draw, then zoom back
-      await _zoomToShowRoute();
-      await Future.delayed(const Duration(milliseconds: 300));
-      await _drawRouteAnimated();
-      await Future.delayed(const Duration(milliseconds: 300));
+      // Full cinematic: top-down → route fill → 45° → 65° behind driver
+      await _runCinematicSequence();
     }
 
     _startRideSwitching = false;
@@ -897,7 +907,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _cameraFollowing = true;
       _isOverview      = false;
     });
-    _zoomBackToDriver();
   }
 
   Future<void> _completeTrip() async {
@@ -1181,118 +1190,14 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     return bytes?.buffer.asUint8List();
   }
 
-  /// Cruise-branded teardrop pin for destination (white tip).
+  /// Unified gold teardrop pin for destination.
   Future<Uint8List?> _buildDestPin() async {
-    return _buildCruiseTeardropPin(Colors.white);
+    return renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: false);
   }
 
-  /// Cruise-branded teardrop pin for pickup (gold tip).
+  /// Unified gold teardrop pin for pickup.
   Future<Uint8List?> _buildPickupPin() async {
-    return _buildCruiseTeardropPin(_gold);
-  }
-
-  /// 3D Cruise-branded teardrop pin with perspective depth effect.
-  /// Navy→tipColor gradient fill, person avatar, ground shadow, highlight.
-  Future<Uint8List?> _buildCruiseTeardropPin(Color tipColor) async {
-    const double pw = 96, ph = 120; // larger canvas for shadow + 3D room
-    const double w = 72, h = 88;    // original pin dimensions
-    const double ox = (pw - w) / 2; // horizontal offset for centering
-    const double oy = 6;            // top offset (room for highlight glow)
-    final rec = ui.PictureRecorder();
-    final cv  = Canvas(rec, const Rect.fromLTWH(0, 0, pw, ph));
-    const cx  = ox + w / 2;
-    const r   = w / 2;
-
-    // ── Ground shadow ellipse (3D depth cue) ──
-    cv.drawOval(
-      Rect.fromCenter(center: const Offset(cx, ph - 8), width: 52, height: 12),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.40)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-
-    // ── Perspective tilt via Matrix4 ──
-    final matrix = Matrix4.identity()
-      ..setEntry(3, 2, 0.0015)   // perspective
-      ..rotateX(-0.18);          // ~10° forward tilt
-    cv.save();
-    cv.transform(matrix.storage);
-
-    // ── Teardrop path ──
-    final path = Path()
-      ..moveTo(cx, oy + h)
-      ..quadraticBezierTo(ox, oy + r + (h - r) * 0.35, ox, oy + r)
-      ..arcTo(Rect.fromLTWH(ox, oy, w, w), math.pi, -math.pi, false)
-      ..quadraticBezierTo(ox + w, oy + r + (h - r) * 0.35, cx, oy + h)
-      ..close();
-
-    // Drop shadow (offset behind pin)
-    cv.drawPath(
-      path.shift(const Offset(2, 5)),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.45)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-
-    // Gradient fill: navy top → tipColor at bottom
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [const Color(0xFF1A1F2E), tipColor],
-        stops: const [0.0, 0.85],
-      ).createShader(Rect.fromLTWH(ox, oy, w, h));
-    cv.drawPath(path, fillPaint);
-
-    // Left-edge highlight (3D light reflection)
-    final highlightPath = Path()
-      ..moveTo(cx, oy + h)
-      ..quadraticBezierTo(ox, oy + r + (h - r) * 0.35, ox, oy + r)
-      ..arcTo(Rect.fromLTWH(ox, oy, w, w), math.pi, -math.pi * 0.4, false);
-    cv.drawPath(
-      highlightPath,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.18)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.0
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
-    );
-
-    // Border
-    cv.drawPath(
-      path,
-      Paint()
-        ..color = tipColor.withValues(alpha: 0.50)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-
-    // ── Person avatar (navy circle + white icon) ──
-    const avatarR  = 22.0;
-    const avatarCy = oy + 26.0;
-    cv.drawCircle(const Offset(cx, avatarCy), avatarR,
-      Paint()..color = const Color(0xFF1A1F2E));
-    cv.drawCircle(const Offset(cx, avatarCy), avatarR,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.24)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0);
-
-    // Person icon (head + body)
-    final iconPaint = Paint()..color = Colors.white;
-    cv.drawCircle(const Offset(cx, avatarCy - 6), 7, iconPaint);
-    final bodyPath = Path()
-      ..moveTo(cx - 8, avatarCy + 14)
-      ..quadraticBezierTo(cx - 8, avatarCy + 2, cx, avatarCy + 2)
-      ..quadraticBezierTo(cx + 8, avatarCy + 2, cx + 8, avatarCy + 14)
-      ..close();
-    cv.drawPath(bodyPath, iconPaint);
-
-    cv.restore(); // restore perspective transform
-
-    final img = await rec.endRecording().toImage(pw.toInt(), ph.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
+    return renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true);
   }
 
   // =========================================================================
@@ -1971,26 +1876,40 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Widget _buildSpeedOverlay(double topOffset) {
     final speed = _currentSpeedMph.round();
 
-    // Infer speed limit from current road name + maneuver context
-    final street = _currentStreet.toLowerCase();
-    final maneuver = _navState?.currentManeuver ?? '';
-    final int limit;
-    if (street.contains('interstate') || street.contains('i-') ||
-        street.contains('freeway') || street.contains('turnpike') ||
-        street.contains('expressway') || street.contains('motorway')) {
-      limit = 65;
-    } else if (street.contains('highway') || street.contains('hwy') ||
-               street.contains('parkway') || street.contains('pkwy') ||
-               maneuver.contains('merge') || maneuver.contains('ramp')) {
-      limit = 55;
-    } else if (street.contains('boulevard') || street.contains('blvd') ||
-               street.contains('avenue') || street.contains('ave') ||
-               street.contains('road') || street.contains('rd') ||
-               street.contains('drive') || street.contains('dr')) {
-      limit = 35;
-    } else {
-      limit = 25; // residential / local streets
+    // Use dynamic speed limit from Mapbox maxspeed annotation on current step
+    final stepLimit = _navState?.currentStep?.maxSpeedMph;
+    if (stepLimit == null) {
+      // No speed data — show only current speed, hide limit sign
+      return Container(
+        width: 44, height: 44,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1E2E),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 8, offset: const Offset(0, 2)),
+          ],
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('$speed',
+                style: const TextStyle(
+                  color: Colors.white, fontSize: 16,
+                  fontWeight: FontWeight.w900, height: 1.0)),
+              const Text('mph',
+                style: TextStyle(
+                  color: Colors.white70, fontSize: 8,
+                  fontWeight: FontWeight.w600, height: 1.2)),
+            ],
+          ),
+        ),
+      );
     }
+
+    final limit = stepLimit.round();
     final isOver = speed > limit;
 
     return Column(

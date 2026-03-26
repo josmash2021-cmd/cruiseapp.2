@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import '../widgets/verified_avatar.dart';
@@ -23,6 +24,7 @@ import '../services/api_service.dart';
 import '../services/navigation_service.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/driver_action_panel.dart';
+import '../widgets/gold_pin_renderer.dart';
 
 class DriverNavigationPage extends StatefulWidget {
   const DriverNavigationPage({
@@ -95,8 +97,20 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   bool _isRerouting = false;
   Timer? _etaRefreshTimer;
 
+  // ── Cinematic route animation ─────────────────────────────────────────
+  List<LatLng> _animatedRoute = [];
+  bool _routeAnimating = false;
+  bool _cinematicDone = false;
+  Ticker? _routeDrawTicker;
+
+  // ── Dynamic speed limit ───────────────────────────────────────────────
+  int? _dynamicSpeedLimit;
+
+  // ── Dest pin pop animation ────────────────────────────────────────────
+  double _destPinScale = 0.0;
+  Timer? _destPinAnimTimer;
+
   static const _navy = Color(0xFF0A2463);
-  static const _green = Color(0xFF34A853);
   static const _red = Color(0xFFEF5350);
   static const _gold = Color(0xFFD4A24C);
   static const _cardBg = Color(0xFF1A1E2E);
@@ -130,6 +144,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     _routePts =
         widget.routePoints ?? _makeStraightRoute(_pos, widget.pickupLatLng);
     _displayRoutePts = List.of(_routePts);
+    _cameraFollowing = false; // wait for cinematic sequence
     _buildRouteOnInit();
 
     // Periodic ETA refresh every 30 seconds
@@ -144,6 +159,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     _gpsSub?.cancel();
     _reFollowTimer?.cancel();
     _etaRefreshTimer?.cancel();
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _destPinAnimTimer?.cancel();
     _motion.dispose();
     _sm.dispose();
     _map?.dispose();
@@ -163,6 +181,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         _routePts = route.overviewPolyline;
         _displayRoutePts = List.of(_routePts);
         _navService.startNavigation(route);
+        // Extract speed limit annotations if available
+        _extractSpeedLimits(route);
       }
     }
     if (mounted) setState(() {});
@@ -193,6 +213,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     }
     _sm.checkProximity(snap.snapped);
     _trimRouteBehind(snap.segmentIndex);
+    _updateDynamicSpeedLimit();
     final dest = _sm.phase == TripPhase.onTrip
         ? widget.dropoffLatLng
         : widget.pickupLatLng;
@@ -254,7 +275,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   void _onPhaseChanged(TripPhase phase) {
     if (phase == TripPhase.onTrip) {
       _hasResumedOnce = false;
-      _cameraFollowing = true;
+      _cameraFollowing = false;
       _switchToDropoffRoute();
     }
   }
@@ -268,14 +289,236 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       _routePts = route.overviewPolyline;
       _displayRoutePts = List.of(_routePts);
       _navService.startNavigation(route);
+      _extractSpeedLimits(route);
       _snapIdx = 0;
       setState(() {});
+      // Run full cinematic for the new route
+      await _runCinematicSequence();
     } else if (mounted) {
       _routePts = _makeStraightRoute(_pos, widget.dropoffLatLng);
       _displayRoutePts = List.of(_routePts);
       _snapIdx = 0;
+      _cameraFollowing = true;
       setState(() {});
     }
+  }
+
+  // =========================================================================
+  //  CINEMATIC ROUTE FILL + CAMERA SEQUENCE
+  // =========================================================================
+
+  Future<void> _startCinematicEntry() async {
+    if (_routePts.length < 2 || _cinematicDone) return;
+    _cinematicDone = true;
+    await _runCinematicSequence();
+  }
+
+  /// Phase A: top-down → route fill → Phase B: 45° → Phase C: 65° chase.
+  Future<void> _runCinematicSequence() async {
+    // Phase A — Zoom to top-down showing full route
+    await _zoomToShowRoute();
+    await Future.delayed(const Duration(milliseconds: 400));
+
+    // Animated route draw (1.5s, easeInOut)
+    await _drawRouteAnimated();
+
+    // Phase B — Transition to 45° behind driver (1.5s)
+    final midCenter = _lookaheadPoint(_pos, _bearing, 60);
+    _map?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(
+            coordinates: mapbox.Position(midCenter.longitude, midCenter.latitude)),
+        zoom: 16.0,
+        bearing: _bearing,
+        pitch: 45,
+      ),
+      mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
+    );
+    await Future.delayed(const Duration(milliseconds: 1600));
+
+    // Pause 0.5s at 45°
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    // Phase C — Settle to 65° chase-camera (1s)
+    _map?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(
+            coordinates: mapbox.Position(
+                _lookaheadPoint(_pos, _bearing, 50).longitude,
+                _lookaheadPoint(_pos, _bearing, 50).latitude)),
+        zoom: 17.0,
+        bearing: _bearing,
+        pitch: 65,
+      ),
+      mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
+    );
+    await Future.delayed(const Duration(milliseconds: 1100));
+
+    // Enable continuous tracking
+    if (mounted) {
+      setState(() => _cameraFollowing = true);
+    }
+  }
+
+  Future<void> _zoomToShowRoute() async {
+    if (_routePts.isEmpty) return;
+    final all = [..._routePts, _pos];
+    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    for (final p in all) {
+      if (p.latitude  < minLat) minLat = p.latitude;
+      if (p.latitude  > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    final midLat = (minLat + maxLat) / 2;
+    final midLng = (minLng + maxLng) / 2;
+    final span = math.max(maxLat - minLat, maxLng - minLng);
+    final zoom = span > 0
+        ? (math.log(360 / span) / math.ln2).clamp(8.0, 14.5)
+        : 13.0;
+    _map?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
+        zoom: zoom,
+        bearing: 0,
+        pitch: 0,
+      ),
+      mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
+    );
+    await Future.delayed(const Duration(milliseconds: 900));
+  }
+
+  /// Draw route progressively at 60fps via Ticker (1.5s, easeInOut).
+  Future<void> _drawRouteAnimated() async {
+    if (_routePts.length < 2) return;
+    _routeAnimating = true;
+    final completer = Completer<void>();
+    final stopwatch = Stopwatch()..start();
+    const totalMs = 1500;
+
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = createTicker((_) {
+      if (!mounted) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      final progress = (stopwatch.elapsedMilliseconds / totalMs).clamp(0.0, 1.0);
+      final eased = Curves.easeInOut.transform(progress);
+      final count = (eased * _routePts.length).round().clamp(1, _routePts.length);
+      _animatedRoute = _routePts.sublist(0, count);
+      _updateRouteAnnotationAnimated(_animatedRoute);
+
+      if (progress >= 1.0) {
+        _routeDrawTicker?.stop();
+        _routeAnimating = false;
+        _animatedRoute = List.from(_routePts);
+        _displayRoutePts = List.from(_routePts);
+        _updateRouteAnnotation();
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+    _routeDrawTicker!.start();
+    return completer.future;
+  }
+
+  /// Animated variant: updates route polyline during progressive draw.
+  Future<void> _updateRouteAnnotationAnimated(List<LatLng> pts) async {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || pts.length < 2) return;
+    final coords = pts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final geo = mapbox.LineString(coordinates: coords);
+    if (_routeAnnot != null) {
+      _routeAnnot!.geometry = geo;
+      try { await mgr.update(_routeAnnot!); } catch (_) {}
+    } else {
+      _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geo,
+        lineColor: const Color(0xFFFFD700).toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    }
+  }
+
+  // =========================================================================
+  //  DYNAMIC SPEED LIMIT
+  // =========================================================================
+
+  List<int?> _segmentSpeedLimits = [];
+
+  void _extractSpeedLimits(dynamic route) {
+    // Try to extract maxspeed annotations from route data
+    try {
+      final annotations = route.speedLimitsMph as List<int?>?;
+      if (annotations != null && annotations.isNotEmpty) {
+        _segmentSpeedLimits = annotations;
+        return;
+      }
+    } catch (_) {}
+    // Fallback: infer from street names
+    _segmentSpeedLimits = [];
+  }
+
+  void _updateDynamicSpeedLimit() {
+    if (_segmentSpeedLimits.isNotEmpty && _snapIdx < _segmentSpeedLimits.length) {
+      final limit = _segmentSpeedLimits[_snapIdx];
+      if (limit != _dynamicSpeedLimit) {
+        setState(() => _dynamicSpeedLimit = limit);
+      }
+      return;
+    }
+    // Infer from street name
+    final street = (_navState?.currentStep?.streetName ?? '').toLowerCase();
+    final maneuver = _navState?.currentManeuver ?? '';
+    int? limit;
+    if (street.contains('interstate') || street.contains('i-') ||
+        street.contains('freeway') || street.contains('turnpike') ||
+        street.contains('expressway') || street.contains('motorway')) {
+      limit = 65;
+    } else if (street.contains('highway') || street.contains('hwy') ||
+               street.contains('parkway') || street.contains('pkwy') ||
+               maneuver.contains('merge') || maneuver.contains('ramp')) {
+      limit = 55;
+    } else if (street.contains('boulevard') || street.contains('blvd') ||
+               street.contains('avenue') || street.contains('ave') ||
+               street.contains('road') || street.contains('rd') ||
+               street.contains('drive') || street.contains('dr')) {
+      limit = 35;
+    } else if (street.isNotEmpty) {
+      limit = 25;
+    } else {
+      limit = null; // hide when no data
+    }
+    if (limit != _dynamicSpeedLimit) {
+      setState(() => _dynamicSpeedLimit = limit);
+    }
+  }
+
+  // =========================================================================
+  //  DEST PIN POP/BOUNCE ANIMATION
+  // =========================================================================
+
+  void _animateDestPinPop() {
+    _destPinScale = 0.0;
+    _destPinAnimTimer?.cancel();
+    const totalMs = 450;
+    final sw = Stopwatch()..start();
+    _destPinAnimTimer = Timer.periodic(const Duration(milliseconds: 16), (t) {
+      if (!mounted) { t.cancel(); return; }
+      final p = (sw.elapsedMilliseconds / totalMs).clamp(0.0, 1.0);
+      final eased = Curves.elasticOut.transform(p);
+      _destPinScale = eased;
+      // Update annotation iconSize
+      final mgr = _pointAnnotMgr;
+      final annot = _destAnnot;
+      if (mgr != null && annot != null) {
+        annot.iconSize = _destPinScale;
+        try { mgr.update(annot); } catch (_) {}
+      }
+      if (p >= 1.0) t.cancel();
+    });
   }
 
   /// Re-fetch route from current position when driver goes off-route.
@@ -755,7 +998,18 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       _cameraFollowing = true;
       _hasResumedOnce = true;
     });
-    _animateCameraNav(_pos, bearing: _bearing);
+    // Smooth flyTo back to 65° tilt chase-camera (1s)
+    final ahead = _lookaheadPoint(_pos, _bearing, 50);
+    _map?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(
+            coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
+        zoom: 17.0,
+        bearing: _bearing,
+        pitch: 65,
+      ),
+      mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
+    );
   }
 
   Future<void> _updateDriverAnnotation() async {
@@ -788,47 +1042,20 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final dest = _sm.phase == TripPhase.onTrip || _sm.phase == TripPhase.arrivedDropoff
         ? widget.dropoffLatLng
         : widget.pickupLatLng;
-    _destPinBytes ??= await _buildDestPinBytes();
+    _destPinBytes ??= await GoldPinRenderer.render(isPickup: _sm.phase == TripPhase.toPickup);
     if (_destAnnot == null) {
       _destAnnot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(dest.longitude, dest.latitude)),
         image: _destPinBytes,
-        iconSize: 1.0,
+        iconSize: 0.0, // start at 0 for pop animation
         iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
       ));
+      _animateDestPinPop();
     } else {
       _destAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(dest.longitude, dest.latitude));
       await mgr.update(_destAnnot!);
     }
-  }
-
-  Future<Uint8List?> _buildDestPinBytes() async {
-    const double w = 60;
-    const double h = 80;
-    final rec = ui.PictureRecorder();
-    final c = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
-    const cx = w / 2;
-    const r = 18.0;
-    const headCY = r + 6;
-    const tipY = h;
-    // Teardrop path
-    final path = Path()
-      ..moveTo(cx - r, headCY)
-      ..arcTo(Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
-          math.pi, -math.pi, false)
-      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 3, cx, tipY)
-      ..cubicTo(cx - r * 0.22, tipY - 3, cx - r, headCY + r, cx - r, headCY)
-      ..close();
-    c.drawPath(path.shift(const Offset(0, 2)), Paint()
-      ..color = Colors.black.withValues(alpha: 0.30)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
-    c.drawPath(path, Paint()..color = _gold);
-    c.drawCircle(const Offset(cx, headCY), r, Paint()..color = Colors.white);
-    c.drawCircle(const Offset(cx, headCY), r - 5, Paint()..color = _gold);
-    final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
   }
 
   Future<void> _updateRouteAnnotation() async {
@@ -926,9 +1153,13 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                   below: "road-label",
                 );
                 _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                _updateRouteAnnotation();
+                // Don't draw route yet — cinematic will do it
                 _updateDestAnnotation();
                 _updateDriverAnnotation();
+                // Trigger cinematic sequence after short delay
+                Future.delayed(const Duration(milliseconds: 500), () {
+                  if (mounted) _startCinematicEntry();
+                });
               },
               onStyleLoadedListener: (_) async {
                 if (_map != null) await MapTheme.applyNavyGold(_map!);
@@ -1238,51 +1469,108 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
 
   Widget _speedLimitSign() {
     final speed = _currentSpeedMph.round();
-    final overLimit = speed > widget.speedLimitMph + 5;
+    final limit = _dynamicSpeedLimit;
+
+    // Hide when no speed limit data available
+    if (limit == null) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 60), // placeholder spacing
+          // Current speed only
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: _cardBg,
+              shape: BoxShape.circle,
+              border: Border.all(color: _cardBorder, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '$speed',
+                  style: const TextStyle(
+                    color: _textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const Text(
+                  'mph',
+                  style: TextStyle(
+                    color: _textSecondary,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    final overLimit = speed > limit + 5;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         // Speed limit badge (MUTCD style)
-        Container(
-          width: 44,
-          padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: Colors.black87, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'SPEED\nLIMIT',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.black87,
-                  fontSize: 6,
-                  fontWeight: FontWeight.w900,
-                  height: 1.1,
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: Container(
+            key: ValueKey(limit),
+            width: 44,
+            padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: overLimit ? Colors.red : Colors.black87, width: overLimit ? 3 : 2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
                 ),
-              ),
-              Text(
-                '${widget.speedLimitMph}',
-                style: const TextStyle(
-                  color: Colors.black87,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  height: 1.1,
-                  fontFeatures: [FontFeature.tabularFigures()],
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'SPEED\nLIMIT',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.black87,
+                    fontSize: 6,
+                    fontWeight: FontWeight.w900,
+                    height: 1.1,
+                  ),
                 ),
-              ),
-            ],
+                Text(
+                  '$limit',
+                  style: const TextStyle(
+                    color: Colors.black87,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    height: 1.1,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 6),
@@ -1345,10 +1633,45 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       mainAxisSize: MainAxisSize.min,
       children: [
         _circleFab(
-          icon: Icons.home_rounded,
+          icon: Icons.zoom_out_map_rounded,
           tooltip: S.of(context).goHomeLabel,
           iconColor: _textSecondary,
-          onTap: () => Navigator.of(context).pop(),
+          onTap: () {
+            // Toggle overview
+            final dest = _sm.phase == TripPhase.onTrip
+                ? widget.dropoffLatLng
+                : widget.pickupLatLng;
+            final midLat = (_pos.latitude + dest.latitude) / 2;
+            final midLng = (_pos.longitude + dest.longitude) / 2;
+            final span = math.max(
+              (_pos.latitude - dest.latitude).abs(),
+              (_pos.longitude - dest.longitude).abs(),
+            );
+            final zoom = span > 0
+                ? (math.log(360 / span) / math.ln2).clamp(8.0, 14.5)
+                : 13.0;
+            setState(() => _cameraFollowing = false);
+            _map?.flyTo(
+              mapbox.CameraOptions(
+                center: mapbox.Point(
+                    coordinates: mapbox.Position(midLng, midLat)),
+                zoom: zoom,
+                bearing: 0,
+                pitch: 0,
+              ),
+              mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        _circleFab(
+          icon: Icons.music_note_rounded,
+          tooltip: 'Music',
+          iconColor: _textSecondary,
+          onTap: () {
+            HapticFeedback.lightImpact();
+            _showMusicSheet();
+          },
         ),
         const SizedBox(height: 10),
         _circleFab(
@@ -1376,6 +1699,63 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           },
         ),
       ],
+    );
+  }
+
+  void _showMusicSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF111318),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.24),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Text('Music Controls',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                )),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.play_arrow_rounded, color: _gold),
+                title: const Text('Open Spotify',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                onTap: () => Navigator.pop(ctx),
+              ),
+              ListTile(
+                leading: const Icon(Icons.skip_next_rounded, color: _gold),
+                title: const Text('Next Track',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                onTap: () => Navigator.pop(ctx),
+              ),
+              ListTile(
+                leading: Icon(_muted ? Icons.volume_off_rounded : Icons.volume_up_rounded, color: _gold),
+                title: Text(_muted ? 'Unmute Navigation' : 'Mute Navigation',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                onTap: () {
+                  setState(() => _muted = !_muted);
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1504,49 +1884,58 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Google Maps style ETA row: green ETA left, details right ──
+          // ── Centered ETA row ──
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Row(
               children: [
-                // Big green ETA
-                Text(
-                  '$_etaMinutes min',
-                  style: const TextStyle(
-                    color: Color(0xFF34A853),
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                    fontFeatures: [FontFeature.tabularFigures()],
+                // Centered ETA / distance / arrival
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$_etaMinutes min',
+                          style: const TextStyle(
+                            color: Color(0xFF34A853),
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$distStr · $arrivalStr',
+                          style: const TextStyle(
+                            color: _textSecondary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                if (!_muted)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 6),
-                    child: Icon(Icons.volume_up_rounded, color: _green, size: 18),
-                  ),
-                const Spacer(),
-                // Distance · Arrival
-                Text(
-                  '$distStr · $arrivalStr',
-                  style: const TextStyle(
-                    color: _textSecondary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                // Recenter / compass button (Google Maps style)
+                // Exit button — no confirmation dialog, just pop
                 GestureDetector(
-                  onTap: _recenter,
+                  onTap: () => Navigator.of(context).pop(),
                   child: Container(
-                    width: 36, height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                     decoration: BoxDecoration(
                       color: const Color(0xFF232840),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: _cardBorder, width: 1),
                     ),
-                    child: const Icon(Icons.near_me_rounded, color: _textSecondary, size: 18),
+                    child: const Text(
+                      'Exit',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -1558,7 +1947,6 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             child: Row(
               children: [
-                // Avatar
                 VerifiedAvatar(
                   photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
                   radius: 20,
@@ -1566,7 +1954,6 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                   isVerified: true,
                 ),
                 const SizedBox(width: 10),
-                // Name + rating
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1596,11 +1983,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                     ],
                   ),
                 ),
-                // Address pill
-                Expanded(
-                  child: _currentAddressPill(),
-                ),
-                // Contact buttons
+                _currentAddressPill(),
                 _miniBtn(Icons.message_rounded, () => HapticFeedback.lightImpact()),
                 const SizedBox(width: 6),
                 _miniBtn(Icons.phone_rounded, () => HapticFeedback.lightImpact()),

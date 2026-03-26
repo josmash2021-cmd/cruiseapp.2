@@ -151,7 +151,7 @@ class DirectionsService {
       final url = Uri.parse(
         'https://api.mapbox.com/directions/v5/mapbox/driving/'
         '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
-        '?geometries=geojson&overview=full&steps=true'
+        '?geometries=geojson&overview=full&steps=true&annotations=maxspeed'
         '&access_token=${MapboxConfig.accessToken}',
       );
       final res = await http.get(url).timeout(const Duration(seconds: 8));
@@ -371,7 +371,7 @@ class DirectionsService {
       final url = Uri.parse(
         'https://api.mapbox.com/directions/v5/mapbox/driving/'
         '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
-        '?geometries=geojson&overview=full&steps=true'
+        '?geometries=geojson&overview=full&steps=true&annotations=maxspeed'
         '&access_token=${MapboxConfig.accessToken}',
       );
       debugPrint('[Route] Mapbox request URL: $url');

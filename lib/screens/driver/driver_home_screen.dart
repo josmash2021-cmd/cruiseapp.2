@@ -31,6 +31,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/verified_avatar.dart';
+import '../../widgets/velocity_aware_panel.dart';
 
 /// ═══════════════════════════════════════════════════════════════
 ///  CRUISE DRIVER HOME — Premium dashboard with map, stats, go-online
@@ -43,7 +44,7 @@ class DriverHomeScreen extends StatefulWidget {
 }
 
 class _DriverHomeScreenState extends State<DriverHomeScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, VelocityAwarePanelMixin {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
   // ignore: unused_field
@@ -77,7 +78,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   late Animation<double> _fabScale;
 
   // ── Bottom panel ──
-  double _panelExtent = 0.0; // 0 = collapsed, 1 = expanded
   static const double _panelCollapsedH = 62.0;
   static const double _panelExpandedH = 380.0; // Increased for full content
   bool _dragging = false;
@@ -97,8 +97,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   int? _driverId;
 
   @override
+  double get panelTravelHeight => _panelExpandedH - _panelCollapsedH;
+
+  @override
   void initState() {
     super.initState();
+    initPanelAnimation();
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarBrightness: Brightness.dark,
@@ -188,6 +192,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   @override
   void dispose() {
+    disposePanelAnimation();
     _pulseCtrl.dispose();
     _statsCtrl.dispose();
     _fabCtrl.dispose();
@@ -636,7 +641,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Widget build(BuildContext context) {
     final pad = MediaQuery.of(context).padding;
     final panelH =
-        _panelCollapsedH + (_panelExpandedH - _panelCollapsedH) * _panelExtent;
+        _panelCollapsedH + (_panelExpandedH - _panelCollapsedH) * panelExtent;
 
     final dc = DriverColors.of(context);
     return Scaffold(
@@ -1047,14 +1052,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Widget _buildDraggablePanel(EdgeInsets pad) {
     final dc = DriverColors.of(context);
     final panelH =
-        _panelCollapsedH + (_panelExpandedH - _panelCollapsedH) * _panelExtent;
+        _panelCollapsedH + (_panelExpandedH - _panelCollapsedH) * panelExtent;
 
     return GestureDetector(
       // Consume taps so panel never opens on tap — swipe-only
       onTap: () {},
-      child: AnimatedContainer(
-      duration: _dragging ? Duration.zero : const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
+      child: Container(
       height: panelH + pad.bottom,
       decoration: BoxDecoration(
         color: dc.card,
@@ -1074,24 +1077,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             behavior: HitTestBehavior.translucent,
             onVerticalDragStart: (_) => setState(() => _dragging = true),
             onVerticalDragUpdate: (d) {
-              setState(() {
-                final delta =
-                    -d.delta.dy / (_panelExpandedH - _panelCollapsedH);
-                _panelExtent = (_panelExtent + delta).clamp(0.0, 1.0);
-              });
+              setState(() => _dragging = true);
+              updatePanelDrag(d.primaryDelta ?? 0);
             },
             onVerticalDragEnd: (d) {
               setState(() => _dragging = false);
-              final velocity = d.primaryVelocity ?? 0;
-              double target;
-              if (velocity < -300) {
-                target = 1.0;
-              } else if (velocity > 300) {
-                target = 0.0;
-              } else {
-                target = _panelExtent > 0.3 ? 1.0 : 0.0;
-              }
-              _animatePanel(target);
+              endPanelDrag(d.primaryVelocity ?? 0);
             },
             child: Padding(
               padding: const EdgeInsets.only(top: 8, bottom: 4),
@@ -1110,24 +1101,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               behavior: HitTestBehavior.translucent,
               onVerticalDragStart: (_) => setState(() => _dragging = true),
               onVerticalDragUpdate: (d) {
-                setState(() {
-                  final delta =
-                      -d.delta.dy / (_panelExpandedH - _panelCollapsedH);
-                  _panelExtent = (_panelExtent + delta).clamp(0.0, 1.0);
-                });
+                setState(() => _dragging = true);
+                updatePanelDrag(d.primaryDelta ?? 0);
               },
               onVerticalDragEnd: (d) {
                 setState(() => _dragging = false);
-                final velocity = d.primaryVelocity ?? 0;
-                double target;
-                if (velocity < -300) {
-                  target = 1.0;
-                } else if (velocity > 300) {
-                  target = 0.0;
-                } else {
-                  target = _panelExtent > 0.3 ? 1.0 : 0.0;
-                }
-                _animatePanel(target);
+                endPanelDrag(d.primaryVelocity ?? 0);
               },
               child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
@@ -1177,10 +1156,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             ),
             ),
             // ── Expanded content ──
-            if (_panelExtent > 0.02)
+            if (panelExtent > 0.02)
               Expanded(
                 child: Opacity(
-                  opacity: _panelExtent.clamp(0.0, 1.0),
+                  opacity: panelExtent.clamp(0.0, 1.0),
                   child: ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.symmetric(
@@ -1339,27 +1318,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ),
       ),
     );
-  }
-
-  void _animatePanel(double target) {
-    final start = _panelExtent;
-    final ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 250),
-    );
-    ctrl.addListener(() {
-      if (mounted) {
-        setState(() {
-          _panelExtent =
-              start +
-              (target - start) * Curves.easeOutCubic.transform(ctrl.value);
-        });
-      }
-    });
-    ctrl.addStatusListener((status) {
-      if (status == AnimationStatus.completed) ctrl.dispose();
-    });
-    ctrl.forward();
   }
 
   Widget _panelStat(IconData icon, String value, String label) {

@@ -7052,8 +7052,8 @@ Widget _navHeader() {
         _panelSheetCtrl.size > (minFrac + 0.05);
     _panelSheetCtrl.animateTo(
       isOpen ? minFrac : 0.85,
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOutCubic,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
     );
     setState(() => _panelOpen = !isOpen);
   }

@@ -9,6 +9,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
 import '../config/map_theme.dart';
+import '../widgets/gold_map_pin.dart';
 
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
@@ -935,153 +936,20 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   /// Renders a gold pin with contextual icon (100px).
-  /// Pickup: circle. Dropoff: rounded square.
-  /// Icon: house, store, airplane, or person based on address.
+  /// Uses shared gold_map_pin utility for consistent design across the app.
   Future<Uint8List> _renderGoldPin({
     required bool isPickup,
     String label = '',
   }) async {
-    const double w = 100;
-    const double h = 130;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
-    const cx = w / 2;
-    const r = 30.0;
-    const headCY = r + 8;
-    const tipY = h;
-    const gold = Color(0xFFE8C547);
-
     final iconType = _detectPinIcon(label);
-
-    // ── Teardrop path (head + tail, tip at exact bottom) ──
-    final path = Path()
-      ..moveTo(cx - r, headCY)
-      ..arcTo(
-        Rect.fromCircle(center: const Offset(cx, headCY), radius: r),
-        math.pi, -math.pi, false,
-      )
-      ..cubicTo(cx + r, headCY + r, cx + r * 0.22, tipY - 4, cx, tipY)
-      ..cubicTo(cx - r * 0.22, tipY - 4, cx - r, headCY + r, cx - r, headCY)
-      ..close();
-
-    // Shadow
-    canvas.drawPath(
-      path.shift(const Offset(0, 3)),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.32)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-    // Gold fill
-    canvas.drawPath(path, Paint()..color = gold);
-    // White border
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..color = Colors.white.withValues(alpha: 0.22),
-    );
-    // Specular highlight
-    canvas.drawCircle(
-      Offset(cx - r * 0.25, headCY - r * 0.25),
-      r * 0.42,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.18)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
-    );
-
-    // ── Fade blend at tip: vertical gradient transparent→route-blue ──
-    final fadeTop = headCY + r * 0.8;
-    canvas.drawRect(
-      Rect.fromLTRB(cx - r, fadeTop, cx + r, tipY),
-      Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(cx, fadeTop),
-          Offset(cx, tipY),
-          [Colors.transparent, const Color(0x885BA3F5)],
-        )
-        ..blendMode = BlendMode.srcATop,
-    );
-
-    // ── White icon inside head ──
-    final iconPaint = Paint()
-      ..color = Colors.white
-      ..isAntiAlias = true;
-    const s = r * 0.43;
-    const iy = headCY;
-
+    GoldPinIcon gpIcon;
     switch (iconType) {
-      case _PinIcon.house:
-        final roofPath = Path()
-          ..moveTo(cx, iy - s * 1.1)
-          ..lineTo(cx - s * 1.0, iy - s * 0.15)
-          ..lineTo(cx + s * 1.0, iy - s * 0.15)
-          ..close();
-        canvas.drawPath(roofPath, iconPaint);
-        canvas.drawRect(
-          Rect.fromLTRB(cx - s * 0.7, iy - s * 0.15, cx + s * 0.7, iy + s * 0.8),
-          iconPaint,
-        );
-        canvas.drawRect(
-          Rect.fromLTRB(cx - s * 0.2, iy + s * 0.2, cx + s * 0.2, iy + s * 0.8),
-          Paint()..color = gold,
-        );
-        break;
-      case _PinIcon.store:
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromLTRB(cx - s * 0.9, iy - s * 0.9, cx + s * 0.9, iy - s * 0.2),
-            Radius.circular(s * 0.3),
-          ),
-          iconPaint,
-        );
-        canvas.drawRect(
-          Rect.fromLTRB(cx - s * 0.9, iy - s * 0.2, cx + s * 0.9, iy + s * 0.8),
-          iconPaint,
-        );
-        canvas.drawRect(
-          Rect.fromLTRB(cx - s * 0.5, iy, cx + s * 0.5, iy + s * 0.5),
-          Paint()..color = gold,
-        );
-        break;
-      case _PinIcon.airplane:
-        // Clean flight_takeoff glyph — no custom path
-        final tp = TextPainter(
-          text: TextSpan(
-            text: String.fromCharCode(Icons.flight_takeoff_rounded.codePoint),
-            style: TextStyle(
-              fontSize: s * 2.8,
-              fontFamily: Icons.flight_takeoff_rounded.fontFamily,
-              package: Icons.flight_takeoff_rounded.fontPackage,
-              color: Colors.white,
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        tp.paint(
-          canvas,
-          Offset(cx - tp.width / 2, iy - tp.height / 2),
-        );
-        break;
-      case _PinIcon.person:
-        canvas.drawCircle(Offset(cx, iy - s * 0.5), s * 0.5, iconPaint);
-        canvas.drawRRect(
-          RRect.fromRectAndCorners(
-            Rect.fromLTRB(cx - s * 0.8, iy + s * 0.15, cx + s * 0.8, iy + s * 0.9),
-            topLeft: Radius.circular(s * 0.8),
-            topRight: Radius.circular(s * 0.8),
-            bottomLeft: Radius.circular(s * 0.15),
-            bottomRight: Radius.circular(s * 0.15),
-          ),
-          iconPaint,
-        );
-        break;
+      case _PinIcon.house:    gpIcon = GoldPinIcon.house; break;
+      case _PinIcon.store:    gpIcon = GoldPinIcon.store; break;
+      case _PinIcon.airplane: gpIcon = GoldPinIcon.airplane; break;
+      case _PinIcon.person:   gpIcon = GoldPinIcon.person; break;
     }
-
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(w.toInt(), h.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    return byteData!.buffer.asUint8List();
+    return renderGoldPinBytes(icon: gpIcon, isPickup: isPickup);
   }
 
   /// Renders a gold pin + address label as a single combined bitmap.

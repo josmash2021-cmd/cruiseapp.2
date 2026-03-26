@@ -13,6 +13,7 @@ class NavStep {
   final LatLng startLocation;
   final LatLng endLocation;
   final List<LatLng> polyline; // detailed polyline for this step
+  final double? maxSpeedMph; // speed limit from Mapbox annotations (null = unknown)
 
   const NavStep({
     required this.instruction,
@@ -23,6 +24,7 @@ class NavStep {
     required this.startLocation,
     required this.endLocation,
     required this.polyline,
+    this.maxSpeedMph,
   });
 
   /// Distance as a human-readable string (ft under 0.1 mi, else mi).
@@ -480,7 +482,14 @@ class NavigationService {
     // Parse steps from all legs
     final steps = <NavStep>[];
     for (final leg in legs) {
-      final rawSteps = (leg as Map<String, dynamic>)['steps'] as List? ?? [];
+      final legMap = leg as Map<String, dynamic>;
+      final rawSteps = legMap['steps'] as List? ?? [];
+
+      // Parse maxspeed annotations for this leg (per-segment)
+      final annotationMap = legMap['annotation'] as Map<String, dynamic>?;
+      final maxspeedList = annotationMap?['maxspeed'] as List? ?? [];
+
+      int segmentOffset = 0;
       for (final s in rawSteps) {
         final m = s as Map<String, dynamic>;
         final maneuverData = m['maneuver'] as Map<String, dynamic>? ?? {};
@@ -516,6 +525,21 @@ class NavigationService {
           }
         }
 
+        // Extract maxspeed for this step's first segment
+        double? stepMaxSpeedMph;
+        if (segmentOffset < maxspeedList.length) {
+          final msEntry = maxspeedList[segmentOffset];
+          if (msEntry is Map<String, dynamic>) {
+            final spd = (msEntry['speed'] as num?)?.toDouble();
+            final unit = (msEntry['unit'] as String?) ?? '';
+            if (spd != null && spd > 0) {
+              stepMaxSpeedMph = unit == 'km/h' ? spd * 0.621371 : spd;
+            }
+          }
+        }
+        // Advance segment offset by number of coordinates - 1 (segments = points - 1)
+        segmentOffset += (stepPoly.length > 1 ? stepPoly.length - 1 : 1);
+
         final endLoc = stepPoly.isNotEmpty ? stepPoly.last : LatLng(startLat, startLng);
 
         steps.add(NavStep(
@@ -527,6 +551,7 @@ class NavigationService {
           startLocation: LatLng(startLat, startLng),
           endLocation: endLoc,
           polyline: stepPoly,
+          maxSpeedMph: stepMaxSpeedMph,
         ));
       }
     }

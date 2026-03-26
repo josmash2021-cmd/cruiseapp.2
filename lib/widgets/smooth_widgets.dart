@@ -393,7 +393,7 @@ class _SmoothFadeInState extends State<SmoothFadeIn>
   }
 }
 
-/// Bottom sheet con entrada suave
+/// Bottom sheet with velocity-aware snapping (via DraggableScrollableSheet).
 class SmoothBottomSheet extends StatelessWidget {
   final Widget child;
   final double initialChildSize;
@@ -417,9 +417,8 @@ class SmoothBottomSheet extends StatelessWidget {
       snap: true,
       snapSizes: [minChildSize, initialChildSize, maxChildSize],
       builder: (context, scrollController) {
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
+        // No AnimatedContainer — the sheet's physics handles smooth transitions
+        return Container(
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),

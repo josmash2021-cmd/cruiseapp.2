@@ -93,11 +93,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Smooth route draw ──
   Ticker? _routeDrawTicker;
-  mapbox.PolylineAnnotation? _routeMainAnnot;
-  mapbox.PolylineAnnotation? _routeGlowAnnot;
-  mapbox.PolylineAnnotation? _routeCasingAnnot;
-  mapbox.PolylineAnnotation? _fullRouteGlow;
-  AnimationController? _glowPulseCtrl;
+  mapbox.PolylineAnnotation? _routeAnnot;
   List<LatLng> _routePoints = [];
 
   // ── Pin pop animation ──
@@ -154,7 +150,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _fadeCtrl.dispose();
     _tiltCtrl.dispose();
     _pinPopCtrl.dispose();
-    _glowPulseCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routePoints = [];
@@ -712,9 +707,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       duration: const Duration(milliseconds: 1000),
     );
     if (!mounted) return;
-
-    // 7. Start glow pulse on full route
-    _startGlowPulse();
   }
 
   void _updatePinScale() {
@@ -817,44 +809,24 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         final geo = mapbox.LineString(coordinates: coords);
 
-        if (_routeGlowAnnot == null) {
-          // Layer 1: Outer glow — wide, diffused halo
-          _routeGlowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo,
-            lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(),
-            lineWidth: 18.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-          // Layer 2: Inner glow — warm transition
-          _routeCasingAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo,
-            lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(),
-            lineWidth: 10.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-          // Layer 3: Main gold line — sharp, crisp
-          _routeMainAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        if (_routeAnnot == null) {
+          // Single 5px gold line
+          _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
             geometry: geo,
             lineColor: const Color(0xFFFFD700).toARGB32(),
-            lineWidth: 4.0,
+            lineWidth: 5.0,
             lineJoin: mapbox.LineJoin.ROUND,
           ));
         } else {
-          _routeGlowAnnot!.geometry = geo;
-          await polyMgr.update(_routeGlowAnnot!);
-          _routeCasingAnnot!.geometry = geo;
-          await polyMgr.update(_routeCasingAnnot!);
-          _routeMainAnnot!.geometry = geo;
-          await polyMgr.update(_routeMainAnnot!);
+          _routeAnnot!.geometry = geo;
+          await polyMgr.update(_routeAnnot!);
         }
       }
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
         final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         final fullGeo = mapbox.LineString(coordinates: fullCoords);
-        if (_routeGlowAnnot != null) { _routeGlowAnnot!.geometry = fullGeo; await polyMgr.update(_routeGlowAnnot!); }
-        if (_routeCasingAnnot != null) { _routeCasingAnnot!.geometry = fullGeo; await polyMgr.update(_routeCasingAnnot!); }
-        if (_routeMainAnnot != null) { _routeMainAnnot!.geometry = fullGeo; await polyMgr.update(_routeMainAnnot!); }
+        if (_routeAnnot != null) { _routeAnnot!.geometry = fullGeo; await polyMgr.update(_routeAnnot!); }
         if (!completer.isCompleted) completer.complete();
       }
     });
@@ -863,38 +835,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   /// Gold glow pulse on full route after animation completes
-  void _startGlowPulse() {
-    _glowPulseCtrl?.dispose();
-    if (_routePoints.length < 2 || _polyMgr == null) return;
-
-    final coords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    final geo = mapbox.LineString(coordinates: coords);
-    _polyMgr!.create(mapbox.PolylineAnnotationOptions(
-      geometry: geo,
-      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.12).toARGB32(),
-      lineWidth: 18.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    )).then((a) => _fullRouteGlow = a);
-
-    _glowPulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    )..repeat(reverse: true);
-    _glowPulseCtrl!.addListener(() {
-      final glow = _fullRouteGlow;
-      if (glow == null || _polyMgr == null) return;
-      final v = _glowPulseCtrl!.value;
-      glow.lineColor = const Color(0xFFFFD700).withValues(alpha: 0.12 + v * 0.10).toARGB32();
-      glow.lineWidth = 16.0 + v * 6.0;
-      _polyMgr!.update(glow);
-      // Pulse inner glow too
-      if (_routeCasingAnnot != null) {
-        _routeCasingAnnot!.lineColor = const Color(0xFFFFE566).withValues(alpha: 0.20 + v * 0.12).toARGB32();
-        try { _polyMgr!.update(_routeCasingAnnot!); } catch (_) {}
-      }
-    });
-  }
-
   // ── Pin builders (matching CruiseMapPin teardrop from rider map) ──────────
 
   /// Teardrop pin: navy→tipColor gradient, person avatar, border — matches CruiseMapPin

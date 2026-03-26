@@ -70,8 +70,6 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
   List<mapbox.PointAnnotation> _markerAnnots = [];
   mapbox.PolylineAnnotation? _routeAnnot;
-  mapbox.PolylineAnnotation? _routeGlowAnnot;
-  mapbox.PolylineAnnotation? _routeCasingAnnot;
   bool _mapReady = false;
 
   // ── Cinematic animation ──
@@ -79,7 +77,6 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
   Animation<double>? _tiltAnim;
   AnimationController? _bearingCtrl;
   Animation<double>? _bearingAnim;
-  AnimationController? _routeGlowPulseCtrl;
   double _cinematicPitch = 0;
   double _cinematicBearing = 0;
   bool _cinematicDone = false;
@@ -136,7 +133,6 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     _routeDrawTicker?.dispose();
     _tiltCtrl?.dispose();
     _bearingCtrl?.dispose();
-    _routeGlowPulseCtrl?.dispose();
     _mapCtrl?.dispose();
     super.dispose();
   }
@@ -311,8 +307,6 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     for (final a in _markerAnnots) { try { await pointMgr.delete(a); } catch (_) {} }
     _markerAnnots = [];
     if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
-    if (_routeGlowAnnot != null) { try { await polyMgr.delete(_routeGlowAnnot!); } catch (_) {} _routeGlowAnnot = null; }
-    if (_routeCasingAnnot != null) { try { await polyMgr.delete(_routeCasingAnnot!); } catch (_) {} _routeCasingAnnot = null; }
     // Pickup marker — gold teardrop with person icon
     if (_pickupLatLng != null && _pickupPinBytes != null) {
       final a = await pointMgr.create(mapbox.PointAnnotationOptions(
@@ -345,8 +339,6 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = null;
-    _routeGlowPulseCtrl?.dispose();
-    _routeGlowPulseCtrl = null;
 
     // 1. Wait for fit (handled by _fitMap caller)
     await Future.delayed(const Duration(milliseconds: 800));
@@ -377,11 +369,10 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     await _animateGoldRoute(routePoints, const Duration(milliseconds: 1000));
     if (!mounted) return;
 
-    // 4. Save camera state + glow pulse
+    // 4. Save camera state
     _cinematicPitch = 55.0;
     _cinematicBearing = randomBearing;
     _cinematicDone = true;
-    _startRouteGlowPulse();
   }
 
   void _applyCinematicCamera() {
@@ -418,19 +409,11 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
         final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         final geo = mapbox.LineString(coordinates: coords);
 
-        if (_routeGlowAnnot == null) {
-          try { _routeGlowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(), lineWidth: 18.0, lineJoin: mapbox.LineJoin.ROUND,
-          )); } catch (_) {}
-          try { _routeCasingAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(), lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
-          )); } catch (_) {}
+        if (_routeAnnot == null) {
           try { _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 4.0, lineJoin: mapbox.LineJoin.ROUND,
+            geometry: geo, lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
           )); } catch (_) {}
         } else {
-          if (_routeGlowAnnot != null) { _routeGlowAnnot!.geometry = geo; try { await polyMgr.update(_routeGlowAnnot!); } catch (_) {} }
-          if (_routeCasingAnnot != null) { _routeCasingAnnot!.geometry = geo; try { await polyMgr.update(_routeCasingAnnot!); } catch (_) {} }
           if (_routeAnnot != null) { _routeAnnot!.geometry = geo; try { await polyMgr.update(_routeAnnot!); } catch (_) {} }
         }
       }
@@ -441,28 +424,6 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     });
     _routeDrawTicker!.start();
     return completer.future;
-  }
-
-  void _startRouteGlowPulse() {
-    _routeGlowPulseCtrl?.dispose();
-    _routeGlowPulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    )..repeat(reverse: true);
-    _routeGlowPulseCtrl!.addListener(_onRouteGlowTick);
-  }
-
-  void _onRouteGlowTick() {
-    final mgr = _polylineAnnotMgr;
-    if (mgr == null || _routeGlowAnnot == null) return;
-    final v = _routeGlowPulseCtrl?.value ?? 0.0;
-    _routeGlowAnnot!.lineWidth = 16.0 + v * 6.0;
-    _routeGlowAnnot!.lineColor = const Color(0xFFFFD700).withValues(alpha: 0.12 + v * 0.10).toARGB32();
-    try { mgr.update(_routeGlowAnnot!); } catch (_) {}
-    if (_routeCasingAnnot != null) {
-      _routeCasingAnnot!.lineColor = const Color(0xFFFFE566).withValues(alpha: 0.20 + v * 0.12).toARGB32();
-      try { mgr.update(_routeCasingAnnot!); } catch (_) {}
-    }
   }
 
   void _updateRidePricing(String durationText) {

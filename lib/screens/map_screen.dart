@@ -132,8 +132,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
-  mapbox.PolylineAnnotation? _routeGlowAnnot;
-  mapbox.PolylineAnnotation? _routeCasingAnnot;
 
   // ── Cinematic animation ──
   AnimationController? _tiltCtrl;
@@ -142,7 +140,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Animation<double>? _bearingAnim;
   AnimationController? _pinPopCtrl;
   Animation<double>? _pinPopAnim;
-  AnimationController? _routeGlowPulseCtrl;
   double _cinematicPitch = 0;
   double _cinematicBearing = 0;
   bool _cinematicDone = false;
@@ -670,7 +667,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _tiltCtrl?.dispose();
     _bearingCtrl?.dispose();
     _pinPopCtrl?.dispose();
-    _routeGlowPulseCtrl?.dispose();
     _glowController?.removeListener(_onGlowTick);
     _glowController?.dispose();
     _pickupFocus.removeListener(_handleAddressFocusChange);
@@ -2419,10 +2415,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Future<void> _startCinematicRouteReveal(List<LatLng> points, int ticket) async {
     if (!mounted || points.isEmpty || ticket != _routeAnimationTicket) return;
 
-    // Stop previous shimmer/glow
+    // Stop previous shimmer
     _stopRouteShimmer();
-    _routeGlowPulseCtrl?.dispose();
-    _routeGlowPulseCtrl = null;
 
     // 1. Fit camera flat first
     await _fitBoundsInsets(points, 90, 70, _panelBottomInset(), 70);
@@ -2463,9 +2457,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _cinematicPitch = 55.0;
     _cinematicBearing = randomBearing;
     _cinematicDone = true;
-
-    // 6. Glow pulse
-    _startRouteGlowPulse();
   }
 
   void _applyCinematicCamera() {
@@ -2548,19 +2539,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         final geo = mapbox.LineString(coordinates: coords);
 
-        if (_routeGlowAnnot == null) {
-          try { _routeGlowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(), lineWidth: 18.0, lineJoin: mapbox.LineJoin.ROUND,
-          )); } catch (_) {}
-          try { _routeCasingAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(), lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
-          )); } catch (_) {}
+        if (_routeAnnot == null) {
           try { _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 4.0, lineJoin: mapbox.LineJoin.ROUND,
+            geometry: geo, lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
           )); } catch (_) {}
         } else {
-          if (_routeGlowAnnot != null) { _routeGlowAnnot!.geometry = geo; try { await polyMgr.update(_routeGlowAnnot!); } catch (_) {} }
-          if (_routeCasingAnnot != null) { _routeCasingAnnot!.geometry = geo; try { await polyMgr.update(_routeCasingAnnot!); } catch (_) {} }
           if (_routeAnnot != null) { _routeAnnot!.geometry = geo; try { await polyMgr.update(_routeAnnot!); } catch (_) {} }
         }
       }
@@ -2571,28 +2554,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     });
     _routeDrawTicker!.start();
     return completer.future;
-  }
-
-  void _startRouteGlowPulse() {
-    _routeGlowPulseCtrl?.dispose();
-    _routeGlowPulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    )..repeat(reverse: true);
-    _routeGlowPulseCtrl!.addListener(_onRouteGlowTick);
-  }
-
-  void _onRouteGlowTick() {
-    final mgr = _polylineAnnotMgr;
-    if (mgr == null || _routeGlowAnnot == null) return;
-    final v = _routeGlowPulseCtrl?.value ?? 0.0;
-    _routeGlowAnnot!.lineWidth = 16.0 + v * 6.0;
-    _routeGlowAnnot!.lineColor = const Color(0xFFFFD700).withValues(alpha: 0.12 + v * 0.10).toARGB32();
-    try { mgr.update(_routeGlowAnnot!); } catch (_) {}
-    if (_routeCasingAnnot != null) {
-      _routeCasingAnnot!.lineColor = const Color(0xFFFFE566).withValues(alpha: 0.20 + v * 0.12).toARGB32();
-      try { mgr.update(_routeCasingAnnot!); } catch (_) {}
-    }
   }
 
   Future<void> _animateRoutePolyline(List<LatLng> points, int ticket) async {
@@ -2635,8 +2596,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final annot = _routeAnnot;
     if (mgr == null || annot == null) return;
     final v = _routeShimmerCtrl?.value ?? 0.0;
-    // Pulse width between 4 and 8
-    annot.lineWidth = 4.0 + v * 4.0;
+    // Pulse width between 5 and 7
+    annot.lineWidth = 5.0 + v * 2.0;
     try { mgr.update(annot); } catch (_) {}
   }
 
@@ -2660,7 +2621,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
       lineColor: _routeColor.toARGB32(),
-      lineWidth: 6.0,  // Slightly thicker for better visibility
+      lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
   }
@@ -2670,13 +2631,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = null;
-    _routeGlowPulseCtrl?.dispose();
-    _routeGlowPulseCtrl = null;
     final mgr = _polylineAnnotMgr;
     if (mgr != null) {
       if (_routeAnnot != null) { try { await mgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
-      if (_routeGlowAnnot != null) { try { await mgr.delete(_routeGlowAnnot!); } catch (_) {} _routeGlowAnnot = null; }
-      if (_routeCasingAnnot != null) { try { await mgr.delete(_routeCasingAnnot!); } catch (_) {} _routeCasingAnnot = null; }
     }
     // Reset cinematic state so next route gets a fresh animation
     _cinematicDone = false;

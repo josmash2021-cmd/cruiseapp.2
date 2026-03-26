@@ -1304,6 +1304,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       driverLng: _animPos.longitude,
       traveledMeters: _traveledM,
       driverPhotoUrl: activeRide.driverPhotoUrl,
+      etaMinutes: activeRide.etaMinutes,
     );
 
     await LocalDataService.setActiveRide(updatedRide);

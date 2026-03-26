@@ -95,8 +95,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   mapbox.PolylineAnnotationManager? _polyMgr;
   mapbox.PointAnnotationManager? _pointMgr;
   mapbox.PolylineAnnotation? _routeAnnot;
-  mapbox.PolylineAnnotation? _routeCasingAnnot;
-  mapbox.PolylineAnnotation? _routeGlowAnnot;
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
 
@@ -434,14 +432,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         .toList();
     final geom = mapbox.LineString(coordinates: coords);
 
-    if (_routeGlowAnnot != null) {
-      _routeGlowAnnot!.geometry = geom;
-      try { await mgr.update(_routeGlowAnnot!); } catch (_) {}
-    }
-    if (_routeCasingAnnot != null) {
-      _routeCasingAnnot!.geometry = geom;
-      try { await mgr.update(_routeCasingAnnot!); } catch (_) {}
-    }
     if (_routeAnnot != null) {
       _routeAnnot!.geometry = geom;
       try { await mgr.update(_routeAnnot!); } catch (_) {}
@@ -582,8 +572,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     // Clear annotations
     final mgr = _polyMgr;
     if (mgr != null) {
-      if (_routeGlowAnnot != null) { try { await mgr.delete(_routeGlowAnnot!); } catch (_) {} _routeGlowAnnot = null; }
-      if (_routeCasingAnnot != null) { try { await mgr.delete(_routeCasingAnnot!); } catch (_) {} _routeCasingAnnot = null; }
       if (_routeAnnot != null) { try { await mgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
     }
     _routeOpacity = 1.0;
@@ -594,14 +582,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   void _updateRouteOpacity() {
     final mgr = _polyMgr;
     if (mgr == null) return;
-    if (_routeGlowAnnot != null) {
-      _routeGlowAnnot!.lineOpacity = 0.18 * _routeOpacity;
-      try { mgr.update(_routeGlowAnnot!); } catch (_) {}
-    }
-    if (_routeCasingAnnot != null) {
-      _routeCasingAnnot!.lineOpacity = 0.28 * _routeOpacity;
-      try { mgr.update(_routeCasingAnnot!); } catch (_) {}
-    }
     if (_routeAnnot != null) {
       _routeAnnot!.lineOpacity = _routeOpacity;
       try { mgr.update(_routeAnnot!); } catch (_) {}
@@ -654,13 +634,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         .toList();
     final geom = mapbox.LineString(coordinates: coords);
 
-    // Update existing annotations or create new ones
-    if (_routeGlowAnnot != null) {
-      _routeGlowAnnot!.geometry = geom;
-      try { await mgr.update(_routeGlowAnnot!); } catch (_) {}
-      _routeCasingAnnot?.geometry = geom;
-      try { await mgr.update(_routeCasingAnnot!); } catch (_) {}
-      _routeAnnot?.geometry = geom;
+    if (_routeAnnot != null) {
+      _routeAnnot!.geometry = geom;
       try { await mgr.update(_routeAnnot!); } catch (_) {}
     } else {
       await _createRouteAnnotations(mgr, geom);
@@ -670,30 +645,15 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Future<void> _deleteRouteAnnotations() async {
     final mgr = _polyMgr;
     if (mgr == null) return;
-    if (_routeGlowAnnot != null) { try { await mgr.delete(_routeGlowAnnot!); } catch (_) {} _routeGlowAnnot = null; }
-    if (_routeCasingAnnot != null) { try { await mgr.delete(_routeCasingAnnot!); } catch (_) {} _routeCasingAnnot = null; }
     if (_routeAnnot != null) { try { await mgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
   }
 
-  /// Create 3-layer gold glow route on Mapbox.
+  /// Create single 5px gold line on Mapbox.
   Future<void> _createRouteAnnotations(mapbox.PolylineAnnotationManager mgr, mapbox.LineString geom) async {
-    // Layer 1: Outer glow — wide, diffused halo
-    _routeGlowAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: geom,
-      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(),
-      lineWidth: 18.0,
-    ));
-    // Layer 2: Inner glow — warm transition
-    _routeCasingAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: geom,
-      lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(),
-      lineWidth: 10.0,
-    ));
-    // Layer 3: Main gold line — sharp, crisp
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
       lineColor: const Color(0xFFFFD700).toARGB32(),
-      lineWidth: 4.0,
+      lineWidth: 5.0,
     ));
   }
 

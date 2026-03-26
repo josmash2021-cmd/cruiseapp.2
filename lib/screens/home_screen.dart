@@ -76,6 +76,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // Active ride state
   ActiveRideInfo? _activeRide;
 
+  // Progress bar countdown state
+  int _totalSeconds = 0;
+  int _remainingSeconds = 0;
+  Timer? _countdownTimer;
+  String _serviceType = 'comfort';
+
   // Verification state
   bool _isVerified = false;
 
@@ -282,6 +288,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       for (final img in ['suburban', 'camry', 'fusion']) {
         precacheImage(AssetImage('assets/images/$img.png'), context);
       }
+      for (final img in ['cruisert1', 'cruisert2', 'cruisert3']) {
+        precacheImage(AssetImage('assets/images/$img.png'), context);
+      }
     }
   }
 
@@ -298,6 +307,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _promoShimmerCtrl.dispose();
     _driverCheckTimer?.cancel();
     _accountStatusTimer?.cancel();
+    _countdownTimer?.cancel();
     _locationSub?.cancel();
     _zonesSub?.cancel();
     super.dispose();
@@ -831,6 +841,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _activeRide = activeRide;
       _isVerified = verified;
       _loadingSavedData = false;
+      if (activeRide != null) {
+        _serviceType = activeRide.rideName;
+      }
       if (user != null) {
         _firstName = user['firstName'] ?? '';
         _lastName = user['lastName'] ?? '';
@@ -840,6 +853,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _photoUrl = url.isNotEmpty ? url : null;
       }
     });
+    // Start ride countdown if there's an active ride
+    if (activeRide != null) {
+      _startCountdown(activeRide.etaMinutes ?? 10);
+    }
   }
 
   int get _unreadNotifications {
@@ -1578,7 +1595,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 400),
               curve: Curves.easeInOutCubic,
-              height: 140,
+              height: active ? 195 : 140,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(28),
                 border: Border.all(
@@ -1756,66 +1773,224 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─── "Ride in progress" content inside the hero card ───
-  Widget _buildHeroRideInProgress() {
-    return Row(
-      key: const ValueKey('hero_ride_active'),
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: _gold.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: _gold.withValues(alpha: 0.4),
-              width: 1,
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Image.asset(
-              'assets/images/logoapp.png',
-              fit: BoxFit.cover,
-              cacheWidth: 96,
-              errorBuilder: (ctx, err, st) => Icon(
-                Icons.directions_car_rounded,
-                color: _gold,
-                size: 24,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
+  // ─── Ride progress countdown ───
+
+  void _startCountdown(int etaMinutes) {
+    _totalSeconds = etaMinutes * 60;
+    _remainingSeconds = _totalSeconds;
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) {
+        if (!mounted) return;
+        if (_remainingSeconds <= 0) {
+          _countdownTimer?.cancel();
+          return;
+        }
+        setState(() {
+          _remainingSeconds--;
+        });
+      },
+    );
+  }
+
+  double get _tripProgress {
+    if (_totalSeconds == 0) return 0.0;
+    return 1.0 - (_remainingSeconds / _totalSeconds);
+  }
+
+  String get _remainingLabel {
+    if (_remainingSeconds <= 0) return 'Arriving...';
+    final mins = (_remainingSeconds / 60).ceil();
+    return '$mins min remaining';
+  }
+
+  String _getCarAsset(String serviceType) {
+    switch (serviceType.toLowerCase()) {
+      case 'vip':
+        return 'assets/images/cruisert1.png';
+      case 'premium':
+      case 'sedan':
+        return 'assets/images/cruisert2.png';
+      case 'comfort':
+      case 'economy':
+      default:
+        return 'assets/images/cruisert3.png';
+    }
+  }
+
+  Widget _buildProgressBar() {
+    final carAsset = _getCarAsset(_serviceType);
+    final progress = _tripProgress.clamp(0.0, 1.0);
+    const carH = 26.0;
+    const carW = 52.0;
+
+    return LayoutBuilder(
+      builder: (_, constraints) {
+        final barW = constraints.maxWidth;
+        final filledW = barW * progress;
+        final carX = (filledW - carW / 2).clamp(0.0, barW - carW);
+
+        return SizedBox(
+          height: carH + 4,
+          child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              Text(
-                S.of(context).rideInProgressTitle,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
+              // Bar track
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A2A2A),
+                    borderRadius: BorderRadius.circular(3.5),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(3.5),
+                    child: FractionallySizedBox(
+                      widthFactor: progress,
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(0xFFFFC200),
+                              Color(0xFFFFD700),
+                              Color(0xFFFFE566),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                S.of(context).rideInProgressSubtitle,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 13,
+              // Car at tip of bar
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 800),
+                curve: Curves.easeInOut,
+                left: carX,
+                bottom: 7,
+                child: Image.asset(
+                  carAsset,
+                  width: carW,
+                  height: carH,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                  isAntiAlias: true,
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.directions_car_rounded,
+                    color: _gold,
+                    size: carH,
+                  ),
                 ),
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  // ─── "Ride in progress" content inside the hero card ───
+  Widget _buildHeroRideInProgress() {
+    return Column(
+      key: const ValueKey('hero_ride_active'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Top row: icon + text + chevron
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _gold.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _gold.withValues(alpha: 0.4),
+                  width: 1,
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.asset(
+                  'assets/images/logoapp.png',
+                  fit: BoxFit.cover,
+                  cacheWidth: 96,
+                  errorBuilder: (ctx, err, st) => Icon(
+                    Icons.directions_car_rounded,
+                    color: _gold,
+                    size: 24,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    S.of(context).rideInProgressTitle,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    S.of(context).rideInProgressSubtitle,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.38),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white.withValues(alpha: 0.24),
+              size: 20,
+            ),
+          ],
         ),
-        Icon(
-          Icons.arrow_forward_ios_rounded,
-          color: _gold,
-          size: 16,
+        const SizedBox(height: 14),
+        // Progress bar with car
+        _buildProgressBar(),
+        const SizedBox(height: 8),
+        // Time labels
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Now',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.24),
+                fontSize: 11,
+              ),
+            ),
+            Text(
+              _remainingLabel,
+              style: const TextStyle(
+                color: Color(0xFFFFD700),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              'Destination',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.24),
+                fontSize: 11,
+              ),
+            ),
+          ],
         ),
       ],
     );

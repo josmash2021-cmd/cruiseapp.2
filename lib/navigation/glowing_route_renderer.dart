@@ -16,12 +16,12 @@ class GlowingRouteRenderer {
   static const Color _glowPurple = Color(0xFF9D4EDD);
   static const Color _glowGold = Color(0xFFE8C547);
 
-  /// Renderiza ruta con múltiples capas para efecto de profundidad
+  /// Renderiza ruta como una sola línea gold gloss — sin glow, sin capas extra.
   static Future<void> renderGlowingRoute({
     required mapbox.PolylineAnnotationManager manager,
     required List<LatLng> points,
     RouteGlowStyle style = RouteGlowStyle.blue,
-    double progress = 1.0, // 0.0 - 1.0 para animación de progreso
+    double progress = 1.0,
   }) async {
     if (points.length < 2) return;
 
@@ -29,166 +29,67 @@ class GlowingRouteRenderer {
       mapbox.Position(p.longitude, p.latitude)
     ).toList();
 
-    final palette = _getGlowPalette(style);
-
-    // Capa 1: Glow exterior (más ancho, difuminado)
+    // Single 5px gold line
     await manager.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
-      lineColor: palette.glow.withAlpha(60).toARGB32(),
-      lineWidth: 24.0,
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
-
-    // Capa 2: Glow medio
-    await manager.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
-      lineColor: palette.glow.withAlpha(120).toARGB32(),
-      lineWidth: 16.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    ));
-
-    // Capa 3: Línea principal brillante
-    await manager.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
-      lineColor: palette.core.toARGB32(),
-      lineWidth: 8.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    ));
-
-    // Capa 4: Centro brillante (línea blanca/azul muy clara)
-    await manager.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
-      lineColor: palette.highlight.toARGB32(),
-      lineWidth: 3.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    ));
-
-    // Si hay progreso parcial, renderizar "cabeza" de la ruta
-    if (progress < 1.0 && progress > 0) {
-      final progressIndex = (points.length * progress).round();
-      if (progressIndex > 0 && progressIndex < points.length) {
-        final traveledPoints = points.sublist(0, progressIndex);
-        final traveledCoords = traveledPoints.map((p) =>
-          mapbox.Position(p.longitude, p.latitude)
-        ).toList();
-
-        // Ruta ya recorrida (más opaca)
-        await manager.create(mapbox.PolylineAnnotationOptions(
-          geometry: mapbox.LineString(coordinates: traveledCoords),
-          lineColor: palette.core.withValues(alpha: 0.5).toARGB32(),
-          lineWidth: 6.0,
-          lineJoin: mapbox.LineJoin.ROUND,
-        ));
-      }
-    }
   }
 
-  /// Renderiza una ruta animada tipo "carrera" con segmentos
+  /// Renderiza ruta tipo "carrera" — single gold line
   static Future<void> renderAnimatedRaceRoute({
     required mapbox.PolylineAnnotationManager manager,
     required List<LatLng> points,
     RouteGlowStyle style = RouteGlowStyle.cyan,
-    double dashLength = 50, // metros aprox
+    double dashLength = 50,
     double gapLength = 30,
   }) async {
     if (points.length < 2) return;
-
-    final palette = _getGlowPalette(style);
-
-    // Crear línea segmentada tipo dash
-    final segments = _createDashSegments(points, dashLength, gapLength);
-
-    for (int i = 0; i < segments.length; i++) {
-      final segment = segments[i];
-      final coords = segment.map((p) =>
-        mapbox.Position(p.longitude, p.latitude)
-      ).toList();
-
-      // Alternar colores para efecto "carrera"
-      final isEven = i % 2 == 0;
-      final color = isEven ? palette.core : palette.highlight;
-      final width = isEven ? 10.0 : 6.0;
-
-      await manager.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: coords),
-        lineColor: color.toARGB32(),
-        lineWidth: width,
-        lineJoin: mapbox.LineJoin.ROUND,
-      ));
-    }
+    final coords = points.map((p) =>
+      mapbox.Position(p.longitude, p.latitude)
+    ).toList();
+    await manager.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: coords),
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 5.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    ));
   }
 
-  /// Renderiza ruta con efecto de pulso/heartbeat
+  /// Renderiza ruta con efecto de pulso — single gold line
   static Future<List<mapbox.PolylineAnnotation>> renderPulsingRoute({
     required mapbox.PolylineAnnotationManager manager,
     required List<LatLng> points,
     RouteGlowStyle style = RouteGlowStyle.purple,
   }) async {
     if (points.length < 2) return [];
-
     final coords = points.map((p) =>
       mapbox.Position(p.longitude, p.latitude)
     ).toList();
-
-    final palette = _getGlowPalette(style);
-    final annotations = <mapbox.PolylineAnnotation>[];
-
-    // Capa de glow (la que pulsará)
-    final glowAnnotation = await manager.create(mapbox.PolylineAnnotationOptions(
+    final annot = await manager.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
-      lineColor: palette.glow.withAlpha(100).toARGB32(),
-      lineWidth: 20.0,
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
-    annotations.add(glowAnnotation);
-
-    // Línea principal
-    final coreAnnotation = await manager.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
-      lineColor: palette.core.toARGB32(),
-      lineWidth: 8.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    ));
-    annotations.add(coreAnnotation);
-
-    // Centro brillante
-    final highlightAnnotation = await manager.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
-      lineColor: palette.highlight.toARGB32(),
-      lineWidth: 3.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    ));
-    annotations.add(highlightAnnotation);
-
-    return annotations;
+    return [annot];
   }
 
-  /// Renderiza ruta tipo "laser" (línea muy brillante)
+  /// Renderiza ruta tipo "laser" — single gold line
   static Future<void> renderLaserRoute({
     required mapbox.PolylineAnnotationManager manager,
     required List<LatLng> points,
     RouteGlowStyle style = RouteGlowStyle.cyan,
   }) async {
     if (points.length < 2) return;
-
     final coords = points.map((p) =>
       mapbox.Position(p.longitude, p.latitude)
     ).toList();
-
-    final palette = _getGlowPalette(style);
-
-    // Glow intenso
     await manager.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
-      lineColor: palette.glow.withAlpha(180).toARGB32(),
-      lineWidth: 18.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    ));
-
-    // Línea laser brillante
-    await manager.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
-      lineColor: palette.highlight.toARGB32(),
+      lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));

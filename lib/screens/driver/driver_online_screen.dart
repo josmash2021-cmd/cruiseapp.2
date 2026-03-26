@@ -40,6 +40,7 @@ import 'driver_inbox_screen.dart';
 import '../../services/map_launcher_service.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'driver_trip_accept_screen.dart';
+import 'trip_accepted_screen.dart';
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  CRUISE DRIVER — ONLINE SCREEN
@@ -99,8 +100,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   mapbox.PolylineAnnotation? _routeAnnot;
   mapbox.PolylineAnnotation? _previewPickupAnnot;
   mapbox.PolylineAnnotation? _previewDropoffAnnot;
-  mapbox.PolylineAnnotation? _previewPickupGlow;
-  mapbox.PolylineAnnotation? _previewDropoffGlow;
   LatLng? _pos;
   StreamSubscription<Position>? _posStream;
   final _gpsService = GpsService();
@@ -165,11 +164,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _showAcceptedBottomCard = false;
   String _acceptedPickupAddr = '';
 
-  // ── Smooth route draw + glow pulse ──
+  // ── Smooth route draw ──
   List<LatLng> _fullSegOne = [];
   List<LatLng> _fullSegTwo = [];
-  mapbox.PolylineAnnotation? _fullRouteGlow;
-  AnimationController? _glowPulseCtrl;
   Ticker? _routeDrawTicker;
 
   // ── Pre-fetched route cache (offerId → segments) ──
@@ -381,7 +378,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _offerPageCtrl.dispose();
     _routePulseCtrl?.dispose();
     _pulseCtrl?.dispose();
-    _glowPulseCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _map?.dispose();
@@ -1842,33 +1838,25 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _nearPickupNotified = false;
     _nearDropoffNotified = false;
 
-    // ── Show accepted bottom card + camera cinematic ──
+    // ── Reset offer state and navigate to full-screen accepted screen ──
     _acceptedPickupAddr = _pickupAddr;
+    _tappedCardIds.clear();
     setState(() {
-      _showAcceptedBottomCard = true;
-      _offerAcceptState = _OfferAcceptState.accepted;
+      _showAcceptedBottomCard = false;
+      _offerAcceptState = _OfferAcceptState.normal;
+      _acceptingCardId = null;
     });
 
-    // Camera: fit route → tilt 55° → rotate 20°
-    _runAcceptCameraSequence();
-
-    // Wait for cinematic to complete (2.4s total)
-    await Future.delayed(const Duration(milliseconds: 2400));
-    if (!mounted) return;
-
-    // Reset state before navigating
-    _offerAcceptState = _OfferAcceptState.normal;
-    _acceptingCardId = null;
-    _showAcceptedBottomCard = false;
-    _tappedCardIds.clear();
     final riderPhotoUrl = (r['rider_photo_url'] ?? r['photo_url'] ?? '') as String;
     final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 4.8;
+    final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final result = await Navigator.of(context).push<String>(
       smoothFadeRoute(
-        DriverTripAcceptScreen(
+        TripAcceptedScreen(
           tripId:         tripId ?? offerId ?? 0,
           riderName:      name,
-          riderPhotoUrl:  riderPhotoUrl,
+          riderInitials:  riderInit,
+          riderPhotoUrl:  riderPhotoUrl.isNotEmpty ? riderPhotoUrl : null,
           riderRating:    riderRating,
           pickupLatLng:   _pickupLL,
           dropoffLatLng:  _dropoffLL,
@@ -2611,25 +2599,20 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: coords),
       lineColor: c.toARGB32(),
-      lineWidth: 4.0,
+      lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
   }
 
   Future<void> _clearRouteAnnotation() async {
-    _stopGlowPulse();
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null) return;
-    for (final a in [_routeAnnot, _previewPickupAnnot, _previewDropoffAnnot,
-                      _previewPickupGlow, _previewDropoffGlow, _fullRouteGlow]) {
+    for (final a in [_routeAnnot, _previewPickupAnnot, _previewDropoffAnnot]) {
       if (a != null) try { await polyMgr.delete(a); } catch (_) {}
     }
     _routeAnnot = null;
     _previewPickupAnnot = null;
     _previewDropoffAnnot = null;
-    _previewPickupGlow = null;
-    _previewDropoffGlow = null;
-    _fullRouteGlow = null;
   }
 
   Future<void> _setPickupAnnotation() async {
@@ -2782,7 +2765,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _animatingOfferId = oid;
       _tappedCardIds.add(oid);
     });
-    _stopGlowPulse();
     await _clearAllAnnotations();
 
     // Load from cache (pre-fetched on offer arrival)
@@ -2862,8 +2844,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     await _drawGoldGlossRoute(fullRoute);
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // ── PHASE 5: Glow pulse starts ──
-    _startGlowPulse();
+    // ── PHASE 5: Route shown ──
 
     if (mounted && _previewingOffer != null) {
       setState(() => _offerRouteShown = true);
@@ -2930,8 +2911,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     return completer.future;
   }
 
-  /// Draw a single gold glow route line with 3 layers (outer glow, inner glow, main).
-  /// Progressive 60fps draw over 1 second with easeInOutSine.
+  /// Draw a single gold route line with progressive 60fps draw over 1 second.
   Future<void> _drawGoldGlossRoute(List<LatLng> points) async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null || points.length < 2) return;
@@ -2940,9 +2920,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final stopwatch = Stopwatch()..start();
     const totalMs = 1000;
 
-    // 3 annotation layers: outer glow, inner glow, main
-    mapbox.PolylineAnnotation? outerGlow;
-    mapbox.PolylineAnnotation? innerGlow;
     mapbox.PolylineAnnotation? mainLine;
     int lastCount = 0;
 
@@ -2967,32 +2944,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         final geo = mapbox.LineString(coordinates: coords);
 
         if (mainLine == null) {
-          // Create 3 layers bottom-to-top
-          outerGlow = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo,
-            lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(),
-            lineWidth: 18.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-          innerGlow = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo,
-            lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(),
-            lineWidth: 10.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
           mainLine = await polyMgr.create(mapbox.PolylineAnnotationOptions(
             geometry: geo,
             lineColor: const Color(0xFFFFD700).toARGB32(),
-            lineWidth: 4.0,
+            lineWidth: 5.0,
             lineJoin: mapbox.LineJoin.ROUND,
           ));
         } else {
-          for (final a in [outerGlow, innerGlow, mainLine]) {
-            if (a != null) {
-              a.geometry = geo;
-              try { await polyMgr.update(a); } catch (_) {}
-            }
-          }
+          mainLine!.geometry = geo;
+          try { await polyMgr.update(mainLine!); } catch (_) {}
         }
       }
 
@@ -3000,17 +2960,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _routeDrawTicker?.stop();
         final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         final fullGeo = mapbox.LineString(coordinates: fullCoords);
-        for (final a in [outerGlow, innerGlow, mainLine]) {
-          if (a != null) {
-            a.geometry = fullGeo;
-            try { await polyMgr.update(a); } catch (_) {}
-          }
+        if (mainLine != null) {
+          mainLine!.geometry = fullGeo;
+          try { await polyMgr.update(mainLine!); } catch (_) {}
         }
         // Store for later cleanup
         _previewPickupAnnot = mainLine;
-        _previewPickupGlow = outerGlow;
-        _previewDropoffAnnot = innerGlow;
-        _previewDropoffGlow = null;
         if (!completer.isCompleted) completer.complete();
       }
     });
@@ -3094,50 +3049,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
     if (pts.isNotEmpty) { pts[0] = o; pts[pts.length - 1] = d; }
     return pts;
-  }
-
-  /// Start pulsing gold glow over the full combined route after animation completes
-  void _startGlowPulse() {
-    _stopGlowPulse();
-    final allPts = [..._fullSegOne, ..._fullSegTwo];
-    if (allPts.length < 2 || _polylineAnnotMgr == null) return;
-
-    final coords = allPts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    final geo = mapbox.LineString(coordinates: coords);
-
-    // Create the pulsing glow annotation once
-    _polylineAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
-      geometry: geo,
-      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.12).toARGB32(),
-      lineWidth: 18.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    )).then((annot) {
-      _fullRouteGlow = annot;
-    });
-
-    _glowPulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    )..repeat(reverse: true);
-    _glowPulseCtrl!.addListener(() {
-      final glow = _fullRouteGlow;
-      if (glow == null || _polylineAnnotMgr == null) return;
-      final v = _glowPulseCtrl!.value;
-      glow.lineColor = const Color(0xFFFFD700).withValues(alpha: 0.12 + v * 0.10).toARGB32();
-      glow.lineWidth = 16.0 + v * 6.0;
-      _polylineAnnotMgr!.update(glow);
-    });
-  }
-
-  /// Stop glow pulse and remove the full-route glow annotation
-  void _stopGlowPulse() {
-    _glowPulseCtrl?.stop();
-    _glowPulseCtrl?.dispose();
-    _glowPulseCtrl = null;
-    if (_fullRouteGlow != null && _polylineAnnotMgr != null) {
-      try { _polylineAnnotMgr!.delete(_fullRouteGlow!); } catch (_) {}
-      _fullRouteGlow = null;
-    }
   }
 
 
@@ -3267,7 +3178,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   void _closePreview() {
     _routePulseCtrl?.stop();
-    _stopGlowPulse();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = null;

@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
@@ -123,23 +125,30 @@ class DirectionsService {
     // Check route cache first (instant return)
     final key = _cacheKey(origin, destination);
     if (_routeCache.containsKey(key) && _isCacheValid(key)) {
+      debugPrint('[Route] Cache hit for $key');
       return _routeCache[key]!;
     }
+
+    debugPrint('[Route] Fetching route: origin=${origin.latitude},${origin.longitude} → dest=${destination.latitude},${destination.longitude}');
 
     final data = await _requestDirectionsWithFallbacks(
       origin: origin,
       destination: destination,
     );
     if (data == null) {
+      debugPrint('[Route] Google Directions failed, trying OSRM…');
       // Try OSRM first, then Mapbox Directions API
       final osrm = await _requestOsrmRoute(origin: origin, destination: destination);
       if (osrm != null) {
+        debugPrint('[Route] OSRM returned ${osrm.points.length} points. First: ${osrm.points.first} Last: ${osrm.points.last}');
         _routeCache[key] = osrm;
         _cacheTimes[key] = DateTime.now();
         return osrm;
       }
+      debugPrint('[Route] OSRM failed, trying Mapbox…');
       final mbx = await _requestMapboxRoute(origin: origin, destination: destination);
       if (mbx != null) {
+        debugPrint('[Route] Mapbox returned ${mbx.points.length} points. First: ${mbx.points.first} Last: ${mbx.points.last}');
         _routeCache[key] = mbx;
         _cacheTimes[key] = DateTime.now();
       }
@@ -206,7 +215,9 @@ class DirectionsService {
     }
 
     if (detailedPoints.isNotEmpty) {
-      final anchored = _anchorRoutePoints(detailedPoints, origin, destination);
+      final validated = _validatePoints(detailedPoints);
+      final anchored = _anchorRoutePoints(validated, origin, destination);
+      debugPrint('[Route] Google steps → ${anchored.length} points. First: ${anchored.first} Last: ${anchored.last}');
       final result = RouteResult(
         points: anchored,
         distanceText: distanceText,
@@ -225,7 +236,9 @@ class DirectionsService {
     if (points == null || points.isEmpty) return null;
 
     final decoded = _decodePolyline(points);
-    final anchored = _anchorRoutePoints(decoded, origin, destination);
+    final validated = _validatePoints(decoded);
+    final anchored = _anchorRoutePoints(validated, origin, destination);
+    debugPrint('[Route] Google overview → ${anchored.length} points. First: ${anchored.first} Last: ${anchored.last}');
 
     final result = RouteResult(
       points: anchored,
@@ -283,7 +296,8 @@ class DirectionsService {
       final decoded = _decodePolyline(geometry);
       if (decoded.isEmpty) return null;
 
-      final anchored = _anchorRoutePoints(decoded, origin, destination);
+      final validated = _validatePoints(decoded);
+      final anchored = _anchorRoutePoints(validated, origin, destination);
       return RouteResult(
         points: anchored,
         distanceText: _metersToMilesText(distanceMeters),
@@ -302,12 +316,14 @@ class DirectionsService {
     required LatLng destination,
   }) async {
     try {
+      // Mapbox expects coordinates as longitude,latitude
       final url = Uri.parse(
         'https://api.mapbox.com/directions/v5/mapbox/driving/'
         '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
         '?geometries=geojson&overview=full&steps=false'
         '&access_token=${MapboxConfig.accessToken}',
       );
+      debugPrint('[Route] Mapbox request URL: $url');
       final res = await http.get(url).timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return null;
       final data = jsonDecode(res.body);
@@ -318,14 +334,17 @@ class DirectionsService {
       final coords = route['geometry']?['coordinates'] as List?;
       if (coords == null || coords.isEmpty) return null;
 
+      // Mapbox GeoJSON: coordinates are [longitude, latitude]
       final points = coords
           .map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
           .toList();
+      debugPrint('[Route] Mapbox parsed ${points.length} points. First 5: ${points.take(5).toList()}');
 
       final distanceMeters = (route['distance'] as num?)?.toInt() ?? 0;
       final durationSeconds = (route['duration'] as num?)?.toInt() ?? 0;
 
-      final anchored = _anchorRoutePoints(points, origin, destination);
+      final validated = _validatePoints(points);
+      final anchored = _anchorRoutePoints(validated, origin, destination);
       return RouteResult(
         points: anchored,
         distanceText: _metersToMilesText(distanceMeters),
@@ -339,6 +358,36 @@ class DirectionsService {
     }
   }
 
+  /// Filter out points with invalid lat/lng that would cause rendering issues.
+  List<LatLng> _validatePoints(List<LatLng> points) {
+    return points.where((p) {
+      final validLat = p.latitude >= -90 && p.latitude <= 90;
+      final validLng = p.longitude >= -180 && p.longitude <= 180;
+      if (!validLat || !validLng) {
+        debugPrint('[Route] Filtered invalid point: $p');
+        return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  /// Haversine distance in meters between two points.
+  static double _haversineMeters(LatLng a, LatLng b) {
+    const r = 6371000.0; // Earth radius in meters
+    final dLat = (b.latitude - a.latitude) * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final sinLat = math.sin(dLat / 2);
+    final sinLng = math.sin(dLng / 2);
+    final h = sinLat * sinLat +
+        math.cos(a.latitude * math.pi / 180) *
+            math.cos(b.latitude * math.pi / 180) *
+            sinLng * sinLng;
+    return 2 * r * math.asin(math.sqrt(h));
+  }
+
+  /// Anchor route so it starts at [origin] and ends at [destination].
+  /// Only prepends/appends if the decoded route's first/last point
+  /// is more than 100 m from the requested origin/destination.
   List<LatLng> _anchorRoutePoints(
     List<LatLng> input,
     LatLng origin,
@@ -347,10 +396,13 @@ class DirectionsService {
     if (input.isEmpty) return [origin, destination];
 
     final out = <LatLng>[];
-    out.add(origin);
+    if (_haversineMeters(origin, input.first) > 100) {
+      out.add(origin);
+    }
     out.addAll(input);
-    out.add(destination);
-
+    if (_haversineMeters(destination, input.last) > 100) {
+      out.add(destination);
+    }
     return out;
   }
 

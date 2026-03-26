@@ -1704,6 +1704,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         tripId: s.tripId,
         firestoreTripId: s.firestoreTripId,
         driverPhotoUrl: s.driver?.photoUrl,
+        etaMinutes: s.selectedOption?.etaMinutes,
       ),
     );
 

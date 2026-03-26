@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
+import '../../config/app_config.dart';
 import '../../l10n/app_localizations.dart';
 
 /// Full-featured earnings screen — fetches real data from the backend.
@@ -801,6 +802,25 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                 child: ElevatedButton(
                   onPressed: () async {
                     Navigator.pop(ctx);
+                    // Sandbox mode: simulate successful cashout
+                    if (AppConfig.sandboxPayments) {
+                      await Future.delayed(const Duration(milliseconds: 800));
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '✅ ${S.of(context).cashOutInitiated(_total.toStringAsFixed(2))}',
+                          ),
+                          backgroundColor: _gold,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      );
+                      _fetchEarnings();
+                      return;
+                    }
                     try {
                       final result = await ApiService.requestCashout(amount: _total);
                       if (!mounted) return;
@@ -822,11 +842,12 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                         );
                         _fetchEarnings();
                       } else if (stripeErr != null) {
-                        // Transfer failed but cashout record was created
+                        // Transfer failed — show clean message, log raw error
+                        debugPrint('Cashout Stripe error: $stripeErr');
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(
-                              'Cashout recorded but transfer failed. Contact support. ($stripeErr)',
+                            content: const Text(
+                              'Cashout could not be completed. Please try again or contact support.',
                             ),
                             backgroundColor: Colors.orange,
                             behavior: SnackBarBehavior.floating,
@@ -854,10 +875,11 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                       }
                     } catch (e) {
                       if (!mounted) return;
+                      debugPrint('Cashout error: $e');
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
-                            S.of(context).cashOutFailed(e.toString()),
+                            S.of(context).cashOutFailed('Please try again or contact support.'),
                           ),
                           backgroundColor: Colors.red,
                           behavior: SnackBarBehavior.floating,

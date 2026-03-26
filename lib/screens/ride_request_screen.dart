@@ -3753,8 +3753,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final amountCents = (option.priceEstimate * 100).round();
     final label = 'Cruise · ${option.name}';
 
-    // In debug mode, simulate success
-    if (kDebugMode) return true;
+    // Sandbox mode: simulate successful payment with brief delay
+    if (AppConfig.sandboxPayments) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      return true;
+    }
 
     switch (_selectedPaymentMethod) {
       case 'apple_pay':

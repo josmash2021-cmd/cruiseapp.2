@@ -89,11 +89,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   mapbox.PointAnnotation? _goldDotAnnot;
   mapbox.PointAnnotation? _userDotAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
-  // ── Gold glow route layers ──
-  mapbox.PolylineAnnotation? _routeGlowAnnot;
-  mapbox.PolylineAnnotation? _routeCasingAnnot;
-  mapbox.PolylineAnnotation? _routeMainAnnot;
-  mapbox.PolylineAnnotation? _fullRouteGlow;
   // ── Cinematic animation ──
   AnimationController? _tiltCtrl;
   Animation<double>? _tiltAnim;
@@ -101,7 +96,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Animation<double>? _bearingAnim;
   AnimationController? _pinPopCtrl;
   Animation<double>? _pinPopAnim;
-  AnimationController? _glowPulseCtrl;
   Ticker? _routeDrawTicker;
   double _randomBearing = 0;
   bool _cinematicDone = false;
@@ -242,6 +236,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       _ctrl.setSchedule(widget.scheduledAt);
     }
 
+    // ── Pre-populate map center from initial details so map renders instantly ──
+    if (widget.initialPickupDetails != null) {
+      _center = LatLng(widget.initialPickupDetails!.lat, widget.initialPickupDetails!.lng);
+    } else if (widget.initialDropoffDetails != null) {
+      _center = LatLng(widget.initialDropoffDetails!.lat, widget.initialDropoffDetails!.lng);
+    }
+
     // ── Pre-loaded route: skip the network fetch entirely ──
     if (widget.preloadedRoute != null &&
         widget.initialPickupDetails != null &&
@@ -256,6 +257,18 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         route: widget.preloadedRoute!,
       );
       // Still resolve GPS for the user-dot overlay
+      _initLocation();
+    } else if (widget.initialPickupDetails != null && widget.initialDropoffDetails != null) {
+      // Both locations already known — set immediately, don't wait for GPS
+      _ctrl.setPickup(
+        widget.initialPickupDetails!,
+        widget.initialPickupLabel ?? widget.initialPickupDetails!.address,
+      );
+      _ctrl.setDropoff(
+        widget.initialDropoffDetails!,
+        widget.initialDropoffLabel ?? widget.initialDropoffDetails!.address,
+      );
+      // Resolve GPS in parallel for user-dot overlay only
       _initLocation();
     } else {
       _initLocation().then((_) {
@@ -979,7 +992,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _bearingCtrl?.dispose();
     _pinPopCtrl?.dispose();
     _labelPopCtrl?.dispose();
-    _glowPulseCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     super.dispose();
@@ -1275,16 +1287,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _pinPopCtrl?.stop();
     _labelPopCtrl?.stop();
     _routeDrawTicker?.stop();
-    _glowPulseCtrl?.dispose();
-    _glowPulseCtrl = null;
 
     // Clear existing route annotations so they redraw fresh
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr != null) {
-      if (_routeGlowAnnot != null) { try { await polyMgr.delete(_routeGlowAnnot!); } catch (_) {} _routeGlowAnnot = null; }
-      if (_routeCasingAnnot != null) { try { await polyMgr.delete(_routeCasingAnnot!); } catch (_) {} _routeCasingAnnot = null; }
-      if (_routeMainAnnot != null) { try { await polyMgr.delete(_routeMainAnnot!); } catch (_) {} _routeMainAnnot = null; }
-      if (_fullRouteGlow != null) { try { await polyMgr.delete(_fullRouteGlow!); } catch (_) {} _fullRouteGlow = null; }
       if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
     }
 
@@ -1354,9 +1360,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (!mounted) return;
     await _animateGoldRoute(pts, const Duration(milliseconds: 1000));
     if (!mounted) return;
-
-    // 5. Glow pulse after route complete
-    _startGlowPulse(pts);
 
     _cinematicDone = true;
   }
@@ -1508,29 +1511,19 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         final geo = mapbox.LineString(coordinates: coords);
 
-        if (_routeGlowAnnot == null) {
-          _routeGlowAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(), lineWidth: 18.0, lineJoin: mapbox.LineJoin.ROUND,
-          ));
-          _routeCasingAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(), lineWidth: 10.0, lineJoin: mapbox.LineJoin.ROUND,
-          ));
-          _routeMainAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 4.0, lineJoin: mapbox.LineJoin.ROUND,
+        if (_routeAnnot == null) {
+          _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo, lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
           ));
         } else {
-          _routeGlowAnnot!.geometry = geo; await polyMgr.update(_routeGlowAnnot!);
-          _routeCasingAnnot!.geometry = geo; await polyMgr.update(_routeCasingAnnot!);
-          _routeMainAnnot!.geometry = geo; await polyMgr.update(_routeMainAnnot!);
+          _routeAnnot!.geometry = geo; await polyMgr.update(_routeAnnot!);
         }
       }
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
         final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         final fullGeo = mapbox.LineString(coordinates: fullCoords);
-        if (_routeGlowAnnot != null) { _routeGlowAnnot!.geometry = fullGeo; await polyMgr.update(_routeGlowAnnot!); }
-        if (_routeCasingAnnot != null) { _routeCasingAnnot!.geometry = fullGeo; await polyMgr.update(_routeCasingAnnot!); }
-        if (_routeMainAnnot != null) { _routeMainAnnot!.geometry = fullGeo; await polyMgr.update(_routeMainAnnot!); }
+        if (_routeAnnot != null) { _routeAnnot!.geometry = fullGeo; await polyMgr.update(_routeAnnot!); }
         if (!completer.isCompleted) completer.complete();
       }
     });
@@ -1538,55 +1531,23 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     return completer.future;
   }
 
-  void _startGlowPulse(List<LatLng> points) {
-    _glowPulseCtrl?.dispose();
-    if (points.length < 2 || _polylineAnnotMgr == null) return;
-
-    final coords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    final geo = mapbox.LineString(coordinates: coords);
-    _polylineAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
-      geometry: geo,
-      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.12).toARGB32(),
-      lineWidth: 18.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    )).then((a) => _fullRouteGlow = a);
-
-    _glowPulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000))
-      ..repeat(reverse: true);
-    _glowPulseCtrl!.addListener(() {
-      final glow = _fullRouteGlow;
-      if (glow == null || _polylineAnnotMgr == null) return;
-      final v = _glowPulseCtrl!.value;
-      glow.lineColor = const Color(0xFFFFD700).withValues(alpha: 0.12 + v * 0.10).toARGB32();
-      glow.lineWidth = 16.0 + v * 6.0;
-      _polylineAnnotMgr!.update(glow);
-      if (_routeCasingAnnot != null) {
-        _routeCasingAnnot!.lineColor = const Color(0xFFFFE566).withValues(alpha: 0.20 + v * 0.12).toARGB32();
-        try { _polylineAnnotMgr!.update(_routeCasingAnnot!); } catch (_) {}
-      }
-    });
-  }
-
   Future<void> _updateRouteAnnotation(List<LatLng> points) async {
     final mgr = _polylineAnnotMgr;
     if (mgr == null) return;
-    // Update gold gloss layers if they exist
-    if (_routeGlowAnnot != null) {
+    // Update single gold line if it exists
+    if (_routeAnnot != null) {
       if (points.isEmpty) return;
       final coords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
       final geo = mapbox.LineString(coordinates: coords);
-      _routeGlowAnnot!.geometry = geo; await mgr.update(_routeGlowAnnot!);
-      _routeCasingAnnot?.geometry = geo; if (_routeCasingAnnot != null) await mgr.update(_routeCasingAnnot!);
-      _routeMainAnnot?.geometry = geo; if (_routeMainAnnot != null) await mgr.update(_routeMainAnnot!);
+      _routeAnnot!.geometry = geo; await mgr.update(_routeAnnot!);
       return;
     }
-    // Fallback: legacy single-color route
-    if (_routeAnnot != null) { try { await mgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+    // Fallback: create new single-line route
     if (points.isEmpty) return;
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
       lineColor: const Color(0xFFFFD700).toARGB32(),
-      lineWidth: 4.0,
+      lineWidth: 5.0,
     ));
   }
 
@@ -2023,20 +1984,40 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 ),
               ),
 
-            // ── Route loading overlay: covers the idle map while route is fetching ──
+            // ── Route loading indicator: subtle pill while route is fetching ──
             if (_fetchingRoute)
-              Positioned.fill(
+              Positioned(
+                top: topPad + 60,
+                left: 0,
+                right: 0,
                 child: IgnorePointer(
-                  child: AnimatedOpacity(
-                    opacity: _fetchingRoute ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 250),
+                  child: Center(
                     child: Container(
-                      color: const Color(0xFF07080D),
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                          color: Color(0xFFE8C547),
-                          strokeWidth: 2.5,
-                        ),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF07080D).withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(
+                              color: Color(0xFFE8C547),
+                              strokeWidth: 2,
+                            ),
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'Finding best route…',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

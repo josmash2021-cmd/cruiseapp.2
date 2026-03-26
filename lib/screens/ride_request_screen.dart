@@ -168,6 +168,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // ── Route loading: hide idle state while route is being fetched ──
   bool _fetchingRoute = false;
 
+  // ── Price shimmer while waiting for real route ──
+  late AnimationController _priceShimmerCtrl;
+
   // ── Driver Found overlay ──
   bool _driverFoundVisible = false;
   Timer? _driverFoundTimer;
@@ -218,6 +221,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       begin: 1.0,
       end: 0.0,
     ).animate(CurvedAnimation(parent: _sheetCtrl, curve: Curves.easeOutCubic));
+
+    _priceShimmerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
 
     _shakeCtrl = AnimationController(
       vsync: this,
@@ -990,6 +998,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _searchStatusTimer?.cancel();
     _searchElapsedTimer?.cancel();
     _sheetCtrl.dispose();
+    _priceShimmerCtrl.dispose();
     _shakeCtrl.dispose();
     _tiltCtrl?.dispose();
     _bearingCtrl?.dispose();
@@ -2434,31 +2443,42 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          for (int i = 0; i < displayOptions.length; i++) ...[
-                            GestureDetector(
-                              onTap: () {
-                                _ctrl.selectRideOption(displayOptions[i]);
-                                // Auto-collapse after selecting to show pay button
-                                Future.delayed(
-                                  const Duration(milliseconds: 250),
-                                  () {
-                                    if (mounted) {
-                                      setState(
-                                        () => _rideOptionsExpanded = false,
-                                      );
-                                    }
-                                  },
-                                );
-                              },
-                              child: _buildRideOptionCard(
-                                c,
-                                displayOptions[i],
-                                option?.id == displayOptions[i].id,
+                          // Route failed → show retry
+                          if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
+                            _buildRouteFailedRetry()
+                          // Loading → shimmer placeholders
+                          else if (displayOptions.isEmpty)
+                            for (int i = 0; i < 3; i++) ...[
+                              _buildShimmerCard(),
+                              if (i < 2) const SizedBox(height: 6),
+                            ]
+                          // Real options
+                          else
+                            for (int i = 0; i < displayOptions.length; i++) ...[
+                              GestureDetector(
+                                onTap: () {
+                                  _ctrl.selectRideOption(displayOptions[i]);
+                                  // Auto-collapse after selecting to show pay button
+                                  Future.delayed(
+                                    const Duration(milliseconds: 250),
+                                    () {
+                                      if (mounted) {
+                                        setState(
+                                          () => _rideOptionsExpanded = false,
+                                        );
+                                      }
+                                    },
+                                  );
+                                },
+                                child: _buildRideOptionCard(
+                                  c,
+                                  displayOptions[i],
+                                  option?.id == displayOptions[i].id,
+                                ),
                               ),
-                            ),
-                            if (i < displayOptions.length - 1)
-                              const SizedBox(height: 6),
-                          ],
+                              if (i < displayOptions.length - 1)
+                                const SizedBox(height: 6),
+                            ],
                         ],
                       ),
                     ),
@@ -2859,6 +2879,32 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           ),
         ],
       ),
+    );
+  }
+
+  /// Animated shimmer placeholder for price while loading.
+  Widget _buildPriceShimmer({required double width, required double height}) {
+    return AnimatedBuilder(
+      animation: _priceShimmerCtrl,
+      builder: (context, _) {
+        return Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            gradient: LinearGradient(
+              begin: Alignment(-1.0 + 2.0 * _priceShimmerCtrl.value, 0),
+              end: Alignment(1.0 + 2.0 * _priceShimmerCtrl.value, 0),
+              colors: const [
+                Color(0xFF2A2A2A),
+                Color(0xFF3A3A3A),
+                Color(0xFF2A2A2A),
+              ],
+              stops: const [0.0, 0.5, 1.0],
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -372,6 +372,7 @@ class SupportChat(Base):
     supervisor_connected = Column(Boolean, default=False)
     last_user_message_at = Column(DateTime, nullable=True)  # for inactivity tracking
     locale = Column(String(5), default="en")  # en, es
+    ai_disabled = Column(Boolean, default=False)  # True when admin takes over
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -554,6 +555,7 @@ async def _migrate_add_columns(conn):
         ("users", "phone_changes_count", "INTEGER DEFAULT 0"),
         ("support_chats", "last_user_message_at", "DATETIME"),
         ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT 0"),
+        ("support_chats", "ai_disabled", "BOOLEAN DEFAULT 0"),
         ("trips", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
         ("trips", "stripe_payment_intent_id", "VARCHAR(100)"),
         ("trips", "is_airport", "BOOLEAN DEFAULT 0"),
@@ -678,6 +680,7 @@ async def _migrate_postgres(conn):
         ("support_chats", "needs_escalation", "BOOLEAN DEFAULT FALSE"),
         ("support_chats", "last_user_message_at", "TIMESTAMP WITH TIME ZONE"),
         ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT FALSE"),
+        ("support_chats", "ai_disabled", "BOOLEAN DEFAULT FALSE"),
     ]
     for table, col, col_type in migrations:
         try:
@@ -5844,13 +5847,22 @@ async def _check_chat_inactivity(chat_id: int):
                 else:
                     agent = chat.agent_name or "Agente"
                     lang = getattr(chat, "locale", "en") or "en"
+                    # Get user name from DB since SupportChat doesn't have user_name
+                    _u_name = "estimado usuario"
+                    try:
+                        _u_r = await db.execute(select(User).where(User.id == chat.user_id))
+                        _u = _u_r.scalar_one_or_none()
+                        if _u and _u.first_name:
+                            _u_name = _u.first_name
+                    except Exception:
+                        pass
                     proactive_msgs_es = [
-                        f"¿Hay algo más en que pueda ayudarle, {chat.user_name or 'estimado usuario'}?",
+                        f"¿Hay algo más en que pueda ayudarle, {_u_name}?",
                         f"¿Necesita ayuda con algo más?",
                         f"Quedo a su disposición si necesita algo adicional.",
                     ]
                     proactive_msgs_en = [
-                        f"Is there anything else I can help you with, {chat.user_name or 'there'}?",
+                        f"Is there anything else I can help you with, {_u_name if _u_name != 'estimado usuario' else 'there'}?",
                         f"Do you need help with anything else?",
                         f"I'm here if you need anything else.",
                     ]

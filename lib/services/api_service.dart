@@ -2285,6 +2285,31 @@ class ApiService {
         .timeout(const Duration(seconds: 10));
     return _parse(res);
   }
+
+  // ═══════════════════════════════════════════════════════
+  //  FARE ESTIMATION
+  // ═══════════════════════════════════════════════════════
+
+  /// Estimate fare for a ride (server-side validation of client estimates).
+  static Future<Map<String, dynamic>> estimateFare({
+    required double pickupLat,
+    required double pickupLng,
+    required double dropoffLat,
+    required double dropoffLng,
+    String vehicleType = 'comfort',
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse(
+            '$_baseUrl/estimate-fare?pickup_lat=$pickupLat&pickup_lng=$pickupLng'
+            '&dropoff_lat=$dropoffLat&dropoff_lng=$dropoffLng&vehicle_type=$vehicleType',
+          ),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
 }
 
 /// Simple exception with HTTP status code.

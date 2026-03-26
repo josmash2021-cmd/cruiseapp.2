@@ -7329,6 +7329,67 @@ async def get_current_surge(lat: float = Query(...), lng: float = Query(...), db
 
     return {"surge_multiplier": best_multiplier, "is_surge": best_multiplier > 1.0, "message": f"{best_multiplier}x" if best_multiplier > 1.0 else "No surge"}
 
+
+@app.get("/estimate-fare", dependencies=[Depends(_verify_api_key)])
+async def estimate_fare(
+    pickup_lat: float = Query(...),
+    pickup_lng: float = Query(...),
+    dropoff_lat: float = Query(...),
+    dropoff_lng: float = Query(...),
+    vehicle_type: str = Query("comfort"),  # comfort, premium, vip
+    db: AsyncSession = Depends(get_db),
+):
+    """Estimate fare for a ride. Returns base, surge, and total estimates."""
+    # Calculate distance
+    dist_km = _haversine(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+    dist_mi = round(dist_km * 0.621371, 2)
+    
+    # Estimated duration (rough: 2 min per mile in city traffic)
+    duration_min = max(3, int(dist_mi * 2.5))
+    
+    # Base rates by vehicle type
+    rates = {
+        "comfort": {"base": 2.50, "per_mile": 1.50, "per_minute": 0.25, "min_fare": 8.00},
+        "premium": {"base": 3.00, "per_mile": 2.00, "per_minute": 0.35, "min_fare": 12.00},
+        "vip":     {"base": 5.00, "per_mile": 3.00, "per_minute": 0.50, "min_fare": 20.00},
+    }
+    r = rates.get(vehicle_type.lower(), rates["comfort"])
+    
+    # Get surge at pickup location
+    surge_mult = 1.0
+    result = await db.execute(select(SurgeZone).where(SurgeZone.is_active == True))
+    for zone in result.scalars().all():
+        if _haversine(pickup_lat, pickup_lng, zone.center_lat, zone.center_lng) <= zone.radius_km:
+            surge_mult = max(surge_mult, zone.surge_multiplier)
+    
+    # Calculate fare components
+    base_fare = r["base"]
+    mileage_charge = round(dist_mi * r["per_mile"], 2)
+    time_charge = round(duration_min * r["per_minute"], 2)
+    subtotal = round(base_fare + mileage_charge + time_charge, 2)
+    surge_extra = round(subtotal * (surge_mult - 1.0), 2) if surge_mult > 1.0 else 0.0
+    total = max(round(subtotal + surge_extra, 2), r["min_fare"])
+    
+    # Calculate range (±15%)
+    low = round(total * 0.85, 2)
+    high = round(total * 1.15, 2)
+    
+    return {
+        "vehicle_type": vehicle_type,
+        "distance_miles": dist_mi,
+        "duration_minutes": duration_min,
+        "base_fare": base_fare,
+        "mileage_charge": mileage_charge,
+        "time_charge": time_charge,
+        "subtotal": subtotal,
+        "surge_multiplier": surge_mult,
+        "surge_extra": surge_extra,
+        "total_estimate": total,
+        "fare_range": {"low": low, "high": high},
+        "display": f"${low:.2f} - ${high:.2f}",
+    }
+
+
 @app.post("/admin/surge/update", dependencies=[Depends(_require_dispatch_auth)])
 async def update_surge_zone(zone_name: str = Body(...), center_lat: float = Body(...), center_lng: float = Body(...), surge_multiplier: float = Body(...), radius_km: float = Body(2.0), db: AsyncSession = Depends(get_db)):
     """Admin: Update or create surge zone."""

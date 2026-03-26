@@ -38,7 +38,6 @@ import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_inbox_screen.dart';
 import '../../services/map_launcher_service.dart';
-import '../../widgets/radial_shimmer_painter.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'driver_trip_accept_screen.dart';
 
@@ -152,16 +151,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _offerRouteShown = false; // true after route draw completes
   AnimationController? _routePulseCtrl;
 
-  // ── Pulse + ripple animation on card tap ──
+  // ── Pulse animation on card tap ──
   AnimationController? _pulseCtrl;
   Animation<double>? _pulseAnim;
-  AnimationController? _rippleCtrl;
-  bool _showRipple = false;
   bool _isCardAnimating = false;
   String? _animatingOfferId; // which card is pulsing
-
-  // ── Continuous radial gold shimmer on offer card ──
-  late AnimationController _shimmerCtrl;
   bool _offerDetailsVisible = false;
 
   // ── Accept card animation state ──
@@ -358,17 +352,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       ),
     ]).animate(_pulseCtrl!);
 
-    _rippleCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-
-    // Continuous radial shimmer ripple on offer cards
-    _shimmerCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2200),
-    )..repeat();
-
     // Fade in time/distance details after card settles
     Future.delayed(const Duration(milliseconds: 400), () {
       if (mounted) setState(() => _offerDetailsVisible = true);
@@ -398,8 +381,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _offerPageCtrl.dispose();
     _routePulseCtrl?.dispose();
     _pulseCtrl?.dispose();
-    _rippleCtrl?.dispose();
-    _shimmerCtrl.dispose();
     _glowPulseCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -2798,7 +2779,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     setState(() {
       _previewingOffer = offer;
-      _showRipple = true;
       _animatingOfferId = oid;
       _tappedCardIds.add(oid);
     });
@@ -2821,20 +2801,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // ── PHASE 1 (t=0ms): 3-ring gold ripple + card spring bounce ──
+    // ── PHASE 1 (t=0ms): card spring bounce ──
     _pulseCtrl!.forward(from: 0);
-    _rippleCtrl!.forward(from: 0);
 
-    // ── PHASE 2 (t=200ms): Smooth zoom out to show full route ──
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
+    // ── PHASE 2: Smooth zoom out to show full route (instant) ──
     _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
 
-    // ── PHASE 3 (t=500ms): Pins pop in ──
+    // ── PHASE 3 (t=300ms): Pins pop in ──
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
-    if (mounted) setState(() => _showRipple = false);
-    _rippleCtrl!.reset();
 
     // Place pins using pre-built images (or build now as fallback)
     final dropoffAddr = (offer['dropoff_address'] ?? '') as String;
@@ -4407,7 +4382,7 @@ Widget _navHeader() {
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOutCubic,
-              height: isCardExpanded ? 380 : 226,
+              height: 340,
               child: PageView.builder(
                 controller: _offerPageCtrl,
                 onPageChanged: (index) {
@@ -4445,39 +4420,10 @@ Widget _navHeader() {
                     );
                   }
                   return GestureDetector(
-                    onTap: () {
-                      final id = oid;
-                      setState(() {
-                        if (_expandedOfferIds.contains(id)) {
-                          _expandedOfferIds.remove(id);
-                        } else {
-                          _expandedOfferIds.add(id);
-                        }
-                      });
-                      _onOfferCardTap(offer);
-                    },
+                    onTap: () => _onOfferCardTap(offer),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          card,
-                          if (_showRipple && isAnimating && _rippleCtrl != null)
-                            Positioned.fill(
-                              child: IgnorePointer(
-                                child: AnimatedBuilder(
-                                  animation: _rippleCtrl!,
-                                  builder: (_, __) => CustomPaint(
-                                    painter: _OfferRipplePainter(
-                                      progress: _rippleCtrl!.value,
-                                      color: const Color(0xFFD4AF37),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+                      child: card,
                     ),
                   );
                 },
@@ -5090,7 +5036,7 @@ Widget _navHeader() {
     Color borderC,
   ) {
     const luxGold = Color(0xFFD4AF37);
-    const deepBlack = Color(0xFF0A0A0A);
+    const deepBlack = Color(0xFF0F0F0F);
     const mutedGray = Color(0xFF9A9A9A);
 
     // Parse offer data
@@ -5128,39 +5074,11 @@ Widget _navHeader() {
         color: deepBlack,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: luxGold.withValues(alpha: 0.10),
+          color: const Color(0xFFFFD700).withValues(alpha: 0.25),
           width: 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: luxGold.withValues(alpha: 0.12),
-            blurRadius: 20,
-            spreadRadius: -4,
-            offset: const Offset(0, 8),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.50),
-            blurRadius: 24,
-            spreadRadius: -2,
-            offset: const Offset(0, 10),
-          ),
-        ],
       ),
-      child: Stack(
-        children: [
-          // Layer 1: Radial gold shimmer ripple behind content
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: AnimatedBuilder(
-                animation: _shimmerCtrl,
-                builder: (_, __) => CustomPaint(
-                  painter: RadialShimmerPainter(progress: _shimmerCtrl.value),
-                ),
-              ),
-            ),
-          ),
-          // Layer 2: Card content on top
-          Padding(
+      child: Padding(
         padding: EdgeInsets.fromLTRB(16, isExpanded ? 14 : 12, 16, isExpanded ? 16 : 12),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 350),
@@ -5189,8 +5107,6 @@ Widget _navHeader() {
                       isExpanded: isExpanded,
                     ),
         ),
-          ),
-        ],
       ),
     );
   }
@@ -5211,441 +5127,257 @@ Widget _navHeader() {
     required bool isExpanded,
   }) {
     const luxGold = Color(0xFFD4AF37);
-    const mutedGray = Color(0xFF9A9A9A);
     final totalMins = etaToPickup + tripEta;
     final totalMiles = distToPickupMi + tripDistMi;
 
-    // ── COMPACT LAYOUT (collapsed card, ~200px) ──
-    if (!isExpanded) {
-      return Column(
-        key: const ValueKey('compact'),
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Row 1: Fare + vehicle badge + rating + dismiss
-          Row(
-            children: [
-              Text(
-                '\$${fare.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  height: 1.0,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: luxGold.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: luxGold.withValues(alpha: 0.25),
-                    width: 0.5,
-                  ),
-                ),
-                child: Text(
-                  vehicleType,
-                  style: const TextStyle(
-                    color: luxGold,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(Icons.star_rounded, color: luxGold, size: 13),
-              const SizedBox(width: 2),
-              Text(
-                rating.toStringAsFixed(1),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              GestureDetector(
-                onTap: () => _rejectOffer(offer),
-                child: Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.close_rounded,
-                      color: Colors.white.withValues(alpha: 0.40), size: 14),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // Compact pickup/dropoff
-          Row(
-            children: [
-              const Icon(Icons.circle, color: luxGold, size: 7),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '$etaToPickup min · $pickupAddr',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              const Icon(Icons.square_rounded, color: mutedGray, size: 7),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '$tripEta min · $dropoffAddr',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.5),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // Total time + distance (fade in)
-          AnimatedOpacity(
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeInOut,
-            opacity: _offerDetailsVisible ? 1.0 : 0.0,
-            child: Row(
-              children: [
-                const Icon(Icons.timer_outlined, color: luxGold, size: 12),
-                const SizedBox(width: 4),
-                Text(
-                  '$totalMins min',
-                  style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(width: 12),
-                const Icon(Icons.straighten_rounded, color: luxGold, size: 12),
-                const SizedBox(width: 4),
-                Text(
-                  '${totalMiles.toStringAsFixed(1)} mi',
-                  style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Compact accept button
-          SizedBox(
-            width: double.infinity,
-            height: 42,
-            child: ElevatedButton(
-              onPressed: () => _acceptOffer(offer),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: luxGold,
-                foregroundColor: Colors.black,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Text(
-                S.of(context).accept,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.3,
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    // ── EXPANDED LAYOUT (full details, ~310px) ──
     return Column(
-      key: const ValueKey('expanded'),
+      key: const ValueKey('compact'),
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Header row
+        // ROW 1: Service badge + Price + Rating
         Row(
           children: [
-            const Icon(Icons.person_rounded, color: luxGold, size: 18),
-            const SizedBox(width: 6),
-            const Text(
-              'Cruise',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.3,
+            // Service badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Text(
+                vehicleType.toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
             const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-              decoration: BoxDecoration(
-                color: luxGold.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: luxGold.withValues(alpha: 0.25),
-                  width: 0.5,
-                ),
-              ),
-              child: Text(
-                vehicleType,
-                style: const TextStyle(
-                  color: luxGold,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ),
-            const Spacer(),
             GestureDetector(
               onTap: () => _rejectOffer(offer),
               child: Container(
-                width: 28,
-                height: 28,
+                width: 24,
+                height: 24,
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.06),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(Icons.close_rounded,
-                    color: Colors.white.withValues(alpha: 0.40), size: 15),
+                    color: Colors.white.withValues(alpha: 0.40), size: 13),
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 10),
-
-        // Fare + rating inline
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+            const Spacer(),
+            // Price
             Text(
               '\$${fare.toStringAsFixed(2)}',
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 32,
-                fontWeight: FontWeight.w900,
-                height: 1.0,
-                letterSpacing: -0.5,
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(width: 12),
-            const Icon(Icons.star_rounded, color: luxGold, size: 15),
-            const SizedBox(width: 3),
-            Text(
-              rating.toStringAsFixed(2),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+            const SizedBox(width: 8),
+            // Rating + est. fare
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.star, color: Color(0xFFFFD700), size: 12),
+                    const SizedBox(width: 2),
+                    Text(
+                      rating.toStringAsFixed(1),
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+                const Text(
+                  'est. fare',
+                  style: TextStyle(color: Colors.white24, fontSize: 10),
+                ),
+              ],
             ),
           ],
         ),
+
         const SizedBox(height: 10),
 
-        // Gold divider
+        // ROW 2: Pickup + Dropoff in dark box
         Container(
-          height: 1,
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                luxGold.withValues(alpha: 0.0),
-                luxGold.withValues(alpha: 0.25),
-                luxGold.withValues(alpha: 0.0),
-              ],
-            ),
+            color: const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(12),
           ),
-        ),
-        const SizedBox(height: 10),
-
-        // Pickup row
-        _uberAddressRow(
-          icon: Icons.circle,
-          iconColor: luxGold,
-          iconSize: 9,
-          topLine: '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
-          bottomLine: pickupAddr,
-          showConnector: true,
-          darkMode: true,
-        ),
-        const SizedBox(height: 2),
-        // Dropoff row
-        _uberAddressRow(
-          icon: Icons.square_rounded,
-          iconColor: mutedGray,
-          iconSize: 9,
-          topLine: '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
-          bottomLine: dropoffAddr,
-          showConnector: false,
-          darkMode: true,
-        ),
-
-        // Long trip pill
-        if (tripEta >= 45) ...[
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-            decoration: BoxDecoration(
-              color: luxGold.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: luxGold.withValues(alpha: 0.20),
-                width: 0.5,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.route_rounded, color: luxGold, size: 14),
-                const SizedBox(width: 6),
-                Text(
-                  'Long trip ($tripEta+ min)',
-                  style: const TextStyle(
-                    color: luxGold,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-
-        const SizedBox(height: 12),
-
-        // Total trip time + distance (fade in)
-        AnimatedOpacity(
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeInOut,
-          opacity: _offerDetailsVisible ? 1.0 : 0.0,
-          child: Row(
+          child: Column(
             children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: luxGold.withValues(alpha: 0.20),
-                      width: 1,
+              // Pickup
+              Row(
+                children: [
+                  Container(
+                    width: 8, height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFFD700),
+                      shape: BoxShape.circle,
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.timer_outlined, color: luxGold, size: 15),
-                      const SizedBox(width: 6),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '$totalMins min',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
+                          style: const TextStyle(color: Colors.white38, fontSize: 10),
+                        ),
+                        Text(
+                          pickupAddr,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
                           ),
-                          const Text(
-                            'Total time',
-                            style: TextStyle(color: Colors.white38, fontSize: 10),
-                          ),
-                        ],
-                      ),
-                    ],
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
+                ],
+              ),
+              // Connector
+              const Padding(
+                padding: EdgeInsets.only(left: 3),
+                child: SizedBox(
+                  height: 8,
+                  child: VerticalDivider(color: Colors.white12, width: 8),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: luxGold.withValues(alpha: 0.20),
-                      width: 1,
+              // Dropoff
+              Row(
+                children: [
+                  Container(
+                    width: 8, height: 8,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.white38, width: 1.5),
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.straighten_rounded, color: luxGold, size: 15),
-                      const SizedBox(width: 6),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${totalMiles.toStringAsFixed(1)} mi',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
+                          style: const TextStyle(color: Colors.white38, fontSize: 10),
+                        ),
+                        Text(
+                          dropoffAddr,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
                           ),
-                          const Text(
-                            'Total distance',
-                            style: TextStyle(color: Colors.white38, fontSize: 10),
-                          ),
-                        ],
-                      ),
-                    ],
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ],
           ),
         ),
 
+        const SizedBox(height: 10),
+
+        // ROW 3: Time + Miles chips
+        Row(
+          children: [
+            Expanded(child: _buildOfferChip(
+              icon: Icons.timer_outlined,
+              value: '$totalMins min',
+              label: 'Total time',
+            )),
+            const SizedBox(width: 8),
+            Expanded(child: _buildOfferChip(
+              icon: Icons.straighten_rounded,
+              value: '${totalMiles.toStringAsFixed(1)} mi',
+              label: 'Total distance',
+            )),
+          ],
+        ),
+
         const SizedBox(height: 12),
 
-        // Accept button
-        SizedBox(
-          width: double.infinity,
-          height: 46,
-          child: ElevatedButton(
-            onPressed: () => _acceptOffer(offer),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: luxGold,
-              foregroundColor: Colors.black,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
+        // ACCEPT BUTTON
+        GestureDetector(
+          onTap: () => _acceptOffer(offer),
+          child: Container(
+            width: double.infinity,
+            height: 50,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFD700),
+              borderRadius: BorderRadius.circular(14),
             ),
-            child: Text(
-              S.of(context).accept,
-              style: const TextStyle(
-                color: Colors.black,
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.3,
+            child: Center(
+              child: Text(
+                S.of(context).accept,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  /// Chip widget for time/distance display on offer card.
+  Widget _buildOfferChip({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: const Color(0xFFFFD700), size: 14),
+          const SizedBox(width: 6),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                label,
+                style: const TextStyle(color: Colors.white38, fontSize: 10),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -5751,24 +5483,7 @@ Widget _navHeader() {
 
   /// Animated 3-dot gold loader for accepted card.
   Widget _buildAcceptLoadingDots() {
-    return AnimatedBuilder(
-      animation: _shimmerCtrl,
-      builder: (_, __) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(3, (i) {
-          final phase = (_shimmerCtrl.value + i * 0.2) % 1.0;
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFFD4AF37).withValues(alpha: 0.3 + phase * 0.7),
-            ),
-          );
-        }),
-      ),
-    );
+    return _AnimatedLoadingDots();
   }
 
   Widget _buildStatItem({
@@ -8056,39 +7771,52 @@ class _DriverRadarPainter extends CustomPainter {
   bool shouldRepaint(_DriverRadarPainter old) => old.progress != progress;
 }
 
-/// Professional 3-ring gold ripple wave that expands outward on offer card tap.
-/// Each ring starts at a different delay for a cascading wave effect.
-class _OfferRipplePainter extends CustomPainter {
-  final double progress;
-  final Color color;
-  const _OfferRipplePainter({required this.progress, required this.color});
+/// Self-contained animated loading dots (gold, 3 dots, pulsing).
+class _AnimatedLoadingDots extends StatefulWidget {
+  @override
+  State<_AnimatedLoadingDots> createState() => _AnimatedLoadingDotsState();
+}
+
+class _AnimatedLoadingDotsState extends State<_AnimatedLoadingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final maxRadius =
-        math.sqrt(size.width * size.width + size.height * size.height) / 2 + 60;
-
-    _drawRing(canvas, center, maxRadius, progress, delay: 0.0,  opacity: 0.50);
-    _drawRing(canvas, center, maxRadius, progress, delay: 0.15, opacity: 0.35);
-    _drawRing(canvas, center, maxRadius, progress, delay: 0.30, opacity: 0.20);
-  }
-
-  void _drawRing(Canvas canvas, Offset center, double maxRadius,
-      double progress, {required double delay, required double opacity}) {
-    final adjusted = ((progress - delay) / (1.0 - delay)).clamp(0.0, 1.0);
-    if (adjusted <= 0) return;
-
-    final eased = Curves.easeOutCubic.transform(adjusted);
-    final paint = Paint()
-      ..color = color.withValues(alpha: opacity * (1 - adjusted))
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-    canvas.drawCircle(center, maxRadius * eased, paint);
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
   }
 
   @override
-  bool shouldRepaint(_OfferRipplePainter old) => old.progress != progress;
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(3, (i) {
+          final phase = (_ctrl.value + i * 0.2) % 1.0;
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFD4AF37).withValues(alpha: 0.3 + phase * 0.7),
+            ),
+          );
+        }),
+      ),
+    );
+  }
 }
 
 /// Cached route segments for a pending offer.

@@ -468,20 +468,35 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   //  CINEMATIC ROUTE ANIMATION
   // =========================================================================
 
-  /// Full cinematic entry: zoom out → pins pop → route draws → zoom back.
+  /// Full cinematic entry: top-down → route draw → 45° tilt → 62° follow.
   Future<void> _startCinematicEntry() async {
     if (_routePts.length < 2 || _cinematicDone) return;
     _cinematicDone = true;
 
-    // 1. Zoom out to show full route + pins
+    // 1. Zoom out to top-down overview (pitch 0°)
     await _zoomToShowRoute();
     await Future.delayed(const Duration(milliseconds: 400));
 
-    // 2. Animated route draw (1s, 60fps)
+    // 2. Animated route draw (1.5s, 60fps)
     await _drawRouteAnimated();
+    await Future.delayed(const Duration(milliseconds: 200));
 
-    // 3. Zoom back to driver follow mode
-    await Future.delayed(const Duration(milliseconds: 300));
+    // 3. Intermediate tilt: fly to 45° with mid-zoom
+    final midZoom = (_navZoom - 2.0).clamp(13.0, 16.0);
+    final midCenter = _offsetLatLng(_pos, _bearing, midZoom, _pinOffsetRatio * 0.5);
+    _map?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(
+            coordinates: mapbox.Position(midCenter.longitude, midCenter.latitude)),
+        zoom: midZoom,
+        bearing: _bearing,
+        pitch: 45,
+      ),
+      mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
+    );
+    await Future.delayed(const Duration(milliseconds: 900));
+
+    // 4. Final tilt: fly to 62° chase-camera follow mode
     _zoomBackToDriver();
   }
 
@@ -525,7 +540,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         bearing: _bearing,
         pitch: _navTilt,
       ),
-      mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
+      mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
     );
   }
 
@@ -535,7 +550,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _routeAnimating = true;
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    const totalMs = 1000;
+    const totalMs = 1500;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -724,9 +739,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   //  CAMERA
   // =========================================================================
 
-  // Navigation camera: 30° tilt, zoom 17, pin at upper 35% of screen
+  // Navigation camera: 62° tilt, zoom 17, pin at upper 35% of screen
   static const double _navZoom = 17.0;
-  static const double _navTilt = 30.0;
+  static const double _navTilt = 62.0;
   static const double _pinOffsetRatio = 0.35;
 
   void _animateCamera(LatLng pos, {double? zoom, double bearing = 0, double tilt = _navTilt}) {
@@ -793,7 +808,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _isOverview      = false;
       _hasResumedOnce  = true;
     });
-    // Smooth flyTo transition back to follow mode with pin in upper 35%
+    // Smooth flyTo transition back to 62° tilt chase-camera
     final offsetCenter = _offsetLatLng(_pos, _bearing, _navZoom, _pinOffsetRatio);
     _map?.flyTo(
       mapbox.CameraOptions(
@@ -803,7 +818,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         bearing: _bearing,
         pitch: _navTilt,
       ),
-      mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
+      mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
     );
   }
 
@@ -913,45 +928,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   Future<void> _exitNav() async {
     HapticFeedback.lightImpact();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0F1621),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: const Text('Exit navigation?',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          )),
-        content: const Text(
-          'You will return to the ride details screen. '
-          'You can restart navigation from there.',
-          style: TextStyle(
-            color: Colors.white60,
-            fontSize: 14,
-          )),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel',
-              style: TextStyle(color: Colors.white54)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Exit',
-              style: TextStyle(
-                color: Color(0xFFF5C518),
-                fontWeight: FontWeight.bold,
-              )),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
 
     // Cancel GPS stream before leaving
     _gpsSub?.cancel();
@@ -1656,7 +1632,36 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 1. Recenter — resumes 3D chase mode
+        // 1. Overview toggle
+        _mapFab(
+          icon: _isOverview ? Icons.zoom_in_map_rounded : Icons.keyboard_arrow_up_rounded,
+          onTap: () {
+            HapticFeedback.lightImpact();
+            setState(() {
+              _isOverview      = !_isOverview;
+              _cameraFollowing = !_isOverview;
+            });
+            if (_isOverview) {
+              final dest = _phase == TripPhase.onTrip
+                  ? widget.dropoffLatLng : widget.pickupLatLng;
+              _animateCameraOverview(_pos, dest);
+            } else {
+              _recenter();
+            }
+          },
+          active: _isOverview,
+        ),
+        const SizedBox(height: 10),
+        // 2. Upcoming directions
+        _mapFab(
+          icon: Icons.alt_route_rounded,
+          onTap: () {
+            HapticFeedback.lightImpact();
+            _showUpcomingSteps();
+          },
+        ),
+        const SizedBox(height: 10),
+        // 3. Recenter — resumes 3D chase mode
         _mapFab(
           icon: Icons.gps_fixed_rounded,
           onTap: () {
@@ -1666,7 +1671,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           active: _cameraFollowing && !_isOverview,
         ),
         const SizedBox(height: 10),
-        // 2. Mute toggle
+        // 4. Mute toggle
         _mapFab(
           icon: _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
           onTap: () {
@@ -1676,7 +1681,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           active: _isMuted,
         ),
         const SizedBox(height: 10),
-        // 3. Safety shield
+        // 5. Safety shield
         _mapFab(
           icon: Icons.shield_rounded,
           onTap: () {
@@ -1756,41 +1761,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // '^' overview toggle
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  setState(() {
-                    _isOverview      = !_isOverview;
-                    _cameraFollowing = !_isOverview;
-                  });
-                  if (_isOverview) {
-                    final dest = _phase == TripPhase.onTrip
-                        ? widget.dropoffLatLng : widget.pickupLatLng;
-                    _animateCameraOverview(_pos, dest);
-                  } else {
-                    _recenter();
-                  }
-                },
-                child: SizedBox(
-                  width: 50,
-                  child: Icon(
-                    _isOverview ? Icons.zoom_in_map_rounded : Icons.keyboard_arrow_up_rounded,
-                    color: Colors.white.withValues(alpha: 0.75), size: 26),
-                ),
-              ),
-              // Fork — upcoming steps panel
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  _showUpcomingSteps();
-                },
-                child: SizedBox(
-                  width: 42,
-                  child: Icon(Icons.alt_route_rounded,
-                      color: Colors.white.withValues(alpha: 0.75), size: 22),
-                ),
-              ),
+              const SizedBox(width: 12),
               // Rider avatar — opens trip options
               GestureDetector(
                 onTap: _showTripOptions,
@@ -1799,7 +1770,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                   child: _riderAvatar(size: 34),
                 ),
               ),
-              // ETA block (green)
+              // Centered ETA / distance / arrival
               Expanded(
                 child: Center(
                   child: eta <= 2
@@ -1999,16 +1970,26 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   Widget _buildSpeedOverlay(double topOffset) {
     final speed = _currentSpeedMph.round();
-    // Dynamic speed limit: residential=25, city=35, highway=55, freeway=65
+
+    // Infer speed limit from current road name + maneuver context
+    final street = _currentStreet.toLowerCase();
+    final maneuver = _navState?.currentManeuver ?? '';
     final int limit;
-    if (speed > 60) {
+    if (street.contains('interstate') || street.contains('i-') ||
+        street.contains('freeway') || street.contains('turnpike') ||
+        street.contains('expressway') || street.contains('motorway')) {
       limit = 65;
-    } else if (speed > 40) {
+    } else if (street.contains('highway') || street.contains('hwy') ||
+               street.contains('parkway') || street.contains('pkwy') ||
+               maneuver.contains('merge') || maneuver.contains('ramp')) {
       limit = 55;
-    } else if (speed > 28) {
+    } else if (street.contains('boulevard') || street.contains('blvd') ||
+               street.contains('avenue') || street.contains('ave') ||
+               street.contains('road') || street.contains('rd') ||
+               street.contains('drive') || street.contains('dr')) {
       limit = 35;
     } else {
-      limit = 25;
+      limit = 25; // residential / local streets
     }
     final isOver = speed > limit;
 

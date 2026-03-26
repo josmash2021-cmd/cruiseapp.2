@@ -24,6 +24,7 @@ import 'services/local_cache.dart';
 import 'services/map_cache_service.dart';
 import 'services/network_service.dart';
 import 'services/keep_alive_service.dart';
+import 'services/analytics_service.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
@@ -92,6 +93,9 @@ void main() async {
         debugPrint('[Firebase] early init error: $e');
       }
       await ApiService.init();
+
+      // Init Firebase Analytics
+      await AnalyticsService.instance.init();
 
       // Init local Hive cache (fast, sync reads after this)
       await LocalCache.init();
@@ -352,6 +356,7 @@ class _UberCloneAppState extends State<UberCloneApp>
               }
               return const Locale('en');
             },
+            navigatorObservers: [AnalyticsService.instance.observer],
             home: const SplashScreen(),
             builder: (context, child) {
               // Apply smooth scroll behavior globally

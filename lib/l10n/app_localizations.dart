@@ -547,6 +547,12 @@ class S {
   String get keep => _es ? 'Mantener' : 'Keep';
   String get rideCancelled =>
       _es ? 'Viaje cancelado exitosamente' : 'Ride canceled successfully';
+  String get rideCancelledByDriver =>
+      _es ? 'Viaje cancelado' : 'Ride Cancelled';
+  String get driverCancelledMessage =>
+      _es ? 'Tu conductor ha cancelado el viaje. Por favor solicita otro viaje.' : 'Your driver has cancelled the ride. Please request another ride.';
+  String get connectionLost =>
+      _es ? 'Conexión perdida — reconectando…' : 'Connection lost — reconnecting…';
 
   // ── Inbox ─────────────────────────────────────────────────────────────────
   String get inbox => _es ? 'Bandeja de Entrada' : 'Inbox';

@@ -152,6 +152,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _saveDriver = false;
   final Set<String> _feedbackChips = {};
   String _anonymousFeedback = '';
+  bool _connectionLost = false;
+  int _pollFailCount = 0;
+  static const int _maxPollFailsBeforeBanner = 3;
 
   int _pickupIdx = 0;
 
@@ -230,21 +233,36 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _driverLocSub = TripFirestoreService.watchDriverLocation(fsId).listen(
         (ll) {
           if (!mounted || _phase == _TrackPhase.completed) return;
+          if (_connectionLost) setState(() => _connectionLost = false);
           _onRealDriverLocation(ll);
         },
         onError: (error) {
           debugPrint('[RiderTracking] Driver location listener error: $error');
+          if (mounted && !_connectionLost) {
+            setState(() => _connectionLost = true);
+          }
         },
       );
 
       // Watch trip status changes
       _tripStatusSub = TripFirestoreService.watchTrip(fsId).listen(
         (data) {
-          if (!mounted || data == null) return;
+          if (!mounted) return;
+          if (data == null) {
+            // Null data = temporary disconnection, do NOT cancel
+            debugPrint('[RiderTracking] Trip data null — keeping last known state');
+            if (!_connectionLost) setState(() => _connectionLost = true);
+            return;
+          }
+          if (_connectionLost) setState(() => _connectionLost = false);
           _onTripStatusUpdate(data);
         },
         onError: (error) {
           debugPrint('[RiderTracking] Trip status listener error: $error');
+          // Stream error = connection issue, show banner and keep retrying
+          if (mounted && !_connectionLost) {
+            setState(() => _connectionLost = true);
+          }
         },
       );
     }
@@ -257,6 +275,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         try {
           final status = await ApiService.getTrip(tripId);
           final st = status['status']?.toString() ?? '';
+          // Successful poll — clear connection lost state
+          if (_connectionLost && mounted) {
+            setState(() {
+              _connectionLost = false;
+              _pollFailCount = 0;
+            });
+          }
           if (st == 'completed') {
             _statusPollTimer?.cancel();
             if (mounted && _phase != _TrackPhase.completed) {
@@ -267,8 +292,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           } else if (st == 'cancelled' || st == 'canceled') {
             _statusPollTimer?.cancel();
             if (mounted) {
-              LocalDataService.clearActiveRide();
-              widget.onTripComplete?.call();
+              _showDriverCancelledDialog();
             }
           } else if (st == 'arrived' && _phase == _TrackPhase.arriving) {
             if (mounted) setState(() => _phase = _TrackPhase.arrived);
@@ -276,11 +300,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
             if (mounted) {
               setState(() => _phase = _TrackPhase.onTrip);
-              _addDropoffPin();
               _popOutPickupPin();
             }
           }
-        } catch (_) {}
+        } catch (_) {
+          // Network error — show reconnecting banner after consecutive failures
+          _pollFailCount++;
+          if (_pollFailCount >= _maxPollFailsBeforeBanner && mounted && !_connectionLost) {
+            setState(() => _connectionLost = true);
+          }
+        }
       });
     }
   }
@@ -390,15 +419,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     } else if (status == 'in_trip' &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       setState(() => _phase = _TrackPhase.onTrip);
-      _addDropoffPin();
       _popOutPickupPin();
     } else if (status == 'completed' && _phase != _TrackPhase.completed) {
       LocalDataService.clearActiveRide();
       setState(() => _phase = _TrackPhase.completed);
       _goToRating();
     } else if (status == 'cancelled' || status == 'canceled') {
-      LocalDataService.clearActiveRide();
-      widget.onTripComplete?.call();
+      _showDriverCancelledDialog();
     }
   }
 
@@ -446,15 +473,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       }
       if (_phase == _TrackPhase.arrived && progress > 0.06) {
         setState(() => _phase = _TrackPhase.onTrip);
-        _addDropoffPin();
         _popOutPickupPin();
       }
+      // Do NOT auto-complete: only the driver's explicit "Complete Trip"
+      // action (via Firestore status change) should end the trip.
+      // Clamp sim progress so car stops near dropoff.
       if (_phase == _TrackPhase.onTrip && progress >= 0.98) {
-        _simTimer?.cancel();
-        LocalDataService.clearActiveRide();
-        setState(() => _phase = _TrackPhase.completed);
-        _goToRating();
-        return;
+        _tgtTraveledM = _segDist.last * 0.98;
       }
 
       // Update ETA
@@ -580,6 +605,80 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             child: Text(
               s.cancelRide,
               style: const TextStyle(color: Color(0xFFFF3B30)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Shows a clear dialog when the driver (or backend) cancels the trip.
+  /// The rider must acknowledge before being sent back to home.
+  void _showDriverCancelledDialog() {
+    if (!mounted) return;
+    // Prevent duplicate dialogs
+    _statusPollTimer?.cancel();
+    _driverLocSub?.cancel();
+    _tripStatusSub?.cancel();
+    _rtdbDriverLocSub?.cancel();
+    _simTimer?.cancel();
+    LocalDataService.clearActiveRide();
+    final s = S.of(context);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A2A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF3B30).withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.cancel_outlined, color: Color(0xFFFF3B30), size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                s.rideCancelledByDriver,
+                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          s.driverCancelledMessage,
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                if (!mounted) return;
+                widget.onTripComplete?.call();
+                Navigator.of(context).pushAndRemoveUntil(
+                  PageRouteBuilder(
+                    pageBuilder: (_, __, ___) => const HomeScreen(),
+                    transitionsBuilder: (_, a, __, child) =>
+                        FadeTransition(opacity: a, child: child),
+                    transitionDuration: const Duration(milliseconds: 400),
+                  ),
+                  (_) => false,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE8C547),
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: Text(s.ok, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
             ),
           ),
         ],
@@ -868,8 +967,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     canvas.drawPath(
       path.shift(const Offset(0, 3)),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..color = Colors.black.withValues(alpha: 0.32)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
     // Gold fill
     canvas.drawPath(path, Paint()..color = gold);
@@ -879,15 +978,28 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
-        ..color = Colors.white.withValues(alpha: 0.35),
+        ..color = Colors.white.withValues(alpha: 0.22),
     );
     // Specular highlight
     canvas.drawCircle(
       Offset(cx - r * 0.25, headCY - r * 0.25),
-      r * 0.4,
+      r * 0.42,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.25)
+        ..color = Colors.white.withValues(alpha: 0.18)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
+
+    // ── Fade blend at tip: vertical gradient transparent→route-blue ──
+    final fadeTop = headCY + r * 0.8;
+    canvas.drawRect(
+      Rect.fromLTRB(cx - r, fadeTop, cx + r, tipY),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, fadeTop),
+          Offset(cx, tipY),
+          [Colors.transparent, const Color(0x885BA3F5)],
+        )
+        ..blendMode = BlendMode.srcATop,
     );
 
     // ── White icon inside head ──
@@ -1228,7 +1340,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           _phase = _TrackPhase.arrived;
         case 'onTrip':
           _phase = _TrackPhase.onTrip;
-          _addDropoffPin();
         default:
           _phase = _TrackPhase.arriving;
       }
@@ -1381,11 +1492,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void _updateCameraForRoute() {
     if (_map == null || _userMovedMap || _routePts.isEmpty) return;
     
-    // Fit bounds to show full route + driver + pins
-    final pts = <LatLng>[_animPos, widget.pickupLatLng];
-    if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.completed) {
-      pts.add(widget.dropoffLatLng);
-    }
+    // Fit bounds to show full route + driver + pins (dropoff always visible)
+    final pts = <LatLng>[_animPos, widget.pickupLatLng, widget.dropoffLatLng];
     // Include route extremes for a tight fit
     for (final p in _routePts) {
       pts.add(p);
@@ -1427,16 +1535,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // ── Compute ideal bounds and set as smooth target ──
   void _updateCamTarget() {
     if (_map == null || _userMovedMap) return;
-    final pts = <LatLng>[_animPos];
-    if (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived) {
-      pts.add(widget.pickupLatLng);
-    }
-    if (_phase == _TrackPhase.onTrip) {
-      pts.add(widget.dropoffLatLng);
-    }
-    if (pts.length < 2) {
-      pts.add(widget.pickupLatLng);
-    }
+    // Always include driver, pickup, and dropoff so all pins are visible
+    final pts = <LatLng>[_animPos, widget.pickupLatLng, widget.dropoffLatLng];
     double mnLat = pts[0].latitude, mxLat = pts[0].latitude;
     double mnLng = pts[0].longitude, mxLng = pts[0].longitude;
     for (final p in pts) {
@@ -1774,6 +1874,50 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 right: 0,
                 child: const OfflineBanner(),
               ),
+              // Connection lost / reconnecting banner
+              if (_connectionLost)
+                Positioned(
+                  top: topPad + 36,
+                  left: 24,
+                  right: 24,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8C547),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            S.of(context).connectionLost,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -2280,10 +2424,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       ));
     } catch (_) {}
 
-    // Dropoff pin — only when onTrip or later
-    if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.completed) {
-      _addDropoffPin();
-    }
+    // Dropoff pin — always visible so rider can see destination
+    _addDropoffPin();
 
     // Cinematic intro: tilt + bearing + route draw + glow
     _startCinematicIntro();

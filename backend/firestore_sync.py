@@ -323,6 +323,76 @@ def sync_dispatch_notification(chat_id: int, user_name: str, notif_type: str, me
 # ═══════════════════════════════════════════════════════════
 #  DELETE user from Firestore
 # ═══════════════════════════════════════════════════════════
+#  ACTION REQUESTS — admin approval queue
+# ═══════════════════════════════════════════════════════════
+
+def sync_action_request(request_id: int, data: dict):
+    """Create or update an action request in Firestore for admin review."""
+    _ensure_init()
+    if _db is None:
+        return
+    doc_id = f"req_{request_id}"
+    try:
+        doc_data = {
+            "requestId": request_id,
+            "type": data.get("type", "unknown"),
+            "chatId": data.get("chat_id"),
+            "userId": data.get("user_id"),
+            "userName": data.get("user_name", ""),
+            "userType": data.get("user_type", "rider"),
+            "agentName": data.get("agent_name", ""),
+            "details": data.get("details", {}),
+            "status": data.get("status", "pending_admin"),
+            "reviewedAt": data.get("reviewed_at"),
+            "reviewedBy": data.get("reviewed_by"),
+            "adminNote": data.get("admin_note"),
+            "lastUpdated": _ts(),
+        }
+        ref = _db.collection("action_requests").document(doc_id)
+        existing = ref.get()
+        if not existing.exists:
+            doc_data["createdAt"] = _ts()
+        ref.set(doc_data, merge=True)
+        log.info("🔄 Synced action request %d → Firestore", request_id)
+    except Exception as e:
+        log.error("❌ Action request sync failed for %d: %s", request_id, e)
+
+
+def notify_admin_action_request(request_id: int, action_type: str,
+                                 user_name: str, agent_name: str,
+                                 details: dict):
+    """Send push notification to admin about a pending action request."""
+    _ensure_init()
+    if _db is None:
+        return
+    try:
+        amount = details.get("amount", "")
+        reason = details.get("reason", "")
+        amount_str = f" de ${amount}" if amount else ""
+        msg = f"{agent_name} solicita {action_type}{amount_str} para {user_name}"
+        if reason:
+            msg += f" — {reason}"
+        _db.collection("dispatch_notifications").add({
+            "type": "action_request",
+            "requestId": request_id,
+            "actionType": action_type,
+            "userName": user_name,
+            "agentName": agent_name,
+            "amount": details.get("amount"),
+            "reason": reason,
+            "chatId": details.get("chat_id"),
+            "message": f"🔔 Solicitud de soporte: {msg}",
+            "isRead": False,
+            "createdAt": _ts(),
+        })
+        log.info("🔔 Admin notified: action request %d (%s)", request_id, action_type)
+    except Exception as e:
+        log.error("❌ Admin notification failed for action request %d: %s", request_id, e)
+
+
+# ═══════════════════════════════════════════════════════════
+#  DELETE user from Firestore
+# ═══════════════════════════════════════════════════════════
 
 def delete_user(user_id: int, collection: str = "clients"):
     """Mark a user as deleted in Firestore (soft-delete)."""

@@ -41,7 +41,7 @@ class _CruiseMapPinState extends State<CruiseMapPin>
     final s = widget.size;
     // Preserve original 72×88 proportions
     final pinW = s;
-    final pinH = s * (88 / 72);
+    final pinH = s * (78 / 72);
     final avatarSize = s * (48 / 72);
     final avatarMarginTop = s * (8 / 72);
     final iconSize = s * (28 / 72);

@@ -69,7 +69,7 @@ Future<Uint8List> renderGoldPinBytes({
   if (_pinCache.containsKey(key)) return _pinCache[key]!;
 
   const double w = 100;
-  const double h = 130;
+  const double h = 105;
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
   const cx = w / 2;
@@ -222,7 +222,7 @@ Future<Uint8List> renderGoldPinBytes({
 /// [size]. This is the Canvas-based variant used in screens that render
 /// markers as part of a larger composite image (e.g. ride_request_screen).
 ///
-/// The pin tip is at (ox + size/2, oy + size).
+/// The pin tip is at (ox + size/2, oy + size * 0.85).
 void drawGoldPinAt(
   Canvas canvas,
   double ox,
@@ -231,7 +231,7 @@ void drawGoldPinAt(
   GoldPinIcon icon = GoldPinIcon.none,
 }) {
   final cx = ox + size / 2;
-  final tipY = oy + size;
+  final tipY = oy + size * 0.85;
   final r = size * 0.32;
   final headCY = oy + r + size * 0.04;
 

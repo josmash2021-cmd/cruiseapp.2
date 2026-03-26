@@ -932,6 +932,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(widget.riderName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: Colors.white, fontSize: 15,
                                 fontWeight: FontWeight.w700)),
@@ -945,6 +947,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           ],
                         ),
                       ),
+                      const SizedBox(width: 10),
                       _actionBtn(Icons.phone_rounded, 'Call', _call),
                       const SizedBox(width: 8),
                       _actionBtn(Icons.message_rounded, 'Message', _openChat),

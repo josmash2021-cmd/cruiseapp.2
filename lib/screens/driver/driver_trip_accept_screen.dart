@@ -15,6 +15,7 @@ import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../widgets/verified_avatar.dart';
+import '../../widgets/gold_map_pin.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../chat_screen.dart';
@@ -604,10 +605,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _routePoints = await _loadRoute();
     if (!mounted) return;
 
-    // 2. Build teardrop pins in parallel (don't place yet)
+    // 2. Build unified gold teardrop pins in parallel (don't place yet)
     final pinResults = await Future.wait([
-      _buildTeardropPin(_gold),    // pickup — gold tip
-      _buildTeardropPin(Colors.white), // dropoff — white tip
+      renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true),   // pickup
+      renderGoldPinBytes(icon: GoldPinIcon.house, isPickup: false),   // dropoff
     ]);
     if (!mounted) return;
 
@@ -636,22 +637,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     _pinAnnots.clear();
     if (_annotMgr != null) {
-      if (pinResults[0] != null) {
-        final a = await _annotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(
-            widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
-          image: pinResults[0], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-        ));
-        _pinAnnots.add(a);
-      }
-      if (pinResults[1] != null) {
-        final a = await _annotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(
-            widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
-          image: pinResults[1], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-        ));
-        _pinAnnots.add(a);
-      }
+      // Pickup pin — unified gold pin
+      final pickupAnnot = await _annotMgr!.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(
+          widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
+        image: pinResults[0], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+      _pinAnnots.add(pickupAnnot);
+      // Dropoff pin — unified gold pin
+      final dropoffAnnot = await _annotMgr!.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(
+          widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
+        image: pinResults[1], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+      _pinAnnots.add(dropoffAnnot);
     }
     // Animate pin pop: 0.01 → 1.15 → 0.95 → 1.0
     _pinPopAnim.addListener(_updatePinScale);
@@ -790,63 +789,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     });
     _routeDrawTicker!.start();
     return completer.future;
-  }
-
-  /// Gold glow pulse on full route after animation completes
-  // ── Pin builders (matching CruiseMapPin teardrop from rider map) ──────────
-
-  /// Teardrop pin: navy→tipColor gradient, person avatar, border — matches CruiseMapPin
-  Future<Uint8List?> _buildTeardropPin(Color tipColor) async {
-    const double w = 72;
-    const double h = 88;
-    const double r = w / 2;
-    const double cx = w / 2;
-
-    final rec = ui.PictureRecorder();
-    final cv = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
-
-    final path = Path()
-      ..moveTo(cx, h)
-      ..quadraticBezierTo(0, r + (h - r) * 0.35, 0, r)
-      ..arcTo(const Rect.fromLTWH(0, 0, w, w), math.pi, -math.pi, false)
-      ..quadraticBezierTo(w, r + (h - r) * 0.35, cx, h)
-      ..close();
-
-    cv.drawShadow(path, Colors.black, 6, false);
-
-    cv.drawPath(path, Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [const Color(0xFF1A1F2E), tipColor],
-        stops: const [0.0, 0.85],
-      ).createShader(const Rect.fromLTWH(0, 0, w, h)));
-
-    cv.drawPath(path, Paint()
-      ..color = tipColor.withValues(alpha: 0.45)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5);
-
-    // Person avatar
-    const avatarR = 48.0 / 2;
-    const avatarCy = 8.0 + avatarR;
-    cv.drawCircle(const Offset(cx, avatarCy), avatarR, Paint()..color = const Color(0xFF1A1F2E));
-    cv.drawCircle(const Offset(cx, avatarCy), avatarR, Paint()
-      ..color = Colors.white.withValues(alpha: 0.24)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0);
-    final iconPaint = Paint()..color = Colors.white..style = PaintingStyle.fill;
-    cv.drawCircle(const Offset(cx, avatarCy - 5), 6, iconPaint);
-    final bodyPath = Path()
-      ..moveTo(cx - 8, avatarCy + 14)
-      ..quadraticBezierTo(cx - 8, avatarCy + 2, cx, avatarCy + 2)
-      ..quadraticBezierTo(cx + 8, avatarCy + 2, cx + 8, avatarCy + 14)
-      ..close();
-    cv.drawPath(bodyPath, iconPaint);
-
-    final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
   }
 
   // ── Hanging instruction card ────────────────────────────────────────────

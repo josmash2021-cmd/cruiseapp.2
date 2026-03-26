@@ -20,6 +20,7 @@ import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
 import '../../widgets/verified_avatar.dart';
+import '../../widgets/gold_map_pin.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
 import '../../services/map_cache_service.dart';
@@ -1654,13 +1655,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       final dropoffAddr = (offer['dropoff_address'] ?? '') as String;
       final placeType = _detectPlaceType(dropoffAddr);
 
-      // Pre-build teardrop pins + fetch routes in parallel
+      // Pre-build unified gold pins + fetch routes in parallel
       Future.wait<Object?>([
         _fetchRoutePoints(_pos!, pickupLL),                                         // [0] segOne
         _fetchRoutePoints(pickupLL, dropoffLL),                                     // [1] segTwo
-        _buildTeardropPin(Colors.white, iconOverride: Icons.directions_car_rounded),// [2] driver pin
-        _buildTeardropPin(_gold, iconOverride: Icons.person_rounded),               // [3] pickup pin
-        _buildTeardropPin(Colors.white, iconOverride: _dropoffIconFor(placeType)),  // [4] dropoff pin
+        renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true),               // [2] driver pos pin
+        renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true),               // [3] pickup pin
+        renderGoldPinBytes(icon: _goldPinIconFor(placeType), isPickup: false),      // [4] dropoff pin
       ]).then((results) {
         if (!mounted) return;
         _routeCache[oid] = _CachedOfferRoute(
@@ -2827,9 +2828,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     Uint8List? dropoffPinImg = cached?.dropoffPin;
     if (driverPinImg == null || pickupPinImg == null || dropoffPinImg == null) {
       final pinResults = await Future.wait([
-        _buildTeardropPin(Colors.white, iconOverride: Icons.directions_car_rounded),
-        _buildTeardropPin(_gold, iconOverride: Icons.person_rounded),
-        _buildTeardropPin(Colors.white, iconOverride: _dropoffIconFor(placeType)),
+        renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true),          // driver position
+        renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true),          // pickup
+        renderGoldPinBytes(icon: _goldPinIconFor(placeType), isPickup: false), // dropoff
       ]);
       driverPinImg ??= pinResults[0];
       pickupPinImg ??= pinResults[1];
@@ -2838,27 +2839,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     final pointMgr = _pointAnnotMgr;
     if (pointMgr != null && mounted) {
-      // Driver pin — car icon
-      if (driverPinImg != null) {
-        _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-          image: driverPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-        ));
-      }
+      // Driver pin — person icon showing driver's current position
+      _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+        image: driverPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
       // Pickup pin — person icon
-      if (pickupPinImg != null) {
-        _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
-          image: pickupPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-        ));
-      }
-      // Dropoff pin — smart icon
-      if (dropoffPinImg != null) {
-        _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
-          image: dropoffPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-        ));
-      }
+      _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
+        image: pickupPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+      // Dropoff pin — smart icon (house/store/airplane)
+      _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
+        image: dropoffPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
 
       // Animate pin pop: scale 0.01 → 1.2 → 0.9 → 1.0 over 600ms
       await _animatePinPop();
@@ -3117,87 +3112,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // White center dot
     c.drawCircle(Offset(cx, cx), 4, Paint()..color = ringColor);
     final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
-  }
-
-  /// Cruise-branded teardrop pin matching CruiseMapPin: navy→tipColor gradient,
-  /// icon at top, gold border, drop shadow. Renders to Uint8List for Mapbox.
-  /// [iconCode] renders a Material Icon codepoint; defaults to person silhouette.
-  Future<Uint8List?> _buildTeardropPin(Color tipColor, {IconData? iconOverride}) async {
-    const double w = 72;
-    const double h = 88;
-    const double r = w / 2; // radius of rounded top
-    const double cx = w / 2;
-
-    final rec = ui.PictureRecorder();
-    final cv = Canvas(rec, const Rect.fromLTWH(0, 0, w, h));
-
-    // Teardrop path (matches CruiseMapPin _PinPainter exactly)
-    final path = Path()
-      ..moveTo(cx, h)
-      ..quadraticBezierTo(0, r + (h - r) * 0.35, 0, r)
-      ..arcTo(const Rect.fromLTWH(0, 0, w, w), math.pi, -math.pi, false)
-      ..quadraticBezierTo(w, r + (h - r) * 0.35, cx, h)
-      ..close();
-
-    // Drop shadow
-    cv.drawShadow(path, Colors.black, 6, false);
-
-    // Gradient fill: navy top → tipColor at bottom
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [const Color(0xFF1A1F2E), tipColor],
-        stops: const [0.0, 0.85],
-      ).createShader(const Rect.fromLTWH(0, 0, w, h));
-    cv.drawPath(path, fillPaint);
-
-    // Subtle border in tipColor
-    cv.drawPath(path, Paint()
-      ..color = tipColor.withValues(alpha: 0.45)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5);
-
-    // Avatar circle at top
-    const avatarR = 48.0 / 2;
-    const avatarCy = 8.0 + avatarR;
-    cv.drawCircle(const Offset(cx, avatarCy), avatarR, Paint()
-      ..color = const Color(0xFF1A1F2E));
-    cv.drawCircle(const Offset(cx, avatarCy), avatarR, Paint()
-      ..color = Colors.white.withValues(alpha: 0.24)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0);
-
-    if (iconOverride != null) {
-      // Render Material Icon via TextPainter
-      final tp = TextPainter(
-        text: TextSpan(
-          text: String.fromCharCode(iconOverride.codePoint),
-          style: TextStyle(
-            fontSize: 22,
-            fontFamily: iconOverride.fontFamily,
-            package: iconOverride.fontPackage,
-            color: Colors.white,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(cv, Offset(cx - tp.width / 2, avatarCy - tp.height / 2));
-    } else {
-      // Person silhouette fallback
-      final iconPaint = Paint()..color = Colors.white..style = PaintingStyle.fill;
-      cv.drawCircle(const Offset(cx, avatarCy - 5), 6, iconPaint);
-      final bodyPath = Path()
-        ..moveTo(cx - 8, avatarCy + 14)
-        ..quadraticBezierTo(cx - 8, avatarCy + 2, cx, avatarCy + 2)
-        ..quadraticBezierTo(cx + 8, avatarCy + 2, cx + 8, avatarCy + 14)
-        ..close();
-      cv.drawPath(bodyPath, iconPaint);
-    }
-
-    final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
     return bytes?.buffer.asUint8List();
   }
@@ -7868,6 +7782,16 @@ IconData _dropoffIconFor(_PlaceType type) {
     case _PlaceType.hotel:    return Icons.apartment_rounded;
     case _PlaceType.commerce: return Icons.storefront_rounded;
     case _PlaceType.home:     return Icons.home_rounded;
+  }
+}
+
+/// Map _PlaceType to GoldPinIcon for unified gold pins.
+GoldPinIcon _goldPinIconFor(_PlaceType type) {
+  switch (type) {
+    case _PlaceType.airport:  return GoldPinIcon.airplane;
+    case _PlaceType.hotel:    return GoldPinIcon.house;
+    case _PlaceType.commerce: return GoldPinIcon.store;
+    case _PlaceType.home:     return GoldPinIcon.house;
   }
 }
 

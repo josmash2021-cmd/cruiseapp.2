@@ -117,23 +117,25 @@ class _PinPainter extends CustomPainter {
     // Drop shadow
     canvas.drawShadow(path, Colors.black, 6, false);
 
-    // Gradient fill: navy top → golden tip
+    // Solid gold fill (unified gold pin design)
+    const goldColor = Color(0xFFE8C547);
     final fillPaint = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Color(0xFF1A1F2E), Color(0xFFF5C518)],
-        stops: [0.0, 0.85],
-      ).createShader(Rect.fromLTWH(0, 0, w, h))
+      ..color = goldColor
       ..style = PaintingStyle.fill;
     canvas.drawPath(path, fillPaint);
 
-    // Subtle gold border
+    // White border highlight
     final borderPaint = Paint()
-      ..color = const Color(0xFFF5C518).withValues(alpha: 0.45)
+      ..color = Colors.white.withValues(alpha: 0.22)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+      ..strokeWidth = 2.0;
     canvas.drawPath(path, borderPaint);
+
+    // Specular highlight on top-left
+    final highlightPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.18)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+    canvas.drawCircle(Offset(cx - r * 0.25, r * 0.4), r * 0.35, highlightPaint);
   }
 
   @override

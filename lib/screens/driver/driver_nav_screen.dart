@@ -235,6 +235,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _reFollowTimer?.cancel();
     _etaRefreshTimer?.cancel();
     _iconPulseTimer?.cancel();
+    _destPinAnimTimer?.cancel();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _pulseCtrl?.dispose();
@@ -719,13 +720,45 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     }
     final pinBytes = await _buildDestPin();
     if (pinBytes == null || !mounted) return;
+    _destPinScale = 0.0;
     _destAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: geom,
       image: pinBytes,
-      iconSize: 1.0,
+      iconSize: 0.0,
       iconAnchor: mapbox.IconAnchor.BOTTOM,
       iconOffset: [0, 0],
     ));
+    _animateDestPinPop();
+  }
+
+  /// Pop/bounce animation for destination pin (elasticOut curve, 450ms).
+  void _animateDestPinPop() {
+    _destPinAnimTimer?.cancel();
+    const totalMs = 450;
+    const steps = 45;
+    const stepMs = totalMs ~/ steps;
+    int i = 0;
+    _destPinAnimTimer = Timer.periodic(const Duration(milliseconds: stepMs), (t) {
+      i++;
+      final progress = i / steps;
+      // ElasticOut curve approximation
+      final raw = math.pow(2, -10 * progress) * math.sin((progress - 0.1) * 5 * math.pi) + 1;
+      _destPinScale = raw.clamp(0.0, 1.2);
+      final annot = _destAnnot;
+      final mgr = _pointMgr;
+      if (annot != null && mgr != null) {
+        annot.iconSize = _destPinScale;
+        mgr.update(annot).catchError((_) {});
+      }
+      if (i >= steps) {
+        t.cancel();
+        // Settle to 1.0
+        if (annot != null && mgr != null) {
+          annot.iconSize = 1.0;
+          mgr.update(annot).catchError((_) {});
+        }
+      }
+    });
   }
 
   /// Show a persistent pickup pin (gold teardrop) at pickup location.
@@ -1586,7 +1619,16 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           active: _isMuted,
         ),
         const SizedBox(height: 10),
-        // 5. Safety shield
+        // 5. Music controls
+        _mapFab(
+          icon: Icons.music_note_rounded,
+          onTap: () {
+            HapticFeedback.lightImpact();
+            _showMusicSheet();
+          },
+        ),
+        const SizedBox(height: 10),
+        // 6. Safety shield
         _mapFab(
           icon: Icons.shield_rounded,
           onTap: () {
@@ -1641,6 +1683,50 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         ),
       );
 
+  /// Bottom sheet for music/DJ controls.
+  void _showMusicSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF14171F),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Music Controls',
+                style: TextStyle(
+                  color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 20),
+              _musicSheetRow(Icons.library_music_rounded, 'Open Spotify',
+                () { Navigator.pop(context); }),
+              const Divider(color: Colors.white24, height: 1),
+              _musicSheetRow(Icons.skip_next_rounded, 'Next Track',
+                () { Navigator.pop(context); }),
+              const Divider(color: Colors.white24, height: 1),
+              _musicSheetRow(_isMuted ? Icons.volume_off : Icons.volume_up,
+                _isMuted ? 'Unmute' : 'Mute', () {
+                  setState(() => _isMuted = !_isMuted);
+                  Navigator.pop(context);
+                }),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _musicSheetRow(IconData icon, String label, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.white70, size: 24),
+      title: Text(label, style: const TextStyle(color: Colors.white, fontSize: 16)),
+      onTap: onTap,
+    );
+  }
 
   // =========================================================================
   //  BOTTOM BAR (DoorDash style)

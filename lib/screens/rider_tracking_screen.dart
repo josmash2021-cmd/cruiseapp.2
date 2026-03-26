@@ -1719,12 +1719,53 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 right: 16,
                 child: _buildDriverCard(),
               ),
-              // LAYER 4: Destination box (bottom)
+              // LAYER 4: Resume button + Destination box (bottom)
               Positioned(
                 bottom: bottomPad + 16,
                 left: 16,
                 right: 16,
-                child: _buildDestinationBox(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Resume button above destination card
+                    if (_userMovedMap)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Center(
+                          child: GestureDetector(
+                            onTap: _recenter,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.92),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
+                                  width: 1,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.3),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.my_location_rounded, color: Color(0xFFD4AF37), size: 14),
+                                  SizedBox(width: 6),
+                                  Text('Resume', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    // Destination card
+                    _buildDestinationBox(),
+                  ],
+                ),
               ),
               // Offline banner
               Positioned(
@@ -2094,41 +2135,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             },
           ),
         ),
-        // Resume button (gold pill)
-        if (_userMovedMap)
-          Positioned(
-            bottom: 12, left: 0, right: 0,
-            child: Center(
-              child: GestureDetector(
-                onTap: _recenter,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.my_location_rounded, color: Color(0xFFD4AF37), size: 14),
-                      SizedBox(width: 6),
-                      Text('Resume', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
       ],
     );
   }

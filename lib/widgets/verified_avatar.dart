@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'user_profile_photo.dart';
 
-/// Gold verified badge overlaid bottom-right on any profile photo circle.
+/// Verified badge overlaid bottom-right on any profile photo circle.
 ///
-/// Wraps [UserProfilePhoto] in a [Stack] with a gold-bordered blue-check badge
+/// Wraps [UserProfilePhoto] in a [Stack] with the Badge_verified.png asset
 /// that appears only when [isVerified] is true.
 class VerifiedAvatar extends StatelessWidget {
   final String? photoUrl;
@@ -26,7 +26,6 @@ class VerifiedAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final badgeSize = radius * 0.75;
-    final iconSize = radius * 0.42;
 
     return SizedBox(
       width: radius * 2 + 8,
@@ -63,24 +62,13 @@ class VerifiedAvatar extends StatelessWidget {
             Positioned(
               bottom: 0,
               right: 0,
-              child: Container(
+              child: Image.asset(
+                'assets/images/Badge_verified.png',
                 width: badgeSize,
                 height: badgeSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF1A1A1A),
-                  border: Border.all(
-                    color: const Color(0xFFFFD700),
-                    width: 2.0,
-                  ),
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.check_rounded,
-                    color: const Color(0xFF1DA1F2),
-                    size: iconSize,
-                  ),
-                ),
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+                isAntiAlias: true,
               ),
             ),
         ],

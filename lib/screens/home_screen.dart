@@ -97,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   final DraggableScrollableController _sheetController = DraggableScrollableController();
   final GlobalKey _mapKey = GlobalKey();
   static const double _kMinSheet = 0.42;
-  static const double _kMaxSheet = 0.95;
+  static const double _kMaxSheet = 1.0; // Full screen when expanded
 
   // User profile data
   String _firstName = '';
@@ -2321,16 +2321,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     );
   }
 
-  // ─── Fleet header with collapse/expand toggle ───
+  // ─── Fleet header with collapse/expand toggle (TAP to toggle) ───
   Widget _buildFleetHeader() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
-      onVerticalDragUpdate: (details) {
-        if (details.delta.dy < -6) {
-          setState(() => _fleetExpanded = true);
-        } else if (details.delta.dy > 6) {
-          setState(() => _fleetExpanded = false);
-        }
+      onTap: () {
+        setState(() => _fleetExpanded = !_fleetExpanded);
       },
       behavior: HitTestBehavior.opaque,
       child: Row(
@@ -2359,8 +2355,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           ),
           const Spacer(),
           AnimatedRotation(
-            turns: _fleetExpanded ? 0.0 : -0.25,
-            duration: const Duration(milliseconds: 250),
+            turns: _fleetExpanded ? 0.5 : 0.0, // Arrow up when expanded, down when collapsed
+            duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
             child: Icon(
               Icons.keyboard_arrow_down_rounded,

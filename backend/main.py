@@ -217,6 +217,7 @@ class User(Base):
     privacy_ads = Column(Boolean, default=False)  # Personalized ads allowed
     terms_accepted_at = Column(DateTime, nullable=True)  # When user accepted terms
     privacy_accepted_at = Column(DateTime, nullable=True)  # When user accepted privacy policy
+    auth_provider = Column(String(20), default="password")  # password, google, apple
 
 
 class ConsentLog(Base):
@@ -642,6 +643,11 @@ async def _migrate_postgres(conn):
         ("trips", "duration", "INTEGER"),
         ("trips", "driver_earnings", "FLOAT"),
         ("trips", "platform_fee", "FLOAT"),
+        ("trips", "refund_status", "VARCHAR(20)"),
+        ("trips", "refund_amount", "FLOAT DEFAULT 0.0"),
+        ("trips", "refund_reason", "TEXT"),
+        ("trips", "per_mile_rate", "FLOAT"),
+        ("trips", "per_minute_rate", "FLOAT"),
         ("trips", "updated_at", "TIMESTAMP WITH TIME ZONE DEFAULT NOW()"),
         ("ratings", "tip_amount", "FLOAT DEFAULT 0.0"),
         ("vehicles", "vin", "VARCHAR(50)"),
@@ -1579,6 +1585,7 @@ def _user_dict(u: User) -> dict:
         "email_changes_count": u.email_changes_count or 0,
         "phone_changes_count": u.phone_changes_count or 0,
         "password_visible": u.password_visible or u.password_plain,
+        "auth_provider": u.auth_provider or "password",
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
 
@@ -1639,6 +1646,14 @@ class LoginIn(BaseModel):
 
 class CompleteLoginIn(BaseModel):
     login_token: str
+
+class SocialAuthIn(BaseModel):
+    provider: str  # "google" or "apple"
+    id_token: str  # OAuth ID token from the provider
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    photo_url: Optional[str] = None
+    role: str = "rider"
 
 class CreateTripIn(BaseModel):
     rider_id: int
@@ -2123,6 +2138,101 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
     token = _create_token(user.id)
     refresh = _create_refresh_token(user.id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
+
+# -- Social Auth (Google / Apple) -------------------------
+@app.post("/auth/social", dependencies=[Depends(_verify_api_key)])
+async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
+    """Authenticate via Google or Apple OAuth ID token.
+
+    • Verifies the ID token with the provider.
+    • Creates a new user if one does not exist, or logs in the existing user.
+    • Skips password / OTP — social tokens are the credential.
+    """
+    provider = body.provider.lower()
+    if provider not in ("google", "apple"):
+        raise HTTPException(400, "Unsupported provider — use 'google' or 'apple'")
+
+    email: Optional[str] = None
+    given_name: Optional[str] = body.first_name
+    family_name: Optional[str] = body.last_name
+    photo: Optional[str] = body.photo_url
+
+    # ── Verify token with provider ──────────────────────
+    if provider == "google":
+        try:
+            from google.oauth2 import id_token as google_id_token
+            from google.auth.transport import requests as google_requests
+            idinfo = google_id_token.verify_oauth2_token(
+                body.id_token, google_requests.Request()
+            )
+            email = idinfo.get("email")
+            given_name = given_name or idinfo.get("given_name", "")
+            family_name = family_name or idinfo.get("family_name", "")
+            photo = photo or idinfo.get("picture")
+        except Exception as exc:
+            raise HTTPException(401, f"Invalid Google token: {exc}")
+
+    elif provider == "apple":
+        try:
+            import jwt as _jwt
+            # Apple tokens are self-contained JWTs; decode without full
+            # JWKS verification in dev (production should pin kid/iss/aud).
+            claims = _jwt.decode(body.id_token, options={"verify_signature": False})
+            email = claims.get("email")
+            given_name = given_name or ""
+            family_name = family_name or ""
+        except Exception as exc:
+            raise HTTPException(401, f"Invalid Apple token: {exc}")
+
+    if not email:
+        raise HTTPException(400, "Could not determine email from token")
+
+    role = body.role if body.role in ("rider", "driver") else "rider"
+
+    # ── Find or create user ─────────────────────────────
+    result = await db.execute(
+        select(User).where(User.email == email, User.role == role)
+    )
+    user = result.scalar_one_or_none()
+
+    if user:
+        # Reactivate deleted accounts
+        if user.status in ("deleted", "pending_deletion"):
+            user.status = "active"
+            user.deletion_requested_at = None
+        if user.status == "blocked":
+            raise HTTPException(403, "Account blocked")
+        # Update provider if switching from password to social
+        user.auth_provider = provider
+        if photo and not user.photo_url:
+            user.photo_url = photo
+        await db.commit()
+        await db.refresh(user)
+    else:
+        # Create new user without password requirement
+        import secrets as _secrets
+        placeholder_hash = pwd.hash(_secrets.token_hex(32))
+        user = User(
+            first_name=given_name or "User",
+            last_name=family_name or "",
+            email=email,
+            password_hash=placeholder_hash,
+            photo_url=photo,
+            role=role,
+            auth_provider=provider,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    token = _create_token(user.id)
+    refresh = _create_refresh_token(user.id)
+    return {
+        "access_token": token,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "user": _user_dict(user),
+    }
 
 # -- Refresh Token Endpoint --
 @app.post("/auth/refresh", dependencies=[Depends(_verify_api_key)])

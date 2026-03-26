@@ -669,10 +669,18 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     final s = S.of(context);
     final icon = _iconForDoc(doc);
     final title = _localizedDocTitle(doc['doc_type'] as String?, s);
+    final docType = doc['doc_type'] as String?;
     final docNumber = (doc['doc_number'] ?? '') as String;
     final expiry = (doc['expiry_date'] ?? doc['expiry'] ?? 'N/A') as String;
     final status = (doc['status'] ?? 'not_uploaded') as String;
     final createdAt = (doc['created_at'] ?? 'N/A') as String;
+    
+    // Special handling for background_check
+    if (docType == 'background_check') {
+      _showBackgroundCheckSheet(doc);
+      return;
+    }
+    
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -814,6 +822,222 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // ── Background Check special sheet ──
+  void _showBackgroundCheckSheet(Map<String, dynamic> doc) {
+    final s = S.of(context);
+    final status = (doc['status'] ?? 'not_uploaded') as String;
+    final isApproved = status == 'approved';
+    final isPending = status == 'pending';
+    final isNotStarted = status == 'not_uploaded';
+    
+    String statusText;
+    Color statusColor;
+    IconData statusIcon;
+    String description;
+    
+    if (isApproved) {
+      statusText = s.approved;
+      statusColor = const Color(0xFF4CAF50);
+      statusIcon = Icons.verified_user_rounded;
+      description = 'Your background check has been approved. You\'re all set to drive!';
+    } else if (isPending) {
+      statusText = 'In Progress';
+      statusColor = _gold;
+      statusIcon = Icons.hourglass_top_rounded;
+      description = 'Your background check is being processed. This typically takes 2-5 business days. We\'ll notify you when it\'s complete.';
+    } else {
+      statusText = 'Not Started';
+      statusColor = Colors.white.withValues(alpha: 0.4);
+      statusIcon = Icons.privacy_tip_rounded;
+      description = 'A background check is required before you can start driving. Tap below to initiate your Checkr background check.';
+    }
+    
+    final loadingNotifier = ValueNotifier<bool>(false);
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: loadingNotifier,
+          builder: (ctx, isLoading, _) {
+            return Container(
+              padding: const EdgeInsets.all(24),
+              decoration: const BoxDecoration(
+                color: _card,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white12,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(statusIcon, color: statusColor, size: 34),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    s.backgroundCheckTitle,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      statusText,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    description,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  if (isNotStarted) ...[
+                    // Info box about Checkr
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: _gold.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _gold.withValues(alpha: 0.2)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: _gold, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Powered by Checkr. You\'ll receive an email invitation to complete the check.',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: ElevatedButton.icon(
+                        onPressed: isLoading ? null : () async {
+                          loadingNotifier.value = true;
+                          try {
+                            await ApiService.initiateBackgroundCheck();
+                            if (!mounted) return;
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Text('Background check initiated! Check your email.'),
+                                backgroundColor: _gold,
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            );
+                            _fetchDocuments(); // Refresh status
+                          } catch (e) {
+                            loadingNotifier.value = false;
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error: $e'),
+                                backgroundColor: Colors.red.shade400,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        },
+                        icon: isLoading 
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                color: Colors.black,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.play_arrow_rounded, size: 22),
+                        label: Text(
+                          isLoading ? 'Starting...' : 'Start Background Check',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _gold,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _gold,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: Text(
+                          s.close,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

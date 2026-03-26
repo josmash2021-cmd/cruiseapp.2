@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
 import '../../config/mapbox_config.dart';
 import '../../config/page_transitions.dart';
@@ -117,11 +118,6 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
   Widget build(BuildContext context) {
     final bottomPad = MediaQuery.of(context).padding.bottom;
 
-    // Mapbox static map URL for blurred background
-    final mapUrl = 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
-        '${widget.pickupLatLng.longitude},${widget.pickupLatLng.latitude},14,0/600x800@2x'
-        '?access_token=${MapboxConfig.accessToken}';
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
@@ -131,16 +127,44 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Blurred static map background
-              Image.network(
-                mapUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const ColoredBox(color: _bg),
+              // Real Mapbox map background
+              IgnorePointer(
+                child: RepaintBoundary(
+                  child: mapbox.MapWidget(
+                    styleUri: MapboxConfig.styleDark,
+                    cameraOptions: mapbox.CameraOptions(
+                      center: mapbox.Point(
+                        coordinates: mapbox.Position(
+                          widget.pickupLatLng.longitude,
+                          widget.pickupLatLng.latitude,
+                        ),
+                      ),
+                      zoom: 14.5,
+                      pitch: 0.0,
+                    ),
+                    onMapCreated: (ctrl) async {
+                      ctrl.scaleBar.updateSettings(
+                          mapbox.ScaleBarSettings(enabled: false));
+                      ctrl.compass.updateSettings(
+                          mapbox.CompassSettings(enabled: false));
+                      ctrl.attribution.updateSettings(
+                          mapbox.AttributionSettings(enabled: false));
+                      ctrl.logo.updateSettings(
+                          mapbox.LogoSettings(enabled: false));
+                    },
+                  ),
+                ),
               ),
-              // Blur + dark overlay
-              BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                child: Container(color: Colors.black.withValues(alpha: 0.65)),
+              // Blur overlay
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: Container(color: Colors.transparent),
+                ),
+              ),
+              // Dark overlay
+              Positioned.fill(
+                child: Container(color: Colors.black.withValues(alpha: 0.55)),
               ),
               // Content
               SafeArea(

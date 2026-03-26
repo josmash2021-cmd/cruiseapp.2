@@ -4474,13 +4474,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       '$firstName ${S.of(context).isOnTheWay}',
     ];
 
-    // Build Mapbox Static API URL for blurred background
     final pickup = _ctrl.state.pickup;
-    final mapUrl = pickup != null
-        ? 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
-          '${pickup.lng},${pickup.lat},14,0/600x800@2x'
-          '?access_token=${MapboxConfig.accessToken}'
-        : '';
 
     return Positioned.fill(
       child: IgnorePointer(
@@ -4491,17 +4485,47 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Blurred static map background
-              if (mapUrl.isNotEmpty)
-                Image.network(
-                  mapUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFF0A0A1A)),
+              // Real Mapbox map background
+              if (pickup != null)
+                IgnorePointer(
+                  child: RepaintBoundary(
+                    child: mapbox.MapWidget(
+                      styleUri: MapboxConfig.styleDark,
+                      cameraOptions: mapbox.CameraOptions(
+                        center: mapbox.Point(
+                          coordinates: mapbox.Position(
+                            pickup.lng,
+                            pickup.lat,
+                          ),
+                        ),
+                        zoom: 14.5,
+                        pitch: 0.0,
+                      ),
+                      onMapCreated: (ctrl) async {
+                        ctrl.scaleBar.updateSettings(
+                            mapbox.ScaleBarSettings(enabled: false));
+                        ctrl.compass.updateSettings(
+                            mapbox.CompassSettings(enabled: false));
+                        ctrl.attribution.updateSettings(
+                            mapbox.AttributionSettings(enabled: false));
+                        ctrl.logo.updateSettings(
+                            mapbox.LogoSettings(enabled: false));
+                      },
+                    ),
+                  ),
+                )
+              else
+                const ColoredBox(color: Color(0xFF0A0A1A)),
+              // Blur overlay
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: Container(color: Colors.transparent),
                 ),
-              // Blur + dark overlay
-              BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                child: Container(color: Colors.black.withValues(alpha: 0.65)),
+              ),
+              // Dark overlay
+              Positioned.fill(
+                child: Container(color: Colors.black.withValues(alpha: 0.55)),
               ),
               // Content
               SafeArea(

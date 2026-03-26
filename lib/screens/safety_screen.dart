@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:geolocator/geolocator.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
+import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 
 class SafetyScreen extends StatefulWidget {
@@ -17,6 +19,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
   static const _gold = Color(0xFFE8C547);
 
   List<String> _trustedContacts = [];
+  bool _isSendingSos = false;
 
   @override
   void initState() {
@@ -174,65 +177,111 @@ class _SafetyScreenState extends State<SafetyScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFDC2626), Color(0xFFB91C1C)],
+        ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.emergency_rounded,
-              color: Colors.white,
-              size: 26,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Emergency',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: c.textPrimary,
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.emergency_rounded,
+                  color: Colors.white,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Emergency',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Call 911 for immediate assistance',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.white.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: () async {
+                  HapticFeedback.heavyImpact();
+                  final uri = Uri.parse('tel:911');
+                  if (await canLaunchUrl(uri)) await launchUrl(uri);
+                },
+                child: Semantics(
+                  label: 'Call 911 emergency',
+                  button: true,
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.call_rounded,
+                      color: Color(0xFFDC2626),
+                      size: 22,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Call 911 for immediate assistance',
-                  style: TextStyle(fontSize: 13, color: c.textSecondary),
+              ),
+            ],
+          ),
+          if (_trustedContacts.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              height: 42,
+              child: ElevatedButton.icon(
+                onPressed: _isSendingSos ? null : _alertAllContacts,
+                icon: _isSendingSos
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFFDC2626),
+                        ),
+                      )
+                    : const Icon(Icons.sms_rounded, size: 18),
+                label: Text(
+                  _isSendingSos
+                      ? 'Sending...'
+                      : 'Alert ${_trustedContacts.length} contact${_trustedContacts.length > 1 ? 's' : ''}',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: () async {
-              final uri = Uri.parse('tel:911');
-              if (await canLaunchUrl(uri)) await launchUrl(uri);
-            },
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.call_rounded,
-                color: Colors.black,
-                size: 22,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFFDC2626),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -335,6 +384,78 @@ class _SafetyScreenState extends State<SafetyScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _alertAllContacts() async {
+    if (_isSendingSos || _trustedContacts.isEmpty) return;
+    setState(() => _isSendingSos = true);
+    HapticFeedback.heavyImpact();
+
+    try {
+      // Get current location
+      Position pos;
+      try {
+        pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        ).timeout(const Duration(seconds: 5));
+      } catch (_) {
+        pos = await Geolocator.getLastKnownPosition().then(
+          (p) => p ?? Position(
+            latitude: 0,
+            longitude: 0,
+            timestamp: DateTime.now(),
+            accuracy: 0,
+            altitude: 0,
+            altitudeAccuracy: 0,
+            heading: 0,
+            headingAccuracy: 0,
+            speed: 0,
+            speedAccuracy: 0,
+          ),
+        );
+      }
+
+      final phones = _trustedContacts
+          .map((c) => c.split('|').length > 1 ? c.split('|')[1] : '')
+          .where((p) => p.isNotEmpty)
+          .toList();
+
+      if (phones.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No phone numbers in contacts')),
+          );
+        }
+        setState(() => _isSendingSos = false);
+        return;
+      }
+
+      await ApiService.sendSosAlert(
+        lat: pos.latitude,
+        lng: pos.longitude,
+        tripId: 0,
+        contactPhones: phones,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Emergency alert sent to ${phones.length} contact${phones.length > 1 ? 's' : ''}'),
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send alert: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSendingSos = false);
+    }
   }
 
   void _shareTrip(BuildContext context) {

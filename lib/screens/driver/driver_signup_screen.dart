@@ -846,6 +846,13 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     await enc('selfie_photo', _selfiePath);
     await enc('verification_video', _verificationVideoPath);
     await ApiService.submitVerification(body);
+
+    // Initiate background check after document submission
+    try {
+      await ApiService.initiateBackgroundCheck();
+    } catch (_) {
+      // Background check is non-blocking — driver can proceed
+    }
   }
 
   void _showError(String msg) {

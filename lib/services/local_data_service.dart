@@ -19,6 +19,7 @@ class FavoritePlace {
 }
 
 class TripHistoryItem {
+  final int? tripId;
   final String pickup;
   final String dropoff;
   final String rideName;
@@ -28,6 +29,7 @@ class TripHistoryItem {
   final DateTime createdAt;
 
   const TripHistoryItem({
+    this.tripId,
     required this.pickup,
     required this.dropoff,
     required this.rideName,
@@ -38,6 +40,7 @@ class TripHistoryItem {
   });
 
   Map<String, dynamic> toJson() => {
+    'tripId': tripId,
     'pickup': pickup,
     'dropoff': dropoff,
     'rideName': rideName,
@@ -49,6 +52,7 @@ class TripHistoryItem {
 
   static TripHistoryItem fromJson(Map<String, dynamic> json) {
     return TripHistoryItem(
+      tripId: json['tripId'] as int?,
       pickup: json['pickup']?.toString() ?? '',
       dropoff: json['dropoff']?.toString() ?? '',
       rideName: json['rideName']?.toString() ?? '',

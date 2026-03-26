@@ -306,9 +306,13 @@ class RideOptionsSheet extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: GestureDetector(
-        onTap: () => onSelect(opt),
-        child: AnimatedContainer(
+      child: Semantics(
+        label: '${opt.name} ride option, \$${opt.priceEstimate.toStringAsFixed(2)}, ${opt.etaMinutes} minutes away${opt.surgeMultiplier > 1.0 ? ', ${opt.surgeMultiplier}x surge pricing' : ''}',
+        button: true,
+        selected: isSelected,
+        child: GestureDetector(
+          onTap: () => onSelect(opt),
+          child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
           padding: const EdgeInsets.all(14),
@@ -419,14 +423,35 @@ class RideOptionsSheet extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    'est. fare',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: c.textTertiary,
-                      fontWeight: FontWeight.w500,
+                  if (opt.surgeMultiplier > 1.0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      margin: const EdgeInsets.only(bottom: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '⚡ ${opt.surgeMultiplier.toStringAsFixed(1)}x',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    )
+                  else
+                    Text(
+                      'est. fare',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: c.textTertiary,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
                   if (isSelected) ...[
                     const SizedBox(height: 6),
                     Container(
@@ -449,6 +474,7 @@ class RideOptionsSheet extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 

@@ -112,6 +112,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSPrivacyPolicyURL</key>
+	<string>https://cruiseride.com/privacy</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

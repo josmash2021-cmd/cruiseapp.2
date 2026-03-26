@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../config/app_theme.dart';
 import '../config/env.dart';
 import '../l10n/app_localizations.dart';
+import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 
@@ -27,6 +28,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
   late Animation<Offset> _slideAnim;
   bool _emailSending = false;
   bool _emailSent = false;
+  Map<String, dynamic>? _fareBreakdown;
 
   @override
   void initState() {
@@ -44,6 +46,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
           CurvedAnimation(parent: _entryController, curve: Curves.easeOutCubic),
         );
     _entryController.forward();
+    _loadFareBreakdown();
   }
 
   @override
@@ -156,6 +159,17 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
           behavior: SnackBarBehavior.floating,
         ),
       );
+    }
+  }
+
+  Future<void> _loadFareBreakdown() async {
+    final tid = trip.tripId;
+    if (tid == null) return;
+    try {
+      final data = await ApiService.getFareBreakdown(tid);
+      if (mounted) setState(() => _fareBreakdown = data);
+    } catch (_) {
+      // Fare breakdown is optional — silently ignore errors
     }
   }
 
@@ -397,6 +411,57 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                           ],
                         ),
                       ),
+
+                      const SizedBox(height: 14),
+
+                      // ── FARE BREAKDOWN ──
+                      if (_fareBreakdown != null)
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: c.panel,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: c.border),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Fare Breakdown',
+                                style: TextStyle(
+                                  color: c.textPrimary,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              _breakdownRow(c, 'Base fare', '\$${(_fareBreakdown!['base_fare'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
+                              _breakdownRow(c, 'Mileage (${(_fareBreakdown!['distance_miles'] as num?)?.toStringAsFixed(1) ?? '0'} mi × \$${(_fareBreakdown!['per_mile_rate'] as num?)?.toStringAsFixed(2) ?? '0.00'}/mi)', '\$${(_fareBreakdown!['mileage_charge'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
+                              _breakdownRow(c, 'Time (${(_fareBreakdown!['duration_minutes'] as num?)?.toInt() ?? 0} min × \$${(_fareBreakdown!['per_minute_rate'] as num?)?.toStringAsFixed(2) ?? '0.00'}/min)', '\$${(_fareBreakdown!['time_charge'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
+                              if ((_fareBreakdown!['surge_multiplier'] as num?) != null && (_fareBreakdown!['surge_multiplier'] as num) > 1.0) ...[
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  child: _breakdownRow(c, 'Surge (${(_fareBreakdown!['surge_multiplier'] as num).toStringAsFixed(1)}x)', '+\$${(_fareBreakdown!['surge_extra'] as num?)?.toStringAsFixed(2) ?? '0.00'}', highlight: true),
+                                ),
+                              ],
+                              if ((_fareBreakdown!['wait_time_charge'] as num?) != null && (_fareBreakdown!['wait_time_charge'] as num) > 0)
+                                _breakdownRow(c, 'Wait time (${(_fareBreakdown!['wait_time_minutes'] as num?)?.toInt() ?? 0} min)', '\$${(_fareBreakdown!['wait_time_charge'] as num).toStringAsFixed(2)}'),
+                              if ((_fareBreakdown!['tip_amount'] as num?) != null && (_fareBreakdown!['tip_amount'] as num) > 0)
+                                _breakdownRow(c, 'Tip', '\$${(_fareBreakdown!['tip_amount'] as num).toStringAsFixed(2)}'),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Divider(color: c.divider, height: 1),
+                              ),
+                              Row(
+                                children: [
+                                  Text('Total', style: TextStyle(color: c.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
+                                  const Spacer(),
+                                  Text(trip.price, style: const TextStyle(color: _gold, fontSize: 18, fontWeight: FontWeight.w800)),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
 
                       const SizedBox(height: 14),
 
@@ -643,5 +708,33 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     final minute = value.minute.toString().padLeft(2, '0');
     final amPm = value.hour >= 12 ? 'PM' : 'AM';
     return '${months[value.month - 1]} ${value.day}, ${value.year} · $hour:$minute $amPm';
+  }
+
+  Widget _breakdownRow(AppColors c, String label, String value, {bool highlight = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: highlight ? Colors.redAccent : c.textSecondary,
+                fontSize: 13,
+                fontWeight: highlight ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: highlight ? Colors.redAccent : c.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

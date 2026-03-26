@@ -543,37 +543,56 @@ class _LoginScreenState extends State<LoginScreen> {
 
               const Spacer(),
 
-              // ── Terms & Conditions link ──
+              // ── Terms & Privacy link ──
               Center(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text.rich(
-                    TextSpan(
-                      text: 'By continuing, you agree to our ',
-                      style: TextStyle(fontSize: 13, color: c.textTertiary),
-                      children: [
-                        WidgetSpan(
-                          child: GestureDetector(
-                            onTap: () {
-                              Navigator.of(context).push(
-                                slideUpFadeRoute(const TermsConditionsScreen()),
-                              );
-                            },
-                            child: const Text(
-                              'Terms & Conditions',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: _gold,
-                                fontWeight: FontWeight.w600,
-                                decoration: TextDecoration.underline,
-                                decorationColor: _gold,
-                              ),
-                            ),
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    children: [
+                      Text(
+                        'By continuing, you agree to our ',
+                        style: TextStyle(fontSize: 13, color: c.textTertiary),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).push(
+                            slideUpFadeRoute(const TermsConditionsScreen()),
+                          );
+                        },
+                        child: const Text(
+                          'Terms',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: _gold,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                            decorationColor: _gold,
                           ),
                         ),
-                      ],
-                    ),
-                    textAlign: TextAlign.center,
+                      ),
+                      Text(
+                        ' and ',
+                        style: TextStyle(fontSize: 13, color: c.textTertiary),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).push(
+                            slideUpFadeRoute(const TermsConditionsScreen()),
+                          );
+                        },
+                        child: const Text(
+                          'Privacy Policy',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: _gold,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                            decorationColor: _gold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

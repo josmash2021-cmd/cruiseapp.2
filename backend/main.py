@@ -236,6 +236,11 @@ class Trip(Base):
     duration = Column(Integer, nullable=True)  # Trip duration in minutes
     driver_earnings = Column(Float, nullable=True)  # Driver's cut after platform fee
     platform_fee = Column(Float, nullable=True)  # Platform commission
+    refund_status = Column(String(20), nullable=True)  # none, partial, full
+    refund_amount = Column(Float, default=0.0)  # Amount refunded
+    refund_reason = Column(Text, nullable=True)  # Reason for refund
+    per_mile_rate = Column(Float, nullable=True)  # Rate per mile used for fare calc
+    per_minute_rate = Column(Float, nullable=True)  # Rate per minute used for fare calc
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -2667,6 +2672,13 @@ def _trip_dict(t: Trip) -> dict:
         "cancellation_fee": getattr(t, "cancellation_fee", 0.0) or 0.0,
         "driver_earnings": getattr(t, "driver_earnings", None),
         "platform_fee": getattr(t, "platform_fee", None),
+        "refund_status": getattr(t, "refund_status", None),
+        "refund_amount": getattr(t, "refund_amount", 0.0) or 0.0,
+        "base_fare": getattr(t, "base_fare", None),
+        "per_mile_rate": getattr(t, "per_mile_rate", None),
+        "per_minute_rate": getattr(t, "per_minute_rate", None),
+        "wait_time_charge": getattr(t, "wait_time_charge", 0.0) or 0.0,
+        "wait_time_minutes": getattr(t, "wait_time_minutes", 0) or 0,
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "updated_at": _upd.isoformat() if _upd else None,
     }
@@ -2826,6 +2838,106 @@ async def charge_trip_endpoint(trip_id: int, user: User = Depends(_get_current_u
         return {"status": "already_paid", "payment_intent_id": trip.stripe_payment_intent_id}
     result = await _charge_trip(trip, db)
     return result
+
+
+@app.post("/trips/{trip_id}/refund", dependencies=[Depends(_verify_api_key)])
+async def refund_trip_endpoint(
+    trip_id: int,
+    amount: float = Body(None, description="Partial refund amount; omit for full refund"),
+    reason: str = Body("requested_by_customer"),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Refund a paid trip. Admin/dispatch only, or rider for full refund."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if user.role not in ("admin",) and trip.rider_id != user.id:
+        raise HTTPException(403, "Not authorized to refund this trip")
+    if trip.payment_status != "paid" or not trip.stripe_payment_intent_id:
+        raise HTTPException(400, "Trip has not been paid via Stripe")
+    if trip.refund_status == "full":
+        return {"status": "already_refunded", "refund_amount": trip.refund_amount}
+
+    if not _HAS_STRIPE:
+        trip.refund_status = "full"
+        trip.refund_amount = trip.fare or 0.0
+        trip.refund_reason = reason
+        trip.payment_status = "refunded"
+        await db.commit()
+        return {"status": "mock_refunded", "refund_amount": trip.refund_amount}
+
+    try:
+        refund_params = {
+            "payment_intent": trip.stripe_payment_intent_id,
+            "reason": reason if reason in ("duplicate", "fraudulent", "requested_by_customer") else "requested_by_customer",
+            "metadata": {"trip_id": str(trip.id)},
+        }
+        if amount and amount > 0:
+            refund_params["amount"] = int(amount * 100)
+        refund = _stripe_mod.Refund.create(**refund_params)
+        refunded_dollars = round(refund.amount / 100, 2)
+        trip.refund_amount = round((trip.refund_amount or 0.0) + refunded_dollars, 2)
+        trip.refund_status = "full" if not amount else "partial"
+        trip.refund_reason = reason
+        trip.payment_status = "refunded"
+        await db.commit()
+        logging.info("[Refund] Trip %s refunded $%.2f — reason: %s", trip.id, refunded_dollars, reason)
+        return {"status": "refunded", "refund_amount": refunded_dollars, "refund_id": refund.id}
+    except _stripe_mod.error.StripeError as e:
+        logging.error("[Refund] Stripe error for trip %s: %s", trip.id, e)
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+
+@app.get("/trips/{trip_id}/fare-breakdown", dependencies=[Depends(_verify_api_key)])
+async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get detailed fare breakdown for a trip."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.rider_id != user.id and trip.driver_id != user.id and user.role not in ("admin",):
+        raise HTTPException(403, "Not authorized")
+    dist_mi = (trip.distance or 0.0)
+    if dist_mi == 0 and trip.pickup_lat and trip.dropoff_lat:
+        dist_km = _haversine(trip.pickup_lat, trip.pickup_lng, trip.dropoff_lat, trip.dropoff_lng)
+        dist_mi = round(dist_km * 0.621371, 1)
+    dur_min = trip.duration or max(1, int(dist_mi * 2))
+    per_mile = trip.per_mile_rate or 1.50
+    per_min = trip.per_minute_rate or 0.25
+    base = 2.50
+    mileage_charge = round(dist_mi * per_mile, 2)
+    time_charge = round(dur_min * per_min, 2)
+    surge_mult = trip.surge_multiplier or 1.0
+    subtotal = round(base + mileage_charge + time_charge, 2)
+    surge_extra = round(subtotal * (surge_mult - 1.0), 2) if surge_mult > 1.0 else 0.0
+    wait_charge = trip.wait_time_charge or 0.0
+    cancel_fee = trip.cancellation_fee or 0.0
+    tip = trip.tip_amount or 0.0
+    total = round(subtotal + surge_extra + wait_charge + cancel_fee + tip, 2)
+    return {
+        "trip_id": trip.id,
+        "base_fare": base,
+        "distance_miles": dist_mi,
+        "per_mile_rate": per_mile,
+        "mileage_charge": mileage_charge,
+        "duration_minutes": dur_min,
+        "per_minute_rate": per_min,
+        "time_charge": time_charge,
+        "subtotal": subtotal,
+        "surge_multiplier": surge_mult,
+        "surge_extra": surge_extra,
+        "wait_time_minutes": trip.wait_time_minutes or 0,
+        "wait_time_charge": wait_charge,
+        "cancellation_fee": cancel_fee,
+        "tip_amount": tip,
+        "total": trip.fare or total,
+        "platform_fee": trip.platform_fee,
+        "driver_earnings": trip.driver_earnings,
+        "refund_amount": trip.refund_amount or 0.0,
+        "refund_status": trip.refund_status,
+    }
 
 
 @app.post("/payments/setup-intent", dependencies=[Depends(_verify_api_key)])
@@ -7082,6 +7194,19 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         logging.warning("[Stripe Webhook] Payment failed for trip %s: %s",
                         trip_id, intent.get("last_payment_error", {}).get("message"))
 
+    elif event_type == "charge.refunded":
+        charge = event["data"]["object"]
+        pi_id = charge.get("payment_intent")
+        if pi_id:
+            trip_r = await db.execute(select(Trip).where(Trip.stripe_payment_intent_id == pi_id))
+            trip = trip_r.scalar_one_or_none()
+            if trip:
+                refunded_cents = charge.get("amount_refunded", 0)
+                trip.refund_amount = round(refunded_cents / 100, 2)
+                trip.refund_status = "full" if refunded_cents >= (charge.get("amount", 0)) else "partial"
+                await db.commit()
+                logging.info("[Stripe Webhook] Refund recorded for trip %s: $%.2f", trip.id, trip.refund_amount)
+
     return {"status": "ok"}
 
 
@@ -7152,7 +7277,8 @@ async def driver_payout_transfer(user: User = Depends(_get_current_user), db: As
 
 @app.get("/surge/current", dependencies=[Depends(_verify_api_key)])
 async def get_current_surge(lat: float = Query(...), lng: float = Query(...), db: AsyncSession = Depends(get_db)):
-    """Get current surge multiplier for a location."""
+    """Get current surge multiplier for a location. Checks manual zones first, then auto-calculates from demand."""
+    # 1) Check manual surge zones
     result = await db.execute(select(SurgeZone).where(SurgeZone.is_active == True))
     zones = result.scalars().all()
     best_multiplier = 1.0
@@ -7160,6 +7286,29 @@ async def get_current_surge(lat: float = Query(...), lng: float = Query(...), db
         dist = _haversine(lat, lng, zone.center_lat, zone.center_lng)
         if dist <= zone.radius_km:
             best_multiplier = max(best_multiplier, zone.surge_multiplier)
+
+    # 2) If no manual surge, auto-calculate from demand/supply
+    if best_multiplier <= 1.0:
+        cutoff = datetime.utcnow() - timedelta(minutes=10)
+        rider_r = await db.execute(
+            select(func.count(Trip.id)).where(
+                Trip.status.in_(["requested", "driver_en_route"]),
+                Trip.created_at >= cutoff,
+            )
+        )
+        active_requests = rider_r.scalar() or 0
+        nearby_r = await db.execute(
+            select(User).where(User.role == "driver", User.is_online == True, User.lat.isnot(None))
+        )
+        nearby_drivers = [
+            d for d in nearby_r.scalars().all()
+            if _haversine(lat, lng, d.lat or 0, d.lng or 0) <= 5.0
+        ]
+        supply = len(nearby_drivers)
+        ratio = active_requests / max(supply, 1)
+        if ratio > 1.0:
+            best_multiplier = min(round(1.0 + (ratio - 1.0) * 0.5, 2), 3.0)
+
     return {"surge_multiplier": best_multiplier, "is_surge": best_multiplier > 1.0, "message": f"{best_multiplier}x" if best_multiplier > 1.0 else "No surge"}
 
 @app.post("/admin/surge/update", dependencies=[Depends(_require_dispatch_auth)])
@@ -7606,6 +7755,37 @@ async def get_heatmap_data(
     except Exception as e:
         logging.error("[Admin] Error getting heatmap data: %s", e)
         raise HTTPException(500, f"Error getting heatmap: {str(e)}")
+
+
+@app.get("/drivers/demand-heatmap", dependencies=[Depends(_verify_api_key)])
+async def get_driver_demand_heatmap(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    radius_km: float = Query(10.0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get demand heatmap for drivers showing high-demand pickup areas nearby."""
+    since = datetime.utcnow() - timedelta(minutes=30)
+    result = await db.execute(
+        select(Trip.pickup_lat, Trip.pickup_lng, func.count(Trip.id).label("cnt"))
+        .where(Trip.status.in_(["requested", "driver_en_route"]), Trip.created_at >= since)
+        .group_by(Trip.pickup_lat, Trip.pickup_lng)
+    )
+    points = []
+    for row in result.all():
+        p_lat, p_lng, cnt = row
+        if p_lat and p_lng and _haversine(lat, lng, p_lat, p_lng) <= radius_km:
+            points.append({"lat": p_lat, "lng": p_lng, "weight": cnt})
+
+    # Also include active surge zones
+    surge_r = await db.execute(select(SurgeZone).where(SurgeZone.is_active == True, SurgeZone.surge_multiplier > 1.0))
+    surge_zones = [
+        {"lat": z.center_lat, "lng": z.center_lng, "radius_km": z.radius_km, "multiplier": z.surge_multiplier, "name": z.zone_name}
+        for z in surge_r.scalars().all()
+        if _haversine(lat, lng, z.center_lat, z.center_lng) <= radius_km + z.radius_km
+    ]
+
+    return {"demand_points": points, "surge_zones": surge_zones}
 
 @app.post("/admin/trips/assign", dependencies=[Depends(_verify_api_key)])
 async def admin_assign_driver(
@@ -8056,6 +8236,249 @@ async def create_paypal_order(body: PayPalOrderIn):
     except Exception as e:
         logging.error("[PayPal] create_paypal_order failed: %s", e)
         raise HTTPException(502, f"PayPal error: {str(e)}")
+
+# ═══════════════════════════════════════════════════════
+#  SOS / EMERGENCY ALERTS
+# ═══════════════════════════════════════════════════════
+
+@app.post("/safety/sos-alert", dependencies=[Depends(_verify_api_key)])
+async def send_sos_alert(
+    lat: float = Body(...),
+    lng: float = Body(...),
+    trip_id: int = Body(None),
+    contact_phones: list = Body(default=[]),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send SOS SMS to trusted contacts with user's live location."""
+    user_name = f"{user.first_name} {user.last_name}"
+    maps_link = f"https://maps.google.com/?q={lat},{lng}"
+    message = (
+        f"🚨 EMERGENCY ALERT from {user_name} via Cruise.\n"
+        f"Location: {maps_link}\n"
+    )
+    if trip_id:
+        message += f"Trip ID: {trip_id}\n"
+    message += "Please check on them immediately or call 911."
+
+    sent_count = 0
+    errors = []
+
+    has_twilio = (
+        TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC")
+        and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER
+    )
+
+    for phone in contact_phones:
+        phone = str(phone).strip()
+        if not phone:
+            continue
+        if has_twilio:
+            try:
+                _creds = base64.b64encode(
+                    f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()
+                ).decode()
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(
+                        f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json",
+                        headers={"Authorization": f"Basic {_creds}"},
+                        data={"To": phone, "From": TWILIO_PHONE_NUMBER, "Body": message},
+                        timeout=10,
+                    )
+                if resp.status_code in (200, 201):
+                    sent_count += 1
+                else:
+                    errors.append(f"{phone}: {resp.status_code}")
+            except Exception as e:
+                errors.append(f"{phone}: {str(e)}")
+        else:
+            errors.append(f"{phone}: Twilio not configured")
+
+    logging.warning("[SOS] Alert from user %s (%s) at %.4f,%.4f — sent %d/%d SMS",
+                    user.id, user_name, lat, lng, sent_count, len(contact_phones))
+    return {"status": "sent", "sent_count": sent_count, "total_contacts": len(contact_phones), "errors": errors}
+
+
+# ═══════════════════════════════════════════════════════
+#  AUTO SURGE CALCULATION
+# ═══════════════════════════════════════════════════════
+
+@app.post("/surge/auto-calculate", dependencies=[Depends(_verify_api_key)])
+async def auto_calculate_surge(
+    lat: float = Body(...),
+    lng: float = Body(...),
+    radius_km: float = Body(5.0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Auto-calculate surge based on rider/driver density in an area.
+    Surge formula: riders_requesting / (available_drivers + 1).
+    1.0x if ratio <= 1, up to 3.0x cap."""
+    # Count active riders with recent trip requests (last 10 min)
+    cutoff = datetime.utcnow() - timedelta(minutes=10)
+    rider_r = await db.execute(
+        select(func.count(Trip.id)).where(
+            Trip.status.in_(["requested", "driver_en_route"]),
+            Trip.created_at >= cutoff,
+        )
+    )
+    active_requests = rider_r.scalar() or 0
+
+    # Count online drivers near location
+    driver_r = await db.execute(
+        select(func.count(User.id)).where(
+            User.role == "driver",
+            User.is_online == True,
+            User.lat.isnot(None),
+        )
+    )
+    online_drivers = driver_r.scalar() or 0
+
+    # Filter to nearby drivers using Haversine approximation
+    if online_drivers > 0:
+        nearby_r = await db.execute(
+            select(User).where(User.role == "driver", User.is_online == True, User.lat.isnot(None))
+        )
+        nearby_drivers = [
+            d for d in nearby_r.scalars().all()
+            if _haversine(lat, lng, d.lat or 0, d.lng or 0) <= radius_km
+        ]
+        online_drivers = len(nearby_drivers)
+
+    ratio = active_requests / max(online_drivers, 1)
+    if ratio <= 1.0:
+        multiplier = 1.0
+    elif ratio <= 2.0:
+        multiplier = round(1.0 + (ratio - 1.0) * 0.5, 2)  # 1.0x–1.5x
+    elif ratio <= 3.0:
+        multiplier = round(1.5 + (ratio - 2.0) * 0.5, 2)  # 1.5x–2.0x
+    else:
+        multiplier = min(round(2.0 + (ratio - 3.0) * 0.25, 2), 3.0)  # 2.0x–3.0x cap
+
+    return {
+        "surge_multiplier": multiplier,
+        "is_surge": multiplier > 1.0,
+        "active_requests": active_requests,
+        "nearby_drivers": online_drivers,
+        "ratio": round(ratio, 2),
+    }
+
+
+# ═══════════════════════════════════════════════════════
+#  BACKGROUND CHECK (CHECKR INTEGRATION)
+# ═══════════════════════════════════════════════════════
+
+CHECKR_API_KEY = os.getenv("CHECKR_API_KEY", "")
+CHECKR_BASE_URL = os.getenv("CHECKR_BASE_URL", "https://api.checkr.com/v1")
+
+@app.post("/drivers/background-check", dependencies=[Depends(_verify_api_key)])
+async def initiate_background_check(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Initiate a background check via Checkr for a driver."""
+    if user.role != "driver":
+        raise HTTPException(403, "Only drivers can request background checks")
+
+    if not CHECKR_API_KEY:
+        # Mock response when Checkr not configured
+        logging.info("[BGCheck] Mock background check for driver %s", user.id)
+        return {
+            "status": "pending",
+            "provider": "checkr",
+            "mock": True,
+            "message": "Background check initiated (demo mode). Configure CHECKR_API_KEY for production.",
+        }
+
+    try:
+        auth = base64.b64encode(f"{CHECKR_API_KEY}:".encode()).decode()
+        async with httpx.AsyncClient() as client:
+            # Create candidate
+            candidate_resp = await client.post(
+                f"{CHECKR_BASE_URL}/candidates",
+                headers={"Authorization": f"Basic {auth}"},
+                json={
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "email": user.email,
+                    "phone": user.phone,
+                    "ssn": user.ssn or "",
+                },
+                timeout=15,
+            )
+            if candidate_resp.status_code not in (200, 201):
+                raise HTTPException(502, f"Checkr candidate creation failed: {candidate_resp.text}")
+            candidate = candidate_resp.json()
+
+            # Create invitation (triggers background check)
+            invite_resp = await client.post(
+                f"{CHECKR_BASE_URL}/invitations",
+                headers={"Authorization": f"Basic {auth}"},
+                json={
+                    "candidate_id": candidate["id"],
+                    "package": "driver_pro",  # Standard rideshare package
+                },
+                timeout=15,
+            )
+            if invite_resp.status_code not in (200, 201):
+                raise HTTPException(502, f"Checkr invitation failed: {invite_resp.text}")
+            invitation = invite_resp.json()
+
+        logging.info("[BGCheck] Checkr check initiated for driver %s, candidate %s",
+                     user.id, candidate["id"])
+        return {
+            "status": "pending",
+            "provider": "checkr",
+            "candidate_id": candidate["id"],
+            "invitation_url": invitation.get("invitation_url"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("[BGCheck] Checkr error for driver %s: %s", user.id, e)
+        raise HTTPException(502, f"Background check service error: {str(e)}")
+
+
+@app.post("/drivers/background-check/webhook")
+async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Handle Checkr webhook events for background check completion."""
+    payload = await request.json()
+    event_type = payload.get("type", "")
+    data = payload.get("data", {}).get("object", {})
+
+    logging.info("[BGCheck Webhook] Received: %s", event_type)
+
+    if event_type in ("report.completed", "report.upgraded"):
+        candidate_id = data.get("candidate_id", "")
+        status = data.get("status", "")  # clear, consider, suspended
+        result = data.get("result", "")
+
+        # Map Checkr status to our verification
+        if result == "clear" or status == "clear":
+            ver_status = "approved"
+        elif result in ("consider",) or status in ("consider",):
+            ver_status = "pending"  # Manual review needed
+        else:
+            ver_status = "rejected"
+
+        # Find user by email from candidate
+        email = data.get("email")
+        if email:
+            user_r = await db.execute(
+                select(User).where(User.email == email, User.role == "driver")
+            )
+            user = user_r.scalar_one_or_none()
+            if user:
+                user.verification_status = ver_status
+                if ver_status == "approved":
+                    user.is_verified = True
+                    user.verified_at = datetime.utcnow()
+                elif ver_status == "rejected":
+                    user.verification_reason = f"Background check: {result}"
+                await db.commit()
+                logging.info("[BGCheck] Driver %s verification updated to %s", user.id, ver_status)
+
+    return {"status": "ok"}
+
 
 # -------------------------------------------------------
 #  SERVER STARTUP (if run directly)

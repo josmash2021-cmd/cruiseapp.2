@@ -2122,6 +2122,129 @@ class ApiService {
     final data = _parse(res);
     return data['client_secret'] as String?;
   }
+
+  // ═══════════════════════════════════════════════════════
+  //  REFUNDS
+  // ═══════════════════════════════════════════════════════
+
+  /// Request a refund for a paid trip. [amount] null = full refund.
+  static Future<Map<String, dynamic>> refundTrip(
+    int tripId, {
+    double? amount,
+    String reason = 'requested_by_customer',
+  }) async {
+    final h = await _authHeaders();
+    final body = <String, dynamic>{'reason': reason};
+    if (amount != null) body['amount'] = amount;
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/trips/$tripId/refund'),
+          headers: {...h, 'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 20));
+    return _parse(res);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  FARE BREAKDOWN
+  // ═══════════════════════════════════════════════════════
+
+  /// Get detailed fare breakdown for a trip.
+  static Future<Map<String, dynamic>> getFareBreakdown(int tripId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/trips/$tripId/fare-breakdown'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  SURGE PRICING
+  // ═══════════════════════════════════════════════════════
+
+  /// Get current surge multiplier for a location.
+  static Future<Map<String, dynamic>> getCurrentSurge(
+    double lat,
+    double lng,
+  ) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/surge/current?lat=$lat&lng=$lng'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  SAFETY / SOS
+  // ═══════════════════════════════════════════════════════
+
+  /// Send SOS alert with location to trusted contacts via backend.
+  static Future<Map<String, dynamic>> sendSosAlert({
+    required double lat,
+    required double lng,
+    required int tripId,
+    required List<String> contactPhones,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/safety/sos-alert'),
+          headers: {...h, 'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'lat': lat,
+            'lng': lng,
+            'trip_id': tripId,
+            'contact_phones': contactPhones,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  BACKGROUND CHECK
+  // ═══════════════════════════════════════════════════════
+
+  /// Initiate a background check for the current driver via Checkr.
+  static Future<Map<String, dynamic>> initiateBackgroundCheck() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/background-check'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 20));
+    return _parse(res);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  DRIVER DEMAND HEATMAP
+  // ═══════════════════════════════════════════════════════
+
+  /// Get demand heatmap data for drivers.
+  static Future<Map<String, dynamic>> getDriverDemandHeatmap(
+    double lat,
+    double lng, {
+    double radiusKm = 10.0,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse(
+            '$_baseUrl/drivers/demand-heatmap?lat=$lat&lng=$lng&radius_km=$radiusKm',
+          ),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
 }
 
 /// Simple exception with HTTP status code.

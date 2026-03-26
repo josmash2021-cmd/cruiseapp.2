@@ -36,6 +36,7 @@ class RideOption {
   final int etaMinutes;
   final String icon; // emoji or asset ref
   final int capacity;
+  final double surgeMultiplier; // 1.0 = no surge
 
   const RideOption({
     required this.id,
@@ -45,6 +46,7 @@ class RideOption {
     required this.etaMinutes,
     required this.icon,
     this.capacity = 4,
+    this.surgeMultiplier = 1.0,
   });
 }
 
@@ -189,6 +191,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _pollTimer;
   Timer? _timeoutTimer; // Fix 1: client-side search timeout
   bool _isRequesting = false; // Fix 2: anti-double-tap guard
+  double _surgeMultiplier = 1.0; // Surge pricing multiplier from backend
 
   RiderTripController() {
     WidgetsBinding.instance.addObserver(this); // M3: observe lifecycle
@@ -293,6 +296,17 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final origin = LatLng(_state.pickup!.lat, _state.pickup!.lng);
     final dest = LatLng(_state.dropoff!.lat, _state.dropoff!.lng);
 
+    // Fetch surge multiplier for pickup location
+    try {
+      final surgeData = await ApiService.getCurrentSurge(
+        _state.pickup!.lat,
+        _state.pickup!.lng,
+      );
+      _surgeMultiplier = (surgeData['surge_multiplier'] as num?)?.toDouble() ?? 1.0;
+    } catch (_) {
+      _surgeMultiplier = 1.0;
+    }
+
     final result = await _directions.getRoute(
       origin: origin,
       destination: dest,
@@ -334,33 +348,40 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     }
     _state = _state.copyWith(isAirportTrip: airportTrip);
 
+    // Apply surge multiplier (fetched async, default 1.0)
+    final surge = _surgeMultiplier;
+    final surgedBase = baseFare * surge;
+
     return [
       RideOption(
         id: 'suburban',
         name: 'VIP',
         description: 'Spacious • Leather • Wi-Fi',
-        priceEstimate: _round(baseFare * 2.20),
+        priceEstimate: _round(surgedBase * 2.20),
         etaMinutes: 5 + math.Random().nextInt(8),
         icon: '🚐',
         capacity: 7,
+        surgeMultiplier: surge,
       ),
       RideOption(
         id: 'camry',
         name: 'Sedan',
         description: 'Comfort • Climate • Charger',
-        priceEstimate: _round(baseFare * 1.35),
+        priceEstimate: _round(surgedBase * 1.35),
         etaMinutes: 4 + math.Random().nextInt(6),
         icon: '🚙',
         capacity: 4,
+        surgeMultiplier: surge,
       ),
       RideOption(
         id: 'fusion',
         name: 'Economy',
         description: 'Clean • Safe • Efficient',
-        priceEstimate: _round(baseFare),
+        priceEstimate: _round(surgedBase),
         etaMinutes: 3 + math.Random().nextInt(5),
         icon: '🚗',
         capacity: 4,
+        surgeMultiplier: surge,
       ),
     ];
   }

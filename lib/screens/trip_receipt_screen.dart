@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:share_plus/share_plus.dart';
 
 import '../config/app_theme.dart';
 import '../config/env.dart';
@@ -173,6 +174,38 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     }
   }
 
+  // ── Share receipt as text ──
+  Future<void> _shareReceipt() async {
+    final date = _formatDate(trip.createdAt);
+    final receiptNum = _fareBreakdown?['receipt_number'] ?? 'CR-${trip.tripId ?? 0}';
+    final paymentMethod = _fareBreakdown?['payment_method'] as String?;
+    
+    final shareText = '''
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     CRUISE RIDE · RECEIPT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Receipt #: $receiptNum
+
+✓  Ride Completed
+
+Ride Type:  ${trip.rideName}
+Total:      ${trip.price}
+Distance:   ${trip.miles}
+Duration:   ${trip.duration}
+Date:       $date
+${paymentMethod != null ? 'Payment:    $paymentMethod\n' : ''}
+── Route ──────────────────────
+◉  Pickup:   ${trip.pickup}
+◉  Drop-off: ${trip.dropoff}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Thank you for riding with Cruise!
+''';
+    
+    await Share.share(shareText, subject: 'Cruise Ride Receipt - $receiptNum');
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
@@ -187,6 +220,11 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
           style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
         ),
         actions: [
+          IconButton(
+            onPressed: _shareReceipt,
+            icon: Icon(Icons.share_outlined, color: c.textSecondary),
+            tooltip: 'Share receipt',
+          ),
           IconButton(
             onPressed: _emailSending ? null : _sendEmailReceipt,
             icon: _emailSending
@@ -234,11 +272,11 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                         ),
                         child: Row(
                           children: [
-                            const Expanded(
+                            Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
+                                  const Text(
                                     'Cruise Ride',
                                     style: TextStyle(
                                       color: Color(0xFF08090C),
@@ -247,15 +285,29 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                       letterSpacing: -0.5,
                                     ),
                                   ),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    'RECEIPT',
-                                    style: TextStyle(
-                                      color: Color(0x9908090C),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: 2,
-                                    ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      const Text(
+                                        'RECEIPT',
+                                        style: TextStyle(
+                                          color: Color(0x9908090C),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 2,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _fareBreakdown?['receipt_number'] ?? '#CR-${trip.tripId ?? 0}',
+                                        style: const TextStyle(
+                                          color: Color(0x9908090C),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
@@ -459,6 +511,20 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                   Text(trip.price, style: const TextStyle(color: _gold, fontSize: 18, fontWeight: FontWeight.w800)),
                                 ],
                               ),
+                              // Payment method
+                              if (_fareBreakdown!['payment_method'] != null) ...[
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Icon(Icons.credit_card_rounded, color: c.textTertiary, size: 16),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _fareBreakdown!['payment_method'] as String,
+                                      style: TextStyle(color: c.textSecondary, fontSize: 13),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ],
                           ),
                         ),

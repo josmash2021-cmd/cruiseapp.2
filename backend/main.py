@@ -2916,8 +2916,21 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
     cancel_fee = trip.cancellation_fee or 0.0
     tip = trip.tip_amount or 0.0
     total = round(subtotal + surge_extra + wait_charge + cancel_fee + tip, 2)
+    # Get payment method info for receipts
+    payment_method_display = None
+    if trip.rider_id:
+        pm_result = await db.execute(
+            select(RiderPaymentMethod)
+            .where(RiderPaymentMethod.user_id == trip.rider_id, RiderPaymentMethod.is_default == True)
+        )
+        pm = pm_result.scalar_one_or_none()
+        if pm:
+            payment_method_display = pm.display_name  # e.g. "Visa •••• 4242"
+    # Generate receipt number
+    receipt_number = f"CR-{trip.id:08d}"
     return {
         "trip_id": trip.id,
+        "receipt_number": receipt_number,
         "base_fare": base,
         "distance_miles": dist_mi,
         "per_mile_rate": per_mile,
@@ -2937,6 +2950,10 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
         "driver_earnings": trip.driver_earnings,
         "refund_amount": trip.refund_amount or 0.0,
         "refund_status": trip.refund_status,
+        "payment_method": payment_method_display,
+        "pickup_address": trip.pickup_address,
+        "dropoff_address": trip.dropoff_address,
+        "completed_at": trip.completed_at.isoformat() if trip.completed_at else None,
     }
 
 

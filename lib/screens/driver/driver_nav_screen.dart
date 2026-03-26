@@ -787,7 +787,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   // Navigation camera: 65° tilt, zoom 17, pin at lower third of screen
   static const double _navZoom = 17.0;
-  static const double _navTilt = 65.0;
+  static const double _navTilt = 62.0;
   static const double _pinOffsetRatio = 0.35;
 
   void _animateCamera(LatLng pos, {double? zoom, double bearing = 0, double tilt = _navTilt}) {
@@ -1372,11 +1372,16 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     final bg = isOffRoute ? const Color(0xFFB71C1C) : _navBg;
     final bgSub = isOffRoute ? const Color(0xFF8B0000) : _navBgSub;
 
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        color: bg,
-        child: Column(
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        _showUpcomingSteps();
+      },
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          color: bg,
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(height: topPad),
@@ -1470,6 +1475,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1590,13 +1596,20 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           active: _isOverview,
         ),
         const SizedBox(height: 10),
-        // 2. Upcoming directions
+        // 2. Directions — top-down route overview
         _mapFab(
           icon: Icons.alt_route_rounded,
           onTap: () {
             HapticFeedback.lightImpact();
-            _showUpcomingSteps();
+            setState(() {
+              _isOverview      = true;
+              _cameraFollowing = false;
+            });
+            final dest = _phase == TripPhase.onTrip
+                ? widget.dropoffLatLng : widget.pickupLatLng;
+            _animateCameraOverview(_pos, dest);
           },
+          active: _isOverview,
         ),
         const SizedBox(height: 10),
         // 3. Recenter — resumes 3D chase mode

@@ -17,6 +17,7 @@ import 'package:permission_handler/permission_handler.dart'
 
 import '../navigation/car_icon_loader.dart';
 import '../config/api_keys.dart';
+import '../config/app_config.dart';
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
@@ -103,6 +104,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Ticker? _routeDrawTicker;
   double _randomBearing = 0;
   bool _cinematicDone = false;
+  bool _hasAppliedSelectionTilt = false;
   bool _labelsRevealed = false;
   AnimationController? _labelPopCtrl;
   Animation<double>? _labelPopAnim;
@@ -1137,10 +1139,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         if (s.pickup != null && s.dropoff != null) {
           _placeMarkersOnly();
         }
-        // Draw polyline + cinematic only when REAL route arrives
+        // Draw polyline + cinematic only when REAL route arrives (once)
         if (s.route != null && s.route!.points.length > 2) {
           _fetchingRoute = false;
-          _drawRoute();
+          if (!_cinematicDone) {
+            _drawRoute();
+          }
         }
         // Mark options as loaded when rideOptions arrive
         if (s.rideOptions.isNotEmpty && !_optionsLoaded) {
@@ -1317,6 +1321,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// Reset all cinematic animation state so sequence can replay from scratch.
   Future<void> _resetCinematic() async {
     _cinematicDone = false;
+    _hasAppliedSelectionTilt = false;
     _labelsRevealed = false;
 
     // Stop running controllers
@@ -1721,11 +1726,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
     final screenH = MediaQuery.of(context).size.height;
+    final botPad = MediaQuery.of(context).padding.bottom;
     final phase = _ctrl.state.phase;
-    // Searching card is ~200px; route preview sheet is ~45%
-    final bottomPad = (phase == RiderPhase.requesting || phase == RiderPhase.searchingDriver)
-        ? screenH * 0.28
-        : screenH * 0.42;
+    // Bottom padding must account for full panel height + safe area + margin
+    final double bottomPad;
+    if (phase == RiderPhase.requesting || phase == RiderPhase.searchingDriver) {
+      bottomPad = 180 + botPad + 20;
+    } else {
+      // Route preview sheet: 45% of screen (clamped 320-420) + safe area + margin
+      final sheetH = (screenH * 0.45).clamp(320.0, 420.0) + botPad;
+      bottomPad = sheetH + 20;
+    }
     _mapCtrl!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
@@ -2480,6 +2491,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                                   setState(
                                     () => _rideOptionsExpanded = false,
                                   );
+                                  // Single gentle 15° tilt — only once
+                                  if (!_hasAppliedSelectionTilt && _mapCtrl != null) {
+                                    _hasAppliedSelectionTilt = true;
+                                    _mapCtrl!.flyTo(
+                                      mapbox.CameraOptions(pitch: 15.0),
+                                      mapbox.MapAnimationOptions(duration: 800),
+                                    );
+                                  }
                                 },
                                 child: _buildRideOptionCard(
                                   c,
@@ -3666,9 +3685,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       if (!mounted) return;
       setSheetState(() => _isProcessingPayment = false);
       setState(() => _isProcessingPayment = false);
+      debugPrint('Payment error: $e');
       _showDeclinedDialog(
         title: S.of(context).paymentDeclined,
-        message: '$e',
+        message: 'Payment could not be processed. Please try again or use a different payment method.',
       );
       return;
     }
@@ -3701,9 +3721,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() => _isProcessingPayment = false);
+      debugPrint('Payment error: $e');
       _showDeclinedDialog(
         title: S.of(context).paymentDeclined,
-        message: '$e',
+        message: 'Payment could not be processed. Please try again or use a different payment method.',
       );
       return;
     }

@@ -293,9 +293,17 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         (_lastCameraUpdate == null ||
             now.difference(_lastCameraUpdate!).inMilliseconds > 16)) {
       _lastCameraUpdate = now;
-      // Añadir inercia a la cámara: tilt dinámico basado en velocidad angular
-      final dynamicTilt = (60.0 + (curveTilt.abs() * 12.0)).clamp(60.0, 75.0);
-      _animateCameraNav(pos, bearing: bearing, tilt: dynamicTilt);
+      // Locked nav camera: 55° tilt, zoom 17.5, follows driver heading
+      _map?.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+              coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+          zoom: 17.5,
+          bearing: bearing,
+          pitch: 55,
+        ),
+        mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
+      );
     }
   }
 
@@ -319,8 +327,10 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       _extractSpeedLimits(route);
       _snapIdx = 0;
       setState(() {});
-      // Run full cinematic for the new route
-      await _runCinematicSequence();
+      // Update route annotation and jump to nav position (no cinematic on ride start)
+      _updateRouteAnnotation();
+      _cameraFollowing = true;
+      setState(() {});
     } else if (mounted) {
       _routePts = _makeStraightRoute(_pos, widget.dropoffLatLng);
       _displayRoutePts = List.of(_routePts);
@@ -340,48 +350,70 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     await _runCinematicSequence();
   }
 
-  /// Phase A: top-down → route fill → Phase B: 45° → Phase C: 65° chase.
+  /// Jump directly to locked nav position (no animation). Used on re-entry.
+  void _jumpToNavPosition() {
+    _map?.setCamera(mapbox.CameraOptions(
+      center: mapbox.Point(
+          coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+      zoom: 17.5,
+      bearing: _bearing,
+      pitch: 55,
+    ));
+    setState(() => _cameraFollowing = true);
+  }
+
+  /// Cinematic camera sequence: overview → tilt 55° → pause 2s → rotate 15° + zoom → final nav.
   Future<void> _runCinematicSequence() async {
-    // Phase A — Zoom to top-down showing full route
+    // ── Phase 1: Centered overview (instant via setCamera) ──
     await _zoomToShowRoute();
-    await Future.delayed(const Duration(milliseconds: 400));
 
-    // Animated route draw (1.5s, easeInOut)
-    await _drawRouteAnimated();
-
-    // Phase B — Transition to 45° behind driver (1.5s)
-    final midCenter = _lookaheadPoint(_pos, _bearing, 60);
+    // ── Phase 2: Tilt down to 55° (1.5s) ──
+    final dest = _sm.phase == TripPhase.onTrip
+        ? widget.dropoffLatLng
+        : widget.pickupLatLng;
+    final routeBearing = _bearingBetween(_pos, dest);
     _map?.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
-            coordinates: mapbox.Position(midCenter.longitude, midCenter.latitude)),
-        zoom: 16.0,
-        bearing: _bearing,
-        pitch: 45,
+            coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+        zoom: 15.0,
+        bearing: routeBearing,
+        pitch: 55,
       ),
       mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
     );
     await Future.delayed(const Duration(milliseconds: 1600));
 
-    // Pause 0.5s at 45°
-    await Future.delayed(const Duration(milliseconds: 500));
+    // ── Phase 3: Pause 2 seconds ──
+    await Future.delayed(const Duration(milliseconds: 2000));
 
-    // Phase C — Settle to 65° chase-camera (1s)
+    // ── Phase 4: Rotate +15° and zoom in (1.5s) ──
     _map?.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
-            coordinates: mapbox.Position(
-                _lookaheadPoint(_pos, _bearing, 50).longitude,
-                _lookaheadPoint(_pos, _bearing, 50).latitude)),
-        zoom: 17.0,
+            coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+        zoom: 16.5,
+        bearing: routeBearing + 15,
+        pitch: 55,
+      ),
+      mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
+    );
+    await Future.delayed(const Duration(milliseconds: 1600));
+
+    // ── Phase 5: Final zoom to nav position (1s) ──
+    _map?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(
+            coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+        zoom: 17.5,
         bearing: _bearing,
-        pitch: 65,
+        pitch: 55,
       ),
       mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
     );
     await Future.delayed(const Duration(milliseconds: 1100));
 
-    // Enable continuous tracking
+    // Enable locked navigation camera
     if (mounted) {
       setState(() => _cameraFollowing = true);
     }
@@ -403,16 +435,15 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final zoom = span > 0
         ? (math.log(360 / span) / math.ln2).clamp(8.0, 14.5)
         : 13.0;
-    _map?.flyTo(
-      mapbox.CameraOptions(
-        center: mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
-        zoom: zoom,
-        bearing: 0,
-        pitch: 0,
-      ),
-      mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
-    );
-    await Future.delayed(const Duration(milliseconds: 900));
+    // Phase 1: instant setCamera for overview (0ms)
+    _map?.setCamera(mapbox.CameraOptions(
+      center: mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
+      zoom: zoom,
+      bearing: 0,
+      pitch: 0,
+    ));
+    // Update route annotation so it's visible in the overview
+    _updateRouteAnnotation();
   }
 
   /// Draw route progressively at 60fps via Ticker (1.5s, easeInOut).
@@ -1015,7 +1046,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     if (!_cameraFollowing) return;
     setState(() => _cameraFollowing = false);
     _reFollowTimer?.cancel();
-    _reFollowTimer = Timer(const Duration(seconds: 7), _recenter);
+    // No auto-recenter — only recenter when Resume is tapped
   }
 
   void _recenter() {
@@ -1025,17 +1056,16 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       _cameraFollowing = true;
       _hasResumedOnce = true;
     });
-    // Smooth flyTo back to 65° tilt chase-camera (1s)
-    final ahead = _lookaheadPoint(_pos, _bearing, 50);
+    // Smooth flyTo back to 55° tilt locked nav camera (800ms)
     _map?.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
-            coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
-        zoom: 17.0,
+            coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+        zoom: 17.5,
         bearing: _bearing,
-        pitch: 65,
+        pitch: 55,
       ),
-      mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
+      mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
     );
   }
 
@@ -1104,24 +1134,23 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     ));
   }
 
+  // _animateCameraNav and _lookaheadPoint are no longer used for continuous
+  // camera follow — camera follow is handled directly in _onMotionTick via
+  // flyTo for smooth 1s transitions.
   void _animateCameraNav(
     LatLng pos, {
     double? zoom,
     double bearing = 0,
-    double tilt = 60,
   }) {
-    // Dynamic zoom: parked=17.5 (closer), highway=15.0 (wider view)
-    final speedZoom = 17.5 - (_currentSpeedMph / 80.0).clamp(0.0, 1.0) * 2.5;
-    final effectiveZoom = zoom ?? speedZoom;
-    // Lookahead: shift camera center forward so more road is visible ahead
-    final lookaheadM = (20.0 + _currentSpeedMph * 0.7).clamp(20.0, 80.0);
-    final ahead = _lookaheadPoint(pos, bearing, lookaheadM);
-    _map?.setCamera(mapbox.CameraOptions(
-      center: mapbox.Point(coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
-      zoom: effectiveZoom,
-      bearing: bearing,
-      pitch: tilt,
-    ));
+    _map?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+        zoom: zoom ?? 17.5,
+        bearing: bearing,
+        pitch: 55,
+      ),
+      mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
+    );
   }
 
   LatLng _lookaheadPoint(LatLng origin, double bearingDeg, double distM) {
@@ -1138,6 +1167,17 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       math.cos(distM / r) - math.sin(lat1) * math.sin(lat2),
     );
     return LatLng(lat2 * 180 / math.pi, lng2 * 180 / math.pi);
+  }
+
+  /// Calculate bearing between two points (degrees).
+  double _bearingBetween(LatLng a, LatLng b) {
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final lat1 = a.latitude * math.pi / 180;
+    final lat2 = b.latitude * math.pi / 180;
+    final y = math.sin(dLng) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) -
+        math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
+    return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
   }
 
   // =========================================================================
@@ -1168,9 +1208,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
               styleUri: MapboxConfig.styleNavigation,
               cameraOptions: mapbox.CameraOptions(
                 center: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
-                zoom: 17.5,
-                pitch: 60,
-                bearing: _bearing,
+                zoom: 13.0,
+                pitch: 0,
+                bearing: 0,
               ),
               onMapCreated: (ctrl) async {
                 _map = ctrl;

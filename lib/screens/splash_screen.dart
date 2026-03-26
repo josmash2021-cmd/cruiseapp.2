@@ -14,6 +14,7 @@ import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
+import '../services/preload_service.dart';
 import '../main.dart' show heavyInit;
 
 class SplashScreen extends StatefulWidget {
@@ -186,6 +187,16 @@ class _SplashScreenState extends State<SplashScreen>
       debugPrint('[SplashScreen] heavyInit error: $e');
     });
 
+    // Pre-load GPS, user data, map tiles, images — ALL in parallel
+    final preloadFuture = PreloadService.preloadAll(context).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        debugPrint('[SplashScreen] preload timeout - continuing anyway');
+      },
+    ).catchError((e) {
+      debugPrint('[SplashScreen] preload error: $e');
+    });
+
     // ── Start destination computation IMMEDIATELY at the very beginning ──
     // This gives it the full animation duration (~3.7 s) to resolve instead
     // of only the 800 ms exit animation, eliminating the black-screen gap.
@@ -210,10 +221,14 @@ class _SplashScreenState extends State<SplashScreen>
     await Future.delayed(const Duration(milliseconds: 500));
     if (_disposed) return;
 
-    // ── Wait for destination to be ready BEFORE starting exit animation ──
-    // This guarantees zero black-screen gap: destination is pre-resolved,
-    // so the navigator push is instant.
-    final destination = await destinationFuture;
+    // ── Wait for destination + preload to be ready BEFORE starting exit ──
+    // This guarantees zero black-screen gap: destination is pre-resolved
+    // and all data is pre-loaded, so the next screen renders instantly.
+    final results = await Future.wait([
+      destinationFuture,
+      preloadFuture,
+    ]);
+    final destination = results[0] as Widget;
     if (_disposed || !mounted) return;
 
     // Phase 3 — scale up + fade out
@@ -335,8 +350,16 @@ class _SplashScreenState extends State<SplashScreen>
 
       final docId = 'sql_$userIdInt';
 
-      // Check drivers collection first (most reliable — dispatch writes here)
-      final driversDoc = await FirebaseFirestore.instance
+      // Check drivers collection first — cache-first for instant reads
+      DocumentSnapshot<Map<String, dynamic>>? driversDoc;
+      try {
+        driversDoc = await FirebaseFirestore.instance
+            .collection('drivers')
+            .doc(docId)
+            .get(const GetOptions(source: Source.cache))
+            .timeout(const Duration(seconds: 1));
+      } catch (_) {}
+      driversDoc ??= await FirebaseFirestore.instance
           .collection('drivers')
           .doc(docId)
           .get()
@@ -347,8 +370,16 @@ class _SplashScreenState extends State<SplashScreen>
         if (_isRejectedData(d)) return 'rejected';
       }
 
-      // Fall back to verifications doc
-      final verDoc = await FirebaseFirestore.instance
+      // Fall back to verifications doc — cache-first
+      DocumentSnapshot<Map<String, dynamic>>? verDoc;
+      try {
+        verDoc = await FirebaseFirestore.instance
+            .collection('verifications')
+            .doc(docId)
+            .get(const GetOptions(source: Source.cache))
+            .timeout(const Duration(seconds: 1));
+      } catch (_) {}
+      verDoc ??= await FirebaseFirestore.instance
           .collection('verifications')
           .doc(docId)
           .get()

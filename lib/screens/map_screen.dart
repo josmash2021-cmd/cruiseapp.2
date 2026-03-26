@@ -12,6 +12,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
 import '../config/map_theme.dart';
+import '../services/preload_service.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -344,8 +345,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _loadLinkedPayments();
     _loadPromoState();
     _registerFcmToken();
-    // Start with plan body visible since we begin at plan stage
-    Future.delayed(const Duration(milliseconds: 40), () {
+    // Start with plan body visible immediately
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _stage == RideStage.plan) {
         setState(() => _planBodyVisible = true);
       }
@@ -495,16 +496,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final initialDropoff = widget.initialDropoffQuery?.trim() ?? '';
     if (!widget.openPlanOnStart && initialDropoff.isEmpty) return;
 
-    await Future.delayed(const Duration(milliseconds: 280));
-    if (!mounted) return;
-
-    await _openWhereTo();
-    if (!mounted) return;
-
-    if (initialDropoff.isNotEmpty) {
-      _dropoffCtrl.text = initialDropoff;
-      await _onDropoffSubmitted(initialDropoff);
-    }
+    // Open WhereTo after first frame renders
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _openWhereTo();
+      if (!mounted) return;
+      if (initialDropoff.isNotEmpty) {
+        _dropoffCtrl.text = initialDropoff;
+        await _onDropoffSubmitted(initialDropoff);
+      }
+    });
   }
 
   @override
@@ -660,6 +661,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       setState(() {
         _isResolvingLocation = true;
       });
+    }
+
+    // Use pre-loaded GPS from splash for instant first fix
+    final preloaded = PreloadService.initialPosition;
+    if (preloaded != null && mounted) {
+      final latLng = LatLng(preloaded.latitude, preloaded.longitude);
+      _setInitialPickup(latLng, S.of(context).currentLocation);
+      _centerMapOn(latLng, zoom: _defaultMapZoom);
+      _refreshPickupAddress(latLng);
+      setState(() => _isResolvingLocation = false);
+      // Still start location stream for updates
+      _startLiveLocationUpdates();
+      return;
     }
 
     final enabled = await Geolocator.isLocationServiceEnabled();
@@ -1042,8 +1056,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       _suggestions = [];
       _searchError = null;
     });
-    await Future.delayed(const Duration(milliseconds: 60));
-    if (mounted) _dropoffFocus.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _dropoffFocus.requestFocus();
+    });
   }
 
   Future<void> _onMapCreated(mapbox.MapboxMap controller) async {
@@ -1685,9 +1700,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
     _setStage(RideStage.loading);
 
-    await Future.delayed(const Duration(milliseconds: 250));
-    if (!mounted) return;
-    _setStage(RideStage.options);
+    // Transition to options immediately
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _setStage(RideStage.options);
+    });
   }
 
   void _showTripCancelledDialog() {
@@ -1765,7 +1781,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     });
 
     if (stage == RideStage.plan) {
-      Future.delayed(const Duration(milliseconds: 40), () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _stage != RideStage.plan) return;
         setState(() {
           _planBodyVisible = true;

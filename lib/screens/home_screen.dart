@@ -13,6 +13,7 @@ import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
 import '../config/map_theme.dart';
 import 'package:geolocator/geolocator.dart';
+import '../services/preload_service.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -411,6 +412,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
   Future<void> _fetchCurrentLocation() async {
     try {
+      // Use pre-loaded GPS from splash if available (instant)
+      final preloaded = PreloadService.initialPosition;
+      if (preloaded != null && mounted) {
+        setState(() {
+          _currentLatLng = LatLng(preloaded.latitude, preloaded.longitude);
+          _locationError = null;
+        });
+        _locAnimFrom = _currentLatLng;
+        _locAnimTo = _currentLatLng;
+        _locAnimProgress = 1.0;
+        _miniMapController?.flyTo(
+          mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude))),
+          mapbox.MapAnimationOptions(duration: 400),
+        );
+        _updateMiniMapAnnotation();
+        if (!_stateCheckDone) {
+          _stateCheckDone = true;
+          _checkUserStateZone(_currentLatLng!);
+        }
+        // Still refresh in background for more accurate position
+        _refreshGpsInBackground();
+        return;
+      }
+
       // 1. Check if location services are enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -515,6 +540,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         setState(() => _locationError = 'Unable to get location');
       }
     }
+  }
+
+  /// Refresh GPS in background after using pre-loaded position
+  void _refreshGpsInBackground() {
+    Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 15),
+      ),
+    ).then((pos) {
+      if (!mounted) return;
+      setState(() {
+        _currentLatLng = LatLng(pos.latitude, pos.longitude);
+      });
+      _animateToLocation(_currentLatLng!);
+    }).catchError((_) {});
+    // Start continuous location stream
+    _locationSub?.cancel();
+    _locationSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((Position p) {
+      if (!mounted) return;
+      final ll = LatLng(p.latitude, p.longitude);
+      setState(() => _currentLatLng = ll);
+      _animateToLocation(ll);
+    });
   }
 
   Timer? _driverCheckTimer;

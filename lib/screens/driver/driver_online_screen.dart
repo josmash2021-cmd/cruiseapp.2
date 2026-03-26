@@ -39,6 +39,7 @@ import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_inbox_screen.dart';
 import '../../services/map_launcher_service.dart';
+import '../../services/preload_service.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'driver_trip_accept_screen.dart';
 import 'trip_accepted_screen.dart';
@@ -347,10 +348,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       duration: const Duration(milliseconds: 300),
     );
 
-    // Fade in time/distance details after card settles
-    Future.delayed(const Duration(milliseconds: 400), () {
-      if (mounted) setState(() => _offerDetailsVisible = true);
-    });
+    // Show offer details immediately — no delay
+    _offerDetailsVisible = true;
 
     _boot();
   }
@@ -452,6 +451,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   Future<void> _locate() async {
+    // Use pre-loaded GPS from splash if available (instant first fix)
+    final preloaded = PreloadService.initialPosition;
+    if (preloaded != null && _pos == null) {
+      _pos = LatLng(preloaded.latitude, preloaded.longitude);
+      if (mounted) setState(() {});
+    }
+
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
         if (mounted) {
@@ -1904,27 +1910,28 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Future<void> _rejectOffer(Map<String, dynamic> r) async {
     HapticFeedback.lightImpact();
     final offerId = r['offer_id'] as int?;
-    final oid = (r['offer_id'] ?? r['id'] ?? '').toString();
 
-    // Animate slide-down before removing
-    setState(() => _rejectingOfferId = oid);
-    _rejectSlideCtrl?.forward(from: 0);
-    await Future.delayed(const Duration(milliseconds: 300));
+    // INSTANT dismiss — remove card + clear map in the same frame
+    setState(() {
+      _rejectingOfferId = null;
+      _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
+      if (_pendingOffers.isEmpty) _hideFindingBar = false;
+      _previewingOffer = null;
+      _offerRouteShown = false;
+      _fullSegOne = [];
+      _fullSegTwo = [];
+    });
+    _rejectSlideCtrl?.reset();
+    _clearAllAnnotations();
+    if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
 
-    // Reject via API so the trip cascades to next driver
+    // Fire-and-forget API rejection — UI already updated
     if (offerId != null && _driverId != null) {
       ApiService.rejectRideOffer(
         offerId: offerId,
         driverId: _driverId!,
       ).catchError((_) => <String, dynamic>{});
     }
-
-    setState(() {
-      _rejectingOfferId = null;
-      _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
-      if (_pendingOffers.isEmpty) _hideFindingBar = false;
-    });
-    _rejectSlideCtrl?.reset();
     if (offerId != null) _routeCache.remove(offerId.toString());
   }
 
@@ -1989,8 +1996,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
     _setPickupDropoffAnnotations();
     await _drawRoute(_pos!, _pickupLL, 'pickup', _navyRoute);
-    await Future.delayed(const Duration(milliseconds: 150));
-    _fitBounds(_pos!, _pickupLL);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fitBounds(_pos!, _pickupLL);
+    });
   }
 
   Future<void> _toPickup() async {
@@ -2016,9 +2024,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
     _setPickupAnnotation();
     await _drawRoute(_pos!, _pickupLL, 'pickup', _navyRoute);
-    // Wait for frame with updated map padding, then center on both points
-    await Future.delayed(const Duration(milliseconds: 150));
-    _fitBounds(_pos!, _pickupLL);
+    // Fit bounds after frame renders with updated map padding
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fitBounds(_pos!, _pickupLL);
+    });
   }
 
   Future<void> _arrivePickup() async {
@@ -2063,10 +2072,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
     _setDropoffAnnotation();
     await _drawRoute(_pos!, _dropoffLL, 'trip', _navyRoute);
-    await Future.delayed(const Duration(milliseconds: 150));
     _nearDropoffNotified = false;
-    // Show overview of route to dropoff (not navigation camera yet)
-    _fitBounds(_pos!, _dropoffLL);
+    // Fit bounds after frame renders
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fitBounds(_pos!, _dropoffLL);
+    });
   }
 
   /// User pressed "Start Navigation" from the route summary — begin actual nav.
@@ -2181,7 +2191,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   void _afterComplete() {
-    // Submit the driver's rating for this rider
+    // Submit the driver's rating for this rider (fire-and-forget)
     if (_tripId != null) {
       ApiService.rateTrip(
         tripId: _tripId!,
@@ -2191,19 +2201,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       ChatService().deleteChat(_tripId.toString());
     }
     _doneCtrl.reverse();
-    Future.delayed(const Duration(milliseconds: 350), () {
-      if (!mounted) return;
-      setState(() {
-        _phase = _Phase.searching;
-        _tripId = null;
-        _currentOfferId = null;
-        _routePts = [];
-        _pendingOffers = [];
-      });
-      _clearAllAnnotations();
-      if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
-      _startPolling();
+    // INSTANT reset — no delay
+    setState(() {
+      _phase = _Phase.searching;
+      _tripId = null;
+      _currentOfferId = null;
+      _routePts = [];
+      _pendingOffers = [];
     });
+    _clearAllAnnotations();
+    if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+    _startPolling();
   }
 
   void _goOffline() {
@@ -2816,8 +2824,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // ── PHASE 1: Smooth zoom out to show full route (instant) ──
     _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
 
-    // ── PHASE 3 (t=300ms): Pins pop in ──
-    await Future.delayed(const Duration(milliseconds: 300));
+    // ── PHASE 3: Pins pop in (after one frame for camera to settle) ──
+    await Future.delayed(const Duration(milliseconds: 50));
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
     // Place pins using pre-built images (or build now as fallback)
@@ -2871,11 +2879,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       setState(() => _offerRouteShown = true);
     }
 
-    // Re-fit camera for final framing
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (mounted && _previewingOffer != null) {
-      _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
-    }
+    // Re-fit camera for final framing (next frame)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _previewingOffer != null) {
+        _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
+      }
+    });
     _isCardAnimating = false;
   }
 
@@ -3237,25 +3246,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               Positioned(
                 top: top + 10,
                 left: 16,
-                child: AnimatedSlide(
-                  offset: _pendingOffers.isNotEmpty ? const Offset(0, -1.5) : Offset.zero,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  child: AnimatedOpacity(
-                    opacity: _pendingOffers.isNotEmpty ? 0.0 : 1.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: IgnorePointer(
-                      ignoring: _pendingOffers.isNotEmpty,
-                      child: _fab(
-                        Icons.arrow_back_ios_new_rounded,
-                        48,
-                        fabBg,
-                        fabBorder,
-                        fabIcon,
-                        _goBack,
-                      ),
-                    ),
-                  ),
+                child: _fab(
+                  Icons.arrow_back_ios_new_rounded,
+                  48,
+                  fabBg,
+                  fabBorder,
+                  fabIcon,
+                  _goBack,
                 ),
               ),
 
@@ -3265,18 +3262,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 top: top + 10,
                 left: 0,
                 right: 0,
-                child: AnimatedSlide(
-                  offset: _pendingOffers.isNotEmpty ? const Offset(0, -1.5) : Offset.zero,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  child: AnimatedOpacity(
-                    opacity: _pendingOffers.isNotEmpty ? 0.0 : 1.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: IgnorePointer(
-                      ignoring: _pendingOffers.isNotEmpty,
-                      child: Column(
-                        children: [
-                          Center(child: _earningsPill(isDark)),
+                child: Column(
+                  children: [
+                    Center(child: _earningsPill(isDark)),
                     // Simulation mode indicator badge
                     if (kDebugMode && _isSimulationMode)
                       Container(
@@ -3315,9 +3303,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         ),
                       ),
                   ],
-                      ),
-                    ),
-                  ),
                 ),
               ),
 
@@ -3550,15 +3535,27 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
 
             // â”€â”€ Bottom: Phase-specific panel â”€â”€
-            if (_phase == _Phase.searching && _pendingOffers.isEmpty)
+            if (_phase == _Phase.searching)
               Positioned.fill(
-                child: _draggablePanel(
-                  isDark,
-                  surface,
-                  textMuted,
-                  borderC,
-                  textPrimary,
-                  shadowC,
+                child: AnimatedSlide(
+                  offset: _pendingOffers.isNotEmpty ? const Offset(0, 1) : Offset.zero,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  child: AnimatedOpacity(
+                    opacity: _pendingOffers.isNotEmpty ? 0.0 : 1.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: IgnorePointer(
+                      ignoring: _pendingOffers.isNotEmpty,
+                      child: _draggablePanel(
+                        isDark,
+                        surface,
+                        textMuted,
+                        borderC,
+                        textPrimary,
+                        shadowC,
+                      ),
+                    ),
+                  ),
                 ),
               )
             else if (_phase != _Phase.searching || _pendingOffers.isEmpty)

@@ -168,15 +168,30 @@ class ApiService {
     }
 
     // Try to read the latest tunnel URL from Firestore (written by startup
-    // script).  This is the key to working from ANY network — the tunnel
-    // URL is always current even after a restart.
+    // script).  Cache-first for instant reads, then refresh from server.
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('config')
-          .doc('server')
-          .get()
-          .timeout(const Duration(seconds: 4));
-      if (doc.exists) {
+      // Try cache first (instant, no network)
+      DocumentSnapshot<Map<String, dynamic>>? doc;
+      try {
+        doc = await FirebaseFirestore.instance
+            .collection('config')
+            .doc('server')
+            .get(const GetOptions(source: Source.cache))
+            .timeout(const Duration(seconds: 1));
+      } catch (_) {}
+
+      // Then try server for freshest data
+      try {
+        doc = await FirebaseFirestore.instance
+            .collection('config')
+            .doc('server')
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 4));
+      } catch (_) {
+        // Cache version is fine
+      }
+
+      if (doc != null && doc.exists) {
         final raw = doc.data()?['tunnel_url'] as String? ??
                     doc.data()?['url'] as String?;
         if (raw != null && raw.isNotEmpty && raw.startsWith('http')) {

@@ -509,23 +509,20 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   void _goToRating() {
     if (!mounted) return;
-    // Small delay so the user sees the completed banner briefly
-    Future.delayed(const Duration(milliseconds: 800), () {
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        PageRouteBuilder(
-          pageBuilder: (_, __, ___) => RiderRatingScreen(
-            driverName: widget.driverName,
-            tripId: widget.tripId,
-            fare: widget.price,
-            driverPhotoUrl: widget.driverPhotoUrl,
-          ),
-          transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-          transitionDuration: const Duration(milliseconds: 500),
+    // Navigate to rating immediately
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => RiderRatingScreen(
+          driverName: widget.driverName,
+          tripId: widget.tripId,
+          fare: widget.price,
+          driverPhotoUrl: widget.driverPhotoUrl,
         ),
-      );
-    });
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
   }
 
   void _showFeedbackDialog() {
@@ -1152,7 +1149,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _etaMinutes = (acc / 0.5).ceil().clamp(1, 99);
 
     setState(() {});
-    Future.delayed(const Duration(milliseconds: 600), _fitAllPoints);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fitAllPoints();
+    });
   }
 
   /// Initialize from persisted state or start fresh
@@ -1239,7 +1238,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _etaMinutes = (_distanceMiles / 0.5).ceil().clamp(1, 99);
 
     setState(() {});
-    Future.delayed(const Duration(milliseconds: 600), _fitAllPoints);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fitAllPoints();
+    });
   }
 
   /// Save current ride state for resuming later
@@ -2542,7 +2543,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
     // 1. Fit camera flat
     _updateCameraForRoute();
-    await Future.delayed(const Duration(milliseconds: 700));
+    await Future.delayed(const Duration(milliseconds: 100));
     if (!mounted) return;
 
     // 2. Animated route draw

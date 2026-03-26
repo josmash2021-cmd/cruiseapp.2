@@ -2476,16 +2476,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                               GestureDetector(
                                 onTap: () {
                                   _ctrl.selectRideOption(displayOptions[i]);
-                                  // Auto-collapse after selecting to show pay button
-                                  Future.delayed(
-                                    const Duration(milliseconds: 250),
-                                    () {
-                                      if (mounted) {
-                                        setState(
-                                          () => _rideOptionsExpanded = false,
-                                        );
-                                      }
-                                    },
+                                  // Auto-collapse immediately after selecting
+                                  setState(
+                                    () => _rideOptionsExpanded = false,
                                   );
                                 },
                                 child: _buildRideOptionCard(

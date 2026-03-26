@@ -10,8 +10,10 @@ class ApiKeys {
   static const String webServices = Env.mapsServicesKey;
 
   /// Platform-specific Google Places API keys
-  static const String _googlePlacesIOS = 'AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo';
-  static const String _googlePlacesAndroid = 'AIzaSyDs8MIOA8qk0JwxOkxd8rGxtAmVTeB7CF0';
+  static const String _googlePlacesIOS = String.fromEnvironment(
+    'GOOGLE_PLACES_IOS', defaultValue: 'AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo');
+  static const String _googlePlacesAndroid = String.fromEnvironment(
+    'GOOGLE_PLACES_ANDROID', defaultValue: 'AIzaSyDs8MIOA8qk0JwxOkxd8rGxtAmVTeB7CF0');
   static String get googlePlaces => Platform.isIOS ? _googlePlacesIOS : _googlePlacesAndroid;
 
   /// Stripe publishable key (pk_test_... or pk_live_...)

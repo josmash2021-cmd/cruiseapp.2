@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'config/mapbox_config.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, kReleaseMode;
 import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -174,7 +174,7 @@ Future<void> heavyInit() async {
           final messaging = FirebaseMessaging.instance;
           await messaging.requestPermission(alert: true, badge: true, sound: true);
           final fcmToken = await messaging.getToken();
-          debugPrint('[FCM] token: $fcmToken');
+          if (kDebugMode) debugPrint('[FCM] token: $fcmToken');
 
           FirebaseMessaging.onMessage.listen((RemoteMessage message) {
             final title = message.notification?.title ?? 'Cruise';

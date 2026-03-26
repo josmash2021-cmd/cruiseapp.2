@@ -3558,7 +3558,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           _lastStyleDark = isDark;
           // Polyline manager with no 'below' constraint — avoids silent failure
           // when the layer name doesn't exist in the style.
-          _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+          _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+            below: "road-label",
+          );
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           // Always fly to real GPS — never the Miami default
           try {

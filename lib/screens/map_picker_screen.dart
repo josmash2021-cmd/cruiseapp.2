@@ -24,7 +24,8 @@ class MapPickerScreen extends StatefulWidget {
   State<MapPickerScreen> createState() => _MapPickerScreenState();
 }
 
-class _MapPickerScreenState extends State<MapPickerScreen> {
+class _MapPickerScreenState extends State<MapPickerScreen>
+    with SingleTickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
   final _places = PlacesService(ApiKeys.webServices);
 
@@ -36,10 +37,20 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   LatLng _center = const LatLng(40.7128, -74.0060);
   Timer? _debounce;
   int _geocodeGen = 0; // generation counter to cancel stale requests
+  late final AnimationController _settleCtrl;
+  late final Animation<double> _settleAnim;
 
   @override
   void initState() {
     super.initState();
+    _settleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    _settleAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.05), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.05, end: 1.0), weight: 50),
+    ]).animate(CurvedAnimation(parent: _settleCtrl, curve: Curves.easeOut));
     if (widget.initialLat != null && widget.initialLng != null) {
       _center = LatLng(widget.initialLat!, widget.initialLng!);
     }
@@ -48,6 +59,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _settleCtrl.dispose();
     super.dispose();
   }
 
@@ -95,6 +107,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   }
 
   void _onMapIdle(mapbox.MapIdleEventData event) {
+    // Settle bounce on pin
+    _settleCtrl.forward(from: 0);
     // Mapbox fires onMapIdle — schedule geocode
     _scheduleGeocode();
   }
@@ -159,9 +173,12 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
           Center(
             child: Transform.translate(
               offset: const Offset(0, -36),
-              child: CruiseMapPin(
-                size: 56,
-                icon: widget.isPickup ? Icons.person : Icons.location_on_rounded,
+              child: ScaleTransition(
+                scale: _settleAnim,
+                child: CruiseMapPin(
+                  size: 56,
+                  icon: widget.isPickup ? Icons.person : Icons.location_on_rounded,
+                ),
               ),
             ),
           ),

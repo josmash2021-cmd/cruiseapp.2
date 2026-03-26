@@ -1021,6 +1021,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _labelPopCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
+    // Clean up map annotations on dispose to prevent ghost routes
+    _cleanupMapAnnotations();
     super.dispose();
   }
 
@@ -1253,6 +1255,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _searchMapTimer = null;
         _splashTimer?.cancel();
         _splashTimer = null;
+        // Clean up route/pins immediately on cancellation
+        _cleanupMapAnnotations();
         // Only show cancel dialog if there's a specific cancel reason from dispatch
         // (not just "no drivers available" which is automatic)
         if (s.cancelReason != null && s.cancelReason!.isNotEmpty) {
@@ -1943,9 +1947,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                     ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                     ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                    // Point manager first → renders ABOVE polyline manager
+                    // Polyline below labels, points always on top
+                    _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+                      below: "road-label",
+                    );
                     _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                    _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
                     _updateUserDotAnnotation();
                     setState(() => _mapReady = true);
                   },
@@ -4851,9 +4857,38 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _searchingShowMap = false;
     _searchingSplash = false;
     _driverFoundVisible = false;
+    // Clean up map annotations so route/pins don't persist
+    _cleanupMapAnnotations();
     _ctrl.cancelRide();
     _ctrl.reset();
     _navigatingToTracking = false;
+  }
+
+  /// Removes all trip-related polyline and pin annotations from the map.
+  Future<void> _cleanupMapAnnotations() async {
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = null;
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr != null) {
+      if (_routeAnnot != null) {
+        try { await polyMgr.delete(_routeAnnot!); } catch (_) {}
+        _routeAnnot = null;
+      }
+    }
+    final ptMgr = _pointAnnotMgr;
+    if (ptMgr != null) {
+      if (_pickupAnnot != null) {
+        try { await ptMgr.delete(_pickupAnnot!); } catch (_) {}
+        _pickupAnnot = null;
+      }
+      if (_dropoffAnnot != null) {
+        try { await ptMgr.delete(_dropoffAnnot!); } catch (_) {}
+        _dropoffAnnot = null;
+      }
+    }
+    _showPinLabels = false;
+    _labelsRevealed = false;
   }
 
   /// Shows a confirmation dialog before canceling the ride search.

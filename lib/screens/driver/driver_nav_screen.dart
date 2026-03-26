@@ -1445,7 +1445,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       onMapCreated: (ctrl) async {
         _map      = ctrl;
         _mapReady = true;
-        _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
+        _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager(
+          below: "road-label",
+        );
         _pointMgr = await ctrl.annotations.createPointAnnotationManager();
         _updateRouteAnnotation();
         _updateDestPin(widget.pickupLatLng);

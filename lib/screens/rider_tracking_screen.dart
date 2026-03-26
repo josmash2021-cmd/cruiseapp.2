@@ -504,7 +504,35 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _tripStatusSub?.cancel();
     _statusPollTimer?.cancel();
     _etaPulse.dispose();
+    // Clean up map annotations so route/pins don't persist
+    _cleanupMapAnnotations();
     super.dispose();
+  }
+
+  /// Removes all trip-related polyline and pin annotations from the map.
+  Future<void> _cleanupMapAnnotations() async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr != null) {
+      if (_remainingRouteAnnot != null) {
+        try { await polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
+        _remainingRouteAnnot = null;
+      }
+      if (_approachAnnot != null) {
+        try { await polyMgr.delete(_approachAnnot!); } catch (_) {}
+        _approachAnnot = null;
+      }
+    }
+    final ptMgr = _pointAnnotMgr;
+    if (ptMgr != null) {
+      if (_pickupAnnot != null) {
+        try { await ptMgr.delete(_pickupAnnot!); } catch (_) {}
+        _pickupAnnot = null;
+      }
+      if (_dropoffAnnot != null) {
+        try { await ptMgr.delete(_dropoffAnnot!); } catch (_) {}
+        _dropoffAnnot = null;
+      }
+    }
   }
 
   void _goToRating() {
@@ -590,6 +618,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   await ApiService.cancelTrip(widget.tripId!);
                 } catch (_) {}
               }
+              // Clean up all map annotations before navigating away
+              await _cleanupMapAnnotations();
               if (!mounted) return;
               Navigator.of(context).pushAndRemoveUntil(
                 PageRouteBuilder(

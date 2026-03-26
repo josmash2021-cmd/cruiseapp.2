@@ -522,7 +522,9 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
                 ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                 ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
                 _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+                _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+                  below: "road-label",
+                );
                 await _drawRoute();
               },
               onStyleLoadedListener: (_) async {

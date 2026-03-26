@@ -614,7 +614,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // Cancel on backend if we have a trip ID
     final tripId = _state.tripId;
     if (tripId != null) {
-      ApiService.cancelTrip(tripId).catchError((_) => <String, dynamic>{});
+      ApiService.cancelTrip(tripId).catchError((e) {
+        debugPrint('[RiderTrip] cancelTrip failed: $e');
+        return <String, dynamic>{};
+      });
     }
 
     _state = _state.copyWith(phase: RiderPhase.cancelled);

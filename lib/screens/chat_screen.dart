@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/chat_message.dart';
 import '../services/api_service.dart';
 import '../services/chat_service.dart';
+import '../services/error_service.dart';
 import '../l10n/app_localizations.dart';
 
 /// Full-page chat screen — real-time via Firebase RTDB for trip chats,
@@ -138,7 +139,9 @@ class _ChatScreenState extends State<ChatScreen> {
       if (widget.tripId != null) {
         try {
           await ApiService.sendChatMessage(tripId: widget.tripId!, message: text);
-        } catch (_) {}
+        } catch (_) {
+          if (mounted) ErrorService.show(context, 'Message failed to send. Check your connection.');
+        }
       }
     }
   }

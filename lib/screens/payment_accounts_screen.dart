@@ -6,6 +6,7 @@ import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
+import '../services/error_service.dart';
 import '../services/local_data_service.dart';
 import '../services/payment_service.dart';
 import 'credit_card_screen.dart';
@@ -126,11 +127,15 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       builder: (ctx) => _GooglePayLinkSheet(
         onSuccess: (result) async {
           await LocalDataService.linkPaymentMethod('google_pay');
-          ApiService.addRiderPaymentMethod(
-            methodType: 'google_pay',
-            displayName: 'Google Pay',
-            setDefault: false,
-          ).catchError((_) => <String, dynamic>{});
+          try {
+            await ApiService.addRiderPaymentMethod(
+              methodType: 'google_pay',
+              displayName: 'Google Pay',
+              setDefault: false,
+            );
+          } catch (_) {
+            if (context.mounted) ErrorService.show(context, 'Failed to save Google Pay on server. Please retry.');
+          }
           if (!mounted) return;
           setState(() => _googlePayLinked = true);
           _showSnack(S.of(context).googlePayLinked);
@@ -171,11 +176,15 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       builder: (ctx) => _ApplePayLinkSheet(
         onSuccess: (result) async {
           await LocalDataService.linkPaymentMethod('apple_pay');
-          ApiService.addRiderPaymentMethod(
-            methodType: 'apple_pay',
-            displayName: 'Apple Pay',
-            setDefault: false,
-          ).catchError((_) => <String, dynamic>{});
+          try {
+            await ApiService.addRiderPaymentMethod(
+              methodType: 'apple_pay',
+              displayName: 'Apple Pay',
+              setDefault: false,
+            );
+          } catch (_) {
+            if (context.mounted) ErrorService.show(context, 'Failed to save Apple Pay on server. Please retry.');
+          }
           if (!mounted) return;
           setState(() => _applePayLinked = true);
           _showSnack(S.of(context).applePayLinked);
@@ -200,11 +209,15 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     if (approved == true) {
       final paypalMsg = S.of(context).paypalLinked;
       await LocalDataService.linkPaymentMethod('paypal');
-      ApiService.addRiderPaymentMethod(
-        methodType: 'paypal',
-        displayName: 'PayPal',
-        setDefault: false,
-      ).catchError((_) => <String, dynamic>{});
+      try {
+        await ApiService.addRiderPaymentMethod(
+          methodType: 'paypal',
+          displayName: 'PayPal',
+          setDefault: false,
+        );
+      } catch (_) {
+        if (mounted) ErrorService.show(context, 'Failed to save PayPal on server. Please retry.');
+      }
       setState(() => _paypalLinked = true);
       _showSnack(paypalMsg);
       await _loadServerMethods();
@@ -229,12 +242,16 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     await LocalDataService.saveCreditCardLast4(last4);
     await LocalDataService.saveCreditCardBrand(brand);
     final stripePmId = await LocalDataService.getStripePaymentMethodId();
-    ApiService.addRiderPaymentMethod(
-      methodType: 'stripe_card',
-      displayName: '${_capitalizedBrand(brand)} •••• $last4',
-      stripePmId: stripePmId,
-      setDefault: true,
-    ).catchError((_) => <String, dynamic>{});
+    try {
+      await ApiService.addRiderPaymentMethod(
+        methodType: 'stripe_card',
+        displayName: '${_capitalizedBrand(brand)} •••• $last4',
+        stripePmId: stripePmId,
+        setDefault: true,
+      );
+    } catch (_) {
+      if (mounted) ErrorService.show(context, 'Failed to save card on server. Please retry.');
+    }
     setState(() {
       _savedCardLast4 = last4;
       _savedCardBrand = brand;

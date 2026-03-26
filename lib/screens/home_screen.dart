@@ -90,8 +90,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final DraggableScrollableController _sheetController = DraggableScrollableController();
   final GlobalKey _mapKey = GlobalKey();
   static const double _kMinSheet = 0.42;
-  static const double _kMidSheet = 0.72;
-  static const double _kMaxSheet = 0.92;
+  static const double _kMaxSheet = 0.95;
 
   // User profile data
   String _firstName = '';
@@ -908,8 +907,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               minChildSize: _kMinSheet,
               maxChildSize: _kMaxSheet,
               snap: true,
-              snapSizes: const [_kMinSheet, _kMidSheet, _kMaxSheet],
-              snapAnimationDuration: const Duration(milliseconds: 380),
+              snapSizes: const [_kMinSheet, _kMaxSheet],
+              snapAnimationDuration: const Duration(milliseconds: 350),
               builder: (ctx, scrollCtrl) =>
                   _buildSheet(scrollCtrl, bottomPad),
             ),

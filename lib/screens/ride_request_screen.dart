@@ -25,6 +25,7 @@ import '../services/api_service.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/payment_service.dart';
+import '../services/analytics_service.dart';
 import '../services/places_service.dart';
 import '../state/rider_trip_controller.dart';
 import 'credit_card_screen.dart';
@@ -178,6 +179,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // ── Price shimmer while waiting for real route ──
   late AnimationController _priceShimmerCtrl;
 
+  // ── Badge animation controllers (match home_screen style) ──
+  late AnimationController _badgePremiumCtrl;
+  late AnimationController _badgeComfortCtrl;
+
   // ── Driver Found overlay ──
   bool _driverFoundVisible = false;
   Timer? _driverFoundTimer;
@@ -222,16 +227,25 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
     _sheetCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 400),
     );
     _sheetSlide = Tween<double>(
       begin: 1.0,
       end: 0.0,
-    ).animate(CurvedAnimation(parent: _sheetCtrl, curve: Curves.easeOutCubic));
+    ).animate(CurvedAnimation(parent: _sheetCtrl, curve: Curves.easeOutBack));
 
     _priceShimmerCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
+    )..repeat();
+
+    _badgePremiumCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+    _badgeComfortCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
     )..repeat();
 
     // Max 1 second shimmer timeout — force show options after 1s
@@ -1014,6 +1028,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _searchElapsedTimer?.cancel();
     _sheetCtrl.dispose();
     _priceShimmerCtrl.dispose();
+    _badgePremiumCtrl.dispose();
+    _badgeComfortCtrl.dispose();
     _shakeCtrl.dispose();
     _tiltCtrl?.dispose();
     _bearingCtrl?.dispose();
@@ -2489,29 +2505,47 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                               _buildShimmerCard(),
                               if (i < 2) const SizedBox(height: 6),
                             ]
-                          // Real options
+                          // Real options — staggered slide-up entrance
                           else
                             for (int i = 0; i < displayOptions.length; i++) ...[
-                              GestureDetector(
-                                onTap: () {
-                                  _ctrl.selectRideOption(displayOptions[i]);
-                                  // Auto-collapse immediately after selecting
-                                  setState(
-                                    () => _rideOptionsExpanded = false,
+                              TweenAnimationBuilder<double>(
+                                key: ValueKey('ride_opt_${displayOptions[i].id}'),
+                                tween: Tween(begin: 0.0, end: 1.0),
+                                duration: const Duration(milliseconds: 350),
+                                curve: Curves.easeOutCubic,
+                                builder: (context, val, child) {
+                                  // Stagger: each card waits 80ms * index
+                                  final delay = i * 0.15; // 0.15 of total duration per card
+                                  final progress = ((val - delay) / (1.0 - delay)).clamp(0.0, 1.0);
+                                  return Transform.translate(
+                                    offset: Offset(0, 20 * (1.0 - progress)),
+                                    child: Opacity(
+                                      opacity: progress,
+                                      child: child,
+                                    ),
                                   );
-                                  // Single gentle 15° tilt — only once
-                                  if (!_hasAppliedSelectionTilt && _mapCtrl != null) {
-                                    _hasAppliedSelectionTilt = true;
-                                    _mapCtrl!.flyTo(
-                                      mapbox.CameraOptions(pitch: 15.0),
-                                      mapbox.MapAnimationOptions(duration: 800),
-                                    );
-                                  }
                                 },
-                                child: _buildRideOptionCard(
-                                  c,
-                                  displayOptions[i],
-                                  option?.id == displayOptions[i].id,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    _ctrl.selectRideOption(displayOptions[i]);
+                                    // Auto-collapse immediately after selecting
+                                    setState(
+                                      () => _rideOptionsExpanded = false,
+                                    );
+                                    // Single gentle 15° tilt — only once
+                                    if (!_hasAppliedSelectionTilt && _mapCtrl != null) {
+                                      _hasAppliedSelectionTilt = true;
+                                      _mapCtrl!.flyTo(
+                                        mapbox.CameraOptions(pitch: 15.0),
+                                        mapbox.MapAnimationOptions(duration: 800),
+                                      );
+                                    }
+                                  },
+                                  child: _buildRideOptionCard(
+                                    c,
+                                    displayOptions[i],
+                                    option?.id == displayOptions[i].id,
+                                  ),
                                 ),
                               ),
                               if (i < displayOptions.length - 1)
@@ -2535,8 +2569,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     crossFadeState: _rideOptionsExpanded
                         ? CrossFadeState.showFirst
                         : CrossFadeState.showSecond,
-                    duration: const Duration(milliseconds: 200),
-                    sizeCurve: Curves.easeInOut,
+                    duration: const Duration(milliseconds: 300),
+                    sizeCurve: Curves.easeInOutCubic,
                   ),
 
                   const SizedBox(height: 6),
@@ -2711,23 +2745,36 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
 
-    // Tier styling
-    final Color tierColor;
-    final String tierLabel;
-    if (isSuv) {
-      tierColor = const Color(0xFFE8C547);
-      tierLabel = 'VIP';
-    } else if (isFusion) {
-      tierColor = const Color(0xFF4A9EFF);
-      tierLabel = 'COMFORT';
-    } else {
-      tierColor = const Color(0xFF6FCF97);
-      tierLabel = 'PREMIUM';
-    }
+    // Tier styling — match home_screen badge colors exactly
+    final bool isVIP = isSuv;
+    final bool isPremium = !isSuv && !isFusion;
+    final bool isComfort = isFusion;
+    final String tierLabel = isVIP ? 'VIP' : isPremium ? 'PREMIUM' : 'COMFORT';
+    final List<Color> gradient = isVIP
+        ? const [Color(0xFFE8C547), Color(0xFFD4A574)]
+        : isPremium
+            ? const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)]
+            : const [Color(0xFF66BB6A), Color(0xFF388E3C)];
+    final Color accent = gradient[0];
+    final IconData tierIcon = isVIP
+        ? Icons.star_rounded
+        : isPremium
+            ? Icons.diamond_rounded
+            : Icons.eco_rounded;
+    final Color tierTextColor = isVIP ? Colors.white : Colors.black87;
+    final AnimationController badgeAnim = isVIP
+        ? _shimmerCtrl
+        : isPremium
+            ? _badgePremiumCtrl
+            : _badgeComfortCtrl;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeOut,
+    return AnimatedScale(
+      scale: selected ? 1.0 : 0.97,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutBack,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: selected
@@ -2783,25 +2830,101 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Tier badge (serves as the name)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: tierColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  child: Text(
-                    tierLabel,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: tierColor,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
+                // Tier badge — animated gradient pill (matches home_screen)
+                AnimatedBuilder(
+                  animation: badgeAnim,
+                  builder: (_, __) {
+                    final t = badgeAnim.value;
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(colors: gradient),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: accent.withValues(alpha: 0.45),
+                                blurRadius: 14,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(tierIcon, color: tierTextColor, size: 12),
+                              const SizedBox(width: 5),
+                              Text(
+                                tierLabel,
+                                style: TextStyle(
+                                  color: tierTextColor,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // VIP: diagonal shimmer sweep
+                        if (isVIP)
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: IgnorePointer(
+                                child: Transform.translate(
+                                  offset: Offset(160 * (t * 2.4 - 0.8), 0),
+                                  child: Transform.rotate(
+                                    angle: 0.4,
+                                    child: Container(
+                                      width: 28,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(colors: [
+                                          Colors.transparent,
+                                          Colors.white.withValues(alpha: 0.55),
+                                          Colors.transparent,
+                                        ]),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        // Premium: white flash pulse
+                        if (isPremium)
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: IgnorePointer(
+                                child: Opacity(
+                                  opacity: (() {
+                                    final d = (t - 0.5).abs();
+                                    return (1.0 - d * 5.5).clamp(0.0, 0.35);
+                                  })(),
+                                  child: Container(color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ),
+                        // Comfort: green glow pulse
+                        if (isComfort)
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: IgnorePointer(
+                                child: Opacity(
+                                  opacity: (0.12 + 0.18 * math.sin(t * 2 * math.pi)).clamp(0.0, 0.35),
+                                  child: Container(color: accent),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 2),
                 // Description
@@ -2895,7 +3018,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           ),
         ],
       ),
-    );
+    ),   // ← closes AnimatedContainer
+    );   // ← closes AnimatedScale
   }
 
   Widget _chipWidget(IconData icon, String label) {
@@ -3692,6 +3816,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     setState(() => _isProcessingPayment = false);
     Navigator.of(context).pop();
     if (widget.applyPromo) await LocalDataService.setPromoUsed();
+    AnalyticsService.instance.logRideRequested(option?.name ?? 'unknown', option?.priceEstimate ?? 0);
 
     if (_ctrl.state.scheduledAt != null) {
       await _createScheduledTrip();
@@ -3726,6 +3851,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (!mounted) return;
     setState(() => _isProcessingPayment = false);
     if (widget.applyPromo) await LocalDataService.setPromoUsed();
+    AnalyticsService.instance.logRideRequested(option?.name ?? 'unknown', option?.priceEstimate ?? 0);
 
     if (_ctrl.state.scheduledAt != null) {
       await _createScheduledTrip();

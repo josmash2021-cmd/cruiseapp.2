@@ -202,6 +202,31 @@ class User(Base):
     total_earnings = Column(Float, default=0.0)  # Driver total lifetime earnings
     pending_balance = Column(Float, default=0.0)  # Driver pending payout balance
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Device & app tracking for support/compliance
+    app_version = Column(String(30), nullable=True)  # e.g. "1.2.3"
+    device_model = Column(String(100), nullable=True)  # e.g. "iPhone 14 Pro"
+    os_version = Column(String(50), nullable=True)  # e.g. "iOS 17.2" or "Android 14"
+    last_active_at = Column(DateTime, nullable=True)  # When user last used the app
+    # GDPR/Privacy
+    privacy_location = Column(Boolean, default=True)  # Location sharing allowed
+    privacy_analytics = Column(Boolean, default=True)  # Analytics allowed
+    privacy_ads = Column(Boolean, default=False)  # Personalized ads allowed
+    terms_accepted_at = Column(DateTime, nullable=True)  # When user accepted terms
+    privacy_accepted_at = Column(DateTime, nullable=True)  # When user accepted privacy policy
+
+
+class ConsentLog(Base):
+    """Audit log for GDPR/CCPA compliance — tracks user consent changes."""
+    __tablename__ = "consent_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    consent_type = Column(String(50), nullable=False)  # terms, privacy, location, analytics, ads
+    action = Column(String(20), nullable=False)  # accepted, revoked
+    version = Column(String(20), nullable=True)  # policy version if applicable
+    ip_address = Column(String(50), nullable=True)
+    user_agent = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 
 class Trip(Base):
     __tablename__ = "trips"
@@ -533,12 +558,34 @@ async def _migrate_add_columns(conn):
         ("users", "pending_balance", "FLOAT DEFAULT 0.0"),
         ("users", "verified_at", "DATETIME"),
         ("users", "fcm_token", "VARCHAR(500)"),
+        ("users", "app_version", "VARCHAR(30)"),
+        ("users", "device_model", "VARCHAR(100)"),
+        ("users", "os_version", "VARCHAR(50)"),
+        ("users", "last_active_at", "DATETIME"),
+        ("users", "privacy_location", "BOOLEAN DEFAULT 1"),
+        ("users", "privacy_analytics", "BOOLEAN DEFAULT 1"),
+        ("users", "privacy_ads", "BOOLEAN DEFAULT 0"),
+        ("users", "terms_accepted_at", "DATETIME"),
+        ("users", "privacy_accepted_at", "DATETIME"),
     ]
     for table, col, col_type in new_columns:
         try:
             await conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
         except Exception:
             pass  # Column already exists
+    # Create consent_logs table if not exists
+    await conn.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS consent_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            consent_type VARCHAR(50) NOT NULL,
+            action VARCHAR(20) NOT NULL,
+            version VARCHAR(20),
+            ip_address VARCHAR(50),
+            user_agent TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
 
 async def _migrate_postgres(conn):
     """Add missing columns to PostgreSQL tables. Uses IF NOT EXISTS (Postgres 9.6+)."""
@@ -564,6 +611,15 @@ async def _migrate_postgres(conn):
         ("users", "total_earnings", "FLOAT DEFAULT 0.0"),
         ("users", "pending_balance", "FLOAT DEFAULT 0.0"),
         ("users", "fcm_token", "VARCHAR(500)"),
+        ("users", "app_version", "VARCHAR(30)"),
+        ("users", "device_model", "VARCHAR(100)"),
+        ("users", "os_version", "VARCHAR(50)"),
+        ("users", "last_active_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "privacy_location", "BOOLEAN DEFAULT TRUE"),
+        ("users", "privacy_analytics", "BOOLEAN DEFAULT TRUE"),
+        ("users", "privacy_ads", "BOOLEAN DEFAULT FALSE"),
+        ("users", "terms_accepted_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "privacy_accepted_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "cancel_reason", "TEXT"),
         ("trips", "notes", "TEXT"),
         ("trips", "pickup_zone", "TEXT"),
@@ -2134,8 +2190,12 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    # Only allow safe fields � NEVER role, is_verified, verification_status
+    # Only allow safe fields — NEVER role, is_verified, verification_status
     _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type")
+    # Device tracking fields (always allowed)
+    _DEVICE_FIELDS = ("app_version", "device_model", "os_version")
+    # Privacy preference fields (always allowed)
+    _PRIVACY_FIELDS = ("privacy_location", "privacy_analytics", "privacy_ads")
     # Enforce email/phone change limits (max 3 each)
     if "email" in updates and updates["email"] != db_user.email:
         if (db_user.email_changes_count or 0) >= 3:
@@ -2145,12 +2205,22 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
         if (db_user.phone_changes_count or 0) >= 3:
             raise HTTPException(400, "Maximum phone changes reached (3)")
         db_user.phone_changes_count = (db_user.phone_changes_count or 0) + 1
-    # Block name changes � first_name and last_name cannot be changed
+    # Block name changes — first_name and last_name cannot be changed
     updates.pop("first_name", None)
     updates.pop("last_name", None)
     for key in _SAFE_SELF_UPDATE_FIELDS:
         if key in updates:
             setattr(db_user, key, updates[key])
+    # Update device tracking fields
+    for key in _DEVICE_FIELDS:
+        if key in updates:
+            setattr(db_user, key, updates[key])
+    # Update privacy preferences
+    for key in _PRIVACY_FIELDS:
+        if key in updates:
+            setattr(db_user, key, updates[key])
+    # Update last active timestamp
+    db_user.last_active_at = datetime.utcnow()
     if updates.get("is_verified") and not db_user.verified_at:
         db_user.verified_at = datetime.utcnow()
     await db.commit()
@@ -2334,6 +2404,147 @@ async def delete_account(user: User = Depends(_get_current_user), db: AsyncSessi
         except Exception as e:
             logging.error("Dispatch deletion notification failed: %s", e)
     return {"detail": "Account deletion requested", "deletion_date": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()}
+
+
+@app.get("/auth/export-data", dependencies=[Depends(_verify_api_key)])
+async def export_user_data(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """GDPR/CCPA data export — returns all personal data for the user."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    
+    # User profile data
+    profile = {
+        "id": db_user.id,
+        "first_name": db_user.first_name,
+        "last_name": db_user.last_name,
+        "email": db_user.email,
+        "phone": db_user.phone,
+        "role": db_user.role,
+        "photo_url": db_user.photo_url,
+        "is_verified": db_user.is_verified,
+        "created_at": db_user.created_at.isoformat() if db_user.created_at else None,
+        "status": db_user.status,
+        "referral_code": db_user.referral_code,
+        "app_version": getattr(db_user, "app_version", None),
+        "device_model": getattr(db_user, "device_model", None),
+        "os_version": getattr(db_user, "os_version", None),
+        "privacy_location": getattr(db_user, "privacy_location", True),
+        "privacy_analytics": getattr(db_user, "privacy_analytics", True),
+        "privacy_ads": getattr(db_user, "privacy_ads", False),
+    }
+    
+    # Trip history
+    trips_result = await db.execute(
+        select(Trip).where((Trip.rider_id == user.id) | (Trip.driver_id == user.id)).order_by(Trip.created_at.desc())
+    )
+    trips_data = []
+    for t in trips_result.scalars().all():
+        trips_data.append({
+            "id": t.id,
+            "role": "rider" if t.rider_id == user.id else "driver",
+            "pickup_address": t.pickup_address,
+            "dropoff_address": t.dropoff_address,
+            "status": t.status,
+            "fare": t.fare,
+            "distance": t.distance,
+            "duration": t.duration,
+            "tip_amount": t.tip_amount,
+            "surge_multiplier": t.surge_multiplier,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+        })
+    
+    # Ratings given
+    ratings_result = await db.execute(
+        select(Rating).where(Rating.user_id == user.id).order_by(Rating.created_at.desc())
+    )
+    ratings_data = [
+        {"trip_id": r.trip_id, "rating": r.rating, "feedback": r.feedback, "created_at": r.created_at.isoformat() if r.created_at else None}
+        for r in ratings_result.scalars().all()
+    ]
+    
+    # Consent history
+    consent_data = []
+    try:
+        consent_result = await db.execute(
+            select(ConsentLog).where(ConsentLog.user_id == user.id).order_by(ConsentLog.created_at.desc())
+        )
+        consent_data = [
+            {"type": c.consent_type, "action": c.action, "version": c.version, "created_at": c.created_at.isoformat() if c.created_at else None}
+            for c in consent_result.scalars().all()
+        ]
+    except Exception:
+        pass  # Table may not exist yet
+    
+    # Payment methods (masked)
+    payment_methods = []
+    try:
+        pm_result = await db.execute(
+            select(RiderPaymentMethod).where(RiderPaymentMethod.user_id == user.id)
+        )
+        payment_methods = [
+            {"type": pm.method_type, "display_name": pm.display_name, "is_default": pm.is_default}
+            for pm in pm_result.scalars().all()
+        ]
+    except Exception:
+        pass
+    
+    return {
+        "exported_at": datetime.utcnow().isoformat(),
+        "profile": profile,
+        "trips": trips_data,
+        "ratings": ratings_data,
+        "consent_history": consent_data,
+        "payment_methods": payment_methods,
+    }
+
+
+@app.post("/auth/consent", dependencies=[Depends(_verify_api_key)])
+async def record_consent(
+    request: Request,
+    consent_type: str = Body(...),  # terms, privacy, location, analytics, ads
+    action: str = Body(...),  # accepted, revoked
+    version: str = Body(None),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Record user consent action for GDPR/CCPA compliance."""
+    # Get request metadata
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("User-Agent", "")[:500]
+    
+    # Create consent log entry
+    log = ConsentLog(
+        user_id=user.id,
+        consent_type=consent_type,
+        action=action,
+        version=version,
+        ip_address=ip,
+        user_agent=ua,
+    )
+    db.add(log)
+    
+    # Update user privacy preferences if applicable
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if db_user:
+        now = datetime.utcnow()
+        if consent_type == "terms":
+            db_user.terms_accepted_at = now if action == "accepted" else None
+        elif consent_type == "privacy":
+            db_user.privacy_accepted_at = now if action == "accepted" else None
+        elif consent_type == "location":
+            db_user.privacy_location = action == "accepted"
+        elif consent_type == "analytics":
+            db_user.privacy_analytics = action == "accepted"
+        elif consent_type == "ads":
+            db_user.privacy_ads = action == "accepted"
+    
+    await db.commit()
+    return {"detail": f"Consent '{consent_type}' {action}", "logged_at": datetime.utcnow().isoformat()}
+
 
 @app.post("/auth/verify-request", dependencies=[Depends(_verify_api_key)])
 async def submit_verification(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

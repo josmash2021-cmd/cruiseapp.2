@@ -2310,6 +2310,64 @@ class ApiService {
         .timeout(const Duration(seconds: 10));
     return _parse(res);
   }
+
+  // ═══════════════════════════════════════════════════════
+  //  PRIVACY & DATA EXPORT (GDPR/CCPA)
+  // ═══════════════════════════════════════════════════════
+
+  /// Export all user data for GDPR/CCPA compliance.
+  static Future<Map<String, dynamic>> exportUserData() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/auth/export-data'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 30));
+    return _parse(res);
+  }
+
+  /// Record user consent action (terms, privacy, location, analytics, ads).
+  static Future<Map<String, dynamic>> recordConsent({
+    required String consentType,
+    required String action, // 'accepted' or 'revoked'
+    String? version,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/consent'),
+          headers: h,
+          body: jsonEncode({
+            'consent_type': consentType,
+            'action': action,
+            if (version != null) 'version': version,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Update device info and privacy preferences in one call.
+  static Future<void> updateDeviceInfo({
+    String? appVersion,
+    String? deviceModel,
+    String? osVersion,
+    bool? privacyLocation,
+    bool? privacyAnalytics,
+    bool? privacyAds,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (appVersion != null) updates['app_version'] = appVersion;
+    if (deviceModel != null) updates['device_model'] = deviceModel;
+    if (osVersion != null) updates['os_version'] = osVersion;
+    if (privacyLocation != null) updates['privacy_location'] = privacyLocation;
+    if (privacyAnalytics != null) updates['privacy_analytics'] = privacyAnalytics;
+    if (privacyAds != null) updates['privacy_ads'] = privacyAds;
+    if (updates.isNotEmpty) {
+      await updateMe(updates);
+    }
+  }
 }
 
 /// Simple exception with HTTP status code.

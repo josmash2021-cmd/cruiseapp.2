@@ -3237,13 +3237,25 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               Positioned(
                 top: top + 10,
                 left: 16,
-                child: _fab(
-                  Icons.arrow_back_ios_new_rounded,
-                  48,
-                  fabBg,
-                  fabBorder,
-                  fabIcon,
-                  _goBack,
+                child: AnimatedSlide(
+                  offset: _pendingOffers.isNotEmpty ? const Offset(0, -1.5) : Offset.zero,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  child: AnimatedOpacity(
+                    opacity: _pendingOffers.isNotEmpty ? 0.0 : 1.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: IgnorePointer(
+                      ignoring: _pendingOffers.isNotEmpty,
+                      child: _fab(
+                        Icons.arrow_back_ios_new_rounded,
+                        48,
+                        fabBg,
+                        fabBorder,
+                        fabIcon,
+                        _goBack,
+                      ),
+                    ),
+                  ),
                 ),
               ),
 
@@ -3253,9 +3265,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 top: top + 10,
                 left: 0,
                 right: 0,
-                child: Column(
-                  children: [
-                    Center(child: _earningsPill(isDark)),
+                child: AnimatedSlide(
+                  offset: _pendingOffers.isNotEmpty ? const Offset(0, -1.5) : Offset.zero,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  child: AnimatedOpacity(
+                    opacity: _pendingOffers.isNotEmpty ? 0.0 : 1.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: IgnorePointer(
+                      ignoring: _pendingOffers.isNotEmpty,
+                      child: Column(
+                        children: [
+                          Center(child: _earningsPill(isDark)),
                     // Simulation mode indicator badge
                     if (kDebugMode && _isSimulationMode)
                       Container(
@@ -3294,6 +3315,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         ),
                       ),
                   ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
 
@@ -4221,7 +4245,7 @@ Widget _navHeader() {
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOutCubic,
-              height: 340,
+              height: (MediaQuery.of(context).size.height * 0.45).clamp(280, 380).toDouble(),
               child: PageView.builder(
                 controller: _offerPageCtrl,
                 onPageChanged: (index) {
@@ -4945,7 +4969,7 @@ Widget _navHeader() {
         ),
       ),
       child: Padding(
-        padding: EdgeInsets.fromLTRB(16, isExpanded ? 14 : 12, 16, isExpanded ? 16 : 12),
+        padding: EdgeInsets.fromLTRB(14, isExpanded ? 10 : 8, 14, isExpanded ? 10 : 8),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 350),
           switchInCurve: Curves.easeOutCubic,
@@ -4999,7 +5023,7 @@ Widget _navHeader() {
 
     return Column(
       key: const ValueKey('compact'),
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: MainAxisSize.max,
       children: [
         // ── ROW 1: Rating (left) · Comfort badge (center) · X reject (right) ──
         Row(
@@ -5082,31 +5106,32 @@ Widget _navHeader() {
           ],
         ),
 
-        const SizedBox(height: 10),
+        const SizedBox(height: 6),
 
         // ── ROW 2: Price (centered) + Tips label ──
         Text(
           '\$${fare.toStringAsFixed(2)}',
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 30,
+            fontSize: 26,
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 1),
         Text(
           '+ Tips',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.4),
-            fontSize: 13,
+            fontSize: 12,
           ),
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
 
         // ── ROW 3: Route indicator (gold ● line ■ with addresses) ──
-        Container(
-          padding: const EdgeInsets.all(10),
+        Expanded(
+          child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: const Color(0xFF1A1A1A),
             borderRadius: BorderRadius.circular(12),
@@ -5116,13 +5141,14 @@ Widget _navHeader() {
             children: [
               // Gold ● | ■ indicator column
               Padding(
-                padding: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.only(top: 3),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     // Gold filled circle (pickup)
                     Container(
-                      width: 10,
-                      height: 10,
+                      width: 9,
+                      height: 9,
                       decoration: const BoxDecoration(
                         color: goldAccent,
                         shape: BoxShape.circle,
@@ -5131,13 +5157,13 @@ Widget _navHeader() {
                     // Gold vertical line
                     Container(
                       width: 2,
-                      height: 44,
+                      height: 30,
                       color: goldAccent.withValues(alpha: 0.4),
                     ),
                     // Gold filled square (dropoff)
                     Container(
-                      width: 10,
-                      height: 10,
+                      width: 9,
+                      height: 9,
                       decoration: BoxDecoration(
                         color: goldAccent,
                         borderRadius: BorderRadius.circular(2),
@@ -5151,6 +5177,7 @@ Widget _navHeader() {
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     // Pickup info
                     Text(
@@ -5160,18 +5187,18 @@ Widget _navHeader() {
                         fontSize: 10,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 1),
                     Text(
                       pickupAddr,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 10),
                     // Dropoff info
                     Text(
                       '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
@@ -5180,12 +5207,12 @@ Widget _navHeader() {
                         fontSize: 10,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 1),
                     Text(
                       dropoffAddr,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
                       maxLines: 1,
@@ -5196,11 +5223,12 @@ Widget _navHeader() {
               ),
             ],
           ),
+          ),
         ),
 
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
 
-        // ── ROW 4: Time + Miles chips (20% smaller) ──
+        // ── ROW 4: Time + Miles chips (compact) ──
         Row(
           children: [
             Expanded(child: _buildOfferChip(
@@ -5217,14 +5245,14 @@ Widget _navHeader() {
           ],
         ),
 
-        const SizedBox(height: 10),
+        const SizedBox(height: 6),
 
-        // ── ROW 5: Accept button — GOLD ──
+        // ── ROW 5: Accept button — GOLD — ALWAYS VISIBLE ──
         GestureDetector(
           onTap: () => _acceptOffer(offer),
           child: Container(
             width: double.infinity,
-            height: 50,
+            height: 48,
             decoration: BoxDecoration(
               color: goldAccent,
               borderRadius: BorderRadius.circular(14),
@@ -5234,7 +5262,7 @@ Widget _navHeader() {
                 S.of(context).accept,
                 style: const TextStyle(
                   color: Colors.black,
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -5252,7 +5280,7 @@ Widget _navHeader() {
     required String label,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(8),

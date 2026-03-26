@@ -111,7 +111,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
           style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700),
         ),
         content: Text(
-          'We\'ll prepare a copy of your personal data and send it to your registered email address within 48 hours.',
+          'This will export all your personal data including your profile, trip history, ratings, and consent records.',
           style: TextStyle(color: c.textSecondary),
         ),
         actions: [
@@ -122,7 +122,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text(
-              'Request Export',
+              'Export Data',
               style: TextStyle(
                 color: Color(0xFFE8C547),
                 fontWeight: FontWeight.w700,
@@ -133,8 +133,124 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       ),
     );
     if (confirm != true) return;
-    _showSnack(
-      'Data export requested. You\'ll receive an email within 48 hours.',
+    
+    _showSnack('Exporting your data...');
+    try {
+      final data = await ApiService.exportUserData();
+      if (!mounted) return;
+      _showExportedData(data);
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack('Failed to export data. Please try again.');
+    }
+  }
+  
+  void _showExportedData(Map<String, dynamic> data) {
+    final c = AppColors.of(context);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: c.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final profile = data['profile'] as Map<String, dynamic>? ?? {};
+        final trips = data['trips'] as List<dynamic>? ?? [];
+        final ratings = data['ratings'] as List<dynamic>? ?? [];
+        final consent = data['consent_history'] as List<dynamic>? ?? [];
+        
+        return DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          expand: false,
+          builder: (_, ctrl) => Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Your Data Export',
+                        style: TextStyle(
+                          color: c.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close, color: c.textSecondary),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: ctrl,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: [
+                    _exportSection('Profile', [
+                      if (profile['name'] != null) 'Name: ${profile['name']}',
+                      if (profile['email'] != null) 'Email: ${profile['email']}',
+                      if (profile['phone'] != null) 'Phone: ${profile['phone']}',
+                      if (profile['created_at'] != null) 'Joined: ${profile['created_at']}',
+                    ], c),
+                    const SizedBox(height: 16),
+                    _exportSection('Trips', [
+                      '${trips.length} trip(s) on record',
+                    ], c),
+                    const SizedBox(height: 16),
+                    _exportSection('Ratings', [
+                      '${ratings.length} rating(s) given',
+                    ], c),
+                    const SizedBox(height: 16),
+                    _exportSection('Consent History', [
+                      '${consent.length} consent record(s)',
+                    ], c),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+  
+  Widget _exportSection(String title, List<String> items, AppColors c) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: c.cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: _gold,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...items.map((item) => Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              item,
+              style: TextStyle(color: c.textSecondary, fontSize: 14),
+            ),
+          )),
+        ],
+      ),
     );
   }
 

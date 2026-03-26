@@ -40,6 +40,7 @@ import '../services/api_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
 import '../widgets/bouncing_button.dart';
+import '../widgets/verified_avatar.dart';
 import 'pickup_dropoff_search_screen.dart';
 
 enum RideStage {
@@ -7255,19 +7256,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 children: [
-                  CircleAvatar(
+                  VerifiedAvatar(
                     radius: 22,
-                    backgroundColor: _gold.withValues(alpha: 0.2),
-                    child: Text(
-                      _driverName.isNotEmpty
-                          ? _driverName[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(
-                        color: _gold,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 18,
-                      ),
-                    ),
+                    fallbackName: _driverName,
+                    isVerified: true,
                   ),
                   const SizedBox(width: 12),
                   Expanded(

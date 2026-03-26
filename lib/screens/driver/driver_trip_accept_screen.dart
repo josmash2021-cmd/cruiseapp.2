@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
+import '../../widgets/verified_avatar.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../chat_screen.dart';
@@ -201,54 +202,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   Widget _avatar() {
-    final init = widget.riderName.isNotEmpty ? widget.riderName[0].toUpperCase() : '?';
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        // Photo (or fallback initial)
-        Container(
-          width: 66, height: 66,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: _gold, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: _gold.withValues(alpha: 0.30),
-                blurRadius: 12, spreadRadius: 1,
-              ),
-            ],
-          ),
-          child: ClipOval(
-            child: widget.riderPhotoUrl.isNotEmpty
-              ? CachedNetworkImage(
-                  imageUrl: widget.riderPhotoUrl,
-                  width: 62, height: 62, fit: BoxFit.cover,
-                  fadeInDuration: const Duration(milliseconds: 200),
-                  placeholder: (_, __) => _initialsFill(init),
-                  errorWidget: (_, __, ___) => _initialsFill(init),
-                )
-              : _initialsFill(init),
-          ),
-        ),
-        // Gold verified badge at bottom-right
-        Positioned(
-          bottom: -1,
-          right: -1,
-          child: Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _gold,
-              border: Border.all(
-                color: const Color(0xFF0A0A0A),
-                width: 2,
-              ),
-            ),
-            child: const Icon(Icons.check, color: Colors.black, size: 13),
-          ),
-        ),
-      ],
+    return VerifiedAvatar(
+      photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
+      radius: 33,
+      fallbackName: widget.riderName,
+      isVerified: true,
     );
   }
 

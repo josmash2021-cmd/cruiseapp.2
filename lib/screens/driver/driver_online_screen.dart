@@ -157,6 +157,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   String? _animatingOfferId; // which card is pulsing
   bool _offerDetailsVisible = false;
 
+  // ── Reject slide-down animation ──
+  String? _rejectingOfferId;
+  AnimationController? _rejectSlideCtrl;
+
   // ── Accept card animation state ──
   _OfferAcceptState _offerAcceptState = _OfferAcceptState.normal;
   String? _acceptingCardId;
@@ -327,28 +331,20 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     )..repeat();
     _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(_searchPulse);
 
-    // Pulse + ripple for offer card tap
+    // Pulse + ripple for offer card tap (tap-down scale)
     _pulseCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 100),
     );
-    _pulseAnim = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 1.06)
-            .chain(CurveTween(curve: Curves.easeOut)),
-        weight: 30,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 1.06, end: 0.96)
-            .chain(CurveTween(curve: Curves.easeInOut)),
-        weight: 40,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 0.96, end: 1.0)
-            .chain(CurveTween(curve: Curves.elasticOut)),
-        weight: 30,
-      ),
-    ]).animate(_pulseCtrl!);
+    _pulseAnim = Tween<double>(begin: 1.0, end: 0.97).animate(
+      CurvedAnimation(parent: _pulseCtrl!, curve: Curves.easeOut),
+    );
+
+    // Reject slide-down animation
+    _rejectSlideCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
 
     // Fade in time/distance details after card settles
     Future.delayed(const Duration(milliseconds: 400), () {
@@ -393,6 +389,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _offerPageCtrl.dispose();
     _routePulseCtrl?.dispose();
     _pulseCtrl?.dispose();
+    _rejectSlideCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _map?.dispose();
@@ -1904,8 +1901,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   Future<void> _rejectOffer(Map<String, dynamic> r) async {
-    HapticFeedback.mediumImpact();
+    HapticFeedback.lightImpact();
     final offerId = r['offer_id'] as int?;
+    final oid = (r['offer_id'] ?? r['id'] ?? '').toString();
+
+    // Animate slide-down before removing
+    setState(() => _rejectingOfferId = oid);
+    _rejectSlideCtrl?.forward(from: 0);
+    await Future.delayed(const Duration(milliseconds: 300));
 
     // Reject via API so the trip cascades to next driver
     if (offerId != null && _driverId != null) {
@@ -1916,9 +1919,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
 
     setState(() {
+      _rejectingOfferId = null;
       _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
       if (_pendingOffers.isEmpty) _hideFindingBar = false;
     });
+    _rejectSlideCtrl?.reset();
     if (offerId != null) _routeCache.remove(offerId.toString());
   }
 
@@ -2731,8 +2736,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   /// Dynamic bottom padding for the GoogleMap based on active overlays
   double get _mapBottomPadding {
-    if (_previewingOffer != null) return 380;
-    if (_phase == _Phase.searching && _pendingOffers.isNotEmpty) return 340;
+    final screenH = MediaQuery.of(context).size.height;
+    if (_previewingOffer != null) return screenH * 0.42;
+    if (_phase == _Phase.searching && _pendingOffers.isNotEmpty) return screenH * 0.42;
     if (_phase == _Phase.enRouteToPickup) return 270;
     if (_phase == _Phase.arrivedAtPickup) return 290;
     if (_phase == _Phase.routeSummary) return 330;
@@ -2806,10 +2812,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // ── PHASE 1 (t=0ms): card spring bounce ──
-    _pulseCtrl!.forward(from: 0);
-
-    // ── PHASE 2: Smooth zoom out to show full route (instant) ──
+    // ── PHASE 1: Smooth zoom out to show full route (instant) ──
     _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
 
     // ── PHASE 3 (t=300ms): Pins pop in ──
@@ -4330,6 +4333,7 @@ Widget _navHeader() {
                   final offer = _pendingOffers[i];
                   final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
                   final isAnimating = _animatingOfferId == oid;
+                  final isRejecting = _rejectingOfferId == oid;
                   Widget card = _offerCard(
                     offer,
                     true,
@@ -4342,6 +4346,7 @@ Widget _navHeader() {
                     acceptBg,
                     cBorderC,
                   );
+                  // Pulse scale on tap-down/tap-up
                   if (isAnimating && _pulseAnim != null) {
                     card = AnimatedBuilder(
                       animation: _pulseAnim!,
@@ -4352,8 +4357,33 @@ Widget _navHeader() {
                       child: card,
                     );
                   }
+                  // Reject slide-down animation
+                  if (isRejecting && _rejectSlideCtrl != null) {
+                    card = AnimatedBuilder(
+                      animation: _rejectSlideCtrl!,
+                      builder: (_, child) => Transform.translate(
+                        offset: Offset(0, _rejectSlideCtrl!.value * 400),
+                        child: Opacity(
+                          opacity: (1.0 - _rejectSlideCtrl!.value).clamp(0.0, 1.0),
+                          child: child,
+                        ),
+                      ),
+                      child: card,
+                    );
+                  }
                   return GestureDetector(
-                    onTap: () => _onOfferCardTap(offer),
+                    onTapDown: (_) {
+                      setState(() => _animatingOfferId = oid);
+                      _pulseCtrl?.forward();
+                    },
+                    onTapUp: (_) {
+                      _pulseCtrl?.reverse().then((_) {
+                        if (mounted) _onOfferCardTap(offer);
+                      });
+                    },
+                    onTapCancel: () {
+                      _pulseCtrl?.reverse();
+                    },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                       child: card,

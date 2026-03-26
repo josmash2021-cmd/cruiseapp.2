@@ -15,11 +15,13 @@ class RiderRatingScreen extends StatefulWidget {
     required this.driverName,
     this.tripId,
     this.fare = 0,
+    this.driverPhotoUrl,
   });
 
   final String driverName;
   final int? tripId;
   final double fare;
+  final String? driverPhotoUrl;
 
   @override
   State<RiderRatingScreen> createState() => _RiderRatingScreenState();
@@ -332,6 +334,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                     VerifiedAvatar(
                       radius: 24,
                       fallbackName: widget.driverName,
+                      photoUrl: widget.driverPhotoUrl,
                       isVerified: true,
                     ),
                   ],

@@ -609,6 +609,11 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
+    // Extract photo URL — try flat field first, then nested driver object
+    final photoUrl = data['driver_photo_url']?.toString() ??
+        (data['driver'] is Map ? (data['driver'] as Map)['photo_url']?.toString() : null) ??
+        '';
+
     final driver = MatchedDriver(
       id: driverId,
       name: data['driver_name']?.toString() ?? 'Driver',
@@ -619,6 +624,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       vehicleColor: data['vehicle_color']?.toString() ?? '',
       vehiclePlate: data['vehicle_plate']?.toString() ?? '',
       vehicleYear: data['vehicle_year']?.toString() ?? '',
+      photoUrl: photoUrl.isNotEmpty ? photoUrl : null,
     );
 
     _state = _state.copyWith(

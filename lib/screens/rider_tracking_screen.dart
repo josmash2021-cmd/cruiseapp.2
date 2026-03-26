@@ -517,6 +517,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             driverName: widget.driverName,
             tripId: widget.tripId,
             fare: widget.price,
+            driverPhotoUrl: widget.driverPhotoUrl,
           ),
           transitionsBuilder: (_, anim, __, child) =>
               FadeTransition(opacity: anim, child: child),

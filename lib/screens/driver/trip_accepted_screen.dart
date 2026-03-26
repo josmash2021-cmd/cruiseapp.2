@@ -119,7 +119,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
 
     // Mapbox static map URL for blurred background
     final mapUrl = 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
-        '${widget.pickupLatLng.lng},${widget.pickupLatLng.lat},14,0/600x800@2x'
+        '${widget.pickupLatLng.longitude},${widget.pickupLatLng.latitude},14,0/600x800@2x'
         '?access_token=${MapboxConfig.accessToken}';
 
     return AnnotatedRegion<SystemUiOverlayStyle>(

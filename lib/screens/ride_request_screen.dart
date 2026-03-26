@@ -35,6 +35,7 @@ import 'rider_tracking_screen.dart';
 import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/gold_location_dot.dart';
+import '../widgets/verified_avatar.dart';
 import 'scheduled_rides_screen.dart';
 import 'searching_driver_screen.dart';
 
@@ -2035,7 +2036,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               ),
 
             // ── Route loading indicator: subtle pill while route is fetching ──
-            if (_fetchingRoute)
+            if (_fetchingRoute && !_ctrl.state.routeFetchFailed)
               Positioned(
                 top: topPad + 60,
                 left: 0,
@@ -2905,6 +2906,107 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           ),
         );
       },
+    );
+  }
+
+  /// Shimmer placeholder card mimicking a ride option while loading.
+  Widget _buildShimmerCard() {
+    return AnimatedBuilder(
+      animation: _priceShimmerCtrl,
+      builder: (context, _) {
+        final gradient = LinearGradient(
+          begin: Alignment(-1.0 + 2.0 * _priceShimmerCtrl.value, 0),
+          end: Alignment(1.0 + 2.0 * _priceShimmerCtrl.value, 0),
+          colors: const [
+            Color(0xFF2A2A2A),
+            Color(0xFF3A3A3A),
+            Color(0xFF2A2A2A),
+          ],
+          stops: const [0.0, 0.5, 1.0],
+        );
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+          ),
+          child: Row(
+            children: [
+              // Icon placeholder
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: gradient,
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Text placeholders
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(width: 80, height: 14, decoration: BoxDecoration(borderRadius: BorderRadius.circular(4), gradient: gradient)),
+                    const SizedBox(height: 6),
+                    Container(width: 120, height: 10, decoration: BoxDecoration(borderRadius: BorderRadius.circular(4), gradient: gradient)),
+                    const SizedBox(height: 6),
+                    Container(width: 100, height: 10, decoration: BoxDecoration(borderRadius: BorderRadius.circular(4), gradient: gradient)),
+                  ],
+                ),
+              ),
+              // Price placeholder
+              Container(width: 54, height: 18, decoration: BoxDecoration(borderRadius: BorderRadius.circular(4), gradient: gradient)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// "Could not load route" card with retry button.
+  Widget _buildRouteFailedRetry() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            'Could not load route',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.7),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () {
+              setState(() {});
+              _ctrl.retryFetchRoute();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE8C547)),
+              ),
+              child: const Text(
+                'Tap to retry',
+                style: TextStyle(
+                  color: Color(0xFFE8C547),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -4511,29 +4613,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                         child: Row(
                           children: [
                             // Driver avatar
-                            Container(
-                              width: 60,
-                              height: 60,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: gold.withValues(alpha: 0.15),
-                                border: Border.all(
-                                  color: gold.withValues(alpha: 0.4),
-                                  width: 2,
-                                ),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  firstName.isNotEmpty
-                                      ? firstName[0].toUpperCase()
-                                      : 'D',
-                                  style: const TextStyle(
-                                    color: gold,
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
+                            VerifiedAvatar(
+                              uid: driver.id,
+                              fallbackName: firstName,
+                              photoUrl: driver.photoUrl,
+                              radius: 30,
                             ),
                             const SizedBox(width: 16),
                             Expanded(
@@ -4673,6 +4757,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
                   const Spacer(flex: 2),
                 ],
+              ),
               ),
             ],
           ),

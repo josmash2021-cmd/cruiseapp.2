@@ -134,6 +134,9 @@ Future<void> heavyInit() async {
   // Start keep-alive pings to prevent server sleep
   KeepAliveService.instance.start();
 
+  // Pre-resolve DNS for all API domains (non-blocking)
+  unawaited(ApiService.preResolveDns());
+
   // Run remaining init tasks in parallel — none depend on each other
   // Initialize network connectivity listener (sync — no Future)
   NetworkService().init();

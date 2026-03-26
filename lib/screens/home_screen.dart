@@ -33,6 +33,7 @@ import '../config/app_theme.dart';
 import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/places_service.dart';
 import '../l10n/app_localizations.dart';
@@ -3009,7 +3010,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         ? dropoffLabel
         : dropoffDetails.address;
 
-    // Navigate immediately — RideRequestScreen fetches route in background
+    // Pre-fetch route in parallel while preparing navigation
+    Future<RouteResult?>? routeFuture;
+    if (effectivePickup != null) {
+      final origin = LatLng(effectivePickup.lat, effectivePickup.lng);
+      final dest = LatLng(dropoffDetails.lat, dropoffDetails.lng);
+      routeFuture = DirectionsService(ApiKeys.webServices)
+          .getRoute(origin: origin, destination: dest);
+    }
+
+    // Wait briefly for route — if it arrives fast, pass it; otherwise navigate without it
+    RouteResult? preloadedRoute;
+    if (routeFuture != null) {
+      preloadedRoute = await routeFuture.timeout(
+        const Duration(milliseconds: 800),
+        onTimeout: () => null,
+      );
+    }
+
+    if (!mounted) return;
+
     await Navigator.of(context).push(
       scaleExpandRoute(
         RideRequestScreen(
@@ -3019,6 +3039,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           initialDropoffLabel: effectiveDropoffLabel,
           initialDropoffAddress: effectiveDropoffLabel,
           initialRideId: rideId,
+          preloadedRoute: preloadedRoute,
         ),
       ),
     );

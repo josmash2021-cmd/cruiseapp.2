@@ -119,6 +119,17 @@ class ApiService {
   /// Returns the URL currently in use by all API calls.
   static String get activeServerUrl => _activeUrl;
 
+  /// Pre-resolve DNS for all API domains to eliminate lookup latency on first request.
+  static Future<void> preResolveDns() async {
+    await Future.wait([
+      InternetAddress.lookup('cruiseapp2-production.up.railway.app').catchError((_) => <InternetAddress>[]),
+      InternetAddress.lookup('api.mapbox.com').catchError((_) => <InternetAddress>[]),
+      InternetAddress.lookup('maps.googleapis.com').catchError((_) => <InternetAddress>[]),
+      InternetAddress.lookup('router.project-osrm.org').catchError((_) => <InternetAddress>[]),
+    ]).timeout(const Duration(seconds: 3), onTimeout: () => []);
+    debugPrint('[ApiService] DNS pre-resolution complete');
+  }
+
   /// Lightweight connectivity check — pings DNS without adding dependencies.
   /// Uses dart:io InternetAddress.lookup with a 3-second timeout.
   static Future<bool> isOnline() async {
@@ -2206,7 +2217,7 @@ class ApiService {
           Uri.parse('$_baseUrl/surge/current?lat=$lat&lng=$lng'),
           headers: h,
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 5));
     return _parse(res);
   }
 

@@ -3849,6 +3849,7 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
                 "driver_id": driver.id,
                 "driver_name": f"{driver.first_name} {driver.last_name}",
                 "driver_phone": driver.phone,
+                "driver_photo_url": driver.photo_url or "",
                 "driver_rating": 4.9,
                 "driver_trips": 0,
                 "vehicle_make": veh.make if veh else "",

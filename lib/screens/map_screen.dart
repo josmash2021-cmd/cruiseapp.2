@@ -28,6 +28,7 @@ import '../services/local_data_service.dart';
 import '../services/notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../services/places_service.dart';
+import '../widgets/gold_location_dot.dart';
 import 'airport_terminal_sheet.dart';
 import 'credit_card_screen.dart';
 import 'payment_accounts_screen.dart';
@@ -182,10 +183,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   AnimationController? _glowController;
   final double _routeGlowPhase = 0.0;
 
-  // Gold animated 3D location dot
-  List<Uint8List> _goldDotFrames = [];
-  int _goldDotFrame = 0;
-  Timer? _goldDotTimer;
+  // Gold animated location dot
+  final GoldLocationDot _goldDot = GoldLocationDot();
+  mapbox.PointAnnotation? _goldDotAnnot;
 
   /// Toggle state for the recenter (my_location) button.
   /// false = next tap centers on pickup at default zoom
@@ -328,7 +328,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _driverMotion!.start(this);
     _loadPinIcons();
     // Car icon loading removed - no car markers on rider map
-    _buildGoldDotFrames();
+    _goldDot.build(() { if (mounted) _updateGoldDotAnnotation(); });
     // Precache car images for the ride progress bar
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -398,94 +398,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (_currentPosition != null) _setPickupAnnotation(_currentPosition!);
   }
 
-  Future<void> _buildGoldDotFrames() async {
-    const int frameCount = 12;
-    const double canvasSize = 140.0;
-    final frames = <Uint8List>[];
-
-    for (int i = 0; i < frameCount; i++) {
-      final t = i / frameCount;
-      final pulseRadius = 40.0 + 20.0 * t;
-      final pulseAlpha = (0.35 * (1.0 - t)).clamp(0.0, 1.0);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(
-        recorder,
-        const Rect.fromLTWH(0, 0, canvasSize, canvasSize),
-      );
-      final center = const Offset(canvasSize / 2, canvasSize / 2);
-
-      // 3D shadow beneath dot (offset down for elevation illusion)
-      canvas.drawCircle(
-        center.translate(0, 4),
-        22,
-        Paint()
-          ..color = const Color(0x50000000)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
-      );
-
-      // Outer pulse ring (fading gold)
-      canvas.drawCircle(
-        center,
-        pulseRadius,
-        Paint()
-          ..color = _gold.withValues(alpha: pulseAlpha * 0.4)
-          ..style = PaintingStyle.fill,
-      );
-      canvas.drawCircle(
-        center,
-        pulseRadius,
-        Paint()
-          ..color = _gold.withValues(alpha: pulseAlpha)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5,
-      );
-
-      // Gold outer ring (3D gradient)
-      canvas.drawCircle(
-        center,
-        18,
-        Paint()
-          ..shader = ui.Gradient.radial(
-            center.translate(-4, -4),
-            22,
-            [const Color(0xFFF5E27A), _gold, const Color(0xFFB8941E)],
-            [0.0, 0.5, 1.0],
-          ),
-      );
-
-      // White inner dot
-      canvas.drawCircle(
-        center,
-        9,
-        Paint()..color = Colors.white,
-      );
-
-      // Highlight (specular reflection for 3D look)
-      canvas.drawCircle(
-        center.translate(-3, -3),
-        5,
-        Paint()..color = const Color(0x40FFFFFF),
-      );
-
-      final img = await recorder
-          .endRecording()
-          .toImage(canvasSize.toInt(), canvasSize.toInt());
-      final data = await img.toByteData(format: ui.ImageByteFormat.png);
-      if (data == null) return;
-      // ignore: deprecated_member_use
-      frames.add(data.buffer.asUint8List());
-    }
-
-    if (!mounted || frames.length != frameCount) return;
-    setState(() => _goldDotFrames = frames);
-
-    // Start pulse animation
-    _goldDotTimer = Timer.periodic(const Duration(milliseconds: 130), (_) {
-      if (!mounted || _goldDotFrames.isEmpty) return;
-      _goldDotFrame = (_goldDotFrame + 1) % _goldDotFrames.length;
-      _updateGoldDotAnnotation();
-    });
   }
 
   Future<void> _applyStartupIntent() async {
@@ -510,7 +422,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _goldDotTimer?.cancel();
+    _goldDot.dispose();
     _liveLocationTimer?.cancel();
     _livePositionSub?.cancel();
     _searchDebounce?.cancel();
@@ -4769,12 +4681,15 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _updateGoldDotAnnotation() async {
     final mgr = _pointAnnotMgr;
-    if (mgr == null || _currentPosition == null || _goldDotFrames.isEmpty) return;
-    final bytes = _goldDotFrames[_goldDotFrame % _goldDotFrames.length];
+    if (mgr == null || _currentPosition == null) return;
+    final bytes = _goldDot.currentBytes;
+    if (bytes == null) return;
     if (_goldDotAnnot != null) {
       try {
-        await mgr.update(_goldDotAnnot!..geometry = mapbox.Point(
-          coordinates: mapbox.Position(_currentPosition!.longitude, _currentPosition!.latitude)));
+        _goldDotAnnot!.geometry = mapbox.Point(
+          coordinates: mapbox.Position(_currentPosition!.longitude, _currentPosition!.latitude));
+        _goldDotAnnot!.image = bytes;
+        await mgr.update(_goldDotAnnot!);
         return;
       } catch (_) { _goldDotAnnot = null; }
     }

@@ -27,6 +27,7 @@ import '../../services/map_cache_service.dart';
 import '../../services/local_cache.dart';
 import '../../services/chat_service.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/gold_location_dot.dart';
 import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
@@ -231,10 +232,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final String _activeVehicleAsset = 'suburban';
 
   // -- Golden animated dot --
-  List<Uint8List> _goldenDotFrames = [];
-  final int _goldenDotFrame = 0;
-  Timer? _goldenDotTimer;
+  final GoldLocationDot _goldDot = GoldLocationDot();
   Uint8List? _goldPinBytes;
+  bool _dotPopDone = false;   // true after first-appearance pop completes
+  double _dotPopScale = 0.0;  // 0→1.15→1.0 during pop, then 1.0
 
   // -- Turn-by-turn navigation --
   final NavigationService _navService = NavigationService();
@@ -360,11 +361,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     if (state == AppLifecycleState.paused) {
       _pollT?.cancel();
       _clock?.cancel();
-      _goldenDotTimer?.cancel();
+      _goldDot.dispose();
     } else if (state == AppLifecycleState.resumed) {
       _startPolling();
       _startClock();
-      _startGoldenDotAnimation();
     }
   }
 
@@ -379,7 +379,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _pollT?.cancel();
     _clock?.cancel();
     _navTimer?.cancel();
-    _goldenDotTimer?.cancel();
+    _goldDot.dispose();
     _driverPhotoImage?.dispose();
     _simTicker?.stop();
     _simTicker?.dispose();
@@ -539,8 +539,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _navCarSprites = null;
     _navCarIconBytes = await CarIconLoader.loadUberBytes();
     await _loadDriverPhoto();
-    await _buildGoldenDotFrames();
-    _startGoldenDotAnimation();
+    await _goldDot.build(() { if (mounted) _updateDriverAnnotation(); });
     _goldPinBytes = await renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true);
     if (mounted) setState(() {});
   }
@@ -559,112 +558,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     } catch (_) {
       // fallback to golden dot
     }
-  }
-
-  /// Pre-render 36 frames of a pulsing golden dot with dual rings.
-  Future<void> _buildGoldenDotFrames() async {
-    const int frameCount = 36;
-    const double canvasSize = 160.0;
-    final frames = <Uint8List>[];
-
-    for (int i = 0; i < frameCount; i++) {
-      final t = i / frameCount;
-      final pulseRadius = 40.0 + 28.0 * t;
-      final pulseAlpha = (0.45 * (1.0 - t)).clamp(0.0, 1.0);
-      // Second outer ring offset by half a cycle
-      final t2 = (t + 0.5) % 1.0;
-      final pulse2Radius = 40.0 + 28.0 * t2;
-      final pulse2Alpha = (0.3 * (1.0 - t2)).clamp(0.0, 1.0);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(
-        recorder,
-        const Rect.fromLTWH(0, 0, canvasSize, canvasSize),
-      );
-      const center = Offset(canvasSize / 2, canvasSize / 2);
-
-      // 3D shadow beneath dot
-      canvas.drawCircle(
-        center.translate(0, 4),
-        22,
-        Paint()
-          ..color = const Color(0x50000000)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
-      );
-
-      // Second outer pulse ring (fading gold, offset phase)
-      canvas.drawCircle(
-        center,
-        pulse2Radius,
-        Paint()
-          ..color = const Color(0xFFE8C547).withValues(alpha: pulse2Alpha * 0.25)
-          ..style = PaintingStyle.fill,
-      );
-      canvas.drawCircle(
-        center,
-        pulse2Radius,
-        Paint()
-          ..color = const Color(0xFFE8C547).withValues(alpha: pulse2Alpha * 0.7)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5,
-      );
-
-      // Primary outer pulse ring (fading gold)
-      canvas.drawCircle(
-        center,
-        pulseRadius,
-        Paint()
-          ..color = const Color(0xFFE8C547).withValues(alpha: pulseAlpha * 0.4)
-          ..style = PaintingStyle.fill,
-      );
-      canvas.drawCircle(
-        center,
-        pulseRadius,
-        Paint()
-          ..color = const Color(0xFFE8C547).withValues(alpha: pulseAlpha)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5,
-      );
-
-      // Gold outer ring (3D gradient)
-      canvas.drawCircle(
-        center,
-        20,
-        Paint()
-          ..shader = ui.Gradient.radial(
-            center.translate(-4, -4),
-            24,
-            [const Color(0xFFF5E27A), const Color(0xFFE8C547), const Color(0xFFB8941E)],
-            [0.0, 0.5, 1.0],
-          ),
-      );
-
-      // White inner dot
-      canvas.drawCircle(center, 10, Paint()..color = Colors.white);
-
-      // Specular highlight for 3D look
-      canvas.drawCircle(
-        center.translate(-3, -3),
-        5,
-        Paint()..color = const Color(0x50FFFFFF),
-      );
-
-      final picture = recorder.endRecording();
-      final image = await picture.toImage(
-        canvasSize.toInt(),
-        canvasSize.toInt(),
-      );
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData != null) {
-        frames.add(byteData.buffer.asUint8List());
-      }
-    }
-    _goldenDotFrames = frames;
-  }
-
-  void _startGoldenDotAnimation() {
-    _goldenDotTimer?.cancel();
-    // Gold pin is static — no frame animation needed
   }
 
   /// Renders a top-down car marker with proper car silhouette using Canvas.
@@ -1463,8 +1356,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _phase == _Phase.inTrip ||
         _phase == _Phase.routeSummary;
 
-    if (!isNav && _goldPinBytes != null) {
-      // Remove car annotation if switching to gold pin
+    if (!isNav) {
+      final dotBytes = _goldDot.currentBytes;
+      if (dotBytes == null) return;
+      // Remove car annotation if switching to gold dot
       if (_carAnnot != null) {
         try { await pointMgr.delete(_carAnnot!); } catch (_) {}
         _carAnnot = null;
@@ -1472,16 +1367,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       if (_goldDotAnnot != null) {
         try {
           _goldDotAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
+          _goldDotAnnot!.image = dotBytes;
+          _goldDotAnnot!.iconSize = _dotPopScale;
           await pointMgr.update(_goldDotAnnot!);
         } catch (_) { _goldDotAnnot = null; }
       }
       if (_pos == null) return;
-      _goldDotAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-        image: _goldPinBytes!,
-        iconSize: 1.0,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-      ));
+      if (_goldDotAnnot == null) {
+        _goldDotAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+          image: dotBytes,
+          iconSize: _dotPopScale,
+        ));
+        // Trigger fade+pop on first creation
+        if (!_dotPopDone) _animateDotPop();
+      }
     } else if (isNav) {
       // Remove dot annotation if switching to car
       if (_goldDotAnnot != null) {
@@ -1513,6 +1413,30 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         }
       }
     }
+  }
+
+  /// Fade + pop animation when the gold dot first appears.
+  /// Scale: 0 → 1.15 (overshoot) → 1.0 (settle). ~350 ms total.
+  Future<void> _animateDotPop() async {
+    _dotPopDone = true;
+    // Phase 1: scale 0 → 1.15 over ~200 ms (12 frames × 16 ms)
+    const riseSteps = 12;
+    for (int i = 1; i <= riseSteps; i++) {
+      await Future.delayed(const Duration(milliseconds: 16));
+      if (!mounted) return;
+      _dotPopScale = (i / riseSteps) * 1.15;
+      _updateDriverAnnotation();
+    }
+    // Phase 2: bounce back 1.15 → 1.0 over ~150 ms (9 frames × 16 ms)
+    const bounceSteps = 9;
+    for (int i = 1; i <= bounceSteps; i++) {
+      await Future.delayed(const Duration(milliseconds: 16));
+      if (!mounted) return;
+      _dotPopScale = 1.15 - (0.15 * (i / bounceSteps));
+      _updateDriverAnnotation();
+    }
+    _dotPopScale = 1.0;
+    if (mounted) _updateDriverAnnotation();
   }
 
   /// Snap a raw GPS coordinate to the nearest point on the active route polyline.
@@ -2710,6 +2634,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
     _carAnnot = null;
     _goldDotAnnot = null;
+    _dotPopDone = false;
+    _dotPopScale = 0.0;
   }
 
   static String _mapRideType(String raw) {

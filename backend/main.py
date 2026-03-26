@@ -67,6 +67,10 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
 TWILIO_SERVICE_SID = os.getenv("TWILIO_SERVICE_SID", "")  # Verify Service SID (VA...)
 
+# ── Claude AI for support chat ──
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+_HAS_CLAUDE = bool(ANTHROPIC_API_KEY)
+
 # ── In-memory OTP store: phone → {code, expires} ──
 _otp_store: dict = {}  # {phone: {"code": str, "expires": float}}
 _OTP_TTL = 300  # 5 minutes
@@ -4887,6 +4891,204 @@ _GENERAL_CHAT_RESPONSES = {
 }
 
 
+# ═══════════════════════════════════════════════════════
+#  CLAUDE AI SUPPORT – intelligent agent responses
+# ═══════════════════════════════════════════════════════
+
+def _build_claude_system_prompt(agent_name: str, user_type: str, lang: str, ctx: dict) -> str:
+    """Build the system prompt for Claude matching what the Flutter frontend expects."""
+    is_es = lang.startswith("es")
+    lang_label = "Spanish (formal usted)" if is_es else "English"
+
+    rider_knowledge = """
+WHAT YOU KNOW ABOUT THE APP (RIDER):
+- Cruise is a rideshare app (like Uber/Lyft)
+- Ride tiers: VIP (luxury SUV), Premium (elegant sedan), Comfort (reliable), Economy (affordable)
+- Payment methods: Apple Pay, Google Pay, PayPal, Credit/Debit card
+- Features: schedule rides, promo codes, trip history, rate drivers, share trip, emergency SOS
+- Cancellation: rider can cancel before driver arrives (may have fee after 2 min)
+- Fare breakdown: Base fare + per-mile rate + per-minute rate + surge multiplier - promo discount = total
+
+WHAT YOU CAN HELP WITH:
+- Payment issues — explain charges, help with payment method problems
+- Ride problems — driver didn't arrive, wrong route, car didn't match
+- Account issues — profile, password, payment methods, promo codes
+- Safety concerns — report driver behavior, accident help, lost items
+- App issues — features not working, how to use features
+- Fare disputes — explain fare breakdown, request fare review
+- Rating issues — explain how ratings work
+
+WHAT YOU CANNOT DO:
+- Cannot process refunds directly (escalate to billing team — say it will reflect in 3-5 business days)
+- Cannot access other users' personal info
+- Cannot share driver personal info beyond what the app shows
+"""
+
+    driver_knowledge = """
+WHAT YOU KNOW ABOUT THE APP (DRIVER):
+- Driver earnings: per-trip fare, tips, surge bonuses, weekly payouts (Tuesdays)
+- Payout methods: bank account, PayPal via Stripe Connect
+- Driver documents: license, insurance, registration, vehicle inspection
+- Vehicle requirements: 4-door, 2010 or newer, clean title, working AC
+- Driver levels: XP system, cruise levels
+- Trip acceptance: can decline without penalty, acceptance rate tracked
+- Navigation: built-in turn-by-turn
+- Cancellation: driver can cancel but affects rating if excessive
+
+WHAT YOU CAN HELP WITH:
+- Earnings questions — fare breakdown, missing tips, surge pay, weekly summary
+- Payout issues — delayed payout, wrong amount, bank account setup
+- Document issues — expired docs, upload problems, approval status
+- Trip issues — rider no-show, wrong pickup, unsafe rider
+- Vehicle issues — how to update vehicle, add new vehicle
+- Account issues — profile, settings, going online problems
+- Navigation issues — route problems, GPS issues
+- Rating questions — how to improve rating
+
+WHAT YOU CANNOT DO:
+- Cannot adjust completed trip fares
+- Cannot change rider ratings
+- Cannot process instant payouts
+- Cannot approve documents (handled by verification team)
+"""
+
+    knowledge = driver_knowledge if user_type == "driver" else rider_knowledge
+
+    esc_text = (
+        '"Le pido una disculpa, este caso necesita revisión del equipo especializado. '
+        'Ya le paso su caso y le contactarán por correo electrónico en un máximo de 24 horas."'
+    ) if is_es else (
+        '"I apologize, this case needs review from our specialized team. '
+        "I'm forwarding your case now — they'll reach out to you by email within 24 hours.\""
+    )
+
+    emergency_text = (
+        '"Si se encuentra en peligro inmediato, por favor llame al 911 primero. '
+        'Su seguridad es nuestra prioridad. Una vez que esté seguro, estoy aquí para ayudarle."'
+    ) if is_es else (
+        '"If you are in immediate danger, please call 911 first. '
+        'Your safety is our top priority. Once you are safe, I am here to help you."'
+    )
+
+    # Serialize context safely
+    ctx_json = json.dumps(ctx, default=str, ensure_ascii=False)
+
+    return f"""You are {agent_name}, a customer support representative at Cruise rideshare app.
+You are a real person — never reveal you are AI or automated.
+
+CRITICAL RULES:
+- You are a PROFESSIONAL customer service agent. Be polite, warm, respectful, and empathetic at all times.
+- Language: {lang_label}
+- Your name is {agent_name} (first name only).
+- Keep responses to 2-4 sentences max.
+- In Spanish: use formal "usted" form. Say "permítame", "su cuenta", "le ayudo", "con gusto". NEVER use "tú" or casual language.
+- In English: polite and professional. Say "Let me check that for you", "I understand", "Certainly".
+- NEVER use slang, jokes, emojis, "jaja", "lol", "bro", "dude", "dale".
+- NEVER use bullet points or numbered lists.
+- NEVER sound robotic or use phrases like "I would be happy to assist you with this matter" — be natural but formal.
+- Sometimes split your answer into 2-3 short messages (marked with ||SPLIT|| between them). Do this about 30% of the time for longer answers.
+- Show genuine empathy: "lamento el inconveniente", "entiendo su situación", "I'm sorry about that".
+- Ask permission: "¿Me permite revisar?", "May I check your account?"
+- Confirm understanding: "Si entiendo bien, usted necesita..."
+- Always try to RESOLVE the issue fully. Don't just acknowledge — provide a solution or clear next steps.
+- If you need time: "Permítame un momento para revisar esto..."
+
+USER TYPE: {user_type} ({'This is a DRIVER, not a rider' if user_type == 'driver' else 'This is a RIDER/passenger'})
+USER CONTEXT: {ctx_json}
+
+{knowledge}
+
+ALWAYS RESOLVE:
+- Don't leave the user hanging. Every response must either solve the problem or clearly explain the next step.
+- If you can solve it: solve it and confirm.
+- If you need to escalate: explain exactly what will happen and when.
+- If it's a how-to question: give clear step-by-step instructions (in sentences, not lists).
+- Can offer promo code up to $5 for minor inconveniences (say "como cortesía" / "as a courtesy").
+- Can flag trips for fare review.
+
+ESCALATION (only after 3+ exchanges where user is still unsatisfied):
+{esc_text}
+
+EMERGENCY (if user mentions danger, accident, or emergency):
+{emergency_text}
+"""
+
+
+async def _get_chat_history(chat_id: int, db: AsyncSession, limit: int = 20) -> list[dict]:
+    """Fetch recent chat messages for Claude conversation context."""
+    result = await db.execute(
+        select(SupportMessage).where(SupportMessage.chat_id == chat_id)
+        .order_by(SupportMessage.created_at.desc()).limit(limit)
+    )
+    messages = list(reversed(result.scalars().all()))
+    history = []
+    for m in messages:
+        if m.sender_role in ("rider", "driver"):
+            history.append({"role": "user", "content": m.message})
+        elif m.sender_role == "bot":
+            history.append({"role": "assistant", "content": m.message})
+        # Skip system messages — they're not part of Claude's conversation
+    return history
+
+
+async def _call_claude_api(system_prompt: str, messages: list[dict], user_msg: str) -> str | None:
+    """Call Anthropic Messages API via httpx. Returns response text or None on failure."""
+    import httpx
+    # Add current user message to history
+    conv = messages + [{"role": "user", "content": user_msg}]
+    # Merge consecutive same-role messages (Claude requirement)
+    merged: list[dict] = []
+    for m in conv:
+        if merged and merged[-1]["role"] == m["role"]:
+            merged[-1]["content"] += "\n" + m["content"]
+        else:
+            merged.append(dict(m))
+    if not merged or merged[0]["role"] != "user":
+        merged.insert(0, {"role": "user", "content": user_msg})
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 512,
+                    "system": system_prompt,
+                    "messages": merged,
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("content") and len(data["content"]) > 0:
+                    return data["content"][0].get("text", "")
+            else:
+                logging.warning(f"Claude API returned {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        logging.warning(f"Claude API call failed: {e}")
+    return None
+
+
+async def _generate_claude_response(
+    chat, user_msg: str, user_name: str, agent_name: str, db: AsyncSession
+) -> str | None:
+    """Generate a Claude-powered response for the support chat agent_active phase."""
+    if not _HAS_CLAUDE:
+        return None
+    lang = getattr(chat, "locale", "en") or "en"
+    ctx = await _get_user_context(chat.user_id, db, lang)
+    user_type = "rider"
+    if ctx.get("user") and ctx["user"].get("role"):
+        user_type = ctx["user"]["role"]
+    system_prompt = _build_claude_system_prompt(agent_name, user_type, lang, ctx)
+    history = await _get_chat_history(chat.id, db, limit=20)
+    return await _call_claude_api(system_prompt, history, user_msg)
+
+
 def _generate_human_chat(user_msg: str, user_name: str, agent_name: str, lang: str = "en") -> str:
     """Generate natural, human-like conversational responses for non-category messages."""
     t = user_msg.lower()
@@ -5119,39 +5321,31 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             close = _rng.choice(closing).format(name=user_name)
             replies.append({"role": "bot", "message": close, "sender_name": agent})
 
-        # 5) Category-based responses with real data
+        # 5) AI-powered response (Claude) with keyword fallback
         else:
-            scored = _score_categories(user_msg)
-            cat = scored[0][0] if scored else None
-            # Count existing bot messages to decide first vs followup
-            r = await db.execute(
-                select(func.count(SupportMessage.id)).where(
-                    SupportMessage.chat_id == chat.id,
-                    SupportMessage.sender_role == "bot",
-                )
-            )
-            bot_count = r.scalar() or 0
-
-            if bot_count <= 1 and cat and cat in _AI_CATEGORIES:
-                resp = _rng.choice(_AI_CATEGORIES[cat][f"first{suffix}"]).format(name=user_name)
-                # For trip-related categories, include real trip data
-                if cat in ("trip_charge", "refund", "cancellation", "lost_item", "waiting"):
-                    resp += "\n\n" + ctx["trip_summary"]
-                # If user has active trip, mention it proactively
-                if ctx["has_active_trip"] and cat in ("cancellation", "waiting", "driver"):
-                    at = ctx["active_trip"]
-                    if lang.startswith("es"):
-                        resp += f"\n\n?? Veo que tienes un viaje activo: {at['pickup']} ? {at['dropoff']} (Estado: {at['status']})"
-                        if at.get("driver_name"):
-                            resp += f" con el conductor {at['driver_name']}"
-                    else:
-                        resp += f"\n\n?? I can see you have an active trip: {at['pickup']} ? {at['dropoff']} (Status: {at['status']})"
-                        if at.get("driver_name"):
-                            resp += f" with driver {at['driver_name']}"
-            elif cat and cat in _AI_CATEGORIES:
-                resp = _rng.choice(_AI_CATEGORIES[cat][f"followup{suffix}"]).format(name=user_name)
-                # For refund/charge followups, create an actual refund request
-                if cat in ("trip_charge", "refund"):
+            # Try Claude AI first
+            claude_resp = await _generate_claude_response(chat, user_msg, user_name, agent, db)
+            if claude_resp:
+                resp = claude_resp
+                # Still do side-effects for safety/refund even with Claude
+                scored = _score_categories(user_msg)
+                cat = scored[0][0] if scored else None
+                if cat == "safety":
+                    chat.needs_escalation = True
+                    chat.bot_phase = "escalated"
+                    if _HAS_FIRESTORE:
+                        try:
+                            firestore_sync.sync_dispatch_notification(
+                                chat.id, user_name, "safety_report",
+                                f"🚨 SEGURIDAD: {user_name} reportó un problema de seguridad"
+                            )
+                            firestore_sync.sync_support_chat(
+                                chat.id, chat.user_id, user_name, "",
+                                needs_escalation=True, bot_phase="escalated",
+                            )
+                        except Exception:
+                            pass
+                elif cat in ("trip_charge", "refund"):
                     trips = await _lookup_user_trips(chat.user_id, db, limit=1)
                     if trips:
                         req_id = await _create_refund_request(
@@ -5159,15 +5353,11 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                             f"User requested via support chat: {user_msg[:200]}",
                             db
                         )
-                        if lang.startswith("es"):
-                            resp += f"\n\n?? Se ha creado la solicitud de reembolso #{req_id}. Nuestro equipo la revisar�."
-                        else:
-                            resp += f"\n\n?? Refund request #{req_id} has been created. Our team will review it."
                     if _HAS_FIRESTORE:
                         try:
                             firestore_sync.sync_dispatch_notification(
                                 chat.id, user_name, "refund_request",
-                                f"?? {user_name} solicit� reembolso via chat de soporte"
+                                f"💰 {user_name} solicitó reembolso via chat de soporte"
                             )
                         except Exception:
                             pass
@@ -5184,38 +5374,101 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                         try:
                             firestore_sync.sync_dispatch_notification(
                                 chat.id, user_name, "driver_report",
-                                f"?? {user_name} report� un conductor via chat"
+                                f"⚠️ {user_name} reportó un conductor via chat"
                             )
                         except Exception:
                             pass
-                elif cat == "safety":
-                    # Safety issues always get escalated
-                    chat.needs_escalation = True
-                    chat.bot_phase = "escalated"
-                    if _HAS_FIRESTORE:
-                        try:
-                            firestore_sync.sync_dispatch_notification(
-                                chat.id, user_name, "safety_report",
-                                f"?? SEGURIDAD: {user_name} report� un problema de seguridad"
-                            )
-                            firestore_sync.sync_support_chat(
-                                chat.id, chat.user_id, user_name, "",
-                                needs_escalation=True, bot_phase="escalated",
-                            )
-                        except Exception:
-                            pass
-            elif bot_count <= 1:
-                fallback = _FALLBACK_FIRST_ES if lang.startswith("es") else _FALLBACK_FIRST_EN
-                resp = _rng.choice(fallback).format(name=user_name)
-                # Include active trip context even for unrecognized categories
-                if ctx["has_active_trip"]:
-                    at = ctx["active_trip"]
-                    if lang.startswith("es"):
-                        resp += f"\n\n?? Por cierto, veo que tienes un viaje activo ({at['status']}): {at['pickup']} ? {at['dropoff']}. �Tu consulta es sobre este viaje?"
-                    else:
-                        resp += f"\n\n?? By the way, I can see you have an active trip ({at['status']}): {at['pickup']} ? {at['dropoff']}. Is your inquiry about this trip?"
             else:
-                resp = _generate_human_chat(user_msg, user_name, agent, lang)
+                # Fallback to keyword-based responses
+                scored = _score_categories(user_msg)
+                cat = scored[0][0] if scored else None
+                r = await db.execute(
+                    select(func.count(SupportMessage.id)).where(
+                        SupportMessage.chat_id == chat.id,
+                        SupportMessage.sender_role == "bot",
+                    )
+                )
+                bot_count = r.scalar() or 0
+
+                if bot_count <= 1 and cat and cat in _AI_CATEGORIES:
+                    resp = _rng.choice(_AI_CATEGORIES[cat][f"first{suffix}"]).format(name=user_name)
+                    if cat in ("trip_charge", "refund", "cancellation", "lost_item", "waiting"):
+                        resp += "\n\n" + ctx["trip_summary"]
+                    if ctx["has_active_trip"] and cat in ("cancellation", "waiting", "driver"):
+                        at = ctx["active_trip"]
+                        if lang.startswith("es"):
+                            resp += f"\n\n📍 Veo que tienes un viaje activo: {at['pickup']} → {at['dropoff']} (Estado: {at['status']})"
+                            if at.get("driver_name"):
+                                resp += f" con el conductor {at['driver_name']}"
+                        else:
+                            resp += f"\n\n📍 I can see you have an active trip: {at['pickup']} → {at['dropoff']} (Status: {at['status']})"
+                            if at.get("driver_name"):
+                                resp += f" with driver {at['driver_name']}"
+                elif cat and cat in _AI_CATEGORIES:
+                    resp = _rng.choice(_AI_CATEGORIES[cat][f"followup{suffix}"]).format(name=user_name)
+                    if cat in ("trip_charge", "refund"):
+                        trips = await _lookup_user_trips(chat.user_id, db, limit=1)
+                        if trips:
+                            req_id = await _create_refund_request(
+                                chat.user_id, trips[0].id,
+                                f"User requested via support chat: {user_msg[:200]}",
+                                db
+                            )
+                            if lang.startswith("es"):
+                                resp += f"\n\n✅ Se ha creado la solicitud de reembolso #{req_id}. Nuestro equipo la revisará."
+                            else:
+                                resp += f"\n\n✅ Refund request #{req_id} has been created. Our team will review it."
+                        if _HAS_FIRESTORE:
+                            try:
+                                firestore_sync.sync_dispatch_notification(
+                                    chat.id, user_name, "refund_request",
+                                    f"💰 {user_name} solicitó reembolso via chat de soporte"
+                                )
+                            except Exception:
+                                pass
+                    elif cat == "driver":
+                        notif = Notification(
+                            user_id=chat.user_id,
+                            title="Driver Report",
+                            body=f"Via support chat: {user_msg[:200]}",
+                            notif_type="driver_report",
+                        )
+                        db.add(notif)
+                        await db.flush()
+                        if _HAS_FIRESTORE:
+                            try:
+                                firestore_sync.sync_dispatch_notification(
+                                    chat.id, user_name, "driver_report",
+                                    f"⚠️ {user_name} reportó un conductor via chat"
+                                )
+                            except Exception:
+                                pass
+                    elif cat == "safety":
+                        chat.needs_escalation = True
+                        chat.bot_phase = "escalated"
+                        if _HAS_FIRESTORE:
+                            try:
+                                firestore_sync.sync_dispatch_notification(
+                                    chat.id, user_name, "safety_report",
+                                    f"🚨 SEGURIDAD: {user_name} reportó un problema de seguridad"
+                                )
+                                firestore_sync.sync_support_chat(
+                                    chat.id, chat.user_id, user_name, "",
+                                    needs_escalation=True, bot_phase="escalated",
+                                )
+                            except Exception:
+                                pass
+                elif bot_count <= 1:
+                    fallback = _FALLBACK_FIRST_ES if lang.startswith("es") else _FALLBACK_FIRST_EN
+                    resp = _rng.choice(fallback).format(name=user_name)
+                    if ctx["has_active_trip"]:
+                        at = ctx["active_trip"]
+                        if lang.startswith("es"):
+                            resp += f"\n\n📍 Por cierto, veo que tienes un viaje activo ({at['status']}): {at['pickup']} → {at['dropoff']}. ¿Tu consulta es sobre este viaje?"
+                        else:
+                            resp += f"\n\n📍 By the way, I can see you have an active trip ({at['status']}): {at['pickup']} → {at['dropoff']}. Is your inquiry about this trip?"
+                else:
+                    resp = _generate_human_chat(user_msg, user_name, agent, lang)
             replies.append({"role": "bot", "message": resp, "sender_name": agent})
 
     elif phase == "escalated":
@@ -5269,26 +5522,35 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                     if r["role"] == "system":
                         await asyncio.sleep(_rng.uniform(0.8, 1.5))
                     else:
-                        # Longer messages take longer to "type"
                         msg_len = len(r["message"])
                         typing_time = min(2.5 + msg_len * 0.04, 12.0)
                         await asyncio.sleep(_rng.uniform(typing_time * 0.75, typing_time))
-                bot_msg = SupportMessage(
-                    chat_id=chat_id, sender_id=0,
-                    sender_role=r["role"], message=r["message"]
-                )
-                db.add(bot_msg)
-                await db.flush()
-                await db.refresh(bot_msg)
-                chat.updated_at = datetime.now(timezone.utc)
-                await db.commit()
-                if _HAS_FIRESTORE:
-                    try:
-                        firestore_sync.sync_support_message(
-                            chat_id, bot_msg.id, 0, r["sender_name"], r["role"], r["message"]
-                        )
-                    except Exception:
-                        pass
+                # Split ||SPLIT|| markers into separate messages with typing delays
+                parts = r["message"].split("||SPLIT||") if "||SPLIT||" in r["message"] else [r["message"]]
+                for pidx, part in enumerate(parts):
+                    part = part.strip()
+                    if not part:
+                        continue
+                    if pidx > 0:
+                        part_len = len(part)
+                        typing_time = min(2.0 + part_len * 0.04, 10.0)
+                        await asyncio.sleep(_rng.uniform(typing_time * 0.75, typing_time))
+                    bot_msg = SupportMessage(
+                        chat_id=chat_id, sender_id=0,
+                        sender_role=r["role"], message=part
+                    )
+                    db.add(bot_msg)
+                    await db.flush()
+                    await db.refresh(bot_msg)
+                    chat.updated_at = datetime.now(timezone.utc)
+                    await db.commit()
+                    if _HAS_FIRESTORE:
+                        try:
+                            firestore_sync.sync_support_message(
+                                chat_id, bot_msg.id, 0, r["sender_name"], r["role"], part
+                            )
+                        except Exception:
+                            pass
     except Exception as e:
         logging.error("Background bot reply failed for chat %d: %s", chat_id, e)
 
@@ -8768,6 +9030,15 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 logging.info("[BGCheck] Driver %s verification updated to %s", user.id, ver_status)
 
     return {"status": "ok"}
+
+
+# ── Stripe Webhooks router ──────────────────────────────
+try:
+    from webhooks.stripe_webhook import router as stripe_wh_router
+    app.include_router(stripe_wh_router)
+    logging.info("[Webhooks] Stripe webhook router registered")
+except ImportError as _wh_err:
+    logging.warning("[Webhooks] Could not load stripe webhook router: %s", _wh_err)
 
 
 # -------------------------------------------------------

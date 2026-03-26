@@ -1,5 +1,9 @@
 import 'dart:async';
 import 'dart:math';
+import '../services/ai_support_service.dart';
+import '../config/agent_prompts.dart';
+import '../widgets/typing_indicator.dart';
+import '../widgets/queue_status_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -902,7 +906,10 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
 }
 
 // ─────────────────────────────────────────────────────────
-//  Live Support Chat (connected to backend with AI agent)
+//  Live Support Chat — 3-phase AI agent experience
+//  Phase 1: Bot intake (greeting + quick actions)
+//  Phase 2: Simulated queue (3-4 min timer)
+//  Phase 3: Agent chat (human-like AI responses)
 // ─────────────────────────────────────────────────────────
 class CruiseSupportChatScreen extends StatefulWidget {
   const CruiseSupportChatScreen({super.key});
@@ -911,6 +918,8 @@ class CruiseSupportChatScreen extends StatefulWidget {
       _CruiseSupportChatScreenState();
 }
 
+enum _ChatPhase { bot, queue, agent }
+
 class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   static const _gold = Color(0xFFE8C547);
 
@@ -918,18 +927,37 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   final _scrollCtrl = ScrollController();
   final _focusNode = FocusNode();
   final List<_ChatMsg> _messages = [];
+  final List<_ChatMsg> _bufferedMessages = [];
+
   int? _chatId;
   String? _agentName;
-  String _subtitle = 'Sistema automatizado';
+  String _subtitle = '';
   bool _loading = true;
   bool _sending = false;
   bool _chatClosed = false;
+  bool _isAgentTyping = false;
+  bool _showQuickActions = true;
   Timer? _pollTimer;
+  String _userRole = 'rider';
+
+  _ChatPhase _phase = _ChatPhase.bot;
+  int _queueDuration = 180;
+
+  // Track how many messages were shown before queue started
+  int _preQueueMsgCount = 0;
+
+  bool get _isSpanish {
+    try {
+      return Localizations.localeOf(context).languageCode.startsWith('es');
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    // Defer to ensure context has Localizations available
+    _queueDuration = AiSupportService.randomQueueWait();
     WidgetsBinding.instance.addPostFrameCallback((_) => _initChat());
   }
 
@@ -942,10 +970,16 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     super.dispose();
   }
 
+  // ── Initialization ──────────────────────────────────────────────────
+
   Future<void> _initChat() async {
     try {
       final locale = Localizations.localeOf(context).languageCode;
-      // Re-probe the server URL in case the tunnel changed
+
+      // Determine user role
+      final mode = await UserSession.getMode();
+      _userRole = mode.isNotEmpty ? mode : 'rider';
+
       await ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 4));
       final chat = await ApiService.createSupportChat(
         subject: 'Soporte general',
@@ -954,7 +988,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       _chatId = chat['id'] as int?;
       _agentName = chat['agent_name'] as String?;
       final status = chat['status'] as String? ?? 'open';
+      final botPhase = chat['bot_phase'] as String? ?? 'welcome';
       if (status == 'closed') _chatClosed = true;
+
       if (_chatId != null) {
         await _loadMessages();
         _pollTimer = Timer.periodic(
@@ -962,9 +998,20 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           (_) => _loadMessages(),
         );
       }
+
+      // If resuming a chat that's already in agent phase, skip to agent
+      if (botPhase == 'agent_active' || botPhase == 'escalated' || botPhase == 'dispatch_takeover') {
+        _phase = _ChatPhase.agent;
+        _showQuickActions = false;
+        if (_agentName != null) {
+          _subtitle = '${_agentName!} · ${_isSpanish ? 'En línea' : 'Online'}';
+        }
+      } else {
+        _subtitle = _isSpanish ? 'Soporte Cruise' : 'Cruise Support';
+      }
     } catch (e) {
       debugPrint('[SupportChat] init error: $e');
-      // Retry once with default locale
+      // Retry once
       if (_chatId == null) {
         try {
           final chat = await ApiService.createSupportChat(
@@ -973,8 +1020,6 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           );
           _chatId = chat['id'] as int?;
           _agentName = chat['agent_name'] as String?;
-          final status = chat['status'] as String? ?? 'open';
-          if (status == 'closed') _chatClosed = true;
           if (_chatId != null) {
             await _loadMessages();
             _pollTimer = Timer.periodic(
@@ -982,19 +1027,20 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               (_) => _loadMessages(),
             );
           }
-        } catch (e2) {
-          debugPrint('[SupportChat] retry init error: $e2');
-        }
+        } catch (_) {}
       }
     }
     if (mounted) setState(() => _loading = false);
   }
+
+  // ── Message loading & polling ───────────────────────────────────────
 
   Future<void> _loadMessages() async {
     if (_chatId == null) return;
     try {
       final msgs = await ApiService.getSupportMessages(_chatId!);
       if (!mounted) return;
+
       final newMessages = msgs.map((m) {
         final role = m['sender_role'] ?? '';
         return _ChatMsg(
@@ -1004,70 +1050,236 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           senderName: m['sender_name'] ?? '',
         );
       }).toList();
-      if (newMessages.length != _messages.length) {
-        // Extract agent name from bot messages
+
+      if (newMessages.length == _messages.length + _bufferedMessages.length) return;
+
+      // Extract agent name from bot messages
+      for (final m in newMessages) {
+        if (m.role == 'bot' && m.senderName.isNotEmpty &&
+            m.senderName != 'Asistente Cruise' &&
+            m.senderName != 'Cruise Assistant') {
+          _agentName = m.senderName;
+        }
+      }
+
+      // Check for chat closure
+      final lastBot = newMessages.where((m) => m.role == 'bot').lastOrNull;
+      if (lastBot != null &&
+          (lastBot.text.contains('cerraré este chat') ||
+              lastBot.text.contains('closing this session'))) {
+        _chatClosed = true;
+        _pollTimer?.cancel();
+      }
+
+      if (_phase == _ChatPhase.queue) {
+        // Buffer messages during queue — they'll be revealed after queue completes
+        _bufferedMessages.clear();
+        _bufferedMessages.addAll(newMessages.skip(_preQueueMsgCount));
+        return;
+      }
+
+      // Check if any new message triggers transition to queue
+      if (_phase == _ChatPhase.bot) {
         for (final m in newMessages) {
-          if (m.role == 'bot' &&
-              m.senderName.isNotEmpty &&
-              m.senderName != 'Asistente Cruise') {
-            _agentName = m.senderName;
+          if ((m.role == 'bot' || m.role == 'system') &&
+              AiSupportService.isConnectingMessage(m.text)) {
+            // Show the connecting message, then start queue
+            setState(() {
+              _messages.clear();
+              _messages.addAll(newMessages);
+              _showQuickActions = false;
+              _preQueueMsgCount = newMessages.length;
+            });
+            _scrollToBottom();
+            // Short delay then transition to queue
+            await Future.delayed(const Duration(seconds: 2));
+            if (mounted) {
+              setState(() {
+                _phase = _ChatPhase.queue;
+                _subtitle = _isSpanish
+                    ? 'Conectando con un agente...'
+                    : 'Connecting to an agent...';
+              });
+            }
+            return;
           }
         }
-        // Check if last bot message indicates chat closure
-        final lastBot = newMessages.where((m) => m.role == 'bot').lastOrNull;
-        if (lastBot != null &&
-            (lastBot.text.contains('cerraré este chat') ||
-                lastBot.text.contains('closing this session'))) {
-          _chatClosed = true;
-          _pollTimer?.cancel();
-        }
-        // Check if supervisor connected
-        final hasSupervisor = newMessages.any(
-          (m) =>
-              m.role == 'system' &&
-              (m.text.contains('supervisor se ha conectado') ||
-                  m.text.contains('supervisor has joined')),
-        );
-        setState(() {
-          _messages.clear();
-          _messages.addAll(newMessages);
-          _sending = false;
-          if (_chatClosed) {
-            _subtitle = S.of(context).chatClosed;
-          } else if (hasSupervisor) {
-            _subtitle = S.of(context).supervisorConnected;
-          } else {
-            _subtitle = _agentName != null
-                ? S.of(context).online
-                : S.of(context).automatedSystem;
-          }
-        });
-        _scrollToBottom();
       }
-      // Also check chat status from the chats list
-      if (!_chatClosed) {
-        try {
-          final chats = await ApiService.getSupportChats();
-          final thisChat = chats.firstWhere(
-            (c) => c['id'] == _chatId,
-            orElse: () => {},
+
+      // Check for agent joined (if we somehow skipped queue)
+      if (_phase == _ChatPhase.bot) {
+        for (final m in newMessages) {
+          if (m.role == 'system' && AiSupportService.isAgentJoinedMessage(m.text)) {
+            _phase = _ChatPhase.agent;
+            _showQuickActions = false;
+          }
+        }
+      }
+
+      // Deliver new messages with typing indicator for agent phase
+      if (_phase == _ChatPhase.agent && newMessages.length > _messages.length) {
+        final newOnes = newMessages.skip(_messages.length).toList();
+        final agentMessages = newOnes.where((m) => m.role == 'bot').toList();
+
+        if (agentMessages.isNotEmpty) {
+          // Show typing indicator then reveal
+          setState(() => _isAgentTyping = true);
+          _scrollToBottom();
+
+          // Wait for realistic typing duration
+          final typingMs = AiSupportService.typingDuration(
+            agentMessages.first.text,
           );
-          if (thisChat.isNotEmpty && thisChat['status'] == 'closed') {
-            _chatClosed = true;
-            _pollTimer?.cancel();
-            if (mounted) setState(() => _subtitle = S.of(context).chatClosed);
-          }
-        } catch (_) {}
+          await Future.delayed(Duration(milliseconds: typingMs.clamp(2000, 8000)));
+
+          if (!mounted) return;
+          setState(() {
+            _isAgentTyping = false;
+            _messages.clear();
+            _messages.addAll(newMessages);
+            if (_chatClosed) {
+              _subtitle = S.of(context).chatClosed;
+            } else if (_agentName != null) {
+              _subtitle = '${_agentName!} · ${_isSpanish ? 'En línea' : 'Online'}';
+            }
+          });
+          _scrollToBottom();
+          return;
+        }
       }
+
+      // Default: just update messages
+      setState(() {
+        _messages.clear();
+        _messages.addAll(newMessages);
+        _sending = false;
+        if (_chatClosed) {
+          _subtitle = S.of(context).chatClosed;
+        } else if (_phase == _ChatPhase.agent && _agentName != null) {
+          _subtitle = '${_agentName!} · ${_isSpanish ? 'En línea' : 'Online'}';
+        }
+      });
+      _scrollToBottom();
     } catch (e) {
       debugPrint('[SupportChat] poll error: $e');
     }
   }
 
-  Future<void> _sendMessage() async {
-    final text = _msgCtrl.text.trim();
+  // ── Queue completed ─────────────────────────────────────────────────
+
+  void _onQueueComplete() async {
+    if (!mounted) return;
+
+    // Transition to agent phase
+    setState(() {
+      _phase = _ChatPhase.agent;
+      _showQuickActions = false;
+    });
+
+    // Show typing indicator briefly
+    setState(() => _isAgentTyping = true);
+    await Future.delayed(const Duration(seconds: 3));
+    if (!mounted) return;
+
+    // Reveal buffered messages one at a time with typing delays
+    final toReveal = List<_ChatMsg>.from(_bufferedMessages);
+    _bufferedMessages.clear();
+
+    for (final msg in toReveal) {
+      if (!mounted) return;
+
+      if (msg.role == 'system') {
+        // System messages appear instantly
+        setState(() {
+          _isAgentTyping = false;
+          _messages.add(msg);
+        });
+        _scrollToBottom();
+        await Future.delayed(const Duration(milliseconds: 800));
+        continue;
+      }
+
+      if (msg.role == 'bot') {
+        setState(() => _isAgentTyping = true);
+        _scrollToBottom();
+        final delay = AiSupportService.typingDuration(msg.text).clamp(3000, 10000);
+        await Future.delayed(Duration(milliseconds: delay));
+        if (!mounted) return;
+        setState(() {
+          _isAgentTyping = false;
+          _messages.add(msg);
+        });
+        _scrollToBottom();
+        await Future.delayed(const Duration(milliseconds: 600));
+      } else {
+        setState(() {
+          _isAgentTyping = false;
+          _messages.add(msg);
+        });
+        _scrollToBottom();
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _isAgentTyping = false;
+        if (_agentName != null) {
+          _subtitle = '${_agentName!} · ${_isSpanish ? 'En línea' : 'Online'}';
+        } else {
+          _subtitle = _isSpanish ? 'Soporte Cruise' : 'Cruise Support';
+        }
+      });
+    }
+
+    // Make sure we have the latest messages
+    await _loadMessages();
+  }
+
+  // ── Send message ────────────────────────────────────────────────────
+
+  Future<void> _sendMessage([String? prefilledText]) async {
+    final text = prefilledText ?? _msgCtrl.text.trim();
     if (text.isEmpty || _sending) return;
-    // If chat not yet initialized, try to create it now
+    if (prefilledText == null) _msgCtrl.clear();
+
+    // Hide quick actions after first message
+    if (_showQuickActions) {
+      setState(() => _showQuickActions = false);
+    }
+
+    // During queue, show a note that message was received
+    if (_phase == _ChatPhase.queue) {
+      setState(() {
+        _messages.add(_ChatMsg(
+          text: text,
+          role: _userRole,
+          time: DateTime.now(),
+        ));
+      });
+      _scrollToBottom();
+      // Send to backend silently
+      if (_chatId != null) {
+        try {
+          await ApiService.sendSupportMessage(_chatId!, text);
+        } catch (_) {}
+      }
+      // Show "message received" note
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) {
+        setState(() {
+          _messages.add(_ChatMsg(
+            text: _isSpanish
+                ? 'Tu mensaje fue recibido. El agente lo verá cuando se conecte.'
+                : 'Your message was received. The agent will see it when they connect.',
+            role: 'system',
+            time: DateTime.now(),
+          ));
+        });
+        _scrollToBottom();
+      }
+      return;
+    }
+
     if (_chatId == null) {
       setState(() => _loading = true);
       await _initChat();
@@ -1084,39 +1296,45 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         return;
       }
     }
-    _msgCtrl.clear();
+
     setState(() {
       _sending = true;
-      _subtitle = S.of(context).processingRequest;
-      _messages.add(_ChatMsg(text: text, role: 'rider', time: DateTime.now()));
+      _messages.add(_ChatMsg(text: text, role: _userRole, time: DateTime.now()));
     });
     _scrollToBottom();
+
     try {
       await ApiService.sendSupportMessage(_chatId!, text);
-      // Immediately poll for bot reply
+      // Show typing indicator while waiting for bot/agent response
+      if (mounted && _phase == _ChatPhase.agent) {
+        setState(() => _isAgentTyping = true);
+        _scrollToBottom();
+      }
+      // Immediately poll for reply
+      await Future.delayed(const Duration(seconds: 2));
       await _loadMessages();
     } catch (e) {
       debugPrint('[SupportChat] send error: $e');
       if (mounted) {
-        // Remove the optimistic message that failed to send
-        setState(() => _messages.removeLast());
+        setState(() {
+          if (_messages.isNotEmpty && _messages.last.role == _userRole) {
+            _messages.removeLast();
+          }
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context).connectionError),
+            content: Text(_isSpanish
+                ? 'No se pudo enviar. Verifica tu conexión.'
+                : 'Failed to send. Check your connection.'),
             backgroundColor: Colors.red,
           ),
         );
       }
     }
-    if (mounted) {
-      setState(() {
-        _sending = false;
-        _subtitle = _agentName != null
-            ? S.of(context).online
-            : S.of(context).automatedSystem;
-      });
-    }
+    if (mounted) setState(() => _sending = false);
   }
+
+  // ── Scroll ──────────────────────────────────────────────────────────
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1130,7 +1348,28 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     });
   }
 
-  String get _displayName => _agentName ?? 'Asistente Cruise';
+  // ── Voice call ──────────────────────────────────────────────────────
+
+  Future<void> _startVoiceCall() async {
+    try {
+      final phone = await ApiService.getSupportPhoneNumber();
+      if (phone == null || phone.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(S.of(context).supportLineUnavailable),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      final uri = Uri(scheme: 'tel', path: phone);
+      if (await canLaunchUrl(uri)) await launchUrl(uri);
+    } catch (_) {}
+  }
+
+  // ── End / new chat ──────────────────────────────────────────────────
 
   Future<void> _endChat() async {
     if (_chatId == null || _chatClosed) return;
@@ -1141,10 +1380,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           S.of(context).endChat,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-          ),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
         ),
         content: Text(
           S.of(context).endChatConfirm,
@@ -1153,17 +1389,11 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              S.of(context).cancel,
-              style: const TextStyle(color: Colors.grey),
-            ),
+            child: Text(S.of(context).cancel, style: const TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              S.of(context).endChat,
-              style: const TextStyle(color: _gold),
-            ),
+            child: Text(S.of(context).endChat, style: const TextStyle(color: _gold)),
           ),
         ],
       ),
@@ -1175,36 +1405,33 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       if (mounted) {
         setState(() {
           _chatClosed = true;
-          _subtitle = S.of(context).chatEnded;
+          _subtitle = S.of(context).chatClosed;
         });
       }
-    } catch (e) {
-      debugPrint('[SupportChat] end chat error: $e');
-    }
+    } catch (_) {}
   }
 
-  Future<void> _startVoiceCall() async {
-    try {
-      final phone = await ApiService.getSupportPhoneNumber();
-      if (phone == null || phone.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Support line not available'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-      final uri = Uri(scheme: 'tel', path: phone);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      }
-    } catch (e) {
-      debugPrint('[SupportChat] voice call error: $e');
-    }
+  void _startNewChat() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    setState(() {
+      _chatId = null;
+      _messages.clear();
+      _bufferedMessages.clear();
+      _chatClosed = false;
+      _loading = true;
+      _agentName = null;
+      _subtitle = '';
+      _sending = false;
+      _phase = _ChatPhase.bot;
+      _showQuickActions = true;
+      _isAgentTyping = false;
+      _queueDuration = AiSupportService.randomQueueWait();
+    });
+    _initChat();
   }
+
+  // ── BUILD ───────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -1216,16 +1443,17 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         elevation: 0,
         title: Row(
           children: [
+            // Avatar
             Container(
               width: 36,
               height: 36,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
                   colors: [_gold, Color(0xFFD4A017)],
                 ),
                 shape: BoxShape.circle,
               ),
-              child: _agentName != null
+              child: _agentName != null && _phase == _ChatPhase.agent
                   ? Center(
                       child: Text(
                         _agentName![0].toUpperCase(),
@@ -1236,11 +1464,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                         ),
                       ),
                     )
-                  : const Icon(
-                      Icons.support_agent,
-                      color: Colors.black,
-                      size: 20,
-                    ),
+                  : const Icon(Icons.support_agent, color: Colors.black, size: 20),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1248,53 +1472,44 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _displayName,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    _isSpanish ? 'Soporte de Cruise' : 'Cruise Support',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                     overflow: TextOverflow.ellipsis,
                   ),
-                  Row(
-                    children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: _sending
-                              ? Colors.orange
-                              : const Color(0xFF4CAF50),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          _subtitle,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey[400],
+                  if (_subtitle.isNotEmpty)
+                    Row(
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: _chatClosed
+                                ? Colors.grey
+                                : _sending || _isAgentTyping
+                                    ? Colors.orange
+                                    : const Color(0xFF4CAF50),
+                            shape: BoxShape.circle,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            _subtitle,
+                            style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
           ],
         ),
         actions: [
-          if (!_chatClosed)
-            IconButton(
-              icon: const Icon(Icons.close_rounded, color: Colors.redAccent),
-              tooltip: S.of(context).endChat,
-              onPressed: _endChat,
-            ),
           IconButton(
             icon: const Icon(Icons.phone, color: _gold),
-            tooltip: 'Llamar a soporte',
+            tooltip: _isSpanish ? 'Llamar a soporte' : 'Call support',
             onPressed: _startVoiceCall,
           ),
         ],
@@ -1304,38 +1519,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: _gold))
-                : _messages.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.chat_bubble_outline,
-                          size: 48,
-                          color: Colors.grey[600],
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          S.of(context).writeToStart,
-                          style: TextStyle(
-                            color: Colors.grey[500],
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scrollCtrl,
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                    itemCount: _messages.length + (_sending ? 1 : 0),
-                    itemBuilder: (context, i) {
-                      if (i == _messages.length && _sending) {
-                        return _buildTypingIndicator();
-                      }
-                      return _buildBubble(_messages[i]);
-                    },
-                  ),
+                : _buildBody(),
           ),
           _buildInputBar(),
         ],
@@ -1343,54 +1527,100 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     );
   }
 
-  Widget _buildTypingIndicator() {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFF2A2A2A),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _dot(0),
-            const SizedBox(width: 4),
-            _dot(1),
-            const SizedBox(width: 4),
-            _dot(2),
-            const SizedBox(width: 8),
-            Text(
-              S.of(context).processingRequest,
-              style: TextStyle(
-                fontSize: 12,
-                color: _gold,
-                fontWeight: FontWeight.w500,
+  // ── Chat body ───────────────────────────────────────────────────────
+
+  Widget _buildBody() {
+    return ListView.builder(
+      controller: _scrollCtrl,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      itemCount: _itemCount(),
+      itemBuilder: (context, i) {
+        // Messages
+        if (i < _messages.length) {
+          return _buildBubble(_messages[i]);
+        }
+
+        // Quick actions (shown after last message)
+        final afterMsgIdx = i - _messages.length;
+
+        if (_showQuickActions && afterMsgIdx == 0) {
+          return _buildQuickActions();
+        }
+
+        // Queue widget
+        if (_phase == _ChatPhase.queue) {
+          final queueIdx = _showQuickActions ? afterMsgIdx - 1 : afterMsgIdx;
+          if (queueIdx == 0) {
+            return QueueStatusWidget(
+              totalDuration: _queueDuration,
+              onComplete: _onQueueComplete,
+              isSpanish: _isSpanish,
+            );
+          }
+        }
+
+        // Typing indicator
+        if (_isAgentTyping) {
+          return const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: TypingBubble(),
+          );
+        }
+
+        return const SizedBox.shrink();
+      },
+    );
+  }
+
+  int _itemCount() {
+    int count = _messages.length;
+    if (_showQuickActions) count += 1;
+    if (_phase == _ChatPhase.queue) count += 1;
+    if (_isAgentTyping) count += 1;
+    return count;
+  }
+
+  // ── Quick action chips ──────────────────────────────────────────────
+
+  Widget _buildQuickActions() {
+    final actions = _userRole == 'driver'
+        ? AgentPrompts.driverQuickActions(_isSpanish)
+        : AgentPrompts.riderQuickActions(_isSpanish);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: actions.map((action) {
+          return GestureDetector(
+            onTap: () => _sendMessage(action['message']),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2A2A2A),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: _gold.withValues(alpha: 0.3)),
+              ),
+              child: Text(
+                action['label']!,
+                style: const TextStyle(
+                  color: _gold,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ],
-        ),
+          );
+        }).toList(),
       ),
     );
   }
 
-  Widget _dot(int index) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.3, end: 1.0),
-      duration: Duration(milliseconds: 600 + index * 200),
-      builder: (_, v, child) => Opacity(opacity: v, child: child),
-      child: Container(
-        width: 7,
-        height: 7,
-        decoration: BoxDecoration(color: _gold, shape: BoxShape.circle),
-      ),
-    );
-  }
+  // ── Message bubble ──────────────────────────────────────────────────
 
   Widget _buildBubble(_ChatMsg msg) {
-    // System messages — centered notification
+    // System messages
     if (msg.role == 'system') {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
@@ -1406,11 +1636,11 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12.5,
-                color: msg.text.startsWith('🟢')
+                color: msg.text.contains('🟢')
                     ? const Color(0xFF4CAF50)
-                    : msg.text.startsWith('⚠️')
-                    ? Colors.orange
-                    : Colors.grey[400],
+                    : msg.text.contains('⚠️')
+                        ? Colors.orange
+                        : Colors.grey[400],
                 fontWeight: FontWeight.w500,
                 height: 1.4,
               ),
@@ -1420,25 +1650,23 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       );
     }
 
-    final isUser = msg.role == 'rider';
-    final isBot = msg.role == 'bot' || msg.role == 'dispatch';
+    final isUser = msg.role == 'rider' || msg.role == 'driver';
+    final isAgent = msg.role == 'bot' || msg.role == 'dispatch';
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisAlignment: isUser
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
+        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
-          if (isBot) ...[
+          if (isAgent) ...[
             Container(
               width: 28,
               height: 28,
               margin: const EdgeInsets.only(right: 6, bottom: 4),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
                   colors: [_gold, Color(0xFFD4A017)],
                 ),
                 shape: BoxShape.circle,
@@ -1447,7 +1675,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                 child: Text(
                   msg.senderName.isNotEmpty
                       ? msg.senderName[0].toUpperCase()
-                      : 'S',
+                      : 'C',
                   style: const TextStyle(
                     color: Colors.black,
                     fontSize: 12,
@@ -1476,6 +1704,19 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Agent name label (only for agent messages in agent phase)
+                  if (isAgent && _phase == _ChatPhase.agent && msg.senderName.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        msg.senderName,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: _gold.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ),
                   Text(
                     msg.text,
                     style: TextStyle(
@@ -1501,13 +1742,13 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     );
   }
 
+  // ── Input bar ───────────────────────────────────────────────────────
+
   Widget _buildInputBar() {
     if (_chatClosed) {
       return Container(
         padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 12,
+          left: 16, right: 16, top: 12,
           bottom: MediaQuery.of(context).padding.bottom + 12,
         ),
         decoration: BoxDecoration(
@@ -1526,20 +1767,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               width: double.infinity,
               height: 44,
               child: ElevatedButton(
-                onPressed: () {
-                  _pollTimer?.cancel();
-                  _pollTimer = null;
-                  setState(() {
-                    _chatId = null;
-                    _messages.clear();
-                    _chatClosed = false;
-                    _loading = true;
-                    _agentName = null;
-                    _subtitle = S.of(context).automatedSystem;
-                    _sending = false;
-                  });
-                  _initChat();
-                },
+                onPressed: _startNewChat,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _gold,
                   foregroundColor: Colors.black,
@@ -1557,11 +1785,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         ),
       );
     }
+
     return Container(
       padding: EdgeInsets.only(
-        left: 12,
-        right: 8,
-        top: 8,
+        left: 12, right: 8, top: 8,
         bottom: MediaQuery.of(context).padding.bottom + 8,
       ),
       decoration: BoxDecoration(
@@ -1584,10 +1811,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                 hintStyle: TextStyle(color: Colors.grey[600]),
                 filled: true,
                 fillColor: const Color(0xFF2A2A2A),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
                   borderSide: BorderSide.none,
@@ -1601,7 +1825,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
             shape: const CircleBorder(),
             child: InkWell(
               customBorder: const CircleBorder(),
-              onTap: _sendMessage,
+              onTap: () => _sendMessage(),
               child: const Padding(
                 padding: EdgeInsets.all(10),
                 child: Icon(Icons.send_rounded, color: Colors.black, size: 20),

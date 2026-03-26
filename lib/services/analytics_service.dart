@@ -1,0 +1,245 @@
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:flutter/foundation.dart';
+
+/// Singleton analytics service wrapping Firebase Analytics.
+///
+/// Provides typed methods for all key app events so screens don't
+/// need to know about Firebase directly.
+class AnalyticsService {
+  AnalyticsService._();
+  static final AnalyticsService instance = AnalyticsService._();
+
+  late final FirebaseAnalytics _analytics;
+  bool _initialized = false;
+
+  /// Initialize — call once from main.dart during startup.
+  Future<void> init() async {
+    if (_initialized) return;
+    try {
+      _analytics = FirebaseAnalytics.instance;
+      _initialized = true;
+      debugPrint('[Analytics] Initialized');
+    } catch (e) {
+      debugPrint('[Analytics] Init failed: $e');
+    }
+  }
+
+  /// Navigator observer for automatic screen tracking.
+  FirebaseAnalyticsObserver get observer =>
+      FirebaseAnalyticsObserver(analytics: _analytics);
+
+  // ── User identity ──────────────────────────────────────
+
+  Future<void> setUserId(String? userId) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.setUserId(id: userId);
+    } catch (e) {
+      debugPrint('[Analytics] setUserId error: $e');
+    }
+  }
+
+  Future<void> setUserType(String type) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.setUserProperty(name: 'user_type', value: type);
+    } catch (e) {
+      debugPrint('[Analytics] setUserType error: $e');
+    }
+  }
+
+  Future<void> setCity(String city) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.setUserProperty(name: 'city', value: city);
+    } catch (e) {
+      debugPrint('[Analytics] setCity error: $e');
+    }
+  }
+
+  Future<void> setPreferredVehicle(String vehicle) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.setUserProperty(name: 'preferred_vehicle', value: vehicle);
+    } catch (e) {
+      debugPrint('[Analytics] setPreferredVehicle error: $e');
+    }
+  }
+
+  // ── Screen views ───────────────────────────────────────
+
+  Future<void> logScreenView(String screenName) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logScreenView(screenName: screenName);
+    } catch (e) {
+      debugPrint('[Analytics] logScreenView error: $e');
+    }
+  }
+
+  // ── Auth events ────────────────────────────────────────
+
+  Future<void> logSignUp(String method) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logSignUp(signUpMethod: method);
+    } catch (e) {
+      debugPrint('[Analytics] logSignUp error: $e');
+    }
+  }
+
+  Future<void> logLogin(String method) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logLogin(loginMethod: method);
+    } catch (e) {
+      debugPrint('[Analytics] logLogin error: $e');
+    }
+  }
+
+  // ── Ride events ────────────────────────────────────────
+
+  Future<void> logRideRequested(String vehicleType, double fare) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(
+        name: 'ride_requested',
+        parameters: {
+          'vehicle_type': vehicleType,
+          'fare': fare,
+        },
+      );
+    } catch (e) {
+      debugPrint('[Analytics] logRideRequested error: $e');
+    }
+  }
+
+  Future<void> logRideCompleted(
+    String vehicleType,
+    double fare,
+    double distance,
+    int durationMinutes,
+  ) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(
+        name: 'ride_completed',
+        parameters: {
+          'vehicle_type': vehicleType,
+          'fare': fare,
+          'distance': distance,
+          'duration_minutes': durationMinutes,
+        },
+      );
+    } catch (e) {
+      debugPrint('[Analytics] logRideCompleted error: $e');
+    }
+  }
+
+  Future<void> logRideCancelled(String reason, bool byDriver) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(
+        name: 'ride_cancelled',
+        parameters: {
+          'reason': reason,
+          'by_driver': byDriver.toString(),
+        },
+      );
+    } catch (e) {
+      debugPrint('[Analytics] logRideCancelled error: $e');
+    }
+  }
+
+  // ── Driver events ──────────────────────────────────────
+
+  Future<void> logDriverOnline() async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(name: 'driver_online');
+    } catch (e) {
+      debugPrint('[Analytics] logDriverOnline error: $e');
+    }
+  }
+
+  Future<void> logDriverOffline() async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(name: 'driver_offline');
+    } catch (e) {
+      debugPrint('[Analytics] logDriverOffline error: $e');
+    }
+  }
+
+  Future<void> logRideOffered() async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(name: 'ride_offered');
+    } catch (e) {
+      debugPrint('[Analytics] logRideOffered error: $e');
+    }
+  }
+
+  Future<void> logRideAccepted() async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(name: 'ride_accepted');
+    } catch (e) {
+      debugPrint('[Analytics] logRideAccepted error: $e');
+    }
+  }
+
+  Future<void> logRideDeclined() async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(name: 'ride_declined');
+    } catch (e) {
+      debugPrint('[Analytics] logRideDeclined error: $e');
+    }
+  }
+
+  // ── Payment events ─────────────────────────────────────
+
+  Future<void> logPaymentAdded(String method) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(
+        name: 'payment_added',
+        parameters: {'method': method},
+      );
+    } catch (e) {
+      debugPrint('[Analytics] logPaymentAdded error: $e');
+    }
+  }
+
+  // ── Promo events ───────────────────────────────────────
+
+  Future<void> logPromoApplied(String code) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(
+        name: 'promo_applied',
+        parameters: {'code': code},
+      );
+    } catch (e) {
+      debugPrint('[Analytics] logPromoApplied error: $e');
+    }
+  }
+
+  // ── Error tracking ─────────────────────────────────────
+
+  Future<void> logError(String errorType, String message) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(
+        name: 'app_error',
+        parameters: {
+          'error_type': errorType,
+          'message': message.length > 100 ? message.substring(0, 100) : message,
+        },
+      );
+    } catch (e) {
+      debugPrint('[Analytics] logError error: $e');
+    }
+  }
+}

@@ -22,6 +22,7 @@ import '../services/notification_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../widgets/offline_banner.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:share_plus/share_plus.dart';
 import '../config/api_keys.dart';
 import 'chat_screen.dart';
 import '../services/chat_service.dart';
@@ -587,6 +588,29 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _handleShareTrip() async {
+    if (widget.tripId == null) return;
+    try {
+      final result = await ApiService.shareTrip(widget.tripId!);
+      final shareUrl = result['share_url'] as String?;
+      if (shareUrl == null) return;
+      final fullUrl = '${ApiService.publicBaseUrl}$shareUrl';
+      await Share.share(
+        'Track my Cruise ride live: $fullUrl',
+        subject: 'Cruise - Live Trip Tracking',
+      );
+      AnalyticsService.instance.logEvent('trip_shared');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not share trip: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _showCancelDialog() {
@@ -2023,6 +2047,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               ),
               const SizedBox(width: 8),
               _buildCardIconBtn(icon: Icons.phone_rounded, onTap: () {}),
+              const SizedBox(width: 8),
+              _buildCardIconBtn(
+                icon: Icons.share_rounded,
+                onTap: _handleShareTrip,
+              ),
               const SizedBox(width: 8),
               _buildCardIconBtn(
                 icon: Icons.more_horiz_rounded,

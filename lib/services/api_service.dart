@@ -2358,6 +2358,22 @@ class ApiService {
   }
 
   // ═══════════════════════════════════════════════════════
+  //  TRIP SHARING
+  // ═══════════════════════════════════════════════════════
+
+  /// Generate a share token/URL for a trip.
+  static Future<Map<String, dynamic>> shareTrip(int tripId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/trips/$tripId/share'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  // ═══════════════════════════════════════════════════════
   //  DRIVER DEMAND HEATMAP
   // ═══════════════════════════════════════════════════════
 

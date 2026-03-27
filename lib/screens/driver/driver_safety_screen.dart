@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
+import '../../services/api_service.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER SAFETY SCREEN — In-navigation safety actions
@@ -92,9 +94,21 @@ class DriverSafetyScreen extends StatelessWidget {
                       icon: Icons.share_location_rounded,
                       title: 'Share Trip Status',
                       subtitle: 'Send your real-time location to a contact',
-                      onTap: () {
+                      onTap: () async {
                         HapticFeedback.lightImpact();
-                        _showToast(context, 'Trip location shared');
+                        try {
+                          final result = await ApiService.shareTrip(tripId);
+                          final shareUrl = result['share_url'] as String?;
+                          if (shareUrl != null) {
+                            final fullUrl = '${ApiService.publicBaseUrl}$shareUrl';
+                            await Share.share(
+                              'Track my Cruise trip live: $fullUrl',
+                              subject: 'Cruise - Live Trip Tracking',
+                            );
+                          }
+                        } catch (_) {
+                          _showToast(context, 'Could not share trip');
+                        }
                       },
                     ),
                     const SizedBox(height: 8),

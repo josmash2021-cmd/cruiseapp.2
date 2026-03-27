@@ -460,7 +460,10 @@ class _SafetyScreenState extends State<SafetyScreen> {
 
   void _shareTrip(BuildContext context) {
     HapticFeedback.selectionClick();
-    Share.share('I\'m riding with Cruise! Track my trip live for safety. 🚗');
+    Share.share(
+      'I\'m riding with Cruise! Track my trip live for safety. '
+      'Download Cruise at ${ApiService.publicBaseUrl} 🚗',
+    );
   }
 
   void _showVerifyTip(BuildContext context, AppColors c) {

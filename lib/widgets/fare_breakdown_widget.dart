@@ -19,7 +19,7 @@ class FareBreakdownWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = AppTheme.colors(context);
+    final c = AppColors.of(context);
 
     return Container(
       padding: const EdgeInsets.all(20),

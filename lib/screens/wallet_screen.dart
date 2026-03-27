@@ -98,18 +98,17 @@ class _WalletScreenState extends State<WalletScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = AppTheme.colors(context);
-    final t = AppTheme.styles(context);
+    final c = AppColors.of(context);
     final loc = S.of(context);
 
     return Scaffold(
-      backgroundColor: c.background,
+      backgroundColor: c.bg,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: _backButton(c),
         centerTitle: true,
-        title: Text(loc.wallet, style: t.titleMedium),
+        title: Text(loc.wallet, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
         actions: [
           IconButton(
             icon: Icon(Icons.refresh_rounded, color: c.textPrimary),
@@ -121,7 +120,7 @@ class _WalletScreenState extends State<WalletScreen> {
           ? const Center(child: CircularProgressIndicator(color: _gold))
           : _error != null
               ? _buildError()
-              : _buildContent(c, t),
+              : _buildContent(c),
     );
   }
 
@@ -163,18 +162,18 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  Widget _buildContent(AppColors c, AppTextStyles t) {
+  Widget _buildContent(AppColors c) {
     return RefreshIndicator(
       onRefresh: _loadWalletData,
       color: _gold,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          _buildBalanceCard(c, t),
+          _buildBalanceCard(c),
           const SizedBox(height: 24),
           _buildQuickActions(c),
           const SizedBox(height: 28),
-          _buildTransactionsHeader(c, t),
+          _buildTransactionsHeader(c),
           const SizedBox(height: 12),
           if (_transactions.isEmpty)
             _buildEmptyTransactions(c)
@@ -185,7 +184,7 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  Widget _buildBalanceCard(AppColors c, AppTextStyles t) {
+  Widget _buildBalanceCard(AppColors c) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -315,7 +314,7 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  Widget _buildTransactionsHeader(AppColors c, AppTextStyles t) {
+  Widget _buildTransactionsHeader(AppColors c) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [

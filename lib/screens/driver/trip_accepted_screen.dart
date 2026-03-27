@@ -1,11 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
 import '../../config/mapbox_config.dart';
+import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../models/lat_lng.dart';
 import '../../widgets/verified_avatar.dart';
@@ -59,13 +64,31 @@ class TripAcceptedScreen extends StatefulWidget {
 }
 
 class _TripAcceptedScreenState extends State<TripAcceptedScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const _gold = Color(0xFFD4AF37);
   static const _bg = Color(0xFF0A0A0A);
   static const _card = Color(0xFF1A1A1A);
 
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fadeAnim;
+
+  // Slide-up animation for the content card
+  late final AnimationController _slideCtrl;
+  late final Animation<Offset> _slideAnim;
+  late final Animation<double> _slideFadeAnim;
+
+  // Map tilt animation: 0° → 55°
+  late final AnimationController _tiltCtrl;
+  late final Animation<double> _tiltAnim;
+
+  // Route draw
+  mapbox.MapboxMap? _mapCtrl;
+  mapbox.PolylineAnnotationManager? _polyMgr;
+  mapbox.PolylineAnnotation? _routeAnnot;
+  List<LatLng> _routePoints = [];
+  Ticker? _routeDrawTicker;
+  bool _routeFetching = false;
+
   Timer? _navTimer;
 
   @override
@@ -78,6 +101,34 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeInOut);
     _fadeCtrl.forward();
 
+    // Slide-up + fade for the bottom card
+    _slideCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
+    _slideFadeAnim = CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic);
+
+    // Start slide after a brief delay for map to appear first
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (mounted) _slideCtrl.forward();
+    });
+
+    // Map tilt: 0° → 55° over 1s
+    _tiltCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+      CurvedAnimation(parent: _tiltCtrl, curve: Curves.easeInOutCubic),
+    );
+
+    // Pre-fetch route in background
+    _prefetchRoute();
+
     // Auto-navigate to active trip screen after 3 seconds
     _navTimer = Timer(const Duration(seconds: 3), _goToTripScreen);
   }
@@ -86,7 +137,194 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
   void dispose() {
     _navTimer?.cancel();
     _fadeCtrl.dispose();
+    _slideCtrl.dispose();
+    _tiltCtrl.dispose();
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
     super.dispose();
+  }
+
+  /// Compute bearing from driver to pickup in degrees.
+  double _bearingToPickup() {
+    final dLng = (widget.pickupLatLng.longitude - widget.driverPos.longitude) * math.pi / 180;
+    final lat1 = widget.driverPos.latitude * math.pi / 180;
+    final lat2 = widget.pickupLatLng.latitude * math.pi / 180;
+    final y = math.sin(dLng) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
+    return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
+  }
+
+  /// Pre-fetch route points: use cached, or fetch from OSRM/Mapbox.
+  Future<void> _prefetchRoute() async {
+    if (widget.routePoints != null && widget.routePoints!.length >= 2) {
+      _routePoints = widget.routePoints!;
+      return;
+    }
+    setState(() => _routeFetching = true);
+    _routePoints = await _fetchRoutePoints(widget.driverPos, widget.pickupLatLng);
+    if (mounted) setState(() => _routeFetching = false);
+  }
+
+  /// Fetch route via OSRM → Mapbox → straight line fallback.
+  Future<List<LatLng>> _fetchRoutePoints(LatLng o, LatLng d) async {
+    // OSRM
+    try {
+      final path = '/route/v1/driving/${o.longitude},${o.latitude};${d.longitude},${d.latitude}';
+      final uri = Uri.https('router.project-osrm.org', path, {
+        'overview': 'full', 'geometries': 'polyline',
+      });
+      final res = await http.get(uri).timeout(const Duration(seconds: 6));
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (data['code']?.toString().toUpperCase() == 'OK') {
+        final routes = data['routes'] as List?;
+        if (routes != null && routes.isNotEmpty) {
+          final positions = _decodePoly(routes[0]['geometry'] as String);
+          if (positions.isNotEmpty) return positions;
+        }
+      }
+    } catch (_) {}
+    // Mapbox fallback
+    try {
+      final mbxUrl = Uri.parse(
+        'https://api.mapbox.com/directions/v5/mapbox/driving/'
+        '${o.longitude},${o.latitude};${d.longitude},${d.latitude}'
+        '?geometries=geojson&overview=full&steps=false'
+        '&access_token=${MapboxConfig.accessToken}',
+      );
+      final mbxRes = await http.get(mbxUrl).timeout(const Duration(seconds: 6));
+      if (mbxRes.statusCode == 200) {
+        final mbxData = jsonDecode(mbxRes.body);
+        final mbxRoutes = mbxData['routes'] as List?;
+        if (mbxRoutes != null && mbxRoutes.isNotEmpty) {
+          final coords = mbxRoutes[0]['geometry']?['coordinates'] as List?;
+          if (coords != null && coords.isNotEmpty) {
+            return coords
+                .map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
+                .toList();
+          }
+        }
+      }
+    } catch (_) {}
+    // Straight line fallback
+    return List.generate(21, (i) {
+      final t = i / 20;
+      return LatLng(
+        o.latitude + (d.latitude - o.latitude) * t,
+        o.longitude + (d.longitude - o.longitude) * t,
+      );
+    });
+  }
+
+  List<LatLng> _decodePoly(String encoded) {
+    final pts = <LatLng>[];
+    int i = 0, lat = 0, lng = 0;
+    while (i < encoded.length) {
+      int s = 0, r = 0, b;
+      do { b = encoded.codeUnitAt(i++) - 63; r |= (b & 0x1F) << s; s += 5; } while (b >= 0x20);
+      lat += (r & 1) != 0 ? ~(r >> 1) : (r >> 1);
+      s = 0; r = 0;
+      do { b = encoded.codeUnitAt(i++) - 63; r |= (b & 0x1F) << s; s += 5; } while (b >= 0x20);
+      lng += (r & 1) != 0 ? ~(r >> 1) : (r >> 1);
+      pts.add(LatLng(lat / 1E5, lng / 1E5));
+    }
+    return pts;
+  }
+
+  /// Animated route draw (gold polyline, 500ms progressive).
+  Future<void> _animateRouteDraw() async {
+    final polyMgr = _polyMgr;
+    if (polyMgr == null || _routePoints.length < 2) return;
+
+    final completer = Completer<void>();
+    final stopwatch = Stopwatch()..start();
+    const totalMs = 500;
+    int lastCount = 0;
+
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = createTicker((_) async {
+      if (!mounted) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      final elapsed = stopwatch.elapsedMilliseconds;
+      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
+      final eased = Curves.easeInOutSine.transform(progress);
+      final count = (eased * _routePoints.length).round().clamp(2, _routePoints.length);
+
+      if (count != lastCount) {
+        lastCount = count;
+        final subset = _routePoints.sublist(0, count);
+        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        final geo = mapbox.LineString(coordinates: coords);
+
+        if (_routeAnnot == null) {
+          _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo,
+            lineColor: const Color(0xFFFFD700).toARGB32(),
+            lineWidth: 5.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } else {
+          _routeAnnot!.geometry = geo;
+          await polyMgr.update(_routeAnnot!);
+        }
+      }
+      if (progress >= 1.0) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+    _routeDrawTicker!.start();
+    return completer.future;
+  }
+
+  /// Called when map is ready — apply theme, tilt, route.
+  Future<void> _onMapReady(mapbox.MapboxMap ctrl) async {
+    _mapCtrl = ctrl;
+    await MapTheme.applyNavyGold(ctrl);
+    ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+    ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+
+    _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
+
+    // Fit camera to show driver + pickup, then animate tilt
+    final bearing = _bearingToPickup();
+    final midLat = (widget.driverPos.latitude + widget.pickupLatLng.latitude) / 2;
+    final midLng = (widget.driverPos.longitude + widget.pickupLatLng.longitude) / 2;
+
+    ctrl.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
+        zoom: 14.5,
+        bearing: bearing,
+        pitch: 0,
+      ),
+      mapbox.MapAnimationOptions(duration: 300),
+    );
+    await Future.delayed(const Duration(milliseconds: 350));
+    if (!mounted) return;
+
+    // Animate tilt 0° → 55°
+    _tiltAnim.addListener(_applyMapTilt);
+    _tiltCtrl.forward();
+
+    // Wait for route to be ready, then draw it
+    while (_routeFetching && mounted) {
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    if (!mounted) return;
+    if (_routePoints.length >= 2) {
+      await _animateRouteDraw();
+    }
+  }
+
+  void _applyMapTilt() {
+    if (_mapCtrl == null || !mounted) return;
+    _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: _tiltAnim.value));
   }
 
   void _goToTripScreen() {
@@ -127,8 +365,8 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Real Mapbox map background
-              IgnorePointer(
+              // Real Mapbox map background — full screen with tilt + route
+              Positioned.fill(
                 child: RepaintBoundary(
                   child: mapbox.MapWidget(
                     styleUri: MapboxConfig.styleDark,
@@ -142,36 +380,46 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                       zoom: 14.5,
                       pitch: 0.0,
                     ),
-                    onMapCreated: (ctrl) async {
-                      ctrl.scaleBar.updateSettings(
-                          mapbox.ScaleBarSettings(enabled: false));
-                      ctrl.compass.updateSettings(
-                          mapbox.CompassSettings(enabled: false));
-                      ctrl.attribution.updateSettings(
-                          mapbox.AttributionSettings(enabled: false));
-                      ctrl.logo.updateSettings(
-                          mapbox.LogoSettings(enabled: false));
+                    onMapCreated: _onMapReady,
+                    onStyleLoadedListener: (_) async {
+                      if (_mapCtrl != null) await MapTheme.applyNavyGold(_mapCtrl!);
                     },
                   ),
                 ),
               ),
-              // Blur overlay
+              // Subtle dark gradient overlay (lighter than before — let map show through)
               Positioned.fill(
-                child: BackdropFilter(
-                  filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                  child: Container(color: Colors.transparent),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.15),
+                        Colors.black.withValues(alpha: 0.55),
+                        Colors.black.withValues(alpha: 0.85),
+                      ],
+                      stops: const [0.0, 0.5, 1.0],
+                    ),
+                  ),
                 ),
               ),
-              // Dark overlay
-              Positioned.fill(
-                child: Container(color: Colors.black.withValues(alpha: 0.55)),
-              ),
-              // Content
-              SafeArea(
-            child: Column(
-              children: [
-                const Spacer(flex: 2),
-
+              // Content — slide up from bottom, no empty space at top
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: SlideTransition(
+                  position: _slideAnim,
+                  child: FadeTransition(
+                    opacity: _slideFadeAnim,
+                    child: SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomPad),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
                 // ── Gold check circle ──
                 TweenAnimationBuilder<double>(
                   tween: Tween(begin: 0.0, end: 1.0),
@@ -202,7 +450,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                   ),
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
                 // ── Title ──
                 const Text(
@@ -215,7 +463,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                   ),
                 ),
 
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
 
                 // ── Subtitle ──
                 Text(
@@ -226,85 +474,81 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                   ),
                 ),
 
-                const SizedBox(height: 40),
+                const SizedBox(height: 20),
 
                 // ── Rider info card ──
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: _card,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: _gold.withValues(alpha: 0.2),
-                        width: 1,
+                Container(
+                  decoration: BoxDecoration(
+                    color: _card,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _gold.withValues(alpha: 0.2),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _gold.withValues(alpha: 0.08),
+                        blurRadius: 20,
+                        spreadRadius: 2,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _gold.withValues(alpha: 0.08),
-                          blurRadius: 20,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    padding: const EdgeInsets.all(20),
-                    child: Row(
-                      children: [
-                        // Rider avatar
-                        VerifiedAvatar(
-                          uid: widget.tripId.toString(),
-                          fallbackName: widget.riderInitials,
-                          photoUrl: widget.riderPhotoUrl,
-                          isVerified: widget.riderVerified,
-                          radius: 28,
-                        ),
-                        const SizedBox(width: 12),
-                        // Rider info
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                widget.riderName,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      // Rider avatar
+                      VerifiedAvatar(
+                        uid: widget.tripId.toString(),
+                        fallbackName: widget.riderInitials,
+                        photoUrl: widget.riderPhotoUrl,
+                        isVerified: widget.riderVerified,
+                        radius: 28,
+                      ),
+                      const SizedBox(width: 12),
+                      // Rider info
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.riderName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(Icons.star_rounded,
+                                    color: _gold, size: 14),
+                                const SizedBox(width: 4),
+                                Text(
+                                  widget.riderRating.toStringAsFixed(1),
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  const Icon(Icons.star_rounded,
-                                      color: _gold, size: 14),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    widget.riderRating.toStringAsFixed(1),
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 13,
-                                    ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  '${widget.etaMinutes} min · ${widget.distToPickupKm.toStringAsFixed(1)} km',
+                                  style: const TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 12,
                                   ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    '${widget.etaMinutes} min · ${widget.distToPickupKm.toStringAsFixed(1)} km',
-                                    style: const TextStyle(
-                                      color: Colors.white38,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
 
                 // ── Pickup address pill ──
                 Container(
@@ -337,30 +581,31 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                   ),
                 ),
 
-                const Spacer(flex: 3),
+                const SizedBox(height: 16),
 
                 // ── Gold progress bar (fills over 3 seconds) ──
-                Padding(
-                  padding: EdgeInsets.fromLTRB(32, 0, 32, 16 + bottomPad),
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0.0, end: 1.0),
-                    duration: const Duration(seconds: 3),
-                    curve: Curves.easeInOut,
-                    builder: (_, value, __) => ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
-                      child: LinearProgressIndicator(
-                        value: value,
-                        backgroundColor: Colors.white12,
-                        valueColor:
-                            const AlwaysStoppedAnimation<Color>(_gold),
-                        minHeight: 3,
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: const Duration(seconds: 3),
+                  curve: Curves.easeInOut,
+                  builder: (_, value, __) => ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: value,
+                      backgroundColor: Colors.white12,
+                      valueColor:
+                          const AlwaysStoppedAnimation<Color>(_gold),
+                      minHeight: 3,
+                    ),
+                  ),
+                ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
+              ),
             ],
           ),
         ),

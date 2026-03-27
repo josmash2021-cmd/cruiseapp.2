@@ -85,6 +85,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── State ─────────────────────────────────────────────────────────────────
   late final AnimationController _fadeCtrl;
   late final Animation<double>   _fadeAnim;
+  late final AnimationController _slideCtrl;
+  late final Animation<Offset>   _slideAnim;
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _annotMgr;
   mapbox.PolylineAnnotationManager? _polyMgr;
@@ -126,12 +128,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
 
-    // Tilt: flat (0°) → perspective (55°) over 1200ms
+    // Slide-up animation: 400ms from bottom
+    _slideCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    )..forward();
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.08),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
+
+    // Tilt: start at 55° for instant 3D view (no flat start)
     _tiltCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
-    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+    _tiltAnim = Tween<double>(begin: 55.0, end: 55.0).animate(
       CurvedAnimation(parent: _tiltCtrl, curve: Curves.easeInOutCubic),
     );
 
@@ -150,6 +162,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   @override
   void dispose() {
     _fadeCtrl.dispose();
+    _slideCtrl.dispose();
     _tiltCtrl.dispose();
     _pinPopCtrl.dispose();
     _routeDrawTicker?.stop();
@@ -852,9 +865,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     return Scaffold(
       backgroundColor: _bg,
-      body: FadeTransition(
-        opacity: _fadeAnim,
-        child: Column(
+      body: SlideTransition(
+        position: _slideAnim,
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: Column(
           children: [
             // ── Header ────────────────────────────────────────────────────
             Container(
@@ -975,7 +990,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                               widget.pickupLatLng.latitude,
                             )),
                             zoom: 13.5,
-                            pitch: 0,
+                            pitch: 55.0,
                           ),
                           onMapCreated: _onMapReady,
                           onStyleLoadedListener: (_) async {
@@ -1114,6 +1129,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             ),
           ],
         ),
+      ),
       ),
     );
   }

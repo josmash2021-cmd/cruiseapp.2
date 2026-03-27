@@ -213,7 +213,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _refreshActiveTripOnResume() async {
     final tripId = _state.tripId;
-    if (tripId == null || tripId == 999999) { return; } // no trip or simulated
+    if (tripId == null) { return; } // no trip
     final phase = _state.phase;
     if (phase != RiderPhase.onTrip &&
         phase != RiderPhase.driverAssigned &&
@@ -682,22 +682,6 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _timeoutTimer?.cancel();
     _isRequesting = false;
     _state = const RiderTripState();
-    notifyListeners();
-  }
-
-  /// Set a simulated driver for practice mode (bypasses backend dispatch)
-  void setSimulatedDriver(MatchedDriver driver) {
-    _searchTimer?.cancel();
-    _pollTimer?.cancel();
-    _timeoutTimer?.cancel();
-    _isRequesting = false;
-    
-    _state = _state.copyWith(
-      phase: RiderPhase.driverAssigned,
-      driver: driver,
-      etaMinutes: _state.selectedOption?.etaMinutes ?? 5,
-      tripId: 999999, // Simulated trip ID
-    );
     notifyListeners();
   }
 

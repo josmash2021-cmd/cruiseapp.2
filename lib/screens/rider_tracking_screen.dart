@@ -187,7 +187,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   StreamSubscription? _rtdbDriverLocSub;
   String? _rtdbDriverId;
   Timer? _statusPollTimer;
-  Timer? _simTimer; // demo simulation timer
 
   late AnimationController _etaPulse;
 
@@ -216,7 +215,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _initFromPersistence();
     _interpTicker = createTicker((_) => _interpolate())..start();
     _startRealTimeTracking();
-    _startSimIfNeeded();
     // Send greeting notification after 3 seconds
     Future.delayed(const Duration(seconds: 3), _sendDriverGreeting);
     // Notify rider that a driver was assigned
@@ -450,55 +448,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     }, onError: (_) {});
   }
 
-  /// Start a simulation timer when there is no real Firestore trip
-  /// (demo mode). Advances the car along the route to simulate navigation.
-  void _startSimIfNeeded() {
-    final fsId = widget.firestoreTripId;
-    if (fsId != null && fsId.isNotEmpty) return; // real trip — skip sim
-
-    // Advance ~13 m/s (~30 mph) every 16ms (60fps) for perfectly smooth motion
-    const tickMs = 16;
-    const speedMps = 13.0; // meters per second
-    const advancePerTick = speedMps * (tickMs / 1000.0);
-
-    _simTimer = Timer.periodic(const Duration(milliseconds: tickMs), (_) {
-      if (!mounted || _segDist.isEmpty) return;
-      final totalM = _segDist.last;
-      if (totalM <= 0) return;
-
-      _tgtTraveledM = (_tgtTraveledM + advancePerTick).clamp(0.0, totalM);
-
-      // Phase transitions based on progress
-      final progress = _tgtTraveledM / totalM;
-      if (_phase == _TrackPhase.arriving && progress > 0.02) {
-        // Simulate arriving at pickup after a bit of movement
-        setState(() => _phase = _TrackPhase.arrived);
-      }
-      if (_phase == _TrackPhase.arrived && progress > 0.06) {
-        setState(() => _phase = _TrackPhase.onTrip);
-        _popOutPickupPin();
-      }
-      // Do NOT auto-complete: only the driver's explicit "Complete Trip"
-      // action (via Firestore status change) should end the trip.
-      // Clamp sim progress so car stops near dropoff.
-      if (_phase == _TrackPhase.onTrip && progress >= 0.98) {
-        _tgtTraveledM = _segDist.last * 0.98;
-      }
-
-      // Update ETA
-      final remainingM = totalM - _tgtTraveledM;
-      _etaMinutes = (remainingM / (speedMps * 60)).ceil().clamp(1, 99);
-      _distanceMiles = remainingM / 1609.34;
-
-      _throttleCam();
-    });
-  }
-
   @override
   void dispose() {
     _interpTicker?.dispose();
     _camTimer?.cancel();
-    _simTimer?.cancel();
     _entranceTimer?.cancel();
     _routeDrawTicker?.dispose();
     _driverLocSub?.cancel();

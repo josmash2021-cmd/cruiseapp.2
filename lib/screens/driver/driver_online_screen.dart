@@ -1823,6 +1823,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _tripDist = _hav(_pickupLL, _dropoffLL);
     _tripEta = (_tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
 
+    // ── Extract cached route BEFORE clearing cache ──
+    final cachedRouteData = _routeCache[oid];
+    final preRoutePoints = cachedRouteData?.segOne;
+
     setState(() => _pendingOffers = []);
     _routeCache.clear();
     _expandedOfferIds.clear();
@@ -1860,6 +1864,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           distToPickupKm: _distToPickup,
           etaMinutes:     _etaToPickup,
           riderPhone:     _riderPhone,
+          routePoints:    preRoutePoints,
         ),
       ),
     );
@@ -5316,9 +5321,9 @@ Widget _navHeader() {
   // ── "Viaje Aceptado" inline card (shown inside AnimatedSwitcher in offer card) ──
   Widget _buildAcceptedCardContent(String pickupAddr) {
     const luxGold = Color(0xFFD4AF37);
-    return SizedBox(
+    return Padding(
       key: const ValueKey('accepted'),
-      height: 180,
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
         children: [
           // Gold check circle
@@ -5350,7 +5355,7 @@ Widget _navHeader() {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
                   'Viaje Aceptado',
@@ -5380,9 +5385,9 @@ Widget _navHeader() {
   // ── "Enrutando..." state ──
   Widget _buildRoutingCardContent() {
     const luxGold = Color(0xFFD4AF37);
-    return SizedBox(
+    return Padding(
       key: const ValueKey('routing'),
-      height: 180,
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
         children: [
           const _RoutingDotsAnimation(),
@@ -5390,7 +5395,7 @@ Widget _navHeader() {
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   'Enrutando...',

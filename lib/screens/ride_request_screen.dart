@@ -165,10 +165,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Timer? _searchMapTimer;
   Timer? _splashTimer;
 
-  // ── Simulation Mode ──
-  bool _isSimulationMode = false;
-  Timer? _simulatedDriverTimer;
-
   // ── Route loading: hide idle state while route is being fetched ──
   bool _fetchingRoute = false;
 
@@ -1012,7 +1008,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _shimmerTimeoutTimer?.cancel();
     _searchMapTimer?.cancel();
     _splashTimer?.cancel();
-    _simulatedDriverTimer?.cancel();
     _driverFoundTimer?.cancel();
     _dfCheckCtrl?.dispose();
     _dfStaggerCtrl?.dispose();
@@ -1208,14 +1203,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           });
           // Trigger cinematic sequence on searching phase open
           _replayCinematicIfRouteAvailable();
-        }
-        // SIMULATION MODE: Auto-assign a simulated driver after 2-4 seconds
-        if (_isSimulationMode && _simulatedDriverTimer == null) {
-          final delay = 2000 + math.Random().nextInt(2000); // 2-4 seconds
-          _simulatedDriverTimer = Timer(Duration(milliseconds: delay), () {
-            if (!mounted) return;
-            _assignSimulatedDriver();
-          });
         }
         break;
       case RiderPhase.driverAssigned:
@@ -1838,49 +1825,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     );
   }
 
-  /// Assign a simulated driver for practice mode
-  void _assignSimulatedDriver() {
-    if (!mounted) return;
-    
-    // Random driver names for simulation
-    final firstNames = ['John', 'Michael', 'David', 'Chris', 'James', 'Robert', 'William', 'Daniel', 'Joseph', 'Thomas'];
-    final lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez'];
-    final random = math.Random();
-    final driverName = '${firstNames[random.nextInt(firstNames.length)]} ${lastNames[random.nextInt(lastNames.length)]}';
-    
-    // Random vehicle details
-    final makes = ['Toyota', 'Honda', 'Ford', 'Chevrolet', 'Nissan', 'Hyundai'];
-    final models = ['Camry', 'Accord', 'Fusion', 'Malibu', 'Altima', 'Sonata'];
-    final colors = ['White', 'Black', 'Silver', 'Gray', 'Blue', 'Red'];
-    final make = makes[random.nextInt(makes.length)];
-    final model = models[random.nextInt(models.length)];
-    final color = colors[random.nextInt(colors.length)];
-    final year = 2020 + random.nextInt(5); // 2020-2024
-    final plate = '${String.fromCharCode(65 + random.nextInt(26))}${String.fromCharCode(65 + random.nextInt(26))}${String.fromCharCode(65 + random.nextInt(26))}-${random.nextInt(9)}${random.nextInt(9)}${random.nextInt(9)}${random.nextInt(9)}';
-    
-    // Create simulated driver info
-    final simulatedDriver = MatchedDriver(
-      id: 'SIM_${random.nextInt(99999)}',
-      name: driverName,
-      rating: 4.7 + random.nextDouble() * 0.3, // 4.7-5.0
-      totalTrips: 500 + random.nextInt(2500), // 500-3000 trips
-      vehicleMake: make,
-      vehicleModel: model,
-      vehicleColor: color,
-      vehiclePlate: plate,
-      vehicleYear: year.toString(),
-    );
-    
-    debugPrint('🎮 RIDER SIMULATION: Driver assigned - $driverName in $color $make $model');
-    
-    // Update controller with simulated driver and transition to driverArriving
-    _ctrl.setSimulatedDriver(simulatedDriver);
-    
-    // Cancel the timer
-    _simulatedDriverTimer?.cancel();
-    _simulatedDriverTimer = null;
-  }
-
   // ── Search screen ──
 
   Future<void> _openSearch() async {
@@ -2018,69 +1962,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     icon: Icons.my_location_rounded,
                     onTap: _recenterMap,
                     c: c,
-                  ),
-                ),
-              ),
-
-            // ── Simulation Mode Toggle (debug only) ──
-            if (kDebugMode && phase == RiderPhase.idle)
-              Positioned(
-                top: topPad + 70,
-                right: 12,
-                child: GestureDetector(
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    setState(() => _isSimulationMode = !_isSimulationMode);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          _isSimulationMode
-                              ? '🔧 Practice Mode ON - Simulated drivers will be assigned'
-                              : '🔧 Practice Mode OFF - Real drivers only',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        backgroundColor: _isSimulationMode
-                            ? const Color(0xFFE8C547)
-                            : Colors.grey.shade800,
-                        duration: const Duration(seconds: 2),
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    );
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: _isSimulationMode
-                          ? const Color(0xFFE8C547).withValues(alpha: 0.9)
-                          : const Color(0xFF1A1A1A),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: _isSimulationMode
-                            ? const Color(0xFFE8C547)
-                            : Colors.white.withValues(alpha: 0.1),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _isSimulationMode
-                              ? const Color(0xFFE8C547).withValues(alpha: 0.4)
-                              : Colors.black.withValues(alpha: 0.25),
-                          blurRadius: 12,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      _isSimulationMode
-                          ? Icons.videogame_asset_rounded
-                          : Icons.videogame_asset_off_rounded,
-                      color: _isSimulationMode ? Colors.black : Colors.white70,
-                      size: 22,
-                    ),
                   ),
                 ),
               ),

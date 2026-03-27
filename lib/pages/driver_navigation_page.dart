@@ -17,6 +17,7 @@ import '../models/lat_lng.dart';
 import '../config/map_styles.dart';
 import '../navigation/nav_state_machine.dart';
 import '../navigation/car_icon_loader.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../navigation/route_snapper.dart';
 import '../navigation/route_service.dart';
 import '../navigation/smooth_motion.dart';
@@ -1352,7 +1353,27 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
               child: DriverActionPanel(
                 phase: _sm.phase,
                 onArrivedAtPickup: () => _sm.arriveAtPickup(),
-                onStartTrip: () => _sm.beginTrip(),
+                onStartTrip: () async {
+                  HapticFeedback.heavyImpact();
+                  bool riderConfirmed = false;
+                  try {
+                    final doc = await FirebaseFirestore.instance
+                        .collection('trips')
+                        .doc(widget.tripId)
+                        .get();
+                    riderConfirmed = doc.data()?['rider_confirmed_pickup'] == true;
+                  } catch (_) {}
+                  if (!context.mounted) return;
+                  if (!riderConfirmed) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('El rider no ha confirmado, comenzando viaje...'),
+                      duration: Duration(seconds: 2),
+                    ));
+                    await Future.delayed(const Duration(seconds: 2));
+                    if (!context.mounted) return;
+                  }
+                  _sm.beginTrip();
+                },
                 onArrivedAtDropoff: () => _sm.arriveAtDropoff(),
                 onFinishTrip: () async {
                   _sm.completeTrip();
@@ -1362,7 +1383,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                       await ApiService.updateTripStatus(tripId: tid, status: 'completed');
                     } catch (_) {}
                   }
-                  if (context.mounted) Navigator.of(context).pop();
+                  if (!context.mounted) return;
+                  Navigator.of(context).pop();
                 },
                 distanceToDestination: _distRemainingMi,
                 etaMinutes: _etaMinutes,
@@ -2233,8 +2255,24 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         label = s.startTrip;
         bg = _gold;
         icon = Icons.play_arrow_rounded;
-        onTap = () {
+        onTap = () async {
           HapticFeedback.heavyImpact();
+          bool riderConfirmed = false;
+          try {
+            final doc = await FirebaseFirestore.instance
+                .collection('trips')
+                .doc(widget.tripId)
+                .get();
+            riderConfirmed = doc.data()?['rider_confirmed_pickup'] == true;
+          } catch (_) {}
+          if (!riderConfirmed && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('El rider no ha confirmado, comenzando viaje...'),
+              duration: Duration(seconds: 2),
+            ));
+            await Future.delayed(const Duration(seconds: 2));
+            if (!mounted) return;
+          }
           _sm.beginTrip();
         };
       case TripPhase.onTrip:

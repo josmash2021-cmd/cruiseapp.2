@@ -942,6 +942,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   bool _isUserTyping = false;
   String _userRole = 'rider';
   int _pollFailures = 0;
+  int _initAttemptCount = 0;
 
   _ChatPhase _phase = _ChatPhase.bot;
   int _queueDuration = 180;
@@ -980,6 +981,12 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   // ── Initialization ──────────────────────────────────────────────────
 
   Future<void> _initChat() async {
+    _initAttemptCount++;
+    if (_initAttemptCount > 3) {
+      _initAttemptCount = 0;
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     try {
       final locale = Localizations.localeOf(context).languageCode;
 
@@ -1000,6 +1007,22 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
       if (_chatId != null) {
         await _loadMessages();
+
+        // If the loaded chat was already ended, auto-restart with a fresh one
+        if (_chatClosed) {
+          ApiService.closeSupportChat(_chatId!).catchError((_) => null);
+          _chatId = null;
+          _chatClosed = false;
+          _messages.clear();
+          _agentName = null;
+          _phase = _ChatPhase.bot;
+          _showQuickActions = true;
+          await Future.delayed(const Duration(milliseconds: 600));
+          if (mounted) await _initChat();
+          return;
+        }
+
+        _initAttemptCount = 0; // successful init
         _pollTimer = Timer.periodic(
           const Duration(seconds: 3),
           (_) => _loadMessages(),
@@ -1502,6 +1525,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       _showQuickActions = true;
       _isAgentTyping = false;
       _queueDuration = AiSupportService.randomQueueWait();
+      _initAttemptCount = 0;
     });
     _initChat();
   }
@@ -1511,92 +1535,210 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1A),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: Row(
-          children: [
-            // Avatar
-            Container(
-              width: 36,
-              height: 36,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [_gold, Color(0xFFD4A017)],
-                ),
-                shape: BoxShape.circle,
-              ),
-              child: _agentName != null && _phase == _ChatPhase.agent
-                  ? Center(
-                      child: Text(
-                        _agentName![0].toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    )
-                  : const Icon(Icons.support_agent, color: Colors.black, size: 20),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _isSpanish ? 'Soporte de Cruise' : 'Cruise Support',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (_subtitle.isNotEmpty)
-                    Row(
-                      children: [
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: _chatClosed
-                                ? Colors.grey
-                                : _sending || _isAgentTyping
-                                    ? Colors.orange
-                                    : const Color(0xFF4CAF50),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            _subtitle,
-                            style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.phone, color: _gold),
-            tooltip: _isSpanish ? 'Llamar a soporte' : 'Call support',
-            onPressed: _startVoiceCall,
-          ),
-        ],
-      ),
+      backgroundColor: const Color(0xFF0D0D0F),
+      appBar: _buildAppBar(),
       body: Column(
         children: [
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator(color: _gold))
-                : _buildBody(),
+            child: _loading ? _buildLoadingState() : _buildBody(),
           ),
           _buildInputBar(),
+        ],
+      ),
+    );
+  }
+
+  // ── App Bar ──────────────────────────────────────────────────────────
+
+  PreferredSizeWidget _buildAppBar() {
+    final String chatTitle = _phase == _ChatPhase.agent && _agentName != null
+        ? _agentName!
+        : (_isSpanish ? 'Asistente Cruise' : 'Cruise Assistant');
+
+    final String statusLabel;
+    final Color statusColor;
+    if (_chatClosed) {
+      statusLabel = S.of(context).chatClosed;
+      statusColor = Colors.white.withValues(alpha: 0.3);
+    } else if (_isAgentTyping || _sending) {
+      statusLabel = _isSpanish ? 'Escribiendo...' : 'Typing...';
+      statusColor = Colors.amber;
+    } else if (_phase == _ChatPhase.queue) {
+      statusLabel = _isSpanish ? 'Buscando agente...' : 'Finding an agent...';
+      statusColor = Colors.orange;
+    } else if (_phase == _ChatPhase.agent) {
+      statusLabel = _isSpanish ? 'En línea' : 'Online';
+      statusColor = const Color(0xFF4CAF50);
+    } else {
+      statusLabel = _isSpanish ? 'Sistema automatizado' : 'Automated system';
+      statusColor = const Color(0xFF4CAF50);
+    }
+
+    return AppBar(
+      backgroundColor: const Color(0xFF0D0D0F),
+      elevation: 0,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      title: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFE8C547), Color(0xFFB8921A)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.22),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Center(
+              child: _phase == _ChatPhase.agent && _agentName != null
+                  ? Text(
+                      _agentName![0].toUpperCase(),
+                      style: const TextStyle(
+                        color: Color(0xFF0A0800),
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    )
+                  : const Icon(Icons.support_agent_rounded, color: Color(0xFF0A0800), size: 22),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  chatTitle,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: -0.2,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        statusLabel,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: statusColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        if (!_chatClosed && _chatId != null)
+          IconButton(
+            icon: Icon(Icons.close_rounded, color: Colors.white.withValues(alpha: 0.3), size: 20),
+            tooltip: _isSpanish ? 'Cerrar chat' : 'End chat',
+            onPressed: _endChat,
+          ),
+        IconButton(
+          icon: const Icon(Icons.phone_rounded, color: _gold, size: 22),
+          tooltip: _isSpanish ? 'Llamar a soporte' : 'Call support',
+          onPressed: _startVoiceCall,
+        ),
+      ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(
+          height: 0.5,
+          color: Colors.white.withValues(alpha: 0.07),
+        ),
+      ),
+    );
+  }
+
+  // ── Loading state ─────────────────────────────────────────────────
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 68,
+            height: 68,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFE8C547), Color(0xFFB8921A)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.28),
+                  blurRadius: 24,
+                  spreadRadius: 4,
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.support_agent_rounded,
+              color: Color(0xFF0A0800),
+              size: 34,
+            ),
+          ),
+          const SizedBox(height: 22),
+          const Text(
+            'Cruise Support',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _isSpanish
+                ? 'Preparando tu sesión de soporte...'
+                : 'Preparing your support session...',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4),
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 28),
+          const SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(strokeWidth: 2.5, color: _gold),
+          ),
         ],
       ),
     );
@@ -1605,54 +1747,128 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   // ── Chat body ───────────────────────────────────────────────────────
 
   Widget _buildBody() {
-    return ListView.builder(
+    final items = <Widget>[];
+
+    // Welcome greeting — fallback when backend hasn't loaded messages yet
+    if (_phase == _ChatPhase.bot && _messages.isEmpty) {
+      items.add(_buildWelcomeHeader());
+    }
+
+    // Message bubbles
+    for (final msg in _messages) {
+      items.add(_buildBubble(msg));
+    }
+
+    // Quick action chips
+    if (_showQuickActions) {
+      items.add(_buildQuickActions());
+    }
+
+    // Queue wait widget
+    if (_phase == _ChatPhase.queue) {
+      items.add(QueueStatusWidget(
+        totalDuration: _queueDuration,
+        onComplete: _onQueueComplete,
+        isSpanish: _isSpanish,
+      ));
+    }
+
+    // Typing indicator
+    if (_isAgentTyping) {
+      items.add(const Padding(
+        padding: EdgeInsets.only(top: 4, bottom: 8),
+        child: TypingBubble(),
+      ));
+    }
+
+    items.add(const SizedBox(height: 20));
+
+    return ListView(
       controller: _scrollCtrl,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      itemCount: _itemCount(),
-      itemBuilder: (context, i) {
-        // Messages
-        if (i < _messages.length) {
-          return _buildBubble(_messages[i]);
-        }
-
-        // Quick actions (shown after last message)
-        final afterMsgIdx = i - _messages.length;
-
-        if (_showQuickActions && afterMsgIdx == 0) {
-          return _buildQuickActions();
-        }
-
-        // Queue widget
-        if (_phase == _ChatPhase.queue) {
-          final queueIdx = _showQuickActions ? afterMsgIdx - 1 : afterMsgIdx;
-          if (queueIdx == 0) {
-            return QueueStatusWidget(
-              totalDuration: _queueDuration,
-              onComplete: _onQueueComplete,
-              isSpanish: _isSpanish,
-            );
-          }
-        }
-
-        // Typing indicator
-        if (_isAgentTyping) {
-          return const Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: TypingBubble(),
-          );
-        }
-
-        return const SizedBox.shrink();
-      },
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 0),
+      children: items,
     );
   }
 
-  int _itemCount() {
-    int count = _messages.length;
-    if (_showQuickActions) count += 1;
-    if (_phase == _ChatPhase.queue) count += 1;
-    if (_isAgentTyping) count += 1;
-    return count;
+  // ── Welcome greeting ─────────────────────────────────────────────
+
+  Widget _buildWelcomeHeader() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF13141A),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE8C547).withValues(alpha: 0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFE8C547), Color(0xFFB8921A)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFE8C547).withValues(alpha: 0.2),
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.support_agent_rounded, color: Color(0xFF0A0800), size: 22),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _isSpanish ? 'Asistente Cruise' : 'Cruise Assistant',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      const Icon(Icons.circle, color: Color(0xFF4CAF50), size: 7),
+                      const SizedBox(width: 4),
+                      Text(
+                        _isSpanish ? 'Sistema automatizado' : 'Automated system',
+                        style: const TextStyle(
+                          color: Color(0xFF4CAF50),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            _isSpanish
+                ? '¡Hola! 👋 Soy el Asistente de soporte de Cruise.\n\nEstoy aquí para ayudarte en lo que necesites — viajes, pagos, cuenta o cualquier otro tema.\n\n¿En qué puedo ayudarte hoy?'
+                : 'Hi there! 👋 I\'m the Cruise Support Assistant.\n\nI\'m here to help with anything — trips, payments, your account, or anything else.\n\nWhat can I help you with?',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 14.5,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── Quick action chips ──────────────────────────────────────────────
@@ -1662,32 +1878,47 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         ? AgentPrompts.driverQuickActions(_isSpanish)
         : AgentPrompts.riderQuickActions(_isSpanish);
 
+    const iconsRider = ['🚗', '💳', '👤', '🛡️', '💬'];
+    const iconsDriver = ['📍', '💰', '🔧', '🛡️', '💬'];
+    final icons = _userRole == 'driver' ? iconsDriver : iconsRider;
+
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 12),
+      padding: const EdgeInsets.only(bottom: 16),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
-        children: actions.map((action) {
+        children: List.generate(actions.length, (i) {
+          final action = actions[i];
+          final icon = i < icons.length ? icons[i] : '💬';
           return GestureDetector(
             onTap: () => _sendMessage(action['message']),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFF2A2A2A),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: _gold.withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                action['label']!,
-                style: const TextStyle(
-                  color: _gold,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                color: const Color(0xFF16171B),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.2),
                 ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(icon, style: const TextStyle(fontSize: 13)),
+                  const SizedBox(width: 6),
+                  Text(
+                    action['label']!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
           );
-        }).toList(),
+        }),
       ),
     );
   }
@@ -1695,27 +1926,22 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   // ── Message bubble ──────────────────────────────────────────────────
 
   Widget _buildBubble(_ChatMsg msg) {
-    // System messages
     if (msg.role == 'system') {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             decoration: BoxDecoration(
-              color: const Color(0xFF2A2A2A),
+              color: Colors.white.withValues(alpha: 0.055),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
               msg.text,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 12.5,
-                color: msg.text.contains('🟢')
-                    ? const Color(0xFF4CAF50)
-                    : msg.text.contains('⚠️')
-                        ? Colors.orange
-                        : Colors.grey[400],
+                fontSize: 12,
+                color: Colors.white.withValues(alpha: 0.45),
                 fontWeight: FontWeight.w500,
                 height: 1.4,
               ),
@@ -1726,35 +1952,31 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     }
 
     final isUser = msg.role == 'rider' || msg.role == 'driver';
-    final isAgent = msg.role == 'bot' || msg.role == 'dispatch';
 
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (isAgent) ...[
+          if (!isUser) ...[
             Container(
               width: 28,
               height: 28,
-              margin: const EdgeInsets.only(right: 6, bottom: 4),
+              margin: const EdgeInsets.only(right: 6, bottom: 2),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [_gold, Color(0xFFD4A017)],
+                  colors: [Color(0xFFE8C547), Color(0xFFB8921A)],
                 ),
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: Text(
-                  msg.senderName.isNotEmpty
-                      ? msg.senderName[0].toUpperCase()
-                      : 'C',
+                  msg.senderName.isNotEmpty ? msg.senderName[0].toUpperCase() : 'C',
                   style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0A0800),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
@@ -1762,56 +1984,75 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           ],
           Flexible(
             child: Container(
-              margin: const EdgeInsets.only(bottom: 8),
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.72,
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
               decoration: BoxDecoration(
-                color: isUser ? _gold : const Color(0xFF2A2A2A),
+                gradient: isUser
+                    ? const LinearGradient(
+                        colors: [Color(0xFFE8C547), Color(0xFFD4A012)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
+                color: isUser ? null : const Color(0xFF1C1D22),
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
                   topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(isUser ? 16 : 4),
-                  bottomRight: Radius.circular(isUser ? 4 : 16),
+                  bottomLeft: Radius.circular(isUser ? 16 : 3),
+                  bottomRight: Radius.circular(isUser ? 3 : 16),
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: isUser
+                        ? const Color(0xFFE8C547).withValues(alpha: 0.12)
+                        : Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                 children: [
-                  // Agent name label (only for agent messages in agent phase)
-                  if (isAgent && _phase == _ChatPhase.agent && msg.senderName.isNotEmpty)
+                  if (!isUser && _phase == _ChatPhase.agent && msg.senderName.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.only(bottom: 3),
                       child: Text(
                         msg.senderName,
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 10.5,
                           fontWeight: FontWeight.w700,
-                          color: _gold.withValues(alpha: 0.8),
+                          color: const Color(0xFFE8C547).withValues(alpha: 0.8),
                         ),
                       ),
                     ),
                   Text(
                     msg.text,
                     style: TextStyle(
-                      color: isUser ? Colors.black : Colors.white,
+                      color: isUser
+                          ? const Color(0xFF0A0800)
+                          : Colors.white.withValues(alpha: 0.9),
                       fontSize: 14.5,
                       height: 1.35,
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     '${msg.time.hour.toString().padLeft(2, '0')}:${msg.time.minute.toString().padLeft(2, '0')}',
                     style: TextStyle(
                       fontSize: 10,
-                      color: isUser ? Colors.black54 : Colors.grey[600],
+                      color: isUser
+                          ? const Color(0xFF0A0800).withValues(alpha: 0.45)
+                          : Colors.white.withValues(alpha: 0.28),
                     ),
                   ),
                 ],
               ),
             ),
           ),
+          if (isUser) const SizedBox(width: 2),
         ],
       ),
     );
@@ -1823,36 +2064,42 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     if (_chatClosed) {
       return Container(
         padding: EdgeInsets.only(
-          left: 16, right: 16, top: 12,
-          bottom: MediaQuery.of(context).padding.bottom + 12,
+          left: 20,
+          right: 20,
+          top: 14,
+          bottom: MediaQuery.of(context).padding.bottom + 14,
         ),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
-          border: Border(top: BorderSide(color: Colors.grey[800]!, width: 0.5)),
+          color: const Color(0xFF0D0D0F),
+          border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               S.of(context).thisChatClosed,
-              style: TextStyle(color: Colors.grey[500], fontSize: 13),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.3),
+                fontSize: 12.5,
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
-              height: 44,
+              height: 48,
               child: ElevatedButton(
                 onPressed: _startNewChat,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _gold,
-                  foregroundColor: Colors.black,
+                  foregroundColor: const Color(0xFF0A0800),
+                  elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22),
+                    borderRadius: BorderRadius.circular(24),
                   ),
                 ),
                 child: Text(
                   S.of(context).startNewChat,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                 ),
               ),
             ),
@@ -1863,12 +2110,14 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
     return Container(
       padding: EdgeInsets.only(
-        left: 12, right: 8, top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 8,
+        left: 12,
+        right: 8,
+        top: 10,
+        bottom: MediaQuery.of(context).padding.bottom + 10,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        border: Border(top: BorderSide(color: Colors.grey[800]!, width: 0.5)),
+        color: const Color(0xFF0D0D0F),
+        border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
       ),
       child: Row(
         children: [
@@ -1884,27 +2133,67 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               onChanged: _onTypingChanged,
               decoration: InputDecoration(
                 hintText: S.of(context).describeYourProblem,
-                hintStyle: TextStyle(color: Colors.grey[600]),
+                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.28)),
                 filled: true,
-                fillColor: const Color(0xFF2A2A2A),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                fillColor: const Color(0xFF16171B),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: _gold, width: 1.5),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 6),
-          Material(
-            color: _gold,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: () => _sendMessage(),
-              child: const Padding(
-                padding: EdgeInsets.all(10),
-                child: Icon(Icons.send_rounded, color: Colors.black, size: 20),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _sending ? null : () => _sendMessage(),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                gradient: _sending
+                    ? null
+                    : const LinearGradient(
+                        colors: [Color(0xFFE8C547), Color(0xFFD4A012)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                color: _sending ? const Color(0xFF2A2A2E) : null,
+                shape: BoxShape.circle,
+                boxShadow: _sending
+                    ? []
+                    : [
+                        BoxShadow(
+                          color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+              ),
+              child: Center(
+                child: _sending
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
+                      )
+                    : const Icon(
+                        Icons.arrow_upward_rounded,
+                        color: Color(0xFF0A0800),
+                        size: 20,
+                      ),
               ),
             ),
           ),

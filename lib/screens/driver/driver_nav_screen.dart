@@ -7,7 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/verified_avatar.dart';
-import '../../widgets/gold_map_pin.dart';
+import '../../widgets/map/circular_pin_renderer.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
@@ -1470,12 +1470,12 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   /// Unified gold teardrop pin for destination.
   Future<Uint8List?> _buildDestPin() async {
-    return renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: false);
+    return renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32);
   }
 
   /// Unified gold teardrop pin for pickup.
   Future<Uint8List?> _buildPickupPin() async {
-    return renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true);
+    return renderCircularPinBytes(icon: CircularPinIcon.dot, isPickup: true, radius: 32);
   }
 
   // =========================================================================

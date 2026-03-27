@@ -15,7 +15,7 @@ import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../widgets/verified_avatar.dart';
-import '../../widgets/gold_map_pin.dart';
+import '../../widgets/map/circular_pin_renderer.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../chat_screen.dart';
@@ -620,8 +620,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     // 2. Build unified gold teardrop pins in parallel (don't place yet)
     final pinResults = await Future.wait([
-      renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true),   // pickup
-      renderGoldPinBytes(icon: GoldPinIcon.house, isPickup: false),   // dropoff
+      renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // pickup
+      renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32),  // dropoff
     ]);
     if (!mounted) return;
 

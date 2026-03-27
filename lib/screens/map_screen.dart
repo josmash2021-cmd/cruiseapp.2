@@ -42,7 +42,7 @@ import '../services/api_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
 import '../widgets/bouncing_button.dart';
-import '../widgets/gold_pin_renderer.dart';
+import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
 import 'pickup_dropoff_search_screen.dart';
 
@@ -273,12 +273,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     ),
   ];
 
-  /// Builds a gold teardrop pin using the shared GoldPinRenderer.
+  /// Builds a circular pin using the unified circular_pin_renderer.
   Future<Uint8List> _buildGoldPin({
     bool withHouse = false,
     bool isPickup = true,
   }) async {
-    return GoldPinRenderer.render(withHouse: withHouse, isPickup: isPickup);
+    return renderCircularPinBytes(
+      icon: withHouse ? CircularPinIcon.home : CircularPinIcon.dot,
+      isPickup: isPickup,
+      radius: 32,
+    );
   }
 
 

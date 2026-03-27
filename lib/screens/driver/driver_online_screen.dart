@@ -20,7 +20,7 @@ import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
 import '../../widgets/verified_avatar.dart';
-import '../../widgets/gold_map_pin.dart';
+import '../../widgets/map/circular_pin_renderer.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
 import '../../services/map_cache_service.dart';
@@ -527,7 +527,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _navCarIconBytes = await CarIconLoader.loadUberBytes();
     await _loadDriverPhoto();
     await _goldDot.build(() { if (mounted) _updateDriverAnnotation(); });
-    _goldPinBytes = await renderGoldPinBytes(icon: GoldPinIcon.car, isPickup: true);
+    _goldPinBytes = await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32);
     if (mounted) setState(() {});
   }
 
@@ -1316,6 +1316,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     return (math.atan2(x, y) * 180 / math.pi + 360) % 360;
   }
 
+  /// Linear interpolation for angles (handles 360° wraparound)
+  double _lerpAngle(double from, double to, double t) {
+    double diff = to - from;
+    while (diff > 180) { diff -= 360; }
+    while (diff < -180) { diff += 360; }
+    return from + diff * t;
+  }
+
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  POLLING & CLOCK
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -1405,9 +1413,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       Future.wait<Object?>([
         _fetchRoutePoints(_pos!, pickupLL),                                         // [0] segOne
         _fetchRoutePoints(pickupLL, dropoffLL),                                     // [1] segTwo
-        renderGoldPinBytes(icon: GoldPinIcon.car, isPickup: true),               // [2] driver pos pin
-        renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true),               // [3] pickup pin
-        renderGoldPinBytes(icon: _goldPinIconFor(placeType), isPickup: false),      // [4] dropoff pin
+        renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // [2] driver pos pin
+        renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // [3] pickup pin
+        renderCircularPinBytes(icon: _goldPinIconFor(placeType), isPickup: false, radius: 32), // [4] dropoff pin
       ]).then((results) {
         if (!mounted) return;
         _routeCache[oid] = _CachedOfferRoute(
@@ -2507,9 +2515,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     Uint8List? dropoffPinImg = cached?.dropoffPin;
     if (driverPinImg == null || pickupPinImg == null || dropoffPinImg == null) {
       final pinResults = await Future.wait([
-        renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true),          // driver position
-        renderGoldPinBytes(icon: GoldPinIcon.person, isPickup: true),          // pickup
-        renderGoldPinBytes(icon: _goldPinIconFor(placeType), isPickup: false), // dropoff
+        renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // driver position
+        renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // pickup
+        renderCircularPinBytes(icon: _goldPinIconFor(placeType), isPickup: false, radius: 32), // dropoff
       ]);
       driverPinImg ??= pinResults[0];
       pickupPinImg ??= pinResults[1];
@@ -7161,13 +7169,13 @@ IconData _dropoffIconFor(_PlaceType type) {
   }
 }
 
-/// Map _PlaceType to GoldPinIcon for unified gold pins.
-GoldPinIcon _goldPinIconFor(_PlaceType type) {
+/// Map _PlaceType to CircularPinIcon for unified circular pins.
+CircularPinIcon _goldPinIconFor(_PlaceType type) {
   switch (type) {
-    case _PlaceType.airport:  return GoldPinIcon.airplane;
-    case _PlaceType.hotel:    return GoldPinIcon.house;
-    case _PlaceType.commerce: return GoldPinIcon.store;
-    case _PlaceType.home:     return GoldPinIcon.house;
+    case _PlaceType.airport:  return CircularPinIcon.airplane;
+    case _PlaceType.hotel:    return CircularPinIcon.home;
+    case _PlaceType.commerce: return CircularPinIcon.store;
+    case _PlaceType.home:     return CircularPinIcon.home;
   }
 }
 

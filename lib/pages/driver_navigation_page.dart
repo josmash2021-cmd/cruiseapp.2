@@ -26,7 +26,7 @@ import '../services/navigation_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/driver_action_panel.dart';
-import '../widgets/gold_pin_renderer.dart';
+import '../widgets/map/circular_pin_renderer.dart';
 
 class DriverNavigationPage extends StatefulWidget {
   const DriverNavigationPage({
@@ -1121,7 +1121,11 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     final dest = _sm.phase == TripPhase.onTrip || _sm.phase == TripPhase.arrivedDropoff
         ? widget.dropoffLatLng
         : widget.pickupLatLng;
-    _destPinBytes ??= await GoldPinRenderer.render(isPickup: _sm.phase == TripPhase.toPickup);
+    _destPinBytes ??= await renderCircularPinBytes(
+      icon: CircularPinIcon.flag,
+      isPickup: _sm.phase == TripPhase.toPickup,
+      radius: 32,
+    );
     if (_destAnnot == null) {
       _destAnnot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(dest.longitude, dest.latitude)),

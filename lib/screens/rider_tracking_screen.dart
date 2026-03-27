@@ -9,7 +9,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
 import '../config/map_theme.dart';
-import '../widgets/gold_map_pin.dart';
+import '../widgets/map/circular_pin_renderer.dart';
 
 import '../config/app_theme.dart';
 import '../config/map_styles.dart';
@@ -940,21 +940,21 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     return _PinIcon.person;
   }
 
-  /// Renders a gold pin with contextual icon (100px).
-  /// Uses shared gold_map_pin utility for consistent design across the app.
+  /// Renders a circular pin with contextual icon.
+  /// Uses shared circular_pin_renderer for consistent design across the app.
   Future<Uint8List> _renderGoldPin({
     required bool isPickup,
     String label = '',
   }) async {
     final iconType = _detectPinIcon(label);
-    GoldPinIcon gpIcon;
+    CircularPinIcon circIcon;
     switch (iconType) {
-      case _PinIcon.house:    gpIcon = GoldPinIcon.house; break;
-      case _PinIcon.store:    gpIcon = GoldPinIcon.store; break;
-      case _PinIcon.airplane: gpIcon = GoldPinIcon.airplane; break;
-      case _PinIcon.person:   gpIcon = GoldPinIcon.person; break;
+      case _PinIcon.house:    circIcon = CircularPinIcon.home; break;
+      case _PinIcon.store:    circIcon = CircularPinIcon.store; break;
+      case _PinIcon.airplane: circIcon = CircularPinIcon.airplane; break;
+      case _PinIcon.person:   circIcon = CircularPinIcon.person; break;
     }
-    return renderGoldPinBytes(icon: gpIcon, isPickup: isPickup);
+    return renderCircularPinBytes(icon: circIcon, isPickup: isPickup, radius: 32);
   }
 
   /// Renders a gold pin + address label as a single combined bitmap.

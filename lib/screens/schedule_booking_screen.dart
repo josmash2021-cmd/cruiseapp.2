@@ -28,7 +28,7 @@ import 'airport_terminal_sheet.dart';
 import 'payment_accounts_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'ride_booking_confirmed_screen.dart';
-import '../widgets/gold_pin_renderer.dart';
+import '../widgets/map/circular_pin_renderer.dart';
 
 class ScheduleBookingScreen extends StatefulWidget {
   final DateTime scheduledAt;
@@ -119,8 +119,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
   }
 
   Future<void> _buildPinBytes() async {
-    _pickupPinBytes = await GoldPinRenderer.render(isPickup: true);
-    _dropoffPinBytes = await GoldPinRenderer.render(isPickup: false);
+    _pickupPinBytes = await renderCircularPinBytes(icon: CircularPinIcon.dot, isPickup: true, radius: 32);
+    _dropoffPinBytes = await renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32);
   }
 
   @override

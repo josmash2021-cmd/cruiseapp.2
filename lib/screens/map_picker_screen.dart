@@ -8,7 +8,7 @@ import '../config/mapbox_config.dart';
 import '../l10n/app_localizations.dart';
 import '../models/lat_lng.dart';
 import '../services/places_service.dart';
-import '../widgets/cruise_map_pin.dart';
+import '../widgets/map/circular_pin_renderer.dart';
 
 /// Full-screen map picker. User drags the map under a fixed center pin.
 /// Returns a Map with 'address' (String), 'lat' (double), 'lng' (double).
@@ -175,9 +175,10 @@ class _MapPickerScreenState extends State<MapPickerScreen>
               offset: const Offset(0, -36),
               child: ScaleTransition(
                 scale: _settleAnim,
-                child: CruiseMapPin(
+                child: CircularMapPin(
                   size: 56,
-                  icon: widget.isPickup ? Icons.person : Icons.location_on_rounded,
+                  icon: widget.isPickup ? CircularPinIcon.person : CircularPinIcon.flag,
+                  isPickup: widget.isPickup,
                 ),
               ),
             ),

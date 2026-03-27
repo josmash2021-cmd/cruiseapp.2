@@ -37,6 +37,7 @@ import 'rider_tracking_screen.dart';
 import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/gold_location_dot.dart';
+import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
 import 'scheduled_rides_screen.dart';
 import 'searching_driver_screen.dart';
@@ -50,6 +51,22 @@ import 'searching_driver_screen.dart';
 ///  4. "Confirm Fusion" → searching animation
 ///  5. Driver matched → tracking screen
 enum _PinIcon { none, person, house, store, airplane }
+
+/// Convert old _PinIcon enum to new CircularPinIcon
+CircularPinIcon _pinIconToCircular(_PinIcon icon) {
+  switch (icon) {
+    case _PinIcon.person:
+      return CircularPinIcon.person;
+    case _PinIcon.house:
+      return CircularPinIcon.home;
+    case _PinIcon.store:
+      return CircularPinIcon.store;
+    case _PinIcon.airplane:
+      return CircularPinIcon.airplane;
+    case _PinIcon.none:
+      return CircularPinIcon.dot;
+  }
+}
 
 class RideRequestScreen extends StatefulWidget {
   final bool fastRide;
@@ -344,19 +361,20 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   }
 
   Future<void> _loadPinIcon() async {
-    _goldPinIcon = await _buildGoldPinBytes();
+    _goldPinIcon = await renderCircularPinBytes(
+      icon: CircularPinIcon.dot,
+      isPickup: true,
+      radius: 32,
+    );
     if (mounted) setState(() {});
   }
 
   Future<Uint8List?> _buildGoldPinBytes() async {
-    const double size = 120;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
-    _drawGoldPinAt(canvas, 0, 0, size, icon: _PinIcon.person, isPickup: true);
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(size.toInt(), size.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    return byteData?.buffer.asUint8List();
+    return renderCircularPinBytes(
+      icon: CircularPinIcon.dot,
+      isPickup: true,
+      radius: 32,
+    );
   }
 
   /// Geocode the airport name + terminal + zone into real coordinates,
@@ -502,14 +520,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _PinIcon icon = _PinIcon.none,
     bool isPickup = true,
   }) async {
-    const double size = 115;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
-    _drawGoldPinAt(canvas, 0, 0, size, icon: icon, isPickup: isPickup);
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(size.toInt(), size.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    return byteData!.buffer.asUint8List();
+    return renderCircularPinBytes(
+      icon: _pinIconToCircular(icon),
+      isPickup: isPickup,
+      radius: 32,
+    );
   }
 
   /// Render a combined pin + label bitmap as a single image.
@@ -603,8 +618,20 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, paddedW, totalH));
 
-    // ── Draw pin (airport uses special rendering in _buildStandalonePin) ──
-    _drawGoldPinAt(canvas, adjPinX, pinY, pinSize, icon: icon, isPickup: isPickup);
+    // ── Draw circular pin (render and decode) ──
+    final pinBytes = await renderCircularPinBytes(
+      icon: _pinIconToCircular(icon),
+      isPickup: isPickup,
+      radius: pinSize / 2,
+    );
+    final codec = await ui.instantiateImageCodec(pinBytes);
+    final frame = await codec.getNextFrame();
+    final pinImage = frame.image;
+    canvas.drawImage(
+      pinImage,
+      Offset(adjPinX, pinY),
+      Paint(),
+    );
 
     // If airport, overlay a golden departure icon on the pin head
     if (icon == _PinIcon.airplane) {
@@ -689,24 +716,21 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     return (rawBytes, anchorOffset, rawBytes);
   }
 
-  /// Render a standalone gold pin (no label) as raw bytes.
+  /// Render a standalone circular pin (no label) as raw bytes.
   Future<(Uint8List, Uint8List)> _buildStandalonePin({
     _PinIcon icon = _PinIcon.none,
     bool isPickup = true,
   }) async {
-    // Airport: clean departure icon only — no teardrop
+    // Airport: clean departure icon only
     if (icon == _PinIcon.airplane) {
       final bytes = await _buildAirportIconBytes(100);
       return (bytes, bytes);
     }
-    const double size = 120;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
-    _drawGoldPinAt(canvas, 0, 0, size, icon: icon, isPickup: isPickup);
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(size.toInt(), size.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    final bytes = byteData!.buffer.asUint8List();
+    final bytes = await renderCircularPinBytes(
+      icon: _pinIconToCircular(icon),
+      isPickup: isPickup,
+      radius: 32,
+    );
     return (bytes, bytes);
   }
 

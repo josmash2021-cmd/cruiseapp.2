@@ -18,6 +18,7 @@ import '../services/user_session.dart';
 import 'splash_screen.dart';
 import 'help_screen.dart';
 import 'payment_accounts_screen.dart';
+import 'wallet_screen.dart';
 import 'safety_screen.dart';
 import 'inbox_screen.dart';
 import 'edit_profile_screen.dart';
@@ -522,7 +523,7 @@ class _AccountScreenState extends State<AccountScreen> {
               case 'wallet':
                 Navigator.of(
                   context,
-                ).push(slideFromRightRoute(const PaymentAccountsScreen()));
+                ).push(slideFromRightRoute(const WalletScreen()));
                 break;
               case 'trips':
                 Navigator.of(

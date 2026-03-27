@@ -2586,6 +2586,73 @@ class ApiService {
       await updateMe(updates);
     }
   }
+
+  // ═══════════════════════════════════════════════════════
+  //  WALLET (Feature 12.2)
+  // ═══════════════════════════════════════════════════════
+
+  /// Get current wallet balance.
+  /// Returns: {id, balance, currency, updated_at}
+  static Future<Map<String, dynamic>> getWalletBalance() async {
+    final h = await _authHeaders();
+    final res = await _cachedGet(
+      Uri.parse('$_baseUrl/wallet/balance'),
+      headers: h,
+      cacheTtl: const Duration(seconds: 10),
+    );
+    return _parse(res);
+  }
+
+  /// Get wallet transactions history.
+  /// Returns: {balance, currency, transactions[]}
+  static Future<Map<String, dynamic>> getWalletTransactions({
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/wallet/transactions?limit=$limit&offset=$offset'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Top up wallet with amount.
+  /// Returns: {status, new_balance, transaction}
+  static Future<Map<String, dynamic>> topUpWallet({
+    required double amount,
+    String? paymentMethodId,
+  }) async {
+    final h = await _authHeaders();
+    final body = <String, dynamic>{'amount': amount};
+    if (paymentMethodId != null) body['payment_method_id'] = paymentMethodId;
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/wallet/top-up'),
+          headers: {...h, 'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 20));
+    return _parse(res);
+  }
+
+  /// Pay for a ride using wallet balance.
+  /// Returns: {status, new_balance, amount_paid}
+  static Future<Map<String, dynamic>> payRideWithWallet({
+    required int tripId,
+    required double amount,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/wallet/pay-ride?trip_id=$tripId&amount=$amount'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
 }
 
 /// Simple exception with HTTP status code.

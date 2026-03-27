@@ -4,11 +4,11 @@ part of 'home_screen.dart';
 //  CONTROLLER — data, navigation, shortcuts, scheduling
 // ════════════════════════════════════════════════════════════
 
-extension HomeScreenController on _HomeScreenState {
+extension _HomeScreenController on _HomeScreenState {
 
   void _onPhotoChanged() {
     if (!mounted) return;
-    setState(() {
+    _setState(() {
       _photoPath = UserSession.photoNotifier.value;
       _photoUrl = UserSession.photoUrlNotifier.value;
     });
@@ -26,7 +26,7 @@ extension HomeScreenController on _HomeScreenState {
           final states = (snap.data()?['activeStates'] as List<dynamic>? ?? [])
               .map((s) => s.toString())
               .toSet();
-          setState(() {
+          _setState(() {
             _activeServiceStates = states;
             // If no states configured → allow all (feature not yet set up)
             if (states.isEmpty) {
@@ -47,7 +47,7 @@ extension HomeScreenController on _HomeScreenState {
       ),
     ).then((pos) {
       if (!mounted) return;
-      setState(() {
+      _setState(() {
         _currentLatLng = LatLng(pos.latitude, pos.longitude);
       });
       _animateToLocation(_currentLatLng!);
@@ -62,7 +62,7 @@ extension HomeScreenController on _HomeScreenState {
     ).listen((Position p) {
       if (!mounted) return;
       final ll = LatLng(p.latitude, p.longitude);
-      setState(() => _currentLatLng = ll);
+      _setState(() => _currentLatLng = ll);
       _animateToLocation(ll);
     });
   }
@@ -82,7 +82,7 @@ extension HomeScreenController on _HomeScreenState {
           _loadSavedData(); // refresh active ride state → may unlock panel
           return;
         }
-        setState(() {
+        _setState(() {
           _remainingSeconds--;
         });
       },

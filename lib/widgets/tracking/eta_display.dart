@@ -4,7 +4,7 @@ part of '../../screens/rider_tracking_screen.dart';
 //  ETA & RATING — rating overlay, tip, driver row
 // ════════════════════════════════════════════════════════════
 
-extension RiderTrackingEtaDisplay on _RiderTrackingScreenState {
+extension _RiderTrackingEtaDisplay on _RiderTrackingScreenState {
 
   // ── Rating / Tip / Save overlay (shown when trip completes) ──
   Widget _ratingOverlay(double botPad) {
@@ -91,7 +91,7 @@ extension RiderTrackingEtaDisplay on _RiderTrackingScreenState {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(5, (i) {
                   return GestureDetector(
-                    onTap: () => setState(() => _ratingStars = i + 1),
+                    onTap: () => _setState(() => _ratingStars = i + 1),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: Icon(
@@ -138,7 +138,7 @@ extension RiderTrackingEtaDisplay on _RiderTrackingScreenState {
                 children: chipOptions.map((label) {
                   final sel = _feedbackChips.contains(label);
                   return GestureDetector(
-                    onTap: () => setState(() {
+                    onTap: () => _setState(() {
                       sel
                           ? _feedbackChips.remove(label)
                           : _feedbackChips.add(label);
@@ -253,7 +253,7 @@ extension RiderTrackingEtaDisplay on _RiderTrackingScreenState {
                         right: pct != tipPercents.last ? 10 : 0,
                       ),
                       child: GestureDetector(
-                        onTap: () => setState(() {
+                        onTap: () => _setState(() {
                           _customTip = false;
                           _tipAmount = sel ? 0 : amt;
                         }),
@@ -308,7 +308,7 @@ extension RiderTrackingEtaDisplay on _RiderTrackingScreenState {
 
               // Custom tip link
               GestureDetector(
-                onTap: () => setState(() {
+                onTap: () => _setState(() {
                   _customTip = !_customTip;
                   if (!_customTip) _tipAmount = 0;
                 }),
@@ -366,7 +366,7 @@ extension RiderTrackingEtaDisplay on _RiderTrackingScreenState {
                     ),
                     onChanged: (v) {
                       final parsed = double.tryParse(v);
-                      setState(() => _tipAmount = parsed ?? 0);
+                      _setState(() => _tipAmount = parsed ?? 0);
                     },
                   ),
                 ),
@@ -375,7 +375,7 @@ extension RiderTrackingEtaDisplay on _RiderTrackingScreenState {
 
               // ── Favorite driver ──
               GestureDetector(
-                onTap: () => setState(() => _saveDriver = !_saveDriver),
+                onTap: () => _setState(() => _saveDriver = !_saveDriver),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,

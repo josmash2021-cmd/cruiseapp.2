@@ -20,7 +20,7 @@ class FirebaseStorageService {
   }
 
   /// Upload a profile photo and return its permanent download URL.
-  /// Uses a stable path (user_<id>/profile.jpg) so re-uploads overwrite the old file.
+  /// Uses a stable path (`user_<id>/profile.jpg`) so re-uploads overwrite the old file.
   static Future<String> uploadProfilePhoto(String filePath, int userId) async {
     await _ensureAuth();
     final ref = _storage.ref('photos/user_$userId/profile.jpg');

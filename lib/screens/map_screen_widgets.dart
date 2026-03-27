@@ -4,7 +4,7 @@ part of 'map_screen.dart';
 //  WIDGETS — panels, UI builders, sheets
 // ════════════════════════════════════════════════════════════
 
-extension MapScreenWidgets on _MapScreenState {
+extension _MapScreenWidgets on _MapScreenState {
 
   void _showTripCancelledDialog() {
     if (!mounted) return;
@@ -176,7 +176,7 @@ extension MapScreenWidgets on _MapScreenState {
       } else {
         expand = draggedHeight >= midpoint;
       }
-      setState(() {
+      _setState(() {
         _optionsExpanded = expand;
         _isPanelDragging = false;
         _panelDragHeight = null;
@@ -184,7 +184,7 @@ extension MapScreenWidgets on _MapScreenState {
       return;
     }
 
-    setState(() {
+    _setState(() {
       _isPanelDragging = false;
       _panelDragHeight = null;
     });
@@ -628,7 +628,7 @@ extension MapScreenWidgets on _MapScreenState {
           children: [
             _handle(),
             BouncingButton(
-              onPressed: () => setState(() {
+              onPressed: () => _setState(() {
                 _optionsExpanded = !_optionsExpanded;
                 _panelDragHeight = null;
               }),
@@ -694,7 +694,7 @@ extension MapScreenWidgets on _MapScreenState {
 
                     return BouncingButton(
                       scaleFactor: 0.96,
-                      onPressed: () => setState(() => _selectedRide = i),
+                      onPressed: () => _setState(() => _selectedRide = i),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 250),
                         curve: Curves.easeOutCubic,
@@ -1004,7 +1004,7 @@ extension MapScreenWidgets on _MapScreenState {
           if (confirm != true || !mounted) return;
           _rideLifecycleTimer?.cancel();
           _tripPollTimer?.cancel();
-          setState(() {
+          _setState(() {
             // driver annotation cleared via manager
             _rideProgress = 0;
           });
@@ -2831,7 +2831,7 @@ extension MapScreenWidgets on _MapScreenState {
                       if (result != null &&
                           result['dropoffLabel'] != null &&
                           mounted) {
-                        setState(() {
+                        _setState(() {
                           _dropoffAddress = result['dropoffLabel'] as String;
                         });
                       }
@@ -3098,7 +3098,7 @@ extension MapScreenWidgets on _MapScreenState {
                       if (confirm != true || !mounted) return;
                       _rideLifecycleTimer?.cancel();
                       _tripPollTimer?.cancel();
-                      setState(() {
+                      _setState(() {
                         // driver annotation cleared via manager
                         _rideProgress = 0;
                       });

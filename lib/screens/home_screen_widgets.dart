@@ -4,7 +4,7 @@ part of 'home_screen.dart';
 //  WIDGETS — UI builders, panels, cards
 // ════════════════════════════════════════════════════════════
 
-extension HomeScreenWidgets on _HomeScreenState {
+extension _HomeScreenWidgets on _HomeScreenState {
 
   // ════════════════════════════════════════════════════
   //  M A P - F I R S T   H E L P E R S
@@ -800,7 +800,7 @@ extension HomeScreenWidgets on _HomeScreenState {
                           Icons.bolt_rounded,
                           _rideNow,
                           () {
-                            if (!_rideNow) setState(() => _rideNow = true);
+                            if (!_rideNow) _setState(() => _rideNow = true);
                           },
                         ),
                         _nowLaterPill(
@@ -809,7 +809,7 @@ extension HomeScreenWidgets on _HomeScreenState {
                           !_rideNow,
                           () {
                             if (_rideNow) {
-                              setState(() => _rideNow = false);
+                              _setState(() => _rideNow = false);
                               _showScheduleSheet();
                             }
                           },
@@ -1332,7 +1332,7 @@ extension HomeScreenWidgets on _HomeScreenState {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
       onTap: () {
-        setState(() => _fleetExpanded = !_fleetExpanded);
+        _setState(() => _fleetExpanded = !_fleetExpanded);
       },
       behavior: HitTestBehavior.opaque,
       child: Row(
@@ -2059,7 +2059,7 @@ extension HomeScreenWidgets on _HomeScreenState {
                             const SizedBox(height: 12),
                             GestureDetector(
                               onTap: () {
-                                setState(() => _locationError = null);
+                                _setState(() => _locationError = null);
                                 _fetchCurrentLocation();
                               },
                               child: Container(

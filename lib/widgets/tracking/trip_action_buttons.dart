@@ -4,7 +4,7 @@ part of '../../screens/rider_tracking_screen.dart';
 //  TRIP ACTION BUTTONS — cancel, share, feedback dialogs
 // ════════════════════════════════════════════════════════════
 
-extension RiderTrackingActionButtons on _RiderTrackingScreenState {
+extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
 
   void _showFeedbackDialog() {
     final controller = TextEditingController(text: _anonymousFeedback);
@@ -29,7 +29,7 @@ extension RiderTrackingActionButtons on _RiderTrackingScreenState {
           ),
           ElevatedButton(
             onPressed: () {
-              setState(() {
+              _setState(() {
                 _anonymousFeedback = controller.text.trim();
               });
               Navigator.of(ctx).pop();

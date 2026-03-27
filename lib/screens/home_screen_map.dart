@@ -4,7 +4,7 @@ part of 'home_screen.dart';
 //  MAP — mini map, location animation, annotations
 // ════════════════════════════════════════════════════════════
 
-extension HomeScreenMap on _HomeScreenState {
+extension _HomeScreenMap on _HomeScreenState {
 
   Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
     await MapTheme.applyNavyGold(ctrl);

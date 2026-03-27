@@ -4,7 +4,7 @@ part of 'driver_online_screen.dart';
 //  WIDGETS — UI builders, panels, overlays, cards, sheets
 // ══════════════════════════════════════════════════════════════
 
-extension DriverOnlineWidgets on _DriverOnlineScreenState {
+extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
   Widget _mapW(bool isDark) {
     if (_pos == null) {
@@ -43,7 +43,7 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
               ),
             );
             if (mounted) {
-              setState(() => _pos = LatLng(gps.latitude, gps.longitude));
+              _setState(() => _pos = LatLng(gps.latitude, gps.longitude));
             }
           } catch (_) {}
           if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: _heading, tilt: 0);
@@ -159,9 +159,9 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
       onHorizontalDragEnd: (details) {
         if (details.primaryVelocity == null) return;
         if (details.primaryVelocity! < -200 && _earningsPage < 2) {
-          setState(() => _earningsPage++);
+          _setState(() => _earningsPage++);
         } else if (details.primaryVelocity! > 200 && _earningsPage > 0) {
-          setState(() => _earningsPage--);
+          _setState(() => _earningsPage--);
         }
       },
       child: SizedBox(
@@ -387,7 +387,7 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
               child: PageView.builder(
                 controller: _offerPageCtrl,
                 onPageChanged: (index) {
-                  setState(() => _currentOfferIndex = index);
+                  _setState(() => _currentOfferIndex = index);
                   HapticFeedback.selectionClick();
                   if (index < _pendingOffers.length) {
                     _autoTriggerRoutePreview(_pendingOffers[index]);
@@ -438,7 +438,7 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
                   }
                   return GestureDetector(
                     onTapDown: (_) {
-                      setState(() => _animatingOfferId = oid);
+                      _setState(() => _animatingOfferId = oid);
                       _pulseCtrl?.forward();
                     },
                     onTapUp: (_) {
@@ -1244,12 +1244,12 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
 
         // ── ROW 5: Accept button — GOLD — ALWAYS VISIBLE ──
         GestureDetector(
-          onTapDown: (_) => setState(() => _isAcceptPressed = true),
+          onTapDown: (_) => _setState(() => _isAcceptPressed = true),
           onTapUp: (_) {
-            setState(() => _isAcceptPressed = false);
+            _setState(() => _isAcceptPressed = false);
             _acceptOffer(offer);
           },
-          onTapCancel: () => setState(() => _isAcceptPressed = false),
+          onTapCancel: () => _setState(() => _isAcceptPressed = false),
           child: AnimatedScale(
             scale: _isAcceptPressed ? 0.97 : 1.0,
             duration: const Duration(milliseconds: 100),
@@ -2811,7 +2811,7 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
                             (i) => GestureDetector(
                               onTap: () {
                                 HapticFeedback.selectionClick();
-                                setState(() => _stars = i + 1);
+                                _setState(() => _stars = i + 1);
                               },
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -2903,7 +2903,7 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
     );
-    setState(() => _panelOpen = !isOpen);
+    _setState(() => _panelOpen = !isOpen);
   }
 
   Widget _draggablePanel(

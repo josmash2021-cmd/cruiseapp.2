@@ -4,7 +4,7 @@ part of '../screens/rider_tracking_screen.dart';
 //  CONTROLLER — Firebase listeners, trip phases, persistence
 // ════════════════════════════════════════════════════════════
 
-extension RiderTrackingController on _RiderTrackingScreenState {
+extension _RiderTrackingController on _RiderTrackingScreenState {
 
   /// Connect to Firestore for real-time driver location and trip status.
   void _startRealTimeTracking() {
@@ -14,13 +14,13 @@ extension RiderTrackingController on _RiderTrackingScreenState {
       _driverLocSub = TripFirestoreService.watchDriverLocation(fsId).listen(
         (ll) {
           if (!mounted || _phase == _TrackPhase.completed) return;
-          if (_connectionLost) setState(() => _connectionLost = false);
+          if (_connectionLost) _setState(() => _connectionLost = false);
           _onRealDriverLocation(ll);
         },
         onError: (error) {
           debugPrint('[RiderTracking] Driver location listener error: $error');
           if (mounted && !_connectionLost) {
-            setState(() => _connectionLost = true);
+            _setState(() => _connectionLost = true);
           }
         },
       );
@@ -32,17 +32,17 @@ extension RiderTrackingController on _RiderTrackingScreenState {
           if (data == null) {
             // Null data = temporary disconnection, do NOT cancel
             debugPrint('[RiderTracking] Trip data null — keeping last known state');
-            if (!_connectionLost) setState(() => _connectionLost = true);
+            if (!_connectionLost) _setState(() => _connectionLost = true);
             return;
           }
-          if (_connectionLost) setState(() => _connectionLost = false);
+          if (_connectionLost) _setState(() => _connectionLost = false);
           _onTripStatusUpdate(data);
         },
         onError: (error) {
           debugPrint('[RiderTracking] Trip status listener error: $error');
           // Stream error = connection issue, show banner and keep retrying
           if (mounted && !_connectionLost) {
-            setState(() => _connectionLost = true);
+            _setState(() => _connectionLost = true);
           }
         },
       );
@@ -89,7 +89,7 @@ extension RiderTrackingController on _RiderTrackingScreenState {
       _distanceMiles = dist;
       _etaMinutes = (dist / 0.5).ceil().clamp(1, 99);
       if (dist < 0.05) {
-        setState(() => _phase = _TrackPhase.arrived);
+        _setState(() => _phase = _TrackPhase.arrived);
         if (!_arrivedNotifSent) {
           _arrivedNotifSent = true;
           _sendRideNotification(
@@ -104,7 +104,7 @@ extension RiderTrackingController on _RiderTrackingScreenState {
       _etaMinutes = (dist / 0.5).ceil().clamp(1, 99);
     }
 
-    setState(() {});
+    _setState(() {});
     _throttleCam();
   }
 
@@ -118,14 +118,14 @@ extension RiderTrackingController on _RiderTrackingScreenState {
 
     final status = data['status']?.toString() ?? '';
     if (status == 'arrived' && _phase == _TrackPhase.arriving) {
-      setState(() => _phase = _TrackPhase.arrived);
+      _setState(() => _phase = _TrackPhase.arrived);
     } else if (status == 'in_trip' &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
-      setState(() => _phase = _TrackPhase.onTrip);
+      _setState(() => _phase = _TrackPhase.onTrip);
       _popOutPickupPin();
     } else if (status == 'completed' && _phase != _TrackPhase.completed) {
       LocalDataService.clearActiveRide();
-      setState(() => _phase = _TrackPhase.completed);
+      _setState(() => _phase = _TrackPhase.completed);
       _goToRating();
     } else if (status == 'cancelled' || status == 'canceled') {
       if (!_cancelDialogShown) {
@@ -269,7 +269,7 @@ extension RiderTrackingController on _RiderTrackingScreenState {
     _distanceMiles = remainingM / 1609.34;
     _etaMinutes = (_distanceMiles / 0.5).ceil().clamp(1, 99);
 
-    setState(() {});
+    _setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _fitAllPoints();
     });

@@ -102,6 +102,7 @@ const int _maxPollFailsBeforeBanner = 3;
 
 class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     with TickerProviderStateMixin {
+  void _setState(VoidCallback fn) { setState(fn); }
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
@@ -162,7 +163,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   final Set<String> _feedbackChips = {};
   String _anonymousFeedback = '';
   bool _connectionLost = false;
-  int _pollFailCount = 0;
+  final int _pollFailCount = 0;
   bool _cancelDialogShown = false; // guard: prevents duplicate cancel dialogs
 
   int _pickupIdx = 0;

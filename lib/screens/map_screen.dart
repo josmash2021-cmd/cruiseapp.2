@@ -108,6 +108,7 @@ const double _zoomOutLevel = 10.5; // ignore: unused_field
 const double _carHeight = 28.0;
 
 class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
+  void _setState(VoidCallback fn) { setState(fn); }
   // Theme-aware colors – _c is set at the top of build()
   late AppColors _c;
   bool? _lastIsDark; // tracks theme so we can re-style the map

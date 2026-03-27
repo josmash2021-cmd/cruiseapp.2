@@ -4,13 +4,13 @@ part of 'map_screen.dart';
 //  CONTROLLER — location, search, ride logic, payment
 // ════════════════════════════════════════════════════════════
 
-extension MapScreenController on _MapScreenState {
+extension _MapScreenController on _MapScreenState {
 
   void _handleAddressFocusChange() {
     if (!mounted || _stage != RideStage.plan) return;
     final focused = _pickupFocus.hasFocus || _dropoffFocus.hasFocus;
     if (_isAddressFieldFocused == focused) return;
-    setState(() {
+    _setState(() {
       _isAddressFieldFocused = focused;
       _panelDragHeight = focused ? _panelMaxHeight(context) : null;
       _isPanelDragging = false;
@@ -150,7 +150,7 @@ extension MapScreenController on _MapScreenState {
 
           if (_stage != RideStage.pin && _stage != RideStage.plan) return;
 
-          setState(() {
+          _setState(() {
             _cameraTarget = live;
             _setPickupAnnotation(live);
             _tripMiles = '-- mi';
@@ -184,7 +184,7 @@ extension MapScreenController on _MapScreenState {
   void _setInitialPickup(LatLng latLng, String initialAddress) {
     if (!mounted) return;
 
-    setState(() {
+    _setState(() {
       _currentPosition = latLng;
       _cameraTarget = latLng;
       _pickupAddress = initialAddress;
@@ -200,7 +200,7 @@ extension MapScreenController on _MapScreenState {
     _searchDebounce?.cancel();
     final query = value.trim();
     if (query.isEmpty) {
-      setState(() {
+      _setState(() {
         _isSearching = false;
         _searchError = null;
         _suggestions = [];
@@ -211,7 +211,7 @@ extension MapScreenController on _MapScreenState {
     final debounceMs = kIsWeb ? 250 : 200;
     _searchDebounce = Timer(Duration(milliseconds: debounceMs), () async {
       if (!mounted) return;
-      setState(() {
+      _setState(() {
         _isSearching = true;
         _searchingPickup = pickup;
         _searchError = null;
@@ -230,7 +230,7 @@ extension MapScreenController on _MapScreenState {
             : topSuggestions;
         if (!mounted) return;
 
-        setState(() {
+        _setState(() {
           _isSearching = false;
           _suggestions = enriched;
         });
@@ -248,14 +248,14 @@ extension MapScreenController on _MapScreenState {
           final position = LatLng(exact.lat, exact.lng);
           _currentPosition = position;
           _setPickupAnnotation(position);
-          setState(() {
+          _setState(() {
             _pickupAddress = exact.address.isEmpty ? query : exact.address;
             _pickupCtrl.text = _pickupAddress;
             _hasPreparedRoute = false;
           });
         } catch (_) {}
 
-        setState(() {
+        _setState(() {
           _isSearching = false;
           _suggestions = [];
           _searchError = null;
@@ -301,7 +301,7 @@ extension MapScreenController on _MapScreenState {
     required bool pickup,
   }) async {
     // Immediately dismiss suggestions for snappy feel
-    setState(() {
+    _setState(() {
       _suggestions = [];
       _searchError = null;
       _isSearching = false;
@@ -361,7 +361,7 @@ extension MapScreenController on _MapScreenState {
       _dropoffPosition = pos;
       _setDropoffAnnotation(pos);
     }
-    setState(() {
+    _setState(() {
       if (pickup) {
         _pickupAddress = resolvedAddress;
         _pickupCtrl.text = resolvedAddress;
@@ -382,7 +382,7 @@ extension MapScreenController on _MapScreenState {
       }
     } else {
       if (!mounted) return;
-      setState(() {
+      _setState(() {
         _tripMiles = '-- mi';
         _tripDuration = '-- min';
         _clearRouteAnnotation();
@@ -414,7 +414,7 @@ extension MapScreenController on _MapScreenState {
 
     if (route != null) {
       _activeRoutePoints = route.points;
-      setState(() {
+      _setState(() {
         _tripMiles = _formatMiles(route.distanceMeters);
         _tripDuration = route.durationText;
         _updateRidePricingFromDuration(_tripDuration);
@@ -442,7 +442,7 @@ extension MapScreenController on _MapScreenState {
       } catch (_) {}
 
       if (!mounted) return false;
-      setState(() {
+      _setState(() {
         _tripMiles = estimate == null
             ? '-- mi'
             : '${estimate.miles.toStringAsFixed(2)} mi';
@@ -477,7 +477,7 @@ extension MapScreenController on _MapScreenState {
   }
 
   void _setStage(RideStage stage) {
-    setState(() {
+    _setState(() {
       _stage = stage;
       _panelDragHeight = null;
       _isPanelDragging = false;
@@ -494,7 +494,7 @@ extension MapScreenController on _MapScreenState {
     if (stage == RideStage.plan) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _stage != RideStage.plan) return;
-        setState(() {
+        _setState(() {
           _planBodyVisible = true;
         });
       });
@@ -553,7 +553,7 @@ extension MapScreenController on _MapScreenState {
   void _clearAddressInput({required bool pickup}) {
     _searchDebounce?.cancel();
 
-    setState(() {
+    _setState(() {
       if (pickup) {
         _pickupCtrl.clear();
       } else {
@@ -700,13 +700,13 @@ extension MapScreenController on _MapScreenState {
                     ) /
                     1000;
                 final etaMin = (distKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-                setState(() {
+                _setState(() {
                   _tripStatus = 'in_trip';
                   _rideProgress = progress;
                   _driverEta = '$etaMin min';
                 });
               } else {
-                setState(() => _tripStatus = 'in_trip');
+                _setState(() => _tripStatus = 'in_trip');
               }
             }
             // 3D Chase-cam follows driver every frame via _onDriverMotionTick
@@ -753,7 +753,7 @@ extension MapScreenController on _MapScreenState {
               ); }
             }
             if (mounted) {
-              setState(() {
+              _setState(() {
                 _driverEta = 'Arrived';
                 _tripStatus = 'arrived';
               });
@@ -774,12 +774,12 @@ extension MapScreenController on _MapScreenState {
                     ) /
                     1000;
                 final etaMin = (distKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-                setState(() {
+                _setState(() {
                   _tripStatus = status;
                   _driverEta = '$etaMin min';
                 });
               } else {
-                setState(() => _tripStatus = status);
+                _setState(() => _tripStatus = status);
               }
             }
             // 3D Chase-cam follows driver on map during en route
@@ -835,7 +835,7 @@ extension MapScreenController on _MapScreenState {
               );
             }
             if (mounted) {
-              setState(() {
+              _setState(() {
                 _rideProgress = 0;
                 _clearRouteAnnotation();
                 _activeRoutePoints = [];
@@ -994,7 +994,7 @@ extension MapScreenController on _MapScreenState {
                         padding: const EdgeInsets.symmetric(vertical: 13),
                       ),
                       onPressed: () {
-                        setState(() => _driverNote = noteCtrl.text.trim());
+                        _setState(() => _driverNote = noteCtrl.text.trim());
                         Navigator.of(context).pop();
                       },
                       child: Text(

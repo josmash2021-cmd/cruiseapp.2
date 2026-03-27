@@ -4,7 +4,7 @@ part of '../../screens/rider_tracking_screen.dart';
 //  DRIVER INFO CARD — driver details, avatar, plate
 // ════════════════════════════════════════════════════════════
 
-extension RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
+extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
 
   String get _vehicleAsset {
     final rn = widget.rideName.toLowerCase();

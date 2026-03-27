@@ -396,7 +396,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
       Position pos;
       try {
         pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
         ).timeout(const Duration(seconds: 5));
       } catch (_) {
         pos = await Geolocator.getLastKnownPosition().then(

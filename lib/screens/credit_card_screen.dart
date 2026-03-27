@@ -368,7 +368,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
 class _CardBrandLogo extends StatelessWidget {
   final String? brand;
 
-  const _CardBrandLogo({this.brand});
+  const _CardBrandLogo() : brand = null;
 
   @override
   Widget build(BuildContext context) {

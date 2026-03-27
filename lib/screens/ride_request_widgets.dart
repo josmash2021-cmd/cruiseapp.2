@@ -4,7 +4,7 @@ part of 'ride_request_screen.dart';
 //  WIDGETS — panels, cards, overlays
 // ════════════════════════════════════════════════════════════
 
-extension RideRequestWidgets on _RideRequestScreenState {
+extension _RideRequestWidgets on _RideRequestScreenState {
 
   // ── "Where to?" bar ──
 
@@ -237,7 +237,7 @@ extension RideRequestWidgets on _RideRequestScreenState {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 18),
                     child: GestureDetector(
-                      onTap: () => setState(
+                      onTap: () => _setState(
                         () => _rideOptionsExpanded = !_rideOptionsExpanded,
                       ),
                       behavior: HitTestBehavior.opaque,
@@ -371,7 +371,7 @@ extension RideRequestWidgets on _RideRequestScreenState {
                                   onTap: () {
                                     _ctrl.selectRideOption(displayOptions[i]);
                                     // Auto-collapse immediately after selecting
-                                    setState(
+                                    _setState(
                                       () => _rideOptionsExpanded = false,
                                     );
                                     // Single gentle 15° tilt — only once
@@ -399,7 +399,7 @@ extension RideRequestWidgets on _RideRequestScreenState {
                     secondChild: option != null
                         ? GestureDetector(
                             onTap: () =>
-                                setState(() => _rideOptionsExpanded = true),
+                                _setState(() => _rideOptionsExpanded = true),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -990,7 +990,7 @@ extension RideRequestWidgets on _RideRequestScreenState {
           const SizedBox(height: 12),
           GestureDetector(
             onTap: () {
-              setState(() {});
+              _setState(() {});
               _ctrl.retryFetchRoute();
             },
             child: Container(

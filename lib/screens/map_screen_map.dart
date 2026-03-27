@@ -4,7 +4,7 @@ part of 'map_screen.dart';
 //  MAP — annotations, camera, routes, animations
 // ════════════════════════════════════════════════════════════
 
-extension MapScreenMap on _MapScreenState {
+extension _MapScreenMap on _MapScreenState {
 
   /// Builds a circular pin using the unified circular_pin_renderer.
   Future<Uint8List> _buildGoldPin({
@@ -64,7 +64,7 @@ extension MapScreenMap on _MapScreenState {
         }
       }
 
-      setState(() {
+      _setState(() {
         _tripMiles = '-- mi';
         _tripDuration = '-- min';
         _clearRouteAnnotation();
@@ -82,7 +82,7 @@ extension MapScreenMap on _MapScreenState {
             ? _coordinatesLabel(target)
             : address;
         _lastReverseGeocodedTarget = target;
-        setState(() {
+        _setState(() {
           _pickupAddress = resolved;
           _pickupCtrl.text = resolved;
           _setPickupAnnotation(target);
@@ -90,7 +90,7 @@ extension MapScreenMap on _MapScreenState {
       } catch (_) {
         if (!mounted || requestTicket != _reverseGeocodeTicket) return;
         final fallback = _coordinatesLabel(target);
-        setState(() {
+        _setState(() {
           _pickupAddress = fallback;
           _pickupCtrl.text = fallback;
           _setPickupAnnotation(target);
@@ -396,7 +396,7 @@ extension MapScreenMap on _MapScreenState {
             ? _coordinatesLabel(target)
             : address;
         _lastReverseGeocodedTarget = target;
-        setState(() {
+        _setState(() {
           _pickupAddress = resolved;
           _pickupCtrl.text = resolved;
           _setPickupAnnotation(target);
@@ -407,7 +407,7 @@ extension MapScreenMap on _MapScreenState {
       } catch (_) {
         if (!mounted || requestTicket != _reverseGeocodeTicket) return;
         final fallback = _coordinatesLabel(target);
-        setState(() {
+        _setState(() {
           _pickupAddress = fallback;
           _pickupCtrl.text = fallback;
           _setPickupAnnotation(target);
@@ -437,7 +437,7 @@ extension MapScreenMap on _MapScreenState {
               ? _coordinatesLabel(newPosition)
               : address;
           _lastReverseGeocodedTarget = newPosition;
-          setState(() {
+          _setState(() {
             _pickupAddress = resolved;
             _pickupCtrl.text = resolved;
             _currentPosition = newPosition;
@@ -448,7 +448,7 @@ extension MapScreenMap on _MapScreenState {
         .catchError((_) {
           if (!mounted || requestTicket != _reverseGeocodeTicket) return;
           final fallback = _coordinatesLabel(newPosition);
-          setState(() {
+          _setState(() {
             _pickupAddress = fallback;
             _pickupCtrl.text = fallback;
             _currentPosition = newPosition;

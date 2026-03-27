@@ -4,7 +4,7 @@ part of 'ride_request_screen.dart';
 //  CONTROLLER — payment, search, scheduling
 // ════════════════════════════════════════════════════════════
 
-extension RideRequestController on _RideRequestScreenState {
+extension _RideRequestController on _RideRequestScreenState {
 
   Future<void> _loadPinIcon() async {
     _goldPinIcon = await renderCircularPinBytes(
@@ -12,7 +12,7 @@ extension RideRequestController on _RideRequestScreenState {
       isPickup: true,
       radius: 32,
     );
-    if (mounted) setState(() {});
+    if (mounted) _setState(() {});
   }
 
   Future<Uint8List?> _buildGoldPinBytes() async {
@@ -102,7 +102,7 @@ extension RideRequestController on _RideRequestScreenState {
     final last4 = await LocalDataService.getCreditCardLast4();
     final brand = await LocalDataService.getCreditCardBrand();
     if (!mounted) return;
-    setState(() {
+    _setState(() {
       _linkedPaymentMethods = linked;
       _savedCardLast4 = last4;
       _savedCardBrand = brand;
@@ -115,7 +115,7 @@ extension RideRequestController on _RideRequestScreenState {
     try {
       bool svc = await Geolocator.isLocationServiceEnabled();
       if (!svc) {
-        setState(() => _fetchingLocation = false);
+        _setState(() => _fetchingLocation = false);
         return;
       }
       LocationPermission perm = await Geolocator.checkPermission();
@@ -124,7 +124,7 @@ extension RideRequestController on _RideRequestScreenState {
       }
       if (perm == LocationPermission.deniedForever) {
         if (mounted) {
-          setState(() => _fetchingLocation = false);
+          _setState(() => _fetchingLocation = false);
           showDialog(
             context: context,
             builder: (ctx) => AlertDialog(
@@ -149,7 +149,7 @@ extension RideRequestController on _RideRequestScreenState {
         return;
       }
       if (perm == LocationPermission.denied) {
-        setState(() => _fetchingLocation = false);
+        _setState(() => _fetchingLocation = false);
         return;
       }
 
@@ -158,7 +158,7 @@ extension RideRequestController on _RideRequestScreenState {
         final lastPos = await Geolocator.getLastKnownPosition();
         if (lastPos != null && mounted) {
           final lastLl = LatLng(lastPos.latitude, lastPos.longitude);
-          setState(() {
+          _setState(() {
             _userLocation = lastLl;
             _center = lastLl;
           });
@@ -178,7 +178,7 @@ extension RideRequestController on _RideRequestScreenState {
       if (!mounted) return;
 
       final ll = LatLng(pos.latitude, pos.longitude);
-      setState(() {
+      _setState(() {
         _userLocation = ll;
         _center = ll;
         _fetchingLocation = false;
@@ -195,10 +195,10 @@ extension RideRequestController on _RideRequestScreenState {
         lng: pos.longitude,
       );
       if (addr != null && mounted) {
-        setState(() => _currentAddress = addr);
+        _setState(() => _currentAddress = addr);
       }
     } catch (_) {
-      if (mounted) setState(() => _fetchingLocation = false);
+      if (mounted) _setState(() => _fetchingLocation = false);
     }
   }
 
@@ -225,7 +225,7 @@ extension RideRequestController on _RideRequestScreenState {
         // Mark options as loaded when rideOptions arrive
         if (s.rideOptions.isNotEmpty && !_optionsLoaded) {
           _shimmerTimeoutTimer?.cancel();
-          setState(() => _optionsLoaded = true);
+          _setState(() => _optionsLoaded = true);
         }
         // Auto-select ride option from home screen card tap
         if (!_didAutoSelectRide &&
@@ -239,7 +239,7 @@ extension RideRequestController on _RideRequestScreenState {
           if (match != null) {
             _ctrl.selectRideOption(match);
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _rideOptionsExpanded = false);
+              if (mounted) _setState(() => _rideOptionsExpanded = false);
             });
           }
         }
@@ -257,12 +257,12 @@ extension RideRequestController on _RideRequestScreenState {
           _searchStatusTimer?.cancel();
           _searchStatusTimer = Timer.periodic(const Duration(seconds: 3), (_) {
             if (mounted) {
-              setState(() => _searchStatusIdx++);
+              _setState(() => _searchStatusIdx++);
             }
           });
           _searchElapsedTimer?.cancel();
           _searchElapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-            if (mounted) setState(() => _searchElapsedSec++);
+            if (mounted) _setState(() => _searchElapsedSec++);
           });
           // Trigger cinematic sequence on searching phase open
           _replayCinematicIfRouteAvailable();
@@ -304,7 +304,7 @@ extension RideRequestController on _RideRequestScreenState {
           _dfMsgTimer = Timer.periodic(
             const Duration(milliseconds: 1200),
             (_) {
-              if (mounted) setState(() => _dfMsgIndex = (_dfMsgIndex + 1) % 3);
+              if (mounted) _setState(() => _dfMsgIndex = (_dfMsgIndex + 1) % 3);
             },
           );
 
@@ -380,7 +380,7 @@ extension RideRequestController on _RideRequestScreenState {
         _splashTimer = null;
         break;
     }
-    setState(() {});
+    _setState(() {});
   }
 
   // ── Search screen ──
@@ -404,7 +404,7 @@ extension RideRequestController on _RideRequestScreenState {
     final dropoffLabel = result['dropoffLabel'] as String? ?? '';
 
     // Ensure loading overlay is up (already set by onWillReturn, but guard here too)
-    if (!_fetchingRoute) setState(() => _fetchingRoute = true);
+    if (!_fetchingRoute) _setState(() => _fetchingRoute = true);
 
     if (pickupDetails != null) {
       _ctrl.setPickup(pickupDetails, pickupLabel);
@@ -691,20 +691,20 @@ extension RideRequestController on _RideRequestScreenState {
     void Function(void Function()) setSheetState,
   ) async {
     setSheetState(() => _isProcessingPayment = true);
-    setState(() => _isProcessingPayment = true);
+    _setState(() => _isProcessingPayment = true);
 
     try {
       final success = await _confirmNativePayment(option);
       if (!mounted) return;
       if (!success) {
         setSheetState(() => _isProcessingPayment = false);
-        setState(() => _isProcessingPayment = false);
+        _setState(() => _isProcessingPayment = false);
         return; // User cancelled — stay on sheet
       }
     } catch (e) {
       if (!mounted) return;
       setSheetState(() => _isProcessingPayment = false);
-      setState(() => _isProcessingPayment = false);
+      _setState(() => _isProcessingPayment = false);
       debugPrint('Payment error: $e');
       _showDeclinedDialog(
         title: S.of(context).paymentDeclined,
@@ -715,7 +715,7 @@ extension RideRequestController on _RideRequestScreenState {
 
     if (!mounted) return;
     setSheetState(() => _isProcessingPayment = false);
-    setState(() => _isProcessingPayment = false);
+    _setState(() => _isProcessingPayment = false);
     Navigator.of(context).pop();
     if (widget.applyPromo) await LocalDataService.setPromoUsed();
     AnalyticsService.instance.logRideRequested(option?.name ?? 'unknown', option?.priceEstimate ?? 0);
@@ -730,18 +730,18 @@ extension RideRequestController on _RideRequestScreenState {
   /// Processes payment directly from the route preview sheet.
   Future<void> _startRideDirectly(AppColors c, RideOption? option) async {
     final nav = Navigator.of(context);
-    setState(() => _isProcessingPayment = true);
+    _setState(() => _isProcessingPayment = true);
 
     try {
       final success = await _confirmNativePayment(option);
       if (!mounted) return;
       if (!success) {
-        setState(() => _isProcessingPayment = false);
+        _setState(() => _isProcessingPayment = false);
         return; // User cancelled — stay on screen
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isProcessingPayment = false);
+      _setState(() => _isProcessingPayment = false);
       debugPrint('Payment error: $e');
       _showDeclinedDialog(
         title: S.of(context).paymentDeclined,
@@ -751,7 +751,7 @@ extension RideRequestController on _RideRequestScreenState {
     }
 
     if (!mounted) return;
-    setState(() => _isProcessingPayment = false);
+    _setState(() => _isProcessingPayment = false);
     if (widget.applyPromo) await LocalDataService.setPromoUsed();
     AnalyticsService.instance.logRideRequested(option?.name ?? 'unknown', option?.priceEstimate ?? 0);
 
@@ -1136,7 +1136,7 @@ extension RideRequestController on _RideRequestScreenState {
                   final selected = id == _selectedPaymentMethod;
                   return GestureDetector(
                     onTap: () {
-                      setState(() => _selectedPaymentMethod = id);
+                      _setState(() => _selectedPaymentMethod = id);
                       Navigator.pop(ctx);
                       _showPaymentSheet(c, option);
                     },

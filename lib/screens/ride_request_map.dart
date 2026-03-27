@@ -4,7 +4,7 @@ part of 'ride_request_screen.dart';
 //  MAP — annotations, cinematic, route drawing
 // ════════════════════════════════════════════════════════════
 
-extension RideRequestMap on _RideRequestScreenState {
+extension _RideRequestMap on _RideRequestScreenState {
 
   /// Detect what icon to show on the dropoff pin based on address text.
   _PinIcon _detectDropoffType(String address) {
@@ -343,7 +343,6 @@ extension RideRequestMap on _RideRequestScreenState {
     double oy,
     double size, {
     _PinIcon icon = _PinIcon.none,
-    bool isPickup = true,
   }) {
     final cx = ox + size / 2;      // horizontal center
     final tipY = oy + size;         // tip of the pin = coordinate point
@@ -889,7 +888,7 @@ extension RideRequestMap on _RideRequestScreenState {
       LatLng(s.pickup!.lat, s.pickup!.lng),
       LatLng(s.dropoff!.lat, s.dropoff!.lng),
     ]);
-    if (mounted) setState(() {});
+    if (mounted) _setState(() {});
   }
 
   Future<void> _buildRouteMarkers() async {
@@ -979,7 +978,7 @@ extension RideRequestMap on _RideRequestScreenState {
         ));
       }
     }
-    if (mounted) setState(() {});
+    if (mounted) _setState(() {});
   }
 
   // Labels always visible — no toggle behavior
@@ -1099,7 +1098,7 @@ extension RideRequestMap on _RideRequestScreenState {
 
   Future<void> _recenterMap() async {
     _programmaticCam = true;
-    setState(() => _userMovedMap = false);
+    _setState(() => _userMovedMap = false);
     final s = _ctrl.state;
     // If we have pickup+dropoff, fit both in view
     if (s.pickup != null && s.dropoff != null) {

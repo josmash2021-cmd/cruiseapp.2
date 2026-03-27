@@ -4,7 +4,7 @@ part of 'driver_online_screen.dart';
 //  CONTROLLER — boot, GPS, polling, offers, navigation, trips
 // ══════════════════════════════════════════════════════════════
 
-extension DriverOnlineController on _DriverOnlineScreenState {
+extension _DriverOnlineController on _DriverOnlineScreenState {
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  BOOT
@@ -55,7 +55,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
     try {
       final data = await ApiService.getDriverEarnings(period: 'week');
       if (mounted) {
-        setState(() {
+        _setState(() {
           _weeklyEarnings = (data['total'] as num?)?.toDouble() ?? 0;
         });
       }
@@ -67,7 +67,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
     final preloaded = PreloadService.initialPosition;
     if (preloaded != null && _pos == null) {
       _pos = LatLng(preloaded.latitude, preloaded.longitude);
-      if (mounted) setState(() {});
+      if (mounted) _setState(() {});
     }
 
     try {
@@ -134,7 +134,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
       );
       if (!mounted) return;
       final ll = LatLng(pos.latitude, pos.longitude);
-      setState(() => _pos = ll);
+      _setState(() => _pos = ll);
       _moveToLatLng(ll);
     } catch (_) {}
   }
@@ -149,7 +149,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
     await _loadDriverPhoto();
     await _goldDot.build(() { if (mounted) _updateDriverAnnotation(); });
     _goldPinBytes = await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32);
-    if (mounted) setState(() {});
+    if (mounted) _setState(() {});
   }
 
   /// Download and decode the driver's profile photo for the map marker.
@@ -560,7 +560,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
             final now = DateTime.now();
             if (now.difference(_lastNavSetState).inMilliseconds > 500) {
               _lastNavSetState = now;
-              setState(() {});
+              _setState(() {});
             }
           } else if (_phase == _Phase.enRouteToPickup) {
             _updateNavState(newLL);
@@ -575,7 +575,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
             final now1 = DateTime.now();
             if (now1.difference(_lastNavSetState).inMilliseconds > 500) {
               _lastNavSetState = now1;
-              setState(() {});
+              _setState(() {});
             }
             if (dist < 0.05) {
               _onNearPickup();
@@ -593,7 +593,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
             final now2 = DateTime.now();
             if (now2.difference(_lastNavSetState).inMilliseconds > 500) {
               _lastNavSetState = now2;
-              setState(() {});
+              _setState(() {});
             }
             if (dist < 0.05) {
               _onNearDropoff();
@@ -676,7 +676,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
       ).catchError((_) => <String, dynamic>{});
     }
     // Show ARRIVED button
-    setState(() {});
+    _setState(() {});
   }
 
   void _onNearDropoff() {
@@ -692,7 +692,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
       ).catchError((_) => <String, dynamic>{});
     }
     // Show FINISH TRIP button in panel
-    setState(() {});
+    _setState(() {});
   }
 
   void _smoothMoveTo(LatLng target, double heading) {
@@ -777,7 +777,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
     }
 
     _updateDriverAnnotation();
-    setState(() {});
+    _setState(() {});
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -814,7 +814,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
         HapticFeedback.heavyImpact();
       }
       final hadOffers = _pendingOffers.isNotEmpty;
-      setState(() {
+      _setState(() {
         _pendingOffers = offers;
         _currentOfferIndex = _currentOfferIndex.clamp(0, offers.length - 1);
         // Hide finding bar when offers appear, show when all dismissed
@@ -833,7 +833,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
 
   void _startClock() {
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _online += const Duration(seconds: 1));
+      if (mounted) _setState(() => _online += const Duration(seconds: 1));
     });
   }
 
@@ -849,7 +849,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
 
     // Block further taps but do NOT change visual state — card stays normal
     // until we navigate away to the full-screen confirmation.
-    setState(() {
+    _setState(() {
       _offerAcceptState = _OfferAcceptState.routing; // blocks re-entry, no visual change
     });
 
@@ -865,7 +865,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
         );
       } catch (e) {
         if (mounted) _snack(S.of(context).tripNoLongerAvailable);
-        setState(() {
+        _setState(() {
           _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
           _offerAcceptState = _OfferAcceptState.normal;
           _acceptingCardId = null;
@@ -877,7 +877,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
         await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
       } catch (e) {
         if (mounted) _snack(S.of(context).tripNoLongerAvailable);
-        setState(() {
+        _setState(() {
           _pendingOffers.removeWhere((o) => o['trip_id'] == tripId);
           _offerAcceptState = _OfferAcceptState.normal;
           _acceptingCardId = null;
@@ -926,7 +926,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
     final cachedRouteData = _routeCache[oid];
     final preRoutePoints = cachedRouteData?.segOne;
 
-    setState(() => _pendingOffers = []);
+    _setState(() => _pendingOffers = []);
     _routeCache.clear();
     _expandedOfferIds.clear();
     _pollT?.cancel();
@@ -935,7 +935,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
 
     // ── Reset offer state and navigate to full-screen accepted screen ──
     _tappedCardIds.clear();
-    setState(() {
+    _setState(() {
       _offerAcceptState = _OfferAcceptState.normal;
       _acceptingCardId = null;
     });
@@ -969,7 +969,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
     if (!mounted) return;
     if (result == 'completed') {
       // Show the earnings / completed overlay (mirrors _complete())
-      setState(() {
+      _setState(() {
         _trips++;
         _earnings += _fare;
         _lastTripEarnings = _fare;
@@ -988,7 +988,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
     final offerId = r['offer_id'] as int?;
 
     // INSTANT dismiss — remove card + clear map in the same frame
-    setState(() {
+    _setState(() {
       _rejectingOfferId = null;
       _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
       if (_pendingOffers.isEmpty) _hideFindingBar = false;
@@ -1059,7 +1059,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
       } catch (_) {}
     }
     if (!mounted) return;
-    setState(() {
+    _setState(() {
       _isPickupSummary = true;
       _phase = _Phase.routeSummary;
       _cameraFollowing = false;
@@ -1087,7 +1087,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
       } catch (_) {}
     }
     if (!mounted) return;
-    setState(() {
+    _setState(() {
       _phase = _Phase.enRouteToPickup;
       _cameraFollowing = true;
       _reFollowTimer?.cancel();
@@ -1114,7 +1114,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
       } catch (_) {}
     }
     if (!mounted) return;
-    setState(() {
+    _setState(() {
       _phase = _Phase.arrivedAtPickup;
       _slideVal = 0;
       _slid = false;
@@ -1133,7 +1133,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
     }
     if (!mounted) return;
     // Show route summary with Start Navigation button
-    setState(() {
+    _setState(() {
       _isPickupSummary = false;
       _phase = _Phase.routeSummary;
       _cameraFollowing = false;
@@ -1161,7 +1161,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
 
     if (_isPickupSummary) {
       // ── Navigate to pickup ──
-      setState(() {
+      _setState(() {
         _isPickupSummary = false;
         _phase = _Phase.enRouteToPickup;
         _cameraFollowing = true;
@@ -1182,7 +1182,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
       });
     } else {
       // ── Navigate to dropoff ──
-      setState(() {
+      _setState(() {
         _phase = _Phase.inTrip;
         _cameraFollowing = true;
         _reFollowTimer?.cancel();
@@ -1223,7 +1223,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
     _navService.stopNavigation();
     _navState = null;
     _currentNavRoute = null;
-    setState(() {
+    _setState(() {
       _phase = _Phase.searching;
       _tripId = null;
       _currentOfferId = null;
@@ -1249,7 +1249,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
       } catch (_) {}
     }
     if (!mounted) return;
-    setState(() {
+    _setState(() {
       _trips++;
       _earnings += _fare;
       _lastTripEarnings = _fare;
@@ -1271,7 +1271,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
     }
     _doneCtrl.reverse();
     // INSTANT reset — no delay
-    setState(() {
+    _setState(() {
       _phase = _Phase.searching;
       _tripId = null;
       _currentOfferId = null;
@@ -1322,7 +1322,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
   
   void _pauseAvailability() {
     HapticFeedback.mediumImpact();
-    setState(() => _isPaused = true);
+    _setState(() => _isPaused = true);
     
     // Stop polling for offers while paused
     _pollT?.cancel();
@@ -1368,7 +1368,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
   }
   
   void _resumeFromPause() {
-    setState(() => _isPaused = false);
+    _setState(() => _isPaused = false);
     _pauseTimer?.cancel();
     _startPolling(); // Resume polling
     _snack('▶️ Back online - receiving trip requests');
@@ -1404,7 +1404,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
         await ApiService.updateTripStatus(tripId: _tripId!, status: 'canceled');
       } catch (_) {}
     }
-    setState(() {
+    _setState(() {
       _phase = _Phase.searching;
       _tripId = null;
       _currentOfferId = null;
@@ -1486,7 +1486,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
             }
 
             debugPrint('ðŸ—ºï¸ Google route OK: ${pts.length} points');
-            setState(() {
+            _setState(() {
               _routePts = pts;
               _navDist = (leg['distance']['value'] as int) / 1609.34;
               _navEta = ((leg['duration']['value'] as int) / 60).ceil();
@@ -1628,7 +1628,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
             }
           }
           debugPrint('ðŸ—ºï¸ OSRM route OK: ${pts.length} points');
-          setState(() {
+          _setState(() {
             _routePts = pts;
             _navDist = distM / 1609.34;
             _navEta = (durS / 60).ceil().clamp(1, 999);
@@ -1679,7 +1679,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
         a.longitude + (b.longitude - a.longitude) * t,
       );
     });
-    setState(() {
+    _setState(() {
       _routePts = pts;
     });
     _setRouteAnnotation(pts, c);

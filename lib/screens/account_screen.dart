@@ -171,7 +171,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                   setSheetState(() { sending = true; errorMsg = null; });
                                   try {
                                     final res = await ApiService.resendEmailVerification();
-                                    if (res != null && res['error'] != null) {
+                                    if (res['error'] != null) {
                                       setSheetState(() { errorMsg = res['error']; sending = false; });
                                     } else {
                                       setSheetState(() { codeSent = true; sending = false; });
@@ -229,7 +229,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                   setSheetState(() { verifying = true; errorMsg = null; });
                                   try {
                                     final res = await ApiService.verifyEmail(codeCtrl.text.trim());
-                                    if (res != null && res['error'] != null) {
+                                    if (res['error'] != null) {
                                       setSheetState(() { errorMsg = res['error']; verifying = false; });
                                     } else {
                                       if (mounted) {
@@ -269,7 +269,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                   setSheetState(() { sending = true; errorMsg = null; });
                                   try {
                                     final res = await ApiService.resendEmailVerification();
-                                    if (res != null && res['error'] != null) {
+                                    if (res['error'] != null) {
                                       setSheetState(() { errorMsg = res['error']; sending = false; });
                                     } else {
                                       setSheetState(() { errorMsg = null; sending = false; });

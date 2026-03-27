@@ -4,7 +4,7 @@ part of '../../screens/rider_tracking_screen.dart';
 //  TRIP PHASE INDICATOR — destination box with phase status
 // ════════════════════════════════════════════════════════════
 
-extension RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
+extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
 
   // ── Destination + ETA box (floats at bottom) ──
   Widget _buildDestinationBox() {

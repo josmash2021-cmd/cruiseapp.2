@@ -24,7 +24,7 @@ from typing import Optional, List
 from dotenv import load_dotenv
 
 # Support chat AI cache & health monitoring
-from support_cache import find_cached_response, add_natural_variation, claude_health
+from support_cache import find_cached_response, add_natural_variation, claude_health, load_cache, maybe_cache_response
 
 load_dotenv()  # Load .env file (gitignored)
 
@@ -810,6 +810,18 @@ async def lifespan(app: FastAPI):
                 logging.error("Bulk Firestore sync failed: %s", e)
         # Start weekly auto-payout scheduler
         asyncio.create_task(_schedule_weekly_payouts())
+        # Initialize support cache (Firestore + TF-IDF)
+        try:
+            load_cache()
+            logging.info("Support cache initialized")
+        except Exception as _e:
+            logging.warning("Support cache init failed: %s", _e)
+        # Rehydrate pending reminders from Firestore
+        if _HAS_FIRESTORE:
+            try:
+                await _rehydrate_pending_reminders()
+            except Exception as _e:
+                logging.warning("Reminder rehydration failed: %s", _e)
 
     asyncio.create_task(_bg_init())
     yield
@@ -5212,15 +5224,27 @@ async def _call_claude_api(system_prompt: str, messages: list[dict], user_msg: s
 def _parse_action_markers(response: str) -> tuple[str, list[dict]]:
     """Extract ||REQUEST:...|| action markers from Claude response.
     Returns (clean_message, list_of_action_dicts).
+    Handles both well-formed and malformed markers (partial pipes, missing closing, etc.)
     """
     actions = []
-    pattern = r'\|\|REQUEST:([\w-]+):(.*?)\|\|'
-    for match in re.finditer(pattern, response):
+    # Strict regex first
+    pattern_strict = r'\|\|REQUEST:([\w-]+):(.*?)\|\|'
+    for match in re.finditer(pattern_strict, response):
         action_type = match.group(1)
         params = match.group(2).split(":")
         action = {"type": action_type, "params": params}
         actions.append(action)
-    clean = re.sub(r'\|\|REQUEST:.*?\|\|', '', response).strip()
+
+    if not actions:
+        # Fallback: partial/malformed markers — handle missing pipes, spaces, etc.
+        pattern_partial = r'\|{1,2}\s*REQUEST\s*:\s*([\w-]+)\s*:\s*(.*?)(?:\|{1,2}|$)'
+        for match in re.finditer(pattern_partial, response):
+            action_type = match.group(1).strip()
+            params = [p.strip() for p in match.group(2).split(":")]
+            action = {"type": action_type, "params": params}
+            actions.append(action)
+
+    clean = re.sub(r'\|{1,2}\s*REQUEST\s*:.*?(?:\|{1,2}|$)', '', response).strip()
     return clean, actions
 
 
@@ -5308,9 +5332,24 @@ async def _create_action_request(
         except Exception as e:
             logging.warning(f"Firestore sync for action request failed: {e}")
 
-    # Start reminder task
+    # Start reminder task and persist to Firestore
     task = asyncio.create_task(_action_request_reminder(ar.id, chat.id, user_name))
     _action_reminder_tasks[ar.id] = task
+    # Persist reminder to Firestore so it survives restarts
+    if _HAS_FIRESTORE:
+        try:
+            from google.cloud.firestore_v1 import SERVER_TIMESTAMP
+            firestore_sync._fs_db.collection("pending_reminders").document(str(ar.id)).set({
+                "request_id": ar.id,
+                "chat_id": chat.id,
+                "user_name": user_name,
+                "remind_at_15m": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
+                "remind_at_60m": (datetime.now(timezone.utc) + timedelta(minutes=60)).isoformat(),
+                "status": "pending",
+                "created_at": SERVER_TIMESTAMP,
+            })
+        except Exception as _e:
+            logging.warning(f"Failed to persist reminder to Firestore: {_e}")
 
     return ar.id
 
@@ -5372,18 +5411,47 @@ async def _action_request_reminder(request_id: int, chat_id: int, user_name: str
         pass
     except Exception as e:
         logging.warning(f"Action reminder task failed: {e}")
+    finally:
+        # Clean up Firestore reminder when done
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync._fs_db.collection("pending_reminders").document(str(request_id)).delete()
+            except Exception:
+                pass
+
+
+async def _rehydrate_pending_reminders():
+    """On startup, reload pending reminders from Firestore and restart their tasks."""
+    if not _HAS_FIRESTORE:
+        return
+    try:
+        docs = firestore_sync._fs_db.collection("pending_reminders").where("status", "==", "pending").stream()
+        count = 0
+        for doc in docs:
+            data = doc.to_dict()
+            rid = data.get("request_id")
+            cid = data.get("chat_id")
+            uname = data.get("user_name", "")
+            if rid and cid and rid not in _action_reminder_tasks:
+                task = asyncio.create_task(_action_request_reminder(rid, cid, uname))
+                _action_reminder_tasks[rid] = task
+                count += 1
+        if count:
+            logging.info("Rehydrated %d pending reminders from Firestore", count)
+    except Exception as e:
+        logging.warning("Failed to rehydrate reminders: %s", e)
 
 
 async def _generate_ai_response(
     chat, user_msg: str, user_name: str, agent_name: str, db: AsyncSession
 ) -> tuple[str | None, list[dict]]:
-    """4-layer AI response: Claude → Cache → Keywords → Handoff.
+    """4-layer AI response: Claude (+ retry) → Cache → Keywords → Handoff.
     Returns (response_text, action_list). response_text is None only if everything fails.
     """
     lang = getattr(chat, "locale", "en") or "en"
     actions: list[dict] = []
 
-    # ── Layer 1: Claude API (primary) ──
+    # ── Layer 1: Claude API (primary) + 1 retry ──
     if _HAS_CLAUDE and not claude_health.should_skip_claude():
         ctx = await _get_user_context(chat.user_id, db, lang)
         user_type = "rider"
@@ -5394,6 +5462,15 @@ async def _generate_ai_response(
         claude_resp = await _call_claude_api(system_prompt, history, user_msg)
         if claude_resp:
             clean_msg, actions = _parse_action_markers(claude_resp)
+            # Auto-learn: cache good Claude responses for future use
+            maybe_cache_response(user_msg, clean_msg, "general", lang)
+            return clean_msg, actions
+        # ── Retry once with shorter timeout before falling to cache ──
+        await asyncio.sleep(1.0)
+        claude_resp = await _call_claude_api(system_prompt, history, user_msg)
+        if claude_resp:
+            clean_msg, actions = _parse_action_markers(claude_resp)
+            maybe_cache_response(user_msg, clean_msg, "general", lang)
             return clean_msg, actions
 
     # ── Layer 2: Cached responses (instant) ──
@@ -5831,10 +5908,13 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
 
 
 async def _check_chat_inactivity(chat_id: int):
-    """Background task: proactive follow-up at 30s, then still-online at 5 min, then close at 7 min."""
+    """Background task: proactive follow-up sequence.
+    2 min → first follow-up, 4 min → second follow-up, 5 min → closing warning, 5:30 → close chat.
+    Respects user typing state from Firestore to avoid interrupting.
+    """
     try:
-        # ── Proactive "anything else?" at 30 seconds ──
-        await asyncio.sleep(30)
+        # ── First follow-up at 2 minutes ──
+        await asyncio.sleep(120)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
             chat = chat_r.scalar_one_or_none()
@@ -5842,60 +5922,71 @@ async def _check_chat_inactivity(chat_id: int):
                 return
             if chat.last_user_message_at:
                 elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
-                if elapsed < 25:
-                    pass  # User was active — skip proactive, continue to 5-min check
-                else:
-                    agent = chat.agent_name or "Agente"
-                    lang = getattr(chat, "locale", "en") or "en"
-                    # Get user name from DB since SupportChat doesn't have user_name
-                    _u_name = "estimado usuario"
-                    try:
-                        _u_r = await db.execute(select(User).where(User.id == chat.user_id))
-                        _u = _u_r.scalar_one_or_none()
-                        if _u and _u.first_name:
-                            _u_name = _u.first_name
-                    except Exception:
-                        pass
-                    proactive_msgs_es = [
-                        f"¿Hay algo más en que pueda ayudarle, {_u_name}?",
-                        f"¿Necesita ayuda con algo más?",
-                        f"Quedo a su disposición si necesita algo adicional.",
-                    ]
-                    proactive_msgs_en = [
-                        f"Is there anything else I can help you with, {_u_name if _u_name != 'estimado usuario' else 'there'}?",
-                        f"Do you need help with anything else?",
-                        f"I'm here if you need anything else.",
-                    ]
-                    proactive_text = _rng.choice(proactive_msgs_es if lang.startswith("es") else proactive_msgs_en)
-                    proactive_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot", message=proactive_text)
-                    db.add(proactive_msg)
-                    chat.updated_at = datetime.now(timezone.utc)
-                    await db.commit()
-                    await db.refresh(proactive_msg)
-                    if _HAS_FIRESTORE:
-                        try:
-                            firestore_sync.sync_support_message(chat_id, proactive_msg.id, 0, agent, "bot", proactive_text)
-                        except Exception:
-                            pass
-
-        # ── Still-online check at 5 minutes ──
-        await asyncio.sleep(270)  # 30s already elapsed above
-        async with SessionLocal() as db:
-            chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
-            chat = chat_r.scalar_one_or_none()
-            if not chat or chat.status != "open":
-                return
-            # Check if user sent a message in the last 5 min
-            if chat.last_user_message_at:
-                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
-                if elapsed < 290:
-                    return  # User was active recently
+                if elapsed < 110:
+                    return  # User was active recently — reset
+            # Check Firestore typing status
+            if _HAS_FIRESTORE:
+                try:
+                    doc = firestore_sync._fs_db.collection("support_chats").document(str(chat_id)).get()
+                    if doc.exists and doc.to_dict().get("user_typing"):
+                        await asyncio.sleep(15)  # Give them time to finish typing
+                except Exception:
+                    pass
             agent = chat.agent_name or "Agente"
             lang = getattr(chat, "locale", "en") or "en"
-            # Send "still online?" message
+            _u_name = "estimado usuario"
+            try:
+                _u_r = await db.execute(select(User).where(User.id == chat.user_id))
+                _u = _u_r.scalar_one_or_none()
+                if _u and _u.first_name:
+                    _u_name = _u.first_name
+            except Exception:
+                pass
+            proactive_msgs_es = [
+                f"¿Hay algo más en que pueda ayudarle, {_u_name}?",
+                f"¿Necesita ayuda con algo más?",
+                f"Quedo a su disposición si necesita algo adicional.",
+            ]
+            proactive_msgs_en = [
+                f"Is there anything else I can help you with, {_u_name if _u_name != 'estimado usuario' else 'there'}?",
+                f"Do you need help with anything else?",
+                f"I'm here if you need anything else.",
+            ]
+            proactive_text = _rng.choice(proactive_msgs_es if lang.startswith("es") else proactive_msgs_en)
+            proactive_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot", message=proactive_text)
+            db.add(proactive_msg)
+            chat.updated_at = datetime.now(timezone.utc)
+            await db.commit()
+            await db.refresh(proactive_msg)
+            if _HAS_FIRESTORE:
+                try:
+                    firestore_sync.sync_support_message(chat_id, proactive_msg.id, 0, agent, "bot", proactive_text)
+                except Exception:
+                    pass
+
+        # ── Second follow-up at 4 minutes (2 min after first) ──
+        await asyncio.sleep(120)
+        async with SessionLocal() as db:
+            chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+            chat = chat_r.scalar_one_or_none()
+            if not chat or chat.status != "open":
+                return
+            if chat.last_user_message_at:
+                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
+                if elapsed < 110:
+                    return  # User responded
+            # Check typing
+            if _HAS_FIRESTORE:
+                try:
+                    doc = firestore_sync._fs_db.collection("support_chats").document(str(chat_id)).get()
+                    if doc.exists and doc.to_dict().get("user_typing"):
+                        await asyncio.sleep(15)
+                except Exception:
+                    pass
+            agent = chat.agent_name or "Agente"
+            lang = getattr(chat, "locale", "en") or "en"
             still_text = "¿Aún sigue en línea conmigo?" if lang.startswith("es") else "Are you still there with me?"
-            still_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot",
-                                        message=still_text)
+            still_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot", message=still_text)
             db.add(still_msg)
             chat.updated_at = datetime.now(timezone.utc)
             await db.commit()
@@ -5905,24 +5996,24 @@ async def _check_chat_inactivity(chat_id: int):
                     firestore_sync.sync_support_message(chat_id, still_msg.id, 0, agent, "bot", still_msg.message)
                 except Exception:
                     pass
-        # Wait 2 more minutes for response
-        await asyncio.sleep(120)
+
+        # ── Closing warning at 5 minutes (1 min after second) ──
+        await asyncio.sleep(60)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
             chat = chat_r.scalar_one_or_none()
             if not chat or chat.status != "open":
                 return
-            # Check if user responded during the 2 min wait
             if chat.last_user_message_at:
                 elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
-                if elapsed < 115:
+                if elapsed < 55:
                     return  # User responded
             agent = chat.agent_name or "Agente"
-            # Send closing warning
             lang = getattr(chat, "locale", "en") or "en"
-            close_text = "Por motivos de que ya no est�s activo/a conmigo en el chat, cerrar� este chat. �Gracias por contactarnos!" if lang.startswith("es") else "Since you're no longer active in the chat, I'll be closing this session. Thanks for reaching out!"
-            close_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot",
-                                        message=close_text)
+            close_warn_es = "Por motivos de inactividad, cerraré este chat en 30 segundos. Si necesita más ayuda, envíe un mensaje."
+            close_warn_en = "Due to inactivity, I'll be closing this chat in 30 seconds. If you still need help, please send a message."
+            close_text = close_warn_es if lang.startswith("es") else close_warn_en
+            close_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot", message=close_text)
             db.add(close_msg)
             chat.updated_at = datetime.now(timezone.utc)
             await db.commit()
@@ -5932,13 +6023,18 @@ async def _check_chat_inactivity(chat_id: int):
                     firestore_sync.sync_support_message(chat_id, close_msg.id, 0, agent, "bot", close_msg.message)
                 except Exception:
                     pass
-        # Wait 10 seconds then close
-        await asyncio.sleep(10)
+
+        # ── Close chat at 5:30 (30 seconds after warning) ──
+        await asyncio.sleep(30)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
             chat = chat_r.scalar_one_or_none()
             if not chat or chat.status != "open":
                 return
+            if chat.last_user_message_at:
+                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
+                if elapsed < 25:
+                    return  # User responded just in time
             chat.status = "closed"
             chat.updated_at = datetime.now(timezone.utc)
             await db.commit()
@@ -6235,6 +6331,21 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
     _inactivity_tasks[chat_id] = asyncio.create_task(_check_chat_inactivity(chat_id))
 
     return _support_msg_dict(msg, user_full)
+
+@app.post("/support/chats/{chat_id}/typing", dependencies=[Depends(_verify_api_key)])
+async def set_typing_status(chat_id: int, request: Request, user: User = Depends(_get_current_user)):
+    """Set user typing status in Firestore for inactivity detection."""
+    body = await request.json()
+    typing = bool(body.get("typing", False))
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync._fs_db.collection("support_chats").document(str(chat_id)).set(
+                {"user_typing": typing, "typing_updated_at": datetime.now(timezone.utc).isoformat()},
+                merge=True,
+            )
+        except Exception:
+            pass
+    return {"ok": True}
 
 @app.post("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_require_dispatch_auth)])
 async def send_support_message_dispatch(chat_id: int, request: Request, db: AsyncSession = Depends(get_db)):
@@ -7225,23 +7336,54 @@ async def approve_action_request(
     if ar.action_type == "request-refund":
         amount = details.get("amount", 0)
         trip_id_str = details.get("trip_id", "")
-        if trip_id_str and trip_id_str not in ("latest", "active"):
+        stripe_refund_ok = False
+        # Auto Stripe refund if Stripe is configured
+        if _HAS_STRIPE and amount > 0:
             try:
-                tid = int(trip_id_str)
-                trip_r = await db.execute(select(Trip).where(Trip.id == tid))
-                trip = trip_r.scalar_one_or_none()
-                if trip:
-                    req_id = await _create_refund_request(ar.user_id, trip.id, f"Aprobado: {admin_note or ar.agent_name}", db)
+                # Find the trip's Stripe payment intent
+                tid = None
+                if trip_id_str and trip_id_str not in ("latest", "active"):
+                    try:
+                        tid = int(trip_id_str)
+                    except (ValueError, TypeError):
+                        pass
+                if not tid:
+                    trips = await _lookup_user_trips(ar.user_id, db, limit=1)
+                    if trips:
+                        tid = trips[0].id
+                if tid:
+                    trip_r = await db.execute(select(Trip).where(Trip.id == tid))
+                    trip = trip_r.scalar_one_or_none()
+                    if trip and getattr(trip, "stripe_payment_intent_id", None):
+                        refund = _stripe_mod.Refund.create(
+                            payment_intent=trip.stripe_payment_intent_id,
+                            amount=int(amount * 100),
+                        )
+                        stripe_refund_ok = True
+                        action_result_msg = f"Reembolso Stripe #{refund.id[:12]} de ${amount:.2f} procesado."
+            except Exception as e:
+                logging.warning(f"Stripe auto-refund failed: {e}")
+                stripe_refund_ok = False
+
+        if not stripe_refund_ok:
+            # Fallback: create internal refund request
+            if trip_id_str and trip_id_str not in ("latest", "active"):
+                try:
+                    tid = int(trip_id_str)
+                    trip_r = await db.execute(select(Trip).where(Trip.id == tid))
+                    trip = trip_r.scalar_one_or_none()
+                    if trip:
+                        req_id = await _create_refund_request(ar.user_id, trip.id, f"Aprobado: {admin_note or ar.agent_name}", db)
+                        action_result_msg = f"Reembolso #{req_id} de ${amount:.2f} creado."
+                except (ValueError, TypeError):
+                    pass
+            if not action_result_msg:
+                trips = await _lookup_user_trips(ar.user_id, db, limit=1)
+                if trips:
+                    req_id = await _create_refund_request(ar.user_id, trips[0].id, f"Aprobado: {admin_note or ar.agent_name}", db)
                     action_result_msg = f"Reembolso #{req_id} de ${amount:.2f} creado."
-            except (ValueError, TypeError):
-                pass
-        if not action_result_msg:
-            trips = await _lookup_user_trips(ar.user_id, db, limit=1)
-            if trips:
-                req_id = await _create_refund_request(ar.user_id, trips[0].id, f"Aprobado: {admin_note or ar.agent_name}", db)
-                action_result_msg = f"Reembolso #{req_id} de ${amount:.2f} creado."
-            else:
-                action_result_msg = f"Reembolso de ${amount:.2f} aprobado (sin viaje asociado)."
+                else:
+                    action_result_msg = f"Reembolso de ${amount:.2f} aprobado (sin viaje asociado)."
 
     elif ar.action_type == "apply-promo":
         amount = details.get("amount", 5)
@@ -7290,6 +7432,21 @@ async def approve_action_request(
             pass
 
     _security_audit_log("ACTION_APPROVED", reviewed_by, f"request_id={request_id} type={ar.action_type}")
+
+    # Push notification to user
+    try:
+        user_r = await db.execute(select(User).where(User.id == ar.user_id))
+        _push_user = user_r.scalar_one_or_none()
+        if _push_user and getattr(_push_user, "fcm_token", None):
+            _send_fcm_push(
+                _push_user.fcm_token,
+                title="✅ Solicitud aprobada" if (getattr(chat, "locale", "en") or "en").startswith("es") else "✅ Request Approved",
+                body=action_result_msg[:200],
+                data={"type": "action_approved", "request_id": str(request_id), "chat_id": str(ar.chat_id)},
+            )
+    except Exception:
+        pass
+
     return {"status": "approved", "action_result": action_result_msg}
 
 
@@ -7353,6 +7510,22 @@ async def reject_action_request(
             pass
 
     _security_audit_log("ACTION_REJECTED", reviewed_by, f"request_id={request_id} type={ar.action_type} note={admin_note}")
+
+    # Push notification to user
+    try:
+        user_r = await db.execute(select(User).where(User.id == ar.user_id))
+        _push_user = user_r.scalar_one_or_none()
+        if _push_user and getattr(_push_user, "fcm_token", None):
+            _lang = getattr(chat, "locale", "en") or "en" if chat else "en"
+            _send_fcm_push(
+                _push_user.fcm_token,
+                title="👤 Supervisor conectado" if _lang.startswith("es") else "👤 Supervisor Connected",
+                body="Un supervisor revisará su caso personalmente." if _lang.startswith("es") else "A supervisor will review your case personally.",
+                data={"type": "action_rejected", "request_id": str(request_id), "chat_id": str(ar.chat_id)},
+            )
+    except Exception:
+        pass
+
     return {"status": "rejected", "takeover": True}
 
 

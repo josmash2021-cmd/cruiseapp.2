@@ -908,6 +908,23 @@ class ApiService {
         .timeout(const Duration(seconds: 10));
   }
 
+  /// Set typing status for a support chat.
+  static Future<void> setSupportTypingStatus(int chatId, bool typing) async {
+    final token = await getToken();
+    if (token == null) return;
+    try {
+      await _client
+          .post(
+            Uri.parse('$_baseUrl/support/chats/$chatId/typing'),
+            headers: _jsonHeaders(token),
+            body: jsonEncode({'typing': typing}),
+          )
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // Non-critical — ignore errors
+    }
+  }
+
   /// Get the support voice call phone number.
   static Future<String?> getSupportPhoneNumber() async {
     try {

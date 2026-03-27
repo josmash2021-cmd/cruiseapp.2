@@ -938,6 +938,8 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   bool _isAgentTyping = false;
   bool _showQuickActions = true;
   Timer? _pollTimer;
+  Timer? _typingDebounce;
+  bool _isUserTyping = false;
   String _userRole = 'rider';
 
   _ChatPhase _phase = _ChatPhase.bot;
@@ -964,6 +966,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _typingDebounce?.cancel();
+    if (_isUserTyping && _chatId != null) {
+      ApiService.setSupportTypingStatus(_chatId!, false);
+    }
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
     _focusNode.dispose();
@@ -1235,12 +1241,35 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     await _loadMessages();
   }
 
+  // ── Typing detection ─────────────────────────────────────────────────
+
+  void _onTypingChanged(String value) {
+    if (_chatId == null) return;
+    if (!_isUserTyping && value.isNotEmpty) {
+      _isUserTyping = true;
+      ApiService.setSupportTypingStatus(_chatId!, true);
+    }
+    _typingDebounce?.cancel();
+    _typingDebounce = Timer(const Duration(seconds: 3), () {
+      if (_isUserTyping) {
+        _isUserTyping = false;
+        ApiService.setSupportTypingStatus(_chatId!, false);
+      }
+    });
+  }
+
   // ── Send message ────────────────────────────────────────────────────
 
   Future<void> _sendMessage([String? prefilledText]) async {
     final text = prefilledText ?? _msgCtrl.text.trim();
     if (text.isEmpty || _sending) return;
     if (prefilledText == null) _msgCtrl.clear();
+    // Clear typing status on send
+    _typingDebounce?.cancel();
+    if (_isUserTyping && _chatId != null) {
+      _isUserTyping = false;
+      ApiService.setSupportTypingStatus(_chatId!, false);
+    }
 
     // Hide quick actions after first message
     if (_showQuickActions) {
@@ -1806,6 +1835,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               minLines: 1,
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _sendMessage(),
+              onChanged: _onTypingChanged,
               decoration: InputDecoration(
                 hintText: S.of(context).describeYourProblem,
                 hintStyle: TextStyle(color: Colors.grey[600]),

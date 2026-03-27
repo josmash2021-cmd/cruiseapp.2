@@ -33,6 +33,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
   bool _scanning = false;
   bool _documentDetected = false;
   String _detectedHint = '';
+  FlashMode _flashMode = FlashMode.off;
 
   // Document detection scanning timer
   Timer? _scanTimer;
@@ -106,6 +107,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
     _ctrl = CameraController(rear, ResolutionPreset.high, enableAudio: false);
     try {
       await _ctrl!.initialize().timeout(const Duration(seconds: 5));
+      await _ctrl!.setFlashMode(FlashMode.off);
       if (mounted) {
         setState(() => _initialized = true);
         _startDocumentDetection();
@@ -122,6 +124,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
           enableAudio: false,
         );
         await _ctrl!.initialize().timeout(const Duration(seconds: 5));
+        await _ctrl!.setFlashMode(FlashMode.off);
         if (mounted) {
           setState(() => _initialized = true);
           _startDocumentDetection();
@@ -138,6 +141,13 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
       const Duration(milliseconds: 1500),
       (_) => _scanForDocument(),
     );
+  }
+
+  Future<void> _toggleFlash() async {
+    if (_ctrl == null || !_ctrl!.value.isInitialized) return;
+    final next = _flashMode == FlashMode.off ? FlashMode.torch : FlashMode.off;
+    await _ctrl!.setFlashMode(next);
+    if (mounted) setState(() => _flashMode = next);
   }
 
   /// Scan current frame for document text via OCR — only updates border color.
@@ -198,6 +208,10 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
   Future<void> _capture() async {
     if (_ctrl == null || !_ctrl!.value.isInitialized || _capturing) return;
     _scanTimer?.cancel();
+    // Wait for any in-progress OCR scan to finish
+    while (_scanning) {
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
     setState(() => _capturing = true);
     HapticFeedback.mediumImpact();
     try {
@@ -492,7 +506,26 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
                     ),
                   ),
                   const Spacer(),
-                  const SizedBox(width: 40),
+                  GestureDetector(
+                    onTap: _toggleFlash,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _flashMode == FlashMode.off
+                            ? Icons.flash_off_rounded
+                            : Icons.flash_on_rounded,
+                        color: _flashMode == FlashMode.off
+                            ? Colors.white
+                            : _gold,
+                        size: 22,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

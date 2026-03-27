@@ -1321,20 +1321,17 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          S.of(context).ssnLabel,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        _badge(S.of(context).requiredBadge),
-                      ],
+                    Text(
+                      S.of(context).ssnLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
+                    const SizedBox(height: 3),
                     Text(
                       ssnFilled
                           ? S.of(context).ssnEntered
@@ -1344,6 +1341,10 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                         fontSize: 11,
                       ),
                     ),
+                    if (!ssnFilled) ...[
+                      const SizedBox(height: 6),
+                      _badge(S.of(context).requiredBadge),
+                    ],
                   ],
                 ),
               ),
@@ -1463,19 +1464,15 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        S.of(context).biometricFaceCheck,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      _badge(S.of(context).requiredBadge),
-                    ],
+                  Text(
+                    S.of(context).biometricFaceCheck,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 3),
                   Text(
@@ -1487,6 +1484,10 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                       fontSize: 11,
                     ),
                   ),
+                  if (!_biometricDone) ...[
+                    const SizedBox(height: 6),
+                    _badge(S.of(context).requiredBadge),
+                  ],
                 ],
               ),
             ),
@@ -1739,29 +1740,27 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      if (required_) ...[
-                        const SizedBox(width: 6),
-                        _badge('Required'),
-                      ],
-                    ],
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 3),
                   Text(
                     subtitle,
-                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: done ? _gold : Colors.white38, fontSize: 11),
                   ),
+                  if (required_ && !done) ...[
+                    const SizedBox(height: 6),
+                    _badge('Required'),
+                  ],
                 ],
               ),
             ),

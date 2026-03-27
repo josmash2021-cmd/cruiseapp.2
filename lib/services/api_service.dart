@@ -632,6 +632,31 @@ class ApiService {
     }
   }
 
+  /// Resend email verification code for the current user.
+  static Future<Map<String, dynamic>> resendEmailVerification() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/resend-email-verification'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Verify email with a code.
+  static Future<Map<String, dynamic>> verifyEmail(String code) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/verify-email'),
+          headers: h,
+          body: jsonEncode({'code': code}),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
   /// Check whether an email or phone is already registered.
   /// Returns `true` if the account exists.
   static Future<bool> checkExists(String identifier, {String? role}) async {

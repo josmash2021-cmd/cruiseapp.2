@@ -44,6 +44,7 @@ class _AccountScreenState extends State<AccountScreen> {
   List<FavoritePlace> _favorites = [];
   bool _loading = false;
   bool _isVerified = false;
+  bool _emailVerified = false;
 
   @override
   void initState() {
@@ -69,11 +70,20 @@ class _AccountScreenState extends State<AccountScreen> {
     final user = await UserSession.getUser();
     final favs = await LocalDataService.getFavorites();
     final verified = await LocalDataService.isIdentityVerified();
+    // Fetch email verification status from backend
+    bool emailVer = false;
+    try {
+      final me = await ApiService.getMe();
+      if (me != null) {
+        emailVer = me['email_verified'] == true;
+      }
+    } catch (_) {}
     if (!mounted) return;
     setState(() {
       _user = user;
       _favorites = favs;
       _isVerified = verified;
+      _emailVerified = emailVer;
       _loading = false;
     });
   }
@@ -88,6 +98,210 @@ class _AccountScreenState extends State<AccountScreen> {
   void _openSettings() async {
     await Navigator.of(context).push(slideFromRightRoute(_SettingsScreen()));
     _loadUser(); // Refresh avatar & name after editing profile
+  }
+
+  void _showEmailVerification() {
+    final codeCtrl = TextEditingController();
+    bool sending = false;
+    bool verifying = false;
+    bool codeSent = false;
+    String? errorMsg;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40, height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Icon(Icons.email_outlined, color: _gold, size: 24),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Email Verification',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'We\'ll send a verification code to your email address.',
+                      style: TextStyle(color: Colors.white60, fontSize: 13),
+                    ),
+                    const SizedBox(height: 20),
+                    if (!codeSent) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: sending
+                              ? null
+                              : () async {
+                                  setSheetState(() { sending = true; errorMsg = null; });
+                                  try {
+                                    final res = await ApiService.resendEmailVerification();
+                                    if (res != null && res['error'] != null) {
+                                      setSheetState(() { errorMsg = res['error']; sending = false; });
+                                    } else {
+                                      setSheetState(() { codeSent = true; sending = false; });
+                                    }
+                                  } catch (e) {
+                                    setSheetState(() { errorMsg = 'Failed to send code. Try again.'; sending = false; });
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _gold,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: sending
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                              : const Text('Send Verification Code', style: TextStyle(fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ] else ...[
+                      Text(
+                        'Enter the code sent to your email:',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: codeCtrl,
+                        keyboardType: TextInputType.number,
+                        maxLength: 6,
+                        style: const TextStyle(color: Colors.white, fontSize: 20, letterSpacing: 8),
+                        textAlign: TextAlign.center,
+                        decoration: InputDecoration(
+                          counterText: '',
+                          hintText: '000000',
+                          hintStyle: TextStyle(color: Colors.white24, letterSpacing: 8),
+                          filled: true,
+                          fillColor: Colors.white.withValues(alpha: 0.06),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: verifying
+                              ? null
+                              : () async {
+                                  if (codeCtrl.text.trim().length < 4) {
+                                    setSheetState(() { errorMsg = 'Please enter the full code.'; });
+                                    return;
+                                  }
+                                  setSheetState(() { verifying = true; errorMsg = null; });
+                                  try {
+                                    final res = await ApiService.verifyEmail(codeCtrl.text.trim());
+                                    if (res != null && res['error'] != null) {
+                                      setSheetState(() { errorMsg = res['error']; verifying = false; });
+                                    } else {
+                                      if (mounted) {
+                                        setState(() { _emailVerified = true; });
+                                      }
+                                      if (ctx.mounted) Navigator.of(ctx).pop();
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: const Text('Email verified successfully!'),
+                                            backgroundColor: Colors.green.shade700,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  } catch (e) {
+                                    setSheetState(() { errorMsg = 'Verification failed. Try again.'; verifying = false; });
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _gold,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: verifying
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                              : const Text('Verify', style: TextStyle(fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton(
+                          onPressed: sending
+                              ? null
+                              : () async {
+                                  setSheetState(() { sending = true; errorMsg = null; });
+                                  try {
+                                    final res = await ApiService.resendEmailVerification();
+                                    if (res != null && res['error'] != null) {
+                                      setSheetState(() { errorMsg = res['error']; sending = false; });
+                                    } else {
+                                      setSheetState(() { errorMsg = null; sending = false; });
+                                      if (ctx.mounted) {
+                                        ScaffoldMessenger.of(ctx).showSnackBar(
+                                          const SnackBar(content: Text('Code resent!')),
+                                        );
+                                      }
+                                    }
+                                  } catch (e) {
+                                    setSheetState(() { errorMsg = 'Failed to resend. Try again.'; sending = false; });
+                                  }
+                                },
+                          child: Text(
+                            'Resend code',
+                            style: TextStyle(color: _gold.withValues(alpha: 0.8), fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (errorMsg != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        errorMsg!,
+                        style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _buildAvatar(String photoPath, AppColors c) {
@@ -200,6 +414,38 @@ class _AccountScreenState extends State<AccountScreen> {
                 ],
               ),
               const SizedBox(height: 28),
+
+              // ── Email verification banner ──
+              if (!_emailVerified && _user != null)
+                GestureDetector(
+                  onTap: _showEmailVerification,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: _gold.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _gold.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.email_outlined, color: _gold, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Verify your email to secure your account',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        Icon(Icons.chevron_right_rounded,
+                            color: Colors.white.withValues(alpha: 0.4), size: 20),
+                      ],
+                    ),
+                  ),
+                ),
 
               // ── Menu grid ──
               _buildMenuGrid(c),

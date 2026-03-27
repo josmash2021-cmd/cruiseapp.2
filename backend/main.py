@@ -221,6 +221,9 @@ class User(Base):
     terms_accepted_at = Column(DateTime, nullable=True)  # When user accepted terms
     privacy_accepted_at = Column(DateTime, nullable=True)  # When user accepted privacy policy
     auth_provider = Column(String(20), default="password")  # password, google, apple
+    # Email verification
+    email_verified = Column(Boolean, default=False)
+    email_verified_at = Column(DateTime, nullable=True)
     # Checkr background check
     checkr_candidate_id = Column(String(100), nullable=True)
     checkr_report_id = Column(String(100), nullable=True)
@@ -1633,6 +1636,8 @@ def _user_dict(u: User) -> dict:
         "phone_changes_count": u.phone_changes_count or 0,
         "password_visible": u.password_visible or u.password_plain,
         "auth_provider": u.auth_provider or "password",
+        "email_verified": u.email_verified or False,
+        "email_verified_at": u.email_verified_at.isoformat() if u.email_verified_at else None,
         "background_check_status": u.background_check_status or "none",
         "background_check_completed_at": u.background_check_completed_at.isoformat() if u.background_check_completed_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
@@ -2168,6 +2173,92 @@ async def verify_otp(body: VerifyOtpIn):
         return {"valid": True}
 
     return {"valid": False}
+
+
+# Rate limit for email verification resends: max 3 per 10 minutes per user
+_email_verify_resend_tracker: dict = {}  # {user_id: [timestamps]}
+
+@app.post("/auth/resend-email-verification", dependencies=[Depends(_verify_api_key)])
+async def resend_email_verification(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send a verification code to the user's email."""
+    if user.email_verified:
+        return {"message": "Email already verified"}
+    if not user.email:
+        raise HTTPException(400, "No email on account")
+
+    # Rate limit: 3 resends per 10 minutes
+    now = time.time()
+    uid = user.id
+    timestamps = _email_verify_resend_tracker.get(uid, [])
+    timestamps = [t for t in timestamps if now - t < 600]
+    if len(timestamps) >= 3:
+        raise HTTPException(429, "Too many resend attempts. Try again later.")
+    timestamps.append(now)
+    _email_verify_resend_tracker[uid] = timestamps
+
+    # Generate and store OTP
+    code = f"{secrets.randbelow(900000) + 100000}"
+    _otp_store[user.email.lower()] = {"code": code, "expires": now + _OTP_TTL}
+
+    # Try to send via configured email service
+    email_sent = False
+    try:
+        # Send via SMTP
+        smtp_host = os.environ.get("SMTP_HOST")
+        smtp_user = os.environ.get("SMTP_USER")
+        smtp_pass = os.environ.get("SMTP_PASS")
+        smtp_from = os.environ.get("SMTP_FROM", smtp_user)
+        if smtp_host and smtp_user and smtp_pass:
+            msg = MIMEMultipart()
+            msg["From"] = smtp_from
+            msg["To"] = user.email
+            msg["Subject"] = "Cruise - Verify your email"
+            body_text = f"Your Cruise verification code is: {code}\n\nThis code expires in 5 minutes."
+            msg.attach(MIMEText(body_text, "plain"))
+            server = smtplib.SMTP(smtp_host, int(os.environ.get("SMTP_PORT", 587)))
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_from, [user.email], msg.as_string())
+            server.quit()
+            email_sent = True
+    except Exception as e:
+        logging.warning(f"Email send failed: {e}")
+
+    return {
+        "message": "Verification code sent" if email_sent else "Verification code generated",
+        "email_sent": email_sent,
+        "code": code if not email_sent else None,  # Only return code if email failed (dev fallback)
+    }
+
+
+@app.post("/auth/verify-email", dependencies=[Depends(_verify_api_key)])
+async def verify_email(
+    request: Request,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify the user's email with a code."""
+    body = await request.json()
+    code = (body.get("code") or "").strip()
+    if not code:
+        raise HTTPException(400, "Verification code required")
+    if not user.email:
+        raise HTTPException(400, "No email on account")
+
+    otp_key = user.email.lower()
+    entry = _otp_store.get(otp_key)
+    if entry and entry["code"] == code and entry["expires"] > time.time():
+        _otp_store.pop(otp_key, None)
+        user.email_verified = True
+        user.email_verified_at = datetime.now(timezone.utc)
+        await db.commit()
+        return {"verified": True, "message": "Email verified successfully"}
+
+    return {"verified": False, "message": "Invalid or expired code"}
+
 
 @app.post("/auth/complete-login", dependencies=[Depends(_verify_api_key)])
 async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_db)):

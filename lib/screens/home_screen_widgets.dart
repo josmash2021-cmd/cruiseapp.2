@@ -843,6 +843,19 @@ extension HomeScreenWidgets on _HomeScreenState {
     );
   }
 
+  String _getCarAssetForRideType(String rideType) {
+    switch (rideType.toLowerCase()) {
+      case 'vip':
+        return 'assets/images/cruisert1.png';
+      case 'premium':
+        return 'assets/images/cruisert2.png';
+      case 'comfort':
+        return 'assets/images/cruisert3.png';
+      default:
+        return 'assets/images/cruisert2.png';
+    }
+  }
+
   Widget _buildProgressBar() {
     final progress = _tripProgress.clamp(0.0, 1.0);
     const carSize = 28.0;
@@ -900,9 +913,13 @@ extension HomeScreenWidgets on _HomeScreenState {
                 curve: Curves.easeInOut,
                 left: carX,
                 bottom: barH - 2,
-                child: CustomPaint(
-                  size: const Size(carSize, carSize),
-                  painter: _CarIconPainter(),
+                child: Image(
+                  image: AssetImage(_getCarAssetForRideType(
+                    _activeRide?.rideName ?? 'comfort',
+                  )),
+                  width: carSize,
+                  height: carSize,
+                  fit: BoxFit.contain,
                 ),
               ),
             ],
@@ -934,9 +951,11 @@ extension HomeScreenWidgets on _HomeScreenState {
                 ),
               ),
               alignment: Alignment.center,
-              child: CustomPaint(
-                size: const Size(32, 32),
-                painter: _CarIconPainter(),
+              child: const Image(
+                image: AssetImage('assets/images/logoapp.png'),
+                width: 52,
+                height: 52,
+                fit: BoxFit.contain,
               ),
             ),
             const SizedBox(width: 14),

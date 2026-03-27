@@ -4665,6 +4665,18 @@ async def get_shared_trip_location(token: str, db: AsyncSession = Depends(get_db
     }
 
 
+@app.get("/track/{token}")
+async def serve_shared_trip_page(token: str):
+    """Serve the shared trip tracking web page."""
+    if not token or len(token) > 64 or not re.match(r'^[A-Za-z0-9_\-]+$', token):
+        raise HTTPException(400, "Invalid token")
+    import os as _os
+    html_path = _os.path.join(_os.path.dirname(__file__), "static", "shared_trip.html")
+    if not _os.path.isfile(html_path):
+        raise HTTPException(404, "Tracking page not found")
+    return FileResponse(html_path, media_type="text/html")
+
+
 # ═══════════════════════════════════════════════════════
 #  RATING  ENDPOINTS
 # ═══════════════════════════════════════════════════════

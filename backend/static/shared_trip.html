@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cruise — Live Trip Tracking</title>
+    <!-- OG Meta Tags for social sharing -->
+    <meta property="og:title" content="Cruise — Live Trip Tracking">
+    <meta property="og:description" content="Track this ride live on the map. Powered by Cruise.">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="/static/og_cruise.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Cruise — Live Trip Tracking">
+    <meta name="twitter:description" content="Track this ride live on the map.">
+    <!-- Mapbox GL JS -->
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0A0A0A;
+            color: #fff;
+            min-height: 100vh;
+        }
+        #map { width: 100%; height: 60vh; }
+        .info-panel {
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+        }
+        .status-in_trip { background: #E8C54720; color: #E8C547; }
+        .status-driver_en_route { background: #4CAF5020; color: #4CAF50; }
+        .status-arrived { background: #2196F320; color: #2196F3; }
+        .status-completed { background: #9E9E9E20; color: #9E9E9E; }
+        .status-canceled { background: #F4433620; color: #F44336; }
+        .status-default { background: #E8C54720; color: #E8C547; }
+        .address-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .address-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-top: 4px;
+            flex-shrink: 0;
+        }
+        .dot-pickup { background: #4CAF50; }
+        .dot-dropoff { background: #E8C547; }
+        .address-label {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .address-text {
+            font-size: 15px;
+            color: #eee;
+            margin-top: 2px;
+        }
+        .brand-footer {
+            text-align: center;
+            padding: 20px;
+            color: #555;
+            font-size: 13px;
+        }
+        .brand-footer a {
+            color: #E8C547;
+            text-decoration: none;
+        }
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 60vh;
+            font-size: 16px;
+            color: #888;
+        }
+        .error-msg {
+            text-align: center;
+            padding: 40px 20px;
+            color: #F44336;
+            font-size: 16px;
+        }
+        @media (min-width: 768px) {
+            #map { height: 70vh; }
+        }
+    </style>
+</head>
+<body>
+    <div id="map-container">
+        <div id="loading" class="loading">Loading trip data...</div>
+        <div id="map" style="display:none;"></div>
+    </div>
+    <div id="error" class="error-msg" style="display:none;"></div>
+    <div id="info" class="info-panel" style="display:none;">
+        <div id="status-badge" class="status-badge status-default"></div>
+        <div class="address-row">
+            <div class="address-dot dot-pickup"></div>
+            <div>
+                <div class="address-label">Pickup</div>
+                <div class="address-text" id="pickup-address"></div>
+            </div>
+        </div>
+        <div class="address-row">
+            <div class="address-dot dot-dropoff"></div>
+            <div>
+                <div class="address-label">Dropoff</div>
+                <div class="address-text" id="dropoff-address"></div>
+            </div>
+        </div>
+    </div>
+    <div class="brand-footer">
+        Powered by <a href="/">Cruise</a>
+    </div>
+
+    <script>
+        const TOKEN = window.location.pathname.split('/track/')[1] || '';
+        const API_BASE = window.location.origin;
+        let map, driverMarker, pickupMarker, dropoffMarker;
+        let pollInterval = null;
+
+        const STATUS_LABELS = {
+            'requested': 'Requested',
+            'scheduled': 'Scheduled',
+            'driver_en_route': 'Driver En Route',
+            'arrived': 'Driver Arrived',
+            'in_trip': 'In Trip',
+            'completed': 'Completed',
+            'canceled': 'Canceled',
+        };
+
+        async function loadTrip() {
+            try {
+                const resp = await fetch(`${API_BASE}/trips/shared/${encodeURIComponent(TOKEN)}`);
+                if (!resp.ok) {
+                    const errText = await resp.text();
+                    throw new Error(resp.status === 410 ? 'This share link has expired.' : errText);
+                }
+                const trip = await resp.json();
+                initMap(trip);
+                showInfo(trip);
+                startPolling();
+            } catch (e) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = e.message || 'Failed to load trip.';
+            }
+        }
+
+        function initMap(trip) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('map').style.display = 'block';
+
+            mapboxgl.accessToken = 'pk.eyJ1IjoiY3J1aXNlLWFwcCIsImEiOiJjbHh5eDAifQ.placeholder';
+
+            const centerLat = (trip.pickup_lat + trip.dropoff_lat) / 2;
+            const centerLng = (trip.pickup_lng + trip.dropoff_lng) / 2;
+
+            map = new mapboxgl.Map({
+                container: 'map',
+                style: 'mapbox://styles/mapbox/dark-v11',
+                center: [centerLng, centerLat],
+                zoom: 12,
+            });
+
+            map.on('load', () => {
+                // Pickup marker
+                const pickupEl = createMarkerEl('#4CAF50', 'P');
+                pickupMarker = new mapboxgl.Marker({ element: pickupEl })
+                    .setLngLat([trip.pickup_lng, trip.pickup_lat])
+                    .addTo(map);
+
+                // Dropoff marker
+                const dropoffEl = createMarkerEl('#E8C547', 'D');
+                dropoffMarker = new mapboxgl.Marker({ element: dropoffEl })
+                    .setLngLat([trip.dropoff_lng, trip.dropoff_lat])
+                    .addTo(map);
+
+                // Fit bounds
+                const bounds = new mapboxgl.LngLatBounds()
+                    .extend([trip.pickup_lng, trip.pickup_lat])
+                    .extend([trip.dropoff_lng, trip.dropoff_lat]);
+                map.fitBounds(bounds, { padding: 60 });
+            });
+        }
+
+        function createMarkerEl(color, letter) {
+            const el = document.createElement('div');
+            el.style.cssText = `width:32px;height:32px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;color:#000;border:2px solid #fff;`;
+            el.textContent = letter;
+            return el;
+        }
+
+        function showInfo(trip) {
+            document.getElementById('info').style.display = 'block';
+            const statusKey = trip.status || 'default';
+            const badge = document.getElementById('status-badge');
+            badge.textContent = STATUS_LABELS[statusKey] || statusKey;
+            badge.className = `status-badge status-${statusKey in STATUS_LABELS ? statusKey : 'default'}`;
+            document.getElementById('pickup-address').textContent = trip.pickup_address;
+            document.getElementById('dropoff-address').textContent = trip.dropoff_address;
+        }
+
+        async function pollLocation() {
+            try {
+                const resp = await fetch(`${API_BASE}/trips/shared/${encodeURIComponent(TOKEN)}/location`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                // Update status badge
+                if (data.status) {
+                    const badge = document.getElementById('status-badge');
+                    const label = STATUS_LABELS[data.status] || data.status;
+                    badge.textContent = label;
+                    badge.className = `status-badge status-${data.status in STATUS_LABELS ? data.status : 'default'}`;
+                }
+
+                // Update driver marker
+                if (data.lat != null && data.lng != null) {
+                    if (driverMarker) {
+                        driverMarker.setLngLat([data.lng, data.lat]);
+                    } else {
+                        const driverEl = createMarkerEl('#2196F3', '🚗');
+                        driverEl.style.fontSize = '18px';
+                        driverMarker = new mapboxgl.Marker({ element: driverEl })
+                            .setLngLat([data.lng, data.lat])
+                            .addTo(map);
+                    }
+                }
+
+                // Stop polling if trip is done
+                if (data.status === 'completed' || data.status === 'canceled') {
+                    clearInterval(pollInterval);
+                }
+            } catch (_) {}
+        }
+
+        function startPolling() {
+            pollLocation();
+            pollInterval = setInterval(pollLocation, 5000);
+        }
+
+        // Boot
+        if (TOKEN) {
+            loadTrip();
+        } else {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').textContent = 'Invalid tracking link.';
+        }
+    </script>
+</body>
+</html>

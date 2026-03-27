@@ -106,10 +106,16 @@ class _TypingIndicatorState extends State<TypingIndicator>
 /// A chat bubble containing the typing indicator, styled to look like
 /// an incoming agent message.
 class TypingBubble extends StatelessWidget {
-  const TypingBubble({super.key});
+  const TypingBubble({super.key, this.agentName});
+
+  /// Agent's first name. First letter is shown as the avatar initial.
+  final String? agentName;
 
   @override
   Widget build(BuildContext context) {
+    final initial = (agentName != null && agentName!.isNotEmpty)
+        ? agentName![0].toUpperCase()
+        : 'C';
     return Align(
       alignment: Alignment.centerLeft,
       child: Row(
@@ -127,10 +133,10 @@ class TypingBubble extends StatelessWidget {
               ),
               shape: BoxShape.circle,
             ),
-            child: const Center(
+            child: Center(
               child: Text(
-                'C',
-                style: TextStyle(
+                initial,
+                style: const TextStyle(
                   color: Colors.black,
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -142,9 +148,9 @@ class TypingBubble extends StatelessWidget {
           Container(
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF2A2A2A),
-              borderRadius: const BorderRadius.only(
+            decoration: const BoxDecoration(
+              color: Color(0xFF2A2A2A),
+              borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(16),
                 topRight: Radius.circular(16),
                 bottomLeft: Radius.circular(4),

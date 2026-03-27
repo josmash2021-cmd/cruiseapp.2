@@ -116,7 +116,7 @@ class _QueueStatusWidgetState extends State<QueueStatusWidget>
               // Header
               Row(
                 children: [
-                  const Text('⏳', style: TextStyle(fontSize: 20)),
+                  const Icon(Icons.hourglass_top_rounded, color: Colors.white70, size: 20),
                   const SizedBox(width: 10),
                   Text(
                     widget.isSpanish

@@ -1297,6 +1297,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   // ── Typing detection ─────────────────────────────────────────────────
 
   void _onTypingChanged(String value) {
+    if (mounted) setState(() {});
     if (_chatId == null) return;
     if (!_isUserTyping && value.isNotEmpty) {
       _isUserTyping = true;
@@ -1543,6 +1544,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D0F),
+      resizeToAvoidBottomInset: true,
       appBar: _buildAppBar(),
       body: Column(
         children: [
@@ -1782,9 +1784,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
     // Typing indicator
     if (_isAgentTyping) {
-      items.add(const Padding(
-        padding: EdgeInsets.only(top: 4, bottom: 8),
-        child: TypingBubble(),
+      items.add(Padding(
+        padding: const EdgeInsets.only(top: 4, bottom: 8),
+        child: TypingBubble(agentName: _agentName),
       ));
     }
 
@@ -1865,8 +1867,8 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           const SizedBox(height: 14),
           Text(
             _isSpanish
-                ? '¡Hola! 👋 Soy el Asistente de soporte de Cruise.\n\nEstoy aquí para ayudarte en lo que necesites — viajes, pagos, cuenta o cualquier otro tema.\n\n¿En qué puedo ayudarte hoy?'
-                : 'Hi there! 👋 I\'m the Cruise Support Assistant.\n\nI\'m here to help with anything — trips, payments, your account, or anything else.\n\nWhat can I help you with?',
+                ? '¡Hola! Soy el Asistente de soporte de Cruise.\n\nEstoy aquí para ayudarte en lo que necesites — viajes, pagos, cuenta o cualquier otro tema.\n\n¿En qué puedo ayudarte hoy?'
+                : 'Hello! I\'m the Cruise Support Assistant.\n\nI\'m here to help with anything — trips, payments, your account, or anything else.\n\nWhat can I help you with?',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.85),
               fontSize: 14.5,
@@ -1885,10 +1887,6 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         ? AgentPrompts.driverQuickActions(_isSpanish)
         : AgentPrompts.riderQuickActions(_isSpanish);
 
-    const iconsRider = ['🚗', '💳', '👤', '🛡️', '💬'];
-    const iconsDriver = ['📍', '💰', '🔧', '🛡️', '💬'];
-    final icons = _userRole == 'driver' ? iconsDriver : iconsRider;
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Wrap(
@@ -1896,7 +1894,6 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         runSpacing: 8,
         children: List.generate(actions.length, (i) {
           final action = actions[i];
-          final icon = i < icons.length ? icons[i] : '💬';
           return GestureDetector(
             onTap: () => _sendMessage(action['message']),
             child: Container(
@@ -1908,20 +1905,13 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                   color: const Color(0xFFE8C547).withValues(alpha: 0.2),
                 ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(icon, style: const TextStyle(fontSize: 13)),
-                  const SizedBox(width: 6),
-                  Text(
-                    action['label']!,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+              child: Text(
+                action['label']!,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           );
@@ -1959,6 +1949,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     }
 
     final isUser = msg.role == 'rider' || msg.role == 'driver';
+    final isDispatch = msg.role == 'dispatch';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -1971,17 +1962,21 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               width: 28,
               height: 28,
               margin: const EdgeInsets.only(right: 6, bottom: 2),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFFE8C547), Color(0xFFB8921A)],
-                ),
+              decoration: BoxDecoration(
+                gradient: isDispatch
+                    ? const LinearGradient(
+                        colors: [Color(0xFF6A5ACD), Color(0xFF483D8B)],
+                      )
+                    : const LinearGradient(
+                        colors: [Color(0xFFE8C547), Color(0xFFB8921A)],
+                      ),
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: Text(
-                  msg.senderName.isNotEmpty ? msg.senderName[0].toUpperCase() : 'C',
+                  msg.senderName.isNotEmpty ? msg.senderName[0].toUpperCase() : (isDispatch ? 'S' : 'C'),
                   style: const TextStyle(
-                    color: Color(0xFF0A0800),
+                    color: Colors.white,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
@@ -2003,18 +1998,27 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                         end: Alignment.bottomRight,
                       )
                     : null,
-                color: isUser ? null : const Color(0xFF1C1D22),
+                color: isUser
+                    ? null
+                    : isDispatch
+                        ? const Color(0xFF1E1A2E)
+                        : const Color(0xFF1C1D22),
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
                   topRight: const Radius.circular(16),
                   bottomLeft: Radius.circular(isUser ? 16 : 3),
                   bottomRight: Radius.circular(isUser ? 3 : 16),
                 ),
+                border: isDispatch
+                    ? Border.all(color: const Color(0xFF6A5ACD).withValues(alpha: 0.4))
+                    : null,
                 boxShadow: [
                   BoxShadow(
                     color: isUser
                         ? const Color(0xFFE8C547).withValues(alpha: 0.12)
-                        : Colors.black.withValues(alpha: 0.18),
+                        : isDispatch
+                            ? const Color(0xFF6A5ACD).withValues(alpha: 0.1)
+                            : Colors.black.withValues(alpha: 0.18),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
@@ -2023,7 +2027,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               child: Column(
                 crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                 children: [
-                  if (!isUser && _phase == _ChatPhase.agent && msg.senderName.isNotEmpty)
+                  if (!isUser && msg.senderName.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 3),
                       child: Text(
@@ -2031,7 +2035,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                         style: TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,
-                          color: const Color(0xFFE8C547).withValues(alpha: 0.8),
+                          color: isDispatch
+                              ? const Color(0xFF9D8FE8)
+                              : const Color(0xFFE8C547).withValues(alpha: 0.8),
                         ),
                       ),
                     ),
@@ -2161,22 +2167,22 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           ),
           const SizedBox(width: 8),
           GestureDetector(
-            onTap: _sending ? null : () => _sendMessage(),
+            onTap: (_sending || _msgCtrl.text.trim().isEmpty) ? null : () => _sendMessage(),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                gradient: _sending
+                gradient: (_sending || _msgCtrl.text.trim().isEmpty)
                     ? null
                     : const LinearGradient(
                         colors: [Color(0xFFE8C547), Color(0xFFD4A012)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-                color: _sending ? const Color(0xFF2A2A2E) : null,
+                color: (_sending || _msgCtrl.text.trim().isEmpty) ? const Color(0xFF2A2A2E) : null,
                 shape: BoxShape.circle,
-                boxShadow: _sending
+                boxShadow: (_sending || _msgCtrl.text.trim().isEmpty)
                     ? []
                     : [
                         BoxShadow(
@@ -2196,9 +2202,11 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                           color: Colors.white.withValues(alpha: 0.5),
                         ),
                       )
-                    : const Icon(
+                    : Icon(
                         Icons.arrow_upward_rounded,
-                        color: Color(0xFF0A0800),
+                        color: _msgCtrl.text.trim().isEmpty
+                            ? Colors.white.withValues(alpha: 0.2)
+                            : const Color(0xFF0A0800),
                         size: 20,
                       ),
               ),

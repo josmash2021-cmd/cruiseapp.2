@@ -334,6 +334,51 @@ class PlacesService {
     }
   }
 
+  // ─── Backend Proxy Autocomplete ───────────────────────────────────
+  //
+  // Uses the backend /places/autocomplete endpoint when local API key
+  // is missing or invalid. The backend has GOOGLE_MAPS_API_KEY configured.
+
+  Future<List<PlaceSuggestion>> _backendAutocomplete(
+    String input, {
+    double? lat,
+    double? lon,
+  }) async {
+    final params = <String, String>{
+      'input': input,
+    };
+    if (lat != null && lon != null) {
+      params['lat'] = lat.toString();
+      params['lng'] = lon.toString();
+    }
+
+    final uri = Uri.parse('${ApiService.publicBaseUrl}/places/autocomplete')
+        .replace(queryParameters: params);
+
+    debugPrint('\ud83d\udd0d Backend places proxy: "$input"');
+    final res = await http.get(uri, headers: {
+      'Accept': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
+    }).timeout(const Duration(seconds: 8));
+
+    if (res.statusCode != 200) {
+      debugPrint('\u274c Backend places proxy HTTP ${res.statusCode}');
+      return [];
+    }
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final predictions = data['predictions'] as List? ?? [];
+    debugPrint('\u2705 Backend proxy: ${predictions.length} results for "$input"');
+
+    return predictions.map<PlaceSuggestion>((p) {
+      return PlaceSuggestion(
+        description: p['description']?.toString() ?? '',
+        placeId: p['place_id']?.toString() ?? '',
+        types: const [],
+      );
+    }).where((s) => s.description.isNotEmpty).toList();
+  }
+
   // ─── Mapbox Geocoding v5 Autocomplete ─────────────────────────────
 
   Future<List<PlaceSuggestion>> _mapboxAutocomplete(
@@ -526,6 +571,16 @@ class PlacesService {
     }
 
     // Google Place Details — include session token to bundle billing
+    // If API key is invalid, use backend proxy
+    if (!isKeyValid) {
+      try {
+        return await _backendDetails(placeId);
+      } catch (e) {
+        debugPrint('\u26a0\ufe0f Backend place details failed: $e');
+        return null;
+      }
+    }
+
     try {
       final uri =
           Uri.https('maps.googleapis.com', '/maps/api/place/details/json', {
@@ -548,6 +603,35 @@ class PlacesService {
       }
     } catch (_) {}
     return null;
+  }
+
+  // ─── Backend Proxy Place Details ───────────────────────────────────
+
+  Future<PlaceDetails?> _backendDetails(String placeId) async {
+    final uri = Uri.parse('${ApiService.publicBaseUrl}/places/details')
+        .replace(queryParameters: {'place_id': placeId});
+
+    final res = await http.get(uri, headers: {
+      'Accept': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
+    }).timeout(const Duration(seconds: 8));
+
+    if (res.statusCode != 200) {
+      debugPrint('\u274c Backend place details HTTP ${res.statusCode}');
+      return null;
+    }
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final lat = data['lat'] as num?;
+    final lng = data['lng'] as num?;
+    if (lat == null || lng == null) return null;
+
+    resetSession();
+    return PlaceDetails(
+      address: data['address']?.toString() ?? '',
+      lat: lat.toDouble(),
+      lng: lng.toDouble(),
+    );
   }
 
   // ─── Geocoding Fallback (for sparse autocomplete) ──────────────────

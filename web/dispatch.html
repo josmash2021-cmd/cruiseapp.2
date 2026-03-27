@@ -194,6 +194,36 @@ video{width:100%;max-height:220px;border-radius:8px;background:#000;display:bloc
 .pm-default{font-size:10px;color:var(--gold);font-weight:700;background:rgba(232,197,71,.12);padding:2px 7px;border-radius:4px}
 .pm-empty{font-size:12px;color:#444;font-style:italic}
 
+/* ── Action Request Cards ── */
+.req-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px;transition:border-color .2s}
+.req-card:hover{border-color:#3a3a3a}
+.req-card.escalated{border-left:3px solid var(--orange)}
+.req-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
+.req-type{font-size:15px;font-weight:700;color:var(--gold)}
+.req-status{font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;text-transform:uppercase}
+.req-status.pending_admin{background:rgba(255,152,0,.15);color:var(--orange)}
+.req-status.approved{background:rgba(76,175,80,.15);color:var(--green)}
+.req-status.rejected{background:rgba(244,67,54,.15);color:var(--red)}
+.req-meta{font-size:12px;color:var(--text2);margin-bottom:8px}
+.req-details{background:#111;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#ccc}
+.req-details table{width:100%;border-collapse:collapse}
+.req-details td{padding:3px 6px;vertical-align:top}
+.req-details td:first-child{color:var(--text2);width:110px;font-weight:600}
+.req-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.req-note-input{flex:1;min-width:160px;padding:7px 10px;background:#0a0a0a;border:1px solid var(--border);border-radius:8px;color:#fff;font-size:12px}
+.req-note-input:focus{border-color:var(--gold);outline:none}
+.btn-approve{padding:8px 18px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;transition:background .2s}
+.btn-approve:hover{background:#43a047}
+.btn-reject{padding:8px 18px;background:var(--red);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;transition:background .2s}
+.btn-reject:hover{background:#e53935}
+.btn-view-chat{padding:8px 14px;background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;font-size:12px;cursor:pointer;transition:all .2s}
+.btn-view-chat:hover{border-color:#555;color:#fff}
+
+/* ── Supervisor Connect Button ── */
+.btn-supervisor{width:100%;padding:10px;background:var(--orange);color:#000;border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;margin-bottom:8px;transition:background .2s}
+.btn-supervisor:hover{background:#fb8c00}
+.supervisor-connected-badge{display:inline-block;background:rgba(76,175,80,.15);color:var(--green);font-size:11px;font-weight:700;padding:4px 10px;border-radius:6px;margin-bottom:8px}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:#111}
@@ -257,6 +287,7 @@ video{width:100%;max-height:220px;border-radius:8px;background:#000;display:bloc
             <button class="tab" id="tab-riders" onclick="showTab('riders',this)">&#128100; Riders</button>
             <button class="tab" id="tab-trips" onclick="showTab('trips',this)">&#128664; Trips</button>
             <button class="tab" id="tab-chats" onclick="showTab('chats',this)">&#128172; Live Chats</button>
+            <button class="tab" id="tab-requests" onclick="showTab('requests',this);loadActionRequests()">&#9888; Requests <span id="requests-badge" style="background:var(--red);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px;display:none">0</span></button>
         </div>
 
         <!-- ── VERIFICATIONS TAB ── -->
@@ -343,7 +374,21 @@ video{width:100%;max-height:220px;border-radius:8px;background:#000;display:bloc
             </div>
             <div id="chatsList" class="chat-list"><div class="loading">Loading…</div></div>
         </div>
-
+        <!-- ── ACTION REQUESTS TAB ── -->
+        <div id="requestsTab" class="hidden">
+            <div class="section-hdr">
+                <span class="section-title">Action Requests</span>
+                <div class="toolbar">
+                    <select class="filter-select" id="requestsStatusFilter" onchange="loadActionRequests()">
+                        <option value="pending_admin">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                    <button class="btn-sm" onclick="loadActionRequests()">&#8635; Refresh</button>
+                </div>
+            </div>
+            <div id="requestsList"><div class="loading">Loading&hellip;</div></div>
+        </div>
     </div><!-- /container -->
 </div><!-- /dashboard -->
 
@@ -413,6 +458,7 @@ function openDashboard() {
     loadRiders();
     loadTrips();
     loadChats();
+    pollPendingRequestsBadge();
 }
 
 function refreshAll() {
@@ -455,7 +501,7 @@ async function loadStats() {
 }
 
 // ── Tabs ──────────────────────────────────────────────
-const TAB_NAMES = ['verifications','drivers','riders','trips','chats'];
+const TAB_NAMES = ['verifications','drivers','riders','trips','chats','requests'];
 function showTab(name, el) {
     TAB_NAMES.forEach(t => {
         document.getElementById(t+'Tab').classList.add('hidden');
@@ -837,24 +883,30 @@ async function loadChats() {
 
 function buildChatCard(c) {
     const isOpen = c.status === 'open';
+    const isSupervisor = c.supervisor_connected;
+    const needsEsc = c.needs_escalation;
+    const supervisorBtn = isOpen && !isSupervisor
+        ? `<button class="btn-supervisor" onclick="connectSupervisor(${c.id},this)">Connect as Supervisor</button>`
+        : (isSupervisor ? `<div class="supervisor-connected-badge">Supervisor Connected</div>` : '');
     return `<div class="chat-card" id="chatcard-${c.id}">
         <div class="chat-header" onclick="toggleChat(${c.id})">
             <div>
                 <div class="chat-user">${esc(c.user_name||'Unknown')}
                     ${c.unread_count > 0 ? `<span class="badge-unread">${c.unread_count}</span>` : ''}
-                    ${c.needs_escalation ? ' ⚠️' : ''}
+                    ${needsEsc ? ' <span style="color:var(--orange);font-size:11px;font-weight:700">ESCALATED</span>' : ''}
                 </div>
                 <div class="chat-meta">${esc(c.subject||'Support')} &middot; ${(c.updated_at||c.created_at||'').slice(0,16).replace('T',' ')}</div>
             </div>
-            <span class="${isOpen ? 'chat-status-open' : 'chat-status-closed'}">${isOpen ? '● OPEN' : '○ CLOSED'}</span>
+            <span class="${isOpen ? 'chat-status-open' : 'chat-status-closed'}">${isOpen ? '&#9679; OPEN' : '&#9675; CLOSED'}</span>
         </div>
         <div class="chat-body" id="chatbody-${c.id}">
             ${isOpen ? `<div class="chat-actions">
-                <button class="btn-close-chat" onclick="closeChat(${c.id})">✕ Close Chat</button>
+                ${supervisorBtn}
+                <button class="btn-close-chat" onclick="closeChat(${c.id})">&#10005; Close Chat</button>
             </div>` : ''}
-            <div class="messages" id="msgs-${c.id}"><div class="loading" style="padding:16px">Click to load…</div></div>
+            <div class="messages" id="msgs-${c.id}"><div class="loading" style="padding:16px">Click to load&hellip;</div></div>
             ${isOpen ? `<div class="reply-row">
-                <input class="reply-input" id="reply-${c.id}" placeholder="Type a message…" onkeydown="if(event.key==='Enter')sendMsg(${c.id})">
+                <input class="reply-input" id="reply-${c.id}" placeholder="Type a message as ${isSupervisor ? 'Supervisor' : 'Support'}…" onkeydown="if(event.key==='Enter')sendMsg(${c.id})">
                 <button class="btn-send" onclick="sendMsg(${c.id})">Send</button>
             </div>` : '<p style="color:var(--text3);font-size:12px;margin-top:8px">This chat is closed</p>'}
         </div>
@@ -913,6 +965,118 @@ async function closeChat(chatId) {
         if (r.ok) loadChats();
         else { const d = await r.json(); alert('Error: '+(d.detail||'Unknown')); }
     } catch(e) { alert('Error: '+e.message); }
+}
+
+// ── Connect as Supervisor ─────────────────────────────
+async function connectSupervisor(chatId, btn) {
+    if (!confirm('Connect to this chat as Supervisor? The AI bot will be paused and you will type directly to the user.')) return;
+    btn.disabled = true;
+    btn.textContent = 'Connecting...';
+    try {
+        const r = await fetch(`${serverUrl}/support/chats/${chatId}/connect-supervisor`, {method:'POST', headers: hdrs()});
+        if (r.ok) {
+            loadChats();
+            setTimeout(() => loadChatMessages(chatId), 800);
+        } else {
+            const d = await r.json();
+            alert('Error: ' + (d.detail || 'Unknown'));
+            btn.disabled = false;
+            btn.textContent = 'Connect as Supervisor';
+        }
+    } catch(e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = 'Connect as Supervisor';
+    }
+}
+
+// ── Action Requests ───────────────────────────────────
+async function loadActionRequests() {
+    const el = document.getElementById('requestsList');
+    if (!el) return;
+    el.innerHTML = '<div class="loading">Loading&hellip;</div>';
+    const status = document.getElementById('requestsStatusFilter')?.value || 'pending_admin';
+    try {
+        const r = await fetch(`${serverUrl}/support/action-requests?status=${status}`, {headers: hdrs()});
+        if (!r.ok) throw new Error(await r.text());
+        const items = await r.json();
+        if (!items.length) { el.innerHTML = '<div class="loading">No requests found</div>'; return; }
+        el.innerHTML = items.map(ar => buildRequestCard(ar)).join('');
+    } catch(e) { el.innerHTML = `<div class="err-box">Error: ${e.message}</div>`; }
+}
+
+function buildRequestCard(ar) {
+    const isPending = ar.status === 'pending_admin';
+    const details = ar.details || {};
+    const detailRows = Object.entries(details)
+        .map(([k,v]) => `<tr><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`)
+        .join('');
+    const date = (ar.created_at || '').slice(0,16).replace('T',' ');
+    return `<div class="req-card${ar.status==='rejected'?'' : ''}">
+        <div class="req-header">
+            <span class="req-type">${esc(ar.action_type.replace(/-/g,' ').toUpperCase())}</span>
+            <span class="req-status ${ar.status}">${ar.status.replace('_',' ')}</span>
+        </div>
+        <div class="req-meta">
+            <strong>${esc(ar.user_name)}</strong> (${esc(ar.user_type)}) &middot; via agent ${esc(ar.agent_name)} &middot; ${date}
+            &nbsp;&nbsp;<button class="btn-view-chat" onclick="openChatInTab(${ar.chat_id})">View Chat</button>
+        </div>
+        <div class="req-details">
+            <table>${detailRows || '<tr><td colspan="2" style="color:#555">No details</td></tr>'}</table>
+        </div>
+        ${isPending ? `
+        <div class="req-actions">
+            <input class="req-note-input" id="note-${ar.id}" placeholder="Optional note to user&hellip;">
+            <button class="btn-approve" onclick="approveRequest(${ar.id})">Approve</button>
+            <button class="btn-reject" onclick="rejectRequest(${ar.id})">Reject</button>
+        </div>` : (ar.admin_note ? `<div style="font-size:12px;color:var(--text2);margin-top:4px">Note: ${esc(ar.admin_note)}</div>` : '')}
+    </div>`;
+}
+
+async function approveRequest(requestId) {
+    const note = document.getElementById('note-'+requestId)?.value?.trim() || '';
+    if (!confirm('Approve this request? A confirmation message will be sent to the user.')) return;
+    try {
+        const r = await fetch(`${serverUrl}/support/action-requests/${requestId}/approve`, {
+            method:'PATCH', headers: hdrs(), body: JSON.stringify({admin_note: note})
+        });
+        if (r.ok) { loadActionRequests(); pollPendingRequestsBadge(); }
+        else { const d = await r.json(); alert('Error: '+(d.detail||'Unknown')); }
+    } catch(e) { alert('Error: '+e.message); }
+}
+
+async function rejectRequest(requestId) {
+    const note = document.getElementById('note-'+requestId)?.value?.trim() || '';
+    if (!confirm('Reject this request? The user will be notified that their case has been escalated to a supervisor.')) return;
+    try {
+        const r = await fetch(`${serverUrl}/support/action-requests/${requestId}/reject`, {
+            method:'PATCH', headers: hdrs(), body: JSON.stringify({admin_note: note})
+        });
+        if (r.ok) { loadActionRequests(); pollPendingRequestsBadge(); }
+        else { const d = await r.json(); alert('Error: '+(d.detail||'Unknown')); }
+    } catch(e) { alert('Error: '+e.message); }
+}
+
+let _requestsBadgeInterval = null;
+async function pollPendingRequestsBadge() {
+    if (_requestsBadgeInterval) return;
+    async function check() {
+        try {
+            const r = await fetch(`${serverUrl}/support/action-requests?status=pending_admin`, {headers: hdrs()});
+            if (!r.ok) return;
+            const items = await r.json();
+            const badge = document.getElementById('requests-badge');
+            if (!badge) return;
+            if (items.length > 0) {
+                badge.textContent = items.length;
+                badge.style.display = '';
+            } else {
+                badge.style.display = 'none';
+            }
+        } catch(_) {}
+    }
+    check();
+    _requestsBadgeInterval = setInterval(check, 60000);
 }
 
 // ── Escape ────────────────────────────────────────────

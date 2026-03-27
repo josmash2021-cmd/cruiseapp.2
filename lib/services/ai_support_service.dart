@@ -27,7 +27,7 @@ class AiSupportService {
   }
 
   /// Random queue wait time in seconds (180-240).
-  static int randomQueueWait() => 180 + _rng.nextInt(61);
+  static int randomQueueWait() => 15 + _rng.nextInt(21);
 
   /// Whether a bot message signals "connecting to agent" (detecting phase transition).
   static bool isConnectingMessage(String text) {

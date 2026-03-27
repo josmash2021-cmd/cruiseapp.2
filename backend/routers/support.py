@@ -29,7 +29,7 @@ router = APIRouter()
 import random as _rng
 
 _AGENT_NAMES = [
-    "Luc�a", "Sof�a", "Isabella", "Valentina", "Camila",
+    "Lucia", "Sofia", "Isabella", "Valentina", "Camila",
     "Mariana", "Daniela", "Gabriela", "Andrea", "Carolina",
     "Ana Paula", "Laura", "Diana", "Natalia", "Alejandra",
 ]
@@ -38,7 +38,7 @@ _ESCALATION_TRIGGERS = [
     "manager", "supervisor", "gerente", "jefe", "encargado", "superior",
     "speak to your manager", "hablar con el gerente", "hablar con un supervisor",
     "hablar con el jefe", "quiero hablar con un supervisor", "quiero hablar con el gerente",
-    "no me ayudas", "incompetente", "in�til", "useless", "your boss",
+    "no me ayudas", "incompetente", "inutil", "useless", "your boss",
     "real person", "persona real", "human", "humano",
 ]
 
@@ -46,8 +46,8 @@ _FRUSTRATION_KEYWORDS = [
     "horrible", "terrible", "worst", "peor", "basura", "garbage", "trash",
     "estafa", "scam", "robo", "steal", "fraud", "fraude", "disgusting",
     "asqueroso", "fuck", "shit", "mierda", "damn", "hell", "stupid",
-    "idiota", "ridiculous", "rid�culo", "absurdo", "absurd", "unacceptable",
-    "inaceptable", "sue", "demandar", "lawyer", "abogado", "police", "polic�a",
+    "idiota", "ridiculous", "ridiculo", "absurdo", "absurd", "unacceptable",
+    "inaceptable", "sue", "demandar", "lawyer", "abogado", "police", "policia",
 ]
 
 _CANCEL_INTENT = [
@@ -143,11 +143,11 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict:
     if ctx["recent_trips"]:
         lines = []
         for rt in ctx["recent_trips"]:
-            lines.append(f"� {rt['date']} � {rt['pickup']} ? {rt['dropoff']} � {rt['fare']} ({rt['status']})")
+            lines.append(f" {rt['date']}  {rt['pickup']} ? {rt['dropoff']}  {rt['fare']} ({rt['status']})")
         header = "Tus viajes recientes:" if lang.startswith("es") else "Your recent trips:"
         ctx["trip_summary"] = header + "\n" + "\n".join(lines)
     else:
-        ctx["trip_summary"] = ("No encontr� viajes recientes en tu cuenta." if lang.startswith("es")
+        ctx["trip_summary"] = ("No encontre viajes recientes en tu cuenta." if lang.startswith("es")
                                else "I couldn't find any recent trips on your account.")
 
     return ctx
@@ -177,7 +177,7 @@ async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
         except Exception:
             pass
     if lang.startswith("es"):
-        return f"Tu viaje #{trip.id} de {trip.pickup_address} a {trip.dropoff_address} ha sido cancelado exitosamente. No se te realizar� ning�n cargo."
+        return f"Tu viaje #{trip.id} de {trip.pickup_address} a {trip.dropoff_address} ha sido cancelado exitosamente. No se te realizara ningun cargo."
     return f"Your trip #{trip.id} from {trip.pickup_address} to {trip.dropoff_address} has been successfully canceled. You won't be charged."
 
 
@@ -194,8 +194,8 @@ def _score_categories(text: str) -> list:
 
 _THANK_KEYWORDS = [
     "gracias", "thanks", "thank you", "thx", "ty", "perfecto", "perfect",
-    "genial", "great", "ok gracias", "listo", "eso es todo", "nada m�s",
-    "that's all", "no nada", "no, gracias", "ya est�", "resolved",
+    "genial", "great", "ok gracias", "listo", "eso es todo", "nada mas",
+    "that's all", "no nada", "no, gracias", "ya esta", "resolved",
     "resuelto", "solucionado", "excelente", "bueno gracias",
 ]
 
@@ -205,9 +205,9 @@ _AI_CATEGORIES = {
                      "price", "caro", "expensive", "overcharge", "sobrecar", "cobrado",
                      "dinero", "money", "amount", "monto", "receipt", "recibo"],
         "first_es": [
-            "Entiendo tu preocupaci�n con el cobro, {name}. D�jame revisar los detalles de tu viaje.\n\n�Me podr�as indicar la fecha y hora aproximada del viaje? As� puedo localizar la transacci�n m�s r�pido ??",
-            "Lamento el inconveniente con el cobro, {name}. Voy a revisar tu cuenta ahora mismo.\n\n�Podr�as darme la fecha del viaje y el monto que te cobraron? As� lo verifico de inmediato.",
-            "Claro, {name}, voy a revisar eso por ti. A veces los cobros var�an por cambios de ruta, peajes o tiempo de espera.\n\n�Me das la fecha y la hora del viaje para revisar el recibo?",
+            "Entiendo tu preocupacion con el cobro, {name}. Dejame revisar los detalles de tu viaje.\n\nMe podras indicar la fecha y hora aproximada del viaje? Asi puedo localizar la transaccion mas rapido ??",
+            "Lamento el inconveniente con el cobro, {name}. Voy a revisar tu cuenta ahora mismo.\n\nPodras darme la fecha del viaje y el monto que te cobraron? Asi lo verifico de inmediato.",
+            "Claro, {name}, voy a revisar eso por ti. A veces los cobros varan por cambios de ruta, peajes o tiempo de espera.\n\nMe das la fecha y la hora del viaje para revisar el recibo?",
         ],
         "first_en": [
             "I understand your concern about the charge, {name}. Let me look into your trip details.\n\nCould you tell me the approximate date and time of the trip? That way I can find the transaction faster ??",
@@ -215,8 +215,8 @@ _AI_CATEGORIES = {
             "Sure thing, {name}, I'll look into that for you. Sometimes charges vary due to route changes, tolls, or wait time.\n\nCan you give me the date and time of the trip so I can check the receipt?",
         ],
         "followup_es": [
-            "Perfecto, ya localic� tu viaje, {name}. He verificado el recibo y voy a procesar el ajuste correspondiente.\n\nEl reembolso se reflejar� en tu m�todo de pago en un plazo de 3 a 5 d�as h�biles. �Necesitas algo m�s?",
-            "Ya revis� la transacci�n, {name}. Efectivamente hay una diferencia y voy a iniciar el proceso de correcci�n.\n\nTe llegar� una notificaci�n cuando se complete. �Hay algo m�s en lo que pueda ayudarte?",
+            "Perfecto, ya localice tu viaje, {name}. He verificado el recibo y voy a procesar el ajuste correspondiente.\n\nEl reembolso se reflejara en tu metodo de pago en un plazo de 3 a 5 dias habiles. Necesitas algo mas?",
+            "Ya reviso la transaccion, {name}. Efectivamente hay una diferencia y voy a iniciar el proceso de correccion.\n\nTe llegara una notificacion cuando se complete. Hay algo mas en lo que pueda ayudarte?",
         ],
         "followup_en": [
             "Got it, I found your trip, {name}. I've checked the receipt and I'm going to process the corresponding adjustment.\n\nThe refund will show up on your payment method within 3 to 5 business days. Do you need anything else?",
@@ -224,19 +224,19 @@ _AI_CATEGORIES = {
         ],
     },
     "cancellation": {
-        "keywords": ["cancel", "cancelar", "cancelaci�n", "cancele", "cancelado",
+        "keywords": ["cancel", "cancelar", "cancelacion", "cancele", "cancelado",
                      "cancelar viaje", "no quiero el viaje"],
         "first_es": [
-            "Entiendo, {name}. Puedo ayudarte con eso. �Es un viaje que quieres cancelar ahora o te cobraron una tarifa de cancelaci�n?\n\nCu�ntame los detalles y lo resolvemos juntos.",
-            "Claro, {name}. �El viaje ya est� programado o es uno que ya pas� y te cobraron por cancelar?\n\nDime los detalles para proceder de la mejor manera.",
+            "Entiendo, {name}. Puedo ayudarte con eso. Es un viaje que quieres cancelar ahora o te cobraron una tarifa de cancelacion?\n\nCuentame los detalles y lo resolvemos juntos.",
+            "Claro, {name}. El viaje ya esta programado o es uno que ya paso y te cobraron por cancelar?\n\nDime los detalles para proceder de la mejor manera.",
         ],
         "first_en": [
             "I understand, {name}. I can help you with that. Is it a trip you want to cancel now, or were you charged a cancellation fee?\n\nTell me the details and we'll sort it out together.",
             "Sure, {name}. Is the trip scheduled or was it one that already happened and you got charged for canceling?\n\nGive me the details so I can handle it the best way.",
         ],
         "followup_es": [
-            "Listo, {name}. He procesado tu solicitud. Si hubo un cobro injustificado, he iniciado la devoluci�n.\n\nEl reembolso tarda de 3 a 5 d�as h�biles. �Puedo ayudarte con algo m�s?",
-            "Todo resuelto, {name}. La cancelaci�n ha sido procesada correctamente.\n\nRecuerda que puedes cancelar sin cargo dentro de los primeros 2 minutos. �Necesitas algo m�s?",
+            "Listo, {name}. He procesado tu solicitud. Si hubo un cobro injustificado, he iniciado la devolucion.\n\nEl reembolso tarda de 3 a 5 dias habiles. Puedo ayudarte con algo mas?",
+            "Todo resuelto, {name}. La cancelacion ha sido procesada correctamente.\n\nRecuerda que puedes cancelar sin cargo dentro de los primeros 2 minutos. Necesitas algo mas?",
         ],
         "followup_en": [
             "All done, {name}. I've processed your request. If there was an unjustified charge, I've started the refund.\n\nThe refund takes 3 to 5 business days. Can I help you with anything else?",
@@ -244,19 +244,19 @@ _AI_CATEGORIES = {
         ],
     },
     "refund": {
-        "keywords": ["reembolso", "refund", "devolver", "devoluci�n", "money back",
+        "keywords": ["reembolso", "refund", "devolver", "devolucion", "money back",
                      "regres", "devuel", "return my money"],
         "first_es": [
-            "Entiendo que necesitas un reembolso, {name}. Voy a revisar tu caso.\n\n�Me podr�as indicar por qu� concepto solicitas el reembolso y la fecha del viaje?",
-            "{name}, claro que puedo ayudarte con el reembolso. Necesito algunos datos:\n\n� �Fecha del viaje?\n� �Monto que te cobraron?\n� �Cu�l fue el motivo?\n\nAs� proceso tu solicitud lo m�s r�pido posible.",
+            "Entiendo que necesitas un reembolso, {name}. Voy a revisar tu caso.\n\nMe podras indicar por qu concepto solicitas el reembolso y la fecha del viaje?",
+            "{name}, claro que puedo ayudarte con el reembolso. Necesito algunos datos:\n\n Fecha del viaje?\n Monto que te cobraron?\n Cul fue el motivo?\n\nAsi proceso tu solicitud lo mas rapido posible.",
         ],
         "first_en": [
             "I understand you need a refund, {name}. I'll look into your case.\n\nCould you tell me what the refund is for and the trip date?",
-            "{name}, of course I can help you with the refund. I need some info:\n\n� Trip date?\n� Amount charged?\n� What was the reason?\n\nThat way I can process your request as quickly as possible.",
+            "{name}, of course I can help you with the refund. I need some info:\n\n Trip date?\n Amount charged?\n What was the reason?\n\nThat way I can process your request as quickly as possible.",
         ],
         "followup_es": [
-            "He procesado tu solicitud de reembolso, {name}. El monto se reflejar� en tu cuenta en 3 a 5 d�as h�biles.\n\nTe enviaremos una confirmaci�n por correo. �Hay algo m�s en lo que pueda ayudarte?",
-            "Listo, {name}. El reembolso fue aprobado y est� en proceso. Ver�s el monto de vuelta en tu m�todo de pago pronto.\n\n�Necesitas algo m�s?",
+            "He procesado tu solicitud de reembolso, {name}. El monto se reflejara en tu cuenta en 3 a 5 dias habiles.\n\nTe enviaremos una confirmacion por correo. Hay algo mas en lo que pueda ayudarte?",
+            "Listo, {name}. El reembolso fue aprobado y esta en proceso. Vers el monto de vuelta en tu metodo de pago pronto.\n\nNecesitas algo mas?",
         ],
         "followup_en": [
             "I've processed your refund request, {name}. The amount will show up in your account within 3 to 5 business days.\n\nWe'll send you a confirmation email. Is there anything else I can help you with?",
@@ -268,16 +268,16 @@ _AI_CATEGORIES = {
                      "driving", "unsafe", "peligro", "insegur", "report", "reportar",
                      "queja", "complain", "comportamiento", "behavior", "actitud", "attitude"],
         "first_es": [
-            "Lamento mucho que hayas tenido esa experiencia, {name}. Tomamos estos reportes muy en serio.\n\n�Me podr�as dar m�s detalles? El nombre del conductor si lo tienes, la fecha y hora del viaje me ayudar�an mucho.",
-            "Eso no deber�a pasar, {name}. Voy a documentar tu reporte inmediatamente.\n\n�Puedes contarme exactamente qu� sucedi� y cu�ndo fue? As� tomo las medidas necesarias.",
+            "Lamento mucho que hayas tenido esa experiencia, {name}. Tomamos estos reportes muy en serio.\n\nMe podras dar mas detalles? El nombre del conductor si lo tienes, la fecha y hora del viaje me ayudaran mucho.",
+            "Eso no debera pasar, {name}. Voy a documentar tu reporte inmediatamente.\n\nPuedes contarme exactamente qu sucedi y cuando fue? Asi tomo las medidas necesarias.",
         ],
         "first_en": [
             "I'm really sorry you had that experience, {name}. We take these reports very seriously.\n\nCould you give me more details? The driver's name if you have it, the date and time of the trip would really help.",
             "That shouldn't happen, {name}. I'm going to document your report right away.\n\nCan you tell me exactly what happened and when it was? That way I can take the necessary actions.",
         ],
         "followup_es": [
-            "Tu reporte ha sido registrado, {name}. Nuestro equipo revisar� el caso y tomar� las medidas necesarias.\n\nEl conductor ser� notificado. Dependiendo de la gravedad, podr�a ser suspendido. �Necesitas algo m�s?",
-            "He documentado todo, {name}. Este tipo de comportamiento no lo toleramos. El equipo de calidad revisar� el caso en las pr�ximas horas.\n\nTe mantendremos informado del resultado. �Puedo ayudarte con algo m�s?",
+            "Tu reporte ha sido registrado, {name}. Nuestro equipo revisar el caso y tomara las medidas necesarias.\n\nEl conductor ser notificado. Dependiendo de la gravedad, podra ser suspendido. Necesitas algo mas?",
+            "He documentado todo, {name}. Este tipo de comportamiento no lo toleramos. El equipo de calidad revisar el caso en las prximas horas.\n\nTe mantendremos informado del resultado. Puedo ayudarte con algo mas?",
         ],
         "followup_en": [
             "Your report has been filed, {name}. Our team will review the case and take the necessary actions.\n\nThe driver will be notified. Depending on the severity, they could be suspended. Need anything else?",
@@ -285,20 +285,20 @@ _AI_CATEGORIES = {
         ],
     },
     "lost_item": {
-        "keywords": ["perd�", "lost", "olvid", "forgot", "left", "item", "objeto",
-                     "cosa", "dej�", "perdi", "phone in car", "tel�fono en el carro",
-                     "left my", "olvid� mi"],
+        "keywords": ["perd", "lost", "olvid", "forgot", "left", "item", "objeto",
+                     "cosa", "dej", "perdi", "phone in car", "telfono en el carro",
+                     "left my", "olvid mi"],
         "first_es": [
-            "No te preocupes, {name}, vamos a intentar recuperar tu objeto. Necesito algunos datos:\n\n� �Qu� objeto perdiste?\n� �En qu� fecha fue el viaje?\n� �Recuerdas el nombre del conductor?\n\nContactar� al conductor en cuanto tenga la informaci�n.",
-            "Entiendo la preocupaci�n, {name}. La mayor�a de objetos se recuperan en las primeras 24 horas.\n\n�Me dices qu� olvidaste y cu�ndo fue el viaje? As� contacto al conductor directamente.",
+            "No te preocupes, {name}, vamos a intentar recuperar tu objeto. Necesito algunos datos:\n\n Qu objeto perdiste?\n En qu fecha fue el viaje?\n Recuerdas el nombre del conductor?\n\nContactar al conductor en cuanto tenga la informacion.",
+            "Entiendo la preocupacion, {name}. La mayora de objetos se recuperan en las primeras 24 horas.\n\nMe dices qu olvidaste y cuando fue el viaje? Asi contacto al conductor directamente.",
         ],
         "first_en": [
-            "Don't worry, {name}, we'll try to recover your item. I need some info:\n\n� What item did you lose?\n� What date was the trip?\n� Do you remember the driver's name?\n\nI'll contact the driver as soon as I have the information.",
+            "Don't worry, {name}, we'll try to recover your item. I need some info:\n\n What item did you lose?\n What date was the trip?\n Do you remember the driver's name?\n\nI'll contact the driver as soon as I have the information.",
             "I understand the concern, {name}. Most items are recovered within the first 24 hours.\n\nCan you tell me what you forgot and when the trip was? I'll contact the driver directly.",
         ],
         "followup_es": [
-            "Ya contact� al conductor, {name}. En cuanto responda te notifico.\n\nLa mayor�a de objetos se devuelven en las primeras 24 horas. Si se localiza, coordinaremos la devoluci�n. �Hay algo m�s?",
-            "El conductor ya fue notificado, {name}. Tan pronto confirme que tiene tu objeto, te avisamos para coordinar la entrega.\n\n�Necesitas algo m�s mientras tanto?",
+            "Ya contact al conductor, {name}. En cuanto responda te notifico.\n\nLa mayora de objetos se devuelven en las primeras 24 horas. Si se localiza, coordinaremos la devolucion. Hay algo mas?",
+            "El conductor ya fue notificado, {name}. Tan pronto confirme que tiene tu objeto, te avisamos para coordinar la entrega.\n\nNecesitas algo mas mientras tanto?",
         ],
         "followup_en": [
             "I've already contacted the driver, {name}. I'll notify you as soon as they respond.\n\nMost items are returned within the first 24 hours. If it's found, we'll coordinate the return. Anything else?",
@@ -306,20 +306,20 @@ _AI_CATEGORIES = {
         ],
     },
     "account": {
-        "keywords": ["cuenta", "account", "login", "contrase�a", "password", "email",
-                     "correo", "tel�fono", "phone", "acceso", "access", "perfil",
-                     "profile", "sesi�n", "session", "iniciar sesi�n", "log in"],
+        "keywords": ["cuenta", "account", "login", "contrasea", "password", "email",
+                     "correo", "telfono", "phone", "acceso", "access", "perfil",
+                     "profile", "sesion", "session", "iniciar sesion", "log in"],
         "first_es": [
-            "Puedo ayudarte con tu cuenta, {name}. �Qu� problema est�s teniendo exactamente?\n\n�Es con el inicio de sesi�n, cambiar datos de tu perfil, o algo diferente?",
-            "Claro, {name}. Los problemas de cuenta tienen soluci�n r�pida generalmente. �Me dices qu� necesitas cambiar o qu� error te aparece?\n\nAs� te gu�o paso a paso.",
+            "Puedo ayudarte con tu cuenta, {name}. Qu problema ests teniendo exactamente?\n\nEs con el inicio de sesion, cambiar datos de tu perfil, o algo diferente?",
+            "Claro, {name}. Los problemas de cuenta tienen solucion rpida generalmente. Me dices qu necesitas cambiar o qu error te aparece?\n\nAsi te guo paso a paso.",
         ],
         "first_en": [
             "I can help you with your account, {name}. What exactly is the issue?\n\nIs it with logging in, changing your profile info, or something else?",
             "Sure, {name}. Account issues are usually quick to fix. Can you tell me what you need to change or what error you're seeing?\n\nI'll walk you through it step by step.",
         ],
         "followup_es": [
-            "Listo, {name}. He actualizado tu cuenta. Los cambios ya deber�an estar activos.\n\nIntenta cerrar sesi�n y volver a iniciar para verificar. �Todo bien ahora?",
-            "Tu cuenta ha sido actualizada, {name}. Si el problema persiste, intenta reinstalar la app.\n\n�Pudiste verificar que todo est� correcto?",
+            "Listo, {name}. He actualizado tu cuenta. Los cambios ya deberan estar activos.\n\nIntenta cerrar sesion y volver a iniciar para verificar. Todo bien ahora?",
+            "Tu cuenta ha sido actualizada, {name}. Si el problema persiste, intenta reinstalar la app.\n\nPudiste verificar que todo esta correcto?",
         ],
         "followup_en": [
             "All done, {name}. I've updated your account. The changes should be active now.\n\nTry logging out and back in to verify. Everything good now?",
@@ -327,20 +327,20 @@ _AI_CATEGORIES = {
         ],
     },
     "app_problem": {
-        "keywords": ["app", "aplicaci�n", "crash", "error", "bug", "funciona", "work",
+        "keywords": ["app", "aplicacion", "crash", "error", "bug", "funciona", "work",
                      "mapa", "map", "gps", "carga", "load", "lenta", "slow",
                      "actualiz", "update", "pantalla", "screen", "no abre", "cierra"],
         "first_es": [
-            "Entiendo que tienes problemas con la app, {name}. Vamos a resolverlo.\n\n�Podr�as decirme qu� error ves o qu� parte de la app no funciona?",
-            "Lamento el inconveniente, {name}. �Me describes qu� pasa exactamente? Por ejemplo: �se cierra sola, no carga, o hay alg�n error espec�fico?\n\nAs� puedo darte la soluci�n correcta.",
+            "Entiendo que tienes problemas con la app, {name}. Vamos a resolverlo.\n\nPodras decirme qu error ves o qu parte de la app no funciona?",
+            "Lamento el inconveniente, {name}. Me describes qu pasa exactamente? Por ejemplo: se cierra sola, no carga, o hay algn error especfico?\n\nAsi puedo darte la solucion correcta.",
         ],
         "first_en": [
             "I understand you're having app issues, {name}. Let's fix it.\n\nCould you tell me what error you see or what part of the app isn't working?",
             "Sorry about the inconvenience, {name}. Can you describe what's happening exactly? For example: does it crash, not load, or is there a specific error?\n\nThat way I can give you the right solution.",
         ],
         "followup_es": [
-            "Gracias, {name}. Te recomiendo estos pasos:\n\n1. Cierra la app completamente\n2. Verifica que tengas la �ltima versi�n\n3. Reinicia tu dispositivo\n4. Abre la app de nuevo\n\nSi persiste, me avisas y lo escalamos al equipo t�cnico. �De acuerdo?",
-            "Entendido, {name}. He reportado el problema al equipo t�cnico. Mientras tanto, prueba reinstalando la app desde la tienda.\n\nEso suele resolver la mayor�a de problemas. �Necesitas algo m�s?",
+            "Gracias, {name}. Te recomiendo estos pasos:\n\n1. Cierra la app completamente\n2. Verifica que tengas la ultima version\n3. Reinicia tu dispositivo\n4. Abre la app de nuevo\n\nSi persiste, me avisas y lo escalamos al equipo tcnico. De acuerdo?",
+            "Entendido, {name}. He reportado el problema al equipo tcnico. Mientras tanto, prueba reinstalando la app desde la tienda.\n\nEso suele resolver la mayora de problemas. Necesitas algo mas?",
         ],
         "followup_en": [
             "Thanks, {name}. I'd recommend these steps:\n\n1. Close the app completely\n2. Make sure you have the latest version\n3. Restart your device\n4. Open the app again\n\nIf it persists, let me know and I'll escalate it to the tech team. Sound good?",
@@ -352,16 +352,16 @@ _AI_CATEGORIES = {
                      "emergency", "peligro", "danger", "acoso", "harass", "amenaz",
                      "threat", "miedo", "scared", "fear"],
         "first_es": [
-            "{name}, tu seguridad es nuestra prioridad. Voy a tomar acci�n inmediata.\n\n�Puedes contarme exactamente qu� sucedi�? Es importante para las medidas necesarias.",
-            "Tomo esto muy en serio, {name}. �Te encuentras bien en este momento?\n\nCu�ntame con detalle qu� pas� para que pueda actuar de inmediato.",
+            "{name}, tu seguridad es nuestra prioridad. Voy a tomar accion inmediata.\n\nPuedes contarme exactamente qu sucedi? Es importante para las medidas necesarias.",
+            "Tomo esto muy en serio, {name}. Te encuentras bien en este momento?\n\nCuentame con detalle qu paso para que pueda actuar de inmediato.",
         ],
         "first_en": [
             "{name}, your safety is our priority. I'm going to take immediate action.\n\nCan you tell me exactly what happened? It's important so we can take the necessary steps.",
             "I take this very seriously, {name}. Are you okay right now?\n\nTell me in detail what happened so I can act immediately.",
         ],
         "followup_es": [
-            "Tu caso ha sido marcado como prioritario, {name}. Nuestro equipo de seguridad ya est� revis�ndolo.\n\nTe contactar�n directamente para dar seguimiento. �Hay algo inmediato que necesites?",
-            "He escalado tu caso al equipo de seguridad, {name}. Este tipo de situaciones las tratamos con m�xima urgencia.\n\nTe mantendremos informado. �Necesitas algo m�s ahora?",
+            "Tu caso ha sido marcado como prioritario, {name}. Nuestro equipo de seguridad ya esta revisondolo.\n\nTe contactarn directamente para dar seguimiento. Hay algo inmediato que necesites?",
+            "He escalado tu caso al equipo de seguridad, {name}. Este tipo de situaciones las tratamos con mxima urgencia.\n\nTe mantendremos informado. Necesitas algo mas ahora?",
         ],
         "followup_en": [
             "Your case has been marked as a priority, {name}. Our safety team is already reviewing it.\n\nThey'll reach out to you directly for follow-up. Is there anything you need right now?",
@@ -369,20 +369,20 @@ _AI_CATEGORIES = {
         ],
     },
     "payment": {
-        "keywords": ["pago", "payment", "tarjeta", "card", "wallet", "m�todo", "method",
-                     "a�adir", "add", "rechaz", "decline", "declined", "visa",
-                     "mastercard", "d�bito", "cr�dito"],
+        "keywords": ["pago", "payment", "tarjeta", "card", "wallet", "metodo", "method",
+                     "aadir", "add", "rechaz", "decline", "declined", "visa",
+                     "mastercard", "dbito", "crdito"],
         "first_es": [
-            "Puedo ayudarte con el m�todo de pago, {name}. �Qu� problema tienes exactamente?\n\n�Tu tarjeta fue rechazada, necesitas agregar una nueva, o hay otro problema?",
-            "Claro, {name}. �Me dices qu� sucede con tu pago? �Error al agregar tarjeta, cargo rechazado, o necesitas cambiar el m�todo?\n\nTe ayudo con eso.",
+            "Puedo ayudarte con el metodo de pago, {name}. Qu problema tienes exactamente?\n\nTu tarjeta fue rechazada, necesitas agregar una nueva, o hay otro problema?",
+            "Claro, {name}. Me dices qu sucede con tu pago? Error al agregar tarjeta, cargo rechazado, o necesitas cambiar el metodo?\n\nTe ayudo con eso.",
         ],
         "first_en": [
             "I can help you with your payment method, {name}. What exactly is the problem?\n\nWas your card declined, do you need to add a new one, or is there another issue?",
             "Sure, {name}. Can you tell me what's going on with your payment? Error adding a card, charge declined, or need to change the method?\n\nI'll help you with that.",
         ],
         "followup_es": [
-            "He revisado tu m�todo de pago, {name}. Te sugiero:\n\n1. Verifica que los datos de tu tarjeta est�n correctos\n2. Aseg�rate de tener fondos\n3. Si contin�a, intenta agregar otra tarjeta\n\n�Pudiste resolver el problema?",
-            "Entendido, {name}. He actualizado la configuraci�n de pago en tu cuenta. Intenta de nuevo.\n\nSi sigue sin funcionar, puede ser un bloqueo temporal de tu banco. �Necesitas algo m�s?",
+            "He revisado tu metodo de pago, {name}. Te sugiero:\n\n1. Verifica que los datos de tu tarjeta esten correctos\n2. Asegrate de tener fondos\n3. Si contina, intenta agregar otra tarjeta\n\nPudiste resolver el problema?",
+            "Entendido, {name}. He actualizado la configuracion de pago en tu cuenta. Intenta de nuevo.\n\nSi sigue sin funcionar, puede ser un bloqueo temporal de tu banco. Necesitas algo mas?",
         ],
         "followup_en": [
             "I've checked your payment method, {name}. I'd suggest:\n\n1. Make sure your card details are correct\n2. Ensure you have sufficient funds\n3. If it continues, try adding a different card\n\nWere you able to fix the issue?",
@@ -390,19 +390,19 @@ _AI_CATEGORIES = {
         ],
     },
     "waiting": {
-        "keywords": ["espera", "wait", "tard�", "late", "demor", "delay", "tiempo",
-                     "lleg�", "arrive", "no lleg", "demorad", "long time", "mucho tiempo"],
+        "keywords": ["espera", "wait", "tard", "late", "demor", "delay", "tiempo",
+                     "lleg", "arrive", "no lleg", "demorad", "long time", "mucho tiempo"],
         "first_es": [
-            "Entiendo tu frustraci�n con la espera, {name}. �Me cuentas cu�nto tiempo esperaste y si el conductor finalmente lleg�?\n\nAs� eval�o si aplica una compensaci�n.",
-            "Lamento la demora, {name}. Los tiempos pueden variar por demanda en tu zona.\n\n�Me cuentas los detalles: cu�nto esperaste, fecha y hora? Para ver qu� puedo hacer.",
+            "Entiendo tu frustracion con la espera, {name}. Me cuentas cuanto tiempo esperaste y si el conductor finalmente lleg?\n\nAsi evalo si aplica una compensacion.",
+            "Lamento la demora, {name}. Los tiempos pueden variar por demanda en tu zona.\n\nMe cuentas los detalles: cuanto esperaste, fecha y hora? Para ver qu puedo hacer.",
         ],
         "first_en": [
             "I understand your frustration with the wait, {name}. Can you tell me how long you waited and if the driver finally arrived?\n\nThat way I can evaluate if compensation applies.",
             "Sorry about the delay, {name}. Wait times can vary depending on demand in your area.\n\nCan you tell me the details: how long you waited, date and time? So I can see what I can do.",
         ],
         "followup_es": [
-            "He revisado tu caso, {name}. Entiendo la molestia. He aplicado un cr�dito a tu cuenta como compensaci�n.\n\nLo ver�s reflejado en tu pr�ximo viaje. �Necesitas algo m�s?",
-            "Entendido, {name}. Voy a aplicar un ajuste en tu cuenta por la mala experiencia.\n\nLamentamos los inconvenientes. �Hay algo m�s en lo que pueda ayudarte?",
+            "He revisado tu caso, {name}. Entiendo la molestia. He aplicado un crdito a tu cuenta como compensacion.\n\nLo vers reflejado en tu prximo viaje. Necesitas algo mas?",
+            "Entendido, {name}. Voy a aplicar un ajuste en tu cuenta por la mala experiencia.\n\nLamentamos los inconvenientes. Hay algo mas en lo que pueda ayudarte?",
         ],
         "followup_en": [
             "I've reviewed your case, {name}. I understand the frustration. I've applied a credit to your account as compensation.\n\nYou'll see it reflected on your next trip. Anything else you need?",
@@ -412,9 +412,9 @@ _AI_CATEGORIES = {
 }
 
 _FALLBACK_FIRST_ES = [
-    "Gracias por contarme, {name}. Voy a revisar tu caso con atenci�n.\n\n�Me podr�as dar un poco m�s de detalle para entender mejor la situaci�n?",
-    "Entiendo, {name}. D�jame ayudarte con eso.\n\n�Puedes darme m�s informaci�n? Cualquier detalle me ayuda a resolver tu caso m�s r�pido.",
-    "Claro, {name}. Estoy revisando lo que me comentas. �Podr�as ampliar un poco m�s para darte una soluci�n precisa?",
+    "Gracias por contarme, {name}. Voy a revisar tu caso con atencion.\n\nMe podras dar un poco mas de detalle para entender mejor la situacion?",
+    "Entiendo, {name}. Dejame ayudarte con eso.\n\nPuedes darme mas informacion? Cualquier detalle me ayuda a resolver tu caso mas rapido.",
+    "Claro, {name}. Estoy revisando lo que me comentas. Podras ampliar un poco mas para darte una solucion precisa?",
 ]
 _FALLBACK_FIRST_EN = [
     "Thanks for letting me know, {name}. I'll review your case carefully.\n\nCould you give me a bit more detail so I can better understand the situation?",
@@ -423,9 +423,9 @@ _FALLBACK_FIRST_EN = [
 ]
 
 _FALLBACK_FOLLOWUP_ES = [
-    "Gracias por la informaci�n, {name}. Ya estoy trabajando en tu caso.\n\nVoy a asegurarme de que se resuelva lo antes posible. �Hay algo m�s que necesites?",
-    "Perfecto, {name}. He registrado todo. Nuestro equipo ya est� al tanto y daremos seguimiento.\n\n�Puedo ayudarte con algo m�s?",
-    "Todo anotado, {name}. Voy a dar seguimiento a tu caso personalmente.\n\nSi surge algo m�s, aqu� estoy. �Necesitas algo adicional?",
+    "Gracias por la informacion, {name}. Ya estoy trabajando en tu caso.\n\nVoy a asegurarme de que se resuelva lo antes posible. Hay algo mas que necesites?",
+    "Perfecto, {name}. He registrado todo. Nuestro equipo ya esta al tanto y daremos seguimiento.\n\nPuedo ayudarte con algo mas?",
+    "Todo anotado, {name}. Voy a dar seguimiento a tu caso personalmente.\n\nSi surge algo mas, aqu estoy. Necesitas algo adicional?",
 ]
 _FALLBACK_FOLLOWUP_EN = [
     "Thanks for the info, {name}. I'm already working on your case.\n\nI'll make sure it gets resolved as soon as possible. Is there anything else you need?",
@@ -434,9 +434,9 @@ _FALLBACK_FOLLOWUP_EN = [
 ]
 
 _CLOSING_RESPONSES_ES = [
-    "Me alegra poder ayudarte, {name} ?? No dudes en escribirnos si necesitas algo. �Que tengas un excelente d�a!",
-    "�Con gusto, {name}! Estamos aqu� para lo que necesites. �Que tengas un gran d�a! ??",
-    "Ha sido un placer atenderte, {name}. Si necesitas algo en el futuro, aqu� estaremos. �Cu�date mucho! ??",
+    "Me alegra poder ayudarte, {name} ?? No dudes en escribirnos si necesitas algo. Que tengas un excelente dia!",
+    "Con gusto, {name}! Estamos aqu para lo que necesites. Que tengas un gran dia! ??",
+    "Ha sido un placer atenderte, {name}. Si necesitas algo en el futuro, aqu estaremos. Cudate mucho! ??",
 ]
 _CLOSING_RESPONSES_EN = [
     "Happy to help, {name} ?? Don't hesitate to reach out if you need anything. Have a great day!",
@@ -461,11 +461,11 @@ def _detect_category(text: str):
 # -- Human-like general conversation responses ---------
 _GENERAL_CHAT_RESPONSES = {
     "greeting": {
-        "keywords": ["hola", "hello", "hi", "hey", "buenos", "buenas", "qu� tal", "como estas", "c�mo est�s", "que tal", "buenas tardes", "buenas noches", "buen d�a", "good morning", "good afternoon"],
+        "keywords": ["hola", "hello", "hi", "hey", "buenos", "buenas", "qu tal", "como estas", "cmo ests", "que tal", "buenas tardes", "buenas noches", "buen dia", "good morning", "good afternoon"],
         "responses_es": [
-            "�Hola {name}! ?? �C�mo est�s? Que gusto saludarte. Cu�ntame, �en qu� puedo ayudarte hoy?",
-            "�Hey {name}! ?? Me da gusto verte por aqu�. �En qu� te puedo ayudar?",
-            "�Hola {name}! Espero que est�s teniendo un buen d�a ?? �Qu� necesitas? Estoy aqu� para ayudarte.",
+            "Hola {name}! ?? Cmo ests? Que gusto saludarte. Cuentame, en qu puedo ayudarte hoy?",
+            "Hey {name}! ?? Me da gusto verte por aqu. En qu te puedo ayudar?",
+            "Hola {name}! Espero que ests teniendo un buen dia ?? Qu necesitas? Estoy aqu para ayudarte.",
         ],
         "responses_en": [
             "Hey {name}! ?? How are you? Great to hear from you. Tell me, how can I help you today?",
@@ -474,11 +474,11 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "how_are_you": {
-        "keywords": ["c�mo est�s", "como estas", "qu� tal est�s", "how are you", "how you doing", "que tal estas"],
+        "keywords": ["cmo ests", "como estas", "qu tal ests", "how are you", "how you doing", "que tal estas"],
         "responses_es": [
-            "�Muy bien, {name}, gracias por preguntar! ?? Aqu� trabajando para ayudar a nuestros usuarios. �Y t� c�mo est�s? �En qu� te puedo ayudar?",
-            "�Todo bien por ac�, {name}! ?? Gracias por preguntar. Cu�ntame, �necesitas ayuda con algo?",
-            "�Excelente, {name}! Siempre con energ�a para ayudar ???? �C�mo te va a ti? �Hay algo en lo que pueda asistirte?",
+            "Muy bien, {name}, gracias por preguntar! ?? Aqu trabajando para ayudar a nuestros usuarios. Y t cmo ests? En qu te puedo ayudar?",
+            "Todo bien por ac, {name}! ?? Gracias por preguntar. Cuentame, necesitas ayuda con algo?",
+            "Excelente, {name}! Siempre con energa para ayudar ???? Cmo te va a ti? Hay algo en lo que pueda asistirte?",
         ],
         "responses_en": [
             "I'm doing great, {name}, thanks for asking! ?? Just here working to help our users. How about you? What can I help you with?",
@@ -487,11 +487,11 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "joke": {
-        "keywords": ["chiste", "joke", "broma", "hazme re�r", "cu�ntame algo", "dime algo gracioso", "something funny"],
+        "keywords": ["chiste", "joke", "broma", "hazme rer", "cuentame algo", "dime algo gracioso", "something funny"],
         "responses_es": [
-            "Jaja {name}, a ver... �Por qu� el conductor de Cruise nunca se pierde? �Porque siempre sigue el camino dorado! ???? �Necesitas ayuda con algo m�s?",
-            "�Uno r�pido, {name}! �Qu� le dijo un taxi a Cruise? 'Oye, �por qu� todos te prefieren?' ?? Jaja, bueno volviendo al trabajo... �en qu� te ayudo?",
-            "Jaja ok {name}, ah� va: Un pasajero le pregunta al conductor '�Cu�nto falta?' y el conductor responde: 'Solo 5 estrellas se�or, solo 5 estrellas' ??? �Puedo ayudarte con algo?",
+            "Jaja {name}, a ver... Por qu el conductor de Cruise nunca se pierde? Porque siempre sigue el camino dorado! ???? Necesitas ayuda con algo mas?",
+            "Uno rapido, {name}! Qu le dijo un taxi a Cruise? 'Oye, por qu todos te prefieren?' ?? Jaja, bueno volviendo al trabajo... en qu te ayudo?",
+            "Jaja ok {name}, ah va: Un pasajero le pregunta al conductor 'Cuanto falta?' y el conductor responde: 'Solo 5 estrellas seor, solo 5 estrellas' ??? Puedo ayudarte con algo?",
         ],
         "responses_en": [
             "Haha {name}, okay... Why does the Cruise driver never get lost? Because they always follow the golden road! ???? Need help with anything else?",
@@ -500,10 +500,10 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "weather": {
-        "keywords": ["clima", "weather", "llueve", "hace calor", "fr�o", "sol", "temperatura", "rain"],
+        "keywords": ["clima", "weather", "llueve", "hace calor", "fro", "sol", "temperatura", "rain"],
         "responses_es": [
-            "Mmm {name}, yo no puedo ver el clima desde aqu� ?? pero espero que est� bonito por all�. Lo que s� puedo hacer es ayudarte con cualquier cosa de Cruise. �Necesitas algo?",
-            "Jaja {name}, no soy la mejor para pron�sticos del clima ??? Pero soy experta en resolver problemas de viajes y soporte de Cruise. �Te ayudo con algo?",
+            "Mmm {name}, yo no puedo ver el clima desde aqu ?? pero espero que esta bonito por all. Lo que s puedo hacer es ayudarte con cualquier cosa de Cruise. Necesitas algo?",
+            "Jaja {name}, no soy la mejor para pronsticos del clima ??? Pero soy experta en resolver problemas de viajes y soporte de Cruise. Te ayudo con algo?",
         ],
         "responses_en": [
             "Hmm {name}, I can't really see the weather from here ?? but I hope it's nice where you are. What I can do is help you with anything Cruise-related. Need something?",
@@ -511,11 +511,11 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "compliment": {
-        "keywords": ["eres genial", "muy buena", "excelente servicio", "buen trabajo", "great job", "you're great", "amazing", "incre�ble", "la mejor", "eres la mejor"],
+        "keywords": ["eres genial", "muy buena", "excelente servicio", "buen trabajo", "great job", "you're great", "amazing", "increble", "la mejor", "eres la mejor"],
         "responses_es": [
-            "�Aww {name}, muchas gracias! ???? Eso me motiva mucho a seguir dando mi mejor esfuerzo. Estoy aqu� siempre que me necesites.",
-            "�Qu� lindo, {name}! ?? Me alegra mucho poder ayudarte. Es lo que m�s me gusta de mi trabajo. �Hay algo m�s en lo que te pueda servir?",
-            "�Gracias {name}! ?? Comentarios as� hacen que valga la pena cada momento. �Necesitas algo m�s?",
+            "Aww {name}, muchas gracias! ???? Eso me motiva mucho a seguir dando mi mejor esfuerzo. Estoy aqu siempre que me necesites.",
+            "Qu lindo, {name}! ?? Me alegra mucho poder ayudarte. Es lo que mas me gusta de mi trabajo. Hay algo mas en lo que te pueda servir?",
+            "Gracias {name}! ?? Comentarios asi hacen que valga la pena cada momento. Necesitas algo mas?",
         ],
         "responses_en": [
             "Aww {name}, thank you so much! ???? That really motivates me to keep giving my best. I'm always here whenever you need me.",
@@ -524,10 +524,10 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "who_are_you": {
-        "keywords": ["qui�n eres", "eres real", "eres un bot", "eres robot", "eres humana", "are you real", "are you a bot", "who are you", "eres una persona"],
+        "keywords": ["quion eres", "eres real", "eres un bot", "eres robot", "eres humana", "are you real", "are you a bot", "who are you", "eres una persona"],
         "responses_es": [
-            "�Soy {agent}, {name}! ?? Tu agente de soporte aqu� en Cruise. Estoy para ayudarte con lo que necesites. �Tienes alguna pregunta o inconveniente?",
-            "�{agent} al servicio! ?? Soy parte del equipo de soporte de Cruise, {name}. Mi trabajo es asegurarme de que tengas la mejor experiencia. �En qu� te ayudo?",
+            "Soy {agent}, {name}! ?? Tu agente de soporte aqu en Cruise. Estoy para ayudarte con lo que necesites. Tienes alguna pregunta o inconveniente?",
+            "{agent} al servicio! ?? Soy parte del equipo de soporte de Cruise, {name}. Mi trabajo es asegurarme de que tengas la mejor experiencia. En qu te ayudo?",
         ],
         "responses_en": [
             "I'm {agent}, {name}! ?? Your support agent here at Cruise. I'm here to help you with whatever you need. Got any questions or issues?",
@@ -535,10 +535,10 @@ _GENERAL_CHAT_RESPONSES = {
         ],
     },
     "about_cruise": {
-        "keywords": ["qu� es cruise", "que es cruise", "c�mo funciona", "como funciona", "what is cruise", "how does cruise work", "para qu� sirve", "servicios"],
+        "keywords": ["qu es cruise", "que es cruise", "cmo funciona", "como funciona", "what is cruise", "how does cruise work", "para qu sirve", "servicios"],
         "responses_es": [
-            "�Claro, {name}! ?? Cruise es una plataforma de transporte que te conecta con conductores confiables para llevarte a donde necesites.\n\nPuedes solicitar viajes, programar recorridos, y mucho m�s desde la app. �Te gustar�a saber algo espec�fico?",
-            "Cruise es tu servicio de transporte de confianza, {name} ?? Conectamos pasajeros con conductores verificados para viajes seguros y c�modos.\n\nPuedes pedir viajes en tiempo real o programarlos con anticipaci�n. �Hay algo espec�fico que quieras saber?",
+            "Claro, {name}! ?? Cruise es una plataforma de transporte que te conecta con conductores confiables para llevarte a donde necesites.\n\nPuedes solicitar viajes, programar recorridos, y mucho mas desde la app. Te gustara saber algo especfico?",
+            "Cruise es tu servicio de transporte de confianza, {name} ?? Conectamos pasajeros con conductores verificados para viajes seguros y cmodos.\n\nPuedes pedir viajes en tiempo real o programarlos con anticipacion. Hay algo especfico que quieras saber?",
         ],
         "responses_en": [
             "Of course, {name}! ?? Cruise is a ride-sharing platform that connects you with reliable drivers to take you wherever you need to go.\n\nYou can request rides, schedule trips, and much more from the app. Would you like to know anything specific?",
@@ -1025,14 +1025,14 @@ def _generate_human_chat(user_msg: str, user_name: str, agent_name: str, lang: s
             resp = _rng.choice(topic[f"responses{suffix}"])
             return resp.format(name=user_name, agent=agent_name)
 
-    # General fallback � still human, warm and helpful
+    # General fallback  still human, warm and helpful
     if lang.startswith("es"):
         general = [
-            f"Entiendo lo que me dices, {user_name} ?? Aunque ese tema no es mi especialidad, estoy aqu� para lo que necesites relacionado con tu cuenta o viajes en Cruise. �Hay algo con lo que pueda ayudarte?",
-            f"Jaja, interesante lo que me cuentas, {user_name} ?? Oye, si necesitas algo relacionado con Cruise estar� encantada de ayudarte. �Hay algo que pueda hacer por ti?",
-            f"Me encanta platicar contigo, {user_name} ?? Pero no quiero que se me pase... �tienes alg�n tema pendiente con tus viajes o tu cuenta? Si no, aqu� estoy disponible para cuando lo necesites.",
-            f"Qu� buena onda, {user_name} ?? Oye, si necesitas ayuda con algo de la app, un viaje, pagos, o cualquier duda, no dudes en decirme. �Para eso estoy aqu�!",
-            f"Claro que s�, {user_name} ?? Mira, si en alg�n momento necesitas ayuda con un viaje, un cobro, tu cuenta, o lo que sea de Cruise, aqu� me tienes. �Todo bien por ahora?",
+            f"Entiendo lo que me dices, {user_name} ?? Aunque ese tema no es mi especialidad, estoy aqu para lo que necesites relacionado con tu cuenta o viajes en Cruise. Hay algo con lo que pueda ayudarte?",
+            f"Jaja, interesante lo que me cuentas, {user_name} ?? Oye, si necesitas algo relacionado con Cruise estar encantada de ayudarte. Hay algo que pueda hacer por ti?",
+            f"Me encanta platicar contigo, {user_name} ?? Pero no quiero que se me pase... tienes algn tema pendiente con tus viajes o tu cuenta? Si no, aqu estoy disponible para cuando lo necesites.",
+            f"Qu buena onda, {user_name} ?? Oye, si necesitas ayuda con algo de la app, un viaje, pagos, o cualquier duda, no dudes en decirme. Para eso estoy aqu!",
+            f"Claro que s, {user_name} ?? Mira, si en algn momento necesitas ayuda con un viaje, un cobro, tu cuenta, o lo que sea de Cruise, aqu me tienes. Todo bien por ahora?",
         ]
     else:
         general = [
@@ -1059,7 +1059,7 @@ async def _build_trip_summary(user_id: int, db: AsyncSession, lang: str):
     trips = await _lookup_user_trips(user_id, db)
     if not trips:
         if lang.startswith("es"):
-            return "No encontr� viajes recientes en tu cuenta."
+            return "No encontre viajes recientes en tu cuenta."
         return "I couldn't find any recent trips on your account."
     lines = []
     for t in trips:
@@ -1068,7 +1068,7 @@ async def _build_trip_summary(user_id: int, db: AsyncSession, lang: str):
         status_str = t.status or "unknown"
         pickup = t.pickup_address or "N/A"
         dropoff = t.dropoff_address or "N/A"
-        lines.append(f"� {date_str} � {pickup} ? {dropoff} � {fare_str} ({status_str})")
+        lines.append(f" {date_str}  {pickup} ? {dropoff}  {fare_str} ({status_str})")
     if lang.startswith("es"):
         header = "Tus viajes recientes:"
     else:
@@ -1101,9 +1101,9 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
         await asyncio.sleep(_rng.randint(5, 12))
         if lang.startswith("es"):
             reply = _rng.choice([
-                f"Entendido, {user_name}. Para poder ayudarte de la mejor manera, �podr�as darme m�s detalles sobre tu problema o situaci�n?",
-                f"Gracias por contactarnos, {user_name}. �Podr�as describir tu problema con un poco m�s de detalle? As� te asigno al mejor agente disponible.",
-                f"Claro, {user_name}. Cu�ntame un poco m�s sobre lo que necesitas para poder conectarte con el agente indicado.",
+                f"Entendido, {user_name}. Para poder ayudarte de la mejor manera, podras darme mas detalles sobre tu problema o situacion?",
+                f"Gracias por contactarnos, {user_name}. Podras describir tu problema con un poco mas de detalle? Asi te asigno al mejor agente disponible.",
+                f"Claro, {user_name}. Cuentame un poco mas sobre lo que necesitas para poder conectarte con el agente indicado.",
             ])
         else:
             reply = _rng.choice([
@@ -1122,9 +1122,9 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
 
         if lang.startswith("es"):
             transfer = _rng.choice([
-                f"Gracias por la informaci�n, {user_name}. Te estoy transfiriendo con un agente de soporte. En breve se conectar� y te ayudar�.",
-                f"Perfecto, {user_name}. Voy a conectarte con un agente especializado. Un momento por favor, enseguida te atender�.",
-                f"Entendido, {user_name}. Estoy transfiriendo tu caso a un agente. Se conectar� contigo en un momento.",
+                f"Gracias por la informacion, {user_name}. Te estoy transfiriendo con un agente de soporte. En breve se conectar y te ayudar.",
+                f"Perfecto, {user_name}. Voy a conectarte con un agente especializado. Un momento por favor, enseguida te atender.",
+                f"Entendido, {user_name}. Estoy transfiriendo tu caso a un agente. Se conectar contigo en un momento.",
             ])
         else:
             transfer = _rng.choice([
@@ -1135,25 +1135,61 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
         replies.append({"role": "bot", "message": transfer, "sender_name": "Asistente Cruise" if lang.startswith("es") else "Cruise Assistant"})
 
         if lang.startswith("es"):
-            connected = f"?? {agent} se ha conectado al chat"
+            connected = f"{agent} se ha conectado al chat"
         else:
-            connected = f"?? {agent} has joined the chat"
+            connected = f"{agent} has joined the chat"
         replies.append({"role": "system", "message": connected, "sender_name": "Sistema" if lang.startswith("es") else "System"})
 
         if lang.startswith("es"):
             intro = _rng.choice([
-                f"�Hola! ?? Mi nombre es {agent}.\n\nEspero que est�s bien, {user_name}. Voy a ayudarte a resolver lo que necesites y har� mi mejor esfuerzo. �Me puedes dar m�s detalles del problema para as� ayudarte mejor?",
-                f"�Hola, {user_name}! Soy {agent} ??\n\nEstoy aqu� para ayudarte. He revisado tu caso y quiero darte la mejor atenci�n posible. �Me podr�as ampliar un poco m�s la informaci�n?",
-                f"�Hola {user_name}! ?? Mi nombre es {agent} y voy a atender tu caso personalmente.\n\nHe le�do tu consulta y quiero ayudarte de la mejor manera. Cu�ntame todo con confianza.",
+                f"Hola, mi nombre es {agent}. Espero que este bien, {user_name}. Voy a ayudarle a resolver lo que necesite y hare mi mejor esfuerzo. Me puede dar mas detalles del problema para asi ayudarle mejor?",
+                f"Hola {user_name}, soy {agent}. Estoy aqui para ayudarle. He revisado su caso y quiero darle la mejor atencion posible. Me podria ampliar un poco mas la informacion?",
+                f"Hola {user_name}, mi nombre es {agent} y voy a atender su caso personalmente. He leido su consulta y quiero ayudarle de la mejor manera. Cuenteme todo con confianza.",
             ])
         else:
             intro = _rng.choice([
-                f"Hi there! ?? My name is {agent}.\n\nHope you're doing well, {user_name}. I'm going to help you resolve whatever you need and I'll give it my best. Can you give me more details about the issue so I can help you better?",
-                f"Hey {user_name}! I'm {agent} ??\n\nI'm here to help you. I've reviewed your case and I want to give you the best support possible. Could you give me a bit more information?",
-                f"Hello {user_name}! ?? My name is {agent} and I'll be handling your case personally.\n\nI've read your inquiry and I want to help you in the best way possible. Tell me everything with confidence.",
+                f"Hi, my name is {agent}. Hope you're doing well, {user_name}. I'm going to help you resolve whatever you need and I'll give it my best. Can you give me more details about the issue so I can help you better?",
+                f"Hey {user_name}, I'm {agent}. I'm here to help you. I've reviewed your case and I want to give you the best support possible. Could you give me a bit more information?",
+                f"Hello {user_name}, my name is {agent} and I'll be handling your case personally. I've read your inquiry and I want to help you in the best way possible. Tell me everything with confidence.",
             ])
         replies.append({"role": "bot", "message": intro, "sender_name": agent})
         chat.bot_phase = "agent_active"
+
+    elif phase == "awaiting_cancel_confirm":
+        agent = chat.agent_name or "Agente"
+        await asyncio.sleep(_rng.uniform(1.5, 3.0))
+        t_lower = user_msg.lower().strip()
+        yes_words = ["si", "yes", "confirm", "confirmar", "confirmo", "ok", "dale", "proceed", "adelante", "cancelar", "cancel", "sure", "claro"]
+        no_words = ["no", "nope", "abort", "ya no", "no quiero", "never mind", "nevermind", "keep", "mantener", "conservar"]
+        if any(w in t_lower for w in yes_words):
+            cancel_result = await _bot_cancel_trip(chat.user_id, db, lang)
+            chat.bot_phase = "agent_active"
+            if lang.startswith("es"):
+                resp = f"{cancel_result}\n\nSi necesita algo mas, aqui estoy para ayudarle, {user_name}."
+            else:
+                resp = f"{cancel_result}\n\nIf you need anything else, I'm here to help, {user_name}."
+            replies.append({"role": "bot", "message": resp, "sender_name": agent})
+            if _HAS_FIRESTORE:
+                try:
+                    firestore_sync.sync_dispatch_notification(
+                        chat.id, user_name, "trip_canceled",
+                        f"{user_name} confirmo cancelacion de viaje via chat de soporte"
+                    )
+                except Exception:
+                    pass
+        elif any(w in t_lower for w in no_words):
+            chat.bot_phase = "agent_active"
+            if lang.startswith("es"):
+                resp = f"Entendido, {user_name}. Su viaje sigue activo. Hay algo mas en lo que pueda ayudarle?"
+            else:
+                resp = f"Understood, {user_name}. Your trip is still active. Is there anything else I can help you with?"
+            replies.append({"role": "bot", "message": resp, "sender_name": agent})
+        else:
+            if lang.startswith("es"):
+                resp = f"Disculpe, {user_name}. Para confirmar la cancelacion escriba 'Si', o escriba 'No' si desea conservar el viaje."
+            else:
+                resp = f"Sorry, {user_name}. To confirm the cancellation please type 'Yes', or type 'No' if you wish to keep the trip."
+            replies.append({"role": "bot", "message": resp, "sender_name": agent})
 
     elif phase == "agent_active":
         agent = chat.agent_name or "Agente"
@@ -1171,13 +1207,13 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
         # Gather user context for smarter responses
         ctx = await _get_user_context(chat.user_id, db, lang)
 
-        # 1) Frustration auto-escalation � angry user gets supervisor fast
+        # 1) Frustration auto-escalation  angry user gets supervisor fast
         if _detect_frustration(user_msg) and not _match_keywords(user_msg, _THANK_KEYWORDS):
             chat.needs_escalation = True
             chat.bot_phase = "escalated"
             if lang.startswith("es"):
-                esc = f"Lamento mucho esta experiencia, {user_name}. Entiendo tu frustraci�n y quiero que recibas la mejor atenci�n posible. Voy a conectarte de inmediato con un supervisor que podr� resolver tu caso directamente."
-                sys_msg = "?? Caso escalado autom�ticamente por urgencia. Un supervisor conectar� en breve."
+                esc = f"Lamento mucho esta experiencia, {user_name}. Entiendo tu frustracion y quiero que recibas la mejor atencion posible. Voy a conectarte de inmediato con un supervisor que podra resolver tu caso directamente."
+                sys_msg = "?? Caso escalado automticamente por urgencia. Un supervisor conectar en breve."
             else:
                 esc = f"I'm truly sorry about this experience, {user_name}. I completely understand your frustration and I want you to get the best possible attention. I'm connecting you right away with a supervisor who can resolve your case directly."
                 sys_msg = "?? Case automatically escalated due to urgency. A supervisor will connect shortly."
@@ -1187,7 +1223,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                 try:
                     firestore_sync.sync_dispatch_notification(
                         chat.id, user_name, "escalation",
-                        f"?? Chat de {user_name} escalado autom�ticamente � usuario frustrado"
+                        f"?? Chat de {user_name} escalado automticamente  usuario frustrado"
                     )
                     firestore_sync.sync_support_chat(
                         chat.id, chat.user_id, user_name, "",
@@ -1202,11 +1238,11 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             chat.bot_phase = "escalated"
             if lang.startswith("es"):
                 esc = _rng.choice([
-                    f"Entiendo tu solicitud, {user_name}. Voy a transferir tu caso a un supervisor. En aproximadamente 5 a 10 minutos un supervisor estar� conect�ndose a este chat para atenderte personalmente.",
-                    f"Entendido, {user_name}. Voy a escalar tu caso. Un supervisor se conectar� a este chat en unos 5 a 10 minutos para ayudarte directamente.",
-                    f"Comprendo, {user_name}. He solicitado la atenci�n de un supervisor. En 5 a 10 minutos estar� conect�ndose a este chat para asistirte.",
+                    f"Entiendo tu solicitud, {user_name}. Voy a transferir tu caso a un supervisor. En aproximadamente 5 a 10 minutos un supervisor estar conectondose a este chat para atenderte personalmente.",
+                    f"Entendido, {user_name}. Voy a escalar tu caso. Un supervisor se conectar a este chat en unos 5 a 10 minutos para ayudarte directamente.",
+                    f"Comprendo, {user_name}. He solicitado la atencion de un supervisor. En 5 a 10 minutos estar conectondose a este chat para asistirte.",
                 ])
-                sys_msg = "?? Se ha solicitado un supervisor. Conectar� en 5-10 minutos."
+                sys_msg = "?? Se ha solicitado un supervisor. Conectar en 5-10 minutos."
             else:
                 esc = _rng.choice([
                     f"I understand your request, {user_name}. I'm going to transfer your case to a supervisor. A supervisor will be connecting to this chat in approximately 5 to 10 minutes to assist you personally.",
@@ -1229,22 +1265,14 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                 except Exception:
                     pass
 
-        # 3) Cancel trip intent � actually cancel the trip
+        # 3) Cancel trip intent — ask for confirmation first
         elif _has_cancel_intent(user_msg):
-            cancel_result = await _bot_cancel_trip(chat.user_id, db, lang)
+            chat.bot_phase = "awaiting_cancel_confirm"
             if lang.startswith("es"):
-                resp = f"? {cancel_result}\n\nSi necesitas algo m�s, aqu� estoy para ayudarte, {user_name}."
+                resp = f"Entendido, {user_name}. Antes de proceder, necesito confirmar: desea cancelar su viaje activo? Responda 'Si' para confirmar la cancelacion o 'No' si desea conservar el viaje."
             else:
-                resp = f"? {cancel_result}\n\nIf you need anything else, I'm here to help, {user_name}."
+                resp = f"Understood, {user_name}. Before I proceed, I need to confirm: do you want to cancel your active trip? Reply 'Yes' to confirm the cancellation or 'No' to keep the trip."
             replies.append({"role": "bot", "message": resp, "sender_name": agent})
-            if _HAS_FIRESTORE:
-                try:
-                    firestore_sync.sync_dispatch_notification(
-                        chat.id, user_name, "trip_canceled",
-                        f"?? {user_name} cancel� viaje via chat de soporte"
-                    )
-                except Exception:
-                    pass
 
         # 4) Thank/closing keywords
         elif _match_keywords(user_msg, _THANK_KEYWORDS):
@@ -1583,25 +1611,25 @@ async def create_or_get_support_chat(request: Request, user: User = Depends(_get
     # Send welcome message
     if locale.startswith("es"):
         welcome_text = (
-            "Sistema de soporte Cruise � Sesi�n iniciada.\n\n"
+            "Sistema de soporte Cruise  Sesion iniciada.\n\n"
             "Bienvenido al centro de ayuda automatizado. "
             "Seleccione o describa su problema para que podamos asistirlo.\n\n"
-            "� Viajes y tarifas\n"
-            "� Pagos y reembolsos\n"
-            "� Cuenta y perfil\n"
-            "� Seguridad\n"
-            "� Problemas con la app"
+            " Viajes y tarifas\n"
+            " Pagos y reembolsos\n"
+            " Cuenta y perfil\n"
+            " Seguridad\n"
+            " Problemas con la app"
         )
     else:
         welcome_text = (
-            "Cruise Support System � Session started.\n\n"
+            "Cruise Support System  Session started.\n\n"
             "Welcome to our automated help center. "
             "Please select or describe your issue so we can assist you.\n\n"
-            "� Trips & fares\n"
-            "� Payments & refunds\n"
-            "� Account & profile\n"
-            "� Safety\n"
-            "� App issues"
+            " Trips & fares\n"
+            " Payments & refunds\n"
+            " Account & profile\n"
+            " Safety\n"
+            " App issues"
         )
     welcome_msg = SupportMessage(chat_id=chat.id, sender_id=0, sender_role="system", message=welcome_text)
     db.add(welcome_msg)
@@ -1722,7 +1750,7 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
 
 @router.get("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_require_dispatch_auth)])
 async def get_support_messages_dispatch(chat_id: int, db: AsyncSession = Depends(get_db)):
-    """Get messages for a support chat (dispatch version � marks dispatch-received as read)."""
+    """Get messages for a support chat (dispatch version  marks dispatch-received as read)."""
     # Load chat for agent_name
     chat_result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
     chat = chat_result.scalar_one_or_none()
@@ -1937,7 +1965,7 @@ async def close_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.patch("/support/chats/{chat_id}/close-user", dependencies=[Depends(_verify_api_key)])
 async def close_support_chat_user(chat_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Close a support chat (user-facing � only the chat owner can close)."""
+    """Close a support chat (user-facing  only the chat owner can close)."""
     result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
     chat = result.scalar_one_or_none()
     if not chat:
@@ -1963,4 +1991,176 @@ async def close_support_chat_user(chat_id: int, user: User = Depends(_get_curren
             logging.error("Firestore close chat sync failed: %s", e)
 
     return {"status": "closed"}
+
+
+# ═══════════════════════════════════════════════════════
+#  ACTION REQUEST ENDPOINTS (DISPATCH)
+# ═══════════════════════════════════════════════════════
+
+@router.get("/support/action-requests", dependencies=[Depends(_require_dispatch_auth)])
+async def list_action_requests(status: str = "pending_admin", db: AsyncSession = Depends(get_db)):
+    """List action requests (dispatch only). Filter by status: pending_admin | approved | rejected."""
+    result = await db.execute(
+        select(ActionRequest).where(ActionRequest.status == status)
+        .order_by(ActionRequest.created_at.desc())
+    )
+    requests = result.scalars().all()
+    out = []
+    for ar in requests:
+        details_parsed = {}
+        try:
+            details_parsed = json.loads(ar.details or "{}")
+        except Exception:
+            pass
+        out.append({
+            "id": ar.id,
+            "chat_id": ar.chat_id,
+            "user_id": ar.user_id,
+            "user_name": ar.user_name,
+            "user_type": ar.user_type,
+            "agent_name": ar.agent_name,
+            "action_type": ar.action_type,
+            "details": details_parsed,
+            "status": ar.status,
+            "admin_note": ar.admin_note,
+            "created_at": ar.created_at.isoformat() if ar.created_at else None,
+            "reviewed_at": ar.reviewed_at.isoformat() if ar.reviewed_at else None,
+            "reviewed_by": ar.reviewed_by,
+        })
+    return out
+
+
+@router.patch("/support/action-requests/{request_id}/approve", dependencies=[Depends(_require_dispatch_auth)])
+async def approve_action_request(request_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Approve an action request and notify the user in the chat."""
+    body = await request.json()
+    admin_note = (body.get("admin_note") or "").strip()
+
+    ar_result = await db.execute(select(ActionRequest).where(ActionRequest.id == request_id))
+    ar = ar_result.scalar_one_or_none()
+    if not ar:
+        raise HTTPException(404, "Action request not found")
+    if ar.status != "pending_admin":
+        raise HTTPException(400, f"Request is already {ar.status}")
+
+    ar.status = "approved"
+    ar.reviewed_at = datetime.now(timezone.utc)
+    ar.reviewed_by = "dispatch"
+    if admin_note:
+        ar.admin_note = admin_note
+
+    chat_result = await db.execute(select(SupportChat).where(SupportChat.id == ar.chat_id))
+    chat = chat_result.scalar_one_or_none()
+    await db.commit()
+
+    if chat and chat.status == "open":
+        lang = getattr(chat, "locale", "en") or "en"
+        agent = chat.agent_name or "Agente"
+        action_label = ar.action_type.replace("-", " ").title()
+        if lang.startswith("es"):
+            msg_text = (
+                f"Buenas noticias, {ar.user_name}. Su solicitud de {action_label} ha sido aprobada por nuestro equipo. "
+                f"Se procesara en las proximas horas y recibira una notificacion cuando este listo."
+            )
+        else:
+            msg_text = (
+                f"Good news, {ar.user_name}. Your {action_label} request has been approved by our team. "
+                f"It will be processed within the next few hours and you will receive a notification when it is ready."
+            )
+        if admin_note:
+            msg_text += f" Nota: {admin_note}" if lang.startswith("es") else f" Note: {admin_note}"
+
+        bot_msg = SupportMessage(chat_id=ar.chat_id, sender_id=0, sender_role="bot", message=msg_text)
+        db.add(bot_msg)
+        await db.commit()
+        await db.refresh(bot_msg)
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.sync_support_message(ar.chat_id, bot_msg.id, 0, agent, "bot", msg_text)
+            except Exception:
+                pass
+
+    task = _action_reminder_tasks.pop(request_id, None)
+    if task and not task.done():
+        task.cancel()
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync._fs_db.collection("pending_reminders").document(str(request_id)).delete()
+        except Exception:
+            pass
+
+    return {"status": "approved", "request_id": request_id}
+
+
+@router.patch("/support/action-requests/{request_id}/reject", dependencies=[Depends(_require_dispatch_auth)])
+async def reject_action_request(request_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Reject an action request, notify user, and flag chat for supervisor escalation."""
+    body = await request.json()
+    admin_note = (body.get("admin_note") or "").strip()
+
+    ar_result = await db.execute(select(ActionRequest).where(ActionRequest.id == request_id))
+    ar = ar_result.scalar_one_or_none()
+    if not ar:
+        raise HTTPException(404, "Action request not found")
+    if ar.status != "pending_admin":
+        raise HTTPException(400, f"Request is already {ar.status}")
+
+    ar.status = "rejected"
+    ar.reviewed_at = datetime.now(timezone.utc)
+    ar.reviewed_by = "dispatch"
+    if admin_note:
+        ar.admin_note = admin_note
+
+    chat_result = await db.execute(select(SupportChat).where(SupportChat.id == ar.chat_id))
+    chat = chat_result.scalar_one_or_none()
+    await db.commit()
+
+    if chat and chat.status == "open":
+        lang = getattr(chat, "locale", "en") or "en"
+        agent = chat.agent_name or "Agente"
+        action_label = ar.action_type.replace("-", " ").title()
+        if lang.startswith("es"):
+            msg_text = (
+                f"Estimado {ar.user_name}, lamentamos informarle que su solicitud de {action_label} no pudo ser procesada automaticamente. "
+                f"Su caso ha sido escalado a un supervisor quien se pondra en contacto con usted para resolver esta situacion personalmente."
+            )
+        else:
+            msg_text = (
+                f"Dear {ar.user_name}, we regret to inform you that your {action_label} request could not be processed automatically. "
+                f"Your case has been escalated to a supervisor who will reach out to you to resolve this situation personally."
+            )
+        if admin_note:
+            msg_text += f" Motivo: {admin_note}" if lang.startswith("es") else f" Reason: {admin_note}"
+
+        bot_msg = SupportMessage(chat_id=ar.chat_id, sender_id=0, sender_role="bot", message=msg_text)
+        db.add(bot_msg)
+        chat.needs_escalation = True
+        chat.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(bot_msg)
+
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.sync_support_message(ar.chat_id, bot_msg.id, 0, agent, "bot", msg_text)
+                firestore_sync.sync_dispatch_notification(
+                    ar.chat_id, ar.user_name, "escalation",
+                    f"Solicitud rechazada escalada a supervisor: {action_label} de {ar.user_name}"
+                )
+                firestore_sync.sync_support_chat(
+                    chat.id, chat.user_id, ar.user_name, "",
+                    needs_escalation=True, bot_phase=chat.bot_phase,
+                )
+            except Exception:
+                pass
+
+    task = _action_reminder_tasks.pop(request_id, None)
+    if task and not task.done():
+        task.cancel()
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync._fs_db.collection("pending_reminders").document(str(request_id)).delete()
+        except Exception:
+            pass
+
+    return {"status": "rejected", "request_id": request_id}
 

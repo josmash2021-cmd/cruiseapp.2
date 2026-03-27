@@ -76,7 +76,7 @@ class DirectionsService {
           'key': apiKey,
         });
 
-    final res = await http.get(uri).timeout(const Duration(seconds: 8));
+    final res = await http.get(uri).timeout(const Duration(seconds: 5));
     final data = jsonDecode(res.body);
     if (data['status'] != 'OK') return {};
 
@@ -154,7 +154,7 @@ class DirectionsService {
         '?geometries=geojson&overview=full&steps=true&annotations=maxspeed'
         '&access_token=${MapboxConfig.accessToken}',
       );
-      final res = await http.get(url).timeout(const Duration(seconds: 8));
+      final res = await http.get(url).timeout(const Duration(seconds: 5));
       if (res.statusCode != 200) return null;
       final data = jsonDecode(res.body);
       if (data is! Map<String, dynamic>) return null;
@@ -175,34 +175,50 @@ class DirectionsService {
       return _routeCache[key]!;
     }
 
+    // Clean up old cache entries periodically (10% chance on each call)
+    if (math.Random().nextDouble() < 0.1) {
+      cleanupOldCache();
+    }
+
     debugPrint('[Route] Fetching route: origin=${origin.latitude},${origin.longitude} → dest=${destination.latitude},${destination.longitude}');
 
-    // Launch all three providers in PARALLEL — take the first success
-    final googleFuture = _requestDirectionsWithFallbacks(
-      origin: origin,
-      destination: destination,
-    ).then((data) {
-      if (data == null) return null;
-      return _parseGoogleRoute(data, origin, destination);
-    }).timeout(const Duration(seconds: 8), onTimeout: () => null);
+    // Retry logic: try up to 2 times with exponential backoff
+    RouteResult? result;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        // Exponential backoff: wait 500ms on retry
+        await Future.delayed(Duration(milliseconds: 500 * attempt));
+        debugPrint('[Route] Retry attempt ${attempt + 1}');
+      }
 
-    final osrmFuture = _requestOsrmRoute(origin: origin, destination: destination)
-        .timeout(const Duration(seconds: 8), onTimeout: () => null);
+      // Launch all three providers in PARALLEL — take the first success
+      final googleFuture = _requestDirectionsWithFallbacks(
+        origin: origin,
+        destination: destination,
+      ).then((data) {
+        if (data == null) return null;
+        return _parseGoogleRoute(data, origin, destination);
+      }).timeout(const Duration(seconds: 4), onTimeout: () => null);
 
-    final mapboxFuture = _requestMapboxRoute(origin: origin, destination: destination)
-        .timeout(const Duration(seconds: 8), onTimeout: () => null);
+      final osrmFuture = _requestOsrmRoute(origin: origin, destination: destination)
+          .timeout(const Duration(seconds: 4), onTimeout: () => null);
 
-    // Wait for all, take the first non-null result (prefer Google > OSRM > Mapbox)
-    final results = await Future.wait([googleFuture, osrmFuture, mapboxFuture]);
-    final result = results[0] ?? results[1] ?? results[2];
+      final mapboxFuture = _requestMapboxRoute(origin: origin, destination: destination)
+          .timeout(const Duration(seconds: 4), onTimeout: () => null);
 
-    if (result != null) {
-      debugPrint('[Route] Got route with ${result.points.length} points');
-      _routeCache[key] = result;
-      _cacheTimes[key] = DateTime.now();
-      return result;
+      // Wait for all, take the first non-null result (prefer Google > OSRM > Mapbox)
+      final results = await Future.wait([googleFuture, osrmFuture, mapboxFuture]);
+      result = results[0] ?? results[1] ?? results[2];
+
+      if (result != null) {
+        debugPrint('[Route] Got route with ${result.points.length} points (attempt ${attempt + 1})');
+        _routeCache[key] = result;
+        _cacheTimes[key] = DateTime.now();
+        return result;
+      }
     }
-    debugPrint('[Route] All providers failed');
+
+    debugPrint('[Route] All providers failed after retries');
     return null;
   }
 
@@ -375,7 +391,7 @@ class DirectionsService {
         '&access_token=${MapboxConfig.accessToken}',
       );
       debugPrint('[Route] Mapbox request URL: $url');
-      final res = await http.get(url).timeout(const Duration(seconds: 8));
+      final res = await http.get(url).timeout(const Duration(seconds: 5));
       if (res.statusCode != 200) return null;
       final data = jsonDecode(res.body);
       final routes = data['routes'] as List?;
@@ -527,7 +543,7 @@ class DirectionsService {
           '/maps/api/directions/json',
           query,
         );
-        final res = await http.get(uri).timeout(const Duration(seconds: 8));
+        final res = await http.get(uri).timeout(const Duration(seconds: 5));
         final data = jsonDecode(res.body);
         if (data is Map<String, dynamic> && data['status'] == 'OK') {
           return data;
@@ -551,5 +567,60 @@ class DirectionsService {
     final rem = minutes % 60;
     if (rem == 0) return '$hours h';
     return '$hours h $rem min';
+  }
+
+  /// Get an INSTANT estimated route (straight line) while the real route is being fetched.
+  /// This provides immediate visual feedback and prevents UI from "thinking" too long.
+  RouteResult getEstimatedRoute({
+    required LatLng origin,
+    required LatLng destination,
+  }) {
+    // Calculate straight-line distance using haversine
+    final distanceMeters = _haversineMeters(origin, destination).toInt();
+    final distanceText = _metersToMilesText(distanceMeters);
+    
+    // Estimate duration: assume 30 mph average city speed (13.4 m/s)
+    // Add 20% buffer for turns and traffic
+    final estimatedSeconds = ((distanceMeters / 13.4) * 1.2).toInt();
+    final durationText = _durationTextFromSeconds(estimatedSeconds);
+    
+    // Create a simple straight line with 10 interpolated points for smooth animation
+    final points = <LatLng>[];
+    const segments = 10;
+    for (var i = 0; i <= segments; i++) {
+      final t = i / segments;
+      final lat = origin.latitude + (destination.latitude - origin.latitude) * t;
+      final lng = origin.longitude + (destination.longitude - origin.longitude) * t;
+      points.add(LatLng(lat, lng));
+    }
+    
+    debugPrint('[Route] Generated estimated route: $distanceText, $durationText (${points.length} points)');
+    
+    return RouteResult(
+      points: points,
+      distanceText: distanceText,
+      distanceMeters: distanceMeters,
+      durationText: durationText,
+      startAddress: 'Origin',
+      endAddress: 'Destination',
+    );
+  }
+
+  /// Clean up old cache entries to prevent memory bloat
+  static void cleanupOldCache() {
+    final now = DateTime.now();
+    final keysToRemove = <String>[];
+    
+    _cacheTimes.forEach((key, time) {
+      if (now.difference(time) > _cacheMaxAge) {
+        keysToRemove.add(key);
+      }
+    });
+    
+    for (final key in keysToRemove) {
+      _routeCache.remove(key);
+      _cacheTimes.remove(key);
+      debugPrint('[Route] Cleaned up old cache entry: $key');
+    }
   }
 }

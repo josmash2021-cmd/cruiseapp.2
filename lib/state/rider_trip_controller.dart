@@ -310,16 +310,22 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final origin = LatLng(_state.pickup!.lat, _state.pickup!.lng);
     final dest = LatLng(_state.dropoff!.lat, _state.dropoff!.lng);
 
-    // Show ride options sheet IMMEDIATELY — prices will shimmer until real route arrives
+    // INSTANT: Show estimated route (straight line) immediately for smooth UX
+    final estimatedRoute = _directions.getEstimatedRoute(
+      origin: origin,
+      destination: dest,
+    );
+    final estimatedOptions = _generateRideOptions(estimatedRoute);
     _state = _state.copyWith(
       phase: RiderPhase.previewRoute,
-      rideOptions: const [],
+      route: estimatedRoute,
+      rideOptions: estimatedOptions,
       selectedOption: null,
       routeFetchFailed: false,
     );
     notifyListeners();
 
-    // Fetch surge + route in PARALLEL (not sequential)
+    // BACKGROUND: Fetch real route + surge and update when ready
     late final RouteResult? routeResult;
     try {
       final results = await Future.wait([
@@ -327,7 +333,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         ApiService.getCurrentSurge(_state.pickup!.lat, _state.pickup!.lng)
             .timeout(const Duration(seconds: 5))
             .catchError((_) => <String, dynamic>{'surge_multiplier': 1.0}),
-        // Real route from Directions API
+        // Real route from Directions API (with retry + cache)
         _directions.getRoute(origin: origin, destination: dest),
       ]);
 
@@ -338,6 +344,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       routeResult = null;
     }
 
+    // Update with real route if we got one (smooth transition from estimated)
     if (routeResult != null) {
       final options = _generateRideOptions(routeResult);
       _state = _state.copyWith(
@@ -348,7 +355,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         routeFetchFailed: false,
       );
     } else {
-      // Route failed — signal UI to show retry
+      // Route failed — keep estimated route but signal retry is available
       _state = _state.copyWith(routeFetchFailed: true);
     }
     notifyListeners();

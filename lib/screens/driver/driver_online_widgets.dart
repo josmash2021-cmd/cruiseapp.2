@@ -1,0 +1,3530 @@
+part of 'driver_online_screen.dart';
+
+// ══════════════════════════════════════════════════════════════
+//  WIDGETS — UI builders, panels, overlays, cards, sheets
+// ══════════════════════════════════════════════════════════════
+
+extension DriverOnlineWidgets on _DriverOnlineScreenState {
+
+  Widget _mapW(bool isDark) {
+    if (_pos == null) {
+      return Container(
+        color: const Color(0xFF07080D),
+        child: const Center(
+          child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
+        ),
+      );
+    }
+    return RepaintBoundary(
+      child: mapbox.MapWidget(
+        key: _mapKey,
+        styleUri: MapboxConfig.styleDark,
+        cameraOptions: mapbox.CameraOptions(
+          center: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+          zoom: 15.5,
+          bearing: 0,
+          pitch: 0,
+        ),
+        onMapCreated: (ctrl) async {
+          _map = ctrl;
+          _lastStyleDark = isDark;
+          // Polyline manager with no 'below' constraint — avoids silent failure
+          // when the layer name doesn't exist in the style.
+          _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+            below: "road-label",
+          );
+          _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+          // Always fly to real GPS — never the Miami default
+          try {
+            final gps = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.high,
+                timeLimit: Duration(seconds: 6),
+              ),
+            );
+            if (mounted) {
+              setState(() => _pos = LatLng(gps.latitude, gps.longitude));
+            }
+          } catch (_) {}
+          if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: _heading, tilt: 0);
+          _updateDriverAnnotation();
+          // Re-draw route if map initialised after _drawRoute already ran
+          if (_routePts.length > 1) {
+            _setRouteAnnotation(_routePts, _navyRoute);
+            await Future.delayed(const Duration(milliseconds: 200));
+            final dest = (_phase == _Phase.enRouteToPickup || _phase == _Phase.routeSummary)
+                ? _pickupLL
+                : _dropoffLL;
+            if (_pos != null) _fitBounds(_pos!, dest);
+          }
+        },
+        onStyleLoadedListener: (_) async {
+          if (_map != null) await MapTheme.applyNavyGold(_map!);
+        },
+        onScrollListener: (_) {
+          _onCameraMoveStarted();
+        },
+      ),
+    );
+  }
+
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  //  EARNINGS PILL (top center — Uber style)
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  Widget _earningsPill(bool isDark) {
+    final pillBg = isDark
+        ? const Color(0xFF1A1A1A).withValues(alpha: 0.85)
+        : Colors.white.withValues(alpha: 0.9);
+    final pillBorder = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.black.withValues(alpha: 0.06);
+    final pillText = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final pillSub = isDark ? Colors.white38 : Colors.black38;
+    final dotActive = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final dotInactive = isDark
+        ? Colors.white.withValues(alpha: 0.2)
+        : Colors.black.withValues(alpha: 0.15);
+
+    final amounts = [
+      '\$${_weeklyEarnings.toStringAsFixed(2)}',
+      '\$${_earnings.toStringAsFixed(2)}',
+      '\$${_lastTripEarnings.toStringAsFixed(2)}',
+    ];
+    final labels = [
+      S.of(context).thisWeek.toUpperCase(),
+      S.of(context).today.toUpperCase(),
+      S.of(context).lastTripLabel.toUpperCase(),
+    ];
+
+    Widget pillPage(String amount, String label) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: pillBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: pillBorder),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  amount,
+                  style: TextStyle(
+                    color: pillText,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: pillSub,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    for (int i = 0; i < 3; i++) ...[
+                      Container(
+                        width: 4,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i == _earningsPage ? dotActive : dotInactive,
+                        ),
+                      ),
+                      if (i < 2) const SizedBox(width: 3),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onHorizontalDragEnd: (details) {
+        if (details.primaryVelocity == null) return;
+        if (details.primaryVelocity! < -200 && _earningsPage < 2) {
+          setState(() => _earningsPage++);
+        } else if (details.primaryVelocity! > 200 && _earningsPage > 0) {
+          setState(() => _earningsPage--);
+        }
+      },
+      child: SizedBox(
+        width: 160,
+        height: 52,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          reverseDuration: const Duration(milliseconds: 300),
+          switchInCurve: Curves.easeInOut,
+          switchOutCurve: Curves.easeInOut,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: child,
+          ),
+          child: Center(
+            key: ValueKey<int>(_earningsPage),
+            child: pillPage(
+              amounts[_earningsPage],
+              labels[_earningsPage],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//  BOTTOM AREA (per phase)
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  Widget _bottomArea(
+    bool isDark,
+    Color bg,
+    Color surface,
+    Color textPrimary,
+    Color textMuted,
+    Color borderC,
+    Color shadowC,
+  ) {
+    switch (_phase) {
+      case _Phase.searching:
+        return _searchingBar(isDark, surface, textMuted, borderC);
+      case _Phase.rideRequest:
+        return const SizedBox.shrink(); // handled by stacked cards overlay
+      case _Phase.enRouteToPickup:
+        return _pickupPanel(
+          isDark,
+          bg,
+          textPrimary,
+          textMuted,
+          borderC,
+          shadowC,
+        );
+      case _Phase.arrivedAtPickup:
+        return _arrivedPanel(
+          isDark,
+          bg,
+          textPrimary,
+          textMuted,
+          borderC,
+          shadowC,
+        );
+      case _Phase.routeSummary:
+        return _routeSummaryPanel(
+          isDark,
+          bg,
+          textPrimary,
+          textMuted,
+          borderC,
+          shadowC,
+        );
+      case _Phase.inTrip:
+        return _tripPanel(isDark, bg, textPrimary, textMuted, borderC, shadowC);
+      case _Phase.completed:
+        return const SizedBox.shrink();
+    }
+  }
+
+  // â”€â”€ SEARCHING: Uber-style "Finding trips" bar â”€â”€
+  Widget _searchingBar(
+    bool isDark,
+    Color surface,
+    Color textMuted,
+    Color borderC,
+  ) {
+    return GestureDetector(
+      onVerticalDragUpdate: (d) {
+        // Detect swipe up (negative dy) to open the panel
+        if (d.delta.dy < -3) _showOnlinePanel();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: ListenableBuilder(
+        listenable: _searchPulseVal,
+        builder: (_, __) => CustomPaint(
+          foregroundPainter: _SearchingBorderPainter(
+            progress: _searchPulseVal.value,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+              border: Border(top: BorderSide(color: borderC)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 2), // Spacer for border glow
+                  // Drag handle
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 4),
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: textMuted.withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+              // Status bar — swipe on parent opens panel
+              SizedBox(
+                height: 44,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 16),
+                    VerifiedAvatar(
+                      photoUrl: widget.photoUrl,
+                      radius: 15,
+                      fallbackName: null,
+                      isVerified: false,
+                    ),
+                    const Spacer(),
+                    Text(
+                      S.of(context).findingTrips,
+                      style: TextStyle(
+                        color: textMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      Icons.format_list_bulleted_rounded,
+                      color: textMuted,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 16),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+        ),
+      ),
+    );
+  }
+
+  // â”€â”€ STACKED RIDE OFFER CARDS (Spark-style — persistent, no timeout) â”€â”€
+  Widget _rideOfferCards(
+    bool isDark,
+    Color card,
+    Color textPrimary,
+    Color textMuted,
+    Color borderC,
+    Color shadowC,
+  ) {
+    final bot = MediaQuery.of(context).padding.bottom;
+    // â”€â”€ Always use dark styling for offer cards â”€â”€
+    const cCardBg = Color(0xFF1A1A1A);
+    final cCardBorder = _gold.withValues(alpha: 0.12);
+    final cRejectBg = Colors.red.withValues(alpha: 0.08);
+    const cRejectText = Color(0xFFFF6B6B);
+    const cTextPrimary = Colors.white;
+    final cTextMuted = Colors.white.withValues(alpha: 0.5);
+    final cBorderC = Colors.white.withValues(alpha: 0.06);
+    final acceptBg = _gold;
+
+    final safeIdx = _currentOfferIndex.clamp(0, (_pendingOffers.length - 1).clamp(0, 999));
+    final currentOid = _pendingOffers.isNotEmpty
+        ? (_pendingOffers[safeIdx]['offer_id'] ?? _pendingOffers[safeIdx]['id'] ?? '').toString()
+        : '';
+    final isCardExpanded = _expandedOfferIds.contains(currentOid);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+              // â”€â”€ Tappable header: handle + title + chevron â”€â”€
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    S.of(context).ridesAvailable(_pendingOffers.length),
+                    style: const TextStyle(
+                      color: _gold,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+            // ── Horizontal swipeable offer cards ──
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              height: (MediaQuery.of(context).size.height * 0.45).clamp(280, 380).toDouble(),
+              child: PageView.builder(
+                controller: _offerPageCtrl,
+                onPageChanged: (index) {
+                  setState(() => _currentOfferIndex = index);
+                  HapticFeedback.selectionClick();
+                  if (index < _pendingOffers.length) {
+                    _autoTriggerRoutePreview(_pendingOffers[index]);
+                  }
+                },
+                itemCount: _pendingOffers.length,
+                itemBuilder: (ctx, i) {
+                  final offer = _pendingOffers[i];
+                  final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+                  final isAnimating = _animatingOfferId == oid;
+                  final isRejecting = _rejectingOfferId == oid;
+                  Widget card = _offerCard(
+                    offer,
+                    true,
+                    cCardBg,
+                    cCardBorder,
+                    cTextPrimary,
+                    cTextMuted,
+                    cRejectBg,
+                    cRejectText,
+                    acceptBg,
+                    cBorderC,
+                  );
+                  // Pulse scale on tap-down/tap-up
+                  if (isAnimating && _pulseAnim != null) {
+                    card = AnimatedBuilder(
+                      animation: _pulseAnim!,
+                      builder: (_, child) => Transform.scale(
+                        scale: _pulseAnim!.value,
+                        child: child,
+                      ),
+                      child: card,
+                    );
+                  }
+                  // Reject slide-down animation
+                  if (isRejecting && _rejectSlideCtrl != null) {
+                    card = AnimatedBuilder(
+                      animation: _rejectSlideCtrl!,
+                      builder: (_, child) => Transform.translate(
+                        offset: Offset(0, _rejectSlideCtrl!.value * 400),
+                        child: Opacity(
+                          opacity: (1.0 - _rejectSlideCtrl!.value).clamp(0.0, 1.0),
+                          child: child,
+                        ),
+                      ),
+                      child: card,
+                    );
+                  }
+                  return GestureDetector(
+                    onTapDown: (_) {
+                      setState(() => _animatingOfferId = oid);
+                      _pulseCtrl?.forward();
+                    },
+                    onTapUp: (_) {
+                      _pulseCtrl?.reverse().then((_) {
+                        if (mounted) _onOfferCardTap(offer);
+                      });
+                    },
+                    onTapCancel: () {
+                      _pulseCtrl?.reverse();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      child: card,
+                    ),
+                  );
+                },
+              ),
+            ),
+            // ── Page indicator dots ──
+            if (_pendingOffers.length > 1)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(_pendingOffers.length, (i) {
+                    final active = i == _currentOfferIndex;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width: active ? 18 : 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: active ? _gold : Colors.white.withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+              // â”€â”€ Scrollable card list (hidden when collapsed) â”€â”€
+
+              // â”€â”€ "Finding trips" bar at the bottom â”€â”€
+              ClipRect(
+                child: AnimatedSlide(
+                  offset: _hideFindingBar ? const Offset(0, 1) : Offset.zero,
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeInOut,
+                  child: AnimatedOpacity(
+                    opacity: _hideFindingBar ? 0.0 : 1.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: GestureDetector(
+                      onTap: _hideFindingBar ? null : _showGoOfflineSheet,
+                      onVerticalDragUpdate: _hideFindingBar ? null : (details) {
+                        if (details.delta.dy < -5) {
+                          _showGoOfflineSheet();
+                        }
+                      },
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF111111),
+                          border: Border(
+                            top: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.06),
+                            ),
+                          ),
+                        ),
+                        child: SafeArea(
+                          top: false,
+                          child: SizedBox(
+                            height: 52,
+                            child: Row(
+                              children: [
+                                const SizedBox(width: 16),
+                                Icon(
+                                  Icons.tune_rounded,
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  size: 22,
+                                ),
+                                const Spacer(),
+                                Text(
+                                  S.of(context).findingTrips,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.5),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Icon(
+                                  Icons.format_list_bulleted_rounded,
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  size: 22,
+                                ),
+                                const SizedBox(width: 16),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+    );
+  }
+
+  /// Shows the Go Offline bottom sheet (accessible from Finding trips bar)
+  void _showGoOfflineSheet() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface = isDark ? const Color(0xFF111111) : Colors.white;
+    final textPrimary = isDark ? Colors.white : Colors.black;
+    final textMuted = isDark
+        ? Colors.white.withValues(alpha: 0.5)
+        : Colors.black.withValues(alpha: 0.5);
+    final borderC = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.black.withValues(alpha: 0.06);
+    final panelItemText = isDark
+        ? Colors.white.withValues(alpha: 0.7)
+        : Colors.black.withValues(alpha: 0.6);
+    final panelItemIcon = isDark
+        ? Colors.white.withValues(alpha: 0.5)
+        : Colors.black.withValues(alpha: 0.4);
+    final panelItemChevron = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.12);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      enableDrag: true,
+      builder: (ctx) {
+        final maxH = MediaQuery.of(ctx).size.height * 0.82;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: Container(
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border(top: BorderSide(color: _gold.withValues(alpha: 0.08))),
+            ),
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: textMuted.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 40,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 16),
+                    Icon(Icons.tune_rounded, color: textMuted, size: 22),
+                    const Spacer(),
+                    Text(
+                      S.of(context).findingTrips,
+                      style: TextStyle(
+                        color: textMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      Icons.format_list_bulleted_rounded,
+                      color: textMuted,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 16),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Divider(height: 1, color: borderC),
+              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              Divider(height: 1, color: borderC),
+              const SizedBox(height: 16),
+              Text(
+                S.of(context).recommendedForYou,
+                style: TextStyle(
+                  color: textPrimary,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _panelItem(
+                Icons.bar_chart_rounded,
+                S.of(context).seeEarningsTrends,
+                panelItemIcon,
+                panelItemText,
+                panelItemChevron,
+                () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverEarningsScreen()),
+                  );
+                },
+              ),
+              _panelItem(
+                Icons.star_outline_rounded,
+                S.of(context).seeUpcomingPromotions,
+                panelItemIcon,
+                panelItemText,
+                panelItemChevron,
+                () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverPromosScreen()),
+                  );
+                },
+              ),
+              _panelItem(
+                Icons.access_time_rounded,
+                S.of(context).seeDrivingTime,
+                panelItemIcon,
+                panelItemText,
+                panelItemChevron,
+                () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverAnalyticsScreen()),
+                  );
+                },
+              ),
+              const SizedBox(height: 20),
+              // PAUSE and GO OFFLINE buttons row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // PAUSE button
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pauseAvailability();
+                    },
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 62,
+                          height: 62,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFFFFA500).withValues(alpha: 0.15),
+                            border: Border.all(
+                              color: const Color(0xFFFFA500).withValues(alpha: 0.3),
+                              width: 2,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.pause_circle_filled_rounded,
+                            color: Color(0xFFFFA500),
+                            size: 26,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'PAUSE'.toUpperCase(),
+                          style: const TextStyle(
+                            color: Color(0xFFFFA500),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // GO OFFLINE button
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      _goOffline();
+                    },
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 62,
+                          height: 62,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(
+                              0xFFCC3333,
+                            ).withValues(alpha: 0.15),
+                            border: Border.all(
+                              color: const Color(
+                                0xFFCC3333,
+                              ).withValues(alpha: 0.3),
+                              width: 2,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.pan_tool_rounded,
+                            color: Color(0xFFCC3333),
+                            size: 26,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          S.of(context).goOffline.toUpperCase(),
+                          style: const TextStyle(
+                            color: Color(0xFFCC3333),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Decode a Google/OSRM polyline string into a list of [lng,lat] coordinate pairs.
+  List<List<double>> _decodePolylineCoords(String encoded) {
+    final pts = <List<double>>[];
+    int i = 0, lat = 0, lng = 0;
+    while (i < encoded.length) {
+      int s = 0, r = 0, b;
+      do {
+        b = encoded.codeUnitAt(i++) - 63;
+        r |= (b & 0x1F) << s;
+        s += 5;
+      } while (b >= 0x20);
+      lat += (r & 1) != 0 ? ~(r >> 1) : (r >> 1);
+      s = 0; r = 0;
+      do {
+        b = encoded.codeUnitAt(i++) - 63;
+        r |= (b & 0x1F) << s;
+        s += 5;
+      } while (b >= 0x20);
+      lng += (r & 1) != 0 ? ~(r >> 1) : (r >> 1);
+      pts.add([lng / 1E5, lat / 1E5]);
+    }
+    return pts;
+  }
+
+  /// Fetch both legs (driver→pickup + pickup→dropoff) from OSRM and build
+  /// a Mapbox Static API URL with the real road polyline overlaid.
+  Future<String> _buildOfferMapUrl(
+    LatLng driver,
+    LatLng pickup,
+    LatLng dropoff,
+  ) async {
+    final token = MapboxConfig.accessToken;
+    final dLng = driver.longitude.toStringAsFixed(6);
+    final dLat = driver.latitude.toStringAsFixed(6);
+    final pLng = pickup.longitude.toStringAsFixed(6);
+    final pLat = pickup.latitude.toStringAsFixed(6);
+    final oLng = dropoff.longitude.toStringAsFixed(6);
+    final oLat = dropoff.latitude.toStringAsFixed(6);
+
+    // Fetch two legs from OSRM
+    List<List<double>> allPts = [];
+    try {
+      // Leg 1: driver → pickup
+      final uri1 = Uri.https(
+        'router.project-osrm.org',
+        '/route/v1/driving/${driver.longitude},${driver.latitude};${pickup.longitude},${pickup.latitude}',
+        {'overview': 'full', 'geometries': 'polyline'},
+      );
+      final r1 = await http.get(uri1).timeout(const Duration(seconds: 6));
+      final d1 = jsonDecode(r1.body);
+      if (d1 is Map && d1['code']?.toString().toUpperCase() == 'OK') {
+        final geo1 = (d1['routes'] as List?)?.first?['geometry']?.toString();
+        if (geo1 != null) allPts.addAll(_decodePolylineCoords(geo1));
+      }
+    } catch (_) {}
+
+    try {
+      // Leg 2: pickup → dropoff
+      final uri2 = Uri.https(
+        'router.project-osrm.org',
+        '/route/v1/driving/${pickup.longitude},${pickup.latitude};${dropoff.longitude},${dropoff.latitude}',
+        {'overview': 'full', 'geometries': 'polyline'},
+      );
+      final r2 = await http.get(uri2).timeout(const Duration(seconds: 6));
+      final d2 = jsonDecode(r2.body);
+      if (d2 is Map && d2['code']?.toString().toUpperCase() == 'OK') {
+        final geo2 = (d2['routes'] as List?)?.first?['geometry']?.toString();
+        if (geo2 != null) allPts.addAll(_decodePolylineCoords(geo2));
+      }
+    } catch (_) {}
+
+    // Pins
+    final driverPin = 'pin-s-car+1a73e8($dLng,$dLat)';
+    final pickupPin  = 'pin-s+00c853($pLng,$pLat)';
+    final dropoffPin = 'pin-s+333333($oLng,$oLat)';
+
+    String pathOverlay;
+    if (allPts.length >= 2) {
+      // Subsample to ≤100 points so URL stays within Mapbox's 8192-char limit
+      final step = allPts.length > 100 ? (allPts.length / 100).ceil() : 1;
+      final sampled = <List<double>>[];
+      for (int k = 0; k < allPts.length; k += step) {
+        sampled.add(allPts[k]);
+      }
+      if (sampled.last != allPts.last) sampled.add(allPts.last);
+      final coords = sampled.map((p) => '${p[0].toStringAsFixed(5)},${p[1].toStringAsFixed(5)}').join(';');
+      pathOverlay = 'path-4+3b82f6-1($coords)';
+    } else {
+      // Fallback: straight line
+      pathOverlay = 'path-3+3b82f6-0.8($dLng,$dLat;$pLng,$pLat;$oLng,$oLat)';
+    }
+
+    return 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
+        '$driverPin,$pickupPin,$dropoffPin,$pathOverlay'
+        '/auto/700x320@2x?padding=70,50,50,50&access_token=$token';
+  }
+
+  Widget _offerCard(
+    Map<String, dynamic> offer,
+    bool isDark,
+    Color cardBg,
+    Color cardBorder,
+    Color textPrimary,
+    Color textMuted,
+    Color rejectBg,
+    Color rejectText,
+    Color acceptBg,
+    Color borderC,
+  ) {
+    const luxGold = Color(0xFFD4AF37);
+    const deepBlack = Color(0xFF0F0F0F);
+    const mutedGray = Color(0xFF9A9A9A);
+
+    // Parse offer data
+    final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 4.8;
+    final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
+    final pickupAddr = (offer['pickup_address'] ?? 'Pickup') as String;
+    final dropoffAddr = (offer['dropoff_address'] ?? 'Drop-off') as String;
+    final pickupLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
+    final pickupLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
+    final dropoffLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
+    final dropoffLng = (offer['dropoff_lng'] as num?)?.toDouble() ?? 0;
+    final vehicleType = _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
+    final pickupLL = LatLng(pickupLat, pickupLng);
+    final dropoffLL = LatLng(dropoffLat, dropoffLng);
+
+    final distToPickupKm = _hav(_pos!, pickupLL);
+    final etaToPickup = (distToPickupKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+    final distToPickupMi = distToPickupKm * 0.621371;
+    final tripDistKm = _hav(pickupLL, dropoffLL);
+    final tripEta = (tripDistKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+    final tripDistMi = tripDistKm * 0.621371;
+
+    // Cache per offer so we don't re-fetch on every rebuild
+    final offerId = (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_$pickupLng').toString();
+    _offerMapUrlCache.putIfAbsent(
+      offerId,
+      () => _buildOfferMapUrl(_pos!, pickupLL, dropoffLL),
+    );
+
+    final isExpanded = _expandedOfferIds.contains(offerId);
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: deepBlack,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFE8C547).withValues(alpha: 0.25),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(14, isExpanded ? 10 : 8, 14, isExpanded ? 10 : 8),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, anim) =>
+              FadeTransition(opacity: anim, child: child),
+          child: _acceptingCardId == offerId &&
+                  _offerAcceptState == _OfferAcceptState.accepted
+              ? _buildAcceptedCardContent(pickupAddr)
+              : _acceptingCardId == offerId &&
+                      _offerAcceptState == _OfferAcceptState.routing
+                  ? _buildRoutingCardContent()
+                  : _buildNormalCardContent(
+                      offer: offer,
+                      offerId: offerId,
+                      fare: fare,
+                      rating: rating,
+                      vehicleType: vehicleType,
+                      etaToPickup: etaToPickup,
+                      distToPickupMi: distToPickupMi,
+                      pickupAddr: pickupAddr,
+                      tripEta: tripEta,
+                      tripDistMi: tripDistMi,
+                      dropoffAddr: dropoffAddr,
+                      isExpanded: isExpanded,
+                    ),
+        ),
+      ),
+    );
+  }
+
+  // ── Normal card content (default offer view) ──
+  Widget _buildNormalCardContent({
+    required Map<String, dynamic> offer,
+    required String offerId,
+    required double fare,
+    required double rating,
+    required String vehicleType,
+    required int etaToPickup,
+    required double distToPickupMi,
+    required String pickupAddr,
+    required int tripEta,
+    required double tripDistMi,
+    required String dropoffAddr,
+    required bool isExpanded,
+  }) {
+    const goldAccent = Color(0xFFE8C547);
+    const rejectRed = Color(0xFFE53935);
+    final totalMins = etaToPickup + tripEta;
+    final totalMiles = distToPickupMi + tripDistMi;
+
+    return Column(
+      key: const ValueKey('compact'),
+      mainAxisSize: MainAxisSize.max,
+      children: [
+        // ── ROW 1: Rating (left) · Comfort badge (center) · X reject (right) ──
+        Row(
+          children: [
+            // Rating badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: goldAccent.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.star_rounded, color: goldAccent, size: 14),
+                  const SizedBox(width: 3),
+                  Text(
+                    rating.toStringAsFixed(1),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Spacer(),
+            // Service tier badge (Comfort/VIP/Premium)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: goldAccent.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.person_rounded, size: 14, color: goldAccent),
+                  const SizedBox(width: 6),
+                  Text(
+                    vehicleType,
+                    style: const TextStyle(
+                      color: goldAccent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Spacer(),
+            // X Reject button — RED
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                _rejectOffer(offer);
+              },
+              child: Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF2A2A2A),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close, color: rejectRed, size: 16),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 6),
+
+        // ── ROW 2: Price (centered) + Tips label ──
+        Text(
+          '\$${fare.toStringAsFixed(2)}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 26,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 1),
+        Text(
+          '+ Tips',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.4),
+            fontSize: 12,
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        // ── ROW 3: Route indicator (gold ● line ■ with addresses) ──
+        Expanded(
+          child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Gold ● | ■ indicator column
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Gold filled circle (pickup)
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFD4A843),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    // Gold vertical line
+                    Container(
+                      width: 2,
+                      height: 22,
+                      color: const Color(0xFFD4A843).withValues(alpha: 0.4),
+                    ),
+                    const SizedBox(height: 4),
+                    // Black square with gold shadow (dropoff)
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(2),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x55D4A843),
+                            blurRadius: 6,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Address details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Pickup info
+                    Text(
+                      '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 10,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      pickupAddr,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 10),
+                    // Dropoff info
+                    Text(
+                      '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 10,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      dropoffAddr,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          ),
+        ),
+
+        const SizedBox(height: 6),
+
+        // ── ROW 4: Time + Miles chips (compact) ──
+        Row(
+          children: [
+            Expanded(child: _buildOfferChip(
+              icon: Icons.timer_outlined,
+              value: '$totalMins min',
+              label: 'Total time',
+            )),
+            const SizedBox(width: 6),
+            Expanded(child: _buildOfferChip(
+              icon: Icons.straighten_rounded,
+              value: '${totalMiles.toStringAsFixed(1)} mi',
+              label: 'Total distance',
+            )),
+          ],
+        ),
+
+        const SizedBox(height: 4),
+
+        // ── Divider ──
+        Container(
+          height: 0.5,
+          color: const Color(0xFF333333),
+        ),
+
+        const SizedBox(height: 6),
+
+        // ── ROW 5: Accept button — GOLD — ALWAYS VISIBLE ──
+        GestureDetector(
+          onTapDown: (_) => setState(() => _isAcceptPressed = true),
+          onTapUp: (_) {
+            setState(() => _isAcceptPressed = false);
+            _acceptOffer(offer);
+          },
+          onTapCancel: () => setState(() => _isAcceptPressed = false),
+          child: AnimatedScale(
+            scale: _isAcceptPressed ? 0.97 : 1.0,
+            duration: const Duration(milliseconds: 100),
+            child: Container(
+              width: double.infinity,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD4A843),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Text(
+                  S.of(context).accept,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Chip widget for time/distance display on offer card (compact).
+  Widget _buildOfferChip({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: const Color(0xFFE8C547), size: 12),
+          const SizedBox(width: 5),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                label,
+                style: const TextStyle(color: Colors.white38, fontSize: 9),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── "Viaje Aceptado" inline card (shown inside AnimatedSwitcher in offer card) ──
+  Widget _buildAcceptedCardContent(String pickupAddr) {
+    const luxGold = Color(0xFFD4AF37);
+    return Padding(
+      key: const ValueKey('accepted'),
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        children: [
+          // Gold check circle
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.elasticOut,
+            builder: (_, scale, child) =>
+                Transform.scale(scale: scale, child: child),
+            child: Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: luxGold.withValues(alpha: 0.15),
+                border: Border.all(color: luxGold, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: luxGold.withValues(alpha: 0.3),
+                    blurRadius: 20,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.check_rounded, color: luxGold, size: 28),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Viaje Aceptado',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  pickupAddr,
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          // Animated loading dots
+          _buildAcceptLoadingDots(),
+        ],
+      ),
+    );
+  }
+
+  // ── "Enrutando..." state ──
+  Widget _buildRoutingCardContent() {
+    const luxGold = Color(0xFFD4AF37);
+    return Padding(
+      key: const ValueKey('routing'),
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        children: [
+          const _RoutingDotsAnimation(),
+          const SizedBox(width: 16),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Enrutando...',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Preparando tu ruta',
+                  style: TextStyle(color: luxGold, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Animated 3-dot gold loader for accepted card.
+  Widget _buildAcceptLoadingDots() {
+    return _AnimatedLoadingDots();
+  }
+
+  Widget _buildStatItem({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    const luxGold = Color(0xFFD4AF37);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: luxGold, size: 16),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _uberAddressRow({
+    required IconData icon,
+    required Color iconColor,
+    required double iconSize,
+    required String topLine,
+    required String bottomLine,
+    required bool showConnector,
+    bool darkMode = false,
+  }) {
+    final subColor = darkMode
+        ? Colors.white.withValues(alpha: 0.45)
+        : const Color(0xFF666666);
+    final mainColor = darkMode ? Colors.white : const Color(0xFF111111);
+    final lineColor = darkMode
+        ? Colors.white.withValues(alpha: 0.15)
+        : const Color(0xFFCCCCCC);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Icon + connector line column
+        SizedBox(
+          width: 20,
+          child: Column(
+            children: [
+              const SizedBox(height: 4),
+              Icon(icon, color: iconColor, size: iconSize),
+              if (showConnector)
+                Container(
+                  width: 1.5,
+                  height: 36,
+                  color: lineColor,
+                  margin: const EdgeInsets.symmetric(vertical: 3),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                topLine,
+                style: TextStyle(
+                  color: subColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                bottomLine,
+                style: TextStyle(
+                  color: mainColor,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (showConnector) const SizedBox(height: 10),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  //  ROUTE PREVIEW PANEL (shown when tapping an offer card)
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  Widget _routePreviewPanel(bool isDark) {
+    final offer = _previewingOffer!;
+    final name = (offer['rider_name'] ?? 'Rider') as String;
+    final init = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 4.8;
+    final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
+    final pickupAddr = (offer['pickup_address'] ?? 'Pickup') as String;
+    final dropoffAddr = (offer['dropoff_address'] ?? 'Drop-off') as String;
+    final pickupLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
+    final pickupLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
+    final dropoffLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
+    final dropoffLng = (offer['dropoff_lng'] as num?)?.toDouble() ?? 0;
+    final pickupLL = LatLng(pickupLat, pickupLng);
+    final dropoffLL = LatLng(dropoffLat, dropoffLng);
+    final vehicleType = _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
+    final distToPickup = _hav(_pos!, pickupLL);
+    final etaToPickup = (distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+    final tripDist = _hav(pickupLL, dropoffLL);
+    final tripEta = (tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+
+    const cCardBg = Color(0xFF1A1A1A); // ignore: unused_local_variable
+    const cTextPrimary = Colors.white;
+    final cTextMuted = Colors.white.withValues(alpha: 0.5);
+    final cBorderC = Colors.white.withValues(alpha: 0.06);
+    final chipBg = Colors.white.withValues(alpha: 0.04);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A0A0A).withValues(alpha: 0.97),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 24,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Handle
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // â”€â”€ Top row: Avatar + Name + Fare â”€â”€
+                  Row(
+                    children: [
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: _gold.withValues(alpha: 0.11),
+                          borderRadius: BorderRadius.circular(13),
+                          border: Border.all(
+                            color: _gold.withValues(alpha: 0.28),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.directions_car_rounded,
+                          color: _gold,
+                          size: 23,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              vehicleType,
+                              style: const TextStyle(
+                                color: cTextPrimary,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Row(
+                              children: [
+                                const Icon(Icons.star_rounded, color: _gold, size: 13),
+                                const SizedBox(width: 3),
+                                Text(
+                                  rating.toStringAsFixed(1),
+                                  style: const TextStyle(
+                                    color: _gold, fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _gold.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: _gold.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Text(
+                          '\$${fare.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // â”€â”€ Info chips â”€â”€
+                  Row(
+                    children: [
+                      _infoChip(
+                        Icons.near_me_rounded,
+                        '${(distToPickup * 0.621371).toStringAsFixed(1)} mi',
+                        chipBg,
+                        cTextMuted,
+                      ),
+                      const SizedBox(width: 8),
+                      _infoChip(
+                        Icons.timer_rounded,
+                        '$etaToPickup min',
+                        chipBg,
+                        cTextMuted,
+                      ),
+                      const SizedBox(width: 8),
+                      _infoChip(
+                        Icons.route_rounded,
+                        '${(tripDist * 0.621371).toStringAsFixed(1)} mi trip',
+                        chipBg,
+                        cTextMuted,
+                      ),
+                      const SizedBox(width: 8),
+                      _infoChip(
+                        Icons.schedule_rounded,
+                        '$tripEta min',
+                        chipBg,
+                        cTextMuted,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // â”€â”€ Route: Driver â†’ Pickup â†’ Dropoff â”€â”€
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.02),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: cBorderC),
+                    ),
+                    child: Column(
+                      children: [
+                        // Driver location
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Column(
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.blueAccent,
+                                      width: 2,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  width: 1.5,
+                                  height: 20,
+                                  color: cBorderC,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    S.of(context).yourLocation,
+                                    style: TextStyle(
+                                      color: cTextMuted,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  Text(
+                                    S.of(context).currentPosition,
+                                    style: const TextStyle(
+                                      color: cTextPrimary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        // Pickup
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Column(
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.greenAccent,
+                                      width: 2,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  width: 1.5,
+                                  height: 20,
+                                  color: cBorderC,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    S.of(context).pickupLabel,
+                                    style: TextStyle(
+                                      color: cTextMuted,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  Text(
+                                    pickupAddr,
+                                    style: const TextStyle(
+                                      color: cTextPrimary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        // Dropoff
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white54,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    S.of(context).dropOffLabel,
+                                    style: TextStyle(
+                                      color: cTextMuted,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  Text(
+                                    dropoffAddr,
+                                    style: const TextStyle(
+                                      color: cTextPrimary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // â”€â”€ Action buttons: Back + Accept â”€â”€
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: OutlinedButton.icon(
+                            onPressed: _closePreview,
+                            icon: const Icon(
+                              Icons.arrow_back_rounded,
+                              color: Colors.white70,
+                              size: 18,
+                            ),
+                            label: Text(
+                              S.of(context).back,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.06,
+                              ),
+                              side: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.12),
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: SizedBox(
+                          height: 48,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              _closePreview();
+                              _acceptOffer(offer);
+                            },
+                            icon: const Icon(
+                              Icons.check_rounded,
+                              color: Colors.black,
+                              size: 18,
+                            ),
+                            label: Text(
+                              S.of(context).acceptRide,
+                              style: const TextStyle(
+                                color: Colors.black,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _gold,
+                              foregroundColor: Colors.black,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoChip(IconData ic, String txt, Color bg, Color textColor) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(ic, size: 14, color: _gold.withValues(alpha: 0.7)),
+            const SizedBox(height: 2),
+            Text(
+              txt,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _badge(IconData ic, String txt, Color c) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: c.withValues(alpha: 0.15)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(ic, size: 12, color: c),
+          const SizedBox(width: 4),
+          Text(
+            txt,
+            style: TextStyle(
+              color: c,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryBadge(IconData icon, String text, Color primary, Color muted) {
+    return Column(
+      children: [
+        Icon(icon, color: _gold, size: 20),
+        const SizedBox(height: 4),
+        Text(
+          text,
+          style: TextStyle(
+            color: primary,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // â”€â”€ ROUTE SUMMARY PANEL (Google Maps-style overview before navigation) â”€â”€
+  Widget _routeSummaryPanel(
+    bool isDark,
+    Color bg,
+    Color textPrimary,
+    Color textMuted,
+    Color borderC,
+    Color shadowC,
+  ) {
+    return _wrapInDraggableSheet(
+      isDark: isDark,
+      surface: bg,
+      shadowC: shadowC,
+      minChildSize: 0.45,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _handle(isDark),
+          const SizedBox(height: 10),
+          // Rider info header with fare
+          Row(
+            children: [
+              _avatar(42, showBadge: true),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _riderName,
+                      style: TextStyle(
+                        color: textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      _vehicleType,
+                      style: TextStyle(
+                        color: _gold,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '\$${_fare.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  color: _gold,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Distance / ETA / Trip info badges
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _summaryBadge(
+                Icons.navigation_rounded,
+                '${(_navDist * 0.621371).toStringAsFixed(1)} mi',
+                textPrimary,
+                textMuted,
+              ),
+              _summaryBadge(
+                Icons.access_time_rounded,
+                '$_navEta min',
+                textPrimary,
+                textMuted,
+              ),
+              _summaryBadge(
+                Icons.route_rounded,
+                '${(_tripDist * 0.621371).toStringAsFixed(1)} mi trip',
+                textPrimary,
+                textMuted,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Pickup & Dropoff addresses
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _gold.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _gold.withValues(alpha: 0.10)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.location_on_rounded, color: _gold, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _pickupAddr,
+                        style: TextStyle(color: textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
+                        maxLines: 3,
+                        softWrap: true,
+                      ),
+                    ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      width: 2, height: 16,
+                      color: _gold.withValues(alpha: 0.3),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    const Icon(Icons.flag_rounded, color: _gold, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _dropoffAddr,
+                        style: TextStyle(color: textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
+                        maxLines: 3,
+                        softWrap: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Re-center button + Start Navigation button
+          Row(
+            children: [
+              // Re-center / overview button
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  _fitBoundsMulti([_pos!, _pickupLL, _dropoffLL]);
+                },
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: _gold.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: _gold.withValues(alpha: 0.2)),
+                  ),
+                  child: const Icon(
+                    Icons.center_focus_strong_rounded,
+                    color: _gold,
+                    size: 22,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Start Navigation button
+              Expanded(
+                child: SizedBox(
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _beginNavigation(),
+                    icon: const Icon(
+                      Icons.navigation_rounded,
+                      color: Colors.black,
+                      size: 20,
+                    ),
+                    label: Flexible(
+                      child: Text(
+                        S.of(context).startNavigation,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _gold,
+                      foregroundColor: Colors.black,
+                      elevation: 4,
+                      shadowColor: _gold.withValues(alpha: 0.3),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── PICKUP PANEL ──
+  Widget _pickupPanel(
+    bool isDark,
+    Color bg,
+    Color textPrimary,
+    Color textMuted,
+    Color borderC,
+    Color shadowC,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 14,
+            offset: const Offset(0, -4),
+          )
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: borderC,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  const Icon(Icons.location_on_rounded, color: _gold, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _riderName,
+                          style: TextStyle(
+                            color: textPrimary,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _pickupAddr,
+                          style: TextStyle(
+                            color: textMuted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 3,
+                          softWrap: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () async {
+                      if (_riderPhone.isNotEmpty) {
+                        final uri = Uri(scheme: 'tel', path: _riderPhone);
+                        if (await canLaunchUrl(uri)) await launchUrl(uri);
+                      }
+                    },
+                    icon: const Icon(Icons.phone, color: _gold, size: 22),
+                    style: IconButton.styleFrom(
+                      backgroundColor: isDark
+                          ? Colors.white.withValues(alpha: 0.1)
+                          : Colors.black.withValues(alpha: 0.05),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Navigate button row
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => MapLauncherService.navigate(
+                        destLat: _pickupLL.latitude,
+                        destLng: _pickupLL.longitude,
+                      ),
+                      icon: const Icon(Icons.navigation_rounded, size: 18),
+                      label: const Text('NAVIGATE'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: isDark ? Colors.white : Colors.black,
+                        side: BorderSide(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.2)
+                              : Colors.black.withValues(alpha: 0.2),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        minimumSize: const Size.fromHeight(48),
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _arrivePickup,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    _nearPickupNotified
+                        ? S.of(context).arrived.toUpperCase()
+                        : S.of(context).arrivedAtPickup.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── ARRIVED PANEL ──
+  Widget _arrivedPanel(
+    bool isDark,
+    Color bg,
+    Color textPrimary,
+    Color textMuted,
+    Color borderC,
+    Color shadowC,
+  ) {
+    return _wrapInDraggableSheet(
+      isDark: isDark,
+      surface: bg,
+      shadowC: shadowC,
+      minChildSize: 0.38,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _handle(isDark),
+          const SizedBox(height: 12),
+          // Waiting status
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: _goldLight.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _goldLight.withValues(alpha: 0.1)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(
+                      _goldLight.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  S.of(context).waitingForRider,
+                  style: TextStyle(
+                    color: textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _avatar(50, showBadge: true),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _riderName,
+                      style: TextStyle(
+                        color: textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _gold.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        _vehicleType,
+                        style: const TextStyle(
+                          color: _gold,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _actionBtn(Icons.phone_rounded, () async {
+                if (_riderPhone.isNotEmpty) {
+                  final uri = Uri(scheme: 'tel', path: _riderPhone);
+                  if (await canLaunchUrl(uri)) await launchUrl(uri);
+                }
+              }),
+              const SizedBox(width: 8),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _actionBtn(Icons.chat_bubble_rounded, () {
+                    Navigator.of(context).push(
+                      slideFromRightRoute(ChatScreen(
+                        recipientName: _riderName,
+                        recipientPhone: _riderPhone,
+                        tripId: _tripId,
+                        currentUserId: _driverId?.toString(),
+                        currentRole: 'driver',
+                      )),
+                    );
+                  }),
+                  if (_tripId != null)
+                    StreamBuilder<int>(
+                      stream: ChatService().unreadCountStream(
+                        rideId: _tripId.toString(),
+                        readerRole: 'driver',
+                      ),
+                      builder: (context, snap) {
+                        final count = snap.data ?? 0;
+                        if (count == 0) return const SizedBox.shrink();
+                        return Positioned(
+                          right: -4,
+                          top: -4,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEF4444),
+                              shape: BoxShape.circle,
+                            ),
+                            constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                            child: Text(
+                              count > 9 ? '9+' : '$count',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // START TRIP button
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton.icon(
+              onPressed: _startTrip,
+              icon: const Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.black,
+                size: 22,
+              ),
+              label: Text(
+                S.of(context).startTrip,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _gold,
+                foregroundColor: Colors.black,
+                elevation: 4,
+                shadowColor: _gold.withValues(alpha: 0.4),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _cancelRow(isDark),
+        ],
+      ),
+    );
+  }
+
+  // â”€â”€ IN-TRIP PANEL â”€â”€
+  // NAV STAT CHIP (icon + label, used in Google Maps-style ETA strip)
+  Widget _navStat(IconData icon, String value, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: 13),
+        const SizedBox(width: 4),
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _tripPanel(
+    bool isDark,
+    Color bg,
+    Color textPrimary,
+    Color textMuted,
+    Color borderC,
+    Color shadowC,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 16,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ETA strip - Uber style
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '$_navEta min',
+                        style: TextStyle(
+                          color: textPrimary,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          height: 1.0,
+                        ),
+                      ),
+                      Text(
+                        '${(_navDist * 0.621371).toStringAsFixed(1)} mi away',
+                        style: TextStyle(
+                          color: textMuted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    '\$${_fare.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      color: textPrimary,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Rider info with avatar + badge
+              Row(
+                children: [
+                  _avatar(42, showBadge: true),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _riderName,
+                          style: TextStyle(
+                            color: textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _vehicleType,
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () async {
+                      if (_riderPhone.isNotEmpty) {
+                        final uri = Uri(scheme: 'tel', path: _riderPhone);
+                        if (await canLaunchUrl(uri)) await launchUrl(uri);
+                      }
+                    },
+                    icon: const Icon(
+                      Icons.phone,
+                      color: _gold,
+                      size: 22,
+                    ),
+                    style: IconButton.styleFrom(
+                      backgroundColor: isDark
+                          ? Colors.white.withValues(alpha: 0.1)
+                          : Colors.black.withValues(alpha: 0.05),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Dropoff address card — full text, gold icon
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1A1A1A) : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.flag_rounded, color: _gold, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _dropoffAddr,
+                        style: TextStyle(
+                          color: textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 3,
+                        softWrap: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Navigate to dropoff button
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => MapLauncherService.navigate(
+                        destLat: _dropoffLL.latitude,
+                        destLng: _dropoffLL.longitude,
+                      ),
+                      icon: const Icon(Icons.navigation_rounded, size: 18),
+                      label: const Text('NAVIGATE'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: isDark ? Colors.white : Colors.black,
+                        side: BorderSide(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.2)
+                              : Colors.black.withValues(alpha: 0.2),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        minimumSize: const Size.fromHeight(48),
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // COMPLETE TRIP button - Uber style
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _complete,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _nearDropoffNotified
+                        ? Colors.black
+                        : Colors.black.withValues(alpha: 0.3),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    _nearDropoffNotified
+                        ? S.of(context).finishTrip.toUpperCase()
+                        : 'COMPLETE TRIP',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // â”€â”€ COMPLETED OVERLAY â”€â”€
+  Widget _completedOverlay(
+    bool isDark,
+    Color overlayBg,
+    Color card,
+    Color textPrimary,
+    Color borderC,
+    Color shadowC,
+  ) {
+    final subtleText = isDark
+        ? Colors.white.withValues(alpha: 0.35)
+        : Colors.black.withValues(alpha: 0.35);
+    final subtleBg = isDark
+        ? Colors.white.withValues(alpha: 0.03)
+        : Colors.black.withValues(alpha: 0.04);
+
+    return GestureDetector(
+      onTap: () {},
+      child: Container(
+        color: overlayBg,
+        child: Center(
+          child: FadeTransition(
+            opacity: _doneScale,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: card,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: _gold.withValues(alpha: 0.2)),
+                boxShadow: [
+                  BoxShadow(
+                    color: _gold.withValues(alpha: 0.08),
+                    blurRadius: 40,
+                    spreadRadius: 4,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [
+                          _gold.withValues(alpha: 0.15),
+                          _gold.withValues(alpha: 0.05),
+                        ],
+                      ),
+                      border: Border.all(
+                        color: _gold.withValues(alpha: 0.3),
+                        width: 2,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      color: _gold,
+                      size: 38,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    S.of(context).tripComplete,
+                    style: TextStyle(
+                      color: textPrimary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Fare
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    decoration: BoxDecoration(
+                      color: _gold.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: _gold.withValues(alpha: 0.1)),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          '\$${_fare.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 36,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          S.of(context).fareEarned,
+                          style: TextStyle(color: subtleText, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Rating
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: subtleBg,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          S.of(context).rateRider,
+                          style: TextStyle(color: subtleText, fontSize: 11),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(
+                            5,
+                            (i) => GestureDetector(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                setState(() => _stars = i + 1);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                ),
+                                child: Icon(
+                                  Icons.star_rounded,
+                                  color: i < _stars
+                                      ? _gold
+                                      : _gold.withValues(alpha: 0.15),
+                                  size: 30,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Session summary
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _sumStat(
+                        '\$${_earnings.toStringAsFixed(2)}',
+                        S.of(context).totalLabel,
+                        textPrimary,
+                        subtleText,
+                      ),
+                      _sumStat(
+                        '$_trips',
+                        S.of(context).tripsLabel,
+                        textPrimary,
+                        subtleText,
+                      ),
+                      _sumStat(
+                        _timeStr,
+                        S.of(context).onlineLabel,
+                        textPrimary,
+                        subtleText,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _afterComplete,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _gold,
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 4,
+                        shadowColor: _gold.withValues(alpha: 0.3),
+                      ),
+                      child: Text(
+                        S.of(context).continueDriving,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  //  ONLINE PANEL (draggable with GO OFFLINE)
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  void _showOnlinePanel() {
+    final screenH = MediaQuery.of(context).size.height;
+    final botPad = MediaQuery.of(context).padding.bottom;
+    final minFrac = ((86 + botPad) / screenH).clamp(0.10, 0.20);
+    final isOpen = _panelSheetCtrl.isAttached &&
+        _panelSheetCtrl.size > (minFrac + 0.05);
+    _panelSheetCtrl.animateTo(
+      isOpen ? minFrac : 0.85,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
+    setState(() => _panelOpen = !isOpen);
+  }
+
+  Widget _draggablePanel(
+    bool isDark,
+    Color surface,
+    Color textMuted,
+    Color borderC,
+    Color textPrimary,
+    Color shadowC,
+  ) {
+    final screenH = MediaQuery.of(context).size.height;
+    final botPad = MediaQuery.of(context).padding.bottom;
+    final minFrac = ((86 + botPad) / screenH).clamp(0.10, 0.20);
+    final panelItemText = isDark
+        ? Colors.white.withValues(alpha: 0.7)
+        : Colors.black.withValues(alpha: 0.6);
+    final panelItemIcon = isDark
+        ? Colors.white.withValues(alpha: 0.5)
+        : Colors.black.withValues(alpha: 0.4);
+    final panelItemChevron = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.12);
+
+    return DraggableScrollableSheet(
+      controller: _panelSheetCtrl,
+      initialChildSize: minFrac,
+      minChildSize: minFrac,
+      maxChildSize: 0.85,
+      snap: true,
+      snapSizes: [minFrac, 0.55, 0.85],
+      builder: (ctx, scrollCtrl) {
+        return Container(
+          decoration: BoxDecoration(
+            color: surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(
+              top: BorderSide(color: _gold.withValues(alpha: 0.08)),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: shadowC,
+                blurRadius: 20,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: ListView(
+            controller: scrollCtrl,
+            padding: EdgeInsets.zero,
+            children: [
+              ListenableBuilder(
+                listenable: _searchPulseVal,
+                builder: (_, __) => SizedBox(
+                  height: 2,
+                  child: LinearProgressIndicator(
+                    value: null,
+                    backgroundColor: Colors.transparent,
+                    valueColor: AlwaysStoppedAnimation(
+                      _gold.withValues(alpha: 0.5),
+                    ),
+                    minHeight: 2,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _handle(isDark),
+              Icon(
+                Icons.keyboard_arrow_up_rounded,
+                color: textMuted.withValues(alpha: 0.5),
+                size: 18,
+              ),
+              SizedBox(
+                height: 40,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 16),
+                    Icon(Icons.tune_rounded, color: textMuted, size: 22),
+                    const Spacer(),
+                    Text(
+                      S.of(context).findingTrips,
+                      style: TextStyle(
+                        color: textMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      Icons.format_list_bulleted_rounded,
+                      color: textMuted,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 16),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+              Divider(height: 1, color: borderC),
+              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              Divider(height: 1, color: borderC),
+              const SizedBox(height: 16),
+              Center(
+                child: Text(
+                  S.of(context).recommendedForYou,
+                  style: TextStyle(
+                    color: textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _panelItem(
+                Icons.bar_chart_rounded,
+                S.of(context).seeEarningsTrends,
+                panelItemIcon,
+                panelItemText,
+                panelItemChevron,
+                () {
+                  Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverEarningsScreen()),
+                  );
+                },
+              ),
+              _panelItem(
+                Icons.star_outline_rounded,
+                S.of(context).seeUpcomingPromotions,
+                panelItemIcon,
+                panelItemText,
+                panelItemChevron,
+                () {
+                  Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverPromosScreen()),
+                  );
+                },
+              ),
+              _panelItem(
+                Icons.access_time_rounded,
+                S.of(context).seeDrivingTime,
+                panelItemIcon,
+                panelItemText,
+                panelItemChevron,
+                () {
+                  Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverAnalyticsScreen()),
+                  );
+                },
+              ),
+              const SizedBox(height: 20),
+              // GO OFFLINE button
+              Center(
+                child: GestureDetector(
+                  onTap: _goOffline,
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 62,
+                        height: 62,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(
+                            0xFFCC3333,
+                          ).withValues(alpha: 0.15),
+                          border: Border.all(
+                            color: const Color(
+                              0xFFCC3333,
+                            ).withValues(alpha: 0.3),
+                            width: 2,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.pan_tool_rounded,
+                          color: Color(0xFFCC3333),
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        S.of(context).goOffline.toUpperCase(),
+                        style: const TextStyle(
+                          color: Color(0xFFCC3333),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(height: MediaQuery.of(context).padding.bottom),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _panelItem(
+    IconData ic,
+    String txt,
+    Color iconC,
+    Color textC,
+    Color chevronC,
+    VoidCallback tap,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: ListTile(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          tap();
+        },
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        leading: Icon(ic, color: iconC, size: 22),
+        title: Text(
+          txt,
+          style: TextStyle(
+            color: textC,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        trailing: Icon(Icons.chevron_right_rounded, color: chevronC, size: 20),
+      ),
+    );
+  }
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  //  SHARED WIDGETS
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  Widget _slideToAction(
+    String label,
+    Color c,
+    bool isDark,
+    VoidCallback onDone,
+  ) {
+    final labelColor = isDark
+        ? Colors.white.withValues(alpha: 0.35)
+        : Colors.black.withValues(alpha: 0.30);
+
+    return StatefulBuilder(
+      builder: (ctx, setLocal) {
+        return Container(
+          height: 56,
+          decoration: BoxDecoration(
+            color: c.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: c.withValues(alpha: 0.18), width: 1.5),
+          ),
+          child: LayoutBuilder(
+            builder: (_, cons) {
+              final max = cons.maxWidth - 60;
+              return Stack(
+                children: [
+                  Center(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        color: labelColor,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(28),
+                      child: FractionallySizedBox(
+                        widthFactor: _slideVal,
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                c.withValues(alpha: 0.12),
+                                c.withValues(alpha: 0.0),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: _slideVal * max + 4,
+                    top: 4,
+                    bottom: 4,
+                    child: GestureDetector(
+                      onHorizontalDragUpdate: (d) {
+                        setLocal(() {
+                          _slideVal += d.delta.dx / max;
+                          _slideVal = _slideVal.clamp(0.0, 1.0);
+                        });
+                        if (_slideVal >= 0.88 && !_slid) {
+                          _slid = true;
+                          HapticFeedback.heavyImpact();
+                          onDone();
+                        }
+                      },
+                      onHorizontalDragEnd: (_) {
+                        if (!_slid) setLocal(() => _slideVal = 0);
+                      },
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: c,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: c.withValues(alpha: 0.35),
+                              blurRadius: 10,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.chevron_right_rounded,
+                          color: Colors.black,
+                          size: 26,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _bottomSheet(bool isDark, Color bg, Color shadowC, Widget child) {
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: _gold.withValues(alpha: 0.08))),
+        boxShadow: [
+          BoxShadow(
+            color: shadowC,
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _wrapInDraggableSheet({
+    required bool isDark,
+    required Color surface,
+    required Color shadowC,
+    required Widget child,
+    double minChildSize = 0.18,
+  }) {
+    final screenH = MediaQuery.of(context).size.height;
+    return SizedBox(
+      height: screenH,
+      child: DraggableScrollableSheet(
+        initialChildSize: minChildSize,
+        minChildSize: minChildSize,
+        maxChildSize: 0.85,
+        snap: true,
+        snapSizes: [minChildSize, 0.55, 0.85],
+        builder: (ctx, scrollCtrl) {
+          return Container(
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border(
+                top: BorderSide(color: _gold.withValues(alpha: 0.08)),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: shadowC,
+                  blurRadius: 20,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+            ),
+            child: ListView(
+              controller: scrollCtrl,
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.zero,
+              children: [
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                    child: child,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _handle(bool isDark) => Center(
+    child: Container(
+      width: 40,
+      height: 5,
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.25)
+            : Colors.black.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(3),
+      ),
+    ),
+  );
+
+  Widget _fab(
+    IconData ic,
+    double sz,
+    Color bg,
+    Color border,
+    Color iconColor,
+    VoidCallback tap,
+  ) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        tap();
+      },
+      child: Container(
+        width: sz,
+        height: sz,
+        decoration: BoxDecoration(
+          color: bg,
+          shape: BoxShape.circle,
+          border: Border.all(color: border),
+        ),
+        child: Icon(ic, color: iconColor, size: sz * 0.44),
+      ),
+    );
+  }
+
+  Widget _avatar(double s, {bool showBadge = false}) {
+    final circle = Container(
+      width: s,
+      height: s,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const LinearGradient(colors: [_gold, _goldLight]),
+      ),
+      child: Center(
+        child: Text(
+          _riderInit,
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: s * 0.42,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+    if (!showBadge) return circle;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        circle,
+        Positioned(
+          bottom: -2,
+          right: -2,
+          child: Container(
+            width: s * 0.38,
+            height: s * 0.38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _gold,
+              border: Border.all(color: const Color(0xFF0A0A0A), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: _gold.withValues(alpha: 0.4),
+                  blurRadius: 6,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.check,
+              color: Colors.black,
+              size: s * 0.22,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _actionBtn(IconData ic, VoidCallback tap) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        tap();
+      },
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: _gold.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+          border: Border.all(color: _gold.withValues(alpha: 0.2)),
+        ),
+        child: Icon(ic, color: _gold, size: 18),
+      ),
+    );
+  }
+
+  Widget _cancelRow(bool isDark) => TextButton(
+    onPressed: _cancel,
+    child: Text(
+      S.of(context).cancelTrip,
+      style: TextStyle(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.25)
+            : Colors.black.withValues(alpha: 0.25),
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
+
+  Widget _sumStat(String v, String l, Color vColor, Color lColor) => Column(
+    children: [
+      Text(
+        v,
+        style: TextStyle(
+          color: vColor,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      Text(l, style: TextStyle(color: lColor, fontSize: 10)),
+    ],
+  );
+}

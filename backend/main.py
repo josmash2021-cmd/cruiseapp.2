@@ -279,6 +279,9 @@ class Trip(Base):
     refund_reason = Column(Text, nullable=True)  # Reason for refund
     per_mile_rate = Column(Float, nullable=True)  # Rate per mile used for fare calc
     per_minute_rate = Column(Float, nullable=True)  # Rate per minute used for fare calc
+    # Trip sharing
+    share_token = Column(String(64), nullable=True, unique=True, index=True)
+    share_expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -3046,6 +3049,7 @@ def _trip_dict(t: Trip) -> dict:
         "per_minute_rate": getattr(t, "per_minute_rate", None),
         "wait_time_charge": getattr(t, "wait_time_charge", 0.0) or 0.0,
         "wait_time_minutes": getattr(t, "wait_time_minutes", 0) or 0,
+        "share_token": getattr(t, "share_token", None),
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "updated_at": _upd.isoformat() if _upd else None,
     }
@@ -4558,6 +4562,104 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         logging.info(f"Checkr report.upgraded: driver={driver.id} status={status}")
 
     return {"ok": True}
+
+# ═══════════════════════════════════════════════════════
+#  LIVE TRIP SHARING  ENDPOINTS
+# ═══════════════════════════════════════════════════════
+
+@app.post("/trips/{trip_id}/share", dependencies=[Depends(_verify_api_key)])
+async def share_trip(
+    trip_id: int,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a share token for live trip tracking."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.rider_id != user.id and trip.driver_id != user.id:
+        raise HTTPException(403, "Not authorized to share this trip")
+    if trip.status in ("completed", "canceled"):
+        raise HTTPException(400, "Cannot share a completed or canceled trip")
+
+    # Reuse existing token if still valid
+    if trip.share_token and trip.share_expires_at and trip.share_expires_at > datetime.now(timezone.utc):
+        return {
+            "share_token": trip.share_token,
+            "share_url": f"/track/{trip.share_token}",
+            "expires_at": trip.share_expires_at.isoformat(),
+        }
+
+    # Generate new token
+    token = secrets.token_urlsafe(32)
+    trip.share_token = token
+    trip.share_expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    await db.commit()
+    await db.refresh(trip)
+
+    return {
+        "share_token": token,
+        "share_url": f"/track/{token}",
+        "expires_at": trip.share_expires_at.isoformat(),
+    }
+
+
+@app.get("/trips/shared/{token}")
+async def get_shared_trip(token: str, db: AsyncSession = Depends(get_db)):
+    """Public endpoint: get trip info by share token (no auth required)."""
+    if not token or len(token) > 64:
+        raise HTTPException(400, "Invalid token")
+    result = await db.execute(select(Trip).where(Trip.share_token == token))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Shared trip not found")
+    if trip.share_expires_at and trip.share_expires_at < datetime.now(timezone.utc):
+        raise HTTPException(410, "Share link has expired")
+
+    # Return limited trip info (no personal data)
+    return {
+        "trip_id": trip.id,
+        "pickup_address": trip.pickup_address,
+        "dropoff_address": trip.dropoff_address,
+        "pickup_lat": trip.pickup_lat,
+        "pickup_lng": trip.pickup_lng,
+        "dropoff_lat": trip.dropoff_lat,
+        "dropoff_lng": trip.dropoff_lng,
+        "status": trip.status,
+        "vehicle_type": trip.vehicle_type,
+        "created_at": trip.created_at.isoformat() if trip.created_at else None,
+    }
+
+
+@app.get("/trips/shared/{token}/location")
+async def get_shared_trip_location(token: str, db: AsyncSession = Depends(get_db)):
+    """Public endpoint: get live driver location for a shared trip."""
+    if not token or len(token) > 64:
+        raise HTTPException(400, "Invalid token")
+    result = await db.execute(select(Trip).where(Trip.share_token == token))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Shared trip not found")
+    if trip.share_expires_at and trip.share_expires_at < datetime.now(timezone.utc):
+        raise HTTPException(410, "Share link has expired")
+
+    if not trip.driver_id:
+        return {"lat": None, "lng": None, "status": trip.status}
+
+    driver_result = await db.execute(select(User).where(User.id == trip.driver_id))
+    driver = driver_result.scalar_one_or_none()
+    if not driver:
+        return {"lat": None, "lng": None, "status": trip.status}
+
+    return {
+        "lat": driver.lat,
+        "lng": driver.lng,
+        "status": trip.status,
+        "driver_first_name": driver.first_name,
+        "vehicle_type": trip.vehicle_type,
+    }
+
 
 # ═══════════════════════════════════════════════════════
 #  RATING  ENDPOINTS

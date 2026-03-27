@@ -81,126 +81,113 @@ class GoldenPinPainter {
   final IconData icon;
   final double size;
 
-  /// Pin proportions
-  double get _width => size;
-  double get _height => size * 1.25;
-  double get _cx => _width / 2;
-  double get _circleY => _height * 0.34;
-  double get _radius => _width * 0.37;
-  double get _tipY => _height * 0.90;
+  double get _width  => size;
+  double get _height => size * 1.375;
+  double get _cx     => _width / 2;
+  double get _r      => _width * 0.32;
+  double get _headCY => _r + _width * 0.06;
+  double get _tipY   => _height * 0.82;
+  double get _shadowY => _height * 0.97; // SEPARATED from tip
+
+  static const _goldLight = Color(0xFFFFF8DC);
+  static const _goldMid   = Color(0xFFE8C547);
+  static const _goldDeep  = Color(0xFFB8860B);
 
   void paint(Canvas canvas, Size canvasSize) {
-    final cx = _cx;
-    final circleY = _circleY;
-    final r = _radius;
-    final tipY = _tipY;
+    final cx      = _cx;
+    final r       = _r;
+    final headCY  = _headCY;
+    final tipY    = _tipY;
+    final shadowY = _shadowY;
 
-    // ── 0. GROUND SHADOW (dark ellipse below tip) ──
+    // ── 0. Ground shadow ring — SEPARATED (floating illusion) ──
     canvas.drawOval(
       Rect.fromCenter(
-        center: Offset(cx, tipY + 4),
-        width: r * 0.9,
-        height: 8,
+        center: Offset(cx, shadowY),
+        width: r * 1.35,
+        height: r * 0.30,
       ),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.55)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+        ..color = Colors.black.withValues(alpha: 0.20)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
 
-    // ── 1. BUILD TEARDROP PATH ──
-    final pinPath = _teardropPath(cx, circleY, r, tipY);
+    // ── 1. Teardrop path ──
+    final pinPath = _buildTeardrop(cx, headCY, r, tipY);
 
-    // ── 2. GOLDEN GRADIENT FILL ──
-    final pinBounds = Rect.fromLTWH(cx - r, circleY - r, r * 2, tipY - circleY + r);
-    final gradient = RadialGradient(
-      center: const Alignment(-0.3, -0.3),
-      radius: 0.8,
-      colors: const [
-        Color(0xFFf5d76e), // bright gold highlight
-        Color(0xFFc8a951), // mid gold
-        Color(0xFF8B6914), // deep gold shadow
-      ],
-      stops: const [0.0, 0.5, 1.0],
-    );
+    // ── 2. Drop shadow behind pin ──
     canvas.drawPath(
-      pinPath,
-      Paint()..shader = gradient.createShader(pinBounds),
+      pinPath.shift(const Offset(0, 4)),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.25)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
     );
 
-    // ── 3. THIN DARK-GOLD BORDER ──
+    // ── 3. Gold gradient fill (linear, light top-left → deep bottom-right) ──
     canvas.drawPath(
       pinPath,
       Paint()
-        ..color = const Color(0xFF705A10)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2,
+        ..shader = ui.Gradient.linear(
+          Offset(cx - r * 0.5, headCY - r),
+          Offset(cx + r * 0.5, tipY),
+          [_goldLight, _goldMid, _goldDeep],
+          [0.0, 0.45, 1.0],
+        ),
     );
 
-    // ── 4. GLOSSY 3D SHINE (white semi-transparent highlight) ──
+    // ── 4. Glass sheen — white oval highlight top-left ──
     canvas.save();
     canvas.clipPath(pinPath);
     canvas.drawOval(
       Rect.fromCenter(
-        center: Offset(cx - r * 0.22, circleY - r * 0.18),
-        width: r * 0.75,
-        height: r * 0.55,
+        center: Offset(cx - r * 0.28, headCY - r * 0.25),
+        width: r * 0.90,
+        height: r * 0.60,
       ),
-      Paint()..color = Colors.white.withValues(alpha: 0.32),
+      Paint()
+        ..color = const Color(0x66FFFFFF)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    // Micro-specular dot
+    canvas.drawCircle(
+      Offset(cx - r * 0.32, headCY - r * 0.32),
+      r * 0.14,
+      Paint()..color = Colors.white.withValues(alpha: 0.85),
     );
     canvas.restore();
 
-    // ── 5. WHITE ICON (centered in circle head) ──
-    _drawMaterialIcon(canvas, icon, cx, circleY, r);
+    // ── 5. Thin bright border ──
+    canvas.drawPath(
+      pinPath,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = Colors.white.withValues(alpha: 0.35),
+    );
+
+    // ── 6. Icon (large and visible) ──
+    _drawIcon(canvas, icon, cx, headCY, r);
   }
 
-  /// Builds the teardrop/drop path: arc for the circle head +
-  /// smooth curves tapering to the tip.
-  Path _teardropPath(double cx, double circleY, double r, double tipY) {
-    // Angle from bottom-center of circle where taper begins (~35°)
-    const double taper = 0.60;
-
-    // Points on circle where taper starts
-    final double rx = cx + r * math.sin(taper);
-    final double ry = circleY + r * math.cos(taper);
-    final double lx = cx - r * math.sin(taper);
-    final double ly = ry; // symmetric
-
-    final path = Path()
+  Path _buildTeardrop(double cx, double headCY, double r, double tipY) {
+    const taper = 0.58;
+    final rx = cx + r * math.sin(taper);
+    final ry = headCY + r * math.cos(taper);
+    final lx = cx - r * math.sin(taper);
+    return Path()
       ..moveTo(cx, tipY)
-      // Right side: cubic bezier from tip up to right taper point
-      ..cubicTo(
-        cx + r * 0.12, tipY - (tipY - ry) * 0.42, // cp1
-        rx + r * 0.06, ry + (tipY - ry) * 0.24,    // cp2
-        rx, ry,                                      // end
-      )
-      // Arc from right taper clockwise through top to left taper
-      ..arcToPoint(
-        Offset(lx, ly),
-        radius: Radius.circular(r),
-        clockwise: false,
-        largeArc: true,
-      )
-      // Left side: cubic bezier from left taper point down to tip
-      ..cubicTo(
-        lx - r * 0.06, ly + (tipY - ly) * 0.24, // cp1
-        cx - r * 0.12, tipY - (tipY - ly) * 0.42, // cp2
-        cx, tipY,                                    // end
-      )
+      ..cubicTo(cx + r * 0.14, tipY - (tipY - ry) * 0.38,
+                rx + r * 0.08, ry + (tipY - ry) * 0.20, rx, ry)
+      ..arcToPoint(Offset(lx, ry),
+          radius: Radius.circular(r), clockwise: false, largeArc: true)
+      ..cubicTo(lx - r * 0.08, ry + (tipY - ry) * 0.20,
+                cx - r * 0.14, tipY - (tipY - ry) * 0.38, cx, tipY)
       ..close();
-
-    return path;
   }
 
-  /// Renders a Material icon via TextPainter onto the canvas.
-  void _drawMaterialIcon(
-    Canvas canvas,
-    IconData iconData,
-    double cx,
-    double cy,
-    double radius,
-  ) {
-    final iconSize = radius * 0.85;
-    final textPainter = TextPainter(
+  void _drawIcon(Canvas canvas, IconData iconData, double cx, double cy, double r) {
+    final iconSize = r * 1.25;
+    final tp = TextPainter(
       text: TextSpan(
         text: String.fromCharCode(iconData.codePoint),
         style: TextStyle(
@@ -208,29 +195,19 @@ class GoldenPinPainter {
           fontFamily: iconData.fontFamily,
           package: iconData.fontPackage,
           color: Colors.white,
+          shadows: const [Shadow(color: Color(0x44000000), blurRadius: 4)],
         ),
       ),
       textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(cx - textPainter.width / 2, cy - textPainter.height / 2),
-    );
+    )..layout();
+    tp.paint(canvas, Offset(cx - tp.width / 2, cy - tp.height / 2));
   }
 }
 
 // ──────────────────────────────────────────────────────────────────
-//  BUILD GOLDEN PIN → BitmapDescriptor  (for Google Maps)
+//  buildGoldenPinBytes — renders pin as PNG Uint8List
 // ──────────────────────────────────────────────────────────────────
 
-/// Returns a golden teardrop pin rendered as PNG [Uint8List].
-///
-/// [icon]  — Material icon to embed in the pin head.
-/// [size]  — logical width in pixels (height = size × 1.25).
-/// [scale] — device-pixel-ratio multiplier (default 2.0 for retina).
-///
-/// Results are cached by (icon.codePoint, size) key.
 final Map<String, Uint8List> _goldenPinCache = {};
 
 Future<Uint8List> buildGoldenPinBytes({
@@ -241,12 +218,12 @@ Future<Uint8List> buildGoldenPinBytes({
   final key = '${icon.codePoint}_$size';
   if (_goldenPinCache.containsKey(key)) return _goldenPinCache[key]!;
 
-  final w = size;
-  final h = size * 1.25;
+  final painter = GoldenPinPainter(icon: icon, size: size);
+  final w = painter._width;
+  final h = painter._height;
 
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w, h));
-  final painter = GoldenPinPainter(icon: icon, size: size);
   painter.paint(canvas, Size(w, h));
 
   final picture = recorder.endRecording();
@@ -261,3 +238,6 @@ Future<Uint8List> buildGoldenPinBytes({
   _goldenPinCache[key] = bytes;
   return bytes;
 }
+
+
+

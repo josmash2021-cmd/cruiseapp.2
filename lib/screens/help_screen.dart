@@ -1010,7 +1010,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
         // If the loaded chat was already ended, auto-restart with a fresh one
         if (_chatClosed) {
-          ApiService.closeSupportChat(_chatId!).catchError((_) => null);
+          ApiService.closeSupportChat(_chatId!).catchError((_) {});
           _chatId = null;
           _chatClosed = false;
           _messages.clear();
@@ -1316,6 +1316,13 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   Future<void> _sendMessage([String? prefilledText]) async {
     final text = prefilledText ?? _msgCtrl.text.trim();
     if (text.isEmpty || _sending) return;
+
+    // If this chat session was closed, start a fresh one instead
+    if (_chatClosed) {
+      _startNewChat();
+      return;
+    }
+
     if (prefilledText == null) _msgCtrl.clear();
     // Clear typing status on send
     _typingDebounce?.cancel();
@@ -1759,8 +1766,8 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       items.add(_buildBubble(msg));
     }
 
-    // Quick action chips
-    if (_showQuickActions) {
+    // Quick action chips — only when chat is active
+    if (_showQuickActions && !_chatClosed) {
       items.add(_buildQuickActions());
     }
 

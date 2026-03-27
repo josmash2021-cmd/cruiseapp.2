@@ -689,6 +689,8 @@ async def _migrate_postgres(conn):
         ("trips", "refund_reason", "TEXT"),
         ("trips", "per_mile_rate", "FLOAT"),
         ("trips", "per_minute_rate", "FLOAT"),
+        ("trips", "share_token", "VARCHAR(100)"),
+        ("trips", "share_expires_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "updated_at", "TIMESTAMP WITH TIME ZONE DEFAULT NOW()"),
         ("ratings", "tip_amount", "FLOAT DEFAULT 0.0"),
         ("vehicles", "vin", "VARCHAR(50)"),

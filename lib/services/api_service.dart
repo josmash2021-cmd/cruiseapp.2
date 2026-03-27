@@ -659,11 +659,16 @@ class ApiService {
 
   // ── Saved Addresses CRUD ──
 
+  /// ✅ QUICK WIN #3: Added 30s cache to reduce redundant API calls
+  /// Saved addresses rarely change, safe to cache for UI responsiveness
   static Future<List<dynamic>> getSavedAddresses() async {
     final h = await _authHeaders();
-    final res = await _client
-        .get(Uri.parse('$_baseUrl/favorites'), headers: h)
-        .timeout(const Duration(seconds: 10));
+    final res = await _cachedGet(
+      Uri.parse('$_baseUrl/favorites'),
+      headers: h,
+      cacheTtl: const Duration(seconds: 30),
+      useCache: true,
+    );
     final parsed = _parse(res);
     if (parsed['list'] != null) return parsed['list'] as List;
     // The endpoint returns a JSON array directly
@@ -1106,27 +1111,28 @@ class ApiService {
   }
 
   /// Check account status (dispatch may have blocked/deleted).
+  /// ✅ QUICK WIN #3: Added 10s cache - called every 30s in background
+  /// Reduces unnecessary API calls while keeping reasonable freshness
   static Future<String> getAccountStatus() async {
     final token = await getToken();
     if (token == null) return 'active'; // no token yet — assume active, don't trigger logout
-    final res = await _client
-        .get(
-          Uri.parse('$_baseUrl/auth/account-status'),
-          headers: _jsonHeaders(token),
-        )
-        .timeout(const Duration(seconds: 5));
+    final res = await _cachedGet(
+      Uri.parse('$_baseUrl/auth/account-status'),
+      headers: _jsonHeaders(token),
+      cacheTtl: const Duration(seconds: 10),
+      useCache: true,
+    );
     // Handle 401 gracefully — attempt refresh but don't trigger global logout
     // from a background poll. The main _parse 401 handler is too aggressive here.
     if (res.statusCode == 401) {
       final refreshed = await refreshAccessToken();
       if (refreshed) {
         final newToken = await getToken();
-        final retry = await _client
-            .get(
-              Uri.parse('$_baseUrl/auth/account-status'),
-              headers: _jsonHeaders(newToken),
-            )
-            .timeout(const Duration(seconds: 5));
+        final retry = await _cachedGet(
+          Uri.parse('$_baseUrl/auth/account-status'),
+          headers: _jsonHeaders(newToken),
+          cacheTtl: const Duration(seconds: 10),
+        );
         if (retry.statusCode == 200) {
           final d = jsonDecode(retry.body);
           return (d is Map ? d['status'] as String? : null) ?? 'active';
@@ -2125,11 +2131,16 @@ class ApiService {
   // ═══════════════════════════════════════════════════════
 
   /// Get user notifications.
+  /// ✅ QUICK WIN #3: Added 5s cache for notification list
+  /// Short TTL keeps them fresh while reducing API load
   static Future<List<Map<String, dynamic>>> getNotifications() async {
     final h = await _authHeaders();
-    final res = await _client
-        .get(Uri.parse('$_baseUrl/notifications'), headers: h)
-        .timeout(const Duration(seconds: 8));
+    final res = await _cachedGet(
+      Uri.parse('$_baseUrl/notifications'),
+      headers: h,
+      cacheTtl: const Duration(seconds: 5),
+      useCache: true,
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
       return list.cast<Map<String, dynamic>>();

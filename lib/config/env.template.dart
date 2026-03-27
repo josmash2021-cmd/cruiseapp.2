@@ -6,8 +6,9 @@
 
 class Env {
   // ── Backend API authentication ──
-  static const String apiKey = 'YOUR_API_KEY';
-  static const String hmacSecret = 'YOUR_HMAC_SECRET';
+  // For local dev, use these defaults (they match backend/main.py defaults):
+  static const String apiKey = 'dev-api-key-change-in-production';
+  static const String hmacSecret = 'dev-hmac-secret-change-in-production';
 
   // ── Google Services (Places Autocomplete, Geocoding, Directions API) ──
   static const String mapsServicesKey = 'YOUR_GOOGLE_SERVICES_KEY';

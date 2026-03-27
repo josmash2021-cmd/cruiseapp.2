@@ -317,6 +317,28 @@ class RiderPaymentMethod(Base):
     is_default = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+# ══════════════════════════════════════════════════════════════════════════
+#  WALLET MODELS (Feature 12.1)
+# ══════════════════════════════════════════════════════════════════════════
+class Wallet(Base):
+    __tablename__ = "wallets"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    balance = Column(Float, default=0.0)
+    currency = Column(String(3), default="USD")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class WalletTransaction(Base):
+    __tablename__ = "wallet_transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    wallet_id = Column(Integer, ForeignKey("wallets.id"), nullable=False)
+    amount = Column(Float, nullable=False)  # Positive for credits, negative for debits
+    type = Column(String(20), nullable=False)  # top-up, ride-payment, refund, promo, withdrawal
+    reference_id = Column(String(100), nullable=True)  # trip_id, stripe_intent_id, promo_code, etc.
+    description = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class Cashout(Base):
     __tablename__ = "cashouts"
     id = Column(Integer, primary_key=True, index=True)
@@ -1756,6 +1778,14 @@ class RiderPaymentMethodIn(BaseModel):
     display_name: str
     stripe_pm_id: Optional[str] = None
     set_default: bool = False
+
+# ── Wallet Input Models ──
+class WalletTopUpIn(BaseModel):
+    amount: float  # Amount to add (must be positive)
+    payment_method_id: Optional[str] = None  # Stripe PaymentMethod ID
+
+class WalletWithdrawIn(BaseModel):
+    amount: float  # Amount to withdraw (must be positive)
 
 class DispatchRequestIn(BaseModel):
     rider_id: int
@@ -4030,6 +4060,166 @@ async def set_default_rider_payment_method(pm_id: int, user: User = Depends(_get
         raise HTTPException(404, "Payment method not found")
     await db.commit()
     return {"status": "ok"}
+
+# ═══════════════════════════════════════════════════════
+#  WALLET ENDPOINTS (Feature 12.1)
+# ═══════════════════════════════════════════════════════
+
+async def _get_or_create_wallet(user_id: int, db: AsyncSession) -> Wallet:
+    """Get existing wallet or create a new one for the user."""
+    result = await db.execute(select(Wallet).where(Wallet.user_id == user_id))
+    wallet = result.scalar_one_or_none()
+    if not wallet:
+        wallet = Wallet(user_id=user_id, balance=0.0, currency="USD")
+        db.add(wallet)
+        await db.commit()
+        await db.refresh(wallet)
+    return wallet
+
+@app.get("/wallet/balance", dependencies=[Depends(_verify_api_key)])
+async def get_wallet_balance(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get user's wallet balance."""
+    wallet = await _get_or_create_wallet(user.id, db)
+    return {
+        "id": wallet.id,
+        "balance": wallet.balance,
+        "currency": wallet.currency,
+        "updated_at": wallet.updated_at.isoformat() if wallet.updated_at else None
+    }
+
+@app.get("/wallet/transactions", dependencies=[Depends(_verify_api_key)])
+async def get_wallet_transactions(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0
+):
+    """Get user's wallet transactions (most recent first)."""
+    wallet = await _get_or_create_wallet(user.id, db)
+    result = await db.execute(
+        select(WalletTransaction)
+        .where(WalletTransaction.wallet_id == wallet.id)
+        .order_by(WalletTransaction.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    transactions = result.scalars().all()
+    return {
+        "balance": wallet.balance,
+        "currency": wallet.currency,
+        "transactions": [
+            {
+                "id": t.id,
+                "amount": t.amount,
+                "type": t.type,
+                "reference_id": t.reference_id,
+                "description": t.description,
+                "created_at": t.created_at.isoformat() if t.created_at else None
+            }
+            for t in transactions
+        ]
+    }
+
+@app.post("/wallet/top-up", dependencies=[Depends(_verify_api_key)])
+async def top_up_wallet(body: WalletTopUpIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Add funds to wallet via payment method."""
+    if body.amount <= 0:
+        raise HTTPException(400, "Amount must be positive")
+    if body.amount > 1000:
+        raise HTTPException(400, "Maximum top-up amount is $1000")
+    
+    wallet = await _get_or_create_wallet(user.id, db)
+    
+    # In production, process payment via Stripe here using body.payment_method_id
+    # For now, we directly credit the wallet (simulated success)
+    
+    wallet.balance += body.amount
+    wallet.updated_at = datetime.utcnow()
+    
+    # Record transaction
+    txn = WalletTransaction(
+        wallet_id=wallet.id,
+        amount=body.amount,
+        type="top-up",
+        reference_id=body.payment_method_id or "manual",
+        description=f"Added ${body.amount:.2f} to wallet"
+    )
+    db.add(txn)
+    await db.commit()
+    await db.refresh(wallet)
+    await db.refresh(txn)
+    
+    return {
+        "status": "success",
+        "new_balance": wallet.balance,
+        "transaction": {
+            "id": txn.id,
+            "amount": txn.amount,
+            "type": txn.type,
+            "created_at": txn.created_at.isoformat() if txn.created_at else None
+        }
+    }
+
+@app.post("/wallet/pay-ride", dependencies=[Depends(_verify_api_key)])
+async def pay_ride_with_wallet(trip_id: int, amount: float, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Deduct ride payment from wallet."""
+    if amount <= 0:
+        raise HTTPException(400, "Amount must be positive")
+    
+    wallet = await _get_or_create_wallet(user.id, db)
+    
+    if wallet.balance < amount:
+        raise HTTPException(400, f"Insufficient balance. Available: ${wallet.balance:.2f}")
+    
+    wallet.balance -= amount
+    wallet.updated_at = datetime.utcnow()
+    
+    # Record transaction
+    txn = WalletTransaction(
+        wallet_id=wallet.id,
+        amount=-amount,  # Negative for debit
+        type="ride-payment",
+        reference_id=str(trip_id),
+        description=f"Ride payment for trip #{trip_id}"
+    )
+    db.add(txn)
+    await db.commit()
+    await db.refresh(wallet)
+    
+    return {
+        "status": "success",
+        "new_balance": wallet.balance,
+        "amount_paid": amount
+    }
+
+@app.post("/wallet/refund", dependencies=[Depends(_verify_api_key)])
+async def refund_to_wallet(trip_id: int, amount: float, reason: str = "Ride refund", user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Refund amount to wallet (for cancelled rides, etc.)."""
+    if amount <= 0:
+        raise HTTPException(400, "Amount must be positive")
+    
+    wallet = await _get_or_create_wallet(user.id, db)
+    
+    wallet.balance += amount
+    wallet.updated_at = datetime.utcnow()
+    
+    # Record transaction
+    txn = WalletTransaction(
+        wallet_id=wallet.id,
+        amount=amount,
+        type="refund",
+        reference_id=str(trip_id),
+        description=reason
+    )
+    db.add(txn)
+    await db.commit()
+    await db.refresh(wallet)
+    
+    return {
+        "status": "success",
+        "new_balance": wallet.balance,
+        "amount_refunded": amount
+    }
 
 # ═══════════════════════════════════════════════════════
 #  DISPATCH  ENDPOINTS

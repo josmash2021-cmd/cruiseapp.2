@@ -84,13 +84,14 @@ extension _RideRequestController on _RideRequestScreenState {
 
       // Use current location as pickup if available
       if (_userLocation != null) {
+        final curLabel = _currentAddress.isNotEmpty ? _currentAddress : 'current location';
         _ctrl.setPickup(
           PlaceDetails(
-            address: _currentAddress,
+            address: curLabel,
             lat: _userLocation!.latitude,
             lng: _userLocation!.longitude,
           ),
-          _currentAddress,
+          curLabel,
         );
       }
       _ctrl.setDropoff(details, address);
@@ -409,14 +410,16 @@ extension _RideRequestController on _RideRequestScreenState {
     if (pickupDetails != null) {
       _ctrl.setPickup(pickupDetails, pickupLabel);
     } else if (_userLocation != null) {
-      // Use current location as pickup
+      // Use current location as pickup (fallback to 'current location' so
+      // the driver side can reverse-geocode when _currentAddress is still '')
+      final curLabel = _currentAddress.isNotEmpty ? _currentAddress : 'current location';
       _ctrl.setPickup(
         PlaceDetails(
-          address: _currentAddress,
+          address: curLabel,
           lat: _userLocation!.latitude,
           lng: _userLocation!.longitude,
         ),
-        _currentAddress,
+        curLabel,
       );
     }
 

@@ -357,13 +357,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             widget.initialPickupLabel ?? widget.initialPickupDetails!.address,
           );
         } else if (_userLocation != null && widget.initialDropoffDetails != null) {
+          final curLabel = _currentAddress.isNotEmpty ? _currentAddress : 'current location';
           _ctrl.setPickup(
             PlaceDetails(
-              address: _currentAddress,
+              address: curLabel,
               lat: _userLocation!.latitude,
               lng: _userLocation!.longitude,
             ),
-            _currentAddress,
+            curLabel,
           );
         }
         if (widget.initialDropoffDetails != null) {

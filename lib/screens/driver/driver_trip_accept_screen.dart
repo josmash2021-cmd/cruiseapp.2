@@ -94,6 +94,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Resolved addresses (replace generic placeholders) ──
   late String _pickupAddr;
   late String _dropoffAddr;
+  bool _resolvingAddresses = false;
 
   // ── Tilt animation ──
   late final AnimationController _tiltCtrl;
@@ -211,20 +212,33 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   Future<void> _resolveGenericAddresses() async {
-    if (_isGenericAddress(_pickupAddr)) {
+    final needsPickup = _isGenericAddress(_pickupAddr);
+    final needsDropoff = _isGenericAddress(_dropoffAddr);
+    if (!needsPickup && !needsDropoff) return;
+    if (mounted) setState(() => _resolvingAddresses = true);
+    if (needsPickup) {
       final resolved = await _reverseGeocode(
-        widget.pickupLatLng.latitude, widget.pickupLatLng.longitude);
-      if (resolved != null && mounted) {
-        setState(() => _pickupAddr = resolved);
+          widget.pickupLatLng.latitude, widget.pickupLatLng.longitude);
+      if (mounted) {
+        setState(() {
+          _pickupAddr = resolved ??
+              '${widget.pickupLatLng.latitude.toStringAsFixed(5)}, '
+              '${widget.pickupLatLng.longitude.toStringAsFixed(5)}';
+        });
       }
     }
-    if (_isGenericAddress(_dropoffAddr)) {
+    if (needsDropoff) {
       final resolved = await _reverseGeocode(
-        widget.dropoffLatLng.latitude, widget.dropoffLatLng.longitude);
-      if (resolved != null && mounted) {
-        setState(() => _dropoffAddr = resolved);
+          widget.dropoffLatLng.latitude, widget.dropoffLatLng.longitude);
+      if (mounted) {
+        setState(() {
+          _dropoffAddr = resolved ??
+              '${widget.dropoffLatLng.latitude.toStringAsFixed(5)}, '
+              '${widget.dropoffLatLng.longitude.toStringAsFixed(5)}';
+        });
       }
     }
+    if (mounted) setState(() => _resolvingAddresses = false);
   }
 
   // ── Navigation ────────────────────────────────────────────────────────────
@@ -1103,7 +1117,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   _gold.withValues(alpha: 0.15),
                   _gold,
                   'Pickup',
-                  _pickupAddr,
+                  _resolvingAddresses && _pickupAddr.isEmpty
+                      ? 'Obteniendo direcci\u00f3n...'
+                      : _pickupAddr,
                   showChevron: true,
                 ),
               ),
@@ -1125,7 +1141,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   _gold.withValues(alpha: 0.15),
                   _gold,
                   'Dropoff',
-                  _dropoffAddr,
+                  _resolvingAddresses && _dropoffAddr.isEmpty
+                      ? 'Obteniendo direcci\u00f3n...'
+                      : _dropoffAddr,
                   showChevron: true,
                 ),
               ),

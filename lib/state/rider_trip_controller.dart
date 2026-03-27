@@ -525,8 +525,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
       final result = await ApiService.dispatchRideRequest(
         riderId: userId,
-        pickupAddress: _state.pickupLabel,
-        dropoffAddress: _state.dropoffLabel,
+        pickupAddress: _state.pickupLabel.isNotEmpty ? _state.pickupLabel : 'current location',
+        dropoffAddress: _state.dropoffLabel.isNotEmpty ? _state.dropoffLabel : 'current location',
         pickupLat: pickup.lat,
         pickupLng: pickup.lng,
         dropoffLat: dropoff.lat,

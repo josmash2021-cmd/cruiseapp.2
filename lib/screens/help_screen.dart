@@ -941,6 +941,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   Timer? _typingDebounce;
   bool _isUserTyping = false;
   String _userRole = 'rider';
+  int _pollFailures = 0;
 
   _ChatPhase _phase = _ChatPhase.bot;
   int _queueDuration = 180;
@@ -1017,9 +1018,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       }
     } catch (e) {
       debugPrint('[SupportChat] init error: $e');
-      // Retry once
+      // _withRetry already tried 3 times — re-probe with longer timeout and try once more
       if (_chatId == null) {
         try {
+          await ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 8));
           final chat = await ApiService.createSupportChat(
             subject: 'Soporte general',
             locale: 'en',
@@ -1033,7 +1035,28 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               (_) => _loadMessages(),
             );
           }
-        } catch (_) {}
+        } catch (e2) {
+          debugPrint('[SupportChat] init retry also failed: $e2');
+          // Show error to user — don't fail silently
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(_isSpanish
+                    ? 'No se pudo conectar al soporte. Intenta de nuevo.'
+                    : 'Could not connect to support. Please try again.'),
+                backgroundColor: Colors.red,
+                action: SnackBarAction(
+                  label: _isSpanish ? 'Reintentar' : 'Retry',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    setState(() => _loading = true);
+                    _initChat();
+                  },
+                ),
+              ),
+            );
+          }
+        }
       }
     }
     if (mounted) setState(() => _loading = false);
@@ -1046,6 +1069,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     try {
       final msgs = await ApiService.getSupportMessages(_chatId!);
       if (!mounted) return;
+      _pollFailures = 0;
 
       final newMessages = msgs.map((m) {
         final role = m['sender_role'] ?? '';
@@ -1168,6 +1192,12 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       _scrollToBottom();
     } catch (e) {
       debugPrint('[SupportChat] poll error: $e');
+      _pollFailures++;
+      // After 3 consecutive failures, re-probe and notify user
+      if (_pollFailures >= 3 && mounted) {
+        _pollFailures = 0;
+        ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 6)).catchError((_) => null);
+      }
     }
   }
 
@@ -1317,8 +1347,18 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           setState(() => _loading = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(S.of(context).connectionError),
+              content: Text(_isSpanish
+                  ? 'No se pudo conectar al soporte. Intenta de nuevo.'
+                  : 'Could not connect to support. Please try again.'),
               backgroundColor: Colors.red,
+              action: SnackBarAction(
+                label: _isSpanish ? 'Reintentar' : 'Retry',
+                textColor: Colors.white,
+                onPressed: () {
+                  setState(() => _loading = true);
+                  _initChat();
+                },
+              ),
             ),
           );
         }
@@ -1345,6 +1385,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     } catch (e) {
       debugPrint('[SupportChat] send error: $e');
       if (mounted) {
+        final failedText = text;
         setState(() {
           if (_messages.isNotEmpty && _messages.last.role == _userRole) {
             _messages.removeLast();
@@ -1353,9 +1394,14 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_isSpanish
-                ? 'No se pudo enviar. Verifica tu conexión.'
-                : 'Failed to send. Check your connection.'),
+                ? 'No se pudo enviar el mensaje. Intenta de nuevo.'
+                : 'Message could not be sent. Please try again.'),
             backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: _isSpanish ? 'Reintentar' : 'Retry',
+              textColor: Colors.white,
+              onPressed: () => _sendMessage(failedText),
+            ),
           ),
         );
       }

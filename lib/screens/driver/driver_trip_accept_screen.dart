@@ -613,6 +613,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     await MapTheme.applyNavyGold(ctrl);
     _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
     _annotMgr = await ctrl.annotations.createPointAnnotationManager();
+    try { await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
 
     // 1. Load route (cache-first — prevents straight-line bug)
     _routePoints = await _loadRoute();

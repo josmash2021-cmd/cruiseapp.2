@@ -118,12 +118,12 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
       if (mounted) _slideCtrl.forward();
     });
 
-    // Map tilt: 0° → 55° over 1s
+    // Tilt controller (kept for disposal, but not animated)
     _tiltCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
-    _tiltAnim = Tween<double>(begin: 0.0, end: 20.0).animate(
+    _tiltAnim = Tween<double>(begin: 20.0, end: 20.0).animate(
       CurvedAnimation(parent: _tiltCtrl, curve: Curves.easeInOutCubic),
     );
 
@@ -281,7 +281,21 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     return completer.future;
   }
 
-  /// Called when map is ready — apply theme, tilt, route.
+  /// Draw the full route polyline instantly (no animation).
+  Future<void> _drawRouteInstant() async {
+    final polyMgr = _polyMgr;
+    if (polyMgr == null || _routePoints.length < 2) return;
+    final coords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final geo = mapbox.LineString(coordinates: coords);
+    _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geo,
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 5.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    ));
+  }
+
+  /// Called when map is ready — apply theme, draw route + pins instantly.
   Future<void> _onMapReady(mapbox.MapboxMap ctrl) async {
     _mapCtrl = ctrl;
     await MapTheme.applyNavyGold(ctrl);
@@ -292,38 +306,18 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
 
     _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _pointMgr = await ctrl.annotations.createPointAnnotationManager();
+    try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
 
-    // Add smart pins (pickup + dropoff)
+    // Add smart pins immediately (pickup + dropoff)
     _addSmartPins();
 
-    // Fit camera to show driver + pickup, then animate tilt
-    final bearing = _bearingToPickup();
-    final midLat = (widget.driverPos.latitude + widget.pickupLatLng.latitude) / 2;
-    final midLng = (widget.driverPos.longitude + widget.pickupLatLng.longitude) / 2;
-
-    ctrl.flyTo(
-      mapbox.CameraOptions(
-        center: mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
-        zoom: 14.5,
-        bearing: bearing,
-        pitch: 0,
-      ),
-      mapbox.MapAnimationOptions(duration: 300),
-    );
-    await Future.delayed(const Duration(milliseconds: 350));
-    if (!mounted) return;
-
-    // Animate tilt 0° → 55°
-    _tiltAnim.addListener(_applyMapTilt);
-    _tiltCtrl.forward();
-
-    // Wait for route to be ready, then draw it
+    // Wait for route to be ready, then draw it instantly (no animation)
     while (_routeFetching && mounted) {
       await Future.delayed(const Duration(milliseconds: 50));
     }
     if (!mounted) return;
     if (_routePoints.length >= 2) {
-      await _animateRouteDraw();
+      await _drawRouteInstant();
     }
   }
 
@@ -410,12 +404,13 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                     cameraOptions: mapbox.CameraOptions(
                       center: mapbox.Point(
                         coordinates: mapbox.Position(
-                          widget.pickupLatLng.longitude,
-                          widget.pickupLatLng.latitude,
+                          (widget.driverPos.longitude + widget.pickupLatLng.longitude) / 2,
+                          (widget.driverPos.latitude + widget.pickupLatLng.latitude) / 2,
                         ),
                       ),
                       zoom: 14.5,
-                      pitch: 0.0,
+                      pitch: 20.0,
+                      bearing: _bearingToPickup(),
                     ),
                     onMapCreated: _onMapReady,
                     onStyleLoadedListener: (_) async {

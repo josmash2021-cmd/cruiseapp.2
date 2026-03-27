@@ -1676,6 +1676,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         // Add smart pins (pickup + dropoff)
                         final pointMgr = await ctrl.annotations
                             .createPointAnnotationManager();
+                        try { await ctrl.style.setStyleLayerProperty(pointMgr.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
                         final pickupBytes =
                             await GoldPinRenderer.render(isPickup: true);
                         await pointMgr.create(mapbox.PointAnnotationOptions(

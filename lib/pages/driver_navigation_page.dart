@@ -1323,6 +1323,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                   below: "road-label",
                 );
                 _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
                 // Don't draw route yet — cinematic will do it
                 _updateDestAnnotation();
                 _updateDriverAnnotation();

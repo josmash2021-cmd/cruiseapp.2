@@ -114,6 +114,7 @@ extension _MapScreenMap on _MapScreenState {
     _pointAnnotMgr = await controller.annotations.createPointAnnotationManager(
       below: null, // No "below" constraint means it renders above everything
     );
+    try { await controller.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
     if (_currentPosition != null) {
       _centerMapOn(_currentPosition!, zoom: _defaultMapZoom);
       await _setPickupAnnotation(_currentPosition!);

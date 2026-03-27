@@ -1604,6 +1604,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           below: "road-label",
         );
         _pointMgr = await ctrl.annotations.createPointAnnotationManager();
+        try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
         _updateRouteAnnotation();
         _updateDestPin(widget.pickupLatLng);
         // Show pickup pin throughout the trip

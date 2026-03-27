@@ -34,6 +34,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             below: "road-label",
           );
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
           // Always fly to real GPS — never the Miami default
           try {
             final gps = await Geolocator.getCurrentPosition(

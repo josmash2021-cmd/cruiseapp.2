@@ -1329,12 +1329,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   Future<void> _poll() async {
-    // SIMULATION MODE: Generate fake ride offers for practice
-    if (_isSimulationMode) {
-      _generateSimulatedOffer();
-      return;
-    }
-
     if (_driverId == null) {
       debugPrint(
         'âš ï¸ _poll: _driverId is null, retrying getCurrentUserId...',
@@ -1428,72 +1422,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         );
       }).catchError((_) {});
     }
-  }
-
-  /// Generate a simulated ride offer for practice mode (2-10 minute trips)
-  void _generateSimulatedOffer() {
-    if (!mounted || _phase != _Phase.searching) return;
-    
-    // Don't generate if we already have pending offers
-    if (_pendingOffers.isNotEmpty) return;
-    
-    _simulatedTripCounter++;
-    
-    // Generate random pickup location near current position (0.5-2km away = 1-3 min)
-    final random = math.Random();
-    final pickupDistanceKm = 0.5 + random.nextDouble() * 1.5;
-    final angle = random.nextDouble() * 2 * math.pi;
-    final pickupLat = _pos!.latitude + (pickupDistanceKm / 111) * math.cos(angle);
-    final pickupLng = _pos!.longitude + (pickupDistanceKm / (111 * math.cos(_pos!.latitude * math.pi / 180))) * math.sin(angle);
-    
-    // Generate dropoff location 1-5km from pickup (2-8 min trip)
-    // Total trip time: 2-10 minutes
-    final tripDistanceKm = 1.0 + random.nextDouble() * 4.0;
-    final tripAngle = random.nextDouble() * 2 * math.pi;
-    final dropoffLat = pickupLat + (tripDistanceKm / 111) * math.cos(tripAngle);
-    final dropoffLng = pickupLng + (tripDistanceKm / (111 * math.cos(pickupLat * math.pi / 180))) * math.sin(tripAngle);
-    
-    // Calculate fare (base $3 + $1.50 per km)
-    final fare = 3.0 + (tripDistanceKm * 1.5);
-    
-    // Random rider names for simulation
-    final firstNames = ['Alex', 'Jordan', 'Casey', 'Taylor', 'Morgan', 'Riley', 'Quinn', 'Avery', 'Sam', 'Drew'];
-    final lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez'];
-    final riderName = '${firstNames[random.nextInt(firstNames.length)]} ${lastNames[random.nextInt(lastNames.length)]}';
-    
-    // Random addresses
-    final streetNames = ['Main St', 'Oak Ave', 'Park Blvd', 'Cedar Ln', 'Elm St', 'Maple Dr', 'Washington Ave', 'Lake St'];
-    final pickupAddr = '${random.nextInt(9999) + 1} ${streetNames[random.nextInt(streetNames.length)]}';
-    final dropoffAddr = '${random.nextInt(9999) + 1} ${streetNames[random.nextInt(streetNames.length)]}';
-    
-    // Calculate ETAs
-    final pickupEtaMin = (pickupDistanceKm * 1000 / 17.88 / 60).ceil().clamp(1, 5);
-    final tripEtaMin = (tripDistanceKm * 1000 / 17.88 / 60).ceil().clamp(2, 8);
-    
-    final simulatedOffer = {
-      'offer_id': 100000 + _simulatedTripCounter, // High ID to avoid conflicts
-      'trip_id': 100000 + _simulatedTripCounter,
-      'rider_name': riderName,
-      'rider_phone': '(555) ${random.nextInt(899) + 100}-${random.nextInt(8999) + 1000}',
-      'pickup_address': pickupAddr,
-      'dropoff_address': dropoffAddr,
-      'pickup_lat': pickupLat,
-      'pickup_lng': pickupLng,
-      'dropoff_lat': dropoffLat,
-      'dropoff_lng': dropoffLng,
-      'fare': fare,
-      'vehicle_type': 'CruiseX',
-      'status': 'pending',
-      'is_simulated': true, // Flag to identify simulated offers
-      'pickup_eta_min': pickupEtaMin,
-      'trip_eta_min': tripEtaMin,
-    };
-    
-    debugPrint('🎮 SIMULATION: Trip #$pickupEtaMin min to pickup, $tripEtaMin min ride - $riderName');
-    
-    HapticFeedback.heavyImpact();
-    setState(() => _pendingOffers = [simulatedOffer]);
-    _preFetchOfferRoutes([simulatedOffer]);
   }
 
   void _startClock() {

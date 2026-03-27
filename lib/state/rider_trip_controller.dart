@@ -191,6 +191,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   RiderTripState _state = const RiderTripState();
   RiderTripState get state => _state;
 
+  static const Duration _dispatchPollInterval = Duration(seconds: 1);
+
   final DirectionsService _directions = DirectionsService(ApiKeys.webServices);
 
   Timer? _searchTimer;
@@ -576,13 +578,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       }
     });
 
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+    Future<void> checkStatus(Timer? timer) async {
       try {
         final status = await ApiService.getDispatchStatus(tripId);
         final tripStatus = status['status']?.toString() ?? '';
 
         if (tripStatus == 'accepted' || tripStatus == 'driver_en_route') {
-          timer.cancel();
+          timer?.cancel();
           _timeoutTimer?.cancel();
           _isRequesting = false;
           _onDriverMatched(status, tripId);
@@ -590,7 +592,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
             tripStatus == 'no_drivers' ||
             tripStatus == 'expired' ||
             tripStatus == 'canceled') {
-          timer.cancel();
+          timer?.cancel();
           _timeoutTimer?.cancel();
           _isRequesting = false;
           // Extract cancel reason from trip data
@@ -610,6 +612,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       } catch (e) {
         debugPrint('⚠️ dispatch poll error: $e');
       }
+    }
+
+    // Immediate first check to avoid waiting for the first timer tick.
+    checkStatus(null);
+
+    _pollTimer = Timer.periodic(_dispatchPollInterval, (timer) async {
+      await checkStatus(timer);
     });
   }
 

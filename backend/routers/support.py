@@ -894,7 +894,7 @@ async def _action_request_reminder(request_id: int, chat_id: int, user_name: str
                     msg = "Su solicitud está siendo revisada por un supervisor. Le notificaremos por correo electrónico cuando sea procesada. Normalmente toma menos de 1 hora."
                 else:
                     msg = "Your request is being reviewed by a supervisor. We'll notify you by email when it's processed. It typically takes less than 1 hour."
-                bot_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot", message=msg)
+                bot_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=msg)
                 db.add(bot_msg)
                 await db.commit()
                 if _HAS_FIRESTORE:
@@ -1419,7 +1419,7 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                         typing_time = min(2.0 + part_len * 0.04, 10.0)
                         await asyncio.sleep(_rng.uniform(typing_time * 0.75, typing_time))
                     bot_msg = SupportMessage(
-                        chat_id=chat_id, sender_id=0,
+                        chat_id=chat_id, sender_id=None,
                         sender_role=r["role"], message=part
                     )
                     db.add(bot_msg)
@@ -1484,7 +1484,7 @@ async def _check_chat_inactivity(chat_id: int):
                 f"I'm here if you need anything else.",
             ]
             proactive_text = _rng.choice(proactive_msgs_es if lang.startswith("es") else proactive_msgs_en)
-            proactive_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot", message=proactive_text)
+            proactive_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=proactive_text)
             db.add(proactive_msg)
             chat.updated_at = datetime.now(timezone.utc)
             await db.commit()
@@ -1517,7 +1517,7 @@ async def _check_chat_inactivity(chat_id: int):
             agent = chat.agent_name or "Agente"
             lang = getattr(chat, "locale", "en") or "en"
             still_text = "¿Aún sigue en línea conmigo?" if lang.startswith("es") else "Are you still there with me?"
-            still_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot", message=still_text)
+            still_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=still_text)
             db.add(still_msg)
             chat.updated_at = datetime.now(timezone.utc)
             await db.commit()
@@ -1544,7 +1544,7 @@ async def _check_chat_inactivity(chat_id: int):
             close_warn_es = "Por motivos de inactividad, cerraré este chat en 30 segundos. Si necesita más ayuda, envíe un mensaje."
             close_warn_en = "Due to inactivity, I'll be closing this chat in 30 seconds. If you still need help, please send a message."
             close_text = close_warn_es if lang.startswith("es") else close_warn_en
-            close_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot", message=close_text)
+            close_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=close_text)
             db.add(close_msg)
             chat.updated_at = datetime.now(timezone.utc)
             await db.commit()
@@ -1631,7 +1631,7 @@ async def create_or_get_support_chat(request: Request, user: User = Depends(_get
             " Safety\n"
             " App issues"
         )
-    welcome_msg = SupportMessage(chat_id=chat.id, sender_id=0, sender_role="system", message=welcome_text)
+    welcome_msg = SupportMessage(chat_id=chat.id, sender_id=None, sender_role="system", message=welcome_text)
     db.add(welcome_msg)
     await db.commit()
     await db.refresh(welcome_msg)
@@ -1828,7 +1828,7 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
             confirm_text = "Gracias por dejarme saber, solo queria confirmar. En que mas puedo ayudarte?"
         else:
             confirm_text = "Thanks for letting me know, just wanted to confirm. What else can I help you with?"
-        confirm_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="bot",
+        confirm_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot",
                                       message=confirm_text)
         db.add(confirm_msg)
         await db.commit()
@@ -1895,7 +1895,7 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
     if chat.bot_phase != "dispatch_takeover":
         chat.bot_phase = "dispatch_takeover"
 
-    msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="dispatch", message=msg_text)
+    msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="dispatch", message=msg_text)
     db.add(msg)
     chat.updated_at = datetime.now(timezone.utc)
     await db.commit()
@@ -1927,7 +1927,7 @@ async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):
     if old_task and not old_task.done():
         old_task.cancel()
     # Send system message visible to user
-    sys_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="system",
+    sys_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="system",
                               message="Un supervisor se ha conectado al chat")
     db.add(sys_msg)
     await db.commit()
@@ -2070,7 +2070,7 @@ async def approve_action_request(request_id: int, request: Request, db: AsyncSes
         if admin_note:
             msg_text += f" Nota: {admin_note}" if lang.startswith("es") else f" Note: {admin_note}"
 
-        bot_msg = SupportMessage(chat_id=ar.chat_id, sender_id=0, sender_role="bot", message=msg_text)
+        bot_msg = SupportMessage(chat_id=ar.chat_id, sender_id=None, sender_role="bot", message=msg_text)
         db.add(bot_msg)
         await db.commit()
         await db.refresh(bot_msg)
@@ -2132,7 +2132,7 @@ async def reject_action_request(request_id: int, request: Request, db: AsyncSess
         if admin_note:
             msg_text += f" Motivo: {admin_note}" if lang.startswith("es") else f" Reason: {admin_note}"
 
-        bot_msg = SupportMessage(chat_id=ar.chat_id, sender_id=0, sender_role="bot", message=msg_text)
+        bot_msg = SupportMessage(chat_id=ar.chat_id, sender_id=None, sender_role="bot", message=msg_text)
         db.add(bot_msg)
         chat.needs_escalation = True
         chat.updated_at = datetime.now(timezone.utc)

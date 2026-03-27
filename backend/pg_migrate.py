@@ -93,6 +93,22 @@ async def migrate_postgresql_columns(conn):
     
     logger.info("=== PostgreSQL Migration Complete ===")
 
+async def migrate_support_tables(conn):
+    """Fix support_messages.sender_id to allow NULL for bot/system messages."""
+    try:
+        result = await conn.execute(text("""
+            SELECT is_nullable FROM information_schema.columns
+            WHERE table_name = 'support_messages' AND column_name = 'sender_id'
+        """))
+        row = result.scalar()
+        if row == 'NO':
+            await conn.execute(text("ALTER TABLE support_messages ALTER COLUMN sender_id DROP NOT NULL"))
+            logger.info("✓ Made support_messages.sender_id nullable")
+        else:
+            logger.info("  support_messages.sender_id already nullable")
+    except Exception as e:
+        logger.error(f"Failed to migrate support_messages.sender_id: {e}")
+
 # Also create default service area if not exists
 async def create_default_service_area(conn):
     """Create default Birmingham service area if it doesn't exist."""

@@ -314,7 +314,7 @@ class SupportMessage(Base):
     __tablename__ = "support_messages"
     id = Column(Integer, primary_key=True, index=True)
     chat_id = Column(Integer, ForeignKey("support_chats.id"), nullable=False)
-    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     sender_role = Column(String(20), nullable=False)
     message = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)

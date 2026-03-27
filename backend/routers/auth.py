@@ -2,6 +2,7 @@ import os, time, math, secrets, logging, json, re, base64, asyncio, collections,
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
+from jose import jwt, JWTError
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession

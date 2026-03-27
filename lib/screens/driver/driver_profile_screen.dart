@@ -8,6 +8,7 @@ import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/user_profile_photo.dart';
+import '../../widgets/common/profile_avatar.dart';
 import 'driver_trip_history_screen.dart';
 
 /// Driver profile screen – Uber-style with stats cards, lifetime highlights, badges.
@@ -471,26 +472,19 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         children: [
           // Avatar with tier ring
           Stack(
+            clipBehavior: Clip.none,
             children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: _tierColor, width: 3),
-                ),
-                child: ClipOval(
-                  child: UserProfilePhoto(
-                    photoUrl: _resolvedPhotoUrl,
-                    photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
-                    radius: 36,
-                    fallbackName: _name,
-                    uid: UserSession.currentUid,
-                  ),
-                ),
+              ProfileAvatar(
+                imageUrl: _resolvedPhotoUrl,
+                imagePath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
+                name: _name,
+                size: 72,
+                isVerified: _isVerified,
+                borderColor: _tierColor,
+                uid: UserSession.currentUid,
               ),
               Positioned(
-                bottom: 0,
+                bottom: -2,
                 left: 0,
                 right: 0,
                 child: Center(
@@ -514,24 +508,6 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                   ),
                 ),
               ),
-              if (_isVerified)
-                Positioned(
-                  bottom: -1,
-                  right: -1,
-                  child: Container(
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFFFFD700),
-                      border: Border.all(
-                        color: Theme.of(context).scaffoldBackgroundColor,
-                        width: 2,
-                      ),
-                    ),
-                    child: const Icon(Icons.check, color: Colors.black, size: 15),
-                  ),
-                ),
             ],
           ),
           const SizedBox(width: 16),

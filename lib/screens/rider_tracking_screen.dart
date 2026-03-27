@@ -28,6 +28,7 @@ import 'chat_screen.dart';
 import '../services/chat_service.dart';
 import 'help_screen.dart';
 import 'home_screen.dart';
+import 'rider_confirm_pickup_screen.dart';
 import 'rider_rating_screen.dart';
 import '../l10n/app_localizations.dart';
 import 'package:cached_network_image/cached_network_image.dart';

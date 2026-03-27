@@ -559,7 +559,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       [mapbox.Point(coordinates: mapbox.Position(mnLng, mnLat)),
        mapbox.Point(coordinates: mapbox.Position(mxLng, mxLat))],
       mapbox.CameraOptions(bearing: 0, pitch: 20),
-      mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
+      mapbox.MbxEdgeInsets(top: 160, left: 40, bottom: 120, right: 40),
       null, null,
     ).then((cam) {
       if (mounted && _map != null) _map!.setCamera(cam);
@@ -618,7 +618,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         [mapbox.Point(coordinates: mapbox.Position(_camSWLng, _camSWLat)),
          mapbox.Point(coordinates: mapbox.Position(_camNELng, _camNELat))],
         mapbox.CameraOptions(bearing: 0, pitch: 20),
-        mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
+        mapbox.MbxEdgeInsets(top: 160, left: 40, bottom: 120, right: 40),
         null, null,
       ).then((cam) {
         if (mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 500));

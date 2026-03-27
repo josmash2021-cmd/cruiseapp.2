@@ -117,8 +117,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
 
     final status = data['status']?.toString() ?? '';
-    if (status == 'arrived' && _phase == _TrackPhase.arriving) {
+    if ((status == 'arrived' || status == 'driver_arrived') && _phase == _TrackPhase.arriving) {
       _setState(() => _phase = _TrackPhase.arrived);
+      _showRiderConfirmPickup();
     } else if (status == 'in_trip' &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       _setState(() => _phase = _TrackPhase.onTrip);
@@ -133,6 +134,29 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _showDriverCancelledDialog();
       }
     }
+  }
+
+  /// Show the rider confirmation pickup overlay when driver has arrived.
+  void _showRiderConfirmPickup() {
+    if (!mounted) return;
+    final vehicleDesc =
+        '${widget.vehicleColor} ${widget.vehicleMake} ${widget.vehicleModel}'.trim();
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (_, __, ___) => RiderConfirmPickupScreen(
+          driverName: widget.driverName,
+          vehicleDesc: vehicleDesc,
+          firestoreTripId: widget.firestoreTripId,
+          onConfirmed: () {
+            if (mounted) Navigator.of(context).pop();
+          },
+        ),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 400),
+      ),
+    );
   }
 
   /// Listen to driver GPS from Firebase RTDB for sub-200ms updates.

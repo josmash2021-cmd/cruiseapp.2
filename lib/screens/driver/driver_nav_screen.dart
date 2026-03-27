@@ -1162,6 +1162,23 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   Future<void> _startRide() async {
     HapticFeedback.heavyImpact();
+
+    // ── Check if rider confirmed pickup ──
+    bool riderConfirmed = false;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.tripId.toString())
+          .get();
+      riderConfirmed = doc.data()?['rider_confirmed_pickup'] == true;
+    } catch (_) {}
+
+    if (!riderConfirmed) {
+      _showToast('El rider no ha confirmado, comenzando viaje...');
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+    }
+
     _stopWaitTimer(); // End wait time when ride starts
     _startRideSwitching = true;
     _sm.beginTrip(); // triggers _onPhaseChanged(TripPhase.onTrip)

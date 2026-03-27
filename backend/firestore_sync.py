@@ -652,6 +652,8 @@ def sync_trip(trip_id: int, rider_id: int, rider_name: str, rider_phone: str,
               status: str = "requested", fare: float = 0.0,
               vehicle_type: str = "Economy",
               driver_id: int = None, driver_name: str = None, driver_phone: str = None,
+              rider_photo_url: str = None,
+              driver_photo_url: str = None,
               created_at: datetime = None,
               scheduled_at: datetime = None, is_airport: bool = False,
               airport_code: str = None, terminal: str = None,
@@ -692,6 +694,10 @@ def sync_trip(trip_id: int, rider_id: int, rider_name: str, rider_phone: str,
         data["driverId"] = f"sql_{driver_id}"
         data["driverName"] = driver_name or ""
         data["driverPhone"] = driver_phone or ""
+    if rider_photo_url:
+        data["riderPhotoUrl"] = rider_photo_url
+    if driver_photo_url:
+        data["driverPhotoUrl"] = driver_photo_url
     try:
         _db.collection("trips").document(doc_id).set(data, merge=True)
         log.info("🔄 Synced trip sql_%d → Firestore (status=%s)", trip_id, status)
@@ -701,6 +707,7 @@ def sync_trip(trip_id: int, rider_id: int, rider_name: str, rider_phone: str,
 
 def sync_trip_status(trip_id: int, status: str,
                      driver_id: int = None, driver_name: str = None, driver_phone: str = None,
+                     driver_photo_url: str = None,
                      cancel_reason: str = None):
     """Update only the trip status (and optionally driver info) in Firestore."""
     _ensure_init()
@@ -729,6 +736,8 @@ def sync_trip_status(trip_id: int, status: str,
             data["driverName"] = driver_name
         if driver_phone:
             data["driverPhone"] = driver_phone
+        if driver_photo_url:
+            data["driverPhotoUrl"] = driver_photo_url
     if cancel_reason:
         data["cancelReason"] = cancel_reason
     try:

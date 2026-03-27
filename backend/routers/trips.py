@@ -22,6 +22,30 @@ from config import (
 
 router = APIRouter()
 
+PLATFORM_COMMISSION_RATE = 0.60
+DRIVER_SHARE_RATE = 0.40
+
+
+def _driver_visible_trip_dict(trip: Trip) -> dict:
+    """Return trip payload for drivers without exposing rider gross fare."""
+    data = _trip_dict(trip)
+    tip = float(trip.tip_amount or 0.0)
+    if trip.driver_earnings is not None:
+        visible_fare = round(float(trip.driver_earnings), 2)
+    else:
+        visible_fare = round((float(trip.fare or 0.0) * DRIVER_SHARE_RATE) + tip, 2)
+    data["fare"] = visible_fare
+    data["driver_earnings"] = visible_fare
+    if trip.platform_fee is None and trip.fare is not None:
+        data["platform_fee"] = round(float(trip.fare or 0.0) * PLATFORM_COMMISSION_RATE, 2)
+    return data
+
+
+def _trip_dict_for_user(trip: Trip, user: User) -> dict:
+    if user.role == "driver" and user.id == trip.driver_id:
+        return _driver_visible_trip_dict(trip)
+    return _trip_dict(trip)
+
 # ═══════════════════════════════════════════════════════
 #  TRIP  ENDPOINTS
 # ═══════════════════════════════════════════════════════
@@ -74,7 +98,7 @@ async def get_trip(trip_id: int, user: User = Depends(_get_current_user), db: As
     # Ownership check: only rider, driver, or admin can view
     if user.id not in (trip.rider_id, trip.driver_id) and user.role != "admin":
         raise HTTPException(403, "Not authorized to view this trip")
-    return _trip_dict(trip)
+    return _trip_dict_for_user(trip, user)
 
 @router.get("/trips/available", dependencies=[Depends(_verify_api_key)])
 async def get_available_trips(
@@ -87,7 +111,7 @@ async def get_available_trips(
     for t in trips:
         dist = _haversine(lat, lng, t.pickup_lat, t.pickup_lng)
         if dist <= radius_km:
-            nearby.append(_trip_dict(t))
+            nearby.append(_trip_dict_for_user(t, user))
     return nearby
 
 @router.post("/trips/{trip_id}/accept", dependencies=[Depends(_verify_api_key)])
@@ -113,11 +137,12 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
                 driver_id=body.driver_id,
                 driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
                 driver_phone=driver.phone if driver else None,
+                driver_photo_url=driver.photo_url or "" if driver else None,
             )
         except Exception as e:
             logging.error("Firestore sync on accept_trip failed: %s", e)
 
-    return _trip_dict(trip)
+    return _trip_dict_for_user(trip, user)
 
 async def _charge_trip(trip, db: AsyncSession) -> dict:
     """Charge the rider's default Stripe payment method for a completed trip.
@@ -308,9 +333,9 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         raise HTTPException(404, "Trip not found")
     trip.status = status
     trip.updated_at = datetime.utcnow()
-    # Auto-calculate driver earnings and platform fee (40% platform / 60% driver)
+    # Auto-calculate earnings split (60% platform / 40% driver)
     if status == "completed" and trip.fare and trip.fare > 0 and trip.driver_id:
-        platform_rate = 0.40
+        platform_rate = PLATFORM_COMMISSION_RATE
         tip = trip.tip_amount or 0.0
         trip.platform_fee = round(trip.fare * platform_rate, 2)
         trip.driver_earnings = round((trip.fare * (1 - platform_rate)) + tip, 2)
@@ -392,7 +417,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
                 "error_message": "Auto-charge after trip completion failed",
             }))
 
-    return _trip_dict(trip)
+    return _trip_dict_for_user(trip, user)
 
 # ═══════════════════════════════════════════════════════
 #  SCHEDULED / AIRPORT TRIPS
@@ -408,7 +433,7 @@ async def get_rider_scheduled_trips(rider_id: int, user: User = Depends(_get_cur
             and_(Trip.rider_id == rider_id, Trip.status.in_(["scheduled", "requested"]), Trip.scheduled_at.isnot(None))
         ).order_by(Trip.scheduled_at.asc())
     )
-    return [_trip_dict(t) for t in result.scalars().all()]
+    return [_trip_dict_for_user(t, user) for t in result.scalars().all()]
 
 @router.get("/trips/scheduled/driver/{driver_id}", dependencies=[Depends(_verify_api_key)])
 async def get_driver_scheduled_trips(driver_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -420,7 +445,7 @@ async def get_driver_scheduled_trips(driver_id: int, user: User = Depends(_get_c
             and_(Trip.driver_id == driver_id, Trip.status.in_(["scheduled", "driver_en_route"]), Trip.scheduled_at.isnot(None))
         ).order_by(Trip.scheduled_at.asc())
     )
-    return [_trip_dict(t) for t in result.scalars().all()]
+    return [_trip_dict_for_user(t, user) for t in result.scalars().all()]
 
 @router.post("/trips/{trip_id}/cancel", dependencies=[Depends(_verify_api_key)])
 async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -465,7 +490,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         "dropoff_address": trip.dropoff_address or "",
     }))
 
-    return {**_trip_dict(trip), "cancellation_fee": cancellation_fee}
+    return {**_trip_dict_for_user(trip, user), "cancellation_fee": cancellation_fee}
 
 # ═══════════════════════════════════════════════════════
 #  LIVE TRIP SHARING  ENDPOINTS

@@ -19,7 +19,7 @@ from utils.security import (
 )
 from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
-    _haversine, _user_dict, _vehicle_dict, _doc_dict,
+    _haversine, _user_dict, _vehicle_dict, _doc_dict, _trip_dict,
 )
 from services.fcm_service import _send_fcm_push
 from config import (
@@ -29,6 +29,31 @@ from config import (
 )
 
 router = APIRouter()
+
+PLATFORM_COMMISSION_RATE = 0.60
+DRIVER_SHARE_RATE = 0.40
+
+
+def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:
+    """Return (base_earnings_without_tip, total_earnings_with_tip)."""
+    tip = float(trip.tip_amount or 0.0)
+    if trip.driver_earnings is not None:
+        total = round(float(trip.driver_earnings), 2)
+        base = round(max(total - tip, 0.0), 2)
+        return base, total
+    base = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+    return base, round(base + tip, 2)
+
+
+def _driver_visible_trip_dict(trip: Trip) -> dict:
+    data = _trip_dict(trip)
+    base, total = _driver_trip_amounts(trip)
+    data["fare"] = total
+    data["driver_earnings"] = total
+    if trip.platform_fee is None and trip.fare is not None:
+        data["platform_fee"] = round(float(trip.fare or 0.0) * PLATFORM_COMMISSION_RATE, 2)
+    data["driver_base_earnings"] = base
+    return data
 
 # ═══════════════════════════════════════════════════════
 #  DRIVER  ENDPOINTS
@@ -86,7 +111,7 @@ async def get_driver_trips(driver_id: int, user: User = Depends(_get_current_use
     if user.id != driver_id and user.role != "admin":
         raise HTTPException(403, "Not authorized to view these trips")
     result = await db.execute(select(Trip).where(Trip.driver_id == driver_id).order_by(Trip.created_at.desc()))
-    return [_trip_dict(t) for t in result.scalars().all()]
+    return [_driver_visible_trip_dict(t) for t in result.scalars().all()]
 
 # ═══════════════════════════════════════════════════════
 #  EARNINGS  ENDPOINTS
@@ -108,7 +133,7 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
         ).order_by(Trip.created_at.desc())
     )
     trips = result.scalars().all()
-    total = sum(t.fare or 0 for t in trips)
+    total = round(sum(_driver_trip_amounts(t)[0] for t in trips), 2)
 
     # Compute tips from ratings for these trips
     trip_ids = [t.id for t in trips]
@@ -127,17 +152,18 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
     for i in range(6, -1, -1):
         day = (now - timedelta(days=i)).date()
         day_labels.append(day.strftime("%a"))
-        day_total = sum(t.fare or 0 for t in trips if t.created_at and t.created_at.date() == day)
+        day_total = sum(_driver_trip_amounts(t)[0] for t in trips if t.created_at and t.created_at.date() == day)
         daily_earnings.append(round(day_total, 2))
 
     # Recent transactions
     transactions = []
     for t in trips[:20]:
+        base, _total = _driver_trip_amounts(t)
         transactions.append({
             "id": t.id,
             "pickup": t.pickup_address,
             "dropoff": t.dropoff_address,
-            "fare": t.fare or 0,
+            "fare": base,
             "date": t.created_at.isoformat() if t.created_at else None,
         })
 
@@ -207,13 +233,12 @@ async def get_stripe_connect_status(
 async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     if body.amount <= 0:
         raise HTTPException(400, "Cashout amount must be positive")
-    # Calculate available balance: completed trip earnings minus previous cashouts
-    earnings_r = await db.execute(
-        select(func.coalesce(func.sum(Trip.fare), 0.0)).where(
-            and_(Trip.driver_id == user.id, Trip.status == "completed")
-        )
+    # Calculate available balance from driver payout (not rider gross fare).
+    completed_r = await db.execute(
+        select(Trip).where(and_(Trip.driver_id == user.id, Trip.status == "completed"))
     )
-    total_earnings = float(earnings_r.scalar() or 0)
+    completed_trips = completed_r.scalars().all()
+    total_earnings = round(sum(_driver_trip_amounts(t)[1] for t in completed_trips), 2)
     cashouts_r = await db.execute(
         select(func.coalesce(func.sum(Cashout.amount), 0.0)).where(Cashout.user_id == user.id)
     )

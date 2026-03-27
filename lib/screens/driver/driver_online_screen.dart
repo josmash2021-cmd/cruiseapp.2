@@ -187,6 +187,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Timer? _pollT;
   String _riderName = '';
   String _riderInit = '';
+  String _riderPhotoUrl = '';
   String _riderPhone = '';
   String _pickupAddr = '';
   String _dropoffAddr = '';

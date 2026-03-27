@@ -858,14 +858,14 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
   Widget _buildProgressBar() {
     final progress = _tripProgress.clamp(0.0, 1.0);
-    const carSize = 28.0;
+    const carSize = 40.0;
     const barH = 6.0;
-    const totalH = carSize + 4;
+    const totalH = carSize + 8;
 
     return LayoutBuilder(
       builder: (_, constraints) {
         final barW = constraints.maxWidth;
-        // Car center sits at the leading edge of the fill
+        // Car center sits at the leading edge of the fill (tip of progress)
         final carX = (barW * progress - carSize / 2).clamp(0.0, barW - carSize);
 
         return SizedBox(
@@ -912,14 +912,25 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 duration: const Duration(milliseconds: 1000),
                 curve: Curves.easeInOut,
                 left: carX,
-                bottom: barH - 2,
-                child: Image(
-                  image: AssetImage(_getCarAssetForRideType(
-                    _activeRide?.rideName ?? 'comfort',
-                  )),
-                  width: carSize,
-                  height: carSize,
-                  fit: BoxFit.contain,
+                bottom: barH - 10,
+                child: Container(
+                  decoration: BoxDecoration(
+                    boxShadow: [
+                      BoxShadow(
+                        color: _gold.withValues(alpha: 0.30),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Image(
+                    image: AssetImage(_getCarAssetForRideType(
+                      _activeRide?.rideName ?? 'comfort',
+                    )),
+                    width: carSize,
+                    height: carSize,
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
             ],
@@ -940,8 +951,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 54,
+              height: 54,
               decoration: BoxDecoration(
                 color: _gold.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
@@ -950,12 +961,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   width: 1,
                 ),
               ),
-              alignment: Alignment.center,
+              clipBehavior: Clip.antiAlias,
               child: const Image(
                 image: AssetImage('assets/images/logoapp.png'),
-                width: 52,
-                height: 52,
-                fit: BoxFit.contain,
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.cover,
               ),
             ),
             const SizedBox(width: 14),
@@ -1027,6 +1038,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
   // ─── Circular action buttons ───
   Widget _buildCircularActions() {
+    final active = _activeRide != null;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
@@ -1058,8 +1070,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
             },
           ),
           label: S.of(context).fastRide,
-          disabled: !_driversOnline,
+          disabled: active || !_driversOnline,
           onTap: () async {
+            if (active) return;
             if (!_driversOnline) {
               _showFastRideUnavailableDialog();
               return;
@@ -1086,6 +1099,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
             },
           ),
           label: S.of(context).schedule,
+          disabled: active,
           onTap: _openScheduleFlow,
         ),
         // 10% off — shimmer animation, disabled after use, shows trip counter
@@ -1159,7 +1173,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   },
                 ),
           label: _promoUsed ? '${3 - _promoTripsLeft}/3 ${S.of(context).promoTrips}' : S.of(context).promoOff,
-          disabled: _promoUsed,
+          disabled: active || _promoUsed,
           onTap: _promoUsed ? _showPromoLockedDialog : _showPromoWelcomeDialog,
         ),
       ],
@@ -1215,7 +1229,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
     bool disabled = false,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: disabled ? null : onTap,
       child: Opacity(
         opacity: disabled ? 0.4 : 1.0,
         child: Column(
@@ -1377,6 +1391,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
   // ─── Fleet: Redesigned professional vehicle cards ───
   Widget _buildFleetStack(double screenW) {
+    final active = _activeRide != null;
     // Unified dark card background for all tiers
     const cardBg = [Color(0xFF1A1D24), Color(0xFF252A35)];
 
@@ -1535,9 +1550,13 @@ extension _HomeScreenWidgets on _HomeScreenState {
           padding: EdgeInsets.only(
             bottom: idx < 2 ? 16 : 0,
           ),
-          child: GestureDetector(
-            onTap: () => _openSearchThenRide(rideId: rideId),
-            child: Container(
+          child: IgnorePointer(
+            ignoring: active,
+            child: Opacity(
+              opacity: active ? 0.45 : 1.0,
+              child: GestureDetector(
+                onTap: () => _openSearchThenRide(rideId: rideId),
+                child: Container(
               constraints: const BoxConstraints(minHeight: 130),
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
@@ -1644,6 +1663,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     ),
                   ),
                 ],
+              ),
+            ),
               ),
             ),
           ),

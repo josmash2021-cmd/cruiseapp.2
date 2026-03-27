@@ -3372,23 +3372,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   }
 
   Widget _avatar(double s, {bool showBadge = false}) {
-    final circle = Container(
-      width: s,
-      height: s,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const LinearGradient(colors: [_gold, _goldLight]),
-      ),
-      child: Center(
-        child: Text(
-          _riderInit,
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: s * 0.42,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ),
+    final circle = VerifiedAvatar(
+      photoUrl: _riderPhotoUrl.isNotEmpty ? _riderPhotoUrl : null,
+      radius: s / 2,
+      fallbackName: _riderName,
+      isVerified: false,
     );
     if (!showBadge) return circle;
     return Stack(

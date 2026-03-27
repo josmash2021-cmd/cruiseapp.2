@@ -905,6 +905,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _tripId = tripId;
     _riderName = name;
     _riderInit = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    _riderPhotoUrl = (r['rider_photo_url'] ?? r['photo_url'] ?? '') as String;
     _riderPhone = (r['rider_phone'] ?? '') as String;
     _pickupAddr = r['pickup_address'] ?? 'Pickup';
     _dropoffAddr = r['dropoff_address'] ?? 'Drop-off';

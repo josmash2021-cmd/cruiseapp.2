@@ -91,6 +91,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   mapbox.PointAnnotationManager? _annotMgr;
   mapbox.PolylineAnnotationManager? _polyMgr;
 
+  // ── Resolved addresses (replace generic placeholders) ──
+  late String _pickupAddr;
+  late String _dropoffAddr;
+
   // ── Tilt animation ──
   late final AnimationController _tiltCtrl;
   late final Animation<double>   _tiltAnim;
@@ -122,6 +126,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   @override
   void initState() {
     super.initState();
+    _pickupAddr = widget.pickupAddress;
+    _dropoffAddr = widget.dropoffAddress;
+    _resolveGenericAddresses();
     _fadeCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 420),
@@ -172,6 +179,54 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     super.dispose();
   }
 
+  // ── Resolve generic / placeholder addresses via reverse geocoding ────────
+  static bool _isGenericAddress(String addr) {
+    if (addr.isEmpty) return true;
+    final lower = addr.toLowerCase().trim();
+    return lower == 'current location' ||
+        lower == 'ubicación actual' ||
+        lower == 'pickup' ||
+        lower == 'drop-off' ||
+        lower == 'mi ubicación';
+  }
+
+  Future<String?> _reverseGeocode(double lat, double lng) async {
+    try {
+      final url = Uri.parse(
+        'https://api.mapbox.com/geocoding/v5/mapbox.places/$lng,$lat.json'
+        '?types=address,poi&limit=1&access_token=${MapboxConfig.accessToken}',
+      );
+      final res = await http.get(url).timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final features = data['features'] as List?;
+        if (features != null && features.isNotEmpty) {
+          return (features[0]['place_name'] as String?)
+              ?.replaceAll(RegExp(r',\s*United States$'), '')
+              .replaceAll(RegExp(r',\s*Puerto Rico$'), '');
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> _resolveGenericAddresses() async {
+    if (_isGenericAddress(_pickupAddr)) {
+      final resolved = await _reverseGeocode(
+        widget.pickupLatLng.latitude, widget.pickupLatLng.longitude);
+      if (resolved != null && mounted) {
+        setState(() => _pickupAddr = resolved);
+      }
+    }
+    if (_isGenericAddress(_dropoffAddr)) {
+      final resolved = await _reverseGeocode(
+        widget.dropoffLatLng.latitude, widget.dropoffLatLng.longitude);
+      if (resolved != null && mounted) {
+        setState(() => _dropoffAddr = resolved);
+      }
+    }
+  }
+
   // ── Navigation ────────────────────────────────────────────────────────────
   void _goNavigate({bool overview = false}) {
     HapticFeedback.mediumImpact();
@@ -184,8 +239,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           riderRating:     widget.riderRating,
           pickupLatLng:    widget.pickupLatLng,
           dropoffLatLng:   widget.dropoffLatLng,
-          pickupAddress:   widget.pickupAddress,
-          dropoffAddress:  widget.dropoffAddress,
+          pickupAddress:   _pickupAddr,
+          dropoffAddress:  _dropoffAddr,
           fare:            widget.fare,
           vehicleType:     widget.vehicleType,
           driverPos:       widget.driverPos,
@@ -348,7 +403,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Navigation app integration ───────────────────────────────────────────
   void _showNavigationSheet({required bool isPickup}) {
     final coords = isPickup ? widget.pickupLatLng : widget.dropoffLatLng;
-    final address = isPickup ? widget.pickupAddress : widget.dropoffAddress;
+    final address = isPickup ? _pickupAddr : _dropoffAddr;
     final bot = MediaQuery.of(context).padding.bottom;
     showModalBottomSheet(
       context: context,
@@ -626,15 +681,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     ]);
     if (!mounted) return;
 
-    // 3. Fit camera to show pickup + dropoff + route
-    final fitPts = [
+    // 3. Fit camera to show pickup + dropoff + full route
+    final fitPts = <mapbox.Point>[
       mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
       mapbox.Point(coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
+      // Include route polyline extremes so curved routes are never clipped
+      for (final rp in _routePoints)
+        mapbox.Point(coordinates: mapbox.Position(rp.longitude, rp.latitude)),
     ];
     final cam = await ctrl.cameraForCoordinatesPadding(
       fitPts,
       mapbox.CameraOptions(),
-      mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
+      mapbox.MbxEdgeInsets(top: 50, left: 50, bottom: 50, right: 50),
       null, null,
     );
     ctrl.flyTo(cam, mapbox.MapAnimationOptions(duration: 600));
@@ -1045,7 +1103,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   _gold.withValues(alpha: 0.15),
                   _gold,
                   'Pickup',
-                  widget.pickupAddress,
+                  _pickupAddr,
                   showChevron: true,
                 ),
               ),
@@ -1067,7 +1125,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   _gold.withValues(alpha: 0.15),
                   _gold,
                   'Dropoff',
-                  widget.dropoffAddress,
+                  _dropoffAddr,
                   showChevron: true,
                 ),
               ),

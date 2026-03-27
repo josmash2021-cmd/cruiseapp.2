@@ -27,6 +27,8 @@ from config import (
 
 router = APIRouter()
 
+DRIVER_SHARE_RATE = 0.40
+
 
 # -- Dispatch Web Interface (owner-only, multi-layer protection) ---------
 @router.post("/dispatch/login")
@@ -216,6 +218,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
                 pickup_address=trip.pickup_address, pickup_lat=trip.pickup_lat, pickup_lng=trip.pickup_lng,
                 dropoff_address=trip.dropoff_address, dropoff_lat=trip.dropoff_lat, dropoff_lng=trip.dropoff_lng,
                 status=trip.status, fare=trip.fare, vehicle_type=trip.vehicle_type,
+                rider_photo_url=user.photo_url or "",
                 created_at=trip.created_at,
                 scheduled_at=trip.scheduled_at, is_airport=trip.is_airport,
                 airport_code=trip.airport_code, terminal=trip.terminal,
@@ -274,6 +277,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
         rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
         rider_phone = rider.phone or "" if rider else ""
         rider_photo_url = rider.photo_url or "" if rider else ""
+        estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
         offers.append({
             "offer_id": offer.id,
             "rider_name": rider_name,
@@ -282,6 +286,8 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
             "created_at": offer.created_at.isoformat() if offer.created_at else None,
             "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
             **_trip_dict(trip),
+            "fare": estimated_driver_fare,
+            "driver_earnings": estimated_driver_fare,
         })
     _pending_cache[driver_id] = (time.monotonic(), offers)  # L3: cache for TTL
     return offers
@@ -315,6 +321,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                 driver_id=driver_id,
                 driver_name=f"{drv.first_name} {drv.last_name}" if drv else None,
                 driver_phone=drv.phone if drv else None,
+                driver_photo_url=drv.photo_url or "" if drv else None,
             )
         except Exception as e:
             logging.error("Firestore sync on accept_offer failed: %s", e)

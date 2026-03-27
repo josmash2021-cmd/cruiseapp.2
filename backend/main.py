@@ -660,6 +660,8 @@ async def _migrate_postgres(conn):
         ("users", "terms_accepted_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "privacy_accepted_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "auth_provider", "VARCHAR(20) DEFAULT 'password'"),
+        ("users", "email_verified", "BOOLEAN DEFAULT FALSE"),
+        ("users", "email_verified_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "checkr_candidate_id", "VARCHAR(100)"),
         ("users", "checkr_report_id", "VARCHAR(100)"),
         ("users", "background_check_status", "VARCHAR(20) DEFAULT 'none'"),

@@ -617,3 +617,11 @@ async def migrate_postgres(conn):
             await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"))
         except Exception as _e:
             logging.warning("Postgres migration skip %s.%s: %s", table, col, _e)
+    # Fix: make support_messages.sender_id nullable so bot/system messages (sender_id=None) work
+    try:
+        await conn.execute(text(
+            "ALTER TABLE support_messages ALTER COLUMN sender_id DROP NOT NULL"
+        ))
+        logging.info("support_messages.sender_id made nullable")
+    except Exception as _e:
+        logging.warning("support_messages.sender_id nullable migration: %s", _e)

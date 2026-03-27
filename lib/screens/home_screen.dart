@@ -91,7 +91,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   int _totalSeconds = 0;
   int _remainingSeconds = 0;
   Timer? _countdownTimer;
-  String _serviceType = 'comfort';
 
   // Verification state
   bool _isVerified = false;
@@ -811,9 +810,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _activeRide = activeRide;
       _isVerified = verified;
       _loadingSavedData = false;
-      if (activeRide != null) {
-        _serviceType = activeRide.rideName;
-      }
       if (user != null) {
         _firstName = user['firstName'] ?? '';
         _lastName = user['lastName'] ?? '';

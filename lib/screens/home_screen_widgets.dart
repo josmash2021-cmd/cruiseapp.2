@@ -843,34 +843,20 @@ extension HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  String _getCarAsset(String serviceType) {
-    switch (serviceType.toLowerCase()) {
-      case 'vip':
-        return 'assets/images/cruisert1.png';
-      case 'premium':
-      case 'sedan':
-        return 'assets/images/cruisert2.png';
-      case 'comfort':
-      case 'economy':
-      default:
-        return 'assets/images/cruisert3.png';
-    }
-  }
-
   Widget _buildProgressBar() {
-    final carAsset = _getCarAsset(_serviceType);
     final progress = _tripProgress.clamp(0.0, 1.0);
-    const carH = 26.0;
-    const carW = 52.0;
+    const carSize = 28.0;
+    const barH = 6.0;
+    const totalH = carSize + 4;
 
     return LayoutBuilder(
       builder: (_, constraints) {
         final barW = constraints.maxWidth;
-        final filledW = barW * progress;
-        final carX = (filledW - carW / 2).clamp(0.0, barW - carW);
+        // Car center sits at the leading edge of the fill
+        final carX = (barW * progress - carSize / 2).clamp(0.0, barW - carSize);
 
         return SizedBox(
-          height: carH + 4,
+          height: totalH,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -880,49 +866,43 @@ extension HomeScreenWidgets on _HomeScreenState {
                 right: 0,
                 bottom: 0,
                 child: Container(
-                  height: 7,
+                  height: barH,
                   decoration: BoxDecoration(
                     color: const Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.circular(3.5),
+                    borderRadius: BorderRadius.circular(barH / 2),
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(3.5),
-                    child: FractionallySizedBox(
-                      widthFactor: progress,
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Color(0xFFFFC200),
-                              Color(0xFFFFD700),
-                              Color(0xFFFFE566),
-                            ],
-                          ),
-                        ),
-                      ),
+                ),
+              ),
+              // Animated yellow fill
+              Positioned(
+                left: 0,
+                bottom: 0,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 1000),
+                  curve: Curves.easeInOut,
+                  width: barW * progress,
+                  height: barH,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(barH / 2),
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFFFFC200),
+                        Color(0xFFFFD700),
+                        Color(0xFFFFE566),
+                      ],
                     ),
                   ),
                 ),
               ),
-              // Car at tip of bar
+              // Car pin at leading edge
               AnimatedPositioned(
-                duration: const Duration(milliseconds: 800),
+                duration: const Duration(milliseconds: 1000),
                 curve: Curves.easeInOut,
                 left: carX,
-                bottom: 7,
-                child: Image.asset(
-                  carAsset,
-                  width: carW,
-                  height: carH,
-                  fit: BoxFit.contain,
-                  filterQuality: FilterQuality.high,
-                  isAntiAlias: true,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.directions_car_rounded,
-                    color: _gold,
-                    size: carH,
-                  ),
+                bottom: barH - 2,
+                child: CustomPaint(
+                  size: const Size(carSize, carSize),
+                  painter: _CarIconPainter(),
                 ),
               ),
             ],
@@ -953,18 +933,10 @@ extension HomeScreenWidgets on _HomeScreenState {
                   width: 1,
                 ),
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.asset(
-                  'assets/images/logoapp.png',
-                  fit: BoxFit.cover,
-                  cacheWidth: 96,
-                  errorBuilder: (ctx, err, st) => Icon(
-                    Icons.directions_car_rounded,
-                    color: _gold,
-                    size: 24,
-                  ),
-                ),
+              alignment: Alignment.center,
+              child: CustomPaint(
+                size: const Size(32, 32),
+                painter: _CarIconPainter(),
               ),
             ),
             const SizedBox(width: 14),
@@ -2274,4 +2246,84 @@ extension HomeScreenWidgets on _HomeScreenState {
       ),
     );
   }
+}
+
+// ─── Top-down car silhouette drawn via CustomPainter ───
+class _CarIconPainter extends CustomPainter {
+  static const _color = Color(0xFFFFD700);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final paint = Paint()
+      ..color = _color
+      ..style = PaintingStyle.fill;
+
+    // ── Body (rounded rect, slightly narrower at front) ──
+    final body = Path()
+      ..moveTo(w * 0.22, h * 0.18)
+      ..quadraticBezierTo(w * 0.28, h * 0.04, w * 0.50, h * 0.04)
+      ..quadraticBezierTo(w * 0.72, h * 0.04, w * 0.78, h * 0.18)
+      ..lineTo(w * 0.82, h * 0.32)
+      ..lineTo(w * 0.84, h * 0.72)
+      ..quadraticBezierTo(w * 0.84, h * 0.94, w * 0.72, h * 0.96)
+      ..lineTo(w * 0.28, h * 0.96)
+      ..quadraticBezierTo(w * 0.16, h * 0.94, w * 0.16, h * 0.72)
+      ..lineTo(w * 0.18, h * 0.32)
+      ..close();
+    canvas.drawPath(body, paint);
+
+    // ── Windshield (darker inset) ──
+    final windshield = Paint()
+      ..color = _color.withValues(alpha: 0.35)
+      ..style = PaintingStyle.fill;
+    final ws = Path()
+      ..moveTo(w * 0.30, h * 0.20)
+      ..quadraticBezierTo(w * 0.50, h * 0.12, w * 0.70, h * 0.20)
+      ..lineTo(w * 0.68, h * 0.34)
+      ..lineTo(w * 0.32, h * 0.34)
+      ..close();
+    canvas.drawPath(ws, windshield);
+
+    // ── Rear window ──
+    final rw = Path()
+      ..moveTo(w * 0.32, h * 0.72)
+      ..lineTo(w * 0.68, h * 0.72)
+      ..lineTo(w * 0.66, h * 0.82)
+      ..quadraticBezierTo(w * 0.50, h * 0.86, w * 0.34, h * 0.82)
+      ..close();
+    canvas.drawPath(rw, windshield);
+
+    // ── Wheels (4 dark rounded rects) ──
+    final wheelPaint = Paint()
+      ..color = const Color(0xFF1A1A1A)
+      ..style = PaintingStyle.fill;
+    final wheelW = w * 0.10;
+    final wheelH = h * 0.14;
+    final r = Radius.circular(wheelW * 0.4);
+    // Front-left
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.10, h * 0.24, wheelW, wheelH), r),
+      wheelPaint);
+    // Front-right
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.80, h * 0.24, wheelW, wheelH), r),
+      wheelPaint);
+    // Rear-left
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.10, h * 0.64, wheelW, wheelH), r),
+      wheelPaint);
+    // Rear-right
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.80, h * 0.64, wheelW, wheelH), r),
+      wheelPaint);
+  }
+
+  @override
+  bool shouldRepaint(_CarIconPainter old) => false;
 }

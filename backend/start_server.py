@@ -35,7 +35,6 @@ def main():
         timeout_keep_alive=75,  # Keep connections alive for 75 seconds
         timeout_graceful_shutdown=30,  # Graceful shutdown timeout
         limit_concurrency=1000,  # Max concurrent connections
-        limit_max_requests=10000,  # Restart worker after 10k requests (prevents memory leaks)
         # Worker settings
         workers=1,  # Single worker for SQLite (prevents DB locks)
         # HTTP settings

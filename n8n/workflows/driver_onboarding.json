@@ -1,0 +1,430 @@
+{
+  "name": "Cruise - Driver Onboarding",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-driver",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - New Driver",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract driver data\nconst data = $input.all()[0].json;\n\n// Validate required fields\nif (!data.name || !data.email || !data.driver_id) {\n  throw new Error('Missing required fields: name, email, driver_id');\n}\n\n// Prepare driver onboarding data\nconst driverData = {\n  name: data.name,\n  email: data.email,\n  driver_id: data.driver_id,\n  timestamp: new Date().toISOString()\n};\n\nreturn [{ json: driverData }];"
+      },
+      "id": "process-driver",
+      "name": "Process Driver Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }\n    .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }\n    .header { background: linear-gradient(135deg, #1a1a1a 0%, #333 100%); padding: 40px 30px; text-align: center; color: #FFD700; }\n    .header h1 { margin: 0; font-size: 28px; font-weight: 700; }\n    .content { padding: 40px 30px; }\n    .greeting { font-size: 20px; color: #333; margin-bottom: 20px; }\n    .message { font-size: 16px; color: #555; line-height: 1.6; margin-bottom: 25px; }\n    .checklist { margin: 30px 0; }\n    .checklist-item { display: flex; margin-bottom: 20px; padding: 15px; background: #f9f9f9; border-radius: 6px; border-left: 4px solid #FFD700; }\n    .checkbox { color: #FFD700; font-size: 24px; margin-right: 15px; }\n    .item-content h3 { margin: 0 0 5px 0; color: #333; font-size: 16px; }\n    .item-content p { margin: 0; color: #666; font-size: 14px; }\n    .cta-button { display: inline-block; padding: 16px 40px; background: #FFD700; color: #1a1a1a; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; margin: 20px 0; }\n    .highlight-box { padding: 20px; background: #fff8e1; border-radius: 6px; border-left: 4px solid #FFA500; margin: 25px 0; }\n    .footer { background: #f9f9f9; padding: 30px; text-align: center; border-top: 1px solid #eee; color: #999; font-size: 12px; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>🚗 ¡Bienvenido al Equipo de Drivers!</h1>\n    </div>\n    <div class=\"content\">\n      <div class=\"greeting\">Hola ${data.name},</div>\n      <div class=\"message\">\n        ¡Estamos emocionados de que formes parte de Cruise! Para empezar a conducir y ganar dinero, necesitamos que completes tu documentación.\n      </div>\n      <div class=\"message\">\n        <strong>📋 Documentos Requeridos:</strong>\n      </div>\n      <div class=\"checklist\">\n        <div class=\"checklist-item\">\n          <div class=\"checkbox\">☐</div>\n          <div class=\"item-content\">\n            <h3>Licencia de Conducir</h3>\n            <p>Foto clara de ambos lados. Debe estar vigente y ser válida en tu país.</p>\n          </div>\n        </div>\n        <div class=\"checklist-item\">\n          <div class=\"checkbox\">☐</div>\n          <div class=\"item-content\">\n            <h3>Seguro del Vehículo</h3>\n            <p>Póliza vigente a tu nombre o con tu nombre como conductor autorizado.</p>\n          </div>\n        </div>\n        <div class=\"checklist-item\">\n          <div class=\"checkbox\">☐</div>\n          <div class=\"item-content\">\n            <h3>Registro Vehicular</h3>\n            <p>Tarjeta de circulación o documento de propiedad del vehículo.</p>\n          </div>\n        </div>\n        <div class=\"checklist-item\">\n          <div class=\"checkbox\">☐</div>\n          <div class=\"item-content\">\n            <h3>Background Check</h3>\n            <p>Verificación de antecedentes penales (se procesa automáticamente).</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"highlight-box\">\n        <strong>⏱️ Tiempo estimado:</strong> 5-10 minutos<br>\n        <strong>📱 Tip:</strong> Podés subir todo desde la app móvil usando tu cámara.\n      </div>\n      <div style=\"text-align: center;\">\n        <a href=\"https://cruise.app/driver/documents/${data.driver_id}\" class=\"cta-button\">Subir Documentos Ahora</a>\n      </div>\n      <div class=\"message\" style=\"margin-top: 30px;\">\n        Una vez que revisemos tu documentación (usualmente en 24-48 horas), te enviaremos un email de aprobación y podrás empezar a recibir solicitudes de viaje.\n      </div>\n    </div>\n    <div class=\"footer\">\n      ¿Necesitás ayuda? Escribinos a support@cruise.app<br>\n      © 2026 Cruise App. Todos los derechos reservados.\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{ json: { ...data, html: htmlContent, subject: `¡Empecemos, ${data.name}! Documentos requeridos 📄` } }];"
+      },
+      "id": "build-initial-email",
+      "name": "Build Initial Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL || 'driver-support@cruise.app'}}",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "senderName": "Cruise Driver Team"
+        }
+      },
+      "id": "send-initial-email",
+      "name": "Send Initial Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [850, 400],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 24,
+        "unit": "hours"
+      },
+      "id": "wait-24h",
+      "name": "Wait 24 Hours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1050, 400],
+      "webhookId": "driver-onboarding-24h"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BACKEND_URL}}/drivers/{{$json.driver_id}}/documents/status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "check-docs-status-1",
+      "name": "Check Documents Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "2",
+          "name": "Backend API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "notEqual",
+              "value2": "complete"
+            }
+          ]
+        }
+      },
+      "id": "if-incomplete",
+      "name": "If Incomplete",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }\n    .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; padding: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }\n    .header { color: #FFD700; font-size: 24px; margin-bottom: 20px; }\n    .message { font-size: 16px; color: #555; line-height: 1.6; margin-bottom: 20px; }\n    .cta-button { display: inline-block; padding: 14px 30px; background: #FFD700; color: #1a1a1a; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }\n    .missing { background: #fff3cd; padding: 15px; border-radius: 6px; border-left: 4px solid #ffc107; margin: 20px 0; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">⏰ Recordatorio: Documentos Pendientes</div>\n    <div class=\"message\">Hola ${data.name},</div>\n    <div class=\"message\">\n      Notamos que todavía no has completado la carga de tus documentos para conducir con Cruise.\n    </div>\n    <div class=\"missing\">\n      <strong>Documentos faltantes:</strong> ${data.missing_documents ? data.missing_documents.join(', ') : 'Varios'}\n    </div>\n    <div class=\"message\">\n      Te tomará solo unos minutos. Una vez que los subas, nuestro equipo los revisará en menos de 48 horas.\n    </div>\n    <div style=\"text-align: center;\">\n      <a href=\"https://cruise.app/driver/documents/${data.driver_id}\" class=\"cta-button\">Completar Ahora</a>\n    </div>\n    <div class=\"message\" style=\"margin-top: 30px; color: #999; font-size: 14px;\">\n      ¿Necesitás ayuda? Respondé a este email o escribinos a driver-support@cruise.app\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{ json: { ...data, html: htmlContent, subject: '⏰ Recordatorio: Completá tus documentos - Cruise' } }];"
+      },
+      "id": "build-reminder-1",
+      "name": "Build First Reminder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL || 'driver-support@cruise.app'}}",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "senderName": "Cruise Driver Team"
+        }
+      },
+      "id": "send-reminder-1",
+      "name": "Send First Reminder",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1850, 300],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 48,
+        "unit": "hours"
+      },
+      "id": "wait-48h",
+      "name": "Wait 48 Hours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [2050, 300],
+      "webhookId": "driver-onboarding-48h"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BACKEND_URL}}/drivers/{{$json.driver_id}}/documents/status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "check-docs-status-2",
+      "name": "Check Documents Again",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2250, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "2",
+          "name": "Backend API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "notEqual",
+              "value2": "complete"
+            }
+          ]
+        }
+      },
+      "id": "if-still-incomplete",
+      "name": "If Still Incomplete",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }\n    .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; padding: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }\n    .header { color: #dc3545; font-size: 24px; margin-bottom: 20px; }\n    .message { font-size: 16px; color: #555; line-height: 1.6; margin-bottom: 20px; }\n    .cta-button { display: inline-block; padding: 14px 30px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }\n    .urgent { background: #f8d7da; padding: 15px; border-radius: 6px; border-left: 4px solid #dc3545; margin: 20px 0; color: #721c24; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">⚠️ Acción Requerida: Documentos Pendientes</div>\n    <div class=\"message\">Hola ${data.name},</div>\n    <div class=\"urgent\">\n      <strong>⏰ Última oportunidad:</strong> Tu solicitud de driver está a punto de expirar por falta de documentación.\n    </div>\n    <div class=\"message\">\n      Todavía no hemos recibido los documentos completos necesarios para activar tu cuenta de driver.\n    </div>\n    <div class=\"message\">\n      Si no completas la documentación en las próximas 24 horas, tendrás que volver a iniciar el proceso de registro.\n    </div>\n    <div style=\"text-align: center;\">\n      <a href=\"https://cruise.app/driver/documents/${data.driver_id}\" class=\"cta-button\">Subir Documentos AHORA</a>\n    </div>\n    <div class=\"message\" style=\"margin-top: 30px;\">\n      <strong>¿Tenés problemas?</strong> Nuestro equipo está listo para ayudarte:<br>\n      📧 driver-support@cruise.app<br>\n      📱 WhatsApp: +1-555-CRUISE<br>\n      💬 Chat en vivo: cruise.app/help\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{ json: { ...data, html: htmlContent, subject: '⚠️ URGENTE: Completá tus documentos HOY - Cruise' } }];"
+      },
+      "id": "build-urgent-reminder",
+      "name": "Build Urgent Reminder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2650, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL || 'driver-support@cruise.app'}}",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "senderName": "Cruise Driver Team"
+        }
+      },
+      "id": "send-urgent-reminder",
+      "name": "Send Urgent Reminder",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [2850, 200],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }\n    .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }\n    .header { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); padding: 40px 30px; text-align: center; color: white; }\n    .header h1 { margin: 0; font-size: 28px; }\n    .content { padding: 40px 30px; }\n    .message { font-size: 16px; color: #555; line-height: 1.6; margin-bottom: 20px; }\n    .success-box { background: #d4edda; padding: 20px; border-radius: 6px; border-left: 4px solid #28a745; margin: 25px 0; color: #155724; }\n    .cta-button { display: inline-block; padding: 16px 40px; background: #28a745; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; margin: 20px 0; }\n    .tips { background: #f9f9f9; padding: 20px; border-radius: 6px; margin: 25px 0; }\n    .tips h3 { margin-top: 0; color: #333; }\n    .tips ul { margin: 0; padding-left: 20px; }\n    .tips li { margin-bottom: 10px; color: #555; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>🎉 ¡Estás Aprobado!</h1>\n    </div>\n    <div class=\"content\">\n      <div class=\"message\">Hola ${data.name},</div>\n      <div class=\"success-box\">\n        <strong>✅ ¡Felicitaciones!</strong> Tu documentación ha sido aprobada y estás listo para empezar a conducir con Cruise.\n      </div>\n      <div class=\"message\">\n        A partir de ahora podés activar el modo \"Disponible\" en la app y empezar a recibir solicitudes de viaje en tiempo real.\n      </div>\n      <div style=\"text-align: center;\">\n        <a href=\"https://cruise.app/driver\" class=\"cta-button\">Empezar a Conducir 🚗</a>\n      </div>\n      <div class=\"tips\">\n        <h3>💡 Tips para tu primer día:</h3>\n        <ul>\n          <li>Mantené tu vehículo limpio y con suficiente combustible</li>\n          <li>Guardá agua y snacks para pasajeros (aumenta tus ratings)</li>\n          <li>Confirmá siempre el nombre del pasajero antes de iniciar el viaje</li>\n          <li>Usá Google Maps o Waze junto con la navegación de Cruise</li>\n          <li>Sé amable, puntual y profesional para obtener 5 estrellas ⭐</li>\n        </ul>\n      </div>\n      <div class=\"message\">\n        <strong>Tus ganancias:</strong> Cobrás el 80% de cada viaje + el 100% de las propinas. Los pagos se procesan semanalmente cada lunes.\n      </div>\n      <div class=\"message\" style=\"margin-top: 30px; padding: 15px; background: #fff8e1; border-radius: 6px;\">\n        🎁 <strong>Bono de bienvenida:</strong> Completá 10 viajes en tu primera semana y recibí $50 USD extra.\n      </div>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{ json: { ...data, html: htmlContent, subject: '🎉 ¡Aprobado! Empezá a conducir con Cruise' } }];"
+      },
+      "id": "build-approval-email",
+      "name": "Build Approval Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2650, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL || 'driver-support@cruise.app'}}",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "senderName": "Cruise Driver Team"
+        }
+      },
+      "id": "send-approval-email",
+      "name": "Send Approval Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [2850, 400],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - New Driver": {
+      "main": [
+        [
+          {
+            "node": "Process Driver Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Driver Data": {
+      "main": [
+        [
+          {
+            "node": "Build Initial Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Initial Email": {
+      "main": [
+        [
+          {
+            "node": "Send Initial Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Initial Email": {
+      "main": [
+        [
+          {
+            "node": "Wait 24 Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 24 Hours": {
+      "main": [
+        [
+          {
+            "node": "Check Documents Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Documents Status": {
+      "main": [
+        [
+          {
+            "node": "If Incomplete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Incomplete": {
+      "main": [
+        [
+          {
+            "node": "Build First Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Approval Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build First Reminder": {
+      "main": [
+        [
+          {
+            "node": "Send First Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send First Reminder": {
+      "main": [
+        [
+          {
+            "node": "Wait 48 Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 48 Hours": {
+      "main": [
+        [
+          {
+            "node": "Check Documents Again",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Documents Again": {
+      "main": [
+        [
+          {
+            "node": "If Still Incomplete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Still Incomplete": {
+      "main": [
+        [
+          {
+            "node": "Build Urgent Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Approval Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Urgent Reminder": {
+      "main": [
+        [
+          {
+            "node": "Send Urgent Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Approval Email": {
+      "main": [
+        [
+          {
+            "node": "Send Approval Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

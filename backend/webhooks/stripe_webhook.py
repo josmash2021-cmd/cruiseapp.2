@@ -7,6 +7,7 @@ so Stripe doesn't retry unnecessarily.
 import os
 import logging
 import json
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, HTTPException
@@ -112,6 +113,22 @@ async def _handle_payment_intent_failed(data_object: dict, client_ip: str):
                 f"Your payment for trip #{trip_id} failed. Please update your payment method.",
                 {"type": "payment_failed", "trip_id": str(trip_id)},
             )
+        
+        # Trigger n8n payment recovery workflow (fire-and-forget, non-blocking)
+        if rider:
+            try:
+                from utils.n8n_trigger import trigger_payment_failed
+                asyncio.create_task(
+                    trigger_payment_failed(
+                        user_name=f"{rider.first_name} {rider.last_name}" if rider.first_name else "User",
+                        user_email=rider.email or "",
+                        user_phone=rider.phone,
+                        trip_id=str(trip_id),
+                        amount=float(trip.fare) if trip.fare else 0.0
+                    )
+                )
+            except Exception as e:
+                logging.error("n8n trigger for payment failed: %s", e)
 
     logging.warning("[StripeWH] Trip %s payment failed: %s", trip_id, error_msg)
     _security_audit_log("stripe_payment_failed", client_ip, f"trip={trip_id} pi={payment_intent_id} err={error_msg[:100]}")

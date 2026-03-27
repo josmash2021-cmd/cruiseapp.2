@@ -1,0 +1,463 @@
+{
+  "name": "Cruise - Payment Failed Recovery",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payment-failed",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Payment Failed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract payment failure data\nconst data = $input.all()[0].json;\n\n// Validate required fields\nif (!data.user_name || !data.user_email || !data.trip_id || !data.amount) {\n  throw new Error('Missing required fields: user_name, user_email, trip_id, amount');\n}\n\n// Prepare payment recovery data\nconst recoveryData = {\n  user_name: data.user_name,\n  user_email: data.user_email,\n  user_phone: data.user_phone || null,\n  trip_id: data.trip_id,\n  amount: parseFloat(data.amount),\n  timestamp: new Date().toISOString(),\n  payment_link: `https://cruise.app/payment/retry/${data.trip_id}`\n};\n\nreturn [{ json: recoveryData }];"
+      },
+      "id": "process-failure",
+      "name": "Process Payment Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nconst formatCurrency = (amount) => {\n  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);\n};\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }\n    .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }\n    .header { background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); padding: 40px 30px; text-align: center; color: white; }\n    .header h1 { margin: 0; font-size: 28px; }\n    .content { padding: 40px 30px; }\n    .greeting { font-size: 18px; color: #333; margin-bottom: 20px; }\n    .message { font-size: 16px; color: #555; line-height: 1.6; margin-bottom: 20px; }\n    .payment-box { background: #f8d7da; padding: 20px; border-radius: 6px; border-left: 4px solid #dc3545; margin: 25px 0; }\n    .payment-box .amount { font-size: 32px; font-weight: 700; color: #721c24; margin: 10px 0; }\n    .cta-button { display: inline-block; padding: 16px 40px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; margin: 20px 0; }\n    .cta-button:hover { background: #c82333; }\n    .info-box { background: #f9f9f9; padding: 15px; border-radius: 6px; margin: 20px 0; font-size: 14px; color: #666; }\n    .footer { background: #f9f9f9; padding: 20px 30px; text-align: center; color: #999; font-size: 12px; border-top: 1px solid #eee; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>⚠️ Problema con tu Pago</h1>\n    </div>\n    <div class=\"content\">\n      <div class=\"greeting\">Hola ${data.user_name},</div>\n      <div class=\"message\">\n        Intentamos procesar el pago de tu último viaje con Cruise pero no pudimos completar la transacción.\n      </div>\n      <div class=\"payment-box\">\n        <div style=\"font-size: 14px; color: #721c24; margin-bottom: 5px;\">Monto pendiente:</div>\n        <div class=\"amount\">${formatCurrency(data.amount)}</div>\n        <div style=\"font-size: 14px; color: #721c24;\">Viaje ID: #${data.trip_id}</div>\n      </div>\n      <div class=\"message\">\n        <strong>Posibles causas:</strong>\n      </div>\n      <div class=\"info-box\">\n        • Fondos insuficientes en la tarjeta<br>\n        • Tarjeta vencida o bloqueada<br>\n        • Límite de crédito alcanzado<br>\n        • Datos de pago incorrectos\n      </div>\n      <div class=\"message\">\n        Por favor, actualizá tu método de pago para completar la transacción:\n      </div>\n      <div style=\"text-align: center;\">\n        <a href=\"${data.payment_link}\" class=\"cta-button\">Actualizar Método de Pago</a>\n      </div>\n      <div class=\"message\" style=\"margin-top: 30px; font-size: 14px; color: #666;\">\n        Si no actualizás tu método de pago, tu cuenta podría ser suspendida temporalmente hasta que se resuelva el pago pendiente.\n      </div>\n    </div>\n    <div class=\"footer\">\n      ¿Tenés preguntas? Escribinos a support@cruise.app<br>\n      © 2026 Cruise App. Todos los derechos reservados.\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{ json: { ...data, html: htmlContent, subject: `⚠️ Tu pago de ${formatCurrency(data.amount)} no pudo procesarse` } }];"
+      },
+      "id": "build-email",
+      "name": "Build Payment Failed Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL || 'billing@cruise.app'}}",
+        "toEmail": "={{ $json.user_email }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "senderName": "Cruise Payments"
+        }
+      },
+      "id": "send-email",
+      "name": "Send Email to Rider",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.user_phone }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "if-has-phone",
+      "name": "If Has Phone",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nconst formatCurrency = (amount) => {\n  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);\n};\n\nconst smsMessage = `Cruise: Tu pago de ${formatCurrency(data.amount)} falló. Actualizá tu método de pago para continuar usando el servicio: ${data.payment_link}`;\n\nreturn [{ json: { ...data, sms_body: smsMessage } }];"
+      },
+      "id": "build-sms",
+      "name": "Build SMS Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 500]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.TWILIO_SMS_URL}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.user_phone }}"
+            },
+            {
+              "name": "From",
+              "value": "={{$env.TWILIO_PHONE}}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.sms_body }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-sms",
+      "name": "Send SMS to Rider",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 500],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "3",
+          "name": "Twilio Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 6,
+        "unit": "hours"
+      },
+      "id": "wait-6h",
+      "name": "Wait 6 Hours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "webhookId": "payment-recovery-6h"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BACKEND_URL}}/payments/{{$json.trip_id}}/status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "check-payment-status",
+      "name": "Check Payment Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "2",
+          "name": "Backend API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.payment_status }}",
+              "operation": "notEqual",
+              "value2": "paid"
+            }
+          ]
+        }
+      },
+      "id": "if-still-unpaid",
+      "name": "If Still Unpaid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nconst formatCurrency = (amount) => {\n  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);\n};\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }\n    .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; padding: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }\n    .header { color: #dc3545; font-size: 24px; margin-bottom: 20px; font-weight: 700; }\n    .message { font-size: 16px; color: #555; line-height: 1.6; margin-bottom: 20px; }\n    .urgent-box { background: #f8d7da; padding: 20px; border-radius: 6px; border-left: 4px solid #dc3545; margin: 20px 0; color: #721c24; }\n    .urgent-box .amount { font-size: 28px; font-weight: 700; margin: 10px 0; }\n    .cta-button { display: inline-block; padding: 16px 40px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">🚨 Recordatorio: Pago Pendiente</div>\n    <div class=\"message\">Hola ${data.user_name},</div>\n    <div class=\"urgent-box\">\n      <strong>Hace 6 horas te enviamos una notificación sobre un pago fallido.</strong>\n      <div class=\"amount\">${formatCurrency(data.amount)} pendiente</div>\n      <div>Viaje ID: #${data.trip_id}</div>\n    </div>\n    <div class=\"message\">\n      Tu cuenta está en riesgo de suspensión. Por favor, actualizá tu método de pago inmediatamente para continuar usando Cruise.\n    </div>\n    <div style=\"text-align: center;\">\n      <a href=\"${data.payment_link}\" class=\"cta-button\">Pagar Ahora</a>\n    </div>\n    <div class=\"message\" style=\"margin-top: 30px; font-size: 14px; color: #999;\">\n      Si ya actualizaste tu método de pago, por favor ignorá este email.\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{ json: { ...data, html: htmlContent, subject: `🚨 Recordatorio: Pago pendiente de ${formatCurrency(data.amount)}` } }];"
+      },
+      "id": "build-reminder",
+      "name": "Build Reminder Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL || 'billing@cruise.app'}}",
+        "toEmail": "={{ $json.user_email }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "senderName": "Cruise Payments"
+        }
+      },
+      "id": "send-reminder",
+      "name": "Send Reminder Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1850, 300],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 18,
+        "unit": "hours"
+      },
+      "id": "wait-18h",
+      "name": "Wait 18 Hours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [2050, 300],
+      "webhookId": "payment-recovery-18h"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BACKEND_URL}}/payments/{{$json.trip_id}}/status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "check-payment-final",
+      "name": "Final Payment Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2250, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "2",
+          "name": "Backend API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.payment_status }}",
+              "operation": "notEqual",
+              "value2": "paid"
+            }
+          ]
+        }
+      },
+      "id": "if-final-unpaid",
+      "name": "If Final Unpaid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nconst formatCurrency = (amount) => {\n  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);\n};\n\nconst adminNotification = `\n⚠️ PAYMENT RECOVERY FAILED\n\nUser: ${data.user_name}\nEmail: ${data.user_email}\nPhone: ${data.user_phone || 'N/A'}\nTrip ID: ${data.trip_id}\nAmount: ${formatCurrency(data.amount)}\nTime Elapsed: 24+ hours\n\nAction Required: Manual follow-up needed.\n\nPayment Link: ${data.payment_link}\nUser Profile: https://cruise.app/admin/users/email/${encodeURIComponent(data.user_email)}\n`;\n\nreturn [{ json: { ...data, admin_message: adminNotification, subject: `⚠️ Failed Payment Recovery: ${data.user_name} - ${formatCurrency(data.amount)}` } }];"
+      },
+      "id": "build-admin-alert",
+      "name": "Build Admin Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2650, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL || 'alerts@cruise.app'}}",
+        "toEmail": "={{$env.ADMIN_EMAIL || 'admin@cruise.app'}}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.admin_message }}",
+        "options": {
+          "senderName": "Cruise Alerts"
+        }
+      },
+      "id": "notify-admin",
+      "name": "Notify Admin",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [2850, 300],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Payment Failed": {
+      "main": [
+        [
+          {
+            "node": "Process Payment Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Payment Failure": {
+      "main": [
+        [
+          {
+            "node": "Build Payment Failed Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If Has Phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Payment Failed Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email to Rider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email to Rider": {
+      "main": [
+        [
+          {
+            "node": "Wait 6 Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Has Phone": {
+      "main": [
+        [
+          {
+            "node": "Build SMS Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SMS Message": {
+      "main": [
+        [
+          {
+            "node": "Send SMS to Rider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 6 Hours": {
+      "main": [
+        [
+          {
+            "node": "Check Payment Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Payment Status": {
+      "main": [
+        [
+          {
+            "node": "If Still Unpaid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Still Unpaid": {
+      "main": [
+        [
+          {
+            "node": "Build Reminder Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reminder Email": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder Email": {
+      "main": [
+        [
+          {
+            "node": "Wait 18 Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 18 Hours": {
+      "main": [
+        [
+          {
+            "node": "Final Payment Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Payment Check": {
+      "main": [
+        [
+          {
+            "node": "If Final Unpaid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Final Unpaid": {
+      "main": [
+        [
+          {
+            "node": "Build Admin Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Admin Alert": {
+      "main": [
+        [
+          {
+            "node": "Notify Admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

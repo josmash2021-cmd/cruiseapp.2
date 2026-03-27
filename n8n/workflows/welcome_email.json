@@ -1,0 +1,120 @@
+{
+  "name": "Cruise - Welcome Email",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-user",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - New User",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract user data\nconst data = $input.all()[0].json;\n\n// Validate required fields\nif (!data.name || !data.email || !data.verification_link) {\n  throw new Error('Missing required fields: name, email, verification_link');\n}\n\n// Prepare email data\nconst emailData = {\n  to: data.email,\n  name: data.name,\n  verification_link: data.verification_link,\n  timestamp: new Date().toISOString()\n};\n\nreturn [{ json: emailData }];"
+      },
+      "id": "process-user",
+      "name": "Process User Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }\n    .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }\n    .header { background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); padding: 40px 30px; text-align: center; color: #1a1a1a; }\n    .header h1 { margin: 0; font-size: 28px; font-weight: 700; }\n    .content { padding: 40px 30px; }\n    .greeting { font-size: 20px; color: #333; margin-bottom: 20px; }\n    .message { font-size: 16px; color: #555; line-height: 1.6; margin-bottom: 30px; }\n    .cta-button { display: inline-block; padding: 16px 40px; background: #FFD700; color: #1a1a1a; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; margin: 20px 0; }\n    .cta-button:hover { background: #FFA500; }\n    .steps { margin: 30px 0; }\n    .step { display: flex; margin-bottom: 20px; align-items: flex-start; }\n    .step-number { background: #FFD700; color: #1a1a1a; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-right: 15px; flex-shrink: 0; }\n    .step-content h3 { margin: 0 0 5px 0; color: #333; font-size: 16px; }\n    .step-content p { margin: 0; color: #666; font-size: 14px; }\n    .footer { background: #f9f9f9; padding: 30px; text-align: center; border-top: 1px solid #eee; }\n    .footer-links { margin: 15px 0; }\n    .footer-links a { color: #FFD700; text-decoration: none; margin: 0 10px; font-size: 14px; }\n    .social-links { margin: 20px 0; }\n    .social-links a { display: inline-block; margin: 0 8px; }\n    .footer-text { color: #999; font-size: 12px; margin-top: 15px; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>🚗 ¡Bienvenido a Cruise!</h1>\n    </div>\n    <div class=\"content\">\n      <div class=\"greeting\">Hola ${data.name},</div>\n      <div class=\"message\">\n        Estamos emocionados de tenerte con nosotros. Cruise es la forma más rápida, segura y conveniente de moverte por la ciudad.\n      </div>\n      <div style=\"text-align: center;\">\n        <a href=\"${data.verification_link}\" class=\"cta-button\">✓ Verificar mi Email</a>\n      </div>\n      <div class=\"message\" style=\"margin-top: 30px;\">\n        <strong>Empezá en 3 simples pasos:</strong>\n      </div>\n      <div class=\"steps\">\n        <div class=\"step\">\n          <div class=\"step-number\">1</div>\n          <div class=\"step-content\">\n            <h3>Completá tu perfil</h3>\n            <p>Agregá tu foto y verificá tu número de teléfono para mayor seguridad.</p>\n          </div>\n        </div>\n        <div class=\"step\">\n          <div class=\"step-number\">2</div>\n          <div class=\"step-content\">\n            <h3>Agregá un método de pago</h3>\n            <p>Guardá tu tarjeta de crédito/débito o activá Apple Pay / Google Pay.</p>\n          </div>\n        </div>\n        <div class=\"step\">\n          <div class=\"step-number\">3</div>\n          <div class=\"step-content\">\n            <h3>Pedí tu primer viaje</h3>\n            <p>Ingresá tu destino, elegí tu vehículo y en minutos estás en camino.</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"message\" style=\"margin-top: 30px; padding: 20px; background: #f9f9f9; border-radius: 6px; border-left: 4px solid #FFD700;\">\n        💡 <strong>Tip:</strong> Tu primera verificación de email desbloquea ofertas exclusivas y promociones especiales.\n      </div>\n    </div>\n    <div class=\"footer\">\n      <div class=\"footer-links\">\n        <a href=\"https://cruise.app/support\">Centro de Ayuda</a> |\n        <a href=\"https://cruise.app/terms\">Términos</a> |\n        <a href=\"https://cruise.app/privacy\">Privacidad</a>\n      </div>\n      <div class=\"social-links\">\n        <a href=\"https://facebook.com/cruiseapp\">📘 Facebook</a>\n        <a href=\"https://instagram.com/cruiseapp\">📷 Instagram</a>\n        <a href=\"https://twitter.com/cruiseapp\">🐦 Twitter</a>\n      </div>\n      <div class=\"footer-text\">\n        © 2026 Cruise App. Todos los derechos reservados.<br>\n        Si no creaste esta cuenta, por favor ignorá este email.\n      </div>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{ json: { ...data, html: htmlContent, subject: `¡Bienvenido a Cruise, ${data.name}! 🚗` } }];"
+      },
+      "id": "build-html",
+      "name": "Build HTML Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL || 'noreply@cruise.app'}}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "senderName": "Cruise Team"
+        }
+      },
+      "id": "send-email",
+      "name": "Send Welcome Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'Welcome email sent', email: $json.to } }}"
+      },
+      "id": "webhook-response",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - New User": {
+      "main": [
+        [
+          {
+            "node": "Process User Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process User Data": {
+      "main": [
+        [
+          {
+            "node": "Build HTML Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build HTML Email": {
+      "main": [
+        [
+          {
+            "node": "Send Welcome Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Welcome Email": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

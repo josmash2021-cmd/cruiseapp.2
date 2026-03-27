@@ -23,6 +23,7 @@ from utils.security import (
 from utils.helpers import utc_now, _user_dict, _haversine
 from services.fcm_service import _send_fcm_push
 from services.email_sms_service import _send_email
+from utils.n8n_trigger import trigger_welcome_email, trigger_driver_onboarding
 from config import (
     _otp_store, _OTP_TTL, PHOTOS_DIR, PUBLIC_URL,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER, TWILIO_SERVICE_SID,
@@ -134,6 +135,30 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 )
         except Exception as e:
             logging.error("Firestore sync on register failed: %s", e)
+
+    # Trigger n8n workflows for new user/driver (fire-and-forget, non-blocking)
+    try:
+        verification_link = f"{PUBLIC_URL}/verify-email/{user.id}"  # Adjust to your actual verification flow
+        if role == "driver":
+            # Trigger driver onboarding workflow
+            asyncio.create_task(
+                trigger_driver_onboarding(
+                    name=f"{user.first_name} {user.last_name}",
+                    email=user.email or "",
+                    driver_id=str(user.id)
+                )
+            )
+        else:
+            # Trigger welcome email workflow for riders
+            asyncio.create_task(
+                trigger_welcome_email(
+                    name=user.first_name,
+                    email=user.email or "",
+                    verification_link=verification_link
+                )
+            )
+    except Exception as e:
+        logging.error("n8n trigger on register failed: %s", e)
 
     token = _create_token(user.id)
     refresh = _create_refresh_token(user.id)

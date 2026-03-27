@@ -1,0 +1,186 @@
+{
+  "name": "Cruise - Weekly Driver Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every Monday 9:00 AM UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate last week's date range\nconst now = new Date();\nconst lastMonday = new Date(now);\nlastMonday.setDate(lastMonday.getDate() - 7);\nlastMonday.setHours(0, 0, 0, 0);\n\nconst lastSunday = new Date(lastMonday);\nlastSunday.setDate(lastSunday.getDate() + 6);\nlastSunday.setHours(23, 59, 59, 999);\n\nconst startDate = lastMonday.toISOString();\nconst endDate = lastSunday.toISOString();\nconst weekLabel = `${lastMonday.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })} - ${lastSunday.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })}`;\n\nreturn [{ json: { startDate, endDate, weekLabel } }];"
+      },
+      "id": "calculate-week",
+      "name": "Calculate Week Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BACKEND_URL}}/admin/drivers/active?week_start={{$json.startDate}}&week_end={{$json.endDate}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "get-active-drivers",
+      "name": "Get Active Drivers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "2",
+          "name": "Backend API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldName": "drivers",
+        "include": "selectedOtherFields",
+        "fieldsToInclude": "startDate,endDate,weekLabel"
+      },
+      "id": "split-drivers",
+      "name": "Split Into Items",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BACKEND_URL}}/admin/drivers/{{$json.driver_id}}/weekly-stats?start={{$json.startDate}}&end={{$json.endDate}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "get-driver-stats",
+      "name": "Get Driver Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "2",
+          "name": "Backend API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nconst formatCurrency = (amount) => {\n  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);\n};\n\nconst formatNumber = (num) => {\n  return new Intl.NumberFormat('en-US').format(num || 0);\n};\n\nconst getChangeIndicator = (current, previous) => {\n  if (!previous || previous === 0) return '';\n  const change = ((current - previous) / previous * 100).toFixed(1);\n  if (change > 0) return `<span style=\"color: #28a745; font-size: 14px;\"> ↗ +${change}%</span>`;\n  if (change < 0) return `<span style=\"color: #dc3545; font-size: 14px;\"> ↘ ${change}%</span>`;\n  return '<span style=\"color: #999; font-size: 14px;\"> → sin cambios</span>';\n};\n\nconst getMotivationalMessage = (rating, trips) => {\n  if (rating >= 4.9) return '🌟 ¡Sos un SÚPER STAR! Tus pasajeros te aman. Seguí así!';\n  if (rating >= 4.8) return '⭐ ¡Excelente trabajo! Estás entre los mejores drivers de Cruise.';\n  if (rating >= 4.5) return '👍 Muy buen desempeño. Mantené la calidad en cada viaje.';\n  if (trips >= 50) return '💪 ¡Impresionante! Completaste muchos viajes esta semana.';\n  return '🚀 ¡Seguí adelante! Cada viaje cuenta.';\n};\n\nconst weeklyEarnings = data.total_earnings || 0;\nconst weeklyTrips = data.total_trips || 0;\nconst currentRating = data.average_rating || 0;\nconst previousEarnings = data.previous_week_earnings || 0;\nconst previousTrips = data.previous_week_trips || 0;\nconst previousRating = data.previous_week_rating || 0;\n\nconst showMotivation = currentRating >= 4.8;\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }\n    .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }\n    .header { background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); padding: 40px 30px; text-align: center; color: #1a1a1a; }\n    .header h1 { margin: 0 0 10px 0; font-size: 28px; font-weight: 700; }\n    .header .week { font-size: 16px; opacity: 0.8; }\n    .content { padding: 40px 30px; }\n    .greeting { font-size: 20px; color: #333; margin-bottom: 25px; }\n    .earnings-highlight { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 30px; border-radius: 8px; text-align: center; margin: 25px 0; }\n    .earnings-highlight .label { font-size: 14px; opacity: 0.9; margin-bottom: 5px; }\n    .earnings-highlight .amount { font-size: 42px; font-weight: 700; margin: 10px 0; }\n    .stats-grid { display: table; width: 100%; margin: 25px 0; }\n    .stat-row { display: table-row; }\n    .stat-label { display: table-cell; padding: 15px 10px; border-bottom: 1px solid #eee; color: #666; font-size: 15px; }\n    .stat-value { display: table-cell; padding: 15px 10px; border-bottom: 1px solid #eee; text-align: right; font-weight: 600; color: #333; font-size: 16px; }\n    .comparison { background: #f9f9f9; padding: 20px; border-radius: 6px; margin: 25px 0; }\n    .comparison h3 { margin: 0 0 15px 0; font-size: 16px; color: #333; }\n    .comparison-item { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; }\n    .motivation-box { background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #1a1a1a; padding: 20px; border-radius: 8px; margin: 25px 0; text-align: center; font-size: 18px; font-weight: 600; }\n    .tips { background: #e7f3ff; padding: 20px; border-radius: 6px; margin: 25px 0; border-left: 4px solid #007bff; }\n    .tips h3 { margin: 0 0 10px 0; font-size: 16px; color: #004085; }\n    .tips ul { margin: 5px 0; padding-left: 20px; }\n    .tips li { margin-bottom: 8px; color: #004085; font-size: 14px; }\n    .footer { background: #f9f9f9; padding: 20px 30px; text-align: center; color: #999; font-size: 12px; border-top: 1px solid #eee; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>📊 Tu Semana en Cruise</h1>\n      <div class=\"week\">${data.weekLabel}</div>\n    </div>\n    <div class=\"content\">\n      <div class=\"greeting\">¡Hola ${data.driver_name || 'Driver'}! 👋</div>\n      \n      <div class=\"earnings-highlight\">\n        <div class=\"label\">Ganaste esta semana</div>\n        <div class=\"amount\">${formatCurrency(weeklyEarnings)}</div>\n        ${previousEarnings > 0 ? getChangeIndicator(weeklyEarnings, previousEarnings) : ''}\n      </div>\n\n      <div class=\"stats-grid\">\n        <div class=\"stat-row\">\n          <div class=\"stat-label\">🚗 Viajes completados</div>\n          <div class=\"stat-value\">${formatNumber(weeklyTrips)}</div>\n        </div>\n        <div class=\"stat-row\">\n          <div class=\"stat-label\">⭐ Rating promedio</div>\n          <div class=\"stat-value\">${currentRating.toFixed(2)}</div>\n        </div>\n        <div class=\"stat-row\">\n          <div class=\"stat-label\">💵 Ganancia por viaje</div>\n          <div class=\"stat-value\">${weeklyTrips > 0 ? formatCurrency(weeklyEarnings / weeklyTrips) : '$0.00'}</div>\n        </div>\n        <div class=\"stat-row\">\n          <div class=\"stat-label\">⏱️ Horas online</div>\n          <div class=\"stat-value\">${data.hours_online || 0}h</div>\n        </div>\n      </div>\n\n      ${previousEarnings > 0 || previousTrips > 0 ? `\n      <div class=\"comparison\">\n        <h3>📈 Comparación con semana anterior</h3>\n        <div class=\"comparison-item\">\n          <span>Ganancias:</span>\n          <span>${formatCurrency(previousEarnings)} → ${formatCurrency(weeklyEarnings)} ${getChangeIndicator(weeklyEarnings, previousEarnings)}</span>\n        </div>\n        <div class=\"comparison-item\">\n          <span>Viajes:</span>\n          <span>${formatNumber(previousTrips)} → ${formatNumber(weeklyTrips)} ${getChangeIndicator(weeklyTrips, previousTrips)}</span>\n        </div>\n        <div class=\"comparison-item\">\n          <span>Rating:</span>\n          <span>${previousRating.toFixed(2)} → ${currentRating.toFixed(2)} ${getChangeIndicator(currentRating, previousRating)}</span>\n        </div>\n      </div>\n      ` : ''}\n\n      ${showMotivation ? `\n      <div class=\"motivation-box\">\n        ${getMotivationalMessage(currentRating, weeklyTrips)}\n      </div>\n      ` : ''}\n\n      ${currentRating < 4.5 ? `\n      <div class=\"tips\">\n        <h3>💡 Tips para mejorar tu rating</h3>\n        <ul>\n          <li>Saludá amablemente y confirmá el nombre del pasajero</li>\n          <li>Mantené el auto limpio y con buen olor</li>\n          <li>Ofrecé agua o caramelos (aumenta las propinas)</li>\n          <li>Usá la ruta más eficiente y manejá con cuidado</li>\n          <li>Evitá conversaciones polémicas, dejá que el pasajero guíe</li>\n        </ul>\n      </div>\n      ` : ''}\n\n      <div style=\"margin-top: 30px; padding: 20px; background: #f9f9f9; border-radius: 6px; text-align: center;\">\n        <div style=\"font-size: 14px; color: #666; margin-bottom: 10px;\">Los pagos se procesan todos los lunes</div>\n        <div style=\"font-size: 16px; color: #333; font-weight: 600;\">Tu pago de ${formatCurrency(weeklyEarnings)} llegará en 24-48 horas</div>\n      </div>\n    </div>\n    <div class=\"footer\">\n      ¿Preguntas sobre tus ganancias? Escribinos a driver-support@cruise.app<br>\n      © 2026 Cruise App. Todos los derechos reservados.\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{ json: { ...data, html: htmlContent, subject: `📊 Tu semana en Cruise: ${formatCurrency(weeklyEarnings)} ganados` } }];"
+      },
+      "id": "build-email",
+      "name": "Build Driver Summary Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL || 'driver-support@cruise.app'}}",
+        "toEmail": "={{ $json.driver_email }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "senderName": "Cruise Driver Team"
+        }
+      },
+      "id": "send-email",
+      "name": "Send Summary Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1450, 400],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Monday 9:00 AM UTC": {
+      "main": [
+        [
+          {
+            "node": "Calculate Week Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Week Range": {
+      "main": [
+        [
+          {
+            "node": "Get Active Drivers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Drivers": {
+      "main": [
+        [
+          {
+            "node": "Split Into Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Items": {
+      "main": [
+        [
+          {
+            "node": "Get Driver Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Driver Stats": {
+      "main": [
+        [
+          {
+            "node": "Build Driver Summary Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Driver Summary Email": {
+      "main": [
+        [
+          {
+            "node": "Send Summary Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

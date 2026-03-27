@@ -15,25 +15,22 @@
 
 definitions:
   # ── Shared environment variables (merged into each workflow) ──────────────
-  # ⚠️  ALL secret values MUST be set as encrypted variables in Codemagic UI
-  #     (Team settings → Global variables & secrets). The placeholders below
-  #     are only used if the encrypted variable is missing.
   vars: &shared_vars
-    ENV_API_KEY: "SET_IN_CODEMAGIC_UI"
-    ENV_HMAC_SECRET: "SET_IN_CODEMAGIC_UI"
-    ENV_EMAILJS_SERVICE_ID: "SET_IN_CODEMAGIC_UI"
-    ENV_EMAILJS_TEMPLATE_ID: "SET_IN_CODEMAGIC_UI"
-    ENV_EMAILJS_PUBLIC_KEY: "SET_IN_CODEMAGIC_UI"
-    ENV_EMAILJS_PRIVATE_KEY: "SET_IN_CODEMAGIC_UI"
-    ENV_STRIPE_PK: "SET_IN_CODEMAGIC_UI"
+    ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
+    ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
+    ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
+    ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
+    ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
+    ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
+    ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
     ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
-    ENV_TWILIO_SID: "SET_IN_CODEMAGIC_UI"
-    ENV_TWILIO_TOKEN: "SET_IN_CODEMAGIC_UI"
-    ENV_TWILIO_SERVICE: "SET_IN_CODEMAGIC_UI"
-    ENV_MAPS_SERVICES_KEY: "SET_IN_CODEMAGIC_UI"
+    ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
+    ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
+    ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
+    ENV_MAPS_SERVICES_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
     ENV_PAYPAL_SANDBOX: "false"
-    ENV_PAYPAL_CLIENT_ID: "SET_IN_CODEMAGIC_UI"
-    ENV_PAYPAL_SECRET: "SET_IN_CODEMAGIC_UI"
+    ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
+    ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
 
   # ── Reusable script anchors ───────────────────────────────────────────────
   scripts:
@@ -73,8 +70,8 @@ definitions:
         sandbox_bool = 'true' if sandbox_val == 'true' else 'false'
         lines = [
           'class Env {',
-          "  static const String apiKey = '" + os.environ.get('ENV_API_KEY', '') + "';",
-          "  static const String hmacSecret = '" + os.environ.get('ENV_HMAC_SECRET', '') + "';",
+          "  static const String apiKey = '" + os.environ.get('ENV_API_KEY', 'dev-api-key-change-in-production') + "';",
+          "  static const String hmacSecret = '" + os.environ.get('ENV_HMAC_SECRET', 'dev-hmac-secret-change-in-production') + "';",
           "  static const String mapsServicesKey = '" + os.environ.get('ENV_MAPS_SERVICES_KEY', '') + "';",
           "  static const String emailjsServiceId = '" + os.environ.get('ENV_EMAILJS_SERVICE_ID', '') + "';",
           "  static const String emailjsTemplateId = '" + os.environ.get('ENV_EMAILJS_TEMPLATE_ID', '') + "';",

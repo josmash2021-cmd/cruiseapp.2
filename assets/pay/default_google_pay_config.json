@@ -16,7 +16,7 @@
           "parameters": {
             "gateway": "stripe",
             "stripe:version": "2018-10-31",
-            "stripe:publishableKey": "SET_VIA_ENV"
+            "stripe:publishableKey": "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
           }
         }
       }

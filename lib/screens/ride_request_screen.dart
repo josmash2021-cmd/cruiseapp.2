@@ -38,6 +38,7 @@ import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/gold_pin_renderer.dart';
+
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
 import 'scheduled_rides_screen.dart';
@@ -118,6 +119,7 @@ const List<String> _searchStatusMessages = [
 
 class _RideRequestScreenState extends State<RideRequestScreen>
     with TickerProviderStateMixin {
+  void _setState(VoidCallback fn) { setState(fn); }
   // ── Map ──
   mapbox.MapboxMap? _mapCtrl;
   mapbox.PointAnnotationManager? _pointAnnotMgr;

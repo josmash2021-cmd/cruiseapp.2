@@ -4,7 +4,7 @@ part of '../../screens/rider_tracking_screen.dart';
 //  TRACKING MAP — map widget, annotations, camera, route
 // ════════════════════════════════════════════════════════════
 
-extension RiderTrackingMapView on _RiderTrackingScreenState {
+extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Project a lat/lng onto the nearest point on the route polyline,
   /// returning the cumulative distance in meters along the route.
@@ -99,7 +99,7 @@ extension RiderTrackingMapView on _RiderTrackingScreenState {
       );
     }
     if (mounted) {
-      setState(() {});
+      _setState(() {});
       // Force annotation update now that bytes are ready
       _updateAnnotations();
     }
@@ -133,7 +133,7 @@ extension RiderTrackingMapView on _RiderTrackingScreenState {
     // Also load navigation arrow icon
     await _loadArrowIcon();
     
-    if (mounted) setState(() {});
+    if (mounted) _setState(() {});
   }
   
   /// Load navigation arrow icon for centering mode
@@ -519,7 +519,7 @@ extension RiderTrackingMapView on _RiderTrackingScreenState {
     _distanceMiles = acc;
     _etaMinutes = (acc / 0.5).ceil().clamp(1, 99);
 
-    setState(() {});
+    _setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _fitAllPoints();
     });
@@ -558,7 +558,7 @@ extension RiderTrackingMapView on _RiderTrackingScreenState {
     _map!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(mnLng, mnLat)),
        mapbox.Point(coordinates: mapbox.Position(mxLng, mxLat))],
-      mapbox.CameraOptions(bearing: 0, pitch: 0),
+      mapbox.CameraOptions(bearing: 0, pitch: 20),
       mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
       null, null,
     ).then((cam) {
@@ -617,7 +617,7 @@ extension RiderTrackingMapView on _RiderTrackingScreenState {
       _map!.cameraForCoordinatesPadding(
         [mapbox.Point(coordinates: mapbox.Position(_camSWLng, _camSWLat)),
          mapbox.Point(coordinates: mapbox.Position(_camNELng, _camNELat))],
-        mapbox.CameraOptions(bearing: 0, pitch: 0),
+        mapbox.CameraOptions(bearing: 0, pitch: 20),
         mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
         null, null,
       ).then((cam) {
@@ -631,7 +631,7 @@ extension RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   void _recenter() {
-    setState(() => _userMovedMap = false);
+    _setState(() => _userMovedMap = false);
     _camInitialized = false; // force re-fit
     _updateCameraForRoute();
   }
@@ -802,7 +802,7 @@ extension RiderTrackingMapView on _RiderTrackingScreenState {
                   widget.pickupLatLng.latitude,
                 ),
               ),
-              zoom: 14.0, pitch: 0.0,
+              zoom: 14.0, pitch: 20.0,
             ),
             textureView: true,
             onMapCreated: (ctrl) async {
@@ -821,7 +821,7 @@ extension RiderTrackingMapView on _RiderTrackingScreenState {
               if (_map != null) await _applyDarkNavyGoldTheme(_map!);
             },
             onScrollListener: (_) {
-              if (!_userMovedMap) setState(() => _userMovedMap = true);
+              if (!_userMovedMap) _setState(() => _userMovedMap = true);
             },
           ),
         ),

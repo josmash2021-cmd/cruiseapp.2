@@ -4,7 +4,7 @@ part of 'driver_online_screen.dart';
 //  MAP — annotations, route preview, camera, pin builders
 // ══════════════════════════════════════════════════════════════
 
-extension DriverOnlineMap on _DriverOnlineScreenState {
+extension _DriverOnlineMap on _DriverOnlineScreenState {
 
   /// Update the driver car / golden dot annotation on the Mapbox map.
   Future<void> _updateDriverAnnotation() async {
@@ -289,7 +289,7 @@ extension DriverOnlineMap on _DriverOnlineScreenState {
         .toList();
     _map!.cameraForCoordinatesPadding(
       coords,
-      mapbox.CameraOptions(),
+      mapbox.CameraOptions(pitch: 20),
       mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: _mapBottomPadding + 60, right: 60),
       null, null,
     ).then((cam) {
@@ -321,7 +321,7 @@ extension DriverOnlineMap on _DriverOnlineScreenState {
     final pickupLL  = LatLng(pickupLat,  pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
 
-    setState(() {
+    _setState(() {
       _previewingOffer = offer;
       _animatingOfferId = oid;
       _tappedCardIds.add(oid);
@@ -399,7 +399,7 @@ extension DriverOnlineMap on _DriverOnlineScreenState {
     // ── PHASE 5: Route shown ──
 
     if (mounted && _previewingOffer != null) {
-      setState(() => _offerRouteShown = true);
+      _setState(() => _offerRouteShown = true);
     }
 
     // Re-fit camera for final framing (next frame)
@@ -653,7 +653,7 @@ extension DriverOnlineMap on _DriverOnlineScreenState {
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = null;
-    setState(() {
+    _setState(() {
       _previewingOffer = null;
       _offerRouteShown = false;
       _fullSegOne = [];
@@ -688,7 +688,7 @@ extension DriverOnlineMap on _DriverOnlineScreenState {
   void _applyMapStyle(bool isDark) {
     if (isDark == _lastStyleDark) return;
     _lastStyleDark = isDark;
-    setState(() {}); // rebuild map with new style
+    _setState(() {}); // rebuild map with new style
   }
 
   /// Called when a camera movement is initiated by user gesture.
@@ -701,7 +701,7 @@ extension DriverOnlineMap on _DriverOnlineScreenState {
         _phase == _Phase.routeSummary;
     if (!isNav) return;
     if (!_cameraFollowing) return; // already paused
-    setState(() => _cameraFollowing = false);
+    _setState(() => _cameraFollowing = false);
     _reFollowTimer?.cancel();
     // Auto-resume after 8 seconds of inactivity
     _reFollowTimer = Timer(const Duration(seconds: 8), _recenterCamera);
@@ -711,7 +711,7 @@ extension DriverOnlineMap on _DriverOnlineScreenState {
   void _recenterCamera() {
     if (!mounted) return;
     _reFollowTimer?.cancel();
-    setState(() => _cameraFollowing = true);
+    _setState(() => _cameraFollowing = true);
     final bearing = _smoothedBearing;
     _cameraBearing = bearing; // sync for sprite selection
     if (_pos != null) _animateToPosition(_pos!, zoom: 17.5, bearing: bearing, tilt: 55);

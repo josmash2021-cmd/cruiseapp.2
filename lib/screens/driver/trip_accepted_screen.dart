@@ -12,7 +12,7 @@ import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../models/lat_lng.dart';
-import '../../widgets/gold_pin_renderer.dart';
+import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/verified_avatar.dart';
 import 'driver_trip_accept_screen.dart';
 
@@ -336,7 +336,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     final mgr = _pointMgr;
     if (mgr == null) return;
     // Pickup pin (person icon)
-    final pickupBytes = await GoldPinRenderer.render(isPickup: true);
+    final pickupBytes = await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32);
     await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(
         coordinates: mapbox.Position(
@@ -349,7 +349,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
       iconAnchor: mapbox.IconAnchor.BOTTOM,
     ));
     // Dropoff pin (location icon)
-    final dropoffBytes = await GoldPinRenderer.render(isPickup: false);
+    final dropoffBytes = await renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32);
     if (!mounted) return;
     await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(

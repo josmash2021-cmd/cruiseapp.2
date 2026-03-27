@@ -761,7 +761,14 @@ extension _RideRequestController on _RideRequestScreenState {
     }
 
     // Show premium "Searching" animation before requesting the ride
-    await nav.push(searchingDriverRoute());
+    final cancelled = await nav.push<bool>(
+      searchingDriverRoute(onCancel: _cancelSearching),
+    );
+    if (cancelled == true) {
+      // Rider confirmed cancel — _cancelSearching already ran; pop back to home
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
     if (!mounted) return;
 
     _ctrl.requestRide();

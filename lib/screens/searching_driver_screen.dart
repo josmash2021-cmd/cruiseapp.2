@@ -6,7 +6,11 @@ import 'package:flutter/material.dart';
 /// orbiting dots, floating particles, shimmer text, and a gleaming
 /// progress bar.  Auto-pops after exactly 4 seconds.
 class SearchingDriverScreen extends StatefulWidget {
-  const SearchingDriverScreen({super.key});
+  const SearchingDriverScreen({super.key, this.onCancel});
+
+  /// Called when the rider confirms they want to cancel the ride.
+  /// Navigation back to home is handled by the caller.
+  final VoidCallback? onCancel;
 
   @override
   State<SearchingDriverScreen> createState() => _SearchingDriverScreenState();
@@ -128,9 +132,66 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   // ═══════════════════════════════════════════════════════════════════════
   //  BUILD
   // ═══════════════════════════════════════════════════════════════════════
+  void _showCancelDialog() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a2e),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFFc8a951), width: 1),
+        ),
+        title: const Text(
+          '¿Estás seguro?',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        content: const Text(
+          '¿Deseas cancelar tu viaje?',
+          style: TextStyle(color: Colors.grey, fontSize: 14),
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'No, continuar',
+              style: TextStyle(color: Color(0xFFc8a951)),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFc8a951),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);            // close dialog
+              widget.onCancel?.call();      // run cancel logic in controller
+              Navigator.of(context).pop(true); // pop this screen with cancelled=true
+            },
+            child: const Text(
+              'Sí, cancelar',
+              style: TextStyle(color: Colors.black),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
       backgroundColor: _bg,
       body: Stack(
         children: [
@@ -208,24 +269,38 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
             ),
           ),
 
-          // Step indicator at bottom
+          // Cancel button + step indicator at bottom
           Positioned(
-            bottom: 40,
+            bottom: 32,
             left: 0,
             right: 0,
-            child: Center(
-              child: Text(
-                '1 of 3',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.3),
-                  fontSize: 13,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: _showCancelDialog,
+                  child: Text(
+                    'Cancelar',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 14,
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 4),
+                Text(
+                  '1 of 3',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.3),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
-    );
+    ));
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -338,12 +413,12 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
 //  ROUTE BUILDER
 // ═════════════════════════════════════════════════════════════════════════
 
-Route<void> searchingDriverRoute() {
-  return PageRouteBuilder<void>(
+Route<bool> searchingDriverRoute({VoidCallback? onCancel}) {
+  return PageRouteBuilder<bool>(
     opaque: true,
     transitionDuration: const Duration(milliseconds: 280),
     reverseTransitionDuration: const Duration(milliseconds: 220),
-    pageBuilder: (_, __, ___) => const SearchingDriverScreen(),
+    pageBuilder: (_, __, ___) => SearchingDriverScreen(onCancel: onCancel),
     transitionsBuilder: (_, anim, __, child) {
       return FadeTransition(
         opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),

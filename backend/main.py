@@ -288,8 +288,32 @@ class Trip(Base):
     # Trip sharing
     share_token = Column(String(64), nullable=True, unique=True, index=True)
     share_expires_at = Column(DateTime, nullable=True)
+    # Feature 15.1: Multi-stop waypoints (JSON array of {lat, lng, address})
+    waypoints = Column(Text, nullable=True)  # JSON: [{"lat": 33.1, "lng": -86.5, "address": "Stop 1"}, ...]
+    # Feature 15.1: Vehicle preferences
+    pet_friendly = Column(Boolean, default=False)
+    ac_guaranteed = Column(Boolean, default=False)
+    silent_ride = Column(Boolean, default=False)
+    wheelchair_accessible = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  FARE SPLIT MODEL (Feature 15.1)
+# ══════════════════════════════════════════════════════════════════════════
+class FareSplit(Base):
+    __tablename__ = "fare_splits"
+    id = Column(Integer, primary_key=True, index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
+    requester_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # User who requested split
+    invitee_phone = Column(String(20), nullable=False)  # Phone number of person to split with
+    invitee_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # User ID if they have account
+    amount = Column(Float, nullable=False)  # Amount this person owes
+    status = Column(String(20), default="pending")  # pending, accepted, declined, paid
+    created_at = Column(DateTime, default=datetime.utcnow)
+    responded_at = Column(DateTime, nullable=True)
+
 
 class DispatchOffer(Base):
     __tablename__ = "dispatch_offers"
@@ -9378,6 +9402,273 @@ async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), use
             trip.driver_earnings = round(trip.driver_earnings + tip_amount, 2)
     await db.commit()
     return {"status": "ok", "tip_amount": tip_amount}
+
+
+@app.get("/tips/presets", dependencies=[Depends(_verify_api_key)])
+async def get_tip_presets(fare: float = Query(None)):
+    """
+    Get suggested tip amounts (Feature 15.1).
+    Returns both percentage-based and fixed amount options.
+    """
+    base_fare = fare or 20.0  # Default fare for calculation
+    
+    # Percentage-based suggestions
+    percentages = [15, 20, 25]
+    percentage_tips = [
+        {"percent": p, "amount": round(base_fare * p / 100, 2), "label": f"{p}%"}
+        for p in percentages
+    ]
+    
+    # Fixed amount suggestions
+    fixed_tips = [
+        {"amount": 2.0, "label": "$2"},
+        {"amount": 5.0, "label": "$5"},
+        {"amount": 10.0, "label": "$10"},
+    ]
+    
+    return {
+        "percentage_tips": percentage_tips,
+        "fixed_tips": fixed_tips,
+        "default_index": 1,  # Default to 20%
+        "custom_enabled": True,
+    }
+
+
+# ═══════════════════════════════════════════════════════
+#  FARE SPLIT ENDPOINTS (Feature 15.1 Skeleton)
+# ═══════════════════════════════════════════════════════
+
+@app.post("/trips/{trip_id}/split", dependencies=[Depends(_verify_api_key)])
+async def request_fare_split(
+    trip_id: int,
+    invitee_phone: str = Body(...),
+    amount: float = Body(None),  # If None, split evenly
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Request to split fare with another rider (skeleton — invite only)."""
+    # Get trip
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.rider_id != user.id:
+        raise HTTPException(403, "Only the ride requester can split fare")
+    if trip.status not in ("requested", "driver_en_route", "arrived", "in_trip", "completed"):
+        raise HTTPException(400, "Cannot split fare for this trip status")
+    
+    # Calculate split amount
+    split_amount = amount if amount else round((trip.fare or 0.0) / 2, 2)
+    
+    # Check if already invited this phone
+    existing = await db.execute(
+        select(FareSplit).where(
+            FareSplit.trip_id == trip_id,
+            FareSplit.invitee_phone == invitee_phone
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "Already invited this person")
+    
+    # Create fare split record
+    fare_split = FareSplit(
+        trip_id=trip_id,
+        requester_id=user.id,
+        invitee_phone=invitee_phone,
+        amount=split_amount,
+        status="pending"
+    )
+    db.add(fare_split)
+    await db.commit()
+    await db.refresh(fare_split)
+    
+    # TODO: Send SMS invite to invitee_phone
+    
+    return {
+        "id": fare_split.id,
+        "status": "pending",
+        "invitee_phone": invitee_phone,
+        "amount": split_amount,
+        "message": "Invite sent (SMS integration pending)"
+    }
+
+
+@app.post("/trips/{trip_id}/split/{split_id}/respond", dependencies=[Depends(_verify_api_key)])
+async def respond_to_fare_split(
+    trip_id: int,
+    split_id: int,
+    accept: bool = Body(...),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Accept or decline a fare split request (skeleton)."""
+    result = await db.execute(
+        select(FareSplit).where(
+            FareSplit.id == split_id,
+            FareSplit.trip_id == trip_id
+        )
+    )
+    fare_split = result.scalar_one_or_none()
+    if not fare_split:
+        raise HTTPException(404, "Fare split not found")
+    if fare_split.status != "pending":
+        raise HTTPException(400, f"Fare split already {fare_split.status}")
+    
+    fare_split.status = "accepted" if accept else "declined"
+    fare_split.responded_at = datetime.utcnow()
+    fare_split.invitee_id = user.id
+    
+    await db.commit()
+    
+    return {
+        "id": fare_split.id,
+        "status": fare_split.status,
+        "amount": fare_split.amount if accept else 0
+    }
+
+
+@app.get("/trips/{trip_id}/splits", dependencies=[Depends(_verify_api_key)])
+async def get_fare_splits(
+    trip_id: int,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all fare split requests for a trip."""
+    result = await db.execute(
+        select(FareSplit).where(FareSplit.trip_id == trip_id)
+    )
+    splits = result.scalars().all()
+    
+    return [
+        {
+            "id": s.id,
+            "invitee_phone": s.invitee_phone,
+            "amount": s.amount,
+            "status": s.status,
+            "created_at": s.created_at.isoformat() if s.created_at else None
+        }
+        for s in splits
+    ]
+
+
+# ═══════════════════════════════════════════════════════
+#  MULTI-STOP WAYPOINTS ENDPOINTS (Feature 15.1 Skeleton)
+# ═══════════════════════════════════════════════════════
+
+@app.post("/trips/{trip_id}/waypoints", dependencies=[Depends(_verify_api_key)])
+async def add_waypoint(
+    trip_id: int,
+    lat: float = Body(...),
+    lng: float = Body(...),
+    address: str = Body(...),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Add a stop (waypoint) to an existing trip (skeleton)."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.rider_id != user.id:
+        raise HTTPException(403, "Only the rider can modify waypoints")
+    if trip.status not in ("requested", "driver_en_route", "arrived"):
+        raise HTTPException(400, "Cannot add waypoints at this stage")
+    
+    # Parse existing waypoints or init empty list
+    waypoints = json.loads(trip.waypoints) if trip.waypoints else []
+    
+    # Max 3 waypoints
+    if len(waypoints) >= 3:
+        raise HTTPException(400, "Maximum 3 stops allowed")
+    
+    waypoints.append({"lat": lat, "lng": lng, "address": address})
+    trip.waypoints = json.dumps(waypoints)
+    await db.commit()
+    
+    return {"waypoints": waypoints, "count": len(waypoints)}
+
+
+@app.delete("/trips/{trip_id}/waypoints/{index}", dependencies=[Depends(_verify_api_key)])
+async def remove_waypoint(
+    trip_id: int,
+    index: int,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Remove a waypoint by index (skeleton)."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.rider_id != user.id:
+        raise HTTPException(403, "Only the rider can modify waypoints")
+    
+    waypoints = json.loads(trip.waypoints) if trip.waypoints else []
+    if index < 0 or index >= len(waypoints):
+        raise HTTPException(400, "Invalid waypoint index")
+    
+    removed = waypoints.pop(index)
+    trip.waypoints = json.dumps(waypoints) if waypoints else None
+    await db.commit()
+    
+    return {"removed": removed, "waypoints": waypoints}
+
+
+# ═══════════════════════════════════════════════════════
+#  VEHICLE PREFERENCES (Feature 15.1 Skeleton)
+# ═══════════════════════════════════════════════════════
+
+@app.patch("/trips/{trip_id}/preferences", dependencies=[Depends(_verify_api_key)])
+async def update_trip_preferences(
+    trip_id: int,
+    pet_friendly: bool = Body(None),
+    ac_guaranteed: bool = Body(None),
+    silent_ride: bool = Body(None),
+    wheelchair_accessible: bool = Body(None),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update vehicle preferences for a trip (skeleton)."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.rider_id != user.id:
+        raise HTTPException(403, "Only the rider can modify preferences")
+    if trip.status not in ("requested", "scheduled"):
+        raise HTTPException(400, "Cannot modify preferences after driver assigned")
+    
+    if pet_friendly is not None:
+        trip.pet_friendly = pet_friendly
+    if ac_guaranteed is not None:
+        trip.ac_guaranteed = ac_guaranteed
+    if silent_ride is not None:
+        trip.silent_ride = silent_ride
+    if wheelchair_accessible is not None:
+        trip.wheelchair_accessible = wheelchair_accessible
+    
+    await db.commit()
+    
+    return {
+        "pet_friendly": trip.pet_friendly,
+        "ac_guaranteed": trip.ac_guaranteed,
+        "silent_ride": trip.silent_ride,
+        "wheelchair_accessible": trip.wheelchair_accessible,
+    }
+
+
+@app.get("/vehicle-preferences/options", dependencies=[Depends(_verify_api_key)])
+async def get_vehicle_preference_options():
+    """Get available vehicle preference options (skeleton for UI)."""
+    return {
+        "options": [
+            {"key": "pet_friendly", "label": "Pet Friendly", "icon": "pets", "description": "Driver accepts pets in vehicle"},
+            {"key": "ac_guaranteed", "label": "AC Guaranteed", "icon": "ac_unit", "description": "Air conditioning will be on"},
+            {"key": "silent_ride", "label": "Quiet Ride", "icon": "volume_off", "description": "No conversation, music off"},
+            {"key": "wheelchair_accessible", "label": "Wheelchair Access", "icon": "accessible", "description": "Vehicle has wheelchair accessibility"},
+        ]
+    }
+
 
 # ═══════════════════════════════════════════════════════
 #  REFERRAL SYSTEM

@@ -143,11 +143,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   List<Map<String, dynamic>> _pendingOffers = [];
   // _offersExpanded removed — cards always visible via PageView
 
-  // â”€â”€ Simulation Mode â”€â”€
-  bool _isSimulationMode = false;
-  int _simulatedTripCounter = 0;
-  double _simulationSpeed = 1.0; // 1.0 = normal (40 mph), 2.0 = 2x faster, 0.5 = half speed
-  bool _isSimulationRunning = false;
 
   // ── Route preview for a tapped offer ──
   Map<String, dynamic>? _previewingOffer;
@@ -259,15 +254,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _slid = false;
   int _stars = 5;
 
-  // â”€â”€ GPS simulation (dev) â”€â”€
-  Ticker? _simTicker;
-  double _simTraveledM = 0;
-  double _simTotalM = 0;
-  List<double> _simCumDist = [];
-  double _simPrevBearing = 0;
-  DateTime? _simLastBackend;
-  DateTime? _simLastCamera;
-  DateTime? _simLastTrim;
 
   // -- Camera follow mode --
   bool _cameraFollowing = true;
@@ -383,8 +369,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _navTimer?.cancel();
     _goldDot.dispose();
     _driverPhotoImage?.dispose();
-    _simTicker?.stop();
-    _simTicker?.dispose();
     _posStream?.cancel();
     _gpsService.stopTracking();
     _reFollowTimer?.cancel();
@@ -1076,7 +1060,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void _onNearPickup() {
     if (_nearPickupNotified || _phase != _Phase.enRouteToPickup) return;
     _nearPickupNotified = true;
-    _simTicker?.stop();
     HapticFeedback.heavyImpact();
     // Send final position to backend so rider sees driver at pickup
     if (_driverId != null) {
@@ -1093,7 +1076,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void _onNearDropoff() {
     if (_nearDropoffNotified || _phase != _Phase.inTrip) return;
     _nearDropoffNotified = true;
-    _simTicker?.stop();
     HapticFeedback.heavyImpact();
     // Send final position to backend so rider sees driver at dropoff
     if (_driverId != null) {
@@ -1107,214 +1089,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     setState(() {});
   }
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  //  GPS SIMULATION — realistic speed drive along route
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  List<LatLng> _simRouteCopy = []; // immutable copy for simulation
-
-  /// Catmull-Rom spline interpolation for smooth curves at turns
-  LatLng _catmullRom(LatLng p0, LatLng p1, LatLng p2, LatLng p3, double t) {
-    final t2 = t * t;
-    final t3 = t2 * t;
-    double cr(double a, double b, double c, double d) =>
-        0.5 *
-        ((2 * b) +
-            (-a + c) * t +
-            (2 * a - 5 * b + 4 * c - d) * t2 +
-            (-a + 3 * b - 3 * c + d) * t3);
-    return LatLng(
-      cr(p0.latitude, p1.latitude, p2.latitude, p3.latitude),
-      cr(p0.longitude, p1.longitude, p2.longitude, p3.longitude),
-    );
-  }
-
-  /// Smooth heading interpolation (avoids 360â†’ 0 jumps)
-  double _lerpAngle(double from, double to, double t) {
-    double diff = (to - from) % 360;
-    if (diff > 180) diff -= 360;
-    if (diff < -180) diff += 360;
-    return (from + diff * t) % 360;
-  }
-
-  void _startSimulation() {
-    _simTicker?.stop();
-    _simTicker?.dispose();
-    if (_routePts.length < 2) return;
-
-    _simRouteCopy = List<LatLng>.from(_routePts);
-    _simCumDist = [0.0];
-    for (int i = 1; i < _simRouteCopy.length; i++) {
-      _simCumDist.add(
-        _simCumDist.last + _hav(_simRouteCopy[i - 1], _simRouteCopy[i]) * 1000,
-      );
-    }
-    _simTotalM = _simCumDist.last;
-    if (_simTotalM < 5) return;
-
-    _simTraveledM = 0;
-    _simPrevBearing = _heading;
-    _simLastBackend = null;
-    _simLastCamera = null;
-    _simLastTrim = null;
-
-    const double baseSpeedMps = 17.88; // 40 mph base
-    final speedMps = baseSpeedMps * _simulationSpeed;
-    final estSecs = (_simTotalM / speedMps).round();
-    debugPrint(
-      'Ὡ7 SIMULATION START: ${_simTotalM.round()}m, ETA ${estSecs}s @ ${(40 * _simulationSpeed).round()} mph (speed: ${_simulationSpeed}x), ${_simRouteCopy.length} pts',
-    );
-    setState(() => _isSimulationRunning = true);
-
-    _simTicker = createTicker(_onSimTick);
-    _simTicker!.start();
-  }
-
-  /// 60fps vsync-driven simulation - buttery smooth, zero ticks
-  void _onSimTick(Duration elapsed) {
-    if (!mounted) {
-      _simTicker?.stop();
-      return;
-    }
-
-    const double baseSpeedMps = 17.88;
-    final speedMps = baseSpeedMps * _simulationSpeed;
-    _simTraveledM = elapsed.inMicroseconds / 1e6 * speedMps;
-    if (_simTraveledM >= _simTotalM) {
-      _simTraveledM = _simTotalM;
-      _simTicker?.stop();
-    }
-
-    // Binary-search for current segment
-    int lo = 0, hi = _simCumDist.length - 1;
-    while (lo < hi - 1) {
-      final mid = (lo + hi) >> 1;
-      if (_simCumDist[mid] <= _simTraveledM) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-    final seg = lo;
-    final segStart = _simCumDist[seg];
-    final segEnd = _simCumDist[math.min(seg + 1, _simCumDist.length - 1)];
-    final segLen = segEnd - segStart;
-    final t = segLen > 0
-        ? ((_simTraveledM - segStart) / segLen).clamp(0.0, 1.0)
-        : 1.0;
-
-    // Catmull-Rom spline for smooth curves
-    final n = _simRouteCopy.length;
-    final p0 = _simRouteCopy[(seg - 1).clamp(0, n - 1)];
-    final p1 = _simRouteCopy[seg];
-    final p2 = _simRouteCopy[math.min(seg + 1, n - 1)];
-    final p3 = _simRouteCopy[math.min(seg + 2, n - 1)];
-    final pt = _catmullRom(p0, p1, p2, p3, t);
-
-    // Cross-segment look-ahead: peek 8m ahead even across segment boundaries
-    const double lookAheadM = 8.0;
-    final aheadDist = _simTraveledM + lookAheadM;
-    LatLng ptAhead;
-    if (aheadDist < _simTotalM) {
-      // Find the segment that contains the look-ahead point
-      int alo = 0, ahi = _simCumDist.length - 1;
-      while (alo < ahi - 1) {
-        final am = (alo + ahi) >> 1;
-        if (_simCumDist[am] <= aheadDist) {
-          alo = am;
-        } else {
-          ahi = am;
-        }
-      }
-      final aSeg = alo;
-      final aSegStart = _simCumDist[aSeg];
-      final aSegEnd = _simCumDist[math.min(aSeg + 1, _simCumDist.length - 1)];
-      final aSegLen = aSegEnd - aSegStart;
-      final aT = aSegLen > 0
-          ? ((aheadDist - aSegStart) / aSegLen).clamp(0.0, 1.0)
-          : 1.0;
-      final ap0 = _simRouteCopy[(aSeg - 1).clamp(0, n - 1)];
-      final ap1 = _simRouteCopy[aSeg];
-      final ap2 = _simRouteCopy[math.min(aSeg + 1, n - 1)];
-      final ap3 = _simRouteCopy[math.min(aSeg + 2, n - 1)];
-      ptAhead = _catmullRom(ap0, ap1, ap2, ap3, aT);
-    } else {
-      ptAhead = _simRouteCopy.last;
-    }
-    final rawBearing = _bearingBetween(pt, ptAhead);
-    _simPrevBearing = _lerpAngle(_simPrevBearing, rawBearing, 0.22);
-    final bearing = _simPrevBearing;
-
-    // Direct position update - no intermediate animation at 60fps
-    _pos = pt;
-    _heading = bearing;
-    setState(() {});
-
-    final now = DateTime.now();
-
-    // Trim route polyline (10 Hz)
-    if (_simLastTrim == null ||
-        now.difference(_simLastTrim!).inMilliseconds > 100) {
-      _simLastTrim = now;
-      _trimRouteBehindDriver(pt);
-    }
-
-    // Camera follows (20 Hz - moveCamera for zero lag)
-    if (_cameraFollowing &&
-        (_simLastCamera == null ||
-            now.difference(_simLastCamera!).inMilliseconds > 33)) {
-      _simLastCamera = now;
-      _cameraBearing = bearing; // sync for sprite selection
-      _map?.setCamera(mapbox.CameraOptions(
-        center: mapbox.Point(coordinates: mapbox.Position(pt.longitude, pt.latitude)),
-        zoom: 17.5, bearing: bearing, pitch: 55,
-      ));
-    }
-
-    // Nav stats + proximity checks
-    // Update turn-by-turn navigation state
-    _updateNavState(pt);
-    final remainM = _simTotalM - _simTraveledM;
-    final remainMin = (remainM / speedMps / 60).ceil().clamp(0, 99);
-    if (_phase == _Phase.enRouteToPickup) {
-      final dist = _hav(pt, _pickupLL);
-      final progress = _distToPickup > 0
-          ? (1.0 - dist / _distToPickup).clamp(0.0, 1.0)
-          : 0.0;
-      _navDist = dist;
-      _navEta = remainMin;
-      _navProgress = progress;
-      if (dist < 0.05) _onNearPickup();
-    } else if (_phase == _Phase.inTrip) {
-      final dist = _hav(pt, _dropoffLL);
-      final progress = _tripDist > 0
-          ? (1.0 - dist / _tripDist).clamp(0.0, 1.0)
-          : 0.0;
-      _navDist = dist;
-      _navEta = remainMin;
-      _navProgress = progress;
-      if (dist < 0.05) _onNearDropoff();
-    }
-
-    // Backend update (~2.5 Hz)
-    if (_simLastBackend == null ||
-        now.difference(_simLastBackend!).inMilliseconds > 400) {
-      _simLastBackend = now;
-      if (_driverId != null) {
-        ApiService.updateDriverLocation(
-          driverId: _driverId!,
-          lat: pt.latitude,
-          lng: pt.longitude,
-        ).catchError((_) => <String, dynamic>{});
-      }
-    }
-  }
-
-  void _stopSimulation() {
-    _simTicker?.stop();
-    _simTicker?.dispose();
-    _simTicker = null;
-    setState(() => _isSimulationRunning = false);
-  }
 
   double _targetHeading = 0;
 
@@ -2009,7 +1783,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   Future<void> _arrivePickup() async {
-    _stopSimulation();
     HapticFeedback.mediumImpact();
     if (_tripId != null) {
       try {
@@ -2127,7 +1900,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         driverId: _driverId!,
       ).catchError((_) => <String, dynamic>{});
     }
-    _stopSimulation();
     _navService.stopNavigation();
     _navState = null;
     _currentNavRoute = null;
@@ -2143,7 +1915,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   Future<void> _complete() async {
-    _stopSimulation();
     _navService.stopNavigation();
     _navState = null;
     _currentNavRoute = null;
@@ -2308,7 +2079,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   Future<void> _cancel() async {
-    _stopSimulation();
     _navService.stopNavigation();
     _navState = null;
     _currentNavRoute = null;

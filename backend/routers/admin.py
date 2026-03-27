@@ -629,7 +629,7 @@ async def update_surge_zone(zone_name: str = Body(...), center_lat: float = Body
         zone.center_lat = center_lat
         zone.center_lng = center_lng
         zone.radius_km = radius_km
-        zone.updated_at = datetime.now(timezone.utc)
+        zone.updated_at = datetime.utcnow()
     else:
         zone = SurgeZone(zone_name=zone_name, center_lat=center_lat, center_lng=center_lng, surge_multiplier=surge_multiplier, radius_km=radius_km)
         db.add(zone)
@@ -833,7 +833,7 @@ async def get_heatmap_data(
 ):
     """Get heatmap data for pickup locations."""
     try:
-        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+        since = datetime.utcnow() - timedelta(hours=hours)
         
         result = await db.execute(
             select(Trip.pickup_lat, Trip.pickup_lng, func.count(Trip.id))
@@ -961,7 +961,7 @@ async def create_driver_incentive(
         driver_id=driver_id, incentive_type=incentive_type, title=title,
         description=f"Complete {target_trips} trips to earn ${bonus_amount:.2f}",
         target_trips=target_trips, bonus_amount=bonus_amount,
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+        expires_at=datetime.utcnow() + timedelta(hours=expires_hours)
     )
     db.add(incentive)
     await db.commit()

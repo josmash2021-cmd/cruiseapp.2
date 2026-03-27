@@ -60,7 +60,7 @@ async def dispatch_owner_login(request: Request, credentials: OwnerLogin):
         raise HTTPException(401, "Invalid credentials")
     
     # LAYER 3: Create owner JWT with restricted claims
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     token = jwt.encode(
         {
             "sub": "owner",
@@ -499,7 +499,7 @@ async def approve_action_request(
         raise HTTPException(400, f"Request already {ar.status}")
 
     ar.status = "approved"
-    ar.reviewed_at = datetime.now(timezone.utc)
+    ar.reviewed_at = datetime.utcnow()
     ar.reviewed_by = reviewed_by
     ar.admin_note = admin_note or ""
     details = json.loads(ar.details) if ar.details else {}
@@ -639,7 +639,7 @@ async def reject_action_request(
         raise HTTPException(400, f"Request already {ar.status}")
 
     ar.status = "rejected"
-    ar.reviewed_at = datetime.now(timezone.utc)
+    ar.reviewed_at = datetime.utcnow()
     ar.reviewed_by = reviewed_by
     ar.admin_note = admin_note or ""
 

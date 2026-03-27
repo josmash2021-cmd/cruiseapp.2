@@ -535,7 +535,7 @@ async def verify_email(
     if entry and entry["code"] == code and entry["expires"] > time.time():
         _otp_store.pop(otp_key, None)
         user.email_verified = True
-        user.email_verified_at = datetime.now(timezone.utc)
+        user.email_verified_at = datetime.utcnow()
         await db.commit()
         return {"verified": True, "message": "Email verified successfully"}
 
@@ -1017,7 +1017,7 @@ async def delete_account(user: User = Depends(_get_current_user), db: AsyncSessi
             )
         except Exception as e:
             logging.error("Dispatch deletion notification failed: %s", e)
-    return {"detail": "Account deletion requested", "deletion_date": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()}
+    return {"detail": "Account deletion requested", "deletion_date": (datetime.utcnow() + timedelta(days=7)).isoformat()}
 
 
 @router.get("/auth/export-data", dependencies=[Depends(_verify_api_key)])

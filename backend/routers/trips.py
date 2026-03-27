@@ -440,7 +440,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # Apply $5 cancellation fee if driver was already en route and rider waited > 2 min
     cancellation_fee = 0.0
     if trip.status in ("driver_en_route", "arrived"):
-        minutes_elapsed = (datetime.now(timezone.utc) - trip.updated_at.replace(tzinfo=timezone.utc) if trip.updated_at else datetime.now(timezone.utc)).total_seconds() / 60 if trip.updated_at else 0
+        minutes_elapsed = (datetime.utcnow() - trip.updated_at).total_seconds() / 60 if trip.updated_at else 0
         if minutes_elapsed > 2:
             cancellation_fee = 5.0
     trip.status = "canceled"
@@ -488,7 +488,7 @@ async def share_trip(
         raise HTTPException(400, "Cannot share a completed or canceled trip")
 
     # Reuse existing token if still valid
-    if trip.share_token and trip.share_expires_at and trip.share_expires_at > datetime.now(timezone.utc):
+    if trip.share_token and trip.share_expires_at and trip.share_expires_at > datetime.utcnow():
         return {
             "share_token": trip.share_token,
             "share_url": f"/track/{trip.share_token}",
@@ -498,7 +498,7 @@ async def share_trip(
     # Generate new token
     token = secrets.token_urlsafe(32)
     trip.share_token = token
-    trip.share_expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    trip.share_expires_at = datetime.utcnow() + timedelta(hours=24)
     await db.commit()
     await db.refresh(trip)
 
@@ -518,7 +518,7 @@ async def get_shared_trip(token: str, db: AsyncSession = Depends(get_db)):
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Shared trip not found")
-    if trip.share_expires_at and trip.share_expires_at < datetime.now(timezone.utc):
+    if trip.share_expires_at and trip.share_expires_at < datetime.utcnow():
         raise HTTPException(410, "Share link has expired")
 
     # Return limited trip info (no personal data)
@@ -545,7 +545,7 @@ async def get_shared_trip_location(token: str, db: AsyncSession = Depends(get_db
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Shared trip not found")
-    if trip.share_expires_at and trip.share_expires_at < datetime.now(timezone.utc):
+    if trip.share_expires_at and trip.share_expires_at < datetime.utcnow():
         raise HTTPException(410, "Share link has expired")
 
     if not trip.driver_id:
@@ -976,7 +976,7 @@ async def start_wait_time(trip_id: int, user: User = Depends(_get_current_user),
         raise HTTPException(403, "Not authorized")
     if trip.status != "arrived":
         raise HTTPException(400, "Can only start wait time when arrived at pickup")
-    trip.notes = (trip.notes or "") + f"\nWait started: {datetime.now(timezone.utc).isoformat()}"
+    trip.notes = (trip.notes or "") + f"\nWait started: {datetime.utcnow().isoformat()}"
     await db.commit()
     return {"status": "wait_time_started"}
 
@@ -991,7 +991,7 @@ async def end_wait_time(trip_id: int, user: User = Depends(_get_current_user), d
         return {"wait_time_minutes": 0, "wait_time_charge": 0.0}
     wait_start_str = trip.notes.split("Wait started: ")[1].split("\n")[0]
     wait_start = datetime.fromisoformat(wait_start_str)
-    wait_minutes = int((datetime.now(timezone.utc) - wait_start).total_seconds() / 60)
+    wait_minutes = int((datetime.utcnow() - wait_start).total_seconds() / 60)
     wait_charge = round(max(0, wait_minutes - 2) * 0.50, 2)
     trip.wait_time_minutes = wait_minutes
     trip.wait_time_charge = wait_charge

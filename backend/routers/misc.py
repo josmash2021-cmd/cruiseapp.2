@@ -37,7 +37,7 @@ async def validate_promo_code(body: dict = Body(...), user: User = Depends(_get_
     promo = result.scalar_one_or_none()
     if not promo or not promo.is_active:
         raise HTTPException(404, "Invalid promo code")
-    if promo.expires_at and promo.expires_at < datetime.now(timezone.utc):
+    if promo.expires_at and promo.expires_at < datetime.utcnow():
         raise HTTPException(410, "Promo code has expired")
     if promo.current_uses >= promo.max_uses:
         raise HTTPException(410, "Promo code has reached its usage limit")
@@ -661,7 +661,7 @@ async def complete_referral(referral_id: int, db: AsyncSession = Depends(get_db)
     if not referral or referral.status != "pending":
         return {"status": "already_processed"}
     referral.status = "rewarded"
-    referral.completed_at = datetime.now(timezone.utc)
+    referral.completed_at = datetime.utcnow()
     ref_result = await db.execute(select(User).where(User.id == referral.referrer_id))
     referrer = ref_result.scalar_one_or_none()
     if referrer:

@@ -698,7 +698,7 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
         if body.get("expiry_date"):
             existing.expiry_date = datetime.fromisoformat(body["expiry_date"])
         existing.rejection_reason = None
-        existing.updated_at = datetime.now(timezone.utc)
+        existing.updated_at = datetime.utcnow()
         doc = existing
     else:
         doc = Document(
@@ -858,7 +858,7 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         report_id = data.get("id")
         status = data.get("status", "")  # clear, consider
         driver.checkr_report_id = report_id
-        driver.background_check_completed_at = datetime.now(timezone.utc)
+        driver.background_check_completed_at = datetime.utcnow()
         if status == "clear":
             driver.background_check_status = "clear"
             driver.verification_status = "approved"
@@ -883,7 +883,7 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             driver.verification_status = "approved"
         elif status == "consider":
             driver.background_check_status = "consider"
-        driver.background_check_completed_at = datetime.now(timezone.utc)
+        driver.background_check_completed_at = datetime.utcnow()
         await db.commit()
         logging.info(f"Checkr report.upgraded: driver={driver.id} status={status}")
 

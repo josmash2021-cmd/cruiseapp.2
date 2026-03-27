@@ -169,7 +169,7 @@ async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
 
     trip.status = "canceled"
     trip.cancel_reason = "Canceled via support chat"
-    trip.updated_at = datetime.now(timezone.utc)
+    trip.updated_at = datetime.utcnow()
     await db.flush()
     if _HAS_FIRESTORE:
         try:
@@ -855,8 +855,8 @@ async def _create_action_request(
                 "request_id": ar.id,
                 "chat_id": chat.id,
                 "user_name": user_name,
-                "remind_at_15m": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
-                "remind_at_60m": (datetime.now(timezone.utc) + timedelta(minutes=60)).isoformat(),
+                "remind_at_15m": (datetime.utcnow() + timedelta(minutes=15)).isoformat(),
+                "remind_at_60m": (datetime.utcnow() + timedelta(minutes=60)).isoformat(),
                 "status": "pending",
                 "created_at": SERVER_TIMESTAMP,
             })
@@ -1425,7 +1425,7 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                     db.add(bot_msg)
                     await db.flush()
                     await db.refresh(bot_msg)
-                    chat.updated_at = datetime.now(timezone.utc)
+                    chat.updated_at = datetime.utcnow()
                     await db.commit()
                     if _HAS_FIRESTORE:
                         try:
@@ -1452,7 +1452,7 @@ async def _check_chat_inactivity(chat_id: int):
             if not chat or chat.status != "open":
                 return
             if chat.last_user_message_at:
-                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
+                elapsed = (datetime.utcnow() - chat.last_user_message_at).total_seconds()
                 if elapsed < 110:
                     return  # User was active recently — reset
             # Check Firestore typing status
@@ -1486,7 +1486,7 @@ async def _check_chat_inactivity(chat_id: int):
             proactive_text = _rng.choice(proactive_msgs_es if lang.startswith("es") else proactive_msgs_en)
             proactive_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=proactive_text)
             db.add(proactive_msg)
-            chat.updated_at = datetime.now(timezone.utc)
+            chat.updated_at = datetime.utcnow()
             await db.commit()
             await db.refresh(proactive_msg)
             if _HAS_FIRESTORE:
@@ -1503,7 +1503,7 @@ async def _check_chat_inactivity(chat_id: int):
             if not chat or chat.status != "open":
                 return
             if chat.last_user_message_at:
-                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
+                elapsed = (datetime.utcnow() - chat.last_user_message_at).total_seconds()
                 if elapsed < 110:
                     return  # User responded
             # Check typing
@@ -1519,7 +1519,7 @@ async def _check_chat_inactivity(chat_id: int):
             still_text = "¿Aún sigue en línea conmigo?" if lang.startswith("es") else "Are you still there with me?"
             still_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=still_text)
             db.add(still_msg)
-            chat.updated_at = datetime.now(timezone.utc)
+            chat.updated_at = datetime.utcnow()
             await db.commit()
             await db.refresh(still_msg)
             if _HAS_FIRESTORE:
@@ -1536,7 +1536,7 @@ async def _check_chat_inactivity(chat_id: int):
             if not chat or chat.status != "open":
                 return
             if chat.last_user_message_at:
-                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
+                elapsed = (datetime.utcnow() - chat.last_user_message_at).total_seconds()
                 if elapsed < 55:
                     return  # User responded
             agent = chat.agent_name or "Agente"
@@ -1546,7 +1546,7 @@ async def _check_chat_inactivity(chat_id: int):
             close_text = close_warn_es if lang.startswith("es") else close_warn_en
             close_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=close_text)
             db.add(close_msg)
-            chat.updated_at = datetime.now(timezone.utc)
+            chat.updated_at = datetime.utcnow()
             await db.commit()
             await db.refresh(close_msg)
             if _HAS_FIRESTORE:
@@ -1563,11 +1563,11 @@ async def _check_chat_inactivity(chat_id: int):
             if not chat or chat.status != "open":
                 return
             if chat.last_user_message_at:
-                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
+                elapsed = (datetime.utcnow() - chat.last_user_message_at).total_seconds()
                 if elapsed < 25:
                     return  # User responded just in time
             chat.status = "closed"
-            chat.updated_at = datetime.now(timezone.utc)
+            chat.updated_at = datetime.utcnow()
             await db.commit()
             if _HAS_FIRESTORE:
                 try:
@@ -1801,8 +1801,8 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
 
     msg = SupportMessage(chat_id=chat_id, sender_id=user.id, sender_role=user.role or "rider", message=msg_text)
     db.add(msg)
-    chat.updated_at = datetime.now(timezone.utc)
-    chat.last_user_message_at = datetime.now(timezone.utc)
+    chat.updated_at = datetime.utcnow()
+    chat.last_user_message_at = datetime.utcnow()
     await db.commit()
     await db.refresh(msg)
 
@@ -1871,7 +1871,7 @@ async def set_typing_status(chat_id: int, request: Request, user: User = Depends
     if _HAS_FIRESTORE:
         try:
             firestore_sync._fs_db.collection("support_chats").document(str(chat_id)).set(
-                {"user_typing": typing, "typing_updated_at": datetime.now(timezone.utc).isoformat()},
+                {"user_typing": typing, "typing_updated_at": datetime.utcnow().isoformat()},
                 merge=True,
             )
         except Exception:
@@ -1897,7 +1897,7 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
 
     msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="dispatch", message=msg_text)
     db.add(msg)
-    chat.updated_at = datetime.now(timezone.utc)
+    chat.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(msg)
 
@@ -1921,7 +1921,7 @@ async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Chat not found")
     chat.supervisor_connected = True
     chat.bot_phase = "dispatch_takeover"
-    chat.updated_at = datetime.now(timezone.utc)
+    chat.updated_at = datetime.utcnow()
     # Cancel any inactivity task
     old_task = _inactivity_tasks.pop(chat_id, None)
     if old_task and not old_task.done():
@@ -1947,7 +1947,7 @@ async def close_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):
     if not chat:
         raise HTTPException(404, "Chat not found")
     chat.status = "closed"
-    chat.updated_at = datetime.now(timezone.utc)
+    chat.updated_at = datetime.utcnow()
     await db.commit()
 
     if _HAS_FIRESTORE:
@@ -1973,7 +1973,7 @@ async def close_support_chat_user(chat_id: int, user: User = Depends(_get_curren
     if chat.user_id != user.id:
         raise HTTPException(403, "Not your chat")
     chat.status = "closed"
-    chat.updated_at = datetime.now(timezone.utc)
+    chat.updated_at = datetime.utcnow()
     await db.commit()
 
     # Cancel any pending inactivity task
@@ -2044,7 +2044,7 @@ async def approve_action_request(request_id: int, request: Request, db: AsyncSes
         raise HTTPException(400, f"Request is already {ar.status}")
 
     ar.status = "approved"
-    ar.reviewed_at = datetime.now(timezone.utc)
+    ar.reviewed_at = datetime.utcnow()
     ar.reviewed_by = "dispatch"
     if admin_note:
         ar.admin_note = admin_note
@@ -2106,7 +2106,7 @@ async def reject_action_request(request_id: int, request: Request, db: AsyncSess
         raise HTTPException(400, f"Request is already {ar.status}")
 
     ar.status = "rejected"
-    ar.reviewed_at = datetime.now(timezone.utc)
+    ar.reviewed_at = datetime.utcnow()
     ar.reviewed_by = "dispatch"
     if admin_note:
         ar.admin_note = admin_note
@@ -2135,7 +2135,7 @@ async def reject_action_request(request_id: int, request: Request, db: AsyncSess
         bot_msg = SupportMessage(chat_id=ar.chat_id, sender_id=None, sender_role="bot", message=msg_text)
         db.add(bot_msg)
         chat.needs_escalation = True
-        chat.updated_at = datetime.now(timezone.utc)
+        chat.updated_at = datetime.utcnow()
         await db.commit()
         await db.refresh(bot_msg)
 

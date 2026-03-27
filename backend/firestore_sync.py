@@ -20,6 +20,7 @@ log = logging.getLogger("firestore_sync")
 
 # ── Init ─────────────────────────────────────────────────
 _db = None  # Firestore client (lazy)
+_fs_db = None  # Alias for _db (used by main.py)
 
 _KEY_PATH = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
 
@@ -30,13 +31,14 @@ def _ensure_init():
     1. serviceAccountKey.json file (local dev)
     2. FIREBASE_SERVICE_ACCOUNT env var (Railway/production) — JSON string
     """
-    global _db
+    global _db, _fs_db
     if _db is not None:
         return
     try:
         # Already initialized by another module?
         firebase_admin.get_app()
         _db = firestore.client()
+        _fs_db = _db
         return
     except ValueError:
         pass  # Not yet initialized
@@ -72,6 +74,7 @@ def _ensure_init():
     try:
         firebase_admin.initialize_app(cred)
         _db = firestore.client()
+        _fs_db = _db
         log.info("✅ Firestore sync initialised (project: %s)", cred.project_id)
     except Exception as e:
         log.error("❌ Firestore init failed: %s", e)

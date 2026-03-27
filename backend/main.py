@@ -32,6 +32,9 @@ from security_guardian import security_guardian
 # Guardian Agent — keeps all systems healthy and connections alive
 from guardian_agent import guardian_agent
 
+# Automatic PostgreSQL backup system
+from db_backup import backup_scheduler as _backup_scheduler, get_status as _backup_status
+
 load_dotenv()  # Load .env file (gitignored)
 
 import base64
@@ -238,6 +241,9 @@ async def lifespan(app: FastAPI):
                 logging.warning("Could not set Firestore for guardian: %s", _e)
         await guardian_agent.start()
         logging.info("🛡️ Guardian Agent ACTIVE — all systems protected")
+        # Start automatic PostgreSQL backup scheduler
+        asyncio.create_task(_backup_scheduler())
+        logging.info("💾 DB Backup Scheduler ACTIVE — backing up every 6 hours")
 
     asyncio.create_task(_bg_init())
     yield
@@ -373,7 +379,7 @@ async def crash_protection_middleware(request: Request, call_next):
         )
 
 @app.get("/health")
-async def health():
+async def health(x_api_key: str = Header(default="")):
     db_status = "ok"
     db_latency_ms = 0.0
     try:
@@ -384,36 +390,44 @@ async def health():
     except Exception as e:
         db_status = f"error: {str(e)[:80]}"
 
-    firebase_status = "ok" if _HAS_FIRESTORE else "disabled"
-    # Check if Firestore is actually usable (credentials loaded)
-    firestore_usable = False
-    if _HAS_FIRESTORE:
-        try:
-            firestore_usable = firestore_sync._db is not None
-        except Exception:
-            pass
-    firebase_detail = {
-        "imported": _HAS_FIRESTORE,
-        "db_initialized": firestore_usable,
-        "status": "ok" if firestore_usable else ("imported_but_no_creds" if _HAS_FIRESTORE else "disabled"),
-    }
-
     uptime_s = int((datetime.utcnow() - _SERVER_START_TIME).total_seconds())
-    uptime_str = f"{uptime_s // 3600}h {(uptime_s % 3600) // 60}m {uptime_s % 60}s"
-
     overall = "ok" if db_status == "ok" else "degraded"
-    return {
+
+    # Public response — minimal info
+    public_response = {
         "status": overall,
         "version": "2.0",
-        "uptime": uptime_str,
-        "uptime_seconds": uptime_s,
-        "database": {"status": db_status, "latency_ms": db_latency_ms},
-        "firebase": firebase_detail,
-        "watchdog": _watchdog_stats,
-        "security": security_guardian.get_status(),
-        "guardian": guardian_agent.get_status(),
         "timestamp": datetime.utcnow().isoformat(),
     }
+
+    # Private response — full details, requires API key
+    if DEV_SKIP_AUTH or x_api_key == API_KEY:
+        firebase_usable = False
+        if _HAS_FIRESTORE:
+            try:
+                firebase_usable = firestore_sync._db is not None
+            except Exception:
+                pass
+        uptime_str = f"{uptime_s // 3600}h {(uptime_s % 3600) // 60}m {uptime_s % 60}s"
+        return {
+            "status": overall,
+            "version": "2.0",
+            "uptime": uptime_str,
+            "uptime_seconds": uptime_s,
+            "database": {"status": db_status, "latency_ms": db_latency_ms},
+            "firebase": {
+                "imported": _HAS_FIRESTORE,
+                "db_initialized": firebase_usable,
+                "status": "ok" if firebase_usable else ("imported_but_no_creds" if _HAS_FIRESTORE else "disabled"),
+            },
+            "watchdog": _watchdog_stats,
+            "security": security_guardian.get_status(),
+            "guardian": guardian_agent.get_status(),
+            "backup": _backup_status(),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    return public_response
 
 # -- Security Guardian Health Endpoint ------------------------------------
 @app.get("/health/security")

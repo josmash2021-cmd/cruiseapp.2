@@ -22,6 +22,7 @@ from config import (
     DISPATCH_ALLOWED_IPS, PUBLIC_URL,
     _pending_cache, _PENDING_CACHE_TTL, OFFER_TIMEOUT_SECONDS,
     firestore_sync, _HAS_FIRESTORE,
+    TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER,
 )
 
 router = APIRouter()

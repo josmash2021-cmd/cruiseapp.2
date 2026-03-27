@@ -15,6 +15,7 @@ Components:
 import re
 import html
 import time
+import json
 import asyncio
 import logging
 import hashlib
@@ -22,9 +23,34 @@ from collections import defaultdict
 from typing import Optional, Tuple, Dict, Any
 from math import radians, sin, cos, sqrt, atan2
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+
+_BLOCKED_IPS_FILE = Path(__file__).parent / "blocked_ips.json"
+
+
+def _load_blocked_ips() -> Dict[str, float]:
+    """Load persisted blocked IPs from disk, filtering expired ones."""
+    try:
+        if _BLOCKED_IPS_FILE.exists():
+            data = json.loads(_BLOCKED_IPS_FILE.read_text())
+            now = time.time()
+            return {ip: t for ip, t in data.items() if t > now}
+    except Exception:
+        pass
+    return {}
+
+
+def _save_blocked_ips(blocked: Dict[str, float]) -> None:
+    """Persist blocked IPs to disk so they survive restarts."""
+    try:
+        now = time.time()
+        active = {ip: t for ip, t in blocked.items() if t > now}
+        _BLOCKED_IPS_FILE.write_text(json.dumps(active))
+    except Exception:
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +65,7 @@ class RateLimiter:
     def __init__(self):
         self._ip_requests: Dict[str, list] = defaultdict(list)  # IP → [timestamps]
         self._user_requests: Dict[str, list] = defaultdict(list)  # user_id → [timestamps]
-        self._blocked_ips: Dict[str, float] = {}  # IP → block_until_timestamp
+        self._blocked_ips: Dict[str, float] = _load_blocked_ips()  # IP → block_until_timestamp (persisted)
         self._ip_warnings: Dict[str, int] = defaultdict(int)  # IP → warning count
         self._auth_attempts: Dict[str, list] = defaultdict(list)  # IP → auth timestamps
 
@@ -62,9 +88,10 @@ class RateLimiter:
         return False
 
     def block_ip(self, ip: str, duration: int = None, reason: str = ""):
-        """Block an IP address"""
+        """Block an IP address and persist to disk so it survives restarts."""
         duration = duration or self.BLOCK_DURATION_SECONDS
         self._blocked_ips[ip] = time.time() + duration
+        _save_blocked_ips(self._blocked_ips)
         logger.critical(f"🔒 IP BLOCKED: {ip} for {duration}s — reason: {reason}")
 
     def check_rate(self, ip: str, endpoint: str = "", user_id: str = None) -> Tuple[bool, str]:

@@ -96,7 +96,10 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   mapbox.PointAnnotation? _destAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
   double _currentSpeedMph = 0;
-  DateTime? _lastAnnotUpdate;
+  // In-flight guards: prevents queueing concurrent platform-channel annotation
+  // updates, which would cause jitter and map-thread congestion.
+  bool _annotUpdateInFlight = false;
+  bool _routeSyncInFlight = false;
   bool _isRerouting = false;
   Timer? _etaRefreshTimer;
 
@@ -193,15 +196,36 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         destination: dest,
       );
       if (route != null && mounted) {
-        _routePts = route.overviewPolyline;
-        _displayRoutePts = List.of(_routePts);
+        _setNewRoute(route.overviewPolyline);
         _navService.startNavigation(route);
         // Extract speed limit annotations if available
         _extractSpeedLimits(route);
+        // Bug 2 fix: map may already be ready (cinematic drew the straight-line
+        // fallback); redraw annotation with the real fetched route.
+        if (_mapReady) await _updateRouteAnnotation();
       }
     }
     if (mounted) setState(() {});
     _startGPS();
+  }
+
+  /// Set a new route and immediately snap-trim to the current driver position.
+  ///
+  /// Bug 2 fix: async route fetches take time — the driver moves during the
+  /// await, so naively setting _displayRoutePts = full polyline leaves a stale
+  /// backward segment behind the car.  We snap the current _pos to the new
+  /// route and start display from that index.
+  void _setNewRoute(List<LatLng> pts) {
+    _routePts = pts;
+    _snapIdx = 0;
+    if (pts.length < 2) {
+      _displayRoutePts = List.of(pts);
+      return;
+    }
+    final snap = RouteSnapper.snap(_pos, pts, lastIndex: 0);
+    final trimIdx = snap.segmentIndex.clamp(0, pts.length - 1);
+    _snapIdx = trimIdx;
+    _displayRoutePts = trimIdx > 0 ? pts.sublist(trimIdx) : List.of(pts);
   }
 
   void _startGPS() {
@@ -260,8 +284,51 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   }
 
   void _trimRouteBehind(int segIdx) {
-    if (segIdx < 2 || segIdx >= _routePts.length) return;
+    // Bug 4 fix: lower guard from <2 to <=0 so erasure starts from segment 1.
+    if (segIdx <= 0 || segIdx >= _routePts.length) return;
     _displayRoutePts = _routePts.sublist(segIdx);
+    // Visual sync is handled continuously by _syncRouteToPin() in _onMotionTick.
+  }
+
+  /// Sync the route polyline start to the current animated pin position.
+  ///
+  /// Bug 1 + 4 fix: SmoothMotion lerps toward the GPS snap target, so _pos
+  /// always lags slightly behind _routePts[snapIdx].  Without this, the route
+  /// starts at the snap point while the pin draws a little behind it, making
+  /// the pin appear to float off the line.  By prepending _pos as the first
+  /// coordinate we guarantee the line always starts exactly at the car marker.
+  Future<void> _syncRouteToPin() async {
+    final mgr = _polylineAnnotMgr;
+    final annot = _routeAnnot;
+    if (mgr == null || annot == null || _displayRoutePts.isEmpty) return;
+    // Build coords: pin position first, then the remaining route.
+    final pinPos = mapbox.Position(_pos.longitude, _pos.latitude);
+    final rest = _displayRoutePts
+        .map((p) => mapbox.Position(p.longitude, p.latitude))
+        .toList();
+    // Avoid a duplicate when _pos has already caught up to the route start.
+    final coords = (rest.isNotEmpty &&
+            (rest.first.lng - pinPos.lng).abs() < 1e-7 &&
+            (rest.first.lat - pinPos.lat).abs() < 1e-7)
+        ? rest
+        : [pinPos, ...rest];
+    if (coords.length < 2) return;
+    annot.geometry = mapbox.LineString(coordinates: coords);
+    try { await mgr.update(annot); } catch (_) {}
+  }
+
+  /// Update just the polyline geometry in-place without recreating annotations.
+  Future<void> _updateRouteSource() async {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || _displayRoutePts.length < 2) return;
+    final coords = _displayRoutePts
+        .map((p) => mapbox.Position(p.longitude, p.latitude))
+        .toList();
+    final geom = mapbox.LineString(coordinates: coords);
+    if (_routeAnnot != null) {
+      _routeAnnot!.geometry = geom;
+      try { await mgr.update(_routeAnnot!); } catch (_) {}
+    }
   }
 
   DateTime? _lastUIUpdate;
@@ -275,14 +342,23 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
 
     final now = DateTime.now();
 
-    // Update car annotation at ~30 fps (every 33 ms).
-    if (_map != null &&
-        _mapReady &&
-        _arrowIconBytes != null &&
-        (_lastAnnotUpdate == null ||
-            now.difference(_lastAnnotUpdate!).inMilliseconds > 33)) {
-      _lastAnnotUpdate = now;
-      _updateDriverAnnotation();
+    // ── Bug 3 fix: update pin every frame — in-flight guard keeps only 1
+    // platform-channel call active at a time, preventing queue congestion.
+    if (_map != null && _mapReady && _arrowIconBytes != null &&
+        !_annotUpdateInFlight) {
+      _annotUpdateInFlight = true;
+      _updateDriverAnnotation()
+          .then((_) { if (mounted) _annotUpdateInFlight = false; });
+    }
+
+    // ── Bug 1 + 4 fix: sync route polyline start to animated pin every frame.
+    // This ensures the yellow line always begins exactly at the car marker,
+    // regardless of lerp lag between GPS snap point and animated position.
+    if (_mapReady && _routeAnnot != null && !_routeSyncInFlight &&
+        _displayRoutePts.isNotEmpty) {
+      _routeSyncInFlight = true;
+      _syncRouteToPin()
+          .then((_) { if (mounted) _routeSyncInFlight = false; });
     }
 
     // Throttle UI rebuild to ~4 Hz (every 250 ms) — speed, ETA, instructions.
@@ -307,8 +383,11 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     }
   }
 
+  // ignore: prefer_final_fields
+  bool _startRideSwitching = false;
+
   void _onPhaseChanged(TripPhase phase) {
-    if (phase == TripPhase.onTrip) {
+    if (phase == TripPhase.onTrip && !_startRideSwitching) {
       _hasResumedOnce = false;
       _cameraFollowing = false;
       _switchToDropoffRoute();
@@ -321,20 +400,17 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       destination: widget.dropoffLatLng,
     );
     if (route != null && mounted) {
-      _routePts = route.overviewPolyline;
-      _displayRoutePts = List.of(_routePts);
+      // Bug 2 fix: snap-trim so no backward segment from movement during fetch.
+      _setNewRoute(route.overviewPolyline);
       _navService.startNavigation(route);
       _extractSpeedLimits(route);
-      _snapIdx = 0;
       setState(() {});
       // Update route annotation and jump to nav position (no cinematic on ride start)
       _updateRouteAnnotation();
       _cameraFollowing = true;
       setState(() {});
     } else if (mounted) {
-      _routePts = _makeStraightRoute(_pos, widget.dropoffLatLng);
-      _displayRoutePts = List.of(_routePts);
-      _snapIdx = 0;
+      _setNewRoute(_makeStraightRoute(_pos, widget.dropoffLatLng));
       _cameraFollowing = true;
       setState(() {});
     }
@@ -494,7 +570,8 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         _routeAnimating = false;
         _animatedRoute = List.from(_routePts);
         _displayRoutePts = List.from(_routePts);
-        _updateRouteAnnotation();
+        // Finalize with the full route via animated updater (no delete/recreate flash)
+        _updateRouteAnnotationAnimated(_routePts);
         if (!completer.isCompleted) completer.complete();
       }
     });
@@ -604,10 +681,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   Future<void> _reroute(LatLng dest) async {
     final route = await RouteService.fetchNavRoute(origin: _pos, destination: dest);
     if (!mounted || route == null) return;
+    // Bug 2 fix: snap-trim before display so no backward stale segment.
+    _setNewRoute(route.overviewPolyline);
     setState(() {
-      _routePts = route.overviewPolyline;
-      _displayRoutePts = List.of(_routePts);
-      _snapIdx = 0;
       _distRemainingMi = route.totalDistanceMiles;
       _etaMinutes = route.totalDurationMinutes;
     });
@@ -628,10 +704,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         : widget.pickupLatLng;
     final route = await RouteService.fetchNavRoute(origin: _pos, destination: dest);
     if (!mounted || route == null) return;
+    // Bug 2 fix: snap-trim after async fetch to remove stale backward segment.
+    _setNewRoute(route.overviewPolyline);
     setState(() {
-      _routePts = route.overviewPolyline;
-      _displayRoutePts = List.of(_routePts);
-      _snapIdx = 0;
       _distRemainingMi = route.totalDistanceMiles;
       _etaMinutes = route.totalDurationMinutes;
     });

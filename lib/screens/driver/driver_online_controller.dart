@@ -847,10 +847,10 @@ extension DriverOnlineController on _DriverOnlineScreenState {
 
     HapticFeedback.heavyImpact();
 
-    // Immediately mark as accepted (visual feedback)
+    // Block further taps but do NOT change visual state — card stays normal
+    // until we navigate away to the full-screen confirmation.
     setState(() {
-      _acceptingCardId = oid;
-      _offerAcceptState = _OfferAcceptState.accepted;
+      _offerAcceptState = _OfferAcceptState.routing; // blocks re-entry, no visual change
     });
 
     final offerId = r['offer_id'] as int?;
@@ -934,10 +934,8 @@ extension DriverOnlineController on _DriverOnlineScreenState {
     _nearDropoffNotified = false;
 
     // ── Reset offer state and navigate to full-screen accepted screen ──
-    _acceptedPickupAddr = _pickupAddr;
     _tappedCardIds.clear();
     setState(() {
-      _showAcceptedBottomCard = false;
       _offerAcceptState = _OfferAcceptState.normal;
       _acceptingCardId = null;
     });

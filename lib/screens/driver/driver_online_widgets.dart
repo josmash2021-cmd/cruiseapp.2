@@ -894,7 +894,7 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
     // Parse offer data
     final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 4.8;
     final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
-    final pickupAddr = (offer['pickup_address'] ?? 'Pickup') as String;
+    final rawPickupAddr = (offer['pickup_address'] ?? 'Pickup') as String;
     final dropoffAddr = (offer['dropoff_address'] ?? 'Drop-off') as String;
     final pickupLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
     final pickupLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
@@ -903,16 +903,38 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
     final vehicleType = _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
-
-    final distToPickupKm = _hav(_pos!, pickupLL);
-    final etaToPickup = (distToPickupKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-    final distToPickupMi = distToPickupKm * 0.621371;
-    final tripDistKm = _hav(pickupLL, dropoffLL);
-    final tripEta = (tripDistKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-    final tripDistMi = tripDistKm * 0.621371;
+    final pickupAddr = _isGenericAddress(rawPickupAddr)
+        ? (_resolvedAddressCache['${pickupLat}_$pickupLng'] ?? rawPickupAddr)
+        : rawPickupAddr;
 
     // Cache per offer so we don't re-fetch on every rebuild
     final offerId = (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_$pickupLng').toString();
+
+    // Use real Directions API metrics from route cache when available,
+    // fall back to haversine estimate.
+    final cached = _routeCache[offerId];
+    final double distToPickupKm;
+    final int etaToPickup;
+    final double distToPickupMi;
+    final double tripDistKm;
+    final int tripEta;
+    final double tripDistMi;
+    if (cached?.driverToPickupKm != null && cached?.pickupToDropoffKm != null) {
+      distToPickupKm = cached!.driverToPickupKm!;
+      etaToPickup = (cached.driverToPickupMin ?? 1).ceil().clamp(1, 99);
+      distToPickupMi = distToPickupKm * 0.621371;
+      tripDistKm = cached.pickupToDropoffKm!;
+      tripEta = (cached.pickupToDropoffMin ?? 1).ceil().clamp(1, 99);
+      tripDistMi = tripDistKm * 0.621371;
+    } else {
+      distToPickupKm = _hav(_pos!, pickupLL);
+      etaToPickup = (distToPickupKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      distToPickupMi = distToPickupKm * 0.621371;
+      tripDistKm = _hav(pickupLL, dropoffLL);
+      tripEta = (tripDistKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      tripDistMi = tripDistKm * 0.621371;
+    }
+
     _offerMapUrlCache.putIfAbsent(
       offerId,
       () => _buildOfferMapUrl(_pos!, pickupLL, dropoffLL),
@@ -938,13 +960,7 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
           switchOutCurve: Curves.easeInCubic,
           transitionBuilder: (child, anim) =>
               FadeTransition(opacity: anim, child: child),
-          child: _acceptingCardId == offerId &&
-                  _offerAcceptState == _OfferAcceptState.accepted
-              ? _buildAcceptedCardContent(pickupAddr)
-              : _acceptingCardId == offerId &&
-                      _offerAcceptState == _OfferAcceptState.routing
-                  ? _buildRoutingCardContent()
-                  : _buildNormalCardContent(
+          child: _buildNormalCardContent(
                       offer: offer,
                       offerId: offerId,
                       fare: fare,
@@ -1169,7 +1185,7 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 4),
                     // Dropoff info
                     Text(
                       '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
@@ -1301,111 +1317,6 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
     );
   }
 
-  // ── "Viaje Aceptado" inline card (shown inside AnimatedSwitcher in offer card) ──
-  Widget _buildAcceptedCardContent(String pickupAddr) {
-    const luxGold = Color(0xFFD4AF37);
-    return Padding(
-      key: const ValueKey('accepted'),
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Row(
-        children: [
-          // Gold check circle
-          TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.0, end: 1.0),
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.elasticOut,
-            builder: (_, scale, child) =>
-                Transform.scale(scale: scale, child: child),
-            child: Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: luxGold.withValues(alpha: 0.15),
-                border: Border.all(color: luxGold, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: luxGold.withValues(alpha: 0.3),
-                    blurRadius: 20,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.check_rounded, color: luxGold, size: 28),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Viaje Aceptado',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  pickupAddr,
-                  style: const TextStyle(color: Colors.white54, fontSize: 13),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          // Animated loading dots
-          _buildAcceptLoadingDots(),
-        ],
-      ),
-    );
-  }
-
-  // ── "Enrutando..." state ──
-  Widget _buildRoutingCardContent() {
-    const luxGold = Color(0xFFD4AF37);
-    return Padding(
-      key: const ValueKey('routing'),
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Row(
-        children: [
-          const _RoutingDotsAnimation(),
-          const SizedBox(width: 16),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Enrutando...',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Preparando tu ruta',
-                  style: TextStyle(color: luxGold, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Animated 3-dot gold loader for accepted card.
-  Widget _buildAcceptLoadingDots() {
-    return _AnimatedLoadingDots();
-  }
-
   Widget _buildStatItem({
     required IconData icon,
     required String value,
@@ -1516,7 +1427,7 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
     final init = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 4.8;
     final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
-    final pickupAddr = (offer['pickup_address'] ?? 'Pickup') as String;
+    final rawPickupAddr2 = (offer['pickup_address'] ?? 'Pickup') as String;
     final dropoffAddr = (offer['dropoff_address'] ?? 'Drop-off') as String;
     final pickupLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
     final pickupLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
@@ -1525,10 +1436,28 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
     final vehicleType = _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
-    final distToPickup = _hav(_pos!, pickupLL);
-    final etaToPickup = (distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-    final tripDist = _hav(pickupLL, dropoffLL);
-    final tripEta = (tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+    final pickupAddr = _isGenericAddress(rawPickupAddr2)
+        ? (_resolvedAddressCache['${pickupLat}_$pickupLng'] ?? rawPickupAddr2)
+        : rawPickupAddr2;
+    final previewOfferId = (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_$pickupLng').toString();
+    final cachedPreview = _routeCache[previewOfferId];
+    final int etaToPickup;
+    final int tripEta;
+    final double distToPickupMi;
+    final double tripDistMi;
+    if (cachedPreview?.driverToPickupKm != null && cachedPreview?.pickupToDropoffKm != null) {
+      etaToPickup = (cachedPreview!.driverToPickupMin ?? 1).ceil().clamp(1, 99);
+      distToPickupMi = cachedPreview.driverToPickupKm! * 0.621371;
+      tripEta = (cachedPreview.pickupToDropoffMin ?? 1).ceil().clamp(1, 99);
+      tripDistMi = cachedPreview.pickupToDropoffKm! * 0.621371;
+    } else {
+      final distToPickupKm = _hav(_pos!, pickupLL);
+      etaToPickup = (distToPickupKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      distToPickupMi = distToPickupKm * 0.621371;
+      final tripDistKm = _hav(pickupLL, dropoffLL);
+      tripEta = (tripDistKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      tripDistMi = tripDistKm * 0.621371;
+    }
 
     const cCardBg = Color(0xFF1A1A1A); // ignore: unused_local_variable
     const cTextPrimary = Colors.white;
@@ -1649,7 +1578,7 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
                     children: [
                       _infoChip(
                         Icons.near_me_rounded,
-                        '${(distToPickup * 0.621371).toStringAsFixed(1)} mi',
+                        '${distToPickupMi.toStringAsFixed(1)} mi',
                         chipBg,
                         cTextMuted,
                       ),
@@ -1663,7 +1592,7 @@ extension DriverOnlineWidgets on _DriverOnlineScreenState {
                       const SizedBox(width: 8),
                       _infoChip(
                         Icons.route_rounded,
-                        '${(tripDist * 0.621371).toStringAsFixed(1)} mi trip',
+                        '${tripDistMi.toStringAsFixed(1)} mi trip',
                         chipBg,
                         cTextMuted,
                       ),

@@ -37,6 +37,7 @@ import 'rider_tracking_screen.dart';
 import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/gold_location_dot.dart';
+import '../widgets/gold_pin_renderer.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
 import 'scheduled_rides_screen.dart';
@@ -219,6 +220,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   int _dfMsgIndex = 0;
   Timer? _dfMsgTimer;
 
+  // ── Driver Found map (tilt + route + pins) ──
+  mapbox.MapboxMap? _dfMapCtrl;
+  AnimationController? _dfTiltCtrl;
+  Animation<double>? _dfTiltAnim;
+
   // Combined pin+label bitmaps (raw bytes + anchor offset)
   bool _showPinLabels = true;
   (Uint8List, Uint8List)? _pickupPinOnly;
@@ -384,6 +390,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _dfCheckCtrl?.dispose();
     _dfStaggerCtrl?.dispose();
     _dfShimmerCtrl?.dispose();
+    _dfTiltCtrl?.dispose();
     _dfMsgTimer?.cancel();
     _goldDot.dispose();
     _ctrl.removeListener(_onStateChange);

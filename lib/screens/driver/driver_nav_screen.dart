@@ -420,16 +420,16 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     });
 
     if (phase == TripPhase.onTrip) {
-      // Route fetch + cinematic animation handled by _startRide()
+      // When _startRide() is driving the transition, it handles route fetch,
+      // pin updates, status sync, and toast itself — skip duplicates here.
       if (!_startRideSwitching) {
         _fetchRoute(widget.dropoffLatLng);
+        _updateDestPin(widget.dropoffLatLng);
+        _updatePickupPin(widget.pickupLatLng);
+        _updateTripStatus('rider_onboard',
+            extra: {'tripStartedAt': FieldValue.serverTimestamp()});
+        _showToast('Trip started — navigate to dropoff');
       }
-      _updateDestPin(widget.dropoffLatLng);
-      // Keep pickup pin visible for reference
-      _updatePickupPin(widget.pickupLatLng);
-      _updateTripStatus('rider_onboard',
-          extra: {'tripStartedAt': FieldValue.serverTimestamp()});
-      _showToast('Trip started — navigate to dropoff');
     } else if (phase == TripPhase.arrivedPickup) {
       _updateTripStatus('arrived_pickup',
           extra: {'driverArrivedAt': FieldValue.serverTimestamp()});
@@ -725,6 +725,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         _routeDrawTicker?.stop();
         _routeAnimating = false;
         _animatedRoute = List.from(_routePts);
+        // Finalize: ensure the annotation has the full route geometry
+        _updateRouteAnnotationAnimated(_routePts);
         if (!completer.isCompleted) completer.complete();
       }
     });
@@ -855,10 +857,15 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     if (mgr == null) return;
     final geom = mapbox.Point(
         coordinates: mapbox.Position(dest.longitude, dest.latitude));
+
+    // If annotation already exists, just move it — no delete/recreate flash.
     if (_destAnnot != null) {
-      try { await mgr.delete(_destAnnot!); } catch (_) {}
-      _destAnnot = null;
+      _destAnnot!.geometry = geom;
+      _destAnnot!.iconSize = 1.0; // keep stable size
+      try { await mgr.update(_destAnnot!); } catch (_) {}
+      return;
     }
+
     final pinBytes = await _buildDestPin();
     if (pinBytes == null || !mounted) return;
     _destPinScale = 0.0;
@@ -1179,6 +1186,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       // Update route annotation and jump to nav position (no cinematic on ride start)
       _updateRouteAnnotation();
     }
+
+    // Pin + status updates that _onPhaseChanged skipped
+    _updateDestPin(widget.dropoffLatLng);
+    _updatePickupPin(widget.pickupLatLng);
+    _updateTripStatus('rider_onboard',
+        extra: {'tripStartedAt': FieldValue.serverTimestamp()});
+    _showToast('Trip started — navigate to dropoff');
 
     _startRideSwitching = false;
     setState(() {

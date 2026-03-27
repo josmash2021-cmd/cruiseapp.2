@@ -1586,7 +1586,8 @@ extension RideRequestWidgets on _RideRequestScreenState {
   Widget _buildDriverFoundOverlay(AppColors c) {
     final driver = _ctrl.state.driver!;
     final firstName = driver.name.split(' ').first;
-    const gold = Color(0xFFC8973A);
+    const gold = Color(0xFFD4AF37);
+    const cardBg = Color(0xFF1A1A1A);
     final stagger = _dfStaggerCtrl;
     final checkCtrl = _dfCheckCtrl;
     final shimmer = _dfShimmerCtrl;
@@ -1601,6 +1602,14 @@ extension RideRequestWidgets on _RideRequestScreenState {
     ];
 
     final pickup = _ctrl.state.pickup;
+    final dropoff = _ctrl.state.dropoff;
+    final midLat = (pickup != null && dropoff != null)
+        ? (pickup.lat + dropoff.lat) / 2
+        : pickup?.lat ?? 0;
+    final midLng = (pickup != null && dropoff != null)
+        ? (pickup.lng + dropoff.lng) / 2
+        : pickup?.lng ?? 0;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
 
     return Positioned.fill(
       child: IgnorePointer(
@@ -1611,7 +1620,7 @@ extension RideRequestWidgets on _RideRequestScreenState {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Real Mapbox map background
+              // ── Full-screen Mapbox map background with tilt + route + pins ──
               if (pickup != null)
                 IgnorePointer(
                   child: RepaintBoundary(
@@ -1619,15 +1628,14 @@ extension RideRequestWidgets on _RideRequestScreenState {
                       styleUri: MapboxConfig.styleDark,
                       cameraOptions: mapbox.CameraOptions(
                         center: mapbox.Point(
-                          coordinates: mapbox.Position(
-                            pickup.lng,
-                            pickup.lat,
-                          ),
+                          coordinates: mapbox.Position(midLng, midLat),
                         ),
                         zoom: 14.5,
                         pitch: 0.0,
                       ),
                       onMapCreated: (ctrl) async {
+                        _dfMapCtrl = ctrl;
+                        await MapTheme.applyNavyGold(ctrl);
                         ctrl.scaleBar.updateSettings(
                             mapbox.ScaleBarSettings(enabled: false));
                         ctrl.compass.updateSettings(
@@ -1636,30 +1644,106 @@ extension RideRequestWidgets on _RideRequestScreenState {
                             mapbox.AttributionSettings(enabled: false));
                         ctrl.logo.updateSettings(
                             mapbox.LogoSettings(enabled: false));
+
+                        // Animate tilt 0° → 20°
+                        if (_dfTiltAnim != null && _dfTiltCtrl != null) {
+                          _dfTiltAnim!.addListener(() {
+                            _dfMapCtrl?.setCamera(
+                              mapbox.CameraOptions(pitch: _dfTiltAnim!.value),
+                            );
+                          });
+                          _dfTiltCtrl!.forward();
+                        }
+
+                        // Add route polyline
+                        final routePts = _ctrl.state.route?.points;
+                        if (routePts != null && routePts.length >= 2) {
+                          final polyMgr = await ctrl.annotations
+                              .createPolylineAnnotationManager();
+                          final coords = routePts
+                              .map((p) =>
+                                  mapbox.Position(p.longitude, p.latitude))
+                              .toList();
+                          await polyMgr.create(mapbox.PolylineAnnotationOptions(
+                            geometry:
+                                mapbox.LineString(coordinates: coords),
+                            lineColor: const Color(0xFFFFD700).toARGB32(),
+                            lineWidth: 5.0,
+                            lineJoin: mapbox.LineJoin.ROUND,
+                          ));
+                        }
+
+                        // Add smart pins (pickup + dropoff)
+                        final pointMgr = await ctrl.annotations
+                            .createPointAnnotationManager();
+                        final pickupBytes =
+                            await GoldPinRenderer.render(isPickup: true);
+                        await pointMgr.create(mapbox.PointAnnotationOptions(
+                          geometry: mapbox.Point(
+                            coordinates:
+                                mapbox.Position(pickup.lng, pickup.lat),
+                          ),
+                          image: pickupBytes,
+                          iconSize: 0.5,
+                          iconAnchor: mapbox.IconAnchor.BOTTOM,
+                        ));
+                        if (dropoff != null) {
+                          final dropoffBytes =
+                              await GoldPinRenderer.render(isPickup: false);
+                          await pointMgr.create(mapbox.PointAnnotationOptions(
+                            geometry: mapbox.Point(
+                              coordinates:
+                                  mapbox.Position(dropoff.lng, dropoff.lat),
+                            ),
+                            image: dropoffBytes,
+                            iconSize: 0.5,
+                            iconAnchor: mapbox.IconAnchor.BOTTOM,
+                          ));
+                        }
                       },
                     ),
                   ),
                 )
               else
                 const ColoredBox(color: Color(0xFF0A0A1A)),
-              // Blur overlay
+              // ── Subtle gradient overlay (let map show through, like Trip Accepted) ──
               Positioned.fill(
-                child: BackdropFilter(
-                  filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                  child: Container(color: Colors.transparent),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.15),
+                        Colors.black.withValues(alpha: 0.55),
+                        Colors.black.withValues(alpha: 0.85),
+                      ],
+                      stops: const [0.0, 0.5, 1.0],
+                    ),
+                  ),
                 ),
               ),
-              // Dark overlay
-              Positioned.fill(
-                child: Container(color: Colors.black.withValues(alpha: 0.55)),
-              ),
-              // Content
-              SafeArea(
-              child: Column(
-                children: [
-                  const Spacer(flex: 2),
-
-                  // ── Animated checkmark with gold glow ──
+              // ── Content (positioned at bottom like Trip Accepted) ──
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.3),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(
+                    parent: stagger,
+                    curve: const Interval(0.0, 0.4, curve: Curves.easeOutCubic),
+                  )),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomPad),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                  // ── Gold check circle (matching Trip Accepted style) ──
                   AnimatedBuilder(
                     animation: checkCtrl,
                     builder: (_, __) {
@@ -1672,26 +1756,26 @@ extension RideRequestWidgets on _RideRequestScreenState {
                           height: 72,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
+                            color: gold.withValues(alpha: 0.15),
+                            border: Border.all(color: gold, width: 2),
                             boxShadow: [
                               BoxShadow(
-                                color: gold.withValues(alpha: 0.35 * checkCtrl.value),
-                                blurRadius: 28,
-                                spreadRadius: 6,
+                                color: gold.withValues(alpha: 0.3 * checkCtrl.value),
+                                blurRadius: 24,
+                                spreadRadius: 4,
                               ),
                             ],
                           ),
-                          child: CustomPaint(
-                            size: const Size(72, 72),
-                            painter: _CheckmarkPainter(
-                              progress: checkCtrl.value,
-                              color: gold,
-                            ),
+                          child: const Icon(
+                            Icons.check_rounded,
+                            color: gold,
+                            size: 36,
                           ),
                         ),
                       );
                     },
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
 
                   // ── "Driver Found!" with shimmer ──
                   FadeTransition(
@@ -1719,12 +1803,12 @@ extension RideRequestWidgets on _RideRequestScreenState {
                           fontSize: 28,
                           fontWeight: FontWeight.w800,
                           color: Colors.white,
-                          letterSpacing: 1.5,
+                          letterSpacing: -0.5,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
 
                   // ── Subtitle ──
                   FadeTransition(
@@ -1734,31 +1818,37 @@ extension RideRequestWidgets on _RideRequestScreenState {
                     ),
                     child: Text(
                       '$firstName ${S.of(context).isOnTheWay}',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white.withValues(alpha: 0.6),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.white54,
                       ),
                     ),
                   ),
 
-                  const Spacer(),
+                  const SizedBox(height: 20),
 
-                  // ── Driver info card ──
+                  // ── Driver info card (matching Trip Accepted style) ──
                   FadeTransition(
                     opacity: CurvedAnimation(
                       parent: stagger,
                       curve: const Interval(0.3, 0.6),
                     ),
                     child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 28),
-                        padding: const EdgeInsets.all(22),
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(22),
+                          color: cardBg,
+                          borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: gold.withValues(alpha: 0.25),
+                            color: gold.withValues(alpha: 0.2),
+                            width: 1,
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: gold.withValues(alpha: 0.08),
+                              blurRadius: 20,
+                              spreadRadius: 2,
+                            ),
+                          ],
                         ),
                         child: Row(
                           children: [
@@ -1767,9 +1857,9 @@ extension RideRequestWidgets on _RideRequestScreenState {
                               uid: driver.id,
                               fallbackName: firstName,
                               photoUrl: driver.photoUrl,
-                              radius: 30,
+                              radius: 28,
                             ),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1778,30 +1868,29 @@ extension RideRequestWidgets on _RideRequestScreenState {
                                     driver.name,
                                     style: const TextStyle(
                                       color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
                                   Row(
                                     children: [
                                       const Icon(Icons.star_rounded,
-                                          color: gold, size: 15),
-                                      const SizedBox(width: 3),
+                                          color: gold, size: 14),
+                                      const SizedBox(width: 4),
                                       Text(
                                         driver.rating.toStringAsFixed(1),
                                         style: const TextStyle(
-                                          color: Colors.white,
+                                          color: Colors.white70,
                                           fontSize: 13,
-                                          fontWeight: FontWeight.w700,
                                         ),
                                       ),
                                       if (driver.totalTrips > 0) ...[
-                                        const SizedBox(width: 10),
+                                        const SizedBox(width: 12),
                                         Text(
                                           '${driver.totalTrips} trips',
-                                          style: TextStyle(
-                                            color: Colors.white.withValues(alpha: 0.5),
+                                          style: const TextStyle(
+                                            color: Colors.white38,
                                             fontSize: 12,
                                           ),
                                         ),
@@ -1818,17 +1907,17 @@ extension RideRequestWidgets on _RideRequestScreenState {
                                     ),
                                   ),
                                   const SizedBox(height: 6),
-                                  // License plate pill
+                                  // License plate pill (golden border)
                                   Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 10,
                                       vertical: 4,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.08),
+                                      color: gold.withValues(alpha: 0.1),
                                       borderRadius: BorderRadius.circular(6),
                                       border: Border.all(
-                                        color: Colors.white.withValues(alpha: 0.15),
+                                        color: gold.withValues(alpha: 0.3),
                                       ),
                                     ),
                                     child: Text(
@@ -1849,24 +1938,24 @@ extension RideRequestWidgets on _RideRequestScreenState {
                     ),
                   ),
 
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 12),
 
-                  // ── ETA pill (fade in) ──
+                  // ── Pickup address pill ──
                   FadeTransition(
                     opacity: CurvedAnimation(
                       parent: stagger,
-                      curve: const Interval(0.5, 0.75),
+                      curve: const Interval(0.4, 0.65),
                     ),
                     child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
+                          horizontal: 16,
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: gold.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(30),
+                          color: gold.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: gold.withValues(alpha: 0.35),
+                            color: gold.withValues(alpha: 0.3),
                           ),
                         ),
                         child: AnimatedSwitcher(
@@ -1876,19 +1965,19 @@ extension RideRequestWidgets on _RideRequestScreenState {
                             key: ValueKey(_dfMsgIndex),
                             style: const TextStyle(
                               color: gold,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ),
                     ),
                   ),
 
-                  const Spacer(),
+                  const SizedBox(height: 16),
 
-                  // ── Gold progress bar ──
+                  // ── Gold progress bar (fills over 3.8 seconds) ──
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 64),
+                    padding: const EdgeInsets.symmetric(horizontal: 48),
                     child: TweenAnimationBuilder<double>(
                       tween: Tween(begin: 0.0, end: 1.0),
                       duration: const Duration(milliseconds: 3800),
@@ -1897,17 +1986,18 @@ extension RideRequestWidgets on _RideRequestScreenState {
                         borderRadius: BorderRadius.circular(2),
                         child: LinearProgressIndicator(
                           value: value,
-                          backgroundColor: Colors.white10,
+                          backgroundColor: Colors.white12,
                           valueColor: const AlwaysStoppedAnimation(gold),
-                          minHeight: 2,
+                          minHeight: 3,
                         ),
                       ),
                     ),
                   ),
-
-                  const Spacer(flex: 2),
-                ],
-              ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),

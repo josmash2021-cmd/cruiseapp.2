@@ -70,7 +70,7 @@ class DriverOnlineScreen extends StatefulWidget {
 }
 
 /// Card accept animation states.
-enum _OfferAcceptState { normal, accepted, routing }
+enum _OfferAcceptState { normal, routing }
 
 enum _Phase {
   searching,
@@ -167,8 +167,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   _OfferAcceptState _offerAcceptState = _OfferAcceptState.normal;
   String? _acceptingCardId;
   final Set<String> _tappedCardIds = {};
-  bool _showAcceptedBottomCard = false;
-  String _acceptedPickupAddr = '';
   bool _isAcceptPressed = false;
 
   // ── Smooth route draw ──
@@ -178,6 +176,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // ── Pre-fetched route cache (offerId → segments) ──
   final Map<String, _CachedOfferRoute> _routeCache = {};
+
+  // ── Reverse-geocoded pickup addresses for generic labels ──
+  final Map<String, String> _resolvedAddressCache = {};
 
   // â”€â”€ Request data (for active trip after acceptance) â”€â”€
   Timer? _pollT;
@@ -442,24 +443,155 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
       // Pre-build unified gold pins + fetch routes in parallel
       Future.wait<Object?>([
-        _fetchRoutePoints(_pos!, pickupLL),                                         // [0] segOne
-        _fetchRoutePoints(pickupLL, dropoffLL),                                     // [1] segTwo
+        _fetchRouteWithMetrics(_pos!, pickupLL),                                    // [0] segOne + metrics
+        _fetchRouteWithMetrics(pickupLL, dropoffLL),                                // [1] segTwo + metrics
         renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // [2] driver pos pin
         renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // [3] pickup pin
         renderCircularPinBytes(icon: _goldPinIconFor(placeType), isPickup: false, radius: 32), // [4] dropoff pin
       ]).then((results) {
         if (!mounted) return;
+        final seg1 = results[0] as ({List<LatLng> pts, double? durSec, double? distM});
+        final seg2 = results[1] as ({List<LatLng> pts, double? durSec, double? distM});
         _routeCache[oid] = _CachedOfferRoute(
-          segOne: results[0] as List<LatLng>,
-          segTwo: results[1] as List<LatLng>,
+          segOne: seg1.pts,
+          segTwo: seg2.pts,
           cachedAt: DateTime.now(),
           dropoffPlaceType: placeType,
           driverPin: results[2] as Uint8List?,
           pickupPin: results[3] as Uint8List?,
           dropoffPin: results[4] as Uint8List?,
+          driverToPickupMin: seg1.durSec != null ? seg1.durSec! / 60.0 : null,
+          driverToPickupKm: seg1.distM != null ? seg1.distM! / 1000.0 : null,
+          pickupToDropoffMin: seg2.durSec != null ? seg2.durSec! / 60.0 : null,
+          pickupToDropoffKm: seg2.distM != null ? seg2.distM! / 1000.0 : null,
         );
+        if (_pendingOffers.isNotEmpty) setState(() {});
       }).catchError((_) {});
+
+      // Reverse-geocode generic pickup addresses
+      final rawPickupAddr = (offer['pickup_address'] ?? '') as String;
+      final addrKey = '${pLat}_$pLng';
+      if (!_resolvedAddressCache.containsKey(addrKey) &&
+          _isGenericAddress(rawPickupAddr)) {
+        _reverseGeocode(pLat, pLng).then((resolved) {
+          if (resolved != null && mounted) {
+            _resolvedAddressCache[addrKey] = resolved;
+            if (_pendingOffers.isNotEmpty) setState(() {});
+          }
+        });
+      }
     }
+  }
+
+  /// Whether an address string is generic / placeholder and needs reverse geocoding.
+  bool _isGenericAddress(String addr) {
+    if (addr.isEmpty) return true;
+    final lower = addr.toLowerCase().trim();
+    return lower == 'current location' ||
+        lower == 'ubicación actual' ||
+        lower == 'pickup' ||
+        lower == 'mi ubicación';
+  }
+
+  /// Reverse-geocode coordinates → street address via Mapbox Geocoding API.
+  Future<String?> _reverseGeocode(double lat, double lng) async {
+    try {
+      final url = Uri.parse(
+        'https://api.mapbox.com/geocoding/v5/mapbox.places/$lng,$lat.json'
+        '?types=address,poi&limit=1&access_token=${MapboxConfig.accessToken}',
+      );
+      final res = await http.get(url).timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final features = data['features'] as List?;
+        if (features != null && features.isNotEmpty) {
+          return (features[0]['place_name'] as String?)
+              ?.replaceAll(RegExp(r',\s*United States$'), '')
+              .replaceAll(RegExp(r',\s*Puerto Rico$'), '');
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Fetch route points + duration/distance from Directions APIs.
+  /// Returns (points, durationSeconds, distanceMeters).
+  Future<({List<LatLng> pts, double? durSec, double? distM})> _fetchRouteWithMetrics(LatLng o, LatLng d) async {
+    // Google Directions API
+    try {
+      final uri = Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
+        'origin': '${o.latitude},${o.longitude}',
+        'destination': '${d.latitude},${d.longitude}',
+        'key': ApiKeys.webServices,
+        'mode': 'driving',
+      });
+      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['status'] == 'OK' && (data['routes'] as List).isNotEmpty) {
+          final route = data['routes'][0];
+          final pts = _decodePoly(route['overview_polyline']['points'] as String);
+          final leg = (route['legs'] as List?)?.firstOrNull;
+          final dur = (leg?['duration']?['value'] as num?)?.toDouble();
+          final dist = (leg?['distance']?['value'] as num?)?.toDouble();
+          return (pts: pts, durSec: dur, distM: dist);
+        }
+      }
+    } catch (_) {}
+    // OSRM fallback
+    try {
+      final path = '/route/v1/driving/${o.longitude},${o.latitude};${d.longitude},${d.latitude}';
+      final uri = Uri.https('router.project-osrm.org', path, {
+        'overview': 'full', 'geometries': 'polyline',
+      });
+      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      final data = jsonDecode(res.body);
+      if (data is Map<String, dynamic> && data['code']?.toString().toUpperCase() == 'OK') {
+        final routes = data['routes'] as List?;
+        if (routes != null && routes.isNotEmpty) {
+          final r = routes[0];
+          final pts = _decodePoly(r['geometry'] as String);
+          final dur = (r['duration'] as num?)?.toDouble();
+          final dist = (r['distance'] as num?)?.toDouble();
+          return (pts: pts, durSec: dur, distM: dist);
+        }
+      }
+    } catch (_) {}
+    // Mapbox Directions API fallback
+    try {
+      final mbxUrl = Uri.parse(
+        'https://api.mapbox.com/directions/v5/mapbox/driving/'
+        '${o.longitude},${o.latitude};${d.longitude},${d.latitude}'
+        '?geometries=geojson&overview=full&steps=false'
+        '&access_token=${MapboxConfig.accessToken}',
+      );
+      final mbxRes = await http.get(mbxUrl).timeout(const Duration(seconds: 8));
+      if (mbxRes.statusCode == 200) {
+        final mbxData = jsonDecode(mbxRes.body);
+        final mbxRoutes = mbxData['routes'] as List?;
+        if (mbxRoutes != null && mbxRoutes.isNotEmpty) {
+          final r = mbxRoutes[0];
+          final coords = r['geometry']?['coordinates'] as List?;
+          if (coords != null && coords.isNotEmpty) {
+            final pts = coords
+                .map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
+                .toList();
+            final dur = (r['duration'] as num?)?.toDouble();
+            final dist = (r['distance'] as num?)?.toDouble();
+            return (pts: pts, durSec: dur, distM: dist);
+          }
+        }
+      }
+    } catch (_) {}
+    // Straight line fallback — no metrics
+    final pts = List.generate(21, (i) {
+      final t = i / 20;
+      return LatLng(
+        o.latitude + (d.latitude - o.latitude) * t,
+        o.longitude + (d.longitude - o.longitude) * t,
+      );
+    });
+    return (pts: pts, durSec: null, distM: null);
   }
 
   String get _timeStr {
@@ -714,100 +846,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
               ),
 
-            // Accepted trip bottom card (replaces offer cards after accept)
-            if (_showAcceptedBottomCard)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 350),
-                  curve: Curves.easeInOut,
-                  opacity: _showAcceptedBottomCard ? 1.0 : 0.0,
-                  child: SafeArea(
-                    top: false,
-                    child: Container(
-                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0A0A0A),
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(
-                        color: const Color(0xFFD4AF37).withValues(alpha: 0.30),
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFD4AF37).withValues(alpha: 0.12),
-                          blurRadius: 24,
-                          spreadRadius: 2,
-                        ),
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.50),
-                          blurRadius: 24,
-                          spreadRadius: -2,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                    child: Row(
-                      children: [
-                        TweenAnimationBuilder<double>(
-                          tween: Tween(begin: 0.0, end: 1.0),
-                          duration: const Duration(milliseconds: 500),
-                          curve: Curves.elasticOut,
-                          builder: (_, scale, child) =>
-                              Transform.scale(scale: scale, child: child),
-                          child: Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: const Color(0xFFD4AF37).withValues(alpha: 0.15),
-                              border: Border.all(color: const Color(0xFFD4AF37), width: 2),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFFD4AF37).withValues(alpha: 0.3),
-                                  blurRadius: 20,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                            child: const Icon(Icons.check_rounded, color: Color(0xFFD4AF37), size: 28),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text(
-                                'Viaje Aceptado',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _acceptedPickupAddr,
-                                style: const TextStyle(color: Colors.white54, fontSize: 13),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        _buildAcceptLoadingDots(),
-                      ],
-                    ),
-                  ),
-                  ),
-                ),
-              ),
 
             // â”€â”€ X button to close preview (top-right) â”€â”€
             if (_previewingOffer != null)
@@ -1127,53 +1165,6 @@ class _DriverRadarPainter extends CustomPainter {
   bool shouldRepaint(_DriverRadarPainter old) => old.progress != progress;
 }
 
-/// Self-contained animated loading dots (gold, 3 dots, pulsing).
-class _AnimatedLoadingDots extends StatefulWidget {
-  @override
-  State<_AnimatedLoadingDots> createState() => _AnimatedLoadingDotsState();
-}
-
-class _AnimatedLoadingDotsState extends State<_AnimatedLoadingDots>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, __) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(3, (i) {
-          final phase = (_ctrl.value + i * 0.2) % 1.0;
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFFD4AF37).withValues(alpha: 0.3 + phase * 0.7),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-}
 
 /// Cached route segments for a pending offer.
 class _CachedOfferRoute {
@@ -1184,6 +1175,10 @@ class _CachedOfferRoute {
   final Uint8List? driverPin;
   final Uint8List? pickupPin;
   final Uint8List? dropoffPin;
+  final double? driverToPickupMin;
+  final double? driverToPickupKm;
+  final double? pickupToDropoffMin;
+  final double? pickupToDropoffKm;
   const _CachedOfferRoute({
     required this.segOne,
     required this.segTwo,
@@ -1192,6 +1187,10 @@ class _CachedOfferRoute {
     this.driverPin,
     this.pickupPin,
     this.dropoffPin,
+    this.driverToPickupMin,
+    this.driverToPickupKm,
+    this.pickupToDropoffMin,
+    this.pickupToDropoffKm,
   });
 }
 
@@ -1233,64 +1232,6 @@ CircularPinIcon _goldPinIconFor(_PlaceType type) {
     case _PlaceType.hotel:    return CircularPinIcon.home;
     case _PlaceType.commerce: return CircularPinIcon.store;
     case _PlaceType.home:     return CircularPinIcon.home;
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  ROUTING DOTS ANIMATION — 3 bouncing gold dots for "Enrutando..." state
-// ═════════════════════════════════════════════════════════════════════════════
-class _RoutingDotsAnimation extends StatefulWidget {
-  const _RoutingDotsAnimation();
-  @override
-  State<_RoutingDotsAnimation> createState() => _RoutingDotsAnimationState();
-}
-
-class _RoutingDotsAnimationState extends State<_RoutingDotsAnimation>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, __) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(3, (i) {
-          final delay = i / 3;
-          final progress = ((_ctrl.value - delay) % 1.0).clamp(0.0, 1.0);
-          final scale = 0.6 + (math.sin(progress * math.pi) * 0.6);
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            child: Transform.scale(
-              scale: scale,
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Color(0xFFD4AF37),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
   }
 }
 

@@ -12,6 +12,7 @@ import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../models/lat_lng.dart';
+import '../../widgets/gold_pin_renderer.dart';
 import '../../widgets/verified_avatar.dart';
 import 'driver_trip_accept_screen.dart';
 
@@ -83,6 +84,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
   // Route draw
   mapbox.MapboxMap? _mapCtrl;
   mapbox.PolylineAnnotationManager? _polyMgr;
+  mapbox.PointAnnotationManager? _pointMgr;
   mapbox.PolylineAnnotation? _routeAnnot;
   List<LatLng> _routePoints = [];
   Ticker? _routeDrawTicker;
@@ -121,7 +123,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
-    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+    _tiltAnim = Tween<double>(begin: 0.0, end: 20.0).animate(
       CurvedAnimation(parent: _tiltCtrl, curve: Curves.easeInOutCubic),
     );
 
@@ -289,6 +291,10 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
 
     _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
+    _pointMgr = await ctrl.annotations.createPointAnnotationManager();
+
+    // Add smart pins (pickup + dropoff)
+    _addSmartPins();
 
     // Fit camera to show driver + pickup, then animate tilt
     final bearing = _bearingToPickup();
@@ -324,6 +330,38 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
   void _applyMapTilt() {
     if (_mapCtrl == null || !mounted) return;
     _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: _tiltAnim.value));
+  }
+
+  Future<void> _addSmartPins() async {
+    final mgr = _pointMgr;
+    if (mgr == null) return;
+    // Pickup pin (person icon)
+    final pickupBytes = await GoldPinRenderer.render(isPickup: true);
+    await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(
+        coordinates: mapbox.Position(
+          widget.pickupLatLng.longitude,
+          widget.pickupLatLng.latitude,
+        ),
+      ),
+      image: pickupBytes,
+      iconSize: 0.5,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
+    ));
+    // Dropoff pin (location icon)
+    final dropoffBytes = await GoldPinRenderer.render(isPickup: false);
+    if (!mounted) return;
+    await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(
+        coordinates: mapbox.Position(
+          widget.dropoffLatLng.longitude,
+          widget.dropoffLatLng.latitude,
+        ),
+      ),
+      image: dropoffBytes,
+      iconSize: 0.5,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
+    ));
   }
 
   void _goToTripScreen() {

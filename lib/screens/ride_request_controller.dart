@@ -290,6 +290,15 @@ extension RideRequestController on _RideRequestScreenState {
             vsync: this,
             duration: const Duration(milliseconds: 2000),
           )..repeat();
+          // Map tilt: 0° → 20° over 1s
+          _dfTiltCtrl?.dispose();
+          _dfTiltCtrl = AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 1000),
+          );
+          _dfTiltAnim = Tween<double>(begin: 0.0, end: 20.0).animate(
+            CurvedAnimation(parent: _dfTiltCtrl!, curve: Curves.easeInOutCubic),
+          );
           _dfMsgIndex = 0;
           _dfMsgTimer?.cancel();
           _dfMsgTimer = Timer.periodic(

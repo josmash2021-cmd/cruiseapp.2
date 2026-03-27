@@ -29,6 +29,9 @@ from support_cache import find_cached_response, add_natural_variation, claude_he
 # Security Guardian Agent — blocks threats BEFORE they cause damage
 from security_guardian import security_guardian
 
+# Guardian Agent — keeps all systems healthy and connections alive
+from guardian_agent import guardian_agent
+
 load_dotenv()  # Load .env file (gitignored)
 
 import base64
@@ -901,11 +904,21 @@ async def lifespan(app: FastAPI):
         # Start Security Guardian heartbeat
         await security_guardian.start_heartbeat()
         logging.info("🛡️ Security Guardian Agent ACTIVE — blocking threats in real-time")
+        # Start Guardian Agent (system health + connection keeper)
+        guardian_agent.set_db_session_maker(SessionLocal)
+        if _HAS_FIRESTORE:
+            try:
+                guardian_agent.set_firestore_db(firestore_sync._db)
+            except Exception as _e:
+                logging.warning("Could not set Firestore for guardian: %s", _e)
+        await guardian_agent.start()
+        logging.info("🛡️ Guardian Agent ACTIVE — all systems protected")
 
     asyncio.create_task(_bg_init())
     yield
     # Cleanup on shutdown
     await security_guardian.stop_heartbeat()
+    await guardian_agent.stop()
 
 app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None)
 
@@ -1267,6 +1280,7 @@ async def health():
         "firebase": firebase_detail,
         "watchdog": _watchdog_stats,
         "security": security_guardian.get_status(),
+        "guardian": guardian_agent.get_status(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -1288,6 +1302,18 @@ async def security_health(x_api_key: str = Header(default="")):
         "block_duration_seconds": security_guardian.rate_limiter.BLOCK_DURATION_SECONDS,
     }
     return status
+
+
+# -- Guardian Agent Health Endpoint ----------------------------------------
+@app.get("/health/guardian")
+async def guardian_health(x_api_key: str = Header(default="")):
+    """Guardian Agent status — system health, connections, memory, data integrity.
+    Protected by API key for production safety."""
+    # Allow access if API key matches OR if DEV_SKIP_AUTH is enabled
+    if not DEV_SKIP_AUTH and x_api_key != API_KEY:
+        raise HTTPException(403, "Forbidden")
+    
+    return guardian_agent.get_status()
 
 
 # -- One-time migration endpoint (protected by API key) ------------------

@@ -943,19 +943,23 @@ class ApiService {
   // ═══════════════════════════════════════════════════════
 
   /// Create or get existing open support chat.
+  /// Uses retry logic to survive transient failures.
   static Future<Map<String, dynamic>> createSupportChat({
     String subject = '',
     String locale = 'en',
   }) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await _client
-        .post(
-          Uri.parse('$_baseUrl/support/chats'),
-          headers: _jsonHeaders(token),
-          body: jsonEncode({'subject': subject, 'locale': locale}),
-        )
-        .timeout(const Duration(seconds: 10));
+    final res = await _withRetry(
+      () => _client
+          .post(
+            Uri.parse('$_baseUrl/support/chats'),
+            headers: _jsonHeaders(token),
+            body: jsonEncode({'subject': subject, 'locale': locale}),
+          )
+          .timeout(const Duration(seconds: 12)),
+      maxAttempts: 3,
+    );
     return _parse(res);
   }
 
@@ -963,9 +967,12 @@ class ApiService {
   static Future<List<Map<String, dynamic>>> getSupportChats() async {
     final token = await getToken();
     if (token == null) return [];
-    final res = await _client
-        .get(Uri.parse('$_baseUrl/support/chats'), headers: _jsonHeaders(token))
-        .timeout(const Duration(seconds: 10));
+    final res = await _withRetry(
+      () => _client
+          .get(Uri.parse('$_baseUrl/support/chats'), headers: _jsonHeaders(token))
+          .timeout(const Duration(seconds: 10)),
+      maxAttempts: 2,
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body);
       if (data is List) return List<Map<String, dynamic>>.from(data);
@@ -977,31 +984,38 @@ class ApiService {
   static Future<List<dynamic>> getSupportMessages(int chatId) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await _client
-        .get(
-          Uri.parse('$_baseUrl/support/chats/$chatId/messages'),
-          headers: _jsonHeaders(token),
-        )
-        .timeout(const Duration(seconds: 10));
+    final res = await _withRetry(
+      () => _client
+          .get(
+            Uri.parse('$_baseUrl/support/chats/$chatId/messages'),
+            headers: _jsonHeaders(token),
+          )
+          .timeout(const Duration(seconds: 10)),
+      maxAttempts: 2,
+    );
     final data = _parse(res);
     final list = data['data'];
     return list is List ? List<dynamic>.from(list) : [];
   }
 
   /// Send a support chat message.
+  /// Uses retry logic so messages are not lost on transient failures.
   static Future<Map<String, dynamic>> sendSupportMessage(
     int chatId,
     String message,
   ) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await _client
-        .post(
-          Uri.parse('$_baseUrl/support/chats/$chatId/messages'),
-          headers: _jsonHeaders(token),
-          body: jsonEncode({'message': message}),
-        )
-        .timeout(const Duration(seconds: 10));
+    final res = await _withRetry(
+      () => _client
+          .post(
+            Uri.parse('$_baseUrl/support/chats/$chatId/messages'),
+            headers: _jsonHeaders(token),
+            body: jsonEncode({'message': message}),
+          )
+          .timeout(const Duration(seconds: 12)),
+      maxAttempts: 3,
+    );
     return _parse(res);
   }
 
@@ -1009,12 +1023,15 @@ class ApiService {
   static Future<void> closeSupportChat(int chatId) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    await _client
-        .patch(
-          Uri.parse('$_baseUrl/support/chats/$chatId/close-user'),
-          headers: _jsonHeaders(token),
-        )
-        .timeout(const Duration(seconds: 10));
+    await _withRetry(
+      () => _client
+          .patch(
+            Uri.parse('$_baseUrl/support/chats/$chatId/close-user'),
+            headers: _jsonHeaders(token),
+          )
+          .timeout(const Duration(seconds: 10)),
+      maxAttempts: 2,
+    );
   }
 
   /// Set typing status for a support chat.

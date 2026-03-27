@@ -26,6 +26,9 @@ from dotenv import load_dotenv
 # Support chat AI cache & health monitoring
 from support_cache import find_cached_response, add_natural_variation, claude_health, load_cache, maybe_cache_response
 
+# Security Guardian Agent — blocks threats BEFORE they cause damage
+from security_guardian import security_guardian
+
 load_dotenv()  # Load .env file (gitignored)
 
 import base64
@@ -895,9 +898,14 @@ async def lifespan(app: FastAPI):
                 await _rehydrate_pending_reminders()
             except Exception as _e:
                 logging.warning("Reminder rehydration failed: %s", _e)
+        # Start Security Guardian heartbeat
+        await security_guardian.start_heartbeat()
+        logging.info("🛡️ Security Guardian Agent ACTIVE — blocking threats in real-time")
 
     asyncio.create_task(_bg_init())
     yield
+    # Cleanup on shutdown
+    await security_guardian.stop_heartbeat()
 
 app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None)
 
@@ -1258,8 +1266,29 @@ async def health():
         "database": {"status": db_status, "latency_ms": db_latency_ms},
         "firebase": firebase_detail,
         "watchdog": _watchdog_stats,
+        "security": security_guardian.get_status(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# -- Security Guardian Health Endpoint ------------------------------------
+@app.get("/health/security")
+async def security_health(x_api_key: str = Header(default="")):
+    """Security Guardian status — detailed threat monitoring info.
+    Protected by API key for production safety."""
+    # Allow access if API key matches OR if DEV_SKIP_AUTH is enabled
+    if not DEV_SKIP_AUTH and x_api_key != API_KEY:
+        raise HTTPException(403, "Forbidden")
+    
+    status = security_guardian.get_status()
+    status["rate_limiter_details"] = {
+        "max_requests_per_minute": security_guardian.rate_limiter.MAX_REQUESTS_PER_MINUTE,
+        "max_requests_per_second": security_guardian.rate_limiter.MAX_REQUESTS_PER_SECOND,
+        "max_auth_attempts_per_hour": security_guardian.rate_limiter.MAX_AUTH_ATTEMPTS_PER_HOUR,
+        "block_duration_seconds": security_guardian.rate_limiter.BLOCK_DURATION_SECONDS,
+    }
+    return status
+
 
 # -- One-time migration endpoint (protected by API key) ------------------
 @app.post("/admin/run-migrations")

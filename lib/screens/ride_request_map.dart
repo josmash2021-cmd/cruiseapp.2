@@ -1055,6 +1055,7 @@ extension RideRequestMap on _RideRequestScreenState {
       ),
     );
 
+    _ctrl.isOnTrackingScreen = true;
     Navigator.of(context).push(
       slideUpFadeRoute(
         RiderTrackingScreen(
@@ -1076,6 +1077,7 @@ extension RideRequestMap on _RideRequestScreenState {
           tripId: s.tripId,
           firestoreTripId: s.firestoreTripId,
           onTripComplete: () {
+            _ctrl.isOnTrackingScreen = false;
             LocalDataService.clearActiveRide();
             // Pop RiderTrackingScreen, then pop RideRequestScreen
             // to return to HomeScreen (Where to? + car options)
@@ -1084,7 +1086,10 @@ extension RideRequestMap on _RideRequestScreenState {
           },
         ),
       ),
-    );
+    ).whenComplete(() {
+      // Reset flag whenever tracking screen is popped (including back gesture or cancel)
+      _ctrl.isOnTrackingScreen = false;
+    });
   }
 
 

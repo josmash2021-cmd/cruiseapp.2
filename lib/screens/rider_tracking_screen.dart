@@ -163,6 +163,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   String _anonymousFeedback = '';
   bool _connectionLost = false;
   int _pollFailCount = 0;
+  bool _cancelDialogShown = false; // guard: prevents duplicate cancel dialogs
 
   int _pickupIdx = 0;
 

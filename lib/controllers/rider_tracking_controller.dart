@@ -72,7 +72,8 @@ extension RiderTrackingController on _RiderTrackingScreenState {
             }
           } else if (st == 'cancelled' || st == 'canceled') {
             _statusPollTimer?.cancel();
-            if (mounted) {
+            if (mounted && !_cancelDialogShown) {
+              _cancelDialogShown = true;
               _showDriverCancelledDialog();
             }
           } else if (st == 'arrived' && _phase == _TrackPhase.arriving) {
@@ -163,7 +164,10 @@ extension RiderTrackingController on _RiderTrackingScreenState {
       setState(() => _phase = _TrackPhase.completed);
       _goToRating();
     } else if (status == 'cancelled' || status == 'canceled') {
-      _showDriverCancelledDialog();
+      if (!_cancelDialogShown) {
+        _cancelDialogShown = true;
+        _showDriverCancelledDialog();
+      }
     }
   }
 

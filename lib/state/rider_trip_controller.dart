@@ -198,6 +198,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _timeoutTimer; // Fix 1: client-side search timeout
   bool _isRequesting = false; // Fix 2: anti-double-tap guard
   double _surgeMultiplier = 1.0; // Surge pricing multiplier from backend
+  /// True while RiderTrackingScreen is on the navigation stack.
+  /// Prevents _refreshActiveTripOnResume from falsely transitioning to cancelled.
+  bool isOnTrackingScreen = false;
 
   RiderTripController() {
     WidgetsBinding.instance.addObserver(this); // M3: observe lifecycle
@@ -214,6 +217,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _refreshActiveTripOnResume() async {
     final tripId = _state.tripId;
     if (tripId == null) { return; } // no trip
+    // Skip if the tracking screen is active — it manages its own real-time listeners
+    if (isOnTrackingScreen) { return; }
     final phase = _state.phase;
     if (phase != RiderPhase.onTrip &&
         phase != RiderPhase.driverAssigned &&

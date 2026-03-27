@@ -42,7 +42,6 @@ import 'driver_analytics_screen.dart';
 import 'driver_inbox_screen.dart';
 import '../../services/map_launcher_service.dart';
 import '../../services/preload_service.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'driver_trip_accept_screen.dart';
 import 'trip_accepted_screen.dart';
 
@@ -1458,34 +1457,32 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final tripId = r['trip_id'] as int? ?? r['id'] as int?;
 
     // Accept via API (fire-and-forget for speed, catch errors)
-    if (!_isSimulationMode) {
-      if (offerId != null && _driverId != null) {
-        try {
-          await ApiService.acceptRideOffer(
-            offerId: offerId,
-            driverId: _driverId!,
-          );
-        } catch (e) {
-          if (mounted) _snack(S.of(context).tripNoLongerAvailable);
-          setState(() {
-            _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
-            _offerAcceptState = _OfferAcceptState.normal;
-            _acceptingCardId = null;
-          });
-          return;
-        }
-      } else if (tripId != null && _driverId != null) {
-        try {
-          await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
-        } catch (e) {
-          if (mounted) _snack(S.of(context).tripNoLongerAvailable);
-          setState(() {
-            _pendingOffers.removeWhere((o) => o['trip_id'] == tripId);
-            _offerAcceptState = _OfferAcceptState.normal;
-            _acceptingCardId = null;
-          });
-          return;
-        }
+    if (offerId != null && _driverId != null) {
+      try {
+        await ApiService.acceptRideOffer(
+          offerId: offerId,
+          driverId: _driverId!,
+        );
+      } catch (e) {
+        if (mounted) _snack(S.of(context).tripNoLongerAvailable);
+        setState(() {
+          _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
+          _offerAcceptState = _OfferAcceptState.normal;
+          _acceptingCardId = null;
+        });
+        return;
+      }
+    } else if (tripId != null && _driverId != null) {
+      try {
+        await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
+      } catch (e) {
+        if (mounted) _snack(S.of(context).tripNoLongerAvailable);
+        setState(() {
+          _pendingOffers.removeWhere((o) => o['trip_id'] == tripId);
+          _offerAcceptState = _OfferAcceptState.normal;
+          _acceptingCardId = null;
+        });
+        return;
       }
     }
 
@@ -1776,16 +1773,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _setPickupAnnotation();
       _cameraBearing = _heading;
       _animateToPosition(_pos!, zoom: 17.5, bearing: _heading, tilt: 55);
-      if (!_isSimulationMode) {
-        MapLauncherService.prefersInApp().then((inApp) {
-          if (!inApp) {
-            MapLauncherService.navigate(
-              destLat: _pickupLL.latitude,
-              destLng: _pickupLL.longitude,
-            );
-          }
-        });
-      }
+      MapLauncherService.prefersInApp().then((inApp) {
+        if (!inApp) {
+          MapLauncherService.navigate(
+            destLat: _pickupLL.latitude,
+            destLng: _pickupLL.longitude,
+          );
+        }
+      });
     } else {
       // ── Navigate to dropoff ──
       setState(() {
@@ -1798,16 +1793,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _setDropoffAnnotation();
       _cameraBearing = _heading;
       _animateToPosition(_pos!, zoom: 17.5, bearing: _heading, tilt: 55);
-      if (!_isSimulationMode) {
-        MapLauncherService.prefersInApp().then((inApp) {
-          if (!inApp) {
-            MapLauncherService.navigate(
-              destLat: _dropoffLL.latitude,
-              destLng: _dropoffLL.longitude,
-            );
-          }
-        });
-      }
+      MapLauncherService.prefersInApp().then((inApp) {
+        if (!inApp) {
+          MapLauncherService.navigate(
+            destLat: _dropoffLL.latitude,
+            destLng: _dropoffLL.longitude,
+          );
+        }
+      });
     }
   }
 
@@ -2943,9 +2936,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 child: Column(
                   children: [
                     Center(child: _earningsPill(isDark)),
-                    // Simulation mode indicator badge
-                    if (kDebugMode && _isSimulationMode)
-                      Container(
                         margin: const EdgeInsets.only(top: 8),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
@@ -3749,78 +3739,6 @@ Widget _navHeader() {
                       ),
                     ),
                   ),
-                  // Practice Mode toggle — always visible
-                  GestureDetector(
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  setState(() => _isSimulationMode = !_isSimulationMode);
-                  _snack(_isSimulationMode
-                    ? '🎮 Practice Mode ON'
-                    : '🎮 Practice Mode OFF');
-                },
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: _isSimulationMode
-                        ? _gold.withValues(alpha: 0.15)
-                        : Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _isSimulationMode
-                          ? _gold.withValues(alpha: 0.6)
-                          : Colors.white.withValues(alpha: 0.12),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _isSimulationMode
-                            ? Icons.videogame_asset_rounded
-                            : Icons.videogame_asset_off_rounded,
-                        color: _isSimulationMode ? _gold : Colors.white.withValues(alpha: 0.5),
-                        size: 18,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Practice Mode',
-                        style: TextStyle(
-                          color: _isSimulationMode ? _gold : Colors.white.withValues(alpha: 0.6),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        width: 40,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          color: _isSimulationMode
-                              ? _gold
-                              : Colors.grey.withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(11),
-                        ),
-                        child: AnimatedAlign(
-                          duration: const Duration(milliseconds: 200),
-                          alignment: _isSimulationMode
-                              ? Alignment.centerRight
-                              : Alignment.centerLeft,
-                          child: Container(
-                            width: 18,
-                            height: 18,
-                            margin: const EdgeInsets.all(2),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
               // Status bar — swipe on parent opens panel
               SizedBox(
                 height: 44,
@@ -4167,86 +4085,6 @@ Widget _navHeader() {
               const SizedBox(height: 12),
               Divider(height: 1, color: borderC),
               const SizedBox(height: 12),
-              // PRACTICE MODE toggle — always visible at top
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  setState(() => _isSimulationMode = !_isSimulationMode);
-                  Navigator.pop(context);
-                  _snack(_isSimulationMode
-                    ? '🎮 Practice Mode ON - Viajes simulados activos'
-                    : '🎮 Practice Mode OFF - Solo viajes reales');
-                },
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: _isSimulationMode
-                        ? const Color(0xFFE8C547).withValues(alpha: 0.15)
-                        : Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _isSimulationMode
-                          ? const Color(0xFFE8C547).withValues(alpha: 0.5)
-                          : Colors.white.withValues(alpha: 0.15),
-                      width: _isSimulationMode ? 1.5 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _isSimulationMode ? Icons.videogame_asset_rounded : Icons.videogame_asset_off_rounded,
-                        color: _isSimulationMode ? const Color(0xFFE8C547) : Colors.white.withValues(alpha: 0.7),
-                        size: 22,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Practice Mode',
-                              style: TextStyle(
-                                color: _isSimulationMode ? const Color(0xFFE8C547) : Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              _isSimulationMode ? 'Viajes simulados activos' : 'Activa para practicar',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        width: 48,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          color: _isSimulationMode ? const Color(0xFFE8C547) : Colors.grey.withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(13),
-                        ),
-                        child: AnimatedAlign(
-                          duration: const Duration(milliseconds: 200),
-                          alignment: _isSimulationMode ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Container(
-                            width: 22,
-                            height: 22,
-                            margin: const EdgeInsets.all(2),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
               const SizedBox(height: 16),
               Divider(height: 1, color: borderC),
               const SizedBox(height: 16),
@@ -4301,102 +4139,6 @@ Widget _navHeader() {
                   );
                 },
               ),
-              const SizedBox(height: 20),
-              // SIMULATION SPEED control (only visible when simulation mode is on)
-              if (_isSimulationMode)
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.03),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: borderC),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.speed_rounded,
-                            color: const Color(0xFFE8C547),
-                            size: 20,
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            'Simulation Speed',
-                            style: TextStyle(
-                              color: textPrimary,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '${(_simulationSpeed * 40).round()} mph',
-                              style: TextStyle(
-                                color: const Color(0xFFE8C547),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          activeTrackColor: const Color(0xFFE8C547),
-                          inactiveTrackColor: Colors.white.withValues(alpha: 0.1),
-                          thumbColor: const Color(0xFFE8C547),
-                          overlayColor: const Color(0xFFE8C547).withValues(alpha: 0.2),
-                          trackHeight: 4,
-                        ),
-                        child: Slider(
-                          value: _simulationSpeed,
-                          min: 0.5,
-                          max: 3.0,
-                          divisions: 5,
-                          onChanged: (v) {
-                            setState(() => _simulationSpeed = v);
-                          },
-                        ),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Slow',
-                            style: TextStyle(
-                              color: textMuted.withValues(alpha: 0.7),
-                              fontSize: 12,
-                            ),
-                          ),
-                          Text(
-                            'Normal',
-                            style: TextStyle(
-                              color: textMuted.withValues(alpha: 0.7),
-                              fontSize: 12,
-                            ),
-                          ),
-                          Text(
-                            'Fast',
-                            style: TextStyle(
-                              color: textMuted.withValues(alpha: 0.7),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
               const SizedBox(height: 20),
               // PAUSE and GO OFFLINE buttons row
               Row(
@@ -6790,92 +6532,6 @@ Widget _navHeader() {
               const SizedBox(height: 12),
               Divider(height: 1, color: borderC),
               const SizedBox(height: 12),
-              // ── Practice Mode toggle ──
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  setState(() => _isSimulationMode = !_isSimulationMode);
-                  _snack(_isSimulationMode
-                    ? '🎮 Practice Mode ON'
-                    : '🎮 Practice Mode OFF');
-                },
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: _isSimulationMode
-                        ? _gold.withValues(alpha: 0.15)
-                        : Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _isSimulationMode
-                          ? _gold.withValues(alpha: 0.6)
-                          : Colors.white.withValues(alpha: 0.15),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _isSimulationMode
-                            ? Icons.videogame_asset_rounded
-                            : Icons.videogame_asset_off_rounded,
-                        color: _isSimulationMode ? _gold : Colors.white.withValues(alpha: 0.6),
-                        size: 22,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Practice Mode',
-                              style: TextStyle(
-                                color: _isSimulationMode ? _gold : Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              _isSimulationMode
-                                  ? 'Viajes simulados activos'
-                                  : 'Toca para activar viajes de práctica',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.45),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        width: 46,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          color: _isSimulationMode
-                              ? _gold
-                              : Colors.grey.withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(13),
-                        ),
-                        child: AnimatedAlign(
-                          duration: const Duration(milliseconds: 200),
-                          alignment: _isSimulationMode
-                              ? Alignment.centerRight
-                              : Alignment.centerLeft,
-                          child: Container(
-                            width: 22,
-                            height: 22,
-                            margin: const EdgeInsets.all(2),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
               const SizedBox(height: 16),
               Divider(height: 1, color: borderC),
               const SizedBox(height: 16),

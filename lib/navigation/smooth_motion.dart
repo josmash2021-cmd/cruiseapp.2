@@ -8,7 +8,7 @@ import '../models/lat_lng.dart';
 class SmoothMotion {
   SmoothMotion({
     required this.onTick,
-    this.lerpFactor = 0.12,
+    this.lerpFactor = 0.15,
     this.enablePrediction = true,
   });
 

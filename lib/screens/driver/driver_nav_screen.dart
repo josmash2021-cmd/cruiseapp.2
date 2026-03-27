@@ -133,6 +133,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   bool   _hasResumedOnce   = false;
   Timer? _reFollowTimer;
 
+  // ── Motion tick throttles ─────────────────────────────────────────────────
+  DateTime? _lastAnnotUpdate;
+  DateTime? _lastUIUpdate;
+
   // ── UI state ──────────────────────────────────────────────────────────────
   bool   _isMuted          = false;
   bool   _nearPickup        = false;
@@ -367,15 +371,31 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   void _onMotionTick(LatLng pos, double bearing, double curveTilt) {
     if (!mounted) return;
-    setState(() {
-      _pos     = pos;
-      _bearing = bearing;
-    });
-    _updateCarAnnotation(pos, bearing);
+
+    // Always update position/bearing (cheap, no rebuild).
+    _pos     = pos;
+    _bearing = bearing;
+
+    final now = DateTime.now();
+
+    // Throttle annotation to ~30 fps (every 33 ms).
+    if (_lastAnnotUpdate == null ||
+        now.difference(_lastAnnotUpdate!).inMilliseconds > 33) {
+      _lastAnnotUpdate = now;
+      _updateCarAnnotation(pos, bearing);
+    }
+
+    // Throttle UI rebuild to ~4 Hz (every 250 ms) — speed, ETA, instructions.
+    if (_lastUIUpdate == null ||
+        now.difference(_lastUIUpdate!).inMilliseconds > 250) {
+      _lastUIUpdate = now;
+      setState(() {});
+    }
+
+    // Camera: use setCamera (instant) since SmoothMotion already interpolates.
     if (_cameraFollowing && !_isOverview) {
-      // Offset center ahead of driver so pin appears in the lower third
       final ahead = _lookaheadPoint(pos, bearing, 120);
-      _map?.flyTo(
+      _map?.setCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
               coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
@@ -383,7 +403,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           bearing: bearing,
           pitch: _navTilt,
         ),
-        mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
       );
     }
   }

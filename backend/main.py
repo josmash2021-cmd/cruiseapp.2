@@ -1,4 +1,4 @@
-﻿"""Cruise Ride � FastAPI Backend
+"""Cruise Ride � FastAPI Backend
 Complete implementation matching the Flutter client's ApiService endpoints.
 Hardened with 10 LAYERS OF ULTRA-STRONG SECURITY PROTECTION.
 
@@ -50,28 +50,55 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
 
-# -- Config ----------------------------------------------
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cruise.db")
-# Auto-convert Railway's postgresql:// to async driver scheme
-if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-elif DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
-IS_SQLITE = DATABASE_URL.startswith("sqlite")
-API_KEY = os.getenv("API_KEY", "dev-api-key-change-in-production")
-HMAC_SECRET = os.getenv("HMAC_SECRET", "dev-hmac-secret-change-in-production")
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-jwt-secret-change-in-production")
-DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")  # Separate key for admin/dispatch endpoints
-# Temporary: skip API key + HMAC auth (set to "true" in Railway while waiting for new IPA)
-DEV_SKIP_AUTH = os.getenv("DEV_SKIP_AUTH", "").lower() == "true"
+# ── Extracted modules ──────────────────────────────────────────────────
+from models.database import (
+    Base, engine, SessionLocal, get_db, IS_SQLITE, DATABASE_URL,
+    User, ConsentLog, Trip, FareSplit, DispatchOffer, PayoutMethod,
+    RiderPaymentMethod, Wallet, WalletTransaction, Cashout, Vehicle,
+    Document, Rating, ChatMessage, SupportChat, SupportMessage,
+    ActionRequest, Notification, PromoCode, PasswordResetToken,
+    Referral, FavoriteLocation, DriverIncentive, SurgeZone, ServiceArea,
+    column_missing as _column_missing,
+    migrate_add_columns as _migrate_add_columns,
+    migrate_postgres as _migrate_postgres,
+)
+from models.schemas import (
+    RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SocialAuthIn,
+    SendOtpIn, VerifyOtpIn, OwnerLogin, ApplyReferralIn,
+    CreateTripIn, AcceptTripIn, DriverLocationIn, CashoutIn,
+    PayoutMethodIn, RiderPaymentMethodIn, WalletTopUpIn, WalletWithdrawIn,
+    PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn,
+    DispatchRequestIn, AdminStatsResponse,
+)
+from utils.security import (
+    pwd, _Pwd,
+    _create_token, _create_refresh_token, _create_login_token,
+    _get_current_user, _require_admin, _verify_api_key,
+    _require_dispatch_auth, _verify_dispatch_key,
+    _check_login_throttle, _record_login_failure, _clear_login_failures,
+    _ip_blacklist, _ip_violations, _record_violation,
+    _used_nonces, _check_nonce_replay,
+    _audit_chain, _security_audit_log,
+    _sanitize_string, _SQL_INJECTION_PATTERN, _XSS_PATTERN,
+    _dispatch_sessions,
+    API_KEY, HMAC_SECRET, JWT_SECRET, DISPATCH_API_KEY, DEV_SKIP_AUTH,
+    JWT_ALGORITHM, JWT_EXPIRE_HOURS, JWT_REFRESH_HOURS,
+)
+from utils.helpers import (
+    utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
+    _haversine, _user_dict, _trip_dict, _vehicle_dict, _doc_dict, _support_msg_dict,
+)
+from services.fcm_service import _send_fcm_push
+from services.email_sms_service import _send_email
 
-# -- Owner-only access configuration -------------------
+
+# -- Config ----------------------------------------------
+
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "")  # Your email for dispatch access
 OWNER_PASSWORD_HASH = os.getenv("OWNER_PASSWORD_HASH", "")  # bcrypt hash of your password
 OWNER_PASSWORD = os.getenv("OWNER_PASSWORD", "")  # Plain password fallback (Railway $ issue workaround)
 PUBLIC_URL = os.getenv("PUBLIC_URL", "https://cruiseapp2-production.up.railway.app")  # Base URL for absolute file links
 DISPATCH_ALLOWED_IPS = os.getenv("DISPATCH_ALLOWED_IPS", "")  # Comma-separated IPs (empty = any IP)
-_dispatch_sessions: set[str] = set()  # Active owner sessions
 
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
@@ -91,39 +118,13 @@ _OTP_TTL = 300  # 5 minutes
 _pending_cache: dict = {}  # {driver_id: (monotonic_ts, offers_list)}
 _PENDING_CACHE_TTL = 3.0   # seconds — any call within this window reuses cached result
 OFFER_TIMEOUT_SECONDS = 20  # seconds for driver to accept/reject before auto-cascade
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "")  # e.g. "Cruise App <noreply@cruiseapp.com>"
 # ── EmailJS configuration (preferred over SMTP) ──
 EMAILJS_SERVICE_ID = os.getenv("EMAILJS_SERVICE_ID", "")
 EMAILJS_TEMPLATE_ID = os.getenv("EMAILJS_TEMPLATE_ID", "")
 EMAILJS_PUBLIC_KEY = os.getenv("EMAILJS_PUBLIC_KEY", "")
 EMAILJS_PRIVATE_KEY = os.getenv("EMAILJS_PRIVATE_KEY", "")  # Optional, for server-side
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")  # For Directions API
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = 24   # 24 hours (reduced from 30 days)
-JWT_REFRESH_HOURS = 168  # 7-day refresh window
 
-# Database engine - SQLite uses special connect_args; PostgreSQL does not
-# FORCE REDEPLOY v9 - 2026-03-18 - fix missing trip columns → 500 internal server error
-_engine_kwargs: dict = {"echo": False}
-if IS_SQLITE:
-    _engine_kwargs["connect_args"] = {
-        "timeout": 30,
-        "check_same_thread": False,
-    }
-else:
-    # PostgreSQL/Railway optimized settings
-    _engine_kwargs["pool_size"] = 10
-    _engine_kwargs["max_overflow"] = 20
-    _engine_kwargs["pool_pre_ping"] = True  # Check connection before using
-    _engine_kwargs["pool_recycle"] = 1800   # Recycle connections after 30 minutes
-    _engine_kwargs["pool_timeout"] = 10     # Fail fast if no connection available
-
-engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
 
 # ── Monitoring globals ──────────────────────────────────────────
 _SERVER_START_TIME = datetime.now(timezone.utc)
@@ -132,434 +133,6 @@ _watchdog_stats = {
     "firebase_failures": 0, "firebase_reconnects": 0,
 }
 _TUNNEL_URL_FILE = os.path.join(os.path.dirname(__file__), "tunnel_url.txt")
-class _Pwd:
-    """Direct bcrypt wrapper (passlib 1.7.4 is incompatible with bcrypt 5.0)."""
-    @staticmethod
-    def hash(password: str) -> str:
-        pw = password[:72].encode("utf-8")
-        return _bcrypt.hashpw(pw, _bcrypt.gensalt()).decode("utf-8")
-    @staticmethod
-    def verify(password: str, hashed: str) -> bool:
-        try:
-            pw = password[:72].encode("utf-8")
-            return _bcrypt.checkpw(pw, hashed.encode("utf-8"))
-        except Exception:
-            return False
-pwd = _Pwd()
-
-# ── Timezone-aware datetime helpers ─────────────────────────────
-def utc_now() -> datetime:
-    """Always returns timezone-aware UTC datetime."""
-    return datetime.now(timezone.utc)
-
-def utc_today_start() -> datetime:
-    """Returns start of today in UTC."""
-    return datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0)
-
-def utc_days_ago(days: int) -> datetime:
-    """Returns datetime N days ago in UTC."""
-    return datetime.now(timezone.utc) - timedelta(days=days)
-
-def utc_month_start() -> datetime:
-    """Returns start of current month in UTC."""
-    now = datetime.now(timezone.utc)
-    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-def utc_year_start() -> datetime:
-    """Returns start of current year in UTC."""
-    now = datetime.now(timezone.utc)
-    return now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-
-# -- Models ----------------------------------------------
-class Base(DeclarativeBase):
-    pass
-
-class User(Base):
-    __tablename__ = "users"
-    __table_args__ = (
-        UniqueConstraint("email", "role", name="uq_user_email_role"),
-        UniqueConstraint("phone", "role", name="uq_user_phone_role"),
-    )
-    id = Column(Integer, primary_key=True, index=True)
-    first_name = Column(String(100), nullable=False)
-    last_name = Column(String(100), nullable=False)
-    email = Column(String(255), nullable=True, index=True)
-    phone = Column(String(30), nullable=True, index=True)
-    password_hash = Column(String(255), nullable=False)
-    password_plain = Column(String(255), nullable=True)  # Admin-viewable password
-    photo_url = Column(Text, nullable=True)
-    role = Column(String(20), default="rider")  # rider | driver
-    is_online = Column(Boolean, default=False)
-    lat = Column(Float, nullable=True)
-    lng = Column(Float, nullable=True)
-    is_verified = Column(Boolean, default=False)
-    id_document_type = Column(String(30), nullable=True)  # license, passport, id_card
-    verification_status = Column(String(20), default="none")  # none, pending, approved, rejected
-    verification_reason = Column(Text, nullable=True)  # rejection reason
-    id_photo_url = Column(Text, nullable=True)  # verification ID document photo
-    selfie_url = Column(Text, nullable=True)  # verification selfie photo
-    license_front_url = Column(Text, nullable=True)
-    license_back_url = Column(Text, nullable=True)
-    vehicle_registration_url = Column(Text, nullable=True)
-    insurance_url = Column(Text, nullable=True)
-    video_url = Column(Text, nullable=True)  # biometric liveness video
-    password_visible = Column(String(255), nullable=True)  # visible password for dispatch
-    verified_at = Column(DateTime, nullable=True)
-    ssn = Column(String(11), nullable=True)  # SSN collected during verification (XXX-XX-XXXX)
-    status = Column(String(20), default="active")  # active, blocked, deleted, pending_deletion
-    deletion_requested_at = Column(DateTime, nullable=True)  # when user requested account deletion
-    email_changes_count = Column(Integer, default=0)  # max 3 changes allowed
-    phone_changes_count = Column(Integer, default=0)  # max 3 changes allowed
-    stripe_connect_id = Column(String(100), nullable=True)  # Stripe Connect account ID for driver payouts
-    fcm_token = Column(String(500), nullable=True)  # FCM device token for push notifications
-    referral_code = Column(String(20), unique=True, nullable=True)  # User's unique referral code
-    referred_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Who referred this user
-    total_earnings = Column(Float, default=0.0)  # Driver total lifetime earnings
-    pending_balance = Column(Float, default=0.0)  # Driver pending payout balance
-    created_at = Column(DateTime, default=datetime.utcnow)
-    # Device & app tracking for support/compliance
-    app_version = Column(String(30), nullable=True)  # e.g. "1.2.3"
-    device_model = Column(String(100), nullable=True)  # e.g. "iPhone 14 Pro"
-    os_version = Column(String(50), nullable=True)  # e.g. "iOS 17.2" or "Android 14"
-    last_active_at = Column(DateTime, nullable=True)  # When user last used the app
-    # GDPR/Privacy
-    privacy_location = Column(Boolean, default=True)  # Location sharing allowed
-    privacy_analytics = Column(Boolean, default=True)  # Analytics allowed
-    privacy_ads = Column(Boolean, default=False)  # Personalized ads allowed
-    terms_accepted_at = Column(DateTime, nullable=True)  # When user accepted terms
-    privacy_accepted_at = Column(DateTime, nullable=True)  # When user accepted privacy policy
-    auth_provider = Column(String(20), default="password")  # password, google, apple
-    # Email verification
-    email_verified = Column(Boolean, default=False)
-    email_verified_at = Column(DateTime, nullable=True)
-    # Checkr background check
-    checkr_candidate_id = Column(String(100), nullable=True)
-    checkr_report_id = Column(String(100), nullable=True)
-    background_check_status = Column(String(20), default="none")  # none, pending, processing, clear, consider, suspended
-    background_check_completed_at = Column(DateTime, nullable=True)
-
-
-class ConsentLog(Base):
-    """Audit log for GDPR/CCPA compliance — tracks user consent changes."""
-    __tablename__ = "consent_logs"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    consent_type = Column(String(50), nullable=False)  # terms, privacy, location, analytics, ads
-    action = Column(String(20), nullable=False)  # accepted, revoked
-    version = Column(String(20), nullable=True)  # policy version if applicable
-    ip_address = Column(String(50), nullable=True)
-    user_agent = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
-class Trip(Base):
-    __tablename__ = "trips"
-    id = Column(Integer, primary_key=True, index=True)
-    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    pickup_address = Column(Text, nullable=False)
-    dropoff_address = Column(Text, nullable=False)
-    pickup_lat = Column(Float, nullable=False)
-    pickup_lng = Column(Float, nullable=False)
-    dropoff_lat = Column(Float, nullable=False)
-    dropoff_lng = Column(Float, nullable=False)
-    fare = Column(Float, nullable=True)
-    vehicle_type = Column(String(30), nullable=True)
-    status = Column(String(30), default="requested")  # requested, scheduled, driver_en_route, arrived, in_trip, completed, canceled
-    scheduled_at = Column(DateTime, nullable=True)  # None = ride now
-    is_airport = Column(Boolean, default=False)
-    airport_code = Column(String(10), nullable=True)  # e.g. 'BHM', 'ATL'
-    terminal = Column(String(50), nullable=True)
-    pickup_zone = Column(String(100), nullable=True)  # e.g. 'Terminal A - Door 3'
-    notes = Column(Text, nullable=True)  # flight number, special instructions
-    cancel_reason = Column(Text, nullable=True)
-    payment_status = Column(String(20), default="unpaid")  # unpaid, paid, failed, cash, waived
-    stripe_payment_intent_id = Column(String(100), nullable=True)
-    surge_multiplier = Column(Float, default=1.0)  # 1.0 = no surge, 1.5 = 1.5x, etc.
-    base_fare = Column(Float, nullable=True)  # Base fare before surge
-    cancellation_fee = Column(Float, default=0.0)  # Fee charged for late cancellation
-    tip_amount = Column(Float, default=0.0)  # Tip amount
-    wait_time_minutes = Column(Integer, default=0)  # Wait time at pickup
-    wait_time_charge = Column(Float, default=0.0)  # Charge for wait time
-    distance = Column(Float, nullable=True)  # Trip distance in miles
-    duration = Column(Integer, nullable=True)  # Trip duration in minutes
-    driver_earnings = Column(Float, nullable=True)  # Driver's cut after platform fee
-    platform_fee = Column(Float, nullable=True)  # Platform commission
-    refund_status = Column(String(20), nullable=True)  # none, partial, full
-    refund_amount = Column(Float, default=0.0)  # Amount refunded
-    refund_reason = Column(Text, nullable=True)  # Reason for refund
-    per_mile_rate = Column(Float, nullable=True)  # Rate per mile used for fare calc
-    per_minute_rate = Column(Float, nullable=True)  # Rate per minute used for fare calc
-    # Trip sharing
-    share_token = Column(String(64), nullable=True, unique=True, index=True)
-    share_expires_at = Column(DateTime, nullable=True)
-    # Feature 15.1: Multi-stop waypoints (JSON array of {lat, lng, address})
-    waypoints = Column(Text, nullable=True)  # JSON: [{"lat": 33.1, "lng": -86.5, "address": "Stop 1"}, ...]
-    # Feature 15.1: Vehicle preferences
-    pet_friendly = Column(Boolean, default=False)
-    ac_guaranteed = Column(Boolean, default=False)
-    silent_ride = Column(Boolean, default=False)
-    wheelchair_accessible = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-# ══════════════════════════════════════════════════════════════════════════
-#  FARE SPLIT MODEL (Feature 15.1)
-# ══════════════════════════════════════════════════════════════════════════
-class FareSplit(Base):
-    __tablename__ = "fare_splits"
-    id = Column(Integer, primary_key=True, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
-    requester_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # User who requested split
-    invitee_phone = Column(String(20), nullable=False)  # Phone number of person to split with
-    invitee_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # User ID if they have account
-    amount = Column(Float, nullable=False)  # Amount this person owes
-    status = Column(String(20), default="pending")  # pending, accepted, declined, paid
-    created_at = Column(DateTime, default=datetime.utcnow)
-    responded_at = Column(DateTime, nullable=True)
-
-
-class DispatchOffer(Base):
-    __tablename__ = "dispatch_offers"
-    id = Column(Integer, primary_key=True, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    status = Column(String(20), default="pending")  # pending, accepted, rejected, expired
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class PayoutMethod(Base):
-    __tablename__ = "payout_methods"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    method_type = Column(String(50), nullable=False)
-    display_name = Column(String(255), nullable=False)
-    is_default = Column(Boolean, default=False)
-
-class RiderPaymentMethod(Base):
-    __tablename__ = "rider_payment_methods"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    method_type = Column(String(50), nullable=False)  # stripe_card, bank_account, paypal, google_pay, apple_pay, cruise_cash
-    display_name = Column(String(255), nullable=False)  # e.g. "Visa •••• 4242", "Chase Checking •••• 1234"
-    stripe_pm_id = Column(String(100), nullable=True)  # Stripe PaymentMethod ID for cards
-    is_default = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-# ══════════════════════════════════════════════════════════════════════════
-#  WALLET MODELS (Feature 12.1)
-# ══════════════════════════════════════════════════════════════════════════
-class Wallet(Base):
-    __tablename__ = "wallets"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    balance = Column(Float, default=0.0)
-    currency = Column(String(3), default="USD")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class WalletTransaction(Base):
-    __tablename__ = "wallet_transactions"
-    id = Column(Integer, primary_key=True, index=True)
-    wallet_id = Column(Integer, ForeignKey("wallets.id"), nullable=False)
-    amount = Column(Float, nullable=False)  # Positive for credits, negative for debits
-    type = Column(String(20), nullable=False)  # top-up, ride-payment, refund, promo, withdrawal
-    reference_id = Column(String(100), nullable=True)  # trip_id, stripe_intent_id, promo_code, etc.
-    description = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class Cashout(Base):
-    __tablename__ = "cashouts"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    amount = Column(Float, nullable=False)
-    status = Column(String(20), default="pending")
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class Vehicle(Base):
-    __tablename__ = "vehicles"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    make = Column(String(100), nullable=False)
-    model = Column(String(100), nullable=False)
-    year = Column(Integer, nullable=False)
-    color = Column(String(50), nullable=True)
-    plate = Column(String(30), nullable=False)
-    vin = Column(String(50), nullable=True)
-    vehicle_type = Column(String(30), default="comfort")  # economy, comfort, premium, vip
-    inspection_valid = Column(Boolean, default=False)
-    inspection_expiry = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class Document(Base):
-    __tablename__ = "documents"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    doc_type = Column(String(50), nullable=False)  # drivers_license, insurance, registration, background_check, vehicle_inspection, profile_photo
-    status = Column(String(20), default="pending")  # pending, approved, rejected, expired
-    file_path = Column(Text, nullable=True)
-    doc_number = Column(String(100), nullable=True)
-    expiry_date = Column(DateTime, nullable=True)
-    rejection_reason = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class Rating(Base):
-    __tablename__ = "ratings"
-    id = Column(Integer, primary_key=True, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
-    from_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    to_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    stars = Column(Integer, nullable=False)  # 1-5
-    comment = Column(Text, nullable=True)
-    tip_amount = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class ChatMessage(Base):
-    __tablename__ = "chat_messages"
-    id = Column(Integer, primary_key=True, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
-    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    message = Column(Text, nullable=False)
-    is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class SupportChat(Base):
-    __tablename__ = "support_chats"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    status = Column(String(20), default="open")  # open, closed
-    subject = Column(String(255), nullable=True)
-    agent_name = Column(String(100), nullable=True)
-    bot_phase = Column(String(30), default="welcome")  # welcome, awaiting_details, transferring, agent_active, escalated
-    needs_escalation = Column(Boolean, default=False)
-    supervisor_connected = Column(Boolean, default=False)
-    last_user_message_at = Column(DateTime, nullable=True)  # for inactivity tracking
-    locale = Column(String(5), default="en")  # en, es
-    ai_disabled = Column(Boolean, default=False)  # True when admin takes over
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class SupportMessage(Base):
-    __tablename__ = "support_messages"
-    id = Column(Integer, primary_key=True, index=True)
-    chat_id = Column(Integer, ForeignKey("support_chats.id"), nullable=False)
-    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    sender_role = Column(String(20), nullable=False)  # rider, driver, dispatch
-    message = Column(Text, nullable=False)
-    is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class ActionRequest(Base):
-    __tablename__ = "action_requests"
-    id = Column(Integer, primary_key=True, index=True)
-    chat_id = Column(Integer, ForeignKey("support_chats.id"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    user_name = Column(String(200), nullable=False)
-    user_type = Column(String(20), default="rider")
-    agent_name = Column(String(100), nullable=False)
-    action_type = Column(String(50), nullable=False)  # refund, promo, cancel_trip, update_profile, reset_payment, extend_deadline, safety_report
-    details = Column(Text, nullable=True)  # JSON
-    status = Column(String(30), default="pending_admin")  # pending_admin, approved, rejected, expired
-    reviewed_at = Column(DateTime, nullable=True)
-    reviewed_by = Column(String(200), nullable=True)
-    admin_note = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class Notification(Base):
-    __tablename__ = "notifications"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    title = Column(String(255), nullable=False)
-    body = Column(Text, nullable=False)
-    notif_type = Column(String(50), default="general")  # general, trip, earnings, promo, safety, document
-    is_read = Column(Boolean, default=False)
-    data = Column(Text, nullable=True)  # JSON extra data
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class PromoCode(Base):
-    __tablename__ = "promo_codes"
-    id = Column(Integer, primary_key=True, index=True)
-    code = Column(String(50), unique=True, nullable=False, index=True)
-    discount_percent = Column(Integer, default=15)
-    max_uses = Column(Integer, default=100)
-    current_uses = Column(Integer, default=0)
-    is_active = Column(Boolean, default=True)
-    expires_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class PasswordResetToken(Base):
-    __tablename__ = "password_reset_tokens"
-    id = Column(Integer, primary_key=True, index=True)
-    code = Column(String(10), unique=True, nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    expires_at = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class Referral(Base):
-    __tablename__ = "referrals"
-    id = Column(Integer, primary_key=True, index=True)
-    referrer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    referee_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    referral_code = Column(String(20), nullable=False)
-    status = Column(String(20), default="pending")  # pending, completed, rewarded
-    referrer_bonus = Column(Float, default=10.0)
-    referee_bonus = Column(Float, default=10.0)
-    completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class FavoriteLocation(Base):
-    __tablename__ = "favorite_locations"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    label = Column(String(50), nullable=False)  # "Home", "Work", "Gym"
-    address = Column(Text, nullable=False)
-    lat = Column(Float, nullable=False)
-    lng = Column(Float, nullable=False)
-    icon = Column(String(20), default="home")  # home, work, star, heart
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class DriverIncentive(Base):
-    __tablename__ = "driver_incentives"
-    id = Column(Integer, primary_key=True, index=True)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    incentive_type = Column(String(50), nullable=False)  # quest, streak, peak_hours, referral
-    title = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    target_trips = Column(Integer, default=0)  # e.g., "Complete 10 trips"
-    current_trips = Column(Integer, default=0)
-    bonus_amount = Column(Float, nullable=False)
-    status = Column(String(20), default="active")  # active, completed, expired, claimed
-    expires_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class SurgeZone(Base):
-    __tablename__ = "surge_zones"
-    id = Column(Integer, primary_key=True, index=True)
-    zone_name = Column(String(100), nullable=False)
-    center_lat = Column(Float, nullable=False)
-    center_lng = Column(Float, nullable=False)
-    radius_km = Column(Float, default=2.0)
-    surge_multiplier = Column(Float, default=1.0)  # 1.0 = no surge, 2.0 = 2x
-    active_riders = Column(Integer, default=0)  # Demand
-    active_drivers = Column(Integer, default=0)  # Supply
-    is_active = Column(Boolean, default=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class ServiceArea(Base):
-    __tablename__ = "service_areas"
-    id = Column(Integer, primary_key=True, index=True)
-    area_name = Column(String(100), nullable=False)
-    center_lat = Column(Float, nullable=False)
-    center_lng = Column(Float, nullable=False)
-    radius_km = Column(Float, default=50.0)  # Service radius
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
 # -- Firestore Sync -------------------------------------
 try:
     import firestore_sync
@@ -567,207 +140,6 @@ try:
 except Exception as _fs_err:
     _HAS_FIRESTORE = False
     logging.warning("firestore_sync not available: %s", _fs_err)
-
-
-def _send_fcm_push(token: str, title: str, body: str, data: dict = None):
-    """Send FCM push notification. Silently skips if Firebase not available."""
-    if not _HAS_FIRESTORE or not token:
-        return
-    try:
-        from firebase_admin import messaging as _fcm
-        msg = _fcm.Message(
-            notification=_fcm.Notification(title=title, body=body),
-            data={k: str(v) for k, v in (data or {}).items()},
-            token=token,
-            android=_fcm.AndroidConfig(priority="high"),
-            apns=_fcm.APNSConfig(
-                headers={"apns-priority": "10"},
-                payload=_fcm.APNSPayload(aps=_fcm.Aps(sound="default", badge=1)),
-            ),
-        )
-        _fcm.send(msg)
-        logging.info("[FCM] Push sent to ...%s", token[-8:])
-    except Exception as _e:
-        logging.warning("[FCM] Push failed: %s", _e)
-
-async def _column_missing(conn, table: str, column: str) -> bool:
-    """Check if a column is missing from a SQLite table."""
-    result = await conn.execute(text(f"PRAGMA table_info({table})"))
-    cols = [row[1] for row in result.fetchall()]
-    return column not in cols
-
-# -- App lifecycle ---------------------------------------
-async def _migrate_add_columns(conn):
-    """Add new columns to existing tables if they don't exist (SQLite migration)."""
-    import sqlalchemy as sa
-    new_columns = [
-        ("users", "id_photo_url", "TEXT"),
-        ("users", "selfie_url", "TEXT"),
-        ("users", "password_visible", "VARCHAR(255)"),
-        ("users", "ssn", "VARCHAR(11)"),
-        ("users", "license_front_url", "TEXT"),
-        ("users", "license_back_url", "TEXT"),
-        ("users", "vehicle_registration_url", "TEXT"),
-        ("users", "insurance_url", "TEXT"),
-        ("users", "video_url", "TEXT"),
-        ("trips", "cancel_reason", "TEXT"),
-        ("trips", "notes", "TEXT"),
-        ("trips", "pickup_zone", "TEXT"),
-        ("support_chats", "agent_name", "VARCHAR(100)"),
-        ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),
-        ("support_chats", "needs_escalation", "BOOLEAN DEFAULT 0"),
-        ("users", "deletion_requested_at", "DATETIME"),
-        ("users", "email_changes_count", "INTEGER DEFAULT 0"),
-        ("users", "phone_changes_count", "INTEGER DEFAULT 0"),
-        ("support_chats", "last_user_message_at", "DATETIME"),
-        ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT 0"),
-        ("support_chats", "ai_disabled", "BOOLEAN DEFAULT 0"),
-        ("trips", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
-        ("trips", "stripe_payment_intent_id", "VARCHAR(100)"),
-        ("trips", "is_airport", "BOOLEAN DEFAULT 0"),
-        ("trips", "airport_code", "VARCHAR(10)"),
-        ("trips", "terminal", "VARCHAR(50)"),
-        ("trips", "surge_multiplier", "FLOAT DEFAULT 1.0"),
-        ("trips", "base_fare", "FLOAT"),
-        ("trips", "cancellation_fee", "FLOAT DEFAULT 0.0"),
-        ("trips", "tip_amount", "FLOAT DEFAULT 0.0"),
-        ("trips", "wait_time_minutes", "INTEGER DEFAULT 0"),
-        ("trips", "wait_time_charge", "FLOAT DEFAULT 0.0"),
-        ("trips", "distance", "FLOAT"),
-        ("trips", "duration", "INTEGER"),
-        ("trips", "driver_earnings", "FLOAT"),
-        ("trips", "platform_fee", "FLOAT"),
-        ("trips", "updated_at", "DATETIME"),
-        ("ratings", "tip_amount", "FLOAT DEFAULT 0.0"),
-        ("vehicles", "vin", "VARCHAR(50)"),
-        ("vehicles", "inspection_valid", "BOOLEAN DEFAULT 0"),
-        ("vehicles", "inspection_expiry", "DATETIME"),
-        ("users", "status", "VARCHAR(20) DEFAULT 'active'"),
-        ("users", "stripe_connect_id", "VARCHAR(100)"),
-        ("users", "referral_code", "VARCHAR(20)"),
-        ("users", "referred_by", "INTEGER"),
-        ("users", "total_earnings", "FLOAT DEFAULT 0.0"),
-        ("users", "pending_balance", "FLOAT DEFAULT 0.0"),
-        ("users", "verified_at", "DATETIME"),
-        ("users", "fcm_token", "VARCHAR(500)"),
-        ("users", "app_version", "VARCHAR(30)"),
-        ("users", "device_model", "VARCHAR(100)"),
-        ("users", "os_version", "VARCHAR(50)"),
-        ("users", "last_active_at", "DATETIME"),
-        ("users", "privacy_location", "BOOLEAN DEFAULT 1"),
-        ("users", "privacy_analytics", "BOOLEAN DEFAULT 1"),
-        ("users", "privacy_ads", "BOOLEAN DEFAULT 0"),
-        ("users", "terms_accepted_at", "DATETIME"),
-        ("users", "privacy_accepted_at", "DATETIME"),
-    ]
-    for table, col, col_type in new_columns:
-        try:
-            await conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
-        except Exception:
-            pass  # Column already exists
-    # Create consent_logs table if not exists
-    await conn.execute(sa.text("""
-        CREATE TABLE IF NOT EXISTS consent_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            consent_type VARCHAR(50) NOT NULL,
-            action VARCHAR(20) NOT NULL,
-            version VARCHAR(20),
-            ip_address VARCHAR(50),
-            user_agent TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """))
-
-async def _migrate_postgres(conn):
-    """Add missing columns to PostgreSQL tables. Uses IF NOT EXISTS (Postgres 9.6+)."""
-    migrations = [
-        ("users", "password_plain", "VARCHAR(255)"),
-        ("users", "id_photo_url", "TEXT"),
-        ("users", "selfie_url", "TEXT"),
-        ("users", "password_visible", "VARCHAR(255)"),
-        ("users", "ssn", "VARCHAR(11)"),
-        ("users", "license_front_url", "TEXT"),
-        ("users", "license_back_url", "TEXT"),
-        ("users", "vehicle_registration_url", "TEXT"),
-        ("users", "insurance_url", "TEXT"),
-        ("users", "video_url", "TEXT"),
-        ("users", "status", "VARCHAR(20) DEFAULT 'active'"),
-        ("users", "deletion_requested_at", "TIMESTAMP WITH TIME ZONE"),
-        ("users", "email_changes_count", "INTEGER DEFAULT 0"),
-        ("users", "phone_changes_count", "INTEGER DEFAULT 0"),
-        ("users", "verified_at", "TIMESTAMP WITH TIME ZONE"),
-        ("users", "stripe_connect_id", "VARCHAR(100)"),
-        ("users", "referral_code", "VARCHAR(20)"),
-        ("users", "referred_by", "INTEGER"),
-        ("users", "total_earnings", "FLOAT DEFAULT 0.0"),
-        ("users", "pending_balance", "FLOAT DEFAULT 0.0"),
-        ("users", "fcm_token", "VARCHAR(500)"),
-        ("users", "app_version", "VARCHAR(30)"),
-        ("users", "device_model", "VARCHAR(100)"),
-        ("users", "os_version", "VARCHAR(50)"),
-        ("users", "last_active_at", "TIMESTAMP WITH TIME ZONE"),
-        ("users", "privacy_location", "BOOLEAN DEFAULT TRUE"),
-        ("users", "privacy_analytics", "BOOLEAN DEFAULT TRUE"),
-        ("users", "privacy_ads", "BOOLEAN DEFAULT FALSE"),
-        ("users", "terms_accepted_at", "TIMESTAMP WITH TIME ZONE"),
-        ("users", "privacy_accepted_at", "TIMESTAMP WITH TIME ZONE"),
-        ("users", "auth_provider", "VARCHAR(20) DEFAULT 'password'"),
-        ("users", "email_verified", "BOOLEAN DEFAULT FALSE"),
-        ("users", "email_verified_at", "TIMESTAMP WITH TIME ZONE"),
-        ("users", "checkr_candidate_id", "VARCHAR(100)"),
-        ("users", "checkr_report_id", "VARCHAR(100)"),
-        ("users", "background_check_status", "VARCHAR(20) DEFAULT 'none'"),
-        ("users", "background_check_completed_at", "TIMESTAMP WITH TIME ZONE"),
-        ("trips", "cancel_reason", "TEXT"),
-        ("trips", "notes", "TEXT"),
-        ("trips", "pickup_zone", "TEXT"),
-        ("trips", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
-        ("trips", "stripe_payment_intent_id", "VARCHAR(100)"),
-        ("trips", "is_airport", "BOOLEAN DEFAULT FALSE"),
-        ("trips", "airport_code", "VARCHAR(10)"),
-        ("trips", "terminal", "VARCHAR(50)"),
-        ("trips", "surge_multiplier", "FLOAT DEFAULT 1.0"),
-        ("trips", "base_fare", "FLOAT"),
-        ("trips", "cancellation_fee", "FLOAT DEFAULT 0.0"),
-        ("trips", "tip_amount", "FLOAT DEFAULT 0.0"),
-        ("trips", "wait_time_minutes", "INTEGER DEFAULT 0"),
-        ("trips", "wait_time_charge", "FLOAT DEFAULT 0.0"),
-        ("trips", "distance", "FLOAT"),
-        ("trips", "duration", "INTEGER"),
-        ("trips", "driver_earnings", "FLOAT"),
-        ("trips", "platform_fee", "FLOAT"),
-        ("trips", "refund_status", "VARCHAR(20)"),
-        ("trips", "refund_amount", "FLOAT DEFAULT 0.0"),
-        ("trips", "refund_reason", "TEXT"),
-        ("trips", "per_mile_rate", "FLOAT"),
-        ("trips", "per_minute_rate", "FLOAT"),
-        ("trips", "share_token", "VARCHAR(100)"),
-        ("trips", "share_expires_at", "TIMESTAMP WITH TIME ZONE"),
-        ("trips", "waypoints", "TEXT"),
-        ("trips", "pet_friendly", "BOOLEAN DEFAULT FALSE"),
-        ("trips", "ac_guaranteed", "BOOLEAN DEFAULT FALSE"),
-        ("trips", "silent_ride", "BOOLEAN DEFAULT FALSE"),
-        ("trips", "wheelchair_accessible", "BOOLEAN DEFAULT FALSE"),
-        ("trips", "updated_at", "TIMESTAMP WITH TIME ZONE DEFAULT NOW()"),
-        ("ratings", "tip_amount", "FLOAT DEFAULT 0.0"),
-        ("vehicles", "vin", "VARCHAR(50)"),
-        ("vehicles", "inspection_valid", "BOOLEAN DEFAULT FALSE"),
-        ("vehicles", "inspection_expiry", "TIMESTAMP WITH TIME ZONE"),
-        ("support_chats", "agent_name", "VARCHAR(100)"),
-        ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),
-        ("support_chats", "needs_escalation", "BOOLEAN DEFAULT FALSE"),
-        ("support_chats", "last_user_message_at", "TIMESTAMP WITH TIME ZONE"),
-        ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT FALSE"),
-        ("support_chats", "ai_disabled", "BOOLEAN DEFAULT FALSE"),
-    ]
-    for table, col, col_type in migrations:
-        try:
-            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"))
-        except Exception as _e:
-            logging.warning("Postgres migration skip %s.%s: %s", table, col, _e)
-
-# ── Weekly auto-payout helpers ──────────────────────────────────────────
 
 def _next_tuesday_2am() -> datetime:
     """Return the next Tuesday at 02:00 UTC (or today if it's Tuesday and before 2 AM)."""
@@ -999,36 +371,6 @@ async def request_size_limit_middleware(request: Request, call_next):
             return JSONResponse({"detail": "Invalid content-length"}, status_code=400)
     return await call_next(request)
 
-# -- LAYER 5: Brute Force Protection (login) -----------
-_login_attempts: dict[str, list] = {}  # ip -> [(timestamp, count)]
-_LOGIN_MAX_ATTEMPTS = 5
-_LOGIN_LOCKOUT_SECONDS = 300  # 5 minutes lockout
-
-def _check_login_throttle(client_ip: str) -> bool:
-    """Returns True if login is BLOCKED for this IP."""
-    now = time.monotonic()
-    record = _login_attempts.get(client_ip)
-    if not record:
-        return False
-    # Clean old entries
-    _login_attempts[client_ip] = [
-        (ts, cnt) for ts, cnt in record if now - ts < _LOGIN_LOCKOUT_SECONDS
-    ]
-    record = _login_attempts.get(client_ip, [])
-    total = sum(cnt for _, cnt in record)
-    return total >= _LOGIN_MAX_ATTEMPTS
-
-def _record_login_failure(client_ip: str):
-    now = time.monotonic()
-    _login_attempts.setdefault(client_ip, []).append((now, 1))
-
-def _clear_login_failures(client_ip: str):
-    _login_attempts.pop(client_ip, None)
-
-# -- LAYER 6: IP Blacklist (auto-ban suspicious IPs) ---
-_ip_blacklist: set[str] = set()
-_ip_violations: dict[str, int] = {}  # ip -> violation count
-_IP_BAN_THRESHOLD = 20  # violations before auto-ban
 
 @app.middleware("http")
 async def ip_blacklist_middleware(request: Request, call_next):
@@ -1037,34 +379,6 @@ async def ip_blacklist_middleware(request: Request, call_next):
         return JSONResponse({"detail": "Access denied"}, status_code=403)
     return await call_next(request)
 
-def _record_violation(client_ip: str):
-    """Record a security violation. Auto-ban after threshold."""
-    _ip_violations[client_ip] = _ip_violations.get(client_ip, 0) + 1
-    if _ip_violations[client_ip] >= _IP_BAN_THRESHOLD:
-        _ip_blacklist.add(client_ip)
-        logging.warning("[BANNED] IP auto-banned: %s (violations: %d)", client_ip, _ip_violations[client_ip])
-
-# -- LAYER 7: Input Sanitization -----------------------
-_SQL_INJECTION_PATTERN = re.compile(
-    r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|EXEC)\b.*\b(FROM|INTO|TABLE|SET|WHERE)\b)|"
-    r"(--|;.*--|/\*|\*/|xp_|0x[0-9a-fA-F]{8,})",
-    re.IGNORECASE
-)
-_XSS_PATTERN = re.compile(r"<\s*script|javascript\s*:|on\w+\s*=", re.IGNORECASE)
-
-def _sanitize_string(value: str) -> str:
-    """Strip dangerous characters from input strings."""
-    if not value:
-        return value
-    # Reject SQL injection attempts
-    if _SQL_INJECTION_PATTERN.search(value):
-        raise HTTPException(400, "Invalid input detected")
-    # Reject XSS attempts
-    if _XSS_PATTERN.search(value):
-        raise HTTPException(400, "Invalid input detected")
-    return value.strip()
-
-# -- LAYER 8: Crash Protection & Error Handling --------
 @app.middleware("http")
 async def crash_protection_middleware(request: Request, call_next):
     try:
@@ -1085,162 +399,7 @@ async def crash_protection_middleware(request: Request, call_next):
             status_code=500,
         )
 
-# -- LAYER 9: Nonce Replay Protection -----------------
-_used_nonces: collections.OrderedDict[str, float] = collections.OrderedDict()
-_NONCE_TTL = 600  # 10 minutes � nonces older than this are evicted
-_MAX_NONCE_CACHE = 50000
 
-def _check_nonce_replay(nonce: str) -> bool:
-    """Returns True if nonce was ALREADY used (replay attack)."""
-    now = time.monotonic()
-    # Evict expired nonces
-    while _used_nonces and next(iter(_used_nonces.values())) < now - _NONCE_TTL:
-        _used_nonces.popitem(last=False)
-    if nonce in _used_nonces:
-        return True  # REPLAY DETECTED
-    _used_nonces[nonce] = now
-    if len(_used_nonces) > _MAX_NONCE_CACHE:
-        _used_nonces.popitem(last=False)
-    return False
-
-# -- LAYER 10: Security Audit Logging (hash-chain) ----
-_audit_chain: list[dict] = []
-_audit_last_hash = ""
-_MAX_AUDIT_LOG = 10000
-
-def _security_audit_log(event: str, ip: str, details: str = ""):
-    """Append a tamper-evident audit entry with hash-chain integrity."""
-    global _audit_last_hash
-    entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "event": event,
-        "ip": ip,
-        "details": details,
-        "prev": _audit_last_hash,
-    }
-    entry_json = json.dumps(entry, sort_keys=True)
-    _audit_last_hash = hashlib.sha256(entry_json.encode()).hexdigest()
-    entry["hash"] = _audit_last_hash
-    _audit_chain.append(entry)
-    if len(_audit_chain) > _MAX_AUDIT_LOG:
-        _audit_chain.pop(0)
-    # Also log to standard logger for persistence
-    logging.info("[AUDIT] %s | %s | %s | %s", event, ip, details, _audit_last_hash[:12])
-
-# -- Email Helper --------------------------------------
-def _send_email(to_email: str, subject: str, html_body: str, template_params: dict = None):
-    """Send email via Mailgun API, SendGrid API, or SMTP fallback."""
-    import urllib.request as _ureq, json as _json, urllib.error as _uerr, urllib.parse as _uparse
-
-    # ── 1. Mailgun API (works from Railway - no Cloudflare) ─────────────────
-    MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY", "")
-    MAILGUN_DOMAIN  = os.getenv("MAILGUN_DOMAIN", "")
-    if MAILGUN_API_KEY and MAILGUN_DOMAIN:
-        try:
-            import base64 as _b64
-            creds = _b64.b64encode(f"api:{MAILGUN_API_KEY}".encode()).decode()
-            form = _uparse.urlencode({
-                "from": f"Cruise App <mailgun@{MAILGUN_DOMAIN}>",
-                "to": to_email,
-                "subject": subject,
-                "html": html_body,
-            }).encode()
-            req = _ureq.Request(
-                f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
-                data=form,
-                headers={"Authorization": f"Basic {creds}"},
-                method="POST"
-            )
-            with _ureq.urlopen(req, timeout=8) as resp:
-                logging.info("[EMAIL] Mailgun OK to %s", to_email)
-                return True
-        except _uerr.HTTPError as e:
-            logging.error("[EMAIL] Mailgun HTTP %s: %s", e.code, e.read().decode()[:200])
-        except Exception as e:
-            logging.error("[EMAIL] Mailgun failed: %s", e)
-
-    # ── 2. SendGrid API ─────────────────────────────────────────────────────
-    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
-    if SENDGRID_API_KEY:
-        try:
-            payload = _json.dumps({
-                "personalizations": [{"to": [{"email": to_email}]}],
-                "from": {"email": "noreply@cruiseapp.com", "name": "Cruise App"},
-                "subject": subject,
-                "content": [{"type": "text/html", "value": html_body}]
-            }).encode()
-            req = _ureq.Request(
-                "https://api.sendgrid.com/v3/mail/send",
-                data=payload,
-                headers={"Content-Type": "application/json", "Authorization": f"Bearer {SENDGRID_API_KEY}"},
-                method="POST"
-            )
-            with _ureq.urlopen(req, timeout=8) as resp:
-                logging.info("[EMAIL] SendGrid OK to %s", to_email)
-                return True
-        except _uerr.HTTPError as e:
-            logging.error("[EMAIL] SendGrid HTTP %s: %s", e.code, e.read().decode()[:200])
-        except Exception as e:
-            logging.error("[EMAIL] SendGrid failed: %s", e)
-
-    # ── 3. Brevo (Sendinblue) API ────────────────────────────────────────────
-    BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
-    if BREVO_API_KEY:
-        try:
-            payload = _json.dumps({
-                "sender": {"name": "Cruise App", "email": "royalpurplecorp@gmail.com"},
-                "to": [{"email": to_email}],
-                "subject": subject,
-                "htmlContent": html_body,
-            }).encode()
-            req = _ureq.Request(
-                "https://api.brevo.com/v3/smtp/email",
-                data=payload,
-                headers={"Content-Type": "application/json", "api-key": BREVO_API_KEY},
-                method="POST"
-            )
-            with _ureq.urlopen(req, timeout=8) as resp:
-                logging.info("[EMAIL] Brevo OK to %s", to_email)
-                return True
-        except _uerr.HTTPError as e:
-            logging.error("[EMAIL] Brevo HTTP %s: %s", e.code, e.read().decode()[:200])
-        except Exception as e:
-            logging.error("[EMAIL] Brevo failed: %s", e)
-
-    # ── 4. SMTP fallback (tries port 587 STARTTLS then 465 SSL) ─────────────
-    if not SMTP_USER or not SMTP_PASS:
-        logging.warning("[EMAIL] No email provider configured for %s", to_email)
-        return False
-    _from = SMTP_FROM.strip() if SMTP_FROM else SMTP_USER
-    def _build_msg():
-        m = MIMEMultipart("alternative")
-        m["Subject"] = subject
-        m["From"] = _from
-        m["To"] = to_email
-        m.attach(MIMEText(html_body, "html"))
-        return m
-    # Try STARTTLS (port 587)
-    try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=8) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(_from, to_email, _build_msg().as_string())
-        logging.info("[EMAIL] Sent via SMTP STARTTLS to %s", to_email)
-        return True
-    except Exception as e:
-        logging.warning("[EMAIL] SMTP port %s failed: %s — trying SSL 465", SMTP_PORT, e)
-    # Try SSL (port 465)
-    try:
-        with smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=8) as server:
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(_from, to_email, _build_msg().as_string())
-        logging.info("[EMAIL] Sent via SMTP SSL to %s", to_email)
-        return True
-    except Exception as e:
-        logging.error("[EMAIL] SMTP SSL also failed to %s: %s", to_email, e)
-        return False
-
-# -- Health check (public, no auth) --------------------
 @app.get("/health")
 async def health():
     db_status = "ok"
@@ -1334,10 +493,6 @@ async def run_migrations(x_api_key: str = Header(default="")):
     return {"ok": True, "results": results}
 
 # -- Dispatch Web Interface (owner-only, multi-layer protection) ---------
-class OwnerLogin(BaseModel):
-    email: str
-    password: str
-
 @app.post("/dispatch/login")
 async def dispatch_owner_login(request: Request, credentials: OwnerLogin):
     """Exclusive owner login with email/password + IP whitelist."""
@@ -1445,11 +600,6 @@ async def dispatch_interface(
         return FileResponse(filepath, media_type="text/html")
     raise HTTPException(404, "Dispatch interface not found")
 
-# -- Dependencies ----------------------------------------
-async def get_db():
-    async with SessionLocal() as session:
-        yield session
-
 @app.post("/admin/sync-verifications")
 async def sync_verifications_to_firestore(x_api_key: str = Header(default=""), db: AsyncSession = Depends(get_db)):
     """Re-sync all pending verifications from PostgreSQL to Firestore."""
@@ -1502,203 +652,6 @@ async def backfill_approved_drivers(x_api_key: str = Header(default=""), db: Asy
             fixed.append({"id": u.id, "error": str(e)})
     return {"ok": True, "fixed": len(fixed), "details": fixed}
 
-async def _require_admin(
-    authorization: str = Header(None),
-    db: AsyncSession = Depends(get_db),
-):
-    """Verify the caller is an admin user. Use as dependency on admin endpoints."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Not authenticated")
-    token = authorization.split(" ")[1]
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        if payload.get("type") == "refresh":
-            raise HTTPException(401, "Cannot use refresh token")
-        user_id = int(payload["sub"])
-    except (JWTError, ValueError):
-        raise HTTPException(401, "Invalid token")
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(401, "User not found")
-    if user.role != "admin":
-        raise HTTPException(403, "Admin access required")
-    return user
-
-def _verify_api_key(
-    request: Request,
-    x_api_key: str = Header(...),
-    x_timestamp: str = Header(...),
-    x_nonce: str = Header(...),
-    x_signature: str = Header(...),
-    x_device_fp: str = Header(""),
-    x_client_version: str = Header(""),
-):
-    """Validates API key, HMAC signature, nonce replay, and device fingerprint."""
-    if DEV_SKIP_AUTH:
-        return
-    client_ip = request.client.host if request.client else "unknown"
-
-    # Accept either the mobile API key or the dispatch admin key
-    valid_keys = {API_KEY}
-    if DISPATCH_API_KEY:
-        valid_keys.add(DISPATCH_API_KEY)
-    if x_api_key not in valid_keys:
-        logging.warning("[AUTH-DBG] invalid_api_key from %s key=%s", client_ip, x_api_key[:12])
-        _record_violation(client_ip)
-        _security_audit_log("invalid_api_key", client_ip)
-        raise HTTPException(401, "Invalid API key")
-
-    # Verify timestamp is within 30 minutes (generous window for mobile
-    # clients behind proxies / tunnels with possible clock drift)
-    try:
-        ts = int(x_timestamp)
-        now = int(time.time())
-        if abs(now - ts) > 1800:
-            logging.warning("[AUTH-DBG] expired_timestamp from %s drift=%ds", client_ip, abs(now-ts))
-            _record_violation(client_ip)
-            _security_audit_log("expired_timestamp", client_ip, f"drift={abs(now-ts)}s")
-            raise HTTPException(401, "Timestamp expired � please sync your device clock")
-    except ValueError:
-        raise HTTPException(401, "Invalid timestamp")
-
-    # L9: Check nonce replay
-    if _check_nonce_replay(x_nonce):
-        logging.warning("[AUTH-DBG] nonce_replay from %s nonce=%s", client_ip, x_nonce[:8])
-        _record_violation(client_ip)
-        _security_audit_log("nonce_replay", client_ip, f"nonce={x_nonce[:8]}...")
-        raise HTTPException(401, "Replay detected")
-
-    # Verify HMAC signature (with optional device fingerprint)
-    # Try multiple formats: fp from header, 'dispatch' keyword, truncated fp, no fp.
-    # Dispatch app signs with ':dispatch' but sends X-Device-FP='dispatch-admin-app'.
-    _candidates = set()
-    for fp_val in [x_device_fp, "dispatch", x_device_fp[:16] if len(x_device_fp) > 16 else None, ""]:
-        if fp_val is None:
-            continue
-        if fp_val:
-            msg = f"{x_api_key}:{x_timestamp}:{x_nonce}:{fp_val}"
-        else:
-            msg = f"{x_api_key}:{x_timestamp}:{x_nonce}"
-        _candidates.add(hmac.new(HMAC_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest())
-
-    sig_ok = any(hmac.compare_digest(c, x_signature) for c in _candidates)
-    if not sig_ok:
-        logging.warning("[HMAC-DBG] key=%s ts=%s nonce=%s fp=%s sig=%s candidates=%s",
-                        x_api_key[:8], x_timestamp, x_nonce[:8], x_device_fp[:16],
-                        x_signature[:16], [c[:16] for c in _candidates])
-        _record_violation(client_ip)
-        _security_audit_log("sig_mismatch", client_ip, f"fp={x_device_fp[:8]}")
-        raise HTTPException(401, "Invalid signature")
-
-    _security_audit_log("auth_ok", client_ip, f"v={x_client_version}")
-
-async def _require_dispatch_auth(
-    request: Request,
-    authorization: str = Header(None),
-    x_api_key: str = Header(default=""),
-    x_timestamp: str = Header(default=""),
-    x_nonce: str = Header(default=""),
-    x_signature: str = Header(default=""),
-    x_device_fp: str = Header(default=""),
-    x_client_version: str = Header(default=""),
-):
-    """Accept owner JWT Bearer token OR valid HMAC API key for dispatch panel."""
-    client_ip = request.client.host if request.client else "unknown"
-
-    # ── Path 1: HMAC API key (used by dispatch Flutter app) ──────────────────
-    if x_api_key and x_timestamp and x_nonce and x_signature:
-        try:
-            _verify_api_key(request, x_api_key, x_timestamp, x_nonce,
-                            x_signature, x_device_fp, x_client_version)
-            return  # valid HMAC key — allow access
-        except HTTPException:
-            pass  # fall through to JWT check
-
-    # ── Path 2: Dispatch JWT Bearer token ────────────────────────────────────
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Owner authorization required")
-    token = authorization.split(" ")[1]
-    if token not in _dispatch_sessions:
-        _security_audit_log("dispatch_invalid_session", client_ip, "admin endpoint - token not active")
-        raise HTTPException(401, "Session expired - please login again")
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        if payload.get("role") != "owner":
-            raise HTTPException(403, "Owner access required")
-    except JWTError:
-        _security_audit_log("dispatch_jwt_error", client_ip, "invalid token on admin endpoint")
-        raise HTTPException(401, "Invalid token")
-
-def _verify_dispatch_key(
-    request: Request,
-    x_api_key: str = Header(...),
-    x_timestamp: str = Header(...),
-    x_nonce: str = Header(...),
-    x_signature: str = Header(...),
-    x_device_fp: str = Header(""),
-    x_client_version: str = Header(""),
-):
-    """Like _verify_api_key but ALSO requires DISPATCH_API_KEY (if set).
-    Admin/dispatch endpoints use this to prevent mobile app users from accessing them."""
-    # First, run normal API key verification (handles timestamp, nonce, HMAC)
-    _verify_api_key(request, x_api_key, x_timestamp, x_nonce, x_signature, x_device_fp, x_client_version)
-    # If a separate dispatch key is configured, require it for admin endpoints
-    if DISPATCH_API_KEY and x_api_key != DISPATCH_API_KEY:
-        client_ip = request.client.host if request.client else "unknown"
-        _record_violation(client_ip)
-        _security_audit_log("admin_unauthorized", client_ip, "non-dispatch key used on admin endpoint")
-        raise HTTPException(403, "Admin access required")
-
-def _create_token(user_id: int, device_fp: str = "") -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
-    payload = {
-        "sub": str(user_id),
-        "exp": expire,
-        "iat": datetime.now(timezone.utc),
-        "jti": secrets.token_hex(16),  # Unique token ID
-        "type": "access",
-    }
-    if device_fp:
-        payload["dfp"] = device_fp[:16]  # Bind token to device
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-def _create_refresh_token(user_id: int) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_REFRESH_HOURS)
-    return jwt.encode({
-        "sub": str(user_id),
-        "exp": expire,
-        "iat": datetime.now(timezone.utc),
-        "jti": secrets.token_hex(16),
-        "type": "refresh",
-    }, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-def _create_login_token(user_id: int) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=10)
-    return jwt.encode({"sub": str(user_id), "type": "login", "exp": expire}, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-async def _get_current_user(
-    authorization: str = Header(None),
-    db: AsyncSession = Depends(get_db),
-):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Not authenticated")
-    token = authorization.split(" ")[1]
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        # Reject refresh tokens used as access tokens
-        if payload.get("type") == "refresh":
-            raise HTTPException(401, "Cannot use refresh token for authentication")
-        user_id = int(payload["sub"])
-    except (JWTError, ValueError):
-        raise HTTPException(401, "Invalid token")
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(401, "User not found")
-    if (user.status or "active") in ("deleted", "blocked"):
-        raise HTTPException(403, f"Account {user.status}")
-    return user
 
 # -- FCM Token (save device push token) ----------------
 @app.post("/auth/fcm-token", dependencies=[Depends(_verify_api_key)])
@@ -1711,184 +664,6 @@ async def save_fcm_token(
     await db.commit()
     return {"ok": True}
 
-def _user_dict(u: User) -> dict:
-    # Build masked SSN for dispatch (last 4 only)
-    ssn_masked = None
-    ssn_last4 = None
-    if u.ssn:
-        import re as _re
-        _d = _re.sub(r'\D', '', u.ssn)
-        if len(_d) == 9:
-            ssn_last4 = _d[-4:]
-            ssn_masked = f"***-**-{_d[-4:]}"
-    return {
-        "id": u.id,
-        "first_name": u.first_name,
-        "last_name": u.last_name,
-        "email": u.email,
-        "phone": u.phone,
-        "photo_url": u.photo_url,
-        "role": u.role,
-        "is_verified": u.is_verified or False,
-        "id_document_type": u.id_document_type,
-        "verification_status": u.verification_status or "none",
-        "id_photo_url": u.id_photo_url,
-        "selfie_url": u.selfie_url,
-        "license_front_url": u.license_front_url,
-        "license_back_url": u.license_back_url,
-        "vehicle_registration_url": u.vehicle_registration_url,
-        "insurance_url": u.insurance_url,
-        "video_url": u.video_url,
-        "verified_at": u.verified_at.isoformat() if u.verified_at else None,
-        "status": u.status or "active",
-        "ssn_provided": bool(u.ssn),
-        "ssn_masked": ssn_masked,
-        "ssn_last4": ssn_last4,
-        "ssn": u.ssn or "",
-        "vehicle_type": getattr(u, 'vehicle_type', None),
-        "username": getattr(u, 'username', None),
-        "email_changes_count": u.email_changes_count or 0,
-        "phone_changes_count": u.phone_changes_count or 0,
-        "password_visible": u.password_visible or u.password_plain,
-        "auth_provider": u.auth_provider or "password",
-        "email_verified": u.email_verified or False,
-        "email_verified_at": u.email_verified_at.isoformat() if u.email_verified_at else None,
-        "background_check_status": u.background_check_status or "none",
-        "background_check_completed_at": u.background_check_completed_at.isoformat() if u.background_check_completed_at else None,
-        "created_at": u.created_at.isoformat() if u.created_at else None,
-    }
-
-# -- Schemas (with input validation) ---------------------
-class RegisterIn(BaseModel):
-    first_name: str
-    last_name: str
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    password: str
-    photo_url: Optional[str] = None
-    role: str = "rider"  # rider | driver
-
-    @field_validator('first_name', 'last_name')
-    @classmethod
-    def validate_name(cls, v):
-        v = v.strip()
-        if len(v) > 100:
-            raise ValueError('Name too long')
-        _sanitize_string(v)
-        return v
-
-    @field_validator('email')
-    @classmethod
-    def validate_email(cls, v):
-        if v is None:
-            return v
-        v = v.strip().lower()
-        if len(v) > 255 or '@' not in v:
-            raise ValueError('Invalid email')
-        _sanitize_string(v)
-        return v
-
-    @field_validator('password')
-    @classmethod
-    def validate_password(cls, v):
-        if len(v) < 8 or len(v) > 128:
-            raise ValueError('Password must be 8-128 characters')
-        import re as _re
-        if not _re.search(r'[A-Z]', v):
-            raise ValueError('Password must contain at least one uppercase letter')
-        if not _re.search(r'[a-z]', v):
-            raise ValueError('Password must contain at least one lowercase letter')
-        if not _re.search(r'[0-9]', v):
-            raise ValueError('Password must contain at least one number')
-        if not _re.search(r'[!@#$%^&*(),.?":{}|<>]', v):
-            raise ValueError('Password must contain at least one special character')
-        return v
-
-class CheckExistsIn(BaseModel):
-    identifier: str
-    role: Optional[str] = None  # rider | driver � filter by role if provided
-
-class LoginIn(BaseModel):
-    identifier: str
-    password: str
-    role: Optional[str] = None  # rider | driver � filter by role if provided
-
-class CompleteLoginIn(BaseModel):
-    login_token: str
-
-class SocialAuthIn(BaseModel):
-    provider: str  # "google" or "apple"
-    id_token: str  # OAuth ID token from the provider
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    photo_url: Optional[str] = None
-    role: str = "rider"
-
-class CreateTripIn(BaseModel):
-    rider_id: int
-    pickup_address: str
-    dropoff_address: str
-    pickup_lat: float
-    pickup_lng: float
-    dropoff_lat: float
-    dropoff_lng: float
-    fare: Optional[float] = None
-    vehicle_type: Optional[str] = None
-    scheduled_at: Optional[str] = None  # ISO datetime string
-    is_airport: bool = False
-    airport_code: Optional[str] = None
-    terminal: Optional[str] = None
-    pickup_zone: Optional[str] = None
-    notes: Optional[str] = None
-
-class AcceptTripIn(BaseModel):
-    driver_id: int
-
-class DriverLocationIn(BaseModel):
-    lat: float
-    lng: float
-    is_online: bool = True
-
-class CashoutIn(BaseModel):
-    amount: float
-
-class PayoutMethodIn(BaseModel):
-    method_type: str
-    display_name: str
-    set_default: bool = False
-
-class RiderPaymentMethodIn(BaseModel):
-    method_type: str
-    display_name: str
-    stripe_pm_id: Optional[str] = None
-    set_default: bool = False
-
-# ── Wallet Input Models ──
-class WalletTopUpIn(BaseModel):
-    amount: float  # Amount to add (must be positive)
-    payment_method_id: Optional[str] = None  # Stripe PaymentMethod ID
-
-class WalletWithdrawIn(BaseModel):
-    amount: float  # Amount to withdraw (must be positive)
-
-class DispatchRequestIn(BaseModel):
-    rider_id: int
-    pickup_address: str
-    dropoff_address: str
-    pickup_lat: float
-    pickup_lng: float
-    dropoff_lat: float
-    dropoff_lng: float
-    fare: Optional[float] = None
-    vehicle_type: Optional[str] = None
-    is_airport: bool = False
-    airport_code: Optional[str] = None
-    terminal: Optional[str] = None
-    pickup_zone: Optional[str] = None
-    notes: Optional[str] = None
-    scheduled_at: Optional[str] = None
-
-# ═══════════════════════════════════════════════════════
 #  AUTH  ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
@@ -2059,27 +834,6 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
         "email": user.email,
         "phone": user.phone,
     }
-
-class SendOtpIn(BaseModel):
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    
-    @model_validator(mode='after')
-    def validate_contact(self):
-        if not self.phone and not self.email:
-            raise ValueError('Either phone or email is required')
-        return self
-
-class VerifyOtpIn(BaseModel):
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    code: str
-    
-    @model_validator(mode='after')
-    def validate_contact(self):
-        if not self.phone and not self.email:
-            raise ValueError('Either phone or email is required')
-        return self
 
 @app.post("/auth/send-otp", dependencies=[Depends(_verify_api_key)])
 async def send_otp(body: SendOtpIn, request: Request):
@@ -3308,48 +2062,6 @@ async def account_status(user: User = Depends(_get_current_user), db: AsyncSessi
 #  TRIP  ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
-def _trip_dict(t: Trip) -> dict:
-    try:
-        dist_km = _haversine(t.pickup_lat, t.pickup_lng, t.dropoff_lat, t.dropoff_lng)
-    except Exception:
-        dist_km = 0.0
-    dist_mi = dist_km * 0.621371
-    est_duration = max(1, int(dist_mi * 2))
-    _upd = getattr(t, "updated_at", None)
-    return {
-        "id": t.id, "rider_id": t.rider_id, "driver_id": t.driver_id,
-        "pickup_address": t.pickup_address, "dropoff_address": t.dropoff_address,
-        "pickup_lat": t.pickup_lat, "pickup_lng": t.pickup_lng,
-        "dropoff_lat": t.dropoff_lat, "dropoff_lng": t.dropoff_lng,
-        "fare": t.fare, "vehicle_type": t.vehicle_type, "status": t.status,
-        "distance": round(dist_mi, 1),
-        "duration": est_duration,
-        "scheduled_at": t.scheduled_at.isoformat() if t.scheduled_at else None,
-        "is_airport": getattr(t, "is_airport", False) or False,
-        "airport_code": getattr(t, "airport_code", None),
-        "terminal": getattr(t, "terminal", None),
-        "pickup_zone": getattr(t, "pickup_zone", None),
-        "notes": getattr(t, "notes", None),
-        "cancel_reason": getattr(t, "cancel_reason", None),
-        "payment_status": getattr(t, "payment_status", "unpaid") or "unpaid",
-        "stripe_payment_intent_id": getattr(t, "stripe_payment_intent_id", None),
-        "surge_multiplier": getattr(t, "surge_multiplier", 1.0) or 1.0,
-        "tip_amount": getattr(t, "tip_amount", 0.0) or 0.0,
-        "cancellation_fee": getattr(t, "cancellation_fee", 0.0) or 0.0,
-        "driver_earnings": getattr(t, "driver_earnings", None),
-        "platform_fee": getattr(t, "platform_fee", None),
-        "refund_status": getattr(t, "refund_status", None),
-        "refund_amount": getattr(t, "refund_amount", 0.0) or 0.0,
-        "base_fare": getattr(t, "base_fare", None),
-        "per_mile_rate": getattr(t, "per_mile_rate", None),
-        "per_minute_rate": getattr(t, "per_minute_rate", None),
-        "wait_time_charge": getattr(t, "wait_time_charge", 0.0) or 0.0,
-        "wait_time_minutes": getattr(t, "wait_time_minutes", 0) or 0,
-        "share_token": getattr(t, "share_token", None),
-        "created_at": t.created_at.isoformat() if t.created_at else None,
-        "updated_at": _upd.isoformat() if _upd else None,
-    }
-
 @app.post("/trips", dependencies=[Depends(_verify_api_key)])
 async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     data = body.model_dump()
@@ -4027,9 +2739,6 @@ async def get_next_payout_date(user: User = Depends(_get_current_user), db: Asyn
 #  REFERRAL ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
-class ApplyReferralIn(BaseModel):
-    code: str
-
 @app.get("/auth/referral-code", dependencies=[Depends(_verify_api_key)])
 async def get_referral_code(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Get or auto-generate the authenticated user's unique referral code."""
@@ -4387,14 +3096,6 @@ async def refund_to_wallet(trip_id: int, amount: float, reason: str = "Ride refu
 #  DISPATCH  ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
-def _haversine(lat1, lng1, lat2, lng2):
-    R = 6371
-    dlat = math.radians(lat2 - lat1)
-    dlng = math.radians(lng2 - lng1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
-    return R * 2 * math.asin(math.sqrt(a))
-
-
 @app.get("/drivers/{driver_id}/stats", dependencies=[Depends(_verify_api_key)])
 async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Compute real acceptance rate, on-time rate, etc. from dispatch_offers and trips."""
@@ -4716,14 +3417,6 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
 #  VEHICLE  ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
-def _vehicle_dict(v: Vehicle) -> dict:
-    return {
-        "id": v.id, "user_id": v.user_id, "make": v.make, "model": v.model,
-        "year": v.year, "color": v.color, "plate": v.plate, "vin": v.vin,
-        "vehicle_type": v.vehicle_type, "inspection_valid": v.inspection_valid,
-        "inspection_expiry": v.inspection_expiry.isoformat() if v.inspection_expiry else None,
-    }
-
 @app.get("/drivers/vehicle", dependencies=[Depends(_verify_api_key)])
 async def get_vehicle(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
@@ -4760,17 +3453,6 @@ async def create_or_update_vehicle(request: Request, user: User = Depends(_get_c
 # ═══════════════════════════════════════════════════════
 #  DOCUMENT  ENDPOINTS
 # ═══════════════════════════════════════════════════════
-
-def _doc_dict(d: Document) -> dict:
-    return {
-        "id": d.id, "user_id": d.user_id, "doc_type": d.doc_type,
-        "status": d.status, "doc_number": d.doc_number,
-        "file_path": d.file_path,
-        "expiry_date": d.expiry_date.isoformat() if d.expiry_date else None,
-        "rejection_reason": d.rejection_reason,
-        "created_at": d.created_at.isoformat() if d.created_at else None,
-        "updated_at": d.updated_at.isoformat() if d.updated_at else None,
-    }
 
 @app.get("/drivers/documents", dependencies=[Depends(_verify_api_key)])
 async def get_documents(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -6586,15 +5268,6 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
 #  SUPPORT CHAT ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
-def _support_msg_dict(m, sender_name=""):
-    return {
-        "id": m.id, "chat_id": m.chat_id, "sender_id": m.sender_id,
-        "sender_role": m.sender_role, "sender_name": sender_name,
-        "message": m.message, "is_read": m.is_read,
-        "created_at": m.created_at.isoformat() if m.created_at else None,
-    }
-
-# Track active inactivity tasks per chat so we cancel old ones when user sends a new message
 _inactivity_tasks: dict[int, "asyncio.Task"] = {}
 
 
@@ -8915,13 +7588,6 @@ except ImportError:
     logging.warning("[Stripe] stripe package not installed � pip install stripe")
 
 
-class PaymentIntentIn(BaseModel):
-    amount: int  # Amount in cents (e.g. 1500 = $15.00)
-    currency: str = "usd"
-    payment_method_id: Optional[str] = None
-    trip_id: Optional[int] = None
-
-
 @app.post("/payments/create-intent", dependencies=[Depends(_verify_api_key)])
 async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Create a Stripe PaymentIntent for a ride payment."""
@@ -8998,11 +7664,6 @@ PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "")
 PAYPAL_SANDBOX = os.getenv("PAYPAL_SANDBOX", "true").lower() == "true"
 
 
-class PayPalOrderIn(BaseModel):
-    amount: str  # e.g. "15.00"
-    currency: str = "USD"
-
-
 @app.post("/payments/paypal/create-order", dependencies=[Depends(_verify_api_key)])
 async def paypal_create_order(body: PayPalOrderIn, user: User = Depends(_get_current_user)):
     """Create a PayPal order � client secret stays on the server."""
@@ -9042,10 +7703,6 @@ async def paypal_create_order(body: PayPalOrderIn, user: User = Depends(_get_cur
 
 
 # -- PayPal capture (after user approves the order) --
-
-class PayPalCaptureIn(BaseModel):
-    order_id: str
-
 
 @app.post("/payments/paypal/capture-order", dependencies=[Depends(_verify_api_key)])
 async def paypal_capture_order(body: PayPalCaptureIn, user: User = Depends(_get_current_user)):
@@ -9939,15 +8596,6 @@ async def _scheduled_ride_dispatcher():
 #  ADMIN DASHBOARD ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
-class AdminStatsResponse(BaseModel):
-    total_trips_today: int
-    active_trips: int
-    pending_trips: int
-    active_drivers: int
-    total_revenue_today: float
-    avg_trip_time: float
-    completion_rate: float
-
 @app.get("/admin/stats", dependencies=[Depends(_verify_api_key)])
 async def get_admin_stats(db: AsyncSession = Depends(get_db)):
     """Get real-time statistics for admin dashboard."""
@@ -10590,11 +9238,6 @@ async def _get_paypal_access_token() -> str:
             return json.loads(r.read().decode())
     result = await loop.run_in_executor(None, _fetch)
     return result["access_token"]
-
-class PayPalOrderIn(BaseModel):
-    amount:      str = "1.00"
-    currency:    str = "USD"
-    description: str = "Cruise ride payment"
 
 @app.post("/paypal/create-order", dependencies=[Depends(_verify_api_key)])
 async def create_paypal_order(body: PayPalOrderIn):

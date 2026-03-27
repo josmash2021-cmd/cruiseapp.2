@@ -76,7 +76,6 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   bool _cameraFollowing = true;
   Timer? _reFollowTimer;
   bool _hasResumedOnce = false;
-  DateTime? _lastCameraUpdate;
 
   List<LatLng> _routePts = [];
   List<LatLng> _displayRoutePts = [];
@@ -139,7 +138,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     );
     _motion = SmoothMotion(
       onTick: _onMotionTick,
-      lerpFactor: 0.08,  // Más suave/fluido (antes 0.22)
+      lerpFactor: 0.15,
       enablePrediction: true,
     );
     _motion.start(this);
@@ -265,37 +264,38 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     _displayRoutePts = _routePts.sublist(segIdx);
   }
 
+  DateTime? _lastUIUpdate;
+
   void _onMotionTick(LatLng pos, double bearing, double curveTilt) {
     if (!mounted) return;
+
+    // Always update position/bearing (cheap, no rebuild).
     _pos = pos;
     _bearing = bearing;
-    setState(() {});
 
     final now = DateTime.now();
 
     // Update car annotation at ~30 fps (every 33 ms).
-    // This is the imperative Mapbox annotation update — without this call
-    // the car marker stays frozen at its initial position.
     if (_map != null &&
         _mapReady &&
         _arrowIconBytes != null &&
         (_lastAnnotUpdate == null ||
             now.difference(_lastAnnotUpdate!).inMilliseconds > 33)) {
       _lastAnnotUpdate = now;
-      // You could pass curveTilt to _updateDriverAnnotation if you had multiple car sprites
       _updateDriverAnnotation();
     }
 
-    // Throttle camera to ~60 Hz for super fluid real-time tracking
-    if (_cameraFollowing &&
-        _map != null &&
-        _mapReady &&
-        (_lastCameraUpdate == null ||
-            now.difference(_lastCameraUpdate!).inMilliseconds > 16)) {
-      _lastCameraUpdate = now;
-      // Offset center ahead of driver so pin appears in the lower third
+    // Throttle UI rebuild to ~4 Hz (every 250 ms) — speed, ETA, instructions.
+    if (_lastUIUpdate == null ||
+        now.difference(_lastUIUpdate!).inMilliseconds > 250) {
+      _lastUIUpdate = now;
+      setState(() {});
+    }
+
+    // Camera: use setCamera (instant) since SmoothMotion already interpolates.
+    if (_cameraFollowing && _map != null && _mapReady) {
       final ahead = _lookaheadPoint(pos, bearing, 120);
-      _map?.flyTo(
+      _map?.setCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
               coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
@@ -303,7 +303,6 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           bearing: bearing,
           pitch: 55,
         ),
-        mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
       );
     }
   }

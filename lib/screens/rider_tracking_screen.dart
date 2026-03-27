@@ -629,7 +629,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _driverLocSub?.cancel();
     _tripStatusSub?.cancel();
     _rtdbDriverLocSub?.cancel();
-    _simTimer?.cancel();
     LocalDataService.clearActiveRide();
     final s = S.of(context);
     showDialog(

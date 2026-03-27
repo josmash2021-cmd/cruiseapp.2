@@ -56,6 +56,8 @@ API_KEY = os.getenv("API_KEY", "dev-api-key-change-in-production")
 HMAC_SECRET = os.getenv("HMAC_SECRET", "dev-hmac-secret-change-in-production")
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-jwt-secret-change-in-production")
 DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")  # Separate key for admin/dispatch endpoints
+# Temporary: skip API key + HMAC auth (set to "true" in Railway while waiting for new IPA)
+DEV_SKIP_AUTH = os.getenv("DEV_SKIP_AUTH", "").lower() == "true"
 
 # -- Owner-only access configuration -------------------
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "")  # Your email for dispatch access
@@ -1422,6 +1424,8 @@ def _verify_api_key(
     x_client_version: str = Header(""),
 ):
     """Validates API key, HMAC signature, nonce replay, and device fingerprint."""
+    if DEV_SKIP_AUTH:
+        return
     client_ip = request.client.host if request.client else "unknown"
 
     # Accept either the mobile API key or the dispatch admin key

@@ -82,16 +82,17 @@ class GoldenPinPainter {
   final double size;
 
   double get _width  => size;
-  double get _height => size * 1.375;
+  double get _height => size * 1.24;
   double get _cx     => _width / 2;
-  double get _r      => _width * 0.32;
+  double get _r      => _width * 0.305;
   double get _headCY => _r + _width * 0.06;
-  double get _tipY   => _height * 0.82;
-  double get _shadowY => _height * 0.97; // SEPARATED from tip
+  // Keep tip at image bottom so IconAnchor.BOTTOM pins exactly at coordinates.
+  double get _tipY   => _height - 1.0;
+  double get _shadowY => _height - (_width * 0.07);
 
-  static const _goldLight = Color(0xFFFFF8DC);
-  static const _goldMid   = Color(0xFFE8C547);
-  static const _goldDeep  = Color(0xFFB8860B);
+  static const _goldLight = Color(0xFFFFF5C4);
+  static const _goldMid   = Color(0xFFE4BD4A);
+  static const _goldDeep  = Color(0xFF9C6B12);
 
   void paint(Canvas canvas, Size canvasSize) {
     final cx      = _cx;
@@ -100,30 +101,20 @@ class GoldenPinPainter {
     final tipY    = _tipY;
     final shadowY = _shadowY;
 
-    // ── 0. Ground shadow ring — SEPARATED (floating illusion) ──
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(cx, shadowY),
-        width: r * 1.35,
-        height: r * 0.30,
-      ),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.20)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
+    // No detached ground shadow: avoid any floating illusion.
 
     // ── 1. Teardrop path ──
     final pinPath = _buildTeardrop(cx, headCY, r, tipY);
 
-    // ── 2. Drop shadow behind pin ──
+    // Minimal body shadow for depth, without visual lift from the map.
     canvas.drawPath(
-      pinPath.shift(const Offset(0, 4)),
+      pinPath.shift(const Offset(0, 1.2)),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.25)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+        ..color = Colors.black.withValues(alpha: 0.13)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
     );
 
-    // ── 3. Gold gradient fill (linear, light top-left → deep bottom-right) ──
+    // ── 3. Premium metallic fill (soft ivory → champagne gold → amber) ──
     canvas.drawPath(
       pinPath,
       Paint()
@@ -131,8 +122,28 @@ class GoldenPinPainter {
           Offset(cx - r * 0.5, headCY - r),
           Offset(cx + r * 0.5, tipY),
           [_goldLight, _goldMid, _goldDeep],
-          [0.0, 0.45, 1.0],
+          [0.0, 0.42, 1.0],
         ),
+    );
+
+    // Center ring only (transparent fill) around the icon.
+    canvas.drawCircle(
+      Offset(cx, headCY),
+      r * 0.61,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.35
+        ..color = const Color(0xB8FFE4A0),
+    );
+
+    // Inner crisp highlight ring for the glossy/luxury look.
+    canvas.drawCircle(
+      Offset(cx, headCY),
+      r * 0.50,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.9
+        ..color = const Color(0x88FFFFFF),
     );
 
     // ── 4. Glass sheen — white oval highlight top-left ──
@@ -156,13 +167,13 @@ class GoldenPinPainter {
     );
     canvas.restore();
 
-    // ── 5. Thin bright border ──
+    // ── 5. Thin bright border around full pin ──
     canvas.drawPath(
       pinPath,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..color = Colors.white.withValues(alpha: 0.35),
+        ..strokeWidth = 1.25
+        ..color = const Color(0x7AFFF1B8),
     );
 
     // ── 6. Icon (large and visible) ──
@@ -186,7 +197,7 @@ class GoldenPinPainter {
   }
 
   void _drawIcon(Canvas canvas, IconData iconData, double cx, double cy, double r) {
-    final iconSize = r * 1.25;
+    final iconSize = r * 1.18;
     final tp = TextPainter(
       text: TextSpan(
         text: String.fromCharCode(iconData.codePoint),
@@ -194,8 +205,8 @@ class GoldenPinPainter {
           fontSize: iconSize,
           fontFamily: iconData.fontFamily,
           package: iconData.fontPackage,
-          color: Colors.white,
-          shadows: const [Shadow(color: Color(0x44000000), blurRadius: 4)],
+          color: const Color(0xFFF8FBFF),
+          shadows: const [Shadow(color: Color(0x66000000), blurRadius: 4)],
         ),
       ),
       textDirection: TextDirection.ltr,

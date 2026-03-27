@@ -217,16 +217,26 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   /// backward segment behind the car.  We snap the current _pos to the new
   /// route and start display from that index.
   void _setNewRoute(List<LatLng> pts) {
-    _routePts = pts;
+    final normalized = List<LatLng>.from(pts);
+    if (normalized.isNotEmpty) {
+      final dest = _sm.phase == TripPhase.toPickup
+          ? widget.pickupLatLng
+          : widget.dropoffLatLng;
+      // Force exact visual endpoint so route line tip meets destination pin.
+      normalized[normalized.length - 1] = dest;
+    }
+
+    _routePts = normalized;
     _snapIdx = 0;
-    if (pts.length < 2) {
-      _displayRoutePts = List.of(pts);
+    if (normalized.length < 2) {
+      _displayRoutePts = List.of(normalized);
       return;
     }
-    final snap = RouteSnapper.snap(_pos, pts, lastIndex: 0);
-    final trimIdx = snap.segmentIndex.clamp(0, pts.length - 1);
+    final snap = RouteSnapper.snap(_pos, normalized, lastIndex: 0);
+    final trimIdx = snap.segmentIndex.clamp(0, normalized.length - 1);
     _snapIdx = trimIdx;
-    _displayRoutePts = trimIdx > 0 ? pts.sublist(trimIdx) : List.of(pts);
+    _displayRoutePts =
+        trimIdx > 0 ? normalized.sublist(trimIdx) : List.of(normalized);
   }
 
   void _startGPS() {

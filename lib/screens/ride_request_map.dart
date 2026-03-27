@@ -1,0 +1,1129 @@
+part of 'ride_request_screen.dart';
+
+// ════════════════════════════════════════════════════════════
+//  MAP — annotations, cinematic, route drawing
+// ════════════════════════════════════════════════════════════
+
+extension RideRequestMap on _RideRequestScreenState {
+
+  /// Detect what icon to show on the dropoff pin based on address text.
+  _PinIcon _detectDropoffType(String address) {
+    final lower = address.toLowerCase();
+    // Airport keywords
+    if (lower.contains('airport') ||
+        lower.contains('aeropuerto') ||
+        lower.contains(' mia ') ||
+        lower.contains(' jfk ') ||
+        lower.contains(' lax ') ||
+        lower.contains(' ord ') ||
+        lower.contains(' atl ') ||
+        lower.contains(' sfo ') ||
+        lower.contains(' dfw ') ||
+        lower.contains('intl') ||
+        lower.contains('terminal') ||
+        lower.contains('aviation')) {
+      return _PinIcon.airplane;
+    }
+    // Commerce / business keywords
+    if (lower.contains('mall') ||
+        lower.contains('plaza') ||
+        lower.contains('store') ||
+        lower.contains('shop') ||
+        lower.contains('market') ||
+        lower.contains('restaurant') ||
+        lower.contains('hotel') ||
+        lower.contains('hospital') ||
+        lower.contains('clinic') ||
+        lower.contains('center') ||
+        lower.contains('centre') ||
+        lower.contains('office') ||
+        lower.contains('building') ||
+        lower.contains('tower') ||
+        lower.contains('suite') ||
+        lower.contains('ste ') ||
+        lower.contains('walmart') ||
+        lower.contains('target') ||
+        lower.contains('costco') ||
+        lower.contains('starbucks') ||
+        lower.contains('mcdonalds') ||
+        lower.contains("mcdonald's") ||
+        lower.contains('gym') ||
+        lower.contains('fitness') ||
+        lower.contains('church') ||
+        lower.contains('school') ||
+        lower.contains('university') ||
+        lower.contains('college') ||
+        lower.contains('stadium') ||
+        lower.contains('arena') ||
+        lower.contains('museum') ||
+        lower.contains('cinema') ||
+        lower.contains('theater') ||
+        lower.contains('theatre') ||
+        lower.contains('park ') ||
+        lower.contains('banco') ||
+        lower.contains('bank') ||
+        lower.contains('station')) {
+      return _PinIcon.store;
+    }
+    // Default: house / residential
+    return _PinIcon.house;
+  }
+
+  Future<Uint8List> _buildGoldPin({
+    _PinIcon icon = _PinIcon.none,
+    bool isPickup = true,
+  }) async {
+    return renderCircularPinBytes(
+      icon: _pinIconToCircular(icon),
+      isPickup: isPickup,
+      radius: 32,
+    );
+  }
+
+  /// Render a combined pin + label bitmap as a single image.
+  /// When [labelOnLeft] is false: pin on LEFT, label on RIGHT (pickup default).
+  /// When [labelOnLeft] is true:  label on LEFT, pin on RIGHT (dropoff default).
+  /// The canvas is padded so the pin tip is at exact bottom-center,
+  /// allowing `iconAnchor: BOTTOM` with zero offset.
+  Future<(Uint8List, Offset, Uint8List)> _buildPinWithLabel({
+    required String text,
+    bool isPickup = true,
+    String? etaText,
+    _PinIcon icon = _PinIcon.none,
+    bool labelOnLeft = false,
+  }) async {
+    final label = _truncateHalf(text);
+    final showEta = etaText != null && etaText.isNotEmpty;
+
+    // ── Pin dimensions ──
+    const pinSize = 158.0;
+
+    // ── Measure label text ──
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout(maxWidth: 550);
+
+    TextPainter? etaPainter;
+    if (showEta) {
+      etaPainter = TextPainter(
+        text: TextSpan(
+          text: etaText,
+          style: const TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+            letterSpacing: 0.3,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout(maxWidth: 300);
+    }
+
+    // ── Label box sizing ──
+    const hPad = 18.0;
+    const gap = 10.0;
+    const dotSize = 12.0;
+    const etaBoxPad = 10.0;
+    final etaW = etaPainter != null
+        ? etaPainter.width + etaBoxPad * 2 + gap
+        : 0.0;
+    final labelW = hPad + dotSize + gap + textPainter.width + etaW + hPad + 10;
+    const labelH = 95.0;
+    const pinLabelGap = 12.0;
+
+    // ── Unpadded layout ──
+    final rawW = pinSize + pinLabelGap + labelW;
+    final totalH = math.max(pinSize, labelH);
+
+    double pinX, labelX;
+    if (labelOnLeft) {
+      labelX = 0;
+      pinX = labelW + pinLabelGap;
+    } else {
+      pinX = 0;
+      labelX = pinSize + pinLabelGap;
+    }
+    final double pinY = (totalH - pinSize) / 2;
+    final double labelY = (totalH - labelH) / 2;
+
+    // ── Pad canvas so pin tip is at bottom-center ──
+    final pinTipX = pinX + pinSize / 2;
+    final leftMargin = pinTipX;
+    final rightMargin = rawW - pinTipX;
+    final maxM = math.max(leftMargin, rightMargin);
+    final leftPad = maxM - leftMargin;
+    final paddedW = 2 * maxM;
+
+    // Shift drawing positions by leftPad
+    final adjPinX = pinX + leftPad;
+    final adjLabelX = labelX + leftPad;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, paddedW, totalH));
+
+    // ── Draw circular pin (render and decode) ──
+    final pinBytes = await renderCircularPinBytes(
+      icon: _pinIconToCircular(icon),
+      isPickup: isPickup,
+      radius: pinSize / 2,
+    );
+    final codec = await ui.instantiateImageCodec(pinBytes);
+    final frame = await codec.getNextFrame();
+    final pinImage = frame.image;
+    canvas.drawImage(
+      pinImage,
+      Offset(adjPinX, pinY),
+      Paint(),
+    );
+
+    // If airport, overlay a golden departure icon on the pin head
+    if (icon == _PinIcon.airplane) {
+      final iconTp = TextPainter(
+        text: TextSpan(
+          text: String.fromCharCode(Icons.flight_takeoff_rounded.codePoint),
+          style: TextStyle(
+            fontSize: pinSize * 0.34,
+            fontFamily: Icons.flight_takeoff_rounded.fontFamily,
+            package: Icons.flight_takeoff_rounded.fontPackage,
+            color: Colors.white,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final headCY = pinY + pinSize * 0.32 + pinSize * 0.04;
+      iconTp.paint(
+        canvas,
+        Offset(
+          adjPinX + pinSize / 2 - iconTp.width / 2,
+          headCY - iconTp.height / 2,
+        ),
+      );
+    }
+
+    // ── Draw label box ──
+    final bgRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(adjLabelX, labelY, labelW, labelH),
+      const Radius.circular(12),
+    );
+    canvas.drawRRect(bgRect, Paint()..color = const Color(0xF01A1A1A));
+    canvas.drawRRect(
+      bgRect,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.10)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+
+    double x = adjLabelX + hPad;
+
+    // ETA badge
+    if (showEta && etaPainter != null) {
+      final etaBoxW = etaPainter.width + etaBoxPad * 2;
+      final etaRect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, labelY + (labelH - 28) / 2, etaBoxW, 28),
+        const Radius.circular(8),
+      );
+      canvas.drawRRect(
+        etaRect,
+        Paint()..color = Colors.white.withValues(alpha: 0.14),
+      );
+      etaPainter.paint(
+        canvas,
+        Offset(x + etaBoxPad, labelY + (labelH - etaPainter.height) / 2),
+      );
+      x += etaBoxW + gap;
+    }
+
+    // Color dot
+    canvas.drawCircle(
+      Offset(x + dotSize / 2, labelY + labelH / 2),
+      dotSize / 2,
+      Paint()..color = isPickup ? Colors.green : _gold,
+    );
+    x += dotSize + gap;
+
+    // Address text
+    textPainter.paint(
+      canvas,
+      Offset(x, labelY + (labelH - textPainter.height) / 2),
+    );
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(paddedW.ceil(), totalH.ceil());
+    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+
+    // Anchor: pin tip is now at bottom-center by construction
+    const anchorOffset = Offset(0.5, 1.0);
+
+    final rawBytes = bytes!.buffer.asUint8List();
+    return (rawBytes, anchorOffset, rawBytes);
+  }
+
+  /// Render a standalone circular pin (no label) as raw bytes.
+  Future<(Uint8List, Uint8List)> _buildStandalonePin({
+    _PinIcon icon = _PinIcon.none,
+    bool isPickup = true,
+  }) async {
+    // Airport: clean departure icon only
+    if (icon == _PinIcon.airplane) {
+      final bytes = await _buildAirportIconBytes(100);
+      return (bytes, bytes);
+    }
+    final bytes = await renderCircularPinBytes(
+      icon: _pinIconToCircular(icon),
+      isPickup: isPickup,
+      radius: 32,
+    );
+    return (bytes, bytes);
+  }
+
+  /// Render a clean golden flight_takeoff icon (no background shape).
+  Future<Uint8List> _buildAirportIconBytes(double dim) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, dim, dim));
+
+    // Drop shadow behind the icon for map contrast
+    final shadow = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.flight_takeoff_rounded.codePoint),
+        style: TextStyle(
+          fontSize: dim * 0.72,
+          fontFamily: Icons.flight_takeoff_rounded.fontFamily,
+          package: Icons.flight_takeoff_rounded.fontPackage,
+          color: Colors.black.withValues(alpha: 0.45),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    shadow.paint(
+      canvas,
+      Offset((dim - shadow.width) / 2 + 1, (dim - shadow.height) / 2 + 2),
+    );
+
+    // Golden departure icon
+    final tp = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.flight_takeoff_rounded.codePoint),
+        style: TextStyle(
+          fontSize: dim * 0.72,
+          fontFamily: Icons.flight_takeoff_rounded.fontFamily,
+          package: Icons.flight_takeoff_rounded.fontPackage,
+          color: _gold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(
+      canvas,
+      Offset((dim - tp.width) / 2, (dim - tp.height) / 2),
+    );
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(dim.toInt(), dim.toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
+  }
+
+  /// Draw a teardrop location pin.
+  /// The tip points DOWN and sits at (ox + size/2, oy + size) — the coordinate.
+  /// A fade gradient blends the tip into the route-line colour.
+  void _drawGoldPinAt(
+    Canvas canvas,
+    double ox,
+    double oy,
+    double size, {
+    _PinIcon icon = _PinIcon.none,
+    bool isPickup = true,
+  }) {
+    final cx = ox + size / 2;      // horizontal center
+    final tipY = oy + size;         // tip of the pin = coordinate point
+    final r = size * 0.32;          // radius of the round head
+    final headCY = oy + r + size * 0.04; // vertical center of the round head
+
+    // ── Build teardrop path ──
+    // Round head (top) + two bezier curves tapering to a tip (bottom).
+    final path = Path();
+    // Start at the left side of the head at its vertical center
+    path.moveTo(cx - r, headCY);
+    // Arc the top half of the head
+    path.arcTo(
+      Rect.fromCircle(center: Offset(cx, headCY), radius: r),
+      math.pi,        // start: left
+      -math.pi,       // sweep: counter-clockwise top
+      false,
+    );
+    // Right side bezier curving to the tip
+    path.cubicTo(
+      cx + r,       headCY + r * 1.0,
+      cx + r * 0.22, tipY - size * 0.04,
+      cx,            tipY,
+    );
+    // Left side bezier back to start
+    path.cubicTo(
+      cx - r * 0.22, tipY - size * 0.04,
+      cx - r,        headCY + r * 1.0,
+      cx - r,        headCY,
+    );
+    path.close();
+
+    // ── Drop shadow ──
+    canvas.drawPath(
+      path.shift(const Offset(0, 3)),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.32)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+
+    // ── Fill teardrop with gold ──
+    canvas.drawPath(path, Paint()..color = _gold);
+
+    // ── White inner stroke ──
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0
+        ..color = Colors.white.withValues(alpha: 0.22),
+    );
+
+    // ── Subtle highlight on top-left ──
+    canvas.drawCircle(
+      Offset(cx - r * 0.25, headCY - r * 0.25),
+      r * 0.42,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.18)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
+
+    // ── Fade blend at tip: vertical gradient transparent→route-blue ──
+    // Covers roughly the bottom 35% of the pin area, softening the tip.
+    final fadeTop = headCY + r * 0.8;
+    canvas.drawRect(
+      Rect.fromLTRB(cx - r, fadeTop, cx + r, tipY),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, fadeTop),
+          Offset(cx, tipY),
+          [Colors.transparent, const Color(0x885BA3F5)],
+        )
+        ..blendMode = BlendMode.srcATop,
+    );
+
+    // Icon center = center of the round head
+    final cy = headCY; // alias so icon drawing code below still works
+
+    // Draw icon directly on pin — modern filled style
+    const iconColor = Color(0xFFFFFFFF);
+    final iconPaint = Paint()
+      ..color = iconColor
+      ..isAntiAlias = true;
+    final iconStrokePaint = Paint()
+      ..color = iconColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size * 0.025
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+
+    switch (icon) {
+      case _PinIcon.person:
+        final s = size * 0.12;
+        // Head — filled circle
+        canvas.drawCircle(Offset(cx, cy - s * 0.65), s * 0.52, iconPaint);
+        // Body — filled rounded shoulders
+        final body = RRect.fromRectAndCorners(
+          Rect.fromLTRB(
+            cx - s * 0.9,
+            cy + s * 0.15,
+            cx + s * 0.9,
+            cy + s * 1.05,
+          ),
+          topLeft: Radius.circular(s * 0.9),
+          topRight: Radius.circular(s * 0.9),
+          bottomLeft: Radius.circular(s * 0.2),
+          bottomRight: Radius.circular(s * 0.2),
+        );
+        canvas.drawRRect(body, iconPaint);
+        break;
+
+      case _PinIcon.house:
+        final s = size * 0.12;
+        // Roof (filled triangle)
+        final roof = Path()
+          ..moveTo(cx, cy - s * 1.25)
+          ..lineTo(cx - s * 1.15, cy - s * 0.1)
+          ..lineTo(cx + s * 1.15, cy - s * 0.1)
+          ..close();
+        canvas.drawPath(roof, iconPaint);
+        // House body (filled rect)
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTRB(
+              cx - s * 0.8,
+              cy - s * 0.1,
+              cx + s * 0.8,
+              cy + s * 0.9,
+            ),
+            Radius.circular(s * 0.08),
+          ),
+          iconPaint,
+        );
+        // Door cutout (dark)
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTRB(
+              cx - s * 0.22,
+              cy + s * 0.3,
+              cx + s * 0.22,
+              cy + s * 0.9,
+            ),
+            Radius.circular(s * 0.15),
+          ),
+          Paint()..color = _gold,
+        );
+        break;
+
+      case _PinIcon.store:
+        final s = size * 0.12;
+        // Store body (filled)
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTRB(
+              cx - s * 1.0,
+              cy - s * 0.3,
+              cx + s * 1.0,
+              cy + s * 1.0,
+            ),
+            Radius.circular(s * 0.1),
+          ),
+          iconPaint,
+        );
+        // Awning (filled with scallops)
+        canvas.drawRRect(
+          RRect.fromRectAndCorners(
+            Rect.fromLTRB(
+              cx - s * 1.1,
+              cy - s * 1.0,
+              cx + s * 1.1,
+              cy - s * 0.3,
+            ),
+            topLeft: Radius.circular(s * 0.2),
+            topRight: Radius.circular(s * 0.2),
+          ),
+          iconPaint,
+        );
+        // Scallop cutouts
+        for (double dx = -0.7; dx <= 0.71; dx += 0.7) {
+          canvas.drawCircle(
+            Offset(cx + s * dx, cy - s * 0.3),
+            s * 0.24,
+            Paint()..color = _gold,
+          );
+        }
+        // Window cutout
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTRB(
+              cx - s * 0.7,
+              cy - s * 0.05,
+              cx - s * 0.1,
+              cy + s * 0.5,
+            ),
+            Radius.circular(s * 0.08),
+          ),
+          Paint()..color = _gold,
+        );
+        // Door cutout
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTRB(
+              cx + s * 0.1,
+              cy - s * 0.05,
+              cx + s * 0.75,
+              cy + s * 1.0,
+            ),
+            Radius.circular(s * 0.08),
+          ),
+          Paint()..color = _gold,
+        );
+        break;
+
+      case _PinIcon.airplane:
+        // Handled externally — standalone pins use _buildAirportIconBytes,
+        // pin-with-label overlays the icon after drawing the teardrop.
+        break;
+
+      case _PinIcon.none:
+        break;
+    }
+  }
+
+  // ── User location dot — hidden on ride request map ──
+  Future<void> _updateUserDotAnnotation() async {
+    // No GPS dot shown on this screen — pickup pin already marks the user's location
+  }
+
+  void _drawRoute() {
+    final s = _ctrl.state;
+    if (s.route == null) return;
+    _showPinLabels = true;
+    // Force polyline endpoints to land exactly on the pickup/dropoff pins
+    final pts = List<LatLng>.from(s.route!.points);
+    if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
+    if (pts.isNotEmpty && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
+    _buildRouteMarkers();
+    // Always replay cinematic — reset state and re-trigger
+    _resetCinematic();
+    _startCinematicSequence(pts);
+  }
+
+  /// Reset all cinematic animation state so sequence can replay from scratch.
+  Future<void> _resetCinematic() async {
+    _cinematicDone = false;
+    _hasAppliedSelectionTilt = false;
+    _labelsRevealed = false;
+
+    // Stop running controllers
+    _tiltCtrl?.stop();
+    _bearingCtrl?.stop();
+    _pinPopCtrl?.stop();
+    _labelPopCtrl?.stop();
+    _routeDrawTicker?.stop();
+
+    // Clear existing route annotations so they redraw fresh
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr != null) {
+      if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+    }
+
+    // Reset camera to flat so tilt animates from 0°
+    if (_mapCtrl != null) {
+      _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: 0, bearing: 0));
+    }
+  }
+
+  /// Replay cinematic if route data is available (used by searching phase).
+  /// Only triggers if cinematic hasn't already played.
+  void _replayCinematicIfRouteAvailable() {
+    if (_cinematicDone) return;
+    final route = _ctrl.state.route;
+    if (route == null || route.points.isEmpty) return;
+    final pts = List<LatLng>.from(route.points);
+    final s = _ctrl.state;
+    if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
+    if (pts.isNotEmpty && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
+    _showPinLabels = true;
+    _buildRouteMarkers();
+    _resetCinematic();
+    _startCinematicSequence(pts);
+  }
+
+  /// Cinematic map animation: fit → tilt 55° + random bearing → pin pop → gold route draw → glow
+  Future<void> _startCinematicSequence(List<LatLng> pts) async {
+    if (!mounted || _mapCtrl == null) return;
+
+    // Generate random bearing 5-15° left or right
+    final rng = math.Random();
+    final degrees = 5.0 + rng.nextDouble() * 10.0;
+    _randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
+
+    // 1. Fit camera to full route (flat, no tilt yet)
+    _fitRoute(pts);
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+
+    // 2. Tilt 0° → 55° + bearing 0° → random, simultaneously (1200ms)
+    _tiltCtrl?.dispose();
+    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+      CurvedAnimation(parent: _tiltCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _bearingCtrl?.dispose();
+    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _bearingAnim = Tween<double>(begin: 0.0, end: _randomBearing).animate(
+      CurvedAnimation(parent: _bearingCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _tiltAnim!.addListener(_applyMapCamera);
+    _tiltCtrl!.forward(from: 0);
+    _bearingCtrl!.forward(from: 0);
+
+    // 3. Pin pop at 500ms into tilt
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    _startPinPop();
+
+    // 3b. Label bubbles unroll 400ms after pin pop starts
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+    _unrollLabels();
+
+    // 4. Gold route draws at 200ms after labels start
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    await _animateGoldRoute(pts, const Duration(milliseconds: 1000));
+    if (!mounted) return;
+
+    _cinematicDone = true;
+  }
+
+  void _applyMapCamera() {
+    if (_mapCtrl == null || !mounted) return;
+    _mapCtrl!.setCamera(mapbox.CameraOptions(
+      pitch: _tiltAnim?.value,
+      bearing: _bearingAnim?.value,
+    ));
+  }
+
+  void _startPinPop() {
+    _pinPopCtrl?.dispose();
+    _pinPopCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
+    _pinPopAnim = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.01, end: 1.15).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 60,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.15, end: 0.95).chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 20,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.95, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 20,
+      ),
+    ]).animate(_pinPopCtrl!);
+    _pinPopAnim!.addListener(_updatePinScales);
+    _pinPopCtrl!.forward(from: 0);
+  }
+
+  void _updatePinScales() {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    final s = _pinPopAnim?.value ?? 1.0;
+    if (_pickupAnnot != null) {
+      _pickupAnnot!.iconSize = s * 0.85;
+      mgr.update(_pickupAnnot!);
+    }
+    if (_dropoffAnnot != null) {
+      _dropoffAnnot!.iconSize = s * 0.85;
+      mgr.update(_dropoffAnnot!);
+    }
+  }
+
+  /// Swap pin-only bitmaps to pin+label bitmaps with a spring scale animation.
+  /// Creates the effect of address labels "unrolling" from the pin.
+  void _unrollLabels() {
+    if (_labelsRevealed) return;
+    _labelsRevealed = true;
+
+    // Swap annotations to pin+label bitmaps
+    _swapToLabelBitmaps();
+
+    // Spring animation: shrink slightly then pop to full size
+    _labelPopCtrl?.dispose();
+    _labelPopCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _labelPopAnim = TweenSequence<double>([
+      // Shrink from current scale to accommodate wider bitmap
+      TweenSequenceItem(
+        tween: Tween(begin: 0.40, end: 0.92)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 55,
+      ),
+      // Overshoot
+      TweenSequenceItem(
+        tween: Tween(begin: 0.92, end: 0.82)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 20,
+      ),
+      // Settle
+      TweenSequenceItem(
+        tween: Tween(begin: 0.82, end: 0.85)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 25,
+      ),
+    ]).animate(_labelPopCtrl!);
+    _labelPopAnim!.addListener(_updateLabelScales);
+    _labelPopCtrl!.forward(from: 0);
+  }
+
+  void _updateLabelScales() {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    final s = _labelPopAnim?.value ?? 0.85;
+    if (_pickupAnnot != null) {
+      _pickupAnnot!.iconSize = s;
+      mgr.update(_pickupAnnot!);
+    }
+    if (_dropoffAnnot != null) {
+      _dropoffAnnot!.iconSize = s;
+      mgr.update(_dropoffAnnot!);
+    }
+  }
+
+  Future<void> _swapToLabelBitmaps() async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+
+    // Swap pickup to pin+label
+    if (_pickupAnnot != null && _showPinLabels && _pickupPinWithLabel != null) {
+      _pickupAnnot!.image = _pickupPinWithLabel!.$1;
+      mgr.update(_pickupAnnot!);
+    }
+
+    // Swap dropoff to pin+label (200ms later for staggered effect)
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted) return;
+    if (_dropoffAnnot != null && _showPinLabels && _dropoffPinWithLabel != null) {
+      _dropoffAnnot!.image = _dropoffPinWithLabel!.$1;
+      mgr.update(_dropoffAnnot!);
+    }
+  }
+
+  /// Animate 4-layer gold gloss route draw at 60fps
+  Future<void> _animateGoldRoute(List<LatLng> points, Duration duration) async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null || points.length < 2) return;
+
+    // Clear old single-color route if present
+    if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+
+    final completer = Completer<void>();
+    final stopwatch = Stopwatch()..start();
+    final totalMs = duration.inMilliseconds;
+    int lastCount = 0;
+
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = createTicker((_) async {
+      if (!mounted) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      final elapsed = stopwatch.elapsedMilliseconds;
+      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
+      final eased = Curves.easeInOutSine.transform(progress);
+      final count = (eased * points.length).round().clamp(2, points.length);
+
+      if (count != lastCount) {
+        lastCount = count;
+        final subset = points.sublist(0, count);
+        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        final geo = mapbox.LineString(coordinates: coords);
+
+        if (_routeAnnot == null) {
+          _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo, lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } else {
+          _routeAnnot!.geometry = geo; await polyMgr.update(_routeAnnot!);
+        }
+      }
+      if (progress >= 1.0) {
+        _routeDrawTicker?.stop();
+        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        final fullGeo = mapbox.LineString(coordinates: fullCoords);
+        if (_routeAnnot != null) { _routeAnnot!.geometry = fullGeo; await polyMgr.update(_routeAnnot!); }
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+    _routeDrawTicker!.start();
+    return completer.future;
+  }
+
+  Future<void> _updateRouteAnnotation(List<LatLng> points) async {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null) return;
+    // Update single gold line if it exists
+    if (_routeAnnot != null) {
+      if (points.isEmpty) return;
+      final coords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+      final geo = mapbox.LineString(coordinates: coords);
+      _routeAnnot!.geometry = geo; await mgr.update(_routeAnnot!);
+      return;
+    }
+    // Fallback: create new single-line route
+    if (points.isEmpty) return;
+    _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 5.0,
+    ));
+  }
+
+  /// Place pickup/dropoff markers immediately and fit camera, even before route loads.
+  Future<void> _placeMarkersOnly() async {
+    final s = _ctrl.state;
+    if (s.pickup == null || s.dropoff == null) return;
+    final mgr = _pointAnnotMgr;
+    if (mgr == null || _goldPinIcon == null) return;
+
+    // Simple gold pin for pickup
+    _pickupAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
+      image: _goldPinIcon!,
+      iconSize: 0.85,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
+    ));
+    // Simple gold pin for dropoff
+    _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
+      geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
+      image: _goldPinIcon!,
+      iconSize: 0.85,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
+    ));
+    // Fit camera to show both markers
+    _fitRoute([
+      LatLng(s.pickup!.lat, s.pickup!.lng),
+      LatLng(s.dropoff!.lat, s.dropoff!.lng),
+    ]);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _buildRouteMarkers() async {
+    final s = _ctrl.state;
+    if (s.route == null) return;
+
+    // Detect dropoff type from address
+    final dropoffIcon = _detectDropoffType(s.dropoffLabel);
+
+    // Build all 4 variants: pin-only and pin+label for pickup and dropoff
+    _pickupPinOnly = await _buildStandalonePin(
+      icon: _PinIcon.person,
+      isPickup: true,
+    );
+    _pickupPinWithLabel = await _buildPinWithLabel(
+      text: s.pickupLabel.isNotEmpty ? s.pickupLabel : 'Pickup',
+      isPickup: true,
+      icon: _PinIcon.person,
+      labelOnLeft: false, // label on RIGHT of pickup pin
+    );
+    _dropoffPinOnly = await _buildStandalonePin(
+      icon: dropoffIcon,
+      isPickup: false,
+    );
+    _dropoffPinWithLabel = await _buildPinWithLabel(
+      text: s.dropoffLabel.isNotEmpty ? s.dropoffLabel : 'Dropoff',
+      isPickup: false,
+      etaText: s.route!.durationText,
+      icon: dropoffIcon,
+      labelOnLeft: true, // label on LEFT of dropoff pin
+    );
+
+    if (!mounted) return;
+    _rebuildMarkers();
+  }
+
+  Future<void> _rebuildMarkers() async {
+    final s = _ctrl.state;
+    if (s.route == null) return;
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+
+    // During cinematic, pins start tiny and use pin-ONLY bitmaps (labels animate in later)
+    final scale = (!_cinematicDone || (_pinPopCtrl?.isAnimating ?? false)) ? 0.01 : 0.85;
+    final useLabels = _labelsRevealed;
+
+    // Pickup marker
+    if (_pickupAnnot != null) { try { await mgr.delete(_pickupAnnot!); } catch (_) {} _pickupAnnot = null; }
+    if (s.pickup != null) {
+      Uint8List? bytes;
+      if (useLabels && _showPinLabels && _pickupPinWithLabel != null) {
+        bytes = _pickupPinWithLabel!.$1;
+      } else if (_pickupPinOnly != null) {
+        bytes = _pickupPinOnly!.$1;
+      } else {
+        bytes = _goldPinIcon;
+      }
+      if (bytes != null) {
+        _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
+          image: bytes,
+          iconSize: scale,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+      }
+    }
+
+    // Dropoff marker
+    if (_dropoffAnnot != null) { try { await mgr.delete(_dropoffAnnot!); } catch (_) {} _dropoffAnnot = null; }
+    if (s.dropoff != null) {
+      Uint8List? bytes;
+      if (useLabels && _showPinLabels && _dropoffPinWithLabel != null) {
+        bytes = _dropoffPinWithLabel!.$1;
+      } else if (_dropoffPinOnly != null) {
+        bytes = _dropoffPinOnly!.$1;
+      } else {
+        bytes = _goldPinIcon;
+      }
+      if (bytes != null) {
+        _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
+          image: bytes,
+          iconSize: scale,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  // Labels always visible — no toggle behavior
+  void _togglePinLabels() {}
+
+  void _fitRoute(List<LatLng> pts, {bool preserveCamera = false}) {
+    if (pts.isEmpty || _mapCtrl == null) return;
+    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    for (final p in pts) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    final screenH = MediaQuery.of(context).size.height;
+    final botPad = MediaQuery.of(context).padding.bottom;
+    final phase = _ctrl.state.phase;
+    // Bottom padding must account for full panel height + safe area + margin
+    final double bottomPad;
+    if (phase == RiderPhase.requesting || phase == RiderPhase.searchingDriver) {
+      bottomPad = 180 + botPad + 20;
+    } else {
+      // Route preview sheet: 45% of screen (clamped 320-420) + safe area + margin
+      final sheetH = (screenH * 0.45).clamp(320.0, 420.0) + botPad;
+      bottomPad = sheetH + 20;
+    }
+    _mapCtrl!.cameraForCoordinatesPadding(
+      [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+       mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
+      mapbox.CameraOptions(
+        pitch: preserveCamera ? 55.0 : null,
+        bearing: preserveCamera ? _randomBearing : null,
+      ),
+      mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60),
+      null, null,
+    ).then((cam) {
+      _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));
+    });
+  }
+
+  void _goToTracking() {
+    final s = _ctrl.state;
+    if (s.pickup == null || s.dropoff == null) {
+      _navigatingToTracking = false;
+      return;
+    }
+
+    // Persist active ride so home screen can show "Resume" banner
+    final routePts =
+        s.route?.points.map((p) => [p.latitude, p.longitude]).toList() ?? [];
+    LocalDataService.setActiveRide(
+      ActiveRideInfo(
+        pickupLat: s.pickup!.lat,
+        pickupLng: s.pickup!.lng,
+        dropoffLat: s.dropoff!.lat,
+        dropoffLng: s.dropoff!.lng,
+        pickupLabel: s.pickupLabel,
+        dropoffLabel: s.dropoffLabel,
+        driverName: s.driver?.name ?? 'Driver',
+        driverRating: s.driver?.rating ?? 4.9,
+        vehicleMake: s.driver?.vehicleMake ?? 'Toyota',
+        vehicleModel: s.driver?.vehicleModel ?? 'Camry',
+        vehicleColor: s.driver?.vehicleColor ?? 'White',
+        vehiclePlate: s.driver?.vehiclePlate ?? 'ABC-1234',
+        vehicleYear: s.driver?.vehicleYear ?? '2022',
+        rideName: s.selectedOption?.name ?? 'Fusion',
+        price: s.selectedOption?.priceEstimate ?? 0,
+        routePoints: routePts,
+        tripId: s.tripId,
+        firestoreTripId: s.firestoreTripId,
+        driverPhotoUrl: s.driver?.photoUrl,
+        etaMinutes: s.selectedOption?.etaMinutes,
+      ),
+    );
+
+    Navigator.of(context).push(
+      slideUpFadeRoute(
+        RiderTrackingScreen(
+          pickupLatLng: LatLng(s.pickup!.lat, s.pickup!.lng),
+          dropoffLatLng: LatLng(s.dropoff!.lat, s.dropoff!.lng),
+          routePoints: s.route?.points,
+          driverName: s.driver?.name ?? 'Driver',
+          driverRating: s.driver?.rating ?? 4.9,
+          driverPhotoUrl: s.driver?.photoUrl,
+          vehicleMake: s.driver?.vehicleMake ?? 'Toyota',
+          vehicleModel: s.driver?.vehicleModel ?? 'Camry',
+          vehicleColor: s.driver?.vehicleColor ?? 'White',
+          vehiclePlate: s.driver?.vehiclePlate ?? 'ABC-1234',
+          vehicleYear: s.driver?.vehicleYear ?? '2022',
+          rideName: s.selectedOption?.name ?? 'Fusion',
+          price: s.selectedOption?.priceEstimate ?? 0,
+          pickupLabel: s.pickupLabel,
+          dropoffLabel: s.dropoffLabel,
+          tripId: s.tripId,
+          firestoreTripId: s.firestoreTripId,
+          onTripComplete: () {
+            LocalDataService.clearActiveRide();
+            // Pop RiderTrackingScreen, then pop RideRequestScreen
+            // to return to HomeScreen (Where to? + car options)
+            Navigator.of(context).pop(); // pop tracking
+            Navigator.of(context).pop(); // pop ride request → back to home
+          },
+        ),
+      ),
+    );
+  }
+
+
+  Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
+    await MapTheme.applyNavyGold(ctrl);
+  }
+
+  Future<void> _recenterMap() async {
+    _programmaticCam = true;
+    setState(() => _userMovedMap = false);
+    final s = _ctrl.state;
+    // If we have pickup+dropoff, fit both in view
+    if (s.pickup != null && s.dropoff != null) {
+      final bounds = LatLngBounds(
+        southwest: LatLng(
+          math.min(s.pickup!.lat, s.dropoff!.lat),
+          math.min(s.pickup!.lng, s.dropoff!.lng),
+        ),
+        northeast: LatLng(
+          math.max(s.pickup!.lat, s.dropoff!.lat),
+          math.max(s.pickup!.lng, s.dropoff!.lng),
+        ),
+      );
+      final coords = [
+        mapbox.Point(coordinates: mapbox.Position(bounds.southwest.longitude, bounds.southwest.latitude)),
+        mapbox.Point(coordinates: mapbox.Position(bounds.northeast.longitude, bounds.northeast.latitude)),
+      ];
+      final screenH = MediaQuery.of(context).size.height;
+      final bottomPad = screenH * 0.52;
+      final cam = await _mapCtrl?.cameraForCoordinatesPadding(
+        coords, mapbox.CameraOptions(),
+        mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60), null, null,
+      );
+      if (cam != null) _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
+    } else if (_userLocation != null) {
+      _mapCtrl?.flyTo(
+        mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_userLocation!.longitude, _userLocation!.latitude)), zoom: 15.5),
+        mapbox.MapAnimationOptions(duration: 500),
+      );
+    }
+  }
+}

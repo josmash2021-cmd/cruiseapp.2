@@ -24,6 +24,7 @@ import '../../navigation/route_snapper.dart';
 import '../../navigation/smooth_motion.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
+import '../../services/analytics_service.dart';
 import '../../services/gps_service.dart';
 import '../../services/navigation_service.dart';
 import '../../services/trip_firestore_service.dart';
@@ -1015,7 +1016,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _waitStartedAt = DateTime.now();
     _waitSeconds = 0;
     // Call backend to record wait time start
-    ApiService.startWaitTime(widget.tripId).catchError((_) {});
+    ApiService.startWaitTime(widget.tripId).catchError((_) => <String, dynamic>{});
     AnalyticsService.instance.logEvent('wait_time_started');
     _waitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -1043,7 +1044,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         AnalyticsService.instance.logEvent('wait_time_charged', parameters: {'amount': charge});
       }
       // Call backend to finalize wait time
-      ApiService.endWaitTime(widget.tripId).catchError((_) {});
+      ApiService.endWaitTime(widget.tripId).catchError((_) => <String, dynamic>{});
     }
   }
 

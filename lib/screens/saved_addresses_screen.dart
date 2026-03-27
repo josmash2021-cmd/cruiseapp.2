@@ -200,7 +200,7 @@ class _SavedAddressesScreenState extends State<SavedAddressesScreen> {
     final favs = _favorites;
 
     return Scaffold(
-      backgroundColor: c.scaffoldBg,
+      backgroundColor: c.bg,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -205,12 +205,12 @@ _AI_CATEGORIES = {
                      "price", "caro", "expensive", "overcharge", "sobrecar", "cobrado",
                      "dinero", "money", "amount", "monto", "receipt", "recibo"],
         "first_es": [
-            "Entiendo tu preocupacion con el cobro, {name}. Dejame revisar los detalles de tu viaje.\n\nMe podras indicar la fecha y hora aproximada del viaje? Asi puedo localizar la transaccion mas rapido ??",
+            "Entiendo tu preocupacion con el cobro, {name}. Dejame revisar los detalles de tu viaje.\n\nMe podras indicar la fecha y hora aproximada del viaje? Asi puedo localizar la transaccion mas rapido",
             "Lamento el inconveniente con el cobro, {name}. Voy a revisar tu cuenta ahora mismo.\n\nPodras darme la fecha del viaje y el monto que te cobraron? Asi lo verifico de inmediato.",
             "Claro, {name}, voy a revisar eso por ti. A veces los cobros varan por cambios de ruta, peajes o tiempo de espera.\n\nMe das la fecha y la hora del viaje para revisar el recibo?",
         ],
         "first_en": [
-            "I understand your concern about the charge, {name}. Let me look into your trip details.\n\nCould you tell me the approximate date and time of the trip? That way I can find the transaction faster ??",
+            "I understand your concern about the charge, {name}. Let me look into your trip details.\n\nCould you tell me the approximate date and time of the trip? That way I can find the transaction faster",
             "Sorry about the inconvenience with the charge, {name}. I'm checking your account right now.\n\nCould you give me the trip date and the amount you were charged? I'll verify it right away.",
             "Sure thing, {name}, I'll look into that for you. Sometimes charges vary due to route changes, tolls, or wait time.\n\nCan you give me the date and time of the trip so I can check the receipt?",
         ],
@@ -434,14 +434,14 @@ _FALLBACK_FOLLOWUP_EN = [
 ]
 
 _CLOSING_RESPONSES_ES = [
-    "Me alegra poder ayudarte, {name} ?? No dudes en escribirnos si necesitas algo. Que tengas un excelente dia!",
-    "Con gusto, {name}! Estamos aqu para lo que necesites. Que tengas un gran dia! ??",
-    "Ha sido un placer atenderte, {name}. Si necesitas algo en el futuro, aqu estaremos. Cudate mucho! ??",
+    "Me alegra poder ayudarte, {name} No dudes en escribirnos si necesitas algo. Que tengas un excelente dia!",
+    "Con gusto, {name}! Estamos aqu para lo que necesites. Que tengas un gran dia!",
+    "Ha sido un placer atenderte, {name}. Si necesitas algo en el futuro, aqu estaremos. Cudate mucho!",
 ]
 _CLOSING_RESPONSES_EN = [
-    "Happy to help, {name} ?? Don't hesitate to reach out if you need anything. Have a great day!",
-    "My pleasure, {name}! We're here for whatever you need. Have an awesome day! ??",
-    "It's been great helping you, {name}. If you need anything in the future, we'll be here. Take care! ??",
+    "Happy to help, {name} Don't hesitate to reach out if you need anything. Have a great day!",
+    "My pleasure, {name}! We're here for whatever you need. Have an awesome day!",
+    "It's been great helping you, {name}. If you need anything in the future, we'll be here. Take care!",
 ]
 
 
@@ -463,86 +463,86 @@ _GENERAL_CHAT_RESPONSES = {
     "greeting": {
         "keywords": ["hola", "hello", "hi", "hey", "buenos", "buenas", "qu tal", "como estas", "cmo ests", "que tal", "buenas tardes", "buenas noches", "buen dia", "good morning", "good afternoon"],
         "responses_es": [
-            "Hola {name}! ?? Cmo ests? Que gusto saludarte. Cuentame, en qu puedo ayudarte hoy?",
-            "Hey {name}! ?? Me da gusto verte por aqu. En qu te puedo ayudar?",
-            "Hola {name}! Espero que ests teniendo un buen dia ?? Qu necesitas? Estoy aqu para ayudarte.",
+            "Hola {name}! Cmo ests? Que gusto saludarte. Cuentame, en qu puedo ayudarte hoy?",
+            "Hey {name}! Me da gusto verte por aqu. En qu te puedo ayudar?",
+            "Hola {name}! Espero que ests teniendo un buen dia Qu necesitas? Estoy aqu para ayudarte.",
         ],
         "responses_en": [
-            "Hey {name}! ?? How are you? Great to hear from you. Tell me, how can I help you today?",
-            "Hi {name}! ?? Nice to see you here. What can I help you with?",
-            "Hello {name}! Hope you're having a great day ?? What do you need? I'm here to help.",
+            "Hey {name}! How are you? Great to hear from you. Tell me, how can I help you today?",
+            "Hi {name}! Nice to see you here. What can I help you with?",
+            "Hello {name}! Hope you're having a great day What do you need? I'm here to help.",
         ],
     },
     "how_are_you": {
         "keywords": ["cmo ests", "como estas", "qu tal ests", "how are you", "how you doing", "que tal estas"],
         "responses_es": [
-            "Muy bien, {name}, gracias por preguntar! ?? Aqu trabajando para ayudar a nuestros usuarios. Y t cmo ests? En qu te puedo ayudar?",
-            "Todo bien por ac, {name}! ?? Gracias por preguntar. Cuentame, necesitas ayuda con algo?",
-            "Excelente, {name}! Siempre con energa para ayudar ???? Cmo te va a ti? Hay algo en lo que pueda asistirte?",
+            "Muy bien, {name}, gracias por preguntar! Aqu trabajando para ayudar a nuestros usuarios. Y t cmo ests? En qu te puedo ayudar?",
+            "Todo bien por ac, {name}! Gracias por preguntar. Cuentame, necesitas ayuda con algo?",
+            "Excelente, {name}! Siempre con energa para ayudar Cmo te va a ti? Hay algo en lo que pueda asistirte?",
         ],
         "responses_en": [
-            "I'm doing great, {name}, thanks for asking! ?? Just here working to help our users. How about you? What can I help you with?",
-            "All good here, {name}! ?? Thanks for asking. So, do you need help with anything?",
-            "Doing awesome, {name}! Always energized to help ???? How about you? Is there anything I can assist you with?",
+            "I'm doing great, {name}, thanks for asking! Just here working to help our users. How about you? What can I help you with?",
+            "All good here, {name}! Thanks for asking. So, do you need help with anything?",
+            "Doing awesome, {name}! Always energized to help How about you? Is there anything I can assist you with?",
         ],
     },
     "joke": {
         "keywords": ["chiste", "joke", "broma", "hazme rer", "cuentame algo", "dime algo gracioso", "something funny"],
         "responses_es": [
-            "Jaja {name}, a ver... Por qu el conductor de Cruise nunca se pierde? Porque siempre sigue el camino dorado! ???? Necesitas ayuda con algo mas?",
-            "Uno rapido, {name}! Qu le dijo un taxi a Cruise? 'Oye, por qu todos te prefieren?' ?? Jaja, bueno volviendo al trabajo... en qu te ayudo?",
-            "Jaja ok {name}, ah va: Un pasajero le pregunta al conductor 'Cuanto falta?' y el conductor responde: 'Solo 5 estrellas seor, solo 5 estrellas' ??? Puedo ayudarte con algo?",
+            "Jaja {name}, a ver... Por qu el conductor de Cruise nunca se pierde? Porque siempre sigue el camino dorado! Necesitas ayuda con algo mas?",
+            "Uno rapido, {name}! Qu le dijo un taxi a Cruise? 'Oye, por qu todos te prefieren?' Jaja, bueno volviendo al trabajo... en qu te ayudo?",
+            "Jaja ok {name}, ah va: Un pasajero le pregunta al conductor 'Cuanto falta?' y el conductor responde: 'Solo 5 estrellas seor, solo 5 estrellas' Puedo ayudarte con algo?",
         ],
         "responses_en": [
-            "Haha {name}, okay... Why does the Cruise driver never get lost? Because they always follow the golden road! ???? Need help with anything else?",
-            "Here's a quick one, {name}! What did the taxi say to Cruise? 'Hey, why does everyone prefer you?' ?? Haha, alright back to work... how can I help?",
-            "Haha ok {name}, here goes: A passenger asks the driver 'How much longer?' and the driver says: 'Just 5 stars sir, just 5 stars' ??? Can I help you with something?",
+            "Haha {name}, okay... Why does the Cruise driver never get lost? Because they always follow the golden road! Need help with anything else?",
+            "Here's a quick one, {name}! What did the taxi say to Cruise? 'Hey, why does everyone prefer you?' Haha, alright back to work... how can I help?",
+            "Haha ok {name}, here goes: A passenger asks the driver 'How much longer?' and the driver says: 'Just 5 stars sir, just 5 stars' Can I help you with something?",
         ],
     },
     "weather": {
         "keywords": ["clima", "weather", "llueve", "hace calor", "fro", "sol", "temperatura", "rain"],
         "responses_es": [
-            "Mmm {name}, yo no puedo ver el clima desde aqu ?? pero espero que esta bonito por all. Lo que s puedo hacer es ayudarte con cualquier cosa de Cruise. Necesitas algo?",
-            "Jaja {name}, no soy la mejor para pronsticos del clima ??? Pero soy experta en resolver problemas de viajes y soporte de Cruise. Te ayudo con algo?",
+            "Mmm {name}, yo no puedo ver el clima desde aqu pero espero que esta bonito por all. Lo que s puedo hacer es ayudarte con cualquier cosa de Cruise. Necesitas algo?",
+            "Jaja {name}, no soy la mejor para pronsticos del clima Pero soy experta en resolver problemas de viajes y soporte de Cruise. Te ayudo con algo?",
         ],
         "responses_en": [
-            "Hmm {name}, I can't really see the weather from here ?? but I hope it's nice where you are. What I can do is help you with anything Cruise-related. Need something?",
-            "Haha {name}, I'm not the best weather forecaster ??? But I'm an expert at solving trips and Cruise support issues. Can I help with something?",
+            "Hmm {name}, I can't really see the weather from here but I hope it's nice where you are. What I can do is help you with anything Cruise-related. Need something?",
+            "Haha {name}, I'm not the best weather forecaster But I'm an expert at solving trips and Cruise support issues. Can I help with something?",
         ],
     },
     "compliment": {
         "keywords": ["eres genial", "muy buena", "excelente servicio", "buen trabajo", "great job", "you're great", "amazing", "increble", "la mejor", "eres la mejor"],
         "responses_es": [
-            "Aww {name}, muchas gracias! ???? Eso me motiva mucho a seguir dando mi mejor esfuerzo. Estoy aqu siempre que me necesites.",
-            "Qu lindo, {name}! ?? Me alegra mucho poder ayudarte. Es lo que mas me gusta de mi trabajo. Hay algo mas en lo que te pueda servir?",
-            "Gracias {name}! ?? Comentarios asi hacen que valga la pena cada momento. Necesitas algo mas?",
+            "Aww {name}, muchas gracias! Eso me motiva mucho a seguir dando mi mejor esfuerzo. Estoy aqu siempre que me necesites.",
+            "Qu lindo, {name}! Me alegra mucho poder ayudarte. Es lo que mas me gusta de mi trabajo. Hay algo mas en lo que te pueda servir?",
+            "Gracias {name}! Comentarios asi hacen que valga la pena cada momento. Necesitas algo mas?",
         ],
         "responses_en": [
-            "Aww {name}, thank you so much! ???? That really motivates me to keep giving my best. I'm always here whenever you need me.",
-            "That's so sweet, {name}! ?? I'm really glad I could help. It's what I love most about my job. Is there anything else I can do for you?",
-            "Thanks {name}! ?? Comments like that make every moment worth it. Need anything else?",
+            "Aww {name}, thank you so much! That really motivates me to keep giving my best. I'm always here whenever you need me.",
+            "That's so sweet, {name}! I'm really glad I could help. It's what I love most about my job. Is there anything else I can do for you?",
+            "Thanks {name}! Comments like that make every moment worth it. Need anything else?",
         ],
     },
     "who_are_you": {
         "keywords": ["quion eres", "eres real", "eres un bot", "eres robot", "eres humana", "are you real", "are you a bot", "who are you", "eres una persona"],
         "responses_es": [
-            "Soy {agent}, {name}! ?? Tu agente de soporte aqu en Cruise. Estoy para ayudarte con lo que necesites. Tienes alguna pregunta o inconveniente?",
-            "{agent} al servicio! ?? Soy parte del equipo de soporte de Cruise, {name}. Mi trabajo es asegurarme de que tengas la mejor experiencia. En qu te ayudo?",
+            "Soy {agent}, {name}! Tu agente de soporte aqu en Cruise. Estoy para ayudarte con lo que necesites. Tienes alguna pregunta o inconveniente?",
+            "{agent} al servicio! Soy parte del equipo de soporte de Cruise, {name}. Mi trabajo es asegurarme de que tengas la mejor experiencia. En qu te ayudo?",
         ],
         "responses_en": [
-            "I'm {agent}, {name}! ?? Your support agent here at Cruise. I'm here to help you with whatever you need. Got any questions or issues?",
-            "{agent} at your service! ?? I'm part of the Cruise support team, {name}. My job is to make sure you have the best experience. How can I help?",
+            "I'm {agent}, {name}! Your support agent here at Cruise. I'm here to help you with whatever you need. Got any questions or issues?",
+            "{agent} at your service! I'm part of the Cruise support team, {name}. My job is to make sure you have the best experience. How can I help?",
         ],
     },
     "about_cruise": {
         "keywords": ["qu es cruise", "que es cruise", "cmo funciona", "como funciona", "what is cruise", "how does cruise work", "para qu sirve", "servicios"],
         "responses_es": [
-            "Claro, {name}! ?? Cruise es una plataforma de transporte que te conecta con conductores confiables para llevarte a donde necesites.\n\nPuedes solicitar viajes, programar recorridos, y mucho mas desde la app. Te gustara saber algo especfico?",
-            "Cruise es tu servicio de transporte de confianza, {name} ?? Conectamos pasajeros con conductores verificados para viajes seguros y cmodos.\n\nPuedes pedir viajes en tiempo real o programarlos con anticipacion. Hay algo especfico que quieras saber?",
+            "Claro, {name}! Cruise es una plataforma de transporte que te conecta con conductores confiables para llevarte a donde necesites.\n\nPuedes solicitar viajes, programar recorridos, y mucho mas desde la app. Te gustara saber algo especfico?",
+            "Cruise es tu servicio de transporte de confianza, {name} Conectamos pasajeros con conductores verificados para viajes seguros y cmodos.\n\nPuedes pedir viajes en tiempo real o programarlos con anticipacion. Hay algo especfico que quieras saber?",
         ],
         "responses_en": [
-            "Of course, {name}! ?? Cruise is a ride-sharing platform that connects you with reliable drivers to take you wherever you need to go.\n\nYou can request rides, schedule trips, and much more from the app. Would you like to know anything specific?",
-            "Cruise is your trusted ride service, {name} ?? We connect riders with verified drivers for safe and comfortable trips.\n\nYou can request rides in real time or schedule them in advance. Is there anything specific you'd like to know?",
+            "Of course, {name}! Cruise is a ride-sharing platform that connects you with reliable drivers to take you wherever you need to go.\n\nYou can request rides, schedule trips, and much more from the app. Would you like to know anything specific?",
+            "Cruise is your trusted ride service, {name} We connect riders with verified drivers for safe and comfortable trips.\n\nYou can request rides in real time or schedule them in advance. Is there anything specific you'd like to know?",
         ],
     },
 }
@@ -1028,19 +1028,19 @@ def _generate_human_chat(user_msg: str, user_name: str, agent_name: str, lang: s
     # General fallback  still human, warm and helpful
     if lang.startswith("es"):
         general = [
-            f"Entiendo lo que me dices, {user_name} ?? Aunque ese tema no es mi especialidad, estoy aqu para lo que necesites relacionado con tu cuenta o viajes en Cruise. Hay algo con lo que pueda ayudarte?",
-            f"Jaja, interesante lo que me cuentas, {user_name} ?? Oye, si necesitas algo relacionado con Cruise estar encantada de ayudarte. Hay algo que pueda hacer por ti?",
-            f"Me encanta platicar contigo, {user_name} ?? Pero no quiero que se me pase... tienes algn tema pendiente con tus viajes o tu cuenta? Si no, aqu estoy disponible para cuando lo necesites.",
-            f"Qu buena onda, {user_name} ?? Oye, si necesitas ayuda con algo de la app, un viaje, pagos, o cualquier duda, no dudes en decirme. Para eso estoy aqu!",
-            f"Claro que s, {user_name} ?? Mira, si en algn momento necesitas ayuda con un viaje, un cobro, tu cuenta, o lo que sea de Cruise, aqu me tienes. Todo bien por ahora?",
+            f"Entiendo lo que me dices, {user_name} Aunque ese tema no es mi especialidad, estoy aqu para lo que necesites relacionado con tu cuenta o viajes en Cruise. Hay algo con lo que pueda ayudarte?",
+            f"Jaja, interesante lo que me cuentas, {user_name} Oye, si necesitas algo relacionado con Cruise estar encantada de ayudarte. Hay algo que pueda hacer por ti?",
+            f"Me encanta platicar contigo, {user_name} Pero no quiero que se me pase... tienes algn tema pendiente con tus viajes o tu cuenta? Si no, aqu estoy disponible para cuando lo necesites.",
+            f"Qu buena onda, {user_name} Oye, si necesitas ayuda con algo de la app, un viaje, pagos, o cualquier duda, no dudes en decirme. Para eso estoy aqu!",
+            f"Claro que s, {user_name} Mira, si en algn momento necesitas ayuda con un viaje, un cobro, tu cuenta, o lo que sea de Cruise, aqu me tienes. Todo bien por ahora?",
         ]
     else:
         general = [
-            f"I hear you, {user_name} ?? While that's not exactly my area, I'm here for anything you need related to your account or trips on Cruise. Can I help you with something?",
-            f"Haha, that's interesting, {user_name} ?? Hey, if you need anything Cruise-related I'd be happy to help. Is there anything I can do for you?",
-            f"Love chatting with you, {user_name} ?? But I don't want to miss anything... do you have any pending issues with your trips or account? If not, I'm here whenever you need me.",
-            f"That's cool, {user_name} ?? Hey, if you need help with the app, a trip, payments, or any questions, don't hesitate to ask. That's what I'm here for!",
-            f"Absolutely, {user_name} ?? Look, whenever you need help with a trip, a charge, your account, or anything Cruise-related, I've got you. All good for now?",
+            f"I hear you, {user_name} While that's not exactly my area, I'm here for anything you need related to your account or trips on Cruise. Can I help you with something?",
+            f"Haha, that's interesting, {user_name} Hey, if you need anything Cruise-related I'd be happy to help. Is there anything I can do for you?",
+            f"Love chatting with you, {user_name} But I don't want to miss anything... do you have any pending issues with your trips or account? If not, I'm here whenever you need me.",
+            f"That's cool, {user_name} Hey, if you need help with the app, a trip, payments, or any questions, don't hesitate to ask. That's what I'm here for!",
+            f"Absolutely, {user_name} Look, whenever you need help with a trip, a charge, your account, or anything Cruise-related, I've got you. All good for now?",
         ]
     return _rng.choice(general)
 
@@ -1213,17 +1213,17 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             chat.bot_phase = "escalated"
             if lang.startswith("es"):
                 esc = f"Lamento mucho esta experiencia, {user_name}. Entiendo tu frustracion y quiero que recibas la mejor atencion posible. Voy a conectarte de inmediato con un supervisor que podra resolver tu caso directamente."
-                sys_msg = "?? Caso escalado automticamente por urgencia. Un supervisor conectar en breve."
+                sys_msg = "Caso escalado automaticamente por urgencia. Un supervisor se conectara en breve."
             else:
                 esc = f"I'm truly sorry about this experience, {user_name}. I completely understand your frustration and I want you to get the best possible attention. I'm connecting you right away with a supervisor who can resolve your case directly."
-                sys_msg = "?? Case automatically escalated due to urgency. A supervisor will connect shortly."
+                sys_msg = "Case automatically escalated due to urgency. A supervisor will connect shortly."
             replies.append({"role": "bot", "message": esc, "sender_name": agent})
             replies.append({"role": "system", "message": sys_msg, "sender_name": "Sistema" if lang.startswith("es") else "System"})
             if _HAS_FIRESTORE:
                 try:
                     firestore_sync.sync_dispatch_notification(
                         chat.id, user_name, "escalation",
-                        f"?? Chat de {user_name} escalado automticamente  usuario frustrado"
+                        f"Chat de {user_name} escalado automaticamente - usuario frustrado"
                     )
                     firestore_sync.sync_support_chat(
                         chat.id, chat.user_id, user_name, "",
@@ -1242,21 +1242,21 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                     f"Entendido, {user_name}. Voy a escalar tu caso. Un supervisor se conectar a este chat en unos 5 a 10 minutos para ayudarte directamente.",
                     f"Comprendo, {user_name}. He solicitado la atencion de un supervisor. En 5 a 10 minutos estar conectondose a este chat para asistirte.",
                 ])
-                sys_msg = "?? Se ha solicitado un supervisor. Conectar en 5-10 minutos."
+                sys_msg = "Se ha solicitado un supervisor. Se conectara en 5-10 minutos."
             else:
                 esc = _rng.choice([
                     f"I understand your request, {user_name}. I'm going to transfer your case to a supervisor. A supervisor will be connecting to this chat in approximately 5 to 10 minutes to assist you personally.",
                     f"Got it, {user_name}. I'm escalating your case. A supervisor will connect to this chat in about 5 to 10 minutes to help you directly.",
                     f"Understood, {user_name}. I've requested a supervisor's attention. They'll be connecting to this chat in 5 to 10 minutes to assist you.",
                 ])
-                sys_msg = "?? A supervisor has been requested. They'll connect in 5-10 minutes."
+                sys_msg = "A supervisor has been requested. They will connect in 5-10 minutes."
             replies.append({"role": "bot", "message": esc, "sender_name": agent})
             replies.append({"role": "system", "message": sys_msg, "sender_name": "Sistema" if lang.startswith("es") else "System"})
             if _HAS_FIRESTORE:
                 try:
                     firestore_sync.sync_dispatch_notification(
                         chat.id, user_name, "escalation",
-                        f"?? Chat de {user_name} escalado a supervisor"
+                        f"Chat de {user_name} escalado a supervisor"
                     )
                     firestore_sync.sync_support_chat(
                         chat.id, chat.user_id, user_name, "",
@@ -1928,7 +1928,7 @@ async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):
         old_task.cancel()
     # Send system message visible to user
     sys_msg = SupportMessage(chat_id=chat_id, sender_id=0, sender_role="system",
-                              message="?? Un supervisor se ha conectado al chat")
+                              message="Un supervisor se ha conectado al chat")
     db.add(sys_msg)
     await db.commit()
     await db.refresh(sys_msg)

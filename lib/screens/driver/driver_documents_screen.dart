@@ -7,6 +7,7 @@ import '../../services/api_service.dart';
 import '../../services/firebase_storage_service.dart';
 import '../../config/driver_colors.dart';
 import '../../l10n/app_localizations.dart';
+import 'background_check_consent_screen.dart';
 
 enum _ExpiryStatus { ok, expiringSoon, expired }
 
@@ -76,6 +77,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       // Check if user is verified
       final verificationStatus = me?['verification_status'] ?? 'none';
       final isVerified = verificationStatus == 'approved';
+      final bgCheckStatus = me?['background_check_status'] as String? ?? 'none';
       
       // Merge with required doc types
       final merged = <Map<String, dynamic>>[];
@@ -90,6 +92,27 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
             'icon': req['icon'],
             'status': 'coming_soon',
             'disabled': true,
+          });
+          continue;
+        }
+
+        // Background check - use status from user profile
+        if (docType == 'background_check') {
+          String bgStatus;
+          if (bgCheckStatus == 'clear') {
+            bgStatus = 'approved';
+          } else if (bgCheckStatus == 'pending' || bgCheckStatus == 'processing') {
+            bgStatus = 'pending';
+          } else if (bgCheckStatus == 'consider' || bgCheckStatus == 'suspended') {
+            bgStatus = 'rejected';
+          } else {
+            bgStatus = 'not_uploaded';
+          }
+          merged.add({
+            'doc_type': docType,
+            'title': req['title'],
+            'icon': req['icon'],
+            'status': bgStatus,
           });
           continue;
         }
@@ -959,11 +982,15 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                       height: 54,
                       child: ElevatedButton.icon(
                         onPressed: isLoading ? null : () async {
-                          loadingNotifier.value = true;
-                          try {
-                            await ApiService.initiateBackgroundCheck();
+                          Navigator.pop(ctx);
+                          final result = await Navigator.push<Map<String, dynamic>>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const BackgroundCheckConsentScreen(),
+                            ),
+                          );
+                          if (result != null) {
                             if (!mounted) return;
-                            Navigator.pop(ctx);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: const Text('Background check initiated! Check your email.'),
@@ -973,16 +1000,6 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                               ),
                             );
                             _fetchDocuments(); // Refresh status
-                          } catch (e) {
-                            loadingNotifier.value = false;
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Error: $e'),
-                                backgroundColor: Colors.red.shade400,
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
                           }
                         },
                         icon: isLoading 

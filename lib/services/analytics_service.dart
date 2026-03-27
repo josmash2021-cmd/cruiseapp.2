@@ -242,4 +242,38 @@ class AnalyticsService {
       debugPrint('[Analytics] logError error: $e');
     }
   }
+
+  // ── Background check ───────────────────────────────────
+
+  Future<void> logBackgroundCheckInitiated() async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(name: 'background_check_initiated');
+    } catch (e) {
+      debugPrint('[Analytics] logBackgroundCheckInitiated error: $e');
+    }
+  }
+
+  Future<void> logBackgroundCheckCompleted(String status) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(
+        name: 'background_check_completed',
+        parameters: {'status': status},
+      );
+    } catch (e) {
+      debugPrint('[Analytics] logBackgroundCheckCompleted error: $e');
+    }
+  }
+
+  // ── Generic event ──────────────────────────────────────
+
+  Future<void> logEvent(String name, {Map<String, Object>? parameters}) async {
+    if (!_initialized) return;
+    try {
+      await _analytics.logEvent(name: name, parameters: parameters);
+    } catch (e) {
+      debugPrint('[Analytics] logEvent($name) error: $e');
+    }
+  }
 }

@@ -422,6 +422,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
     await _locate();
     await _buildVehicleIcons();
+    // Gate: check verification / background check status before going online
+    await _verifyDriverApproval();
     _goOnlineBackend();
 
     // Pre-cache map tiles around driver's current area (silent background)
@@ -839,6 +841,52 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     return _suvIconBytes;
   }
 
+  bool _approvalGatePassed = false;
+
+  Future<void> _verifyDriverApproval() async {
+    try {
+      final me = await ApiService.getMe();
+      if (me == null) return;
+      final bgStatus = me['background_check_status'] as String? ?? 'none';
+      final verStatus = me['verification_status'] as String? ?? 'none';
+      if (bgStatus == 'clear' || verStatus == 'approved') {
+        _approvalGatePassed = true;
+        return;
+      }
+      _approvalGatePassed = false;
+      if (!mounted) return;
+      String title;
+      String message;
+      if (bgStatus == 'pending' || bgStatus == 'processing') {
+        title = 'Background Check In Progress';
+        message = 'Your background check is still being processed. You\'ll be notified when it\'s complete.';
+      } else if (bgStatus == 'consider' || bgStatus == 'suspended') {
+        title = 'Background Check Issue';
+        message = 'There is an issue with your background check. Please contact support.';
+      } else {
+        title = 'Verification Required';
+        message = 'Please complete your documents and background check before going online.';
+      }
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1C1C1E),
+          title: Text(title, style: const TextStyle(color: Colors.white)),
+          content: Text(message, style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK', style: TextStyle(color: Color(0xFFE8C547))),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      debugPrint('_verifyDriverApproval error: $e');
+      _approvalGatePassed = true;
+    }
+  }
+
   void _goOnlineBackend() {
     if (_driverId == null) {
       debugPrint('âš ï¸ _goOnlineBackend: _driverId is null, skipping');
@@ -847,6 +895,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     debugPrint(
       'ðŸŸ¢ Going online: driverId=$_driverId lat=${_pos?.latitude} lng=${_pos?.longitude}',
     );
+    if (!_approvalGatePassed) {
+      debugPrint('_goOnlineBackend: approval gate not passed, skipping');
+      return;
+    }
     if (_pos == null) return;
     // Save last known location for startup pre-caching
     LocalCache.set('last_driver_lat', _pos!.latitude);

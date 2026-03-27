@@ -4471,6 +4471,26 @@ async def get_background_check_status(
     }
 
 
+# Convenience routes (use current user's ID)
+@app.post("/drivers/background-check", dependencies=[Depends(_verify_api_key)])
+async def initiate_background_check_self(
+    request: Request,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Convenience: initiate background check for the current user."""
+    return await initiate_background_check(user.id, request, user, db)
+
+
+@app.get("/drivers/background-check/status", dependencies=[Depends(_verify_api_key)])
+async def get_background_check_status_self(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Convenience: get background check status for the current user."""
+    return await get_background_check_status(user.id, user, db)
+
+
 @app.post("/webhooks/checkr")
 async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """Handle Checkr webhook events (report.completed, invitation.completed, etc.)."""

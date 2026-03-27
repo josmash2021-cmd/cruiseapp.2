@@ -2319,14 +2319,41 @@ class ApiService {
   // ═══════════════════════════════════════════════════════
 
   /// Initiate a background check for the current driver via Checkr.
-  static Future<Map<String, dynamic>> initiateBackgroundCheck() async {
+  static Future<Map<String, dynamic>> initiateBackgroundCheck({
+    String? firstName,
+    String? lastName,
+    String? dob,
+    String? ssnLast4,
+    String? licenseNumber,
+    String? licenseState,
+  }) async {
     final h = await _authHeaders();
+    final body = <String, dynamic>{};
+    if (firstName != null) body['first_name'] = firstName;
+    if (lastName != null) body['last_name'] = lastName;
+    if (dob != null) body['dob'] = dob;
+    if (ssnLast4 != null) body['ssn_last4'] = ssnLast4;
+    if (licenseNumber != null) body['license_number'] = licenseNumber;
+    if (licenseState != null) body['license_state'] = licenseState;
     final res = await _client
         .post(
           Uri.parse('$_baseUrl/drivers/background-check'),
           headers: h,
+          body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 20));
+    return _parse(res);
+  }
+
+  /// Get the current background check status.
+  static Future<Map<String, dynamic>> getBackgroundCheckStatus() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/drivers/background-check/status'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
     return _parse(res);
   }
 

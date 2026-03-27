@@ -996,6 +996,24 @@ class S {
   String get accessibilityLabel => _es ? 'Accesibilidad' : 'Accessibility';
   String get accessibilityFeatures =>
       _es ? 'Funciones de accesibilidad' : 'Accessibility features';
+  
+  // Accessibility screen strings
+  String get textSize => _es ? 'Tamaño del texto' : 'Text Size';
+  String get textSizePreview => _es ? 'Vista previa del texto' : 'Text size preview';
+  String get highContrast => _es ? 'Alto contraste' : 'High Contrast';
+  String get highContrastDesc => _es ? 'Aumentar contraste de colores' : 'Increase color contrast';
+  String get reduceMotion => _es ? 'Reducir movimiento' : 'Reduce Motion';
+  String get reduceMotionDesc => _es ? 'Minimizar animaciones' : 'Minimize animations';
+  String get screenReaderHints => _es ? 'Pistas para lector de pantalla' : 'Screen Reader Hints';
+  String get screenReaderHintsDesc => _es ? 'Descripciones adicionales para accesibilidad' : 'Extra descriptions for accessibility';
+  String get colorBlindMode => _es ? 'Modo daltónico' : 'Color Blind Mode';
+  String get colorBlindNone => _es ? 'Ninguno' : 'None';
+  String get colorBlindProtanopia => _es ? 'Protanopia (rojo-verde)' : 'Protanopia (red-green)';
+  String get colorBlindDeuteranopia => _es ? 'Deuteranopia (verde-rojo)' : 'Deuteranopia (green-red)';
+  String get colorBlindTritanopia => _es ? 'Tritanopia (azul-amarillo)' : 'Tritanopia (blue-yellow)';
+  String get hapticFeedback => _es ? 'Vibración háptica' : 'Haptic Feedback';
+  String get hapticFeedbackDesc => _es ? 'Vibraciones para acciones' : 'Vibrations for actions';
+
   String get appAppearance => _es ? 'Apariencia de la app' : 'App appearance';
   String get siriShortcuts =>
       _es ? 'Accesos directos de Siri' : 'Siri Shortcuts';

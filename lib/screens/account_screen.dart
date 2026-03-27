@@ -24,6 +24,7 @@ import 'edit_profile_screen.dart';
 import 'notification_settings_screen.dart';
 import 'privacy_screen.dart';
 import 'about_screen.dart';
+import 'accessibility_screen.dart';
 import 'ride_history_screen.dart';
 import 'promo_code_screen.dart';
 import 'referral_screen.dart';
@@ -833,6 +834,16 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                   Navigator.of(
                     context,
                   ).push(slideFromRightRoute(const PrivacyScreen()));
+                },
+              ),
+              const SizedBox(height: 10),
+              _settingsItem(
+                c,
+                icon: Icons.accessibility_new_rounded,
+                label: S.of(context).accessibility,
+                onTap: () {
+                  Navigator.of(context)
+                      .push(slideFromRightRoute(const AccessibilityScreen()));
                 },
               ),
               const SizedBox(height: 10),

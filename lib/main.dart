@@ -14,6 +14,7 @@ import 'config/page_transitions.dart';
 import 'config/api_keys.dart';
 import 'config/app_theme.dart';
 import 'config/theme_notifier.dart';
+import 'state/accessibility_notifier.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
@@ -31,6 +32,9 @@ import 'l10n/app_localizations.dart';
 
 /// Global theme notifier so any screen can toggle night mode.
 final themeNotifier = ThemeNotifier();
+
+/// Global accessibility notifier for app-wide a11y settings.
+final accessibilityNotifier = AccessibilityNotifier();
 
 /// M2: Global navigator key for imperative navigation (auto-logout on 401).
 final _navigatorKey = GlobalKey<NavigatorState>();
@@ -322,7 +326,7 @@ class _UberCloneAppState extends State<UberCloneApp>
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: themeNotifier,
+      animation: Listenable.merge([themeNotifier, accessibilityNotifier]),
       builder: (context, _) {
         return AnimatedTheme(
           data: themeNotifier.isNightMode ? darkTheme : lightTheme,
@@ -359,10 +363,15 @@ class _UberCloneAppState extends State<UberCloneApp>
             navigatorObservers: [AnalyticsService.instance.observer],
             home: const SplashScreen(),
             builder: (context, child) {
-              // Apply smooth scroll behavior globally
-              return ScrollConfiguration(
-                behavior: const SmoothScrollBehavior(),
-                child: child!,
+              final scale = accessibilityNotifier.textScale;
+              return MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: TextScaler.linear(scale),
+                ),
+                child: ScrollConfiguration(
+                  behavior: const SmoothScrollBehavior(),
+                  child: child!,
+                ),
               );
             },
           ),

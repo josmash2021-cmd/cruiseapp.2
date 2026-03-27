@@ -144,7 +144,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               fontSize: 34,
                               fontWeight: FontWeight.w900,
                               color: _gold,
-                              letterSpacing: 0.5,
+                              letterSpacing: 6,
                             ),
                           ),
                         ],
@@ -218,33 +218,38 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                       ),
                     ),
 
+                  const SizedBox(height: 24),
+
+                  // Already have an account? button
                   FadeTransition(
                     opacity: _btnFade,
-                    child: Center(
-                      child: GestureDetector(
-                        onTap: () {
-                          Navigator.of(
-                            context,
-                          ).push(slideUpFadeRoute(const LoginPasswordScreen()));
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 58,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0a0a0a),
+                          foregroundColor: const Color(0xFFc8a951),
+                          side: const BorderSide(
+                            color: Color(0xFFc8a951),
+                            width: 1,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          elevation: 0,
+                        ),
+                        onPressed: () {
+                          Navigator.of(context)
+                              .push(slideUpFadeRoute(const LoginPasswordScreen()));
                         },
-                        child: RichText(
-                          text: TextSpan(
-                            text: '${S.of(context).alreadyHaveAccount} ',
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: Colors.white60,
-                            ),
-                            children: [
-                              TextSpan(
-                                text: S.of(context).signIn,
-                                style: TextStyle(
-                                  color: _gold,
-                                  fontWeight: FontWeight.w700,
-                                  decoration: TextDecoration.underline,
-                                  decorationColor: _gold,
-                                ),
-                              ),
-                            ],
+                        child: Text(
+                          S.of(context).alreadyHaveAccount,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.2,
+                            color: Color(0xFFc8a951),
                           ),
                         ),
                       ),

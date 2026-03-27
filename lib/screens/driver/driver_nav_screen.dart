@@ -146,6 +146,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   AnimationController? _pulseCtrl;
   late Animation<double> _pulseAnim;
 
+  // ── Wait time tracking ────────────────────────────────────────────────────
+  DateTime? _waitStartedAt;
+  Timer? _waitTimer;
+  int _waitSeconds = 0;
+  static const int _freeWaitMinutes = 2;  // 2 minutes free
+  static const double _waitRatePerMinute = 0.50;  // $0.50/min after free period
+
   // ── GPS ───────────────────────────────────────────────────────────────────
   StreamSubscription<Position>? _gpsSub;
   final _gpsService = GpsService();
@@ -249,6 +256,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _etaRefreshTimer?.cancel();
     _iconPulseTimer?.cancel();
     _destPinAnimTimer?.cancel();
+    _waitTimer?.cancel();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _pulseCtrl?.dispose();
@@ -1000,6 +1008,118 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _isOverview = true;
     });
     _animateCameraOverview(_pos, widget.pickupLatLng);
+    _startWaitTimer();
+  }
+
+  void _startWaitTimer() {
+    _waitStartedAt = DateTime.now();
+    _waitSeconds = 0;
+    // Call backend to record wait time start
+    ApiService.startWaitTime(widget.tripId).catchError((_) {});
+    AnalyticsService.instance.logEvent('wait_time_started');
+    _waitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        _waitSeconds = DateTime.now().difference(_waitStartedAt!).inSeconds;
+      });
+      // Haptic feedback at 90s (30s before free ends) and 120s (free ends)
+      if (_waitSeconds == 90) {
+        HapticFeedback.mediumImpact();
+      } else if (_waitSeconds == _freeWaitMinutes * 60) {
+        HapticFeedback.heavyImpact();
+        AnalyticsService.instance.logEvent('wait_time_free_expired');
+      }
+    });
+  }
+
+  void _stopWaitTimer() {
+    _waitTimer?.cancel();
+    _waitTimer = null;
+    if (_waitStartedAt != null) {
+      final waitMinutes = _waitSeconds ~/ 60;
+      final chargedMinutes = (waitMinutes > _freeWaitMinutes) ? waitMinutes - _freeWaitMinutes : 0;
+      final charge = chargedMinutes * _waitRatePerMinute;
+      if (charge > 0) {
+        AnalyticsService.instance.logEvent('wait_time_charged', parameters: {'amount': charge});
+      }
+      // Call backend to finalize wait time
+      ApiService.endWaitTime(widget.tripId).catchError((_) {});
+    }
+  }
+
+  String _formatWaitTime(int totalSeconds) {
+    final mins = totalSeconds ~/ 60;
+    final secs = totalSeconds % 60;
+    return '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
+  double _calculateWaitCharge() {
+    final waitMinutes = _waitSeconds ~/ 60;
+    if (waitMinutes <= _freeWaitMinutes) return 0.0;
+    return (waitMinutes - _freeWaitMinutes) * _waitRatePerMinute;
+  }
+
+  Widget _buildWaitTimerDisplay() {
+    final freeSecondsTotal = _freeWaitMinutes * 60;
+    final isCharging = _waitSeconds > freeSecondsTotal;
+    final charge = _calculateWaitCharge();
+
+    // Calculate remaining free time or time charging
+    final freeRemaining = freeSecondsTotal - _waitSeconds;
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isCharging 
+            ? Colors.orange.withValues(alpha: 0.2)
+            : Colors.green.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isCharging 
+              ? Colors.orange.withValues(alpha: 0.4)
+              : Colors.green.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.timer_outlined,
+            color: isCharging ? Colors.orange : Colors.green,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _formatWaitTime(_waitSeconds),
+            style: TextStyle(
+              color: isCharging ? Colors.orange : Colors.green,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (!isCharging)
+            Text(
+              'Free: ${_formatWaitTime(freeRemaining > 0 ? freeRemaining : 0)} left',
+              style: TextStyle(
+                color: Colors.green.withValues(alpha: 0.8),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            )
+          else
+            Text(
+              'Charging: \$${charge.toStringAsFixed(2)}',
+              style: const TextStyle(
+                color: Colors.orange,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   double _hav(LatLng a, LatLng b) {
@@ -1015,6 +1135,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   Future<void> _startRide() async {
     HapticFeedback.heavyImpact();
+    _stopWaitTimer(); // End wait time when ride starts
     _startRideSwitching = true;
     _sm.beginTrip(); // triggers _onPhaseChanged(TripPhase.onTrip)
 
@@ -2190,10 +2311,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             ],
           ),
           const SizedBox(height: 14),
-          Text('Waiting for your rider',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
-              fontSize: 13)),
+          // Wait timer display
+          _buildWaitTimerDisplay(),
           const SizedBox(height: 14),
           // Start Ride button (gold)
           SizedBox(

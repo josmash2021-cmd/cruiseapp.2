@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import '../config/mapbox_config.dart';
+import 'api_service.dart';
 
 // ─── Place type enum for smart icons ─────────────────────────────────
 
@@ -278,10 +279,16 @@ class PlacesService {
     // ── Fallback: Google Places ──
     if (!isKeyValid) {
       debugPrint(
-        '\u26a0\ufe0f Places autocomplete: API key is empty or invalid. '
-        'Set your Google API key in lib/config/env.dart (mapsServicesKey). '
-        'Current key: "${apiKey.isEmpty ? "(empty)" : apiKey.substring(0, (apiKey.length).clamp(0, 8))}..."',
+        '\u26a0\ufe0f Places autocomplete: API key is empty or invalid, using backend proxy.',
       );
+      // Try backend proxy endpoint
+      try {
+        final results = await _backendAutocomplete(cleanInput, lat: latitude, lon: longitude);
+        if (seq != _autocompleteSeq) return [];
+        if (results.isNotEmpty) return results;
+      } catch (e) {
+        debugPrint('\u26a0\ufe0f Backend autocomplete failed: $e');
+      }
       return [];
     }
 

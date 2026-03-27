@@ -10153,6 +10153,192 @@ except ImportError as _wh_err:
 
 
 # -------------------------------------------------------
+#  GOOGLE PLACES PROXY (for clients without valid API key)
+# -------------------------------------------------------
+
+@app.get("/places/autocomplete")
+async def places_autocomplete(
+    input: str = Query(..., description="Search input text"),
+    lat: float = Query(None, description="Latitude for location bias"),
+    lng: float = Query(None, description="Longitude for location bias"),
+):
+    """
+    Proxy for Google Places Autocomplete API.
+    Allows clients without a valid API key to search for addresses.
+    """
+    if not GOOGLE_MAPS_API_KEY:
+        raise HTTPException(503, "Places service not configured")
+    
+    try:
+        import urllib.request
+        import urllib.parse
+        
+        base_url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+        params = {
+            "input": input,
+            "key": GOOGLE_MAPS_API_KEY,
+            "language": "en",
+        }
+        
+        # Add location bias if provided
+        if lat is not None and lng is not None:
+            params["location"] = f"{lat},{lng}"
+            params["radius"] = "50000"  # 50km radius
+        
+        url = f"{base_url}?{urllib.parse.urlencode(params)}"
+        req = urllib.request.Request(url, method="GET")
+        
+        loop = asyncio.get_event_loop()
+        def _fetch():
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    return json.loads(resp.read().decode())
+            except urllib.error.HTTPError as e:
+                raise HTTPException(e.code, f"Places API error")
+        
+        data = await loop.run_in_executor(None, _fetch)
+        
+        if data.get("status") not in ("OK", "ZERO_RESULTS"):
+            logging.warning("[Places] Autocomplete error: %s", data.get("status"))
+            raise HTTPException(502, f"Places API error: {data.get('status')}")
+        
+        # Return simplified predictions
+        predictions = []
+        for p in data.get("predictions", []):
+            predictions.append({
+                "place_id": p.get("place_id"),
+                "description": p.get("description"),
+                "main_text": p.get("structured_formatting", {}).get("main_text", ""),
+                "secondary_text": p.get("structured_formatting", {}).get("secondary_text", ""),
+            })
+        
+        return {"predictions": predictions}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("[Places] Autocomplete error: %s", e)
+        raise HTTPException(500, "Places search failed")
+
+
+@app.get("/places/details")
+async def places_details(
+    place_id: str = Query(..., description="Google Place ID"),
+):
+    """
+    Proxy for Google Places Details API.
+    Returns place details including coordinates.
+    """
+    if not GOOGLE_MAPS_API_KEY:
+        raise HTTPException(503, "Places service not configured")
+    
+    try:
+        import urllib.request
+        import urllib.parse
+        
+        base_url = "https://maps.googleapis.com/maps/api/place/details/json"
+        params = {
+            "place_id": place_id,
+            "key": GOOGLE_MAPS_API_KEY,
+            "fields": "place_id,name,formatted_address,geometry,address_components",
+        }
+        
+        url = f"{base_url}?{urllib.parse.urlencode(params)}"
+        req = urllib.request.Request(url, method="GET")
+        
+        loop = asyncio.get_event_loop()
+        def _fetch():
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    return json.loads(resp.read().decode())
+            except urllib.error.HTTPError as e:
+                raise HTTPException(e.code, f"Places API error")
+        
+        data = await loop.run_in_executor(None, _fetch)
+        
+        if data.get("status") != "OK":
+            logging.warning("[Places] Details error: %s", data.get("status"))
+            raise HTTPException(502, f"Places API error: {data.get('status')}")
+        
+        result = data.get("result", {})
+        geo = result.get("geometry", {}).get("location", {})
+        
+        return {
+            "place_id": result.get("place_id"),
+            "name": result.get("name"),
+            "address": result.get("formatted_address"),
+            "lat": geo.get("lat"),
+            "lng": geo.get("lng"),
+            "address_components": result.get("address_components", []),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("[Places] Details error: %s", e)
+        raise HTTPException(500, "Places details failed")
+
+
+@app.get("/places/geocode")
+async def places_geocode(
+    address: str = Query(..., description="Address to geocode"),
+):
+    """
+    Proxy for Google Geocoding API.
+    Converts an address to coordinates.
+    """
+    if not GOOGLE_MAPS_API_KEY:
+        raise HTTPException(503, "Geocoding service not configured")
+    
+    try:
+        import urllib.request
+        import urllib.parse
+        
+        base_url = "https://maps.googleapis.com/maps/api/geocode/json"
+        params = {
+            "address": address,
+            "key": GOOGLE_MAPS_API_KEY,
+        }
+        
+        url = f"{base_url}?{urllib.parse.urlencode(params)}"
+        req = urllib.request.Request(url, method="GET")
+        
+        loop = asyncio.get_event_loop()
+        def _fetch():
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    return json.loads(resp.read().decode())
+            except urllib.error.HTTPError as e:
+                raise HTTPException(e.code, f"Geocoding API error")
+        
+        data = await loop.run_in_executor(None, _fetch)
+        
+        if data.get("status") not in ("OK", "ZERO_RESULTS"):
+            logging.warning("[Places] Geocode error: %s", data.get("status"))
+            raise HTTPException(502, f"Geocoding API error: {data.get('status')}")
+        
+        results = data.get("results", [])
+        if not results:
+            return {"results": []}
+        
+        # Return simplified results
+        simplified = []
+        for r in results[:5]:  # Max 5 results
+            geo = r.get("geometry", {}).get("location", {})
+            simplified.append({
+                "place_id": r.get("place_id"),
+                "address": r.get("formatted_address"),
+                "lat": geo.get("lat"),
+                "lng": geo.get("lng"),
+            })
+        
+        return {"results": simplified}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error("[Places] Geocode error: %s", e)
+        raise HTTPException(500, "Geocoding failed")
+
+
+# -------------------------------------------------------
 #  SERVER STARTUP (if run directly)
 # -------------------------------------------------------
 

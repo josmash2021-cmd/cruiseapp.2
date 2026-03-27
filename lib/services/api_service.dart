@@ -721,6 +721,26 @@ class ApiService {
     return _parse(res);
   }
 
+  // ── Wait Time for Drivers ──
+
+  /// Start wait timer when driver arrives at pickup.
+  static Future<Map<String, dynamic>> startWaitTime(int tripId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(Uri.parse('$_baseUrl/trips/$tripId/wait-time/start'), headers: h)
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// End wait timer and calculate charges.
+  static Future<Map<String, dynamic>> endWaitTime(int tripId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(Uri.parse('$_baseUrl/trips/$tripId/wait-time/end'), headers: h)
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
   /// Check whether an email or phone is already registered.
   /// Returns `true` if the account exists.
   static Future<bool> checkExists(String identifier, {String? role}) async {

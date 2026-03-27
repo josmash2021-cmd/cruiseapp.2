@@ -84,6 +84,7 @@ _OTP_TTL = 300  # 5 minutes
 # Prevents DB hammering when client polls faster than the 5-second interval
 _pending_cache: dict = {}  # {driver_id: (monotonic_ts, offers_list)}
 _PENDING_CACHE_TTL = 3.0   # seconds — any call within this window reuses cached result
+OFFER_TIMEOUT_SECONDS = 20  # seconds for driver to accept/reject before auto-cascade
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
@@ -4186,6 +4187,8 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
             "rider_name": rider_name,
             "rider_phone": rider_phone,
             "rider_photo_url": rider_photo_url,
+            "created_at": offer.created_at.isoformat() if offer.created_at else None,
+            "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
             **_trip_dict(trip),
         })
     _pending_cache[driver_id] = (time.monotonic(), offers)  # L3: cache for TTL

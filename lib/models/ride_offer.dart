@@ -14,6 +14,8 @@ class RideOffer {
   final String vehicleType;
   final String riderPhotoUrl;
   final double riderRating;
+  final DateTime? createdAt;
+  final int offerTimeoutSeconds;
 
   const RideOffer({
     required this.offerId,
@@ -28,7 +30,17 @@ class RideOffer {
     required this.vehicleType,
     this.riderPhotoUrl = '',
     this.riderRating = 5.0,
+    this.createdAt,
+    this.offerTimeoutSeconds = 20,
   });
+
+  /// Seconds remaining before this offer expires (0 if already expired).
+  int get secondsRemaining {
+    if (createdAt == null) return offerTimeoutSeconds;
+    final elapsed = DateTime.now().difference(createdAt!).inSeconds;
+    final remaining = offerTimeoutSeconds - elapsed;
+    return remaining > 0 ? remaining : 0;
+  }
 
   factory RideOffer.fromJson(Map<String, dynamic> json) {
     return RideOffer(
@@ -51,6 +63,10 @@ class RideOffer {
       vehicleType: json['vehicle_type']?.toString() ?? 'Fusion',
       riderPhotoUrl: json['rider_photo_url']?.toString() ?? '',
       riderRating: (json['rider_rating'] as num?)?.toDouble() ?? 5.0,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'].toString())
+          : null,
+      offerTimeoutSeconds: (json['offer_timeout_seconds'] as num?)?.toInt() ?? 20,
     );
   }
 }

@@ -18,11 +18,12 @@ import '../../models/ride_offer.dart';
 import '../../navigation/offers_controller.dart';
 import '../../navigation/route_service.dart';
 import '../../pages/driver_navigation_page.dart';
+import '../../services/analytics_service.dart';
 import '../../widgets/gold_location_dot.dart';
 
 /// Instacart-style driver offers screen.
 ///
-/// Shows a list of available ride offers. No countdown timers.
+/// Shows a list of available ride offers with countdown timers.
 /// Driver can ACCEPT or REJECT each offer.
 /// After ACCEPT → navigates to [DriverNavigationPage].
 class DriverOffersScreen extends StatefulWidget {
@@ -50,6 +51,9 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   bool _loading = true;
   bool _accepting = false;
   final GoldLocationDot _goldDot = GoldLocationDot();
+  Timer? _countdownTimer;
+  final Set<String> _expiredOffers = {};  // Track offers we've auto-declined
+  bool _warningHaptic5Played = false;
 
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
@@ -68,14 +72,53 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
 
     _goldDot.build(() { if (mounted) setState(() {}); });
     _initLocation();
+    _startCountdownTimer();
   }
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _goldDot.dispose();
     _pulseCtrl.dispose();
     _ctrl.dispose();
     super.dispose();
+  }
+
+  void _startCountdownTimer() {
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final offers = _ctrl.offersNotifier.value;
+      bool anyExpired = false;
+      for (final offer in offers) {
+        final remaining = offer.secondsRemaining;
+        // Haptic warning at 5 seconds
+        if (remaining == 5 && !_warningHaptic5Played) {
+          HapticFeedback.heavyImpact();
+          _warningHaptic5Played = true;
+        }
+        // Auto-decline expired offers
+        if (remaining <= 0 && !_expiredOffers.contains(offer.offerId)) {
+          _expiredOffers.add(offer.offerId);
+          _ctrl.rejectOffer(offer.offerId, reason: 'timeout');
+          AnalyticsService.instance.logEvent('offer_timeout');
+          anyExpired = true;
+        }
+      }
+      if (anyExpired && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Offer expired'),
+            backgroundColor: _red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      // Reset haptic flag when no offers with 5s remaining
+      if (offers.isEmpty || !offers.any((o) => o.secondsRemaining == 5)) {
+        _warningHaptic5Played = false;
+      }
+      setState(() {}); // Refresh UI to update countdown displays
+    });
   }
 
   Future<void> _onMapCreated(mapbox.MapboxMap controller) async {
@@ -738,44 +781,8 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                           ],
                         ),
                       ),
-                      // Exclusive badge like UberX
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              _gold.withValues(alpha: 0.25),
-                              _gold.withValues(alpha: 0.1),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: _gold.withValues(alpha: 0.4),
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.star_rounded,
-                              color: _gold,
-                              size: 14,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Exclusivo',
-                              style: TextStyle(
-                                color: _gold,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      // Countdown timer - replaces exclusive badge
+                      _buildCountdownTimer(offer),
                     ],
                   ),
                 ),
@@ -1091,6 +1098,62 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
               color: Colors.white70,
               fontSize: 12,
               fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCountdownTimer(RideOffer offer) {
+    final remaining = offer.secondsRemaining;
+    final total = offer.offerTimeoutSeconds;
+    final progress = remaining / total;
+    
+    // Color changes: green > 10s, yellow 5-10s, red < 5s
+    Color timerColor;
+    if (remaining > 10) {
+      timerColor = _green;
+    } else if (remaining > 5) {
+      timerColor = const Color(0xFFFFA500); // Orange
+    } else {
+      timerColor = _red;
+    }
+    
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Background circle
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: CircularProgressIndicator(
+              value: 1.0,
+              strokeWidth: 4,
+              valueColor: AlwaysStoppedAnimation(Colors.white.withValues(alpha: 0.1)),
+            ),
+          ),
+          // Progress circle
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: CircularProgressIndicator(
+              value: progress,
+              strokeWidth: 4,
+              strokeCap: StrokeCap.round,
+              valueColor: AlwaysStoppedAnimation(timerColor),
+            ),
+          ),
+          // Seconds text
+          Text(
+            '$remaining',
+            style: TextStyle(
+              color: timerColor,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],

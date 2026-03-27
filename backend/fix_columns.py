@@ -5,21 +5,16 @@ import os
 import sys
 import asyncio
 import logging
+from db_url import resolve_database_url
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get DATABASE_URL
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+DATABASE_URL = resolve_database_url(default="", async_driver=True)
 if not DATABASE_URL:
     logger.error("DATABASE_URL not set!")
     sys.exit(1)
-
-# Convert to asyncpg format
-if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-elif DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text

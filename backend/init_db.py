@@ -5,6 +5,7 @@ This module can be imported and run automatically on startup.
 import os
 import sys
 import logging
+from db_url import resolve_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ async def init_database():
     """Create all tables in PostgreSQL - called on server startup."""
     
     # Get DATABASE_URL from environment
-    DATABASE_URL = os.getenv("DATABASE_URL", "")
+    DATABASE_URL = resolve_database_url(default="", async_driver=True)
     
     if not DATABASE_URL:
         logger.error("DATABASE_URL not set!")
@@ -20,12 +21,6 @@ async def init_database():
     
     logger.info(f"Initializing database...")
     logger.info(f"Database type: {'PostgreSQL' if 'postgresql' in DATABASE_URL else 'SQLite'}")
-    
-    # Convert to asyncpg format if needed
-    if DATABASE_URL.startswith("postgresql://"):
-        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-    elif DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
     
     try:
         from sqlalchemy.ext.asyncio import create_async_engine

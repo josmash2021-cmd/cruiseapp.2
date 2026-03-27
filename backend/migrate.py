@@ -3,20 +3,16 @@ import asyncio
 import os
 import sys
 import logging
+from db_url import resolve_database_url
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 try:
-    DATABASE_URL = os.getenv("DATABASE_URL", "")
+    DATABASE_URL = resolve_database_url(default="", async_driver=True)
     if not DATABASE_URL:
         log.info("No DATABASE_URL - skipping migrations")
         sys.exit(0)
-
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
-    elif DATABASE_URL.startswith("postgresql://"):
-        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
     from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy import text

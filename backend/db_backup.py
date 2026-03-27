@@ -11,6 +11,7 @@ import gzip
 import shutil
 from datetime import datetime
 from pathlib import Path
+from db_url import resolve_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ _last_backup_size_kb: float = 0.0
 
 def _get_pg_url() -> str | None:
     """Get the PostgreSQL connection URL from environment."""
-    return os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+    return resolve_database_url(default=None, async_driver=False) or None
 
 
 def _pg_url_to_env(pg_url: str) -> dict:

@@ -1,0 +1,237 @@
+{
+  "name": "Cruise - Driver Assignment",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "driver-assigned",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Driver Assigned",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract assignment data\nconst data = $input.all()[0].json;\n\n// Validate required fields\nif (!data.trip_id || !data.driver_id || !data.rider_id) {\n  throw new Error('Missing required fields: trip_id, driver_id, rider_id');\n}\n\n// Format notification for rider\nconst riderNotif = {\n  target: 'rider',\n  user_id: data.rider_id,\n  title: 'Driver on the way!',\n  body: `${data.driver_name} is heading to pick you up in a ${data.vehicle_color} ${data.vehicle_make} ${data.vehicle_model}`,\n  data: {\n    type: 'driver_assigned',\n    trip_id: String(data.trip_id),\n    driver_id: String(data.driver_id),\n    driver_name: data.driver_name,\n    driver_rating: String(data.driver_rating || 5.0),\n    vehicle_plate: data.vehicle_plate,\n    eta_minutes: String(data.eta_minutes || 5)\n  }\n};\n\n// Format notification for driver\nconst driverNotif = {\n  target: 'driver',\n  user_id: data.driver_id,\n  title: 'New ride accepted!',\n  body: `Head to ${data.pickup_address} to pick up ${data.rider_name}`,\n  data: {\n    type: 'ride_accepted',\n    trip_id: String(data.trip_id),\n    rider_id: String(data.rider_id),\n    pickup_lat: String(data.pickup_lat),\n    pickup_lng: String(data.pickup_lng),\n    pickup_address: data.pickup_address\n  }\n};\n\nreturn [\n  { json: riderNotif },\n  { json: driverNotif }\n];"
+      },
+      "id": "process-assignment",
+      "name": "Process Assignment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CRUISE_BACKEND_URL}}/internal/push-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Key",
+              "value": "={{$env.INTERNAL_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"user_id\": {{ $json.user_id }},\n  \"title\": \"{{ $json.title }}\",\n  \"body\": \"{{ $json.body }}\",\n  \"data\": {{ JSON.stringify($json.data) }}\n}",
+        "options": {}
+      },
+      "id": "send-push",
+      "name": "Send Push via Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.target }}",
+              "value2": "rider"
+            }
+          ]
+        }
+      },
+      "id": "if-rider",
+      "name": "If Rider",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.TWILIO_SMS_URL}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Basic {{$env.TWILIO_AUTH_HEADER}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.rider_phone }}"
+            },
+            {
+              "name": "From",
+              "value": "={{$env.TWILIO_PHONE}}"
+            },
+            {
+              "name": "Body",
+              "value": "=Your Cruise driver {{ $json.driver_name }} is on the way! {{ $json.vehicle_color }} {{ $json.vehicle_make }} {{ $json.vehicle_model }} - Plate: {{ $json.vehicle_plate }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sms-rider",
+      "name": "SMS to Rider",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 150]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CRUISE_BACKEND_URL}}/trips/{{ $json.data.trip_id }}/events",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Key",
+              "value": "={{$env.INTERNAL_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event\": \"notification_sent\",\n  \"target\": \"{{ $json.target }}\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "id": "log-event",
+      "name": "Log Trip Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return success response\nreturn [{\n  json: {\n    status: 'success',\n    notifications_sent: 2,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "final-response",
+      "name": "Final Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Driver Assigned": {
+      "main": [
+        [
+          {
+            "node": "Process Assignment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Assignment": {
+      "main": [
+        [
+          {
+            "node": "Send Push via Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Push via Backend": {
+      "main": [
+        [
+          {
+            "node": "If Rider",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Trip Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Rider": {
+      "main": [
+        [
+          {
+            "node": "SMS to Rider",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "SMS to Rider": {
+      "main": [
+        [
+          {
+            "node": "Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Trip Event": {
+      "main": [
+        [
+          {
+            "node": "Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "instanceId": "cruise-rideshare-app"
+  },
+  "tags": [
+    {
+      "name": "Cruise",
+      "id": "1"
+    },
+    {
+      "name": "Driver Assignment",
+      "id": "3"
+    }
+  ]
+}

@@ -1,0 +1,184 @@
+{
+  "name": "Cruise - New Ride Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-ride",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - New Ride",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract ride request data\nconst data = $input.all()[0].json;\n\n// Validate required fields\nif (!data.rider_id || !data.pickup_address || !data.dropoff_address) {\n  throw new Error('Missing required fields: rider_id, pickup_address, dropoff_address');\n}\n\n// Format notification message\nconst message = {\n  title: 'New Ride Request',\n  body: `From ${data.pickup_address} to ${data.dropoff_address}`,\n  rider_id: data.rider_id,\n  fare: data.fare || 0,\n  vehicle_type: data.vehicle_type || 'comfort',\n  pickup: {\n    lat: data.pickup_lat,\n    lng: data.pickup_lng,\n    address: data.pickup_address\n  },\n  dropoff: {\n    lat: data.dropoff_lat,\n    lng: data.dropoff_lng,\n    address: data.dropoff_address\n  },\n  timestamp: new Date().toISOString()\n};\n\nreturn [{ json: message }];"
+      },
+      "id": "process-request",
+      "name": "Process Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.FIREBASE_FCM_URL}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.FIREBASE_SERVER_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "topic",
+              "value": "available_drivers"
+            },
+            {
+              "name": "notification",
+              "value": "={{ JSON.stringify({ title: $json.title, body: $json.body }) }}"
+            },
+            {
+              "name": "data",
+              "value": "={{ JSON.stringify({ type: 'new_ride', rider_id: String($json.rider_id), fare: String($json.fare), vehicle_type: $json.vehicle_type, pickup_lat: String($json.pickup.lat), pickup_lng: String($json.pickup.lng) }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-fcm",
+      "name": "Send FCM to Drivers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.TWILIO_SMS_URL}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Basic {{$env.TWILIO_AUTH_HEADER}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{$env.ADMIN_PHONE}}"
+            },
+            {
+              "name": "From",
+              "value": "={{$env.TWILIO_PHONE}}"
+            },
+            {
+              "name": "Body",
+              "value": "=New Cruise ride: {{ $json.body }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-sms-admin",
+      "name": "SMS to Admin (Optional)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log notification result\nconst input = $input.all();\nconst success = input.every(item => !item.json.error);\n\nreturn [{\n  json: {\n    status: success ? 'success' : 'partial_failure',\n    fcm_sent: true,\n    sms_sent: true,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "log-result",
+      "name": "Log Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - New Ride": {
+      "main": [
+        [
+          {
+            "node": "Process Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Request": {
+      "main": [
+        [
+          {
+            "node": "Send FCM to Drivers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SMS to Admin (Optional)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send FCM to Drivers": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SMS to Admin (Optional)": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "instanceId": "cruise-rideshare-app"
+  },
+  "tags": [
+    {
+      "name": "Cruise",
+      "id": "1"
+    },
+    {
+      "name": "Notifications",
+      "id": "2"
+    }
+  ]
+}

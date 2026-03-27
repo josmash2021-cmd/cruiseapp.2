@@ -564,6 +564,39 @@ async def get_navigation_instructions(
         if not data.get("routes"):
             raise HTTPException(404, "No route found")
         
+        def _parse_maneuver_to_type(maneuver: str) -> str:
+            """Convert Google Directions maneuver to our navigation type."""
+            if not maneuver:
+                return "straight"
+            maneuver = maneuver.lower()
+            if "turn-left" in maneuver:
+                return "turn_left"
+            elif "turn-right" in maneuver:
+                return "turn_right"
+            elif "uturn" in maneuver:
+                return "uturn"
+            elif "roundabout" in maneuver or "rotary" in maneuver:
+                return "roundabout"
+            elif "merge" in maneuver:
+                return "merge"
+            elif "ramp" in maneuver or "exit" in maneuver:
+                return "exit"
+            elif "fork" in maneuver:
+                return "fork"
+            else:
+                return "straight"
+        
+        def _clean_html_instructions(html_text: str) -> str:
+            """Remove HTML tags from instructions."""
+            import re as _re
+            text = _re.sub(r'<[^>]+>', '', html_text)
+            text = text.replace("&nbsp;", " ")
+            text = text.replace("&amp;", "&")
+            text = text.replace("&lt;", "<")
+            text = text.replace("&gt;", ">")
+            text = " ".join(text.split())
+            return text
+        
         # Parse route steps
         route = data["routes"][0]
         leg = route["legs"][0]

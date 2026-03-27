@@ -526,44 +526,6 @@ async def _scheduled_ride_dispatcher():
                                      trip.id, best.id, best_dist)
         except Exception as e:
             logging.error("[Scheduler] Error in scheduled ride dispatcher: %s", e)
-def _parse_maneuver_to_type(maneuver: str) -> str:
-    """Convert Google Directions maneuver to our navigation type."""
-    if not maneuver:
-        return "straight"
-    
-    maneuver = maneuver.lower()
-    
-    if "turn-left" in maneuver:
-        return "turn_left"
-    elif "turn-right" in maneuver:
-        return "turn_right"
-    elif "uturn" in maneuver:
-        return "uturn"
-    elif "roundabout" in maneuver or "rotary" in maneuver:
-        return "roundabout"
-    elif "merge" in maneuver:
-        return "merge"
-    elif "ramp" in maneuver or "exit" in maneuver:
-        return "exit"
-    elif "fork" in maneuver:
-        return "fork"
-    else:
-        return "straight"
-
-def _clean_html_instructions(html_text: str) -> str:
-    """Remove HTML tags from instructions."""
-    import re
-    # Remove HTML tags
-    text = re.sub(r'<[^>]+>', '', html_text)
-    # Replace common entities
-    text = text.replace("&nbsp;", " ")
-    text = text.replace("&amp;", "&")
-    text = text.replace("&lt;", "<")
-    text = text.replace("&gt;", ">")
-    # Clean up extra spaces
-    text = " ".join(text.split())
-    return text
-
 async def _connection_watchdog():
     """Monitors DB + Firebase every 30 s and auto-reconnects on failure."""
     global _HAS_FIRESTORE

@@ -940,6 +940,7 @@ extension DriverOnlineController on _DriverOnlineScreenState {
       _acceptingCardId = null;
     });
 
+    if (!mounted) return;
     final riderPhotoUrl = (r['rider_photo_url'] ?? r['photo_url'] ?? '') as String;
     final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 4.8;
     final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';

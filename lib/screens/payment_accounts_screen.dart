@@ -134,7 +134,8 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               setDefault: false,
             );
           } catch (_) {
-            if (context.mounted) ErrorService.show(context, 'Failed to save Google Pay on server. Please retry.');
+            if (!context.mounted) return;
+            ErrorService.show(context, 'Failed to save Google Pay on server. Please retry.');
           }
           if (!mounted) return;
           setState(() => _googlePayLinked = true);
@@ -183,7 +184,8 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               setDefault: false,
             );
           } catch (_) {
-            if (context.mounted) ErrorService.show(context, 'Failed to save Apple Pay on server. Please retry.');
+            if (!context.mounted) return;
+            ErrorService.show(context, 'Failed to save Apple Pay on server. Please retry.');
           }
           if (!mounted) return;
           setState(() => _applePayLinked = true);

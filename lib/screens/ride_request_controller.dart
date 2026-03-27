@@ -865,6 +865,7 @@ extension RideRequestController on _RideRequestScreenState {
   /// Credit/debit card: charge saved card via Stripe PaymentIntent.
   Future<bool> _confirmCard(int amountCents) async {
     final pmId = await LocalDataService.getStripePaymentMethodId();
+    if (!mounted) return false;
     if (pmId == null || pmId.isEmpty) {
       throw Exception(S.of(context).pleaseAddPaymentFirst);
     }

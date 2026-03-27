@@ -107,7 +107,7 @@ class DriverSafetyScreen extends StatelessWidget {
                             );
                           }
                         } catch (_) {
-                          _showToast(context, 'Could not share trip');
+                          if (mounted) _showToast(context, 'Could not share trip');
                         }
                       },
                     ),

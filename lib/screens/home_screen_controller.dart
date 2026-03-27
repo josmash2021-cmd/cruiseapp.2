@@ -79,6 +79,7 @@ extension HomeScreenController on _HomeScreenState {
         if (!mounted) return;
         if (_remainingSeconds <= 0) {
           _countdownTimer?.cancel();
+          _loadSavedData(); // refresh active ride state → may unlock panel
           return;
         }
         setState(() {

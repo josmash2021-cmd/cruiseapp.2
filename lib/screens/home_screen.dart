@@ -51,7 +51,8 @@ part 'home_screen_map.dart';
 part 'home_screen_widgets.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final bool forceExpandPanel;
+  const HomeScreen({super.key, this.forceExpandPanel = false});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -86,6 +87,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
   // Active ride state
   ActiveRideInfo? _activeRide;
+
+  // Panel lock — keeps sheet fully expanded while trip is active
+  bool _panelLocked = false;
 
   // Progress bar countdown state
   int _totalSeconds = 0;
@@ -233,6 +237,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     );
     UserSession.photoNotifier.addListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
+
+    // If returning from tracking screen, lock panel open
+    if (widget.forceExpandPanel) {
+      _panelLocked = true;
+    }
   }
 
   @override
@@ -823,6 +832,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     if (activeRide != null) {
       _startCountdown(activeRide.etaMinutes ?? 10);
     }
+
+    // Panel lock: unlock if no active ride, keep locked otherwise
+    if (_panelLocked && activeRide == null) {
+      _unlockPanel();
+    }
   }
 
   int get _unreadNotifications {
@@ -886,11 +900,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           RepaintBoundary(
             child: DraggableScrollableSheet(
               controller: _sheetController,
-              initialChildSize: _kMinSheet,
-              minChildSize: _kMinSheet,
+              initialChildSize: _panelLocked ? _kMaxSheet : _kMinSheet,
+              minChildSize: _panelLocked ? _kMaxSheet : _kMinSheet,
               maxChildSize: _kMaxSheet,
               snap: true,
-              snapSizes: const [_kMinSheet, _kMaxSheet],
+              snapSizes: _panelLocked
+                  ? const [_kMaxSheet]
+                  : const [_kMinSheet, _kMaxSheet],
               // No snapAnimationDuration — let Flutter use velocity-aware defaults
               builder: (ctx, scrollCtrl) =>
                   _buildSheet(scrollCtrl, bottomPad),
@@ -911,6 +927,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     if (_remainingSeconds <= 0) return 'Arriving...';
     final mins = (_remainingSeconds / 60).ceil();
     return '$mins min remaining';
+  }
+
+  /// Smoothly collapse the panel and restore normal drag behavior.
+  void _unlockPanel() {
+    if (!_panelLocked) return;
+    setState(() => _panelLocked = false);
+    // After rebuild with new minChildSize, animate to collapsed
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _sheetController.animateTo(
+        _kMinSheet,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOutCubic,
+      );
+    });
   }
 
   void _requestRideToAddress(String address) async {

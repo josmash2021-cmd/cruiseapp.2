@@ -2661,6 +2661,84 @@ async def save_photo_url(request: Request, user: User = Depends(_get_current_use
             logging.error("Firestore photo-url sync failed: %s", e)
     return {"photo_url": photo_url}
 
+
+# ═══════════════════════════════════════════════════════
+#  FIREBASE STORAGE PHOTO UPLOAD (Feature 13.1)
+# ═══════════════════════════════════════════════════════
+
+@app.post("/users/me/photo", dependencies=[Depends(_verify_api_key)])
+async def upload_photo_to_firebase(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Upload profile photo to Firebase Storage via backend.
+    
+    Accepts base64 image, uploads to Firebase Storage, updates user.photo_url.
+    Returns the Firebase Storage public URL.
+    """
+    body = await request.json()
+    photo_b64 = body.get("photo")
+    if not photo_b64 or not isinstance(photo_b64, str):
+        raise HTTPException(400, "Missing 'photo' field (base64)")
+    
+    # Pre-check base64 string size BEFORE decoding (prevents memory exhaustion)
+    if len(photo_b64) > 4 * 1024 * 1024:  # ~3MB decoded
+        raise HTTPException(413, "Photo data too large")
+    
+    # Validate and decode base64
+    try:
+        photo_bytes = base64.b64decode(photo_b64, validate=True)
+    except Exception:
+        raise HTTPException(400, "Invalid base64 data")
+    
+    # Limit decoded size to 3MB
+    if len(photo_bytes) > 3 * 1024 * 1024:
+        raise HTTPException(413, "Photo too large (max 3MB)")
+    
+    # Validate image magic bytes — only allow JPEG and PNG
+    if photo_bytes[:2] == b'\xff\xd8':
+        ext = "jpg"
+        content_type = "image/jpeg"
+    elif photo_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+        ext = "png"
+        content_type = "image/png"
+    else:
+        raise HTTPException(400, "Unsupported image format (only JPEG and PNG)")
+    
+    # Upload to Firebase Storage
+    storage_path = f"photos/user_{user.id}/profile.{ext}"
+    firebase_url = firestore_sync.upload_to_firebase_storage(
+        data=photo_bytes,
+        path=storage_path,
+        content_type=content_type
+    )
+    
+    if not firebase_url:
+        # Fallback to local storage if Firebase fails
+        filename = f"user_{user.id}.{ext}"
+        filepath = os.path.join(PHOTOS_DIR, filename)
+        with open(filepath, "wb") as f:
+            f.write(photo_bytes)
+        photo_url = f"/photos/{filename}"
+        logging.warning("Firebase Storage upload failed, using local storage: %s", photo_url)
+    else:
+        photo_url = firebase_url
+    
+    # Update user photo_url in DB
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if db_user:
+        db_user.photo_url = photo_url
+        await db.commit()
+        await db.refresh(db_user)
+        # Sync to Firestore
+        if _HAS_FIRESTORE:
+            try:
+                collection = "drivers" if db_user.role == "driver" else "clients"
+                firestore_sync.update_field(collection, db_user.id, "photoUrl", photo_url)
+            except Exception as e:
+                logging.error("Firestore photo sync failed: %s", e)
+    
+    return {"photo_url": photo_url, "storage": "firebase" if firebase_url else "local"}
+
+
 @app.get("/photos/{filename}")
 async def serve_photo(filename: str):
     """Serve uploaded profile photos. Public endpoint (no auth)."""

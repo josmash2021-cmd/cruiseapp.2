@@ -14,15 +14,17 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, storage
 
 log = logging.getLogger("firestore_sync")
 
 # ── Init ─────────────────────────────────────────────────
 _db = None  # Firestore client (lazy)
 _fs_db = None  # Alias for _db (used by main.py)
+_bucket = None  # Firebase Storage bucket
 
 _KEY_PATH = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
+_STORAGE_BUCKET = "cruise-af9f1.firebasestorage.app"
 
 def _ensure_init():
     """Initialise Firebase Admin SDK once.
@@ -31,7 +33,7 @@ def _ensure_init():
     1. serviceAccountKey.json file (local dev)
     2. FIREBASE_SERVICE_ACCOUNT env var (Railway/production) — JSON string
     """
-    global _db, _fs_db
+    global _db, _fs_db, _bucket
     if _db is not None:
         return
     try:
@@ -39,6 +41,10 @@ def _ensure_init():
         firebase_admin.get_app()
         _db = firestore.client()
         _fs_db = _db
+        try:
+            _bucket = storage.bucket(_STORAGE_BUCKET)
+        except Exception as e:
+            log.warning("⚠️  Firebase Storage bucket init failed: %s", e)
         return
     except ValueError:
         pass  # Not yet initialized
@@ -72,9 +78,14 @@ def _ensure_init():
         return
 
     try:
-        firebase_admin.initialize_app(cred)
+        firebase_admin.initialize_app(cred, {'storageBucket': _STORAGE_BUCKET})
         _db = firestore.client()
         _fs_db = _db
+        try:
+            _bucket = storage.bucket()
+            log.info("✅ Firebase Storage initialised (bucket: %s)", _STORAGE_BUCKET)
+        except Exception as e:
+            log.warning("⚠️  Firebase Storage bucket init failed: %s", e)
         log.info("✅ Firestore sync initialised (project: %s)", cred.project_id)
     except Exception as e:
         log.error("❌ Firestore init failed: %s", e)
@@ -85,6 +96,60 @@ def _ts(dt: Optional[datetime] = None):
     if dt is None:
         return firestore.SERVER_TIMESTAMP
     return dt
+
+
+# ═══════════════════════════════════════════════════════════
+#  FIREBASE STORAGE (Feature 13.1)
+# ═══════════════════════════════════════════════════════════
+
+def upload_to_firebase_storage(data: bytes, path: str, content_type: str = "image/jpeg") -> Optional[str]:
+    """Upload bytes to Firebase Storage and return the public download URL.
+    
+    Args:
+        data: File bytes to upload
+        path: Storage path (e.g., 'photos/user_123/profile.jpg')
+        content_type: MIME type
+        
+    Returns:
+        Public download URL or None if upload fails
+    """
+    _ensure_init()
+    if _bucket is None:
+        log.warning("⚠️  Firebase Storage not available — upload skipped")
+        return None
+    
+    try:
+        blob = _bucket.blob(path)
+        blob.upload_from_string(data, content_type=content_type)
+        blob.make_public()
+        log.info("✅ Uploaded to Firebase Storage: %s", path)
+        return blob.public_url
+    except Exception as e:
+        log.error("❌ Firebase Storage upload failed: %s", e)
+        return None
+
+
+def delete_from_firebase_storage(path: str) -> bool:
+    """Delete a file from Firebase Storage.
+    
+    Args:
+        path: Storage path to delete
+        
+    Returns:
+        True if deleted, False otherwise
+    """
+    _ensure_init()
+    if _bucket is None:
+        return False
+    
+    try:
+        blob = _bucket.blob(path)
+        blob.delete()
+        log.info("✅ Deleted from Firebase Storage: %s", path)
+        return True
+    except Exception as e:
+        log.warning("⚠️  Firebase Storage delete failed: %s", e)
+        return False
 
 
 # ═══════════════════════════════════════════════════════════

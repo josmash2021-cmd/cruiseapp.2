@@ -9151,6 +9151,130 @@ async def get_current_surge(lat: float = Query(...), lng: float = Query(...), db
     return {"surge_multiplier": best_multiplier, "is_surge": best_multiplier > 1.0, "message": f"{best_multiplier}x" if best_multiplier > 1.0 else "No surge"}
 
 
+# ═══════════════════════════════════════════════════════
+#  ROUTING PREVIEW WITH REAL DISTANCE (Feature 14.1)
+# ═══════════════════════════════════════════════════════
+
+@app.get("/routing/preview", dependencies=[Depends(_verify_api_key)])
+async def routing_preview(
+    pickup_lat: float = Query(..., description="Pickup latitude"),
+    pickup_lng: float = Query(..., description="Pickup longitude"),
+    dropoff_lat: float = Query(..., description="Dropoff latitude"),
+    dropoff_lng: float = Query(..., description="Dropoff longitude"),
+    vehicle_type: str = Query("comfort"),  # comfort, premium, vip
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get routing preview with REAL distance and duration from Google Directions API.
+    Returns: distance_miles, duration_minutes, polyline, and fare estimate.
+    """
+    import urllib.request
+    import urllib.parse
+    
+    # Base rates by vehicle type
+    rates = {
+        "comfort": {"base": 2.50, "per_mile": 1.50, "per_minute": 0.25, "min_fare": 8.00},
+        "premium": {"base": 3.00, "per_mile": 2.00, "per_minute": 0.35, "min_fare": 12.00},
+        "vip":     {"base": 5.00, "per_mile": 3.00, "per_minute": 0.50, "min_fare": 20.00},
+    }
+    r = rates.get(vehicle_type.lower(), rates["comfort"])
+    
+    # Variables for distance/duration
+    dist_mi = 0.0
+    duration_min = 0
+    polyline = ""
+    routing_source = "haversine"  # Default fallback
+    
+    # Try Google Directions API first
+    if GOOGLE_MAPS_API_KEY:
+        try:
+            base_url = "https://maps.googleapis.com/maps/api/directions/json"
+            params = {
+                "origin": f"{pickup_lat},{pickup_lng}",
+                "destination": f"{dropoff_lat},{dropoff_lng}",
+                "mode": "driving",
+                "key": GOOGLE_MAPS_API_KEY,
+                "units": "imperial",
+            }
+            url = f"{base_url}?{urllib.parse.urlencode(params)}"
+            req = urllib.request.Request(url, method="GET")
+            
+            loop = asyncio.get_event_loop()
+            def _fetch():
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    return json.loads(resp.read().decode())
+            
+            data = await loop.run_in_executor(None, _fetch)
+            
+            if data.get("status") == "OK" and data.get("routes"):
+                route = data["routes"][0]
+                leg = route["legs"][0]
+                
+                # Real distance and duration from Google
+                dist_meters = leg.get("distance", {}).get("value", 0)
+                dist_mi = round(dist_meters / 1609.344, 2)  # meters to miles
+                
+                duration_sec = leg.get("duration", {}).get("value", 0)
+                duration_min = max(1, int(duration_sec / 60))
+                
+                # Encoded polyline
+                polyline = route.get("overview_polyline", {}).get("points", "")
+                routing_source = "google"
+                
+                logging.info("[ROUTING] Google: %.2f mi, %d min", dist_mi, duration_min)
+        except Exception as e:
+            logging.warning("[ROUTING] Google Directions API failed: %s", e)
+    
+    # Fallback to haversine if Google failed
+    if routing_source == "haversine" or dist_mi == 0:
+        dist_km = _haversine(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+        dist_mi = round(dist_km * 0.621371, 2)
+        # Rough estimate: 2.5 min/mile in city traffic
+        duration_min = max(3, int(dist_mi * 2.5))
+        polyline = ""  # No polyline for haversine
+        routing_source = "haversine"
+        logging.info("[ROUTING] Haversine fallback: %.2f mi, %d min", dist_mi, duration_min)
+    
+    # Get surge at pickup location
+    surge_mult = 1.0
+    result = await db.execute(select(SurgeZone).where(SurgeZone.is_active == True))
+    for zone in result.scalars().all():
+        if _haversine(pickup_lat, pickup_lng, zone.center_lat, zone.center_lng) <= zone.radius_km:
+            surge_mult = max(surge_mult, zone.surge_multiplier)
+    
+    # Calculate fare components
+    base_fare = r["base"]
+    mileage_charge = round(dist_mi * r["per_mile"], 2)
+    time_charge = round(duration_min * r["per_minute"], 2)
+    subtotal = round(base_fare + mileage_charge + time_charge, 2)
+    surge_extra = round(subtotal * (surge_mult - 1.0), 2) if surge_mult > 1.0 else 0.0
+    total = max(round(subtotal + surge_extra, 2), r["min_fare"])
+    
+    # Calculate range (±15%)
+    low = round(total * 0.85, 2)
+    high = round(total * 1.15, 2)
+    
+    return {
+        "routing_source": routing_source,
+        "distance_miles": dist_mi,
+        "duration_minutes": duration_min,
+        "polyline": polyline,
+        "vehicle_type": vehicle_type,
+        "fare_estimate": {
+            "base_fare": base_fare,
+            "mileage_charge": mileage_charge,
+            "time_charge": time_charge,
+            "subtotal": subtotal,
+            "surge_multiplier": surge_mult,
+            "surge_extra": surge_extra,
+            "total": total,
+            "low": low,
+            "high": high,
+            "display": f"${low:.2f} - ${high:.2f}",
+        },
+    }
+
+
 @app.get("/estimate-fare", dependencies=[Depends(_verify_api_key)])
 async def estimate_fare(
     pickup_lat: float = Query(...),

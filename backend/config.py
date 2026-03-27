@@ -90,3 +90,7 @@ except Exception:
         _HAS_FIRESTORE = True
     except Exception as _e:
         logging.warning("firestore_sync not available: %s", _e)
+
+# ── n8n Webhooks ──
+N8N_WEBHOOK_BASE = os.getenv("N8N_WEBHOOK_BASE", "")  # e.g. https://n8n.example.com/webhook
+_HAS_N8N = bool(N8N_WEBHOOK_BASE)

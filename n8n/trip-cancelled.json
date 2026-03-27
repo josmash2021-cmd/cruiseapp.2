@@ -1,0 +1,268 @@
+{
+  "name": "Cruise - Trip Cancelled",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trip-cancelled",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Trip Cancelled",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nif (!data.trip_id) {\n  throw new Error('Missing required field: trip_id');\n}\n\nconst cancelledBy = data.cancelled_by || 'rider';\nconst fee = data.cancellation_fee || 0;\n\nreturn [{\n  json: {\n    trip_id: data.trip_id,\n    rider_id: data.rider_id,\n    rider_name: data.rider_name || 'Rider',\n    rider_phone: data.rider_phone || '',\n    driver_id: data.driver_id,\n    driver_name: data.driver_name || 'Driver',\n    pickup_address: data.pickup_address || '',\n    dropoff_address: data.dropoff_address || '',\n    cancel_reason: data.cancel_reason || 'No reason provided',\n    cancelled_by: cancelledBy,\n    cancellation_fee: fee.toFixed(2),\n    has_fee: fee > 0,\n    previous_status: data.previous_status || 'requested',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "process-cancel",
+      "name": "Process Cancellation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.cancelled_by }}",
+              "value2": "rider"
+            }
+          ]
+        }
+      },
+      "id": "who-cancelled",
+      "name": "Rider or Driver?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CRUISE_BACKEND_URL}}/internal/push-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Key",
+              "value": "={{$env.INTERNAL_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"user_id\": {{ $json.driver_id }},\n  \"title\": \"Ride Cancelled\",\n  \"body\": \"{{ $json.rider_name }} cancelled the trip. Reason: {{ $json.cancel_reason }}\",\n  \"data\": {\n    \"type\": \"trip_cancelled\",\n    \"trip_id\": \"{{ $json.trip_id }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "notify-driver",
+      "name": "Notify Driver",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CRUISE_BACKEND_URL}}/internal/push-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Key",
+              "value": "={{$env.INTERNAL_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"user_id\": {{ $json.rider_id }},\n  \"title\": \"Your driver cancelled\",\n  \"body\": \"{{ $json.driver_name }} had to cancel. We're finding you another driver.\",\n  \"data\": {\n    \"type\": \"driver_cancelled\",\n    \"trip_id\": \"{{ $json.trip_id }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "notify-rider",
+      "name": "Notify Rider",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_fee }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "has-fee",
+      "name": "Has Fee?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.TWILIO_SMS_URL}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Basic {{$env.TWILIO_AUTH_HEADER}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.rider_phone }}"
+            },
+            {
+              "name": "From",
+              "value": "={{$env.TWILIO_PHONE}}"
+            },
+            {
+              "name": "Body",
+              "value": "=Cruise: A ${{ $json.cancellation_fee }} cancellation fee has been applied to your account for trip #{{ $json.trip_id }}."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sms-fee",
+      "name": "SMS Fee Notice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    status: 'success',\n    trip_id: $json.trip_id,\n    cancelled_by: $json.cancelled_by,\n    fee_applied: $json.has_fee,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "log-result",
+      "name": "Log Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Trip Cancelled": {
+      "main": [
+        [
+          {
+            "node": "Process Cancellation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Cancellation": {
+      "main": [
+        [
+          {
+            "node": "Rider or Driver?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rider or Driver?": {
+      "main": [
+        [
+          {
+            "node": "Notify Driver",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Rider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Driver": {
+      "main": [
+        [
+          {
+            "node": "Has Fee?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Rider": {
+      "main": [
+        [
+          {
+            "node": "Has Fee?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Fee?": {
+      "main": [
+        [
+          {
+            "node": "SMS Fee Notice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SMS Fee Notice": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "cruise",
+      "id": "1"
+    }
+  ],
+  "triggerCount": 1,
+  "pinData": {}
+}

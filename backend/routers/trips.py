@@ -14,6 +14,7 @@ from utils.security import (
 )
 from utils.helpers import utc_now, _haversine, _trip_dict
 from services.fcm_service import _send_fcm_push
+from services.n8n_webhooks import fire as _n8n_fire
 from config import (
     PUBLIC_URL, STRIPE_SECRET, _HAS_STRIPE, _stripe_mod,
     firestore_sync, _HAS_FIRESTORE,
@@ -367,6 +368,30 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     except Exception as _fcm_err:
         logging.warning("[FCM] Rider push failed: %s", _fcm_err)
 
+    # ── n8n webhook triggers ──
+    if status == "completed":
+        asyncio.ensure_future(_n8n_fire("trip-completed", {
+            "trip_id": trip.id, "rider_id": trip.rider_id, "driver_id": trip.driver_id,
+            "rider_name": rider.name if rider else "",
+            "rider_email": rider.email if rider else "",
+            "driver_name": getattr(trip, "driver_name", ""),
+            "pickup_address": trip.pickup_address or "",
+            "dropoff_address": trip.dropoff_address or "",
+            "fare": float(trip.fare or 0), "tip_amount": float(trip.tip_amount or 0),
+            "platform_fee": float(trip.platform_fee or 0),
+            "driver_earnings": float(trip.driver_earnings or 0),
+            "payment_status": trip.payment_status or "unpaid",
+            "vehicle_type": trip.vehicle_type or "sedan",
+        }))
+        if trip.payment_status == "failed":
+            asyncio.ensure_future(_n8n_fire("payment-failed", {
+                "trip_id": trip.id, "rider_id": trip.rider_id,
+                "rider_name": rider.name if rider else "",
+                "fare": float(trip.fare or 0),
+                "error_code": "charge_failed",
+                "error_message": "Auto-charge after trip completion failed",
+            }))
+
     return _trip_dict(trip)
 
 # ═══════════════════════════════════════════════════════
@@ -429,6 +454,17 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
             firestore_sync.sync_trip_status(trip_id=trip.id, status="canceled", cancel_reason=reason)
         except Exception as e:
             logging.error("Firestore sync on cancel_trip failed: %s", e)
+
+    # ── n8n webhook trigger ──
+    asyncio.ensure_future(_n8n_fire("trip-cancelled", {
+        "trip_id": trip.id, "rider_id": trip.rider_id, "driver_id": trip.driver_id,
+        "cancel_reason": reason or "", "cancelled_by": "rider",
+        "cancellation_fee": cancellation_fee,
+        "previous_status": trip.status,
+        "pickup_address": trip.pickup_address or "",
+        "dropoff_address": trip.dropoff_address or "",
+    }))
+
     return {**_trip_dict(trip), "cancellation_fee": cancellation_fee}
 
 # ═══════════════════════════════════════════════════════

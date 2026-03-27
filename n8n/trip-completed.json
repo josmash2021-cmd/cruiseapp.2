@@ -1,0 +1,220 @@
+{
+  "name": "Cruise - Trip Completed",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trip-completed",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Trip Completed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all()[0].json;\n\nif (!data.trip_id || !data.rider_id) {\n  throw new Error('Missing required fields: trip_id, rider_id');\n}\n\nconst fare = data.fare || 0;\nconst tip = data.tip_amount || 0;\nconst total = fare + tip;\nconst platformFee = data.platform_fee || 0;\nconst driverEarnings = data.driver_earnings || 0;\n\nreturn [{\n  json: {\n    trip_id: data.trip_id,\n    rider_id: data.rider_id,\n    rider_name: data.rider_name || 'Rider',\n    rider_email: data.rider_email || '',\n    rider_phone: data.rider_phone || '',\n    driver_id: data.driver_id,\n    driver_name: data.driver_name || 'Driver',\n    driver_email: data.driver_email || '',\n    pickup_address: data.pickup_address || '',\n    dropoff_address: data.dropoff_address || '',\n    fare: fare.toFixed(2),\n    tip: tip.toFixed(2),\n    total: total.toFixed(2),\n    platform_fee: platformFee.toFixed(2),\n    driver_earnings: driverEarnings.toFixed(2),\n    payment_status: data.payment_status || 'paid',\n    distance_miles: data.distance_miles || 0,\n    duration_minutes: data.duration_minutes || 0,\n    vehicle_type: data.vehicle_type || 'sedan',\n    completed_at: data.completed_at || new Date().toISOString()\n  }\n}];"
+      },
+      "id": "process-completion",
+      "name": "Build Receipt Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CRUISE_BACKEND_URL}}/internal/push-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Key",
+              "value": "={{$env.INTERNAL_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"user_id\": {{ $json.rider_id }},\n  \"title\": \"Trip Complete - ${{ $json.total }}\",\n  \"body\": \"{{ $json.pickup_address }} → {{ $json.dropoff_address }}. Rate your driver!\",\n  \"data\": {\n    \"type\": \"trip_receipt\",\n    \"trip_id\": \"{{ $json.trip_id }}\",\n    \"fare\": \"{{ $json.fare }}\",\n    \"tip\": \"{{ $json.tip }}\",\n    \"total\": \"{{ $json.total }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "push-receipt-rider",
+      "name": "Push Receipt to Rider",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CRUISE_BACKEND_URL}}/internal/push-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Key",
+              "value": "={{$env.INTERNAL_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"user_id\": {{ $json.driver_id }},\n  \"title\": \"Earnings: ${{ $json.driver_earnings }}\",\n  \"body\": \"Trip #{{ $json.trip_id }} completed. Earnings added to your balance.\",\n  \"data\": {\n    \"type\": \"trip_earnings\",\n    \"trip_id\": \"{{ $json.trip_id }}\",\n    \"earnings\": \"{{ $json.driver_earnings }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "push-earnings-driver",
+      "name": "Push Earnings to Driver",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.rider_email }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "has-email",
+      "name": "Has Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SENDGRID_FROM_EMAIL}}",
+        "toEmail": "={{ $json.rider_email }}",
+        "subject": "=Your Cruise receipt - ${{ $json.total }}",
+        "text": "=Trip #{{ $json.trip_id }}\n\nFrom: {{ $json.pickup_address }}\nTo: {{ $json.dropoff_address }}\n\nFare: ${{ $json.fare }}\nTip: ${{ $json.tip }}\nTotal: ${{ $json.total }}\n\nDriver: {{ $json.driver_name }}\nVehicle: {{ $json.vehicle_type }}\nDate: {{ $json.completed_at }}\n\nThank you for riding with Cruise!",
+        "options": {}
+      },
+      "id": "send-email-receipt",
+      "name": "Email Receipt",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1050, 150],
+      "credentials": {
+        "smtp": {
+          "id": "sendgrid-smtp",
+          "name": "SendGrid SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    status: 'success',\n    receipt_sent: true,\n    driver_notified: true,\n    email_sent: $input.all().length > 0,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "log-result",
+      "name": "Log Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Trip Completed": {
+      "main": [
+        [
+          {
+            "node": "Build Receipt Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Receipt Data": {
+      "main": [
+        [
+          {
+            "node": "Push Receipt to Rider",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Push Earnings to Driver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Receipt to Rider": {
+      "main": [
+        [
+          {
+            "node": "Has Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Email?": {
+      "main": [
+        [
+          {
+            "node": "Email Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Earnings to Driver": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Receipt": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "cruise",
+      "id": "1"
+    }
+  ],
+  "triggerCount": 1,
+  "pinData": {}
+}

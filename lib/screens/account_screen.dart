@@ -25,6 +25,7 @@ import 'notification_settings_screen.dart';
 import 'privacy_screen.dart';
 import 'about_screen.dart';
 import 'accessibility_screen.dart';
+import 'saved_addresses_screen.dart';
 import 'ride_history_screen.dart';
 import 'promo_code_screen.dart';
 import 'referral_screen.dart';
@@ -812,6 +813,17 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                   await Navigator.of(
                     context,
                   ).push(slideFromRightRoute(const EditProfileScreen()));
+                },
+              ),
+              const SizedBox(height: 10),
+              _settingsItem(
+                c,
+                icon: Icons.place_rounded,
+                label: S.of(context).savedAddresses,
+                onTap: () {
+                  Navigator.of(context).push(
+                    slideFromRightRoute(const SavedAddressesScreen()),
+                  );
                 },
               ),
               const SizedBox(height: 10),

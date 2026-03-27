@@ -9022,18 +9022,49 @@ async def apply_referral_code(referral_code: str = Body(...), user: User = Depen
 @app.get("/favorites", dependencies=[Depends(_verify_api_key)])
 async def get_favorite_locations(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Get user's favorite locations."""
-    result = await db.execute(select(FavoriteLocation).where(FavoriteLocation.user_id == user.id))
+    result = await db.execute(select(FavoriteLocation).where(FavoriteLocation.user_id == user.id).order_by(FavoriteLocation.created_at))
     favorites = result.scalars().all()
     return [{"id": f.id, "label": f.label, "address": f.address, "lat": f.lat, "lng": f.lng, "icon": f.icon} for f in favorites]
 
 @app.post("/favorites", dependencies=[Depends(_verify_api_key)])
 async def add_favorite_location(label: str = Body(...), address: str = Body(...), lat: float = Body(...), lng: float = Body(...), icon: str = Body("star"), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Add a favorite location."""
-    favorite = FavoriteLocation(user_id=user.id, label=label, address=address, lat=lat, lng=lng, icon=icon)
+    """Add a favorite location. Max 1 home, 1 work, 10 favorites."""
+    norm = label.strip().lower()
+    # Enforce limits
+    if norm in ("home", "work"):
+        existing = await db.execute(select(FavoriteLocation).where(FavoriteLocation.user_id == user.id, func.lower(FavoriteLocation.label) == norm))
+        if existing.scalar_one_or_none():
+            raise HTTPException(409, f"A '{norm}' address already exists. Use PUT to update it.")
+    else:
+        result = await db.execute(select(func.count()).select_from(FavoriteLocation).where(FavoriteLocation.user_id == user.id, func.lower(FavoriteLocation.label).notin_(["home", "work"])))
+        count = result.scalar() or 0
+        if count >= 10:
+            raise HTTPException(409, "Maximum 10 favorite addresses reached")
+    favorite = FavoriteLocation(user_id=user.id, label=label.strip(), address=address, lat=lat, lng=lng, icon=icon)
     db.add(favorite)
     await db.commit()
     await db.refresh(favorite)
     return {"id": favorite.id, "label": label, "status": "added"}
+
+@app.put("/favorites/{favorite_id}", dependencies=[Depends(_verify_api_key)])
+async def update_favorite_location(favorite_id: int, label: str = Body(None), address: str = Body(None), lat: float = Body(None), lng: float = Body(None), icon: str = Body(None), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Update a favorite location."""
+    result = await db.execute(select(FavoriteLocation).where(FavoriteLocation.id == favorite_id, FavoriteLocation.user_id == user.id))
+    favorite = result.scalar_one_or_none()
+    if not favorite:
+        raise HTTPException(404, "Favorite not found")
+    if label is not None:
+        favorite.label = label.strip()
+    if address is not None:
+        favorite.address = address
+    if lat is not None:
+        favorite.lat = lat
+    if lng is not None:
+        favorite.lng = lng
+    if icon is not None:
+        favorite.icon = icon
+    await db.commit()
+    return {"id": favorite.id, "label": favorite.label, "status": "updated"}
 
 @app.delete("/favorites/{favorite_id}", dependencies=[Depends(_verify_api_key)])
 async def delete_favorite_location(favorite_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

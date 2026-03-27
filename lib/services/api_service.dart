@@ -657,6 +657,70 @@ class ApiService {
     return _parse(res);
   }
 
+  // ── Saved Addresses CRUD ──
+
+  static Future<List<dynamic>> getSavedAddresses() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/favorites'), headers: h)
+        .timeout(const Duration(seconds: 10));
+    final parsed = _parse(res);
+    if (parsed['list'] != null) return parsed['list'] as List;
+    // The endpoint returns a JSON array directly
+    return jsonDecode(res.body) as List? ?? [];
+  }
+
+  static Future<Map<String, dynamic>> addSavedAddress({
+    required String label,
+    required String address,
+    required double lat,
+    required double lng,
+    String icon = 'star',
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/favorites'),
+          headers: h,
+          body: jsonEncode({'label': label, 'address': address, 'lat': lat, 'lng': lng, 'icon': icon}),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  static Future<Map<String, dynamic>> updateSavedAddress({
+    required int id,
+    String? label,
+    String? address,
+    double? lat,
+    double? lng,
+    String? icon,
+  }) async {
+    final h = await _authHeaders();
+    final body = <String, dynamic>{};
+    if (label != null) body['label'] = label;
+    if (address != null) body['address'] = address;
+    if (lat != null) body['lat'] = lat;
+    if (lng != null) body['lng'] = lng;
+    if (icon != null) body['icon'] = icon;
+    final res = await _client
+        .put(
+          Uri.parse('$_baseUrl/favorites/$id'),
+          headers: h,
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  static Future<Map<String, dynamic>> deleteSavedAddress(int id) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .delete(Uri.parse('$_baseUrl/favorites/$id'), headers: h)
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
   /// Check whether an email or phone is already registered.
   /// Returns `true` if the account exists.
   static Future<bool> checkExists(String identifier, {String? role}) async {

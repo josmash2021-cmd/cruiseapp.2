@@ -3,17 +3,39 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FavoritePlace {
+  final int? id;
   final String label;
   final String address;
+  final double? lat;
+  final double? lng;
+  final String icon;
 
-  const FavoritePlace({required this.label, required this.address});
+  const FavoritePlace({
+    this.id,
+    required this.label,
+    required this.address,
+    this.lat,
+    this.lng,
+    this.icon = 'star',
+  });
 
-  Map<String, dynamic> toJson() => {'label': label, 'address': address};
+  Map<String, dynamic> toJson() => {
+    if (id != null) 'id': id,
+    'label': label,
+    'address': address,
+    if (lat != null) 'lat': lat,
+    if (lng != null) 'lng': lng,
+    'icon': icon,
+  };
 
   static FavoritePlace fromJson(Map<String, dynamic> json) {
     return FavoritePlace(
+      id: json['id'] as int?,
       label: json['label']?.toString() ?? '',
       address: json['address']?.toString() ?? '',
+      lat: (json['lat'] as num?)?.toDouble(),
+      lng: (json['lng'] as num?)?.toDouble(),
+      icon: json['icon']?.toString() ?? 'star',
     );
   }
 }
@@ -164,6 +186,22 @@ class LocalDataService {
         .toList();
     filtered.insert(0, favorite);
 
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _favoritesKey,
+      jsonEncode(filtered.map((item) => item.toJson()).toList()),
+    );
+  }
+
+  static Future<void> removeFavorite(String label) async {
+    final existing = await getFavorites();
+    final filtered = existing
+        .where(
+          (item) =>
+              item.label.toLowerCase().trim() !=
+              label.toLowerCase().trim(),
+        )
+        .toList();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       _favoritesKey,

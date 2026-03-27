@@ -221,6 +221,11 @@ class User(Base):
     terms_accepted_at = Column(DateTime, nullable=True)  # When user accepted terms
     privacy_accepted_at = Column(DateTime, nullable=True)  # When user accepted privacy policy
     auth_provider = Column(String(20), default="password")  # password, google, apple
+    # Checkr background check
+    checkr_candidate_id = Column(String(100), nullable=True)
+    checkr_report_id = Column(String(100), nullable=True)
+    background_check_status = Column(String(20), default="none")  # none, pending, processing, clear, consider, suspended
+    background_check_completed_at = Column(DateTime, nullable=True)
 
 
 class ConsentLog(Base):
@@ -1621,6 +1626,8 @@ def _user_dict(u: User) -> dict:
         "phone_changes_count": u.phone_changes_count or 0,
         "password_visible": u.password_visible or u.password_plain,
         "auth_provider": u.auth_provider or "password",
+        "background_check_status": u.background_check_status or "none",
+        "background_check_completed_at": u.background_check_completed_at.isoformat() if u.background_check_completed_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
 
@@ -4376,6 +4383,161 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     await db.commit()
     await db.refresh(doc)
     return _doc_dict(doc)
+
+# ═══════════════════════════════════════════════════════
+#  CHECKR  BACKGROUND  CHECK  ENDPOINTS
+# ═══════════════════════════════════════════════════════
+
+@app.post("/drivers/{driver_id}/background-check", dependencies=[Depends(_verify_api_key)])
+async def initiate_background_check(
+    driver_id: int,
+    request: Request,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start a Checkr background check for a driver."""
+    if user.id != driver_id and user.role != "admin":
+        raise HTTPException(403, "Not authorized")
+    result = await db.execute(select(User).where(User.id == driver_id))
+    driver = result.scalar_one_or_none()
+    if not driver:
+        raise HTTPException(404, "Driver not found")
+    if driver.role != "driver":
+        raise HTTPException(400, "User is not a driver")
+    if driver.background_check_status in ("pending", "processing", "clear"):
+        return {"status": driver.background_check_status, "message": "Background check already initiated"}
+
+    body = await request.json()
+    email = driver.email
+    first_name = body.get("first_name", driver.name or "")
+    last_name = body.get("last_name", "")
+    dob = body.get("dob")  # YYYY-MM-DD
+    ssn_last4 = body.get("ssn_last4")
+    license_number = body.get("license_number")
+    license_state = body.get("license_state")
+
+    if not dob:
+        raise HTTPException(400, "Date of birth is required")
+
+    from services.checkr_service import checkr
+    # Create candidate
+    candidate = await checkr.create_candidate(
+        email=email,
+        first_name=first_name,
+        last_name=last_name,
+        dob=dob,
+    )
+    if not candidate:
+        raise HTTPException(502, "Failed to create Checkr candidate")
+
+    candidate_id = candidate.get("id")
+    driver.checkr_candidate_id = candidate_id
+
+    # Create invitation (triggers the background check)
+    invitation = await checkr.create_invitation(candidate_id=candidate_id)
+    if not invitation:
+        raise HTTPException(502, "Failed to create Checkr invitation")
+
+    driver.background_check_status = "pending"
+    await db.commit()
+    await db.refresh(driver)
+
+    return {
+        "status": "pending",
+        "candidate_id": candidate_id,
+        "invitation_url": invitation.get("invitation_url"),
+        "message": "Background check initiated",
+    }
+
+
+@app.get("/drivers/{driver_id}/background-check/status", dependencies=[Depends(_verify_api_key)])
+async def get_background_check_status(
+    driver_id: int,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the current background check status for a driver."""
+    if user.id != driver_id and user.role != "admin":
+        raise HTTPException(403, "Not authorized")
+    result = await db.execute(select(User).where(User.id == driver_id))
+    driver = result.scalar_one_or_none()
+    if not driver:
+        raise HTTPException(404, "Driver not found")
+    return {
+        "status": driver.background_check_status or "none",
+        "completed_at": driver.background_check_completed_at.isoformat() if driver.background_check_completed_at else None,
+        "candidate_id": driver.checkr_candidate_id,
+        "report_id": driver.checkr_report_id,
+    }
+
+
+@app.post("/webhooks/checkr")
+async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Handle Checkr webhook events (report.completed, invitation.completed, etc.)."""
+    body_bytes = await request.body()
+    signature = request.headers.get("x-checkr-signature", "")
+    webhook_secret = os.environ.get("CHECKR_WEBHOOK_SECRET", "")
+    if webhook_secret:
+        expected = hmac.new(
+            webhook_secret.encode(), body_bytes, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            _security_audit_log("CHECKR_WEBHOOK_INVALID_SIG", "checkr", "signature mismatch")
+            raise HTTPException(401, "Invalid signature")
+
+    try:
+        payload = json.loads(body_bytes)
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
+
+    event_type = payload.get("type", "")
+    data = payload.get("data", {}).get("object", {})
+    candidate_id = data.get("candidate_id") or data.get("id")
+
+    if not candidate_id:
+        return {"ok": True, "message": "No candidate_id, skipped"}
+
+    # Find driver by checkr_candidate_id
+    result = await db.execute(select(User).where(User.checkr_candidate_id == candidate_id))
+    driver = result.scalar_one_or_none()
+    if not driver:
+        logging.warning(f"Checkr webhook: no driver for candidate {candidate_id}")
+        return {"ok": True, "message": "Driver not found, skipped"}
+
+    if event_type == "report.completed":
+        report_id = data.get("id")
+        status = data.get("status", "")  # clear, consider
+        driver.checkr_report_id = report_id
+        driver.background_check_completed_at = datetime.now(timezone.utc)
+        if status == "clear":
+            driver.background_check_status = "clear"
+            driver.verification_status = "approved"
+        elif status == "consider":
+            driver.background_check_status = "consider"
+        else:
+            driver.background_check_status = status
+        await db.commit()
+        logging.info(f"Checkr report.completed: driver={driver.id} status={status}")
+
+    elif event_type == "invitation.completed":
+        driver.background_check_status = "processing"
+        await db.commit()
+        logging.info(f"Checkr invitation.completed: driver={driver.id}")
+
+    elif event_type == "report.upgraded":
+        report_id = data.get("id")
+        status = data.get("status", "")
+        driver.checkr_report_id = report_id
+        if status == "clear":
+            driver.background_check_status = "clear"
+            driver.verification_status = "approved"
+        elif status == "consider":
+            driver.background_check_status = "consider"
+        driver.background_check_completed_at = datetime.now(timezone.utc)
+        await db.commit()
+        logging.info(f"Checkr report.upgraded: driver={driver.id} status={status}")
+
+    return {"ok": True}
 
 # ═══════════════════════════════════════════════════════
 #  RATING  ENDPOINTS

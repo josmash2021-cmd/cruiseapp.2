@@ -23,6 +23,7 @@ import '../../widgets/verified_avatar.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/map_cache_service.dart';
 import '../../services/local_cache.dart';
 import '../../services/analytics_service.dart';
@@ -152,6 +153,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Map<String, dynamic>? _previewingOffer;
   bool _offerRouteShown = false; // true after route draw completes
   AnimationController? _routePulseCtrl;
+  bool _isPollingOffers = false;
 
   // ── Pulse animation on card tap ──
   AnimationController? _pulseCtrl;
@@ -676,6 +678,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       child: Scaffold(
         backgroundColor: bg,
         body: Stack(
+          clipBehavior: Clip.none,
           children: [
             // Offline connectivity banner
             const Positioned(
@@ -834,7 +837,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             if (_phase == _Phase.searching &&
                 _pendingOffers.isNotEmpty)
               Positioned(
-                bottom: 0,
+                bottom: -16,
                 left: 0,
                 right: 0,
                 child: _rideOfferCards(
@@ -859,7 +862,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   fabBg,
                   fabBorder,
                   fabIcon,
-                  _closePreview,
+                  () => _closePreview(),
                 ),
               ),
 

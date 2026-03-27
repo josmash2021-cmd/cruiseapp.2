@@ -648,7 +648,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return bytes?.buffer.asUint8List();
   }
 
-  void _closePreview() {
+  Future<void> _closePreview() async {
     _routePulseCtrl?.stop();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -659,7 +659,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _fullSegOne = [];
       _fullSegTwo = [];
     });
-    _clearAllAnnotations();
+    await _clearAllAnnotations();
     if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
   }
 

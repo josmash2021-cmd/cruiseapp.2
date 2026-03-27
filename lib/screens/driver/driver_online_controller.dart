@@ -785,13 +785,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _startPolling() {
     _pollT?.cancel();
-    _pollT = Timer.periodic(const Duration(seconds: 5), (_) {
+    _poll();
+    _pollT = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || _phase != _Phase.searching) return;
       _poll();
     });
   }
 
   Future<void> _poll() async {
+    if (_isPollingOffers) return;
+    _isPollingOffers = true;
     if (_driverId == null) {
       debugPrint(
         'âš ï¸ _poll: _driverId is null, retrying getCurrentUserId...',
@@ -804,7 +807,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           _goOnlineBackend(); // Re-establish online status
         }
       } catch (_) {}
-      if (_driverId == null) return;
+      if (_driverId == null) {
+        _isPollingOffers = false;
+        return;
+      }
     }
     try {
       final offers = await ApiService.getDriverPendingOffers(_driverId!);
@@ -828,6 +834,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
     } catch (e) {
       debugPrint('âŒ Poll error: $e');
+    } finally {
+      _isPollingOffers = false;
     }
   }
 
@@ -856,35 +864,20 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final offerId = r['offer_id'] as int?;
     final tripId = r['trip_id'] as int? ?? r['id'] as int?;
 
-    // Accept via API (fire-and-forget for speed, catch errors)
-    if (offerId != null && _driverId != null) {
-      try {
+    final acceptFuture = (() async {
+      if (offerId != null && _driverId != null) {
         await ApiService.acceptRideOffer(
           offerId: offerId,
           driverId: _driverId!,
         );
-      } catch (e) {
-        if (mounted) _snack(S.of(context).tripNoLongerAvailable);
-        _setState(() {
-          _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
-          _offerAcceptState = _OfferAcceptState.normal;
-          _acceptingCardId = null;
-        });
-        return;
+        return true;
       }
-    } else if (tripId != null && _driverId != null) {
-      try {
+      if (tripId != null && _driverId != null) {
         await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
-      } catch (e) {
-        if (mounted) _snack(S.of(context).tripNoLongerAvailable);
-        _setState(() {
-          _pendingOffers.removeWhere((o) => o['trip_id'] == tripId);
-          _offerAcceptState = _OfferAcceptState.normal;
-          _acceptingCardId = null;
-        });
-        return;
+        return true;
       }
-    }
+      return false;
+    })();
 
     // Reject all other pending offers silently
     for (final other in _pendingOffers) {
@@ -930,8 +923,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _routeCache.clear();
     _expandedOfferIds.clear();
     _pollT?.cancel();
+    _previewingOffer = null;
+    _offerRouteShown = false;
+    _fullSegOne = [];
+    _fullSegTwo = [];
     _nearPickupNotified = false;
     _nearDropoffNotified = false;
+    await _clearAllAnnotations();
+    if (_pos != null) {
+      _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+    }
 
     // ── Reset offer state and navigate to full-screen accepted screen ──
     _tappedCardIds.clear();
@@ -944,7 +945,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final riderPhotoUrl = (r['rider_photo_url'] ?? r['photo_url'] ?? '') as String;
     final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 4.8;
     final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final result = await Navigator.of(context).push<String>(
+    final navFuture = Navigator.of(context).push<String>(
       smoothFadeRoute(
         TripAcceptedScreen(
           tripId:         tripId ?? offerId ?? 0,
@@ -966,6 +967,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         ),
       ),
     );
+    try {
+      await acceptFuture;
+    } catch (e) {
+      if (!mounted) return;
+      _snack(S.of(context).tripNoLongerAvailable);
+      _cancel();
+      return;
+    }
+    final result = await navFuture;
     if (!mounted) return;
     if (result == 'completed') {
       // Show the earnings / completed overlay (mirrors _complete())
@@ -998,7 +1008,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _fullSegTwo = [];
     });
     _rejectSlideCtrl?.reset();
-    _clearAllAnnotations();
+    await _clearAllAnnotations();
     if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
 
     // Fire-and-forget API rejection — UI already updated
@@ -1126,6 +1136,27 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   Future<void> _startTrip() async {
     HapticFeedback.heavyImpact();
+
+    // ── Check if rider confirmed pickup ──
+    bool riderConfirmed = false;
+    if (_tripId != null) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('trips')
+            .doc(_tripId.toString())
+            .get();
+        riderConfirmed = doc.data()?['rider_confirmed_pickup'] == true;
+      } catch (_) {}
+    }
+    if (!riderConfirmed && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('El rider no ha confirmado, comenzando viaje...'),
+        duration: Duration(seconds: 2),
+      ));
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+    }
+
     if (_tripId != null) {
       try {
         await ApiService.updateTripStatus(tripId: _tripId!, status: 'in_trip');

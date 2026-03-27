@@ -384,7 +384,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOutCubic,
-              height: (MediaQuery.of(context).size.height * 0.45).clamp(280, 380).toDouble(),
+              height: (MediaQuery.of(context).size.height * 0.37).clamp(230, 320).toDouble(),
               child: PageView.builder(
                 controller: _offerPageCtrl,
                 onPageChanged: (index) {
@@ -438,14 +438,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     );
                   }
                   return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTapDown: (_) {
                       _setState(() => _animatingOfferId = oid);
                       _pulseCtrl?.forward();
                     },
-                    onTapUp: (_) {
-                      _pulseCtrl?.reverse().then((_) {
-                        if (mounted) _onOfferCardTap(offer);
-                      });
+                    onTap: () {
+                      _pulseCtrl?.reverse();
+                      _onOfferCardTap(offer);
                     },
                     onTapCancel: () {
                       _pulseCtrl?.reverse();
@@ -952,9 +952,23 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           color: const Color(0xFFE8C547).withValues(alpha: 0.25),
           width: 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 24,
+            spreadRadius: 2,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.20),
+            blurRadius: 48,
+            spreadRadius: 0,
+            offset: const Offset(0, 16),
+          ),
+        ],
       ),
       child: Padding(
-        padding: EdgeInsets.fromLTRB(14, isExpanded ? 10 : 8, 14, isExpanded ? 10 : 8),
+        padding: EdgeInsets.fromLTRB(12, isExpanded ? 8 : 6, 12, isExpanded ? 8 : 6),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 350),
           switchInCurve: Curves.easeOutCubic,
@@ -1002,7 +1016,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
     return Column(
       key: const ValueKey('compact'),
-      mainAxisSize: MainAxisSize.max,
+      mainAxisSize: MainAxisSize.min,
       children: [
         // ── ROW 1: Rating (left) · Comfort badge (center) · X reject (right) ──
         Row(
@@ -1085,7 +1099,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ],
         ),
 
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
 
         // ── ROW 2: Price (centered) + Tips label ──
         Text(
@@ -1105,11 +1119,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ),
         ),
 
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
 
         // ── ROW 3: Route indicator (gold ● line ■ with addresses) ──
-        Expanded(
-          child: Container(
+        Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: const Color(0xFF1A1A1A),
@@ -1172,7 +1185,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.4),
-                        fontSize: 10,
+                        fontSize: 11,
                       ),
                     ),
                     const SizedBox(height: 1),
@@ -1180,7 +1193,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       pickupAddr,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
                       maxLines: 1,
@@ -1192,7 +1205,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.4),
-                        fontSize: 10,
+                        fontSize: 11,
                       ),
                     ),
                     const SizedBox(height: 1),
@@ -1200,7 +1213,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       dropoffAddr,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
                       maxLines: 1,
@@ -1211,10 +1224,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               ),
             ],
           ),
-          ),
         ),
 
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
 
         // ── ROW 4: Time + Miles chips (compact) ──
         Row(
@@ -1224,7 +1236,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               value: '$totalMins min',
               label: 'Total time',
             )),
-            const SizedBox(width: 6),
+            const SizedBox(width: 5),
             Expanded(child: _buildOfferChip(
               icon: Icons.straighten_rounded,
               value: '${totalMiles.toStringAsFixed(1)} mi',
@@ -1233,7 +1245,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ],
         ),
 
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
 
         // ── Divider ──
         Container(
@@ -1241,7 +1253,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           color: const Color(0xFF333333),
         ),
 
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
 
         // ── ROW 5: Accept button — GOLD — ALWAYS VISIBLE ──
         GestureDetector(
@@ -1266,7 +1278,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   S.of(context).accept,
                   style: const TextStyle(
                     color: Colors.black,
-                    fontSize: 15,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -1303,13 +1315,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 value,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               Text(
                 label,
-                style: const TextStyle(color: Colors.white38, fontSize: 9),
+                style: const TextStyle(color: Colors.white38, fontSize: 10),
               ),
             ],
           ),
@@ -1775,7 +1787,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         child: SizedBox(
                           height: 48,
                           child: OutlinedButton.icon(
-                            onPressed: _closePreview,
+                            onPressed: () {
+                              _closePreview();
+                            },
                             icon: const Icon(
                               Icons.arrow_back_rounded,
                               color: Colors.white70,
@@ -1810,7 +1824,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                           height: 48,
                           child: ElevatedButton.icon(
                             onPressed: () {
-                              _closePreview();
                               _acceptOffer(offer);
                             },
                             icon: const Icon(

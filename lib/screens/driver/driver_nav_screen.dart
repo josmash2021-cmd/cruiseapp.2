@@ -145,6 +145,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   double _slideVal         = 0;
   bool   _slid             = false;
 
+  // ── Dropoff finalize & completion ─────────────────────────────────────────
+  bool   _showFinalizeButton   = false;
+  bool   _showCompletionOverlay = false;
+  Timer? _completionTimer;
+
   // ── Car icon ──────────────────────────────────────────────────────────────
   Uint8List? _arrowBytes;
 
@@ -272,6 +277,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _routeDrawTicker?.dispose();
     _pulseCtrl?.dispose();
     _pickupPopCtrl?.dispose();
+    _completionTimer?.cancel();
     _motion.dispose();
     super.dispose();
   }
@@ -356,10 +362,17 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     // Auto-proximity check for phase transitions
     _sm.checkProximity(raw);
 
-    // Show "Arrived at Pickup" button when within 300 m
+    // Show "Arrived at Pickup" button when within 50 m
     if (_phase == TripPhase.toPickup && !_nearPickup) {
-      if (_hav(raw, widget.pickupLatLng) < 0.3 && mounted) {
+      if (_hav(raw, widget.pickupLatLng) < 0.05 && mounted) {
         setState(() => _nearPickup = true);
+      }
+    }
+
+    // Show "Finalizar Viaje" button within 80 m of dropoff at low speed
+    if (_phase == TripPhase.onTrip && !_showFinalizeButton) {
+      if (_hav(raw, widget.dropoffLatLng) < 0.08 && p.speed < 1.5) {
+        setState(() => _showFinalizeButton = true);
       }
     }
 
@@ -442,6 +455,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       setState(() {
         _cameraFollowing = false;
         _isOverview = true;
+        _showFinalizeButton = true;
       });
       _animateCameraOverview(_pos, widget.dropoffLatLng);
     }
@@ -1322,21 +1336,27 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     await _updateTripStatus('completed',
         extra: {'completedAt': FieldValue.serverTimestamp()});
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      PageRouteBuilder(
-        pageBuilder: (_, anim, __) => DriverRateRiderScreen(
-          tripId: widget.tripId,
-          riderName: widget.riderName,
-          riderPhotoUrl: widget.riderPhotoUrl,
-          fare: widget.fare,
+    // Show "Viaje Finalizado" overlay on map
+    setState(() => _showCompletionOverlay = true);
+    // After 2.5 s auto-navigate to rate rider screen
+    _completionTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (_, anim, __) => DriverRateRiderScreen(
+            tripId: widget.tripId,
+            riderName: widget.riderName,
+            riderPhotoUrl: widget.riderPhotoUrl,
+            fare: widget.fare,
+          ),
+          transitionsBuilder: (_, anim, __, child) => FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+            child: child,
+          ),
+          transitionDuration: const Duration(milliseconds: 400),
         ),
-        transitionsBuilder: (_, anim, __, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
-          child: child,
-        ),
-        transitionDuration: const Duration(milliseconds: 280),
-      ),
-    );
+      );
+    });
   }
 
   Future<void> _exitNav() async {
@@ -1695,10 +1715,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 child: Center(child: _buildResumeButton()),
               ),
 
-            // ── PHASE OVERLAY (arrived / slide) ───────────────────────
+            // ── PHASE OVERLAY (arrived / finalize / complete) ─────────
             if (_nearPickup && _phase == TripPhase.toPickup)
               Positioned(
-                bottom: bottomBarH + 16,
+                top: top + 80,
                 right: 12,
                 child: _buildArrivedBtn(),
               ),
@@ -1709,13 +1729,28 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 right: 12,
                 child: _buildArrivedAtPickupCard(),
               ),
-            if (_phase == TripPhase.arrivedDropoff)
-              Positioned(
-                bottom: bottomBarH + 8,
-                left: 12,
-                right: 12,
-                child: _buildSlideToComplete(),
+
+            // ── FINALIZAR VIAJE — slides up when near dropoff at low speed ──
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOutCubic,
+              bottom: (_showFinalizeButton && !_completing)
+                  ? bottomBarH + 8
+                  : -100,
+              left: 24,
+              right: 24,
+              child: _buildFinalizeButton(),
+            ),
+
+            // ── VIAJE FINALIZADO OVERLAY (full-screen, on top of map) ──
+            IgnorePointer(
+              ignoring: !_showCompletionOverlay,
+              child: AnimatedOpacity(
+                opacity: _showCompletionOverlay ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 500),
+                child: _buildCompletionOverlay(),
               ),
+            ),
           ],
         ),
       ),
@@ -2525,7 +2560,96 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   }
 
   // =========================================================================
-  //  SLIDE TO COMPLETE
+  //  FINALIZAR VIAJE BUTTON
+  // =========================================================================
+
+  Widget _buildFinalizeButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 58,
+      child: ElevatedButton(
+        onPressed: _completing ? null : _completeTrip,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _gold,
+          disabledBackgroundColor: _gold.withValues(alpha: 0.5),
+          foregroundColor: Colors.black,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        child: _completing
+            ? const SizedBox(
+                width: 24, height: 24,
+                child: CircularProgressIndicator(
+                  color: Colors.black, strokeWidth: 2.5))
+            : const Text(
+                'Finalizar Viaje',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+      ),
+    );
+  }
+
+  // =========================================================================
+  //  VIAJE FINALIZADO OVERLAY
+  // =========================================================================
+
+  Widget _buildCompletionOverlay() {
+    return Container(
+      color: Colors.black.withValues(alpha: 0.85),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 600),
+            builder: (_, value, __) => Transform.scale(
+              scale: value,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _gold,
+                ),
+                child: const Icon(
+                  Icons.check_rounded,
+                  color: Colors.black,
+                  size: 40,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            '¡Viaje Finalizado!',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Ganancia: \$${widget.fare.toStringAsFixed(2)}',
+            style: const TextStyle(
+              color: _gold,
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =========================================================================
+  //  SLIDE TO COMPLETE (legacy — replaced by _buildFinalizeButton)
   // =========================================================================
 
   Widget _buildSlideToComplete() {

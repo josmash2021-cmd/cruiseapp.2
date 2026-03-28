@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../../config/page_transitions.dart';
@@ -86,6 +87,16 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
           'tags': _selectedTags.toList(),
           'tripId': widget.tripId,
           'timestamp': ServerValue.timestamp,
+        });
+      } catch (_) {}
+      // Also save to Firestore trip document
+      try {
+        await FirebaseFirestore.instance
+            .collection('trips')
+            .doc(widget.tripId.toString())
+            .update({
+          'riderRating': _stars,
+          'riderRatedAt': FieldValue.serverTimestamp(),
         });
       } catch (_) {}
     }

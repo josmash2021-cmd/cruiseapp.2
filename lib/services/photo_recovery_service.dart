@@ -58,7 +58,7 @@ class PhotoRecoveryService {
     try {
       final firestore = FirebaseFirestore.instance;
       // Try both possible paths: users/{uid} and users/sql_{uid}
-      DocumentSnapshot? userDoc;
+      DocumentSnapshot userDoc;
       try {
         userDoc = await firestore.collection('users').doc(uid).get();
       } catch (_) {
@@ -66,7 +66,7 @@ class PhotoRecoveryService {
         userDoc = await firestore.collection('users').doc('sql_$uid').get();
       }
 
-      if (userDoc != null && userDoc.exists) {
+      if (userDoc.exists) {
         final data = userDoc.data() as Map<String, dynamic>?;
         final firestoreUrl = data?['photoUrl'] as String?;
         if (firestoreUrl != null && firestoreUrl.isNotEmpty && firestoreUrl.startsWith('https')) {

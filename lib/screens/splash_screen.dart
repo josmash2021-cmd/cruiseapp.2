@@ -178,6 +178,9 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _runSequence() async {
     if (_disposed) return;
 
+    // Capture context before any awaits (use_build_context_synchronously)
+    final nav = Navigator.of(context);
+
     // Start heavy init in parallel with the splash animation
     final initFuture = heavyInit().timeout(
       const Duration(seconds: 12),
@@ -187,6 +190,36 @@ class _SplashScreenState extends State<SplashScreen>
     ).catchError((e) {
       debugPrint('[SplashScreen] heavyInit error: $e');
     });
+
+    // ── Fast login check: if already logged in, skip CRUISE animation ──
+    final loggedIn = await UserSession.isLoggedInLocal();
+    if (_disposed || !mounted) return;
+
+    if (loggedIn) {
+      // Pre-load in background while we resolve the destination.
+      unawaited(PreloadService.preloadAll(context).catchError((_) {}));
+
+      final destination = await _computeDestination(initFuture).catchError((e) {
+        debugPrint('[SplashScreen] destination error: $e');
+        return const WelcomeScreen() as Widget;
+      });
+      if (_disposed || !mounted) return;
+
+      nav.pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => destination,
+          transitionDuration: const Duration(milliseconds: 400),
+          reverseTransitionDuration: Duration.zero,
+          transitionsBuilder: (_, anim, __, child) => FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
+            child: child,
+          ),
+        ),
+      );
+      return;
+    }
+
+    // ── Not logged in: show full CRUISE splash animation ──
 
     // Pre-load GPS, user data, map tiles, images — ALL in parallel
     final preloadFuture = PreloadService.preloadAll(context).timeout(
@@ -240,7 +273,7 @@ class _SplashScreenState extends State<SplashScreen>
     await Future.delayed(const Duration(milliseconds: 50));
     if (_disposed || !mounted) return;
 
-    Navigator.of(context).pushReplacement(
+    nav.pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => destination,
         transitionDuration: const Duration(milliseconds: 600),

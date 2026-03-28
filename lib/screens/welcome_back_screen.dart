@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -18,25 +19,31 @@ class WelcomeBackScreen extends StatefulWidget {
 
 class _WelcomeBackScreenState extends State<WelcomeBackScreen>
     with TickerProviderStateMixin {
-  static const _bg = Color(0xFF000000);
-  static const _gold = Color(0xFFE8C547);
+  static const _bg = Color(0xFF080604);
+  static const _gold = Color(0xFFD4A843);
+  static const _goldLight = Color(0xFFE8C547);
   static const _goldBright = Color(0xFFFFF1C1);
 
-  // ── Phase 1: Decorative lines fade in ──
-  late AnimationController _decoCtrl;
-  late Animation<double> _decoFade;
+  // Phase 1: Background glow
+  late AnimationController _glowCtrl;
+  late Animation<double> _glowFade;
 
-  // ── Phase 2: "WELCOME BACK" text fade + scale ──
+  // Phase 2: "WELCOME BACK" text
   late AnimationController _titleCtrl;
   late Animation<double> _titleFade;
   late Animation<double> _titleScale;
-  late Animation<double> _titleGlow;
 
-  // ── Phase 3: User name fade in ──
+  // Phase 3: Decorative lines
+  late AnimationController _decoCtrl;
+  late Animation<double> _decoFade;
+  late Animation<double> _decoWidth;
+
+  // Phase 4: User's name
   late AnimationController _nameCtrl;
   late Animation<double> _nameFade;
+  late Animation<Offset> _nameSlide;
 
-  // ── Phase 4: Everything fades out ──
+  // Phase 5: Exit
   late AnimationController _exitCtrl;
   late Animation<double> _exitFade;
 
@@ -60,37 +67,48 @@ class _WelcomeBackScreenState extends State<WelcomeBackScreen>
   }
 
   void _setupAnimations() {
-    // Deco: 600ms
+    // Background glow: 800ms
+    _glowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _glowFade = CurvedAnimation(parent: _glowCtrl, curve: Curves.easeOut);
+
+    // Title: 800ms
+    _titleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _titleFade = CurvedAnimation(parent: _titleCtrl, curve: Curves.easeOut);
+    _titleScale = Tween<double>(begin: 0.85, end: 1.0).animate(
+      CurvedAnimation(parent: _titleCtrl, curve: Curves.easeOutCubic),
+    );
+
+    // Deco lines: 500ms
     _decoCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 500),
     );
     _decoFade = CurvedAnimation(parent: _decoCtrl, curve: Curves.easeOut);
+    _decoWidth = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _decoCtrl, curve: Curves.easeOutCubic),
+    );
 
-    // Title: 700ms
-    _titleCtrl = AnimationController(
+    // Name: 700ms
+    _nameCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
-    _titleFade = CurvedAnimation(parent: _titleCtrl, curve: Curves.easeOut);
-    _titleScale = Tween<double>(begin: 0.92, end: 1.0).animate(
-      CurvedAnimation(parent: _titleCtrl, curve: Curves.easeOut),
-    );
-    _titleGlow = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _titleCtrl, curve: Curves.easeIn),
-    );
-
-    // Name: 600ms
-    _nameCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
     _nameFade = CurvedAnimation(parent: _nameCtrl, curve: Curves.easeOut);
+    _nameSlide = Tween<Offset>(
+      begin: const Offset(0, 0.15),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _nameCtrl, curve: Curves.easeOutCubic));
 
-    // Exit: 600ms
+    // Exit: 700ms
     _exitCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 700),
     );
     _exitFade = Tween<double>(begin: 1.0, end: 0.0).animate(
       CurvedAnimation(parent: _exitCtrl, curve: Curves.easeInQuart),
@@ -98,35 +116,37 @@ class _WelcomeBackScreenState extends State<WelcomeBackScreen>
   }
 
   Future<void> _runSequence() async {
-    // Step 1: start black
+    await Future.delayed(const Duration(milliseconds: 250));
+    if (_disposed || !mounted) return;
+
+    // Glow appears
+    _glowCtrl.forward();
     await Future.delayed(const Duration(milliseconds: 300));
     if (_disposed || !mounted) return;
 
-    // Step 2: deco lines fade in
-    await _decoCtrl.forward().orCancel.catchError((_) {});
+    // Title fades in
+    _titleCtrl.forward();
+    await Future.delayed(const Duration(milliseconds: 500));
     if (_disposed || !mounted) return;
 
-    // Step 3: title fades in (overlapping — starts 300ms after deco starts,
-    // but deco is already done at 600ms, so this runs immediately)
-    await _titleCtrl.forward().orCancel.catchError((_) {});
+    // Deco lines expand
+    _decoCtrl.forward();
+    await Future.delayed(const Duration(milliseconds: 350));
     if (_disposed || !mounted) return;
 
-    // Step 4: name fades in with slight overlap
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (_disposed || !mounted) return;
+    // Name slides up
     await _nameCtrl.forward().orCancel.catchError((_) {});
     if (_disposed || !mounted) return;
 
-    // Step 5: hold
-    await Future.delayed(const Duration(milliseconds: 600));
+    // Hold
+    await Future.delayed(const Duration(milliseconds: 900));
     if (_disposed || !mounted) return;
 
-    // Step 6: fade out everything
+    // Fade out
     _exitCtrl.forward().orCancel.catchError((_) {});
-    await Future.delayed(const Duration(milliseconds: 50));
+    await Future.delayed(const Duration(milliseconds: 100));
     if (_disposed || !mounted) return;
 
-    // Step 7: navigate to home
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => widget.destination,
@@ -143,8 +163,9 @@ class _WelcomeBackScreenState extends State<WelcomeBackScreen>
   @override
   void dispose() {
     _disposed = true;
-    _decoCtrl.dispose();
+    _glowCtrl.dispose();
     _titleCtrl.dispose();
+    _decoCtrl.dispose();
     _nameCtrl.dispose();
     _exitCtrl.dispose();
     super.dispose();
@@ -152,10 +173,14 @@ class _WelcomeBackScreenState extends State<WelcomeBackScreen>
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+
     return Scaffold(
       backgroundColor: _bg,
       body: AnimatedBuilder(
-        animation: Listenable.merge([_decoCtrl, _titleCtrl, _nameCtrl, _exitCtrl]),
+        animation: Listenable.merge([
+          _glowCtrl, _titleCtrl, _decoCtrl, _nameCtrl, _exitCtrl,
+        ]),
         builder: (context, _) {
           return Opacity(
             opacity: _exitFade.value,
@@ -163,83 +188,103 @@ class _WelcomeBackScreenState extends State<WelcomeBackScreen>
               fit: StackFit.expand,
               children: [
                 // ── Background radial glow ──
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: Alignment.center,
-                      radius: 0.75,
-                      colors: [
-                        Color.lerp(
-                          const Color(0xFF1A1500),
-                          const Color(0xFF0A0900),
-                          1 - _titleGlow.value * 0.6,
-                        )!,
-                        _bg,
-                      ],
-                      stops: const [0.0, 1.0],
+                Opacity(
+                  opacity: _glowFade.value,
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      gradient: RadialGradient(
+                        center: Alignment(0, -0.05),
+                        radius: 0.65,
+                        colors: [
+                          Color(0xFF1C1508),
+                          Color(0xFF0E0B04),
+                          _bg,
+                        ],
+                        stops: [0.0, 0.5, 1.0],
+                      ),
                     ),
                   ),
                 ),
+                // ── Content ──
                 Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // ── Top decorative line ──
-                      Opacity(
-                        opacity: _decoFade.value,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildDecoLine(60),
-                            const SizedBox(width: 10),
-                            _buildDiamond(),
-                            const SizedBox(width: 10),
-                            _buildDecoLine(60),
-                          ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // ── Top decorative accent ──
+                        Opacity(
+                          opacity: _decoFade.value,
+                          child: _buildTopAccent(screenWidth),
                         ),
-                      ),
-                      const SizedBox(height: 14),
+                        const SizedBox(height: 28),
 
-                      // ── "WELCOME BACK" ──
-                      Opacity(
-                        opacity: _titleFade.value,
-                        child: Transform.scale(
-                          scale: _titleScale.value,
-                          child: _buildTitleText(),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-
-                      // ── User's name ──
-                      Opacity(
-                        opacity: _nameFade.value,
-                        child: Text(
-                          widget.firstName.toUpperCase(),
-                          style: GoogleFonts.cinzel(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w400,
-                            color: _gold.withValues(alpha: 0.7),
-                            letterSpacing: 6,
+                        // ── "WELCOME" ──
+                        Opacity(
+                          opacity: _titleFade.value,
+                          child: Transform.scale(
+                            scale: _titleScale.value,
+                            child: _buildGoldText(
+                              'WELCOME',
+                              fontSize: 32,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 10,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 14),
+                        const SizedBox(height: 4),
 
-                      // ── Bottom decorative line ──
-                      Opacity(
-                        opacity: _decoFade.value,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildDecoLine(60),
-                            const SizedBox(width: 10),
-                            _buildDiamond(),
-                            const SizedBox(width: 10),
-                            _buildDecoLine(60),
-                          ],
+                        // ── "BACK" ──
+                        Opacity(
+                          opacity: _titleFade.value,
+                          child: Transform.scale(
+                            scale: _titleScale.value,
+                            child: _buildGoldText(
+                              'BACK',
+                              fontSize: 32,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 14,
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 20),
+
+                        // ── Center divider line ──
+                        Opacity(
+                          opacity: _decoFade.value,
+                          child: _buildDividerLine(
+                            math.min(screenWidth * 0.45, 180) * _decoWidth.value,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // ── User's name ──
+                        SlideTransition(
+                          position: _nameSlide,
+                          child: Opacity(
+                            opacity: _nameFade.value,
+                            child: Text(
+                              widget.firstName.toUpperCase(),
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.cormorantGaramond(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w600,
+                                color: _goldBright.withValues(alpha: 0.9),
+                                letterSpacing: 8,
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+
+                        // ── Bottom decorative accent ──
+                        Opacity(
+                          opacity: _decoFade.value,
+                          child: _buildBottomAccent(screenWidth),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -250,40 +295,96 @@ class _WelcomeBackScreenState extends State<WelcomeBackScreen>
     );
   }
 
-  Widget _buildTitleText() {
-    final glowIntensity = _titleGlow.value;
-    final glowColor = Color.lerp(_gold, _goldBright, glowIntensity)!;
-
+  /// Gold shimmer text with glow shadow
+  Widget _buildGoldText(
+    String text, {
+    required double fontSize,
+    required FontWeight fontWeight,
+    required double letterSpacing,
+  }) {
+    final glow = _titleFade.value;
     return ShaderMask(
       shaderCallback: (bounds) {
         return LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
           colors: [
             _goldBright,
-            glowColor,
+            _goldLight,
             _gold,
+            _goldLight,
           ],
-          stops: const [0.0, 0.4, 1.0],
+          stops: const [0.0, 0.3, 0.7, 1.0],
         ).createShader(bounds);
       },
       child: Text(
-        'WELCOME  BACK',
+        text,
+        textAlign: TextAlign.center,
         style: GoogleFonts.cinzel(
-          fontSize: 38,
-          fontWeight: FontWeight.w900,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
           color: Colors.white,
-          letterSpacing: 6,
+          letterSpacing: letterSpacing,
           shadows: [
             Shadow(
-              color: _gold.withValues(alpha: 0.5 + glowIntensity * 0.5),
-              blurRadius: 20 + glowIntensity * 40,
+              color: _gold.withValues(alpha: 0.4 + glow * 0.3),
+              blurRadius: 16 + glow * 24,
             ),
             Shadow(
-              color: _goldBright.withValues(alpha: glowIntensity * 0.4),
-              blurRadius: 50,
+              color: _goldBright.withValues(alpha: glow * 0.15),
+              blurRadius: 40,
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Top accent: thin lines expanding from a center diamond
+  Widget _buildTopAccent(double screenWidth) {
+    final w = math.min(screenWidth * 0.3, 100.0) * _decoWidth.value;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildDecoLine(w),
+        const SizedBox(width: 12),
+        _buildDiamond(4),
+        const SizedBox(width: 12),
+        _buildDecoLine(w),
+      ],
+    );
+  }
+
+  /// Bottom accent: mirrored thin lines
+  Widget _buildBottomAccent(double screenWidth) {
+    final w = math.min(screenWidth * 0.3, 100.0) * _decoWidth.value;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildDecoLine(w),
+        const SizedBox(width: 12),
+        _buildDiamond(4),
+        const SizedBox(width: 12),
+        _buildDecoLine(w),
+      ],
+    );
+  }
+
+  /// Horizontal gold gradient line
+  Widget _buildDividerLine(double width) {
+    return Container(
+      width: width,
+      height: 0.6,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.transparent,
+            _gold.withValues(alpha: 0.5),
+            _goldLight.withValues(alpha: 0.8),
+            _gold.withValues(alpha: 0.5),
+            Colors.transparent,
+          ],
+          stops: const [0.0, 0.2, 0.5, 0.8, 1.0],
         ),
       ),
     );
@@ -292,12 +393,12 @@ class _WelcomeBackScreenState extends State<WelcomeBackScreen>
   Widget _buildDecoLine(double width) {
     return Container(
       width: width,
-      height: 0.8,
+      height: 0.6,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
             Colors.transparent,
-            _gold.withValues(alpha: 0.7),
+            _gold.withValues(alpha: 0.6),
             Colors.transparent,
           ],
         ),
@@ -305,14 +406,20 @@ class _WelcomeBackScreenState extends State<WelcomeBackScreen>
     );
   }
 
-  Widget _buildDiamond() {
+  Widget _buildDiamond(double size) {
     return Transform.rotate(
       angle: 0.785398,
       child: Container(
-        width: 5,
-        height: 5,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
-          color: _gold.withValues(alpha: 0.8),
+          color: _gold.withValues(alpha: 0.7),
+          boxShadow: [
+            BoxShadow(
+              color: _gold.withValues(alpha: 0.3),
+              blurRadius: 6,
+            ),
+          ],
         ),
       ),
     );

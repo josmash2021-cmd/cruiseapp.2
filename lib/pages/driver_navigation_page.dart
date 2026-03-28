@@ -1331,12 +1331,13 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     return Scaffold(
       backgroundColor: const Color(0xFF080c16),
       body: Stack(
+        fit: StackFit.expand,
         children: [
           // ── FULLSCREEN MAP ────────────────────────────────────────────────
           Positioned.fill(
-            child: SizedBox.expand(
-              child: RepaintBoundary(
-                child: mapbox.MapWidget(
+            child: RepaintBoundary(
+              child: mapbox.MapWidget(
+              textureView: true,
               styleUri: MapboxConfig.styleNavigation,
               cameraOptions: mapbox.CameraOptions(
                 center: mapbox.Point(coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
@@ -1366,7 +1367,6 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
               },
               onScrollListener: (_) => _onCameraMoveStarted(),
             ),
-              ),
             ),
           ),
 

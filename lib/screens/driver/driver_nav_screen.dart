@@ -1670,6 +1670,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       child: Scaffold(
         backgroundColor: const Color(0xFF080C16),
         body: Stack(
+          fit: StackFit.expand,
           children: [
             // ── FULL MAP ─────────────────────────────────────────────────
             Positioned.fill(child: _buildMap()),
@@ -1778,49 +1779,48 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   Widget _buildMap() {
-    return SizedBox.expand(
-      child: RepaintBoundary(
-        child: mapbox.MapWidget(
-      key: _mapKey,
-      styleUri: MapboxConfig.styleNavigation,
-      cameraOptions: mapbox.CameraOptions(
-        center: mapbox.Point(
-            coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
-        zoom: 13.0,
-        pitch: 0,
-        bearing: 0,
-      ),
-      onMapCreated: (ctrl) async {
-        _map      = ctrl;
-        _mapReady = true;
-        _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager(
-          below: "road-label",
-        );
-        // Pin manager (pickup / dropoff pins) — pitch-aligned to viewport so
-        // they stand upright at 55° nav pitch instead of lying flat on the map.
-        _pointMgr = await ctrl.annotations.createPointAnnotationManager();
-        try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-        try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
+    return RepaintBoundary(
+      child: mapbox.MapWidget(
+        key: _mapKey,
+        textureView: true,
+        styleUri: MapboxConfig.styleNavigation,
+        cameraOptions: mapbox.CameraOptions(
+          center: mapbox.Point(
+              coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
+          zoom: 13.0,
+          pitch: 0,
+          bearing: 0,
+        ),
+        onMapCreated: (ctrl) async {
+          _map      = ctrl;
+          _mapReady = true;
+          _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager(
+            below: "road-label",
+          );
+          // Pin manager (pickup / dropoff pins) — pitch-aligned to viewport so
+          // they stand upright at 55° nav pitch instead of lying flat on the map.
+          _pointMgr = await ctrl.annotations.createPointAnnotationManager();
+          try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
 
-        // Arrow manager (driver icon only) — rotation-alignment 'map' so
-        // iconRotate tracks geographic bearing, not screen-space bearing.
-        _arrowMgr = await ctrl.annotations.createPointAnnotationManager();
-        try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-        try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-rotation-alignment', 'map'); } catch (_) {}
-        _updateRouteAnnotation();
-        _updateDestPin(widget.pickupLatLng);
-        // Show pickup pin throughout the trip
-        _updatePickupPin(widget.pickupLatLng);
-        // Cinematic entry: zoom out → draw route → zoom back
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) _startCinematicEntry();
-        });
-      },
-      onStyleLoadedListener: (_) async {
-        if (_map != null) await MapTheme.applyNavyGold(_map!);
-      },
-      onScrollListener: (_) => _onCameraMoveStarted(),
-    ),
+          // Arrow manager (driver icon only) — rotation-alignment 'map' so
+          // iconRotate tracks geographic bearing, not screen-space bearing.
+          _arrowMgr = await ctrl.annotations.createPointAnnotationManager();
+          try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-rotation-alignment', 'map'); } catch (_) {}
+          _updateRouteAnnotation();
+          _updateDestPin(widget.pickupLatLng);
+          // Show pickup pin throughout the trip
+          _updatePickupPin(widget.pickupLatLng);
+          // Cinematic entry: zoom out → draw route → zoom back
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) _startCinematicEntry();
+          });
+        },
+        onStyleLoadedListener: (_) async {
+          if (_map != null) await MapTheme.applyNavyGold(_map!);
+        },
+        onScrollListener: (_) => _onCameraMoveStarted(),
       ),
     );
   }

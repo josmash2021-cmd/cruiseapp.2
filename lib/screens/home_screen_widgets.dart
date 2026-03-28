@@ -143,13 +143,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
       child: Row(
         children: [
           const SizedBox(width: 10),
-          // Car photo — real vehicle image picked by ride type
-          Image.asset(
-            _getCarAssetForRideType(_activeRide?.rideName ?? ''),
-            width: 38,
-            height: 22,
-            fit: BoxFit.contain,
-          ),
+          // Car icon
+          Icon(Icons.directions_car_rounded, color: _gold, size: 22),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -929,13 +924,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Car image — sized to look proportional, no frame
-            Image.asset(
-              _getCarAssetForRideType(_activeRide?.rideName ?? ''),
-              width: 72,
-              height: 44,
-              fit: BoxFit.contain,
-            ),
+            // Car icon
+            Icon(Icons.directions_car_rounded, color: _gold, size: 28),
             const SizedBox(width: 14),
             Expanded(
               child: Column(

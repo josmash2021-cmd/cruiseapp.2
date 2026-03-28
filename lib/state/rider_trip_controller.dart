@@ -65,6 +65,7 @@ class MatchedDriver {
   final String vehiclePlate;
   final String vehicleYear;
   final String? photoUrl;
+  final String phone;
 
   const MatchedDriver({
     required this.id,
@@ -77,6 +78,7 @@ class MatchedDriver {
     required this.vehiclePlate,
     required this.vehicleYear,
     this.photoUrl,
+    this.phone = '',
   });
 }
 
@@ -700,6 +702,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       vehiclePlate: data['vehicle_plate']?.toString() ?? '',
       vehicleYear: data['vehicle_year']?.toString() ?? '',
       photoUrl: photoUrl.isNotEmpty ? photoUrl : null,
+      phone: data['driver_phone']?.toString() ?? '',
     );
 
     _state = _state.copyWith(

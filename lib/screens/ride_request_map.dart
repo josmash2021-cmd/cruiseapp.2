@@ -1064,6 +1064,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           driverName: s.driver?.name ?? 'Driver',
           driverRating: s.driver?.rating ?? 4.9,
           driverPhotoUrl: s.driver?.photoUrl,
+          driverPhone: s.driver?.phone,
           vehicleMake: s.driver?.vehicleMake ?? 'Toyota',
           vehicleModel: s.driver?.vehicleModel ?? 'Camry',
           vehicleColor: s.driver?.vehicleColor ?? 'White',

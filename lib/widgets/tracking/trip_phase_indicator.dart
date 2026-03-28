@@ -72,11 +72,27 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     }
   }
 
+  // ── Phase-based single status text (for arrived / onTrip / nearDestination) ──
+  String get _singleStatusText {
+    final s = S.of(context);
+    switch (_phase) {
+      case _TrackPhase.arriving:
+        return ''; // not used in single mode
+      case _TrackPhase.arrived:
+        return s.driverHasArrived;
+      case _TrackPhase.onTrip:
+        return s.onWayToDestination;
+      case _TrackPhase.nearDestination:
+        return s.arrivingAtDestination;
+      case _TrackPhase.completed:
+        return s.onWayToDestination;
+    }
+  }
+
   // ── Destination + ETA box (floats at bottom) ──
   Widget _buildDestinationBox() {
+    final bool isArriving = _phase == _TrackPhase.arriving;
     final bool isArrivedState = _phase == _TrackPhase.arrived;
-    final String topText = _topStatusText;
-    final String bottomText = _bottomCardText;
     final Color dotColor = _dotColor;
 
     return Container(
@@ -92,120 +108,173 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
         ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Status label with phase-based dot color
-                Row(
-                  children: [
-                    // Phase-based dot: pulsing on arrived, animated color transitions
-                    if (isArrivedState)
-                      ScaleTransition(
-                        scale: Tween<double>(begin: 0.7, end: 1.3)
-                            .animate(_arrivedDotPulse),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 500),
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: dotColor,
-                          ),
-                        ),
-                      )
-                    else
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 500),
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: dotColor,
-                        ),
-                      ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 400),
-                        transitionBuilder: (child, anim) =>
-                            FadeTransition(opacity: anim, child: child),
-                        child: Text(
-                          topText,
-                          key: ValueKey(topText),
-                          style: TextStyle(
-                            color: dotColor,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.8,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 500),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, anim) =>
+            FadeTransition(opacity: anim, child: child),
+        child: isArriving
+            ? _buildArrivingContent(dotColor)
+            : _buildSingleLineContent(dotColor, isArrivedState),
+      ),
+    );
+  }
+
+  /// Arriving phase: dot + status label + bold text + ETA badge
+  Widget _buildArrivingContent(Color dotColor) {
+    final String topText = _topStatusText;
+    final String bottomText = _bottomCardText;
+
+    return Row(
+      key: const ValueKey('arriving_content'),
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 500),
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: dotColor,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                // Bottom card text — changes per phase with smooth fade
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 400),
-                  transitionBuilder: (child, anim) =>
-                      FadeTransition(opacity: anim, child: child),
-                  child: Text(
-                    bottomText,
-                    key: ValueKey(bottomText),
-                    style: TextStyle(
-                      color: isArrivedState ? const Color(0xFFC8A951) : Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 400),
+                      transitionBuilder: (child, anim) =>
+                          FadeTransition(opacity: anim, child: child),
+                      child: Text(
+                        topText,
+                        key: ValueKey(topText),
+                        style: TextStyle(
+                          color: dotColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.8,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 400),
+                transitionBuilder: (child, anim) =>
+                    FadeTransition(opacity: anim, child: child),
+                child: Text(
+                  bottomText,
+                  key: ValueKey(bottomText),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        // ETA badge
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$_etaMinutes',
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Text(
+                'min',
+                style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Arrived / OnTrip / NearDestination: single centered text, no ETA badge
+  Widget _buildSingleLineContent(Color dotColor, bool isArrivedState) {
+    final text = _singleStatusText;
+
+    return Row(
+      key: ValueKey('single_$_phase'),
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // Pulsing dot for arrived, static dot for others
+        if (isArrivedState)
+          ScaleTransition(
+            scale: Tween<double>(begin: 0.7, end: 1.3)
+                .animate(_arrivedDotPulse),
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: dotColor,
+              ),
+            ),
+          )
+        else
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: dotColor,
             ),
           ),
-          const SizedBox(width: 12),
-          // ETA badge (hidden when arrived)
-          if (!isArrivedState)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+        const SizedBox(width: 12),
+        Flexible(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 400),
+            transitionBuilder: (child, anim) =>
+                FadeTransition(opacity: anim, child: child),
+            child: Text(
+              text,
+              key: ValueKey(text),
+              style: TextStyle(
+                color: isArrivedState ? const Color(0xFFC8A951) : Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '$_etaMinutes',
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const Text(
-                    'min',
-                    style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-        ],
-      ),
+          ),
+        ),
+      ],
     );
   }
 

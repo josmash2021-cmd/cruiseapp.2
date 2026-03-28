@@ -937,12 +937,26 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       null,
       null,
     );
+    // Set an initial camera close to the route center, then animate.
     ctrl.setCamera(mapbox.CameraOptions(
       center: cam.center,
-      zoom: (cam.zoom ?? 13) - 0.5,
-      bearing: 15.0,
+      zoom: (cam.zoom ?? 13) - 2.5,
+      bearing: 0,
       pitch: 0,
     ));
+
+    // Animate to full route bounds with tilt + bearing.
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted) return;
+    await ctrl.flyTo(
+      mapbox.CameraOptions(
+        center: cam.center,
+        zoom: (cam.zoom ?? 13) - 0.5,
+        bearing: 15.0,
+        pitch: 20.0,
+      ),
+      mapbox.MapAnimationOptions(duration: 1200),
+    );
 
     // 4. Pins must use exact line endpoints (not geocoded address coords).
     final pickupPoint = routeCoordinates.first;

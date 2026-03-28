@@ -278,12 +278,12 @@ Future<Uint8List> renderGoldPinBytes({
   if (_pinCache.containsKey(key)) return _pinCache[key]!;
 
   const double w = 80;
-  const double h = 110;
+  const double h = 88;
   const double cx = w / 2;
-  const double r = 26.0;
-  const double headCY = r + 8;
-  const double tipY = 88.0;
-  const double shadowY = 102.0; // SEPARATED from tip
+  const double r = 23.0;
+  const double headCY = r + 6;
+  const double tipY = 76.0;
+  const double shadowY = 82.0; // SEPARATED from tip
 
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));

@@ -16,15 +16,20 @@ IconData getIconForPlace({
   required String placeName,
   required bool isPickup,
 }) {
+  // PICKUP — always person icon regardless of location type.
+  if (isPickup) return Icons.person;
+
   final name = placeName.toLowerCase();
   final types = placeTypes.map((t) => t.toLowerCase()).toList();
 
   // AIRPORT
   if (types.contains('airport') ||
+      types.contains('transit_station') ||
       name.contains('airport') ||
       name.contains('aeropuerto') ||
       name.contains('terminal') ||
-      types.contains('transit_station')) {
+      name.contains('intl') ||
+      name.contains('international')) {
     return Icons.flight_takeoff;
   }
 
@@ -34,7 +39,7 @@ IconData getIconForPlace({
         'shopping_mall', 'lodging', 'hotel', 'bar',
         'establishment', 'food', 'point_of_interest',
         'grocery_or_supermarket', 'pharmacy',
-        'gas_station', 'gym',
+        'gas_station', 'gym', 'bank', 'supermarket',
       ].contains(t)) ||
       name.contains('mall') ||
       name.contains('plaza') ||
@@ -43,6 +48,11 @@ IconData getIconForPlace({
       name.contains('store') ||
       name.contains('market') ||
       name.contains('office') ||
+      name.contains('center') ||
+      name.contains('clinic') ||
+      name.contains('hospital') ||
+      name.contains('restaurant') ||
+      name.contains('cafe') ||
       name.contains('suite')) {
     return Icons.storefront;
   }
@@ -51,21 +61,21 @@ IconData getIconForPlace({
   if (types.any((t) => [
         'premise', 'street_address',
         'subpremise', 'neighborhood',
-        'residential',
+        'residential', 'route',
       ].contains(t)) ||
       name.contains('apt') ||
       name.contains('house') ||
       name.contains('home') ||
       name.contains('residence') ||
-      name.contains('dr ') ||
-      name.contains('st ') ||
-      name.contains('ave ') ||
-      name.contains('blvd')) {
+      name.contains(' dr') ||
+      name.contains(' st') ||
+      name.contains(' ave') ||
+      name.contains(' blvd') ||
+      name.contains(' ln') ||
+      name.contains(' ct') ||
+      name.contains(' rd')) {
     return Icons.home;
   }
-
-  // PICKUP default
-  if (isPickup) return Icons.person;
 
   // DROPOFF default
   return Icons.location_on;
@@ -83,9 +93,9 @@ class GoldenPinPainter {
   final bool isPickup;
 
   double get _width  => size;
-  double get _height => size * 1.24;
+  double get _height => size * 1.1;
   double get _cx     => _width / 2;
-  double get _r      => _width * 0.305;
+  double get _r      => _width * 0.29;
   double get _headCY => _r + _width * 0.06;
   // Keep tip at image bottom so IconAnchor.BOTTOM pins exactly at coordinates.
   double get _tipY   => _height - 1.0;

@@ -27,7 +27,7 @@ class GoldPinRenderer {
   }) async {
     final recorder = ui.PictureRecorder();
     const double w = 120;
-    const double h = 125;
+    const double h = 132;
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
 
     const cx = w / 2;

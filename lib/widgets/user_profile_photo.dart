@@ -18,7 +18,7 @@ import '../services/photo_recovery_service.dart';
 ///
 /// Priority order for display:
 /// 1. [photoUrl] — CachedNetworkImage from Firebase Storage URL
-/// 2. Recovered URL from 4-source chain (if uid provided)
+/// 2. Recovered URL from 4-source chain (if uid + role provided)
 /// 3. [photoPath] — Local file (fast, already downloaded)
 /// 4. Gold initials derived from [fallbackName]
 class UserProfilePhoto extends StatefulWidget {
@@ -27,8 +27,11 @@ class UserProfilePhoto extends StatefulWidget {
   final double radius;
   final String? fallbackName;
   /// User ID used as cache key — ensures photos never leak between accounts.
-  /// When provided, triggers 4-source recovery chain on init.
+  /// When provided with [role], triggers 4-source recovery chain on init.
   final String? uid;
+  /// User's role — 'rider' or 'driver'. REQUIRED if uid is provided.
+  /// Prevents rider/driver photo cross-contamination.
+  final String? role;
 
   /// When true, skips the outer CircleAvatar wrapper (used inside VerifiedAvatar
   /// which provides its own border).
@@ -55,6 +58,7 @@ class UserProfilePhoto extends StatefulWidget {
     this.radius = 24,
     this.fallbackName,
     this.uid,
+    this.role,
     this.noBorder = false,
   });
 
@@ -69,18 +73,19 @@ class _UserProfilePhotoState extends State<UserProfilePhoto> {
   @override
   void initState() {
     super.initState();
-    // If uid is provided and no explicit photoUrl, attempt recovery chain
-    if (widget.uid != null && (widget.photoUrl == null || widget.photoUrl!.isEmpty)) {
+    // If uid + role provided and no explicit photoUrl, attempt recovery chain
+    if (widget.uid != null && widget.role != null &&
+        (widget.photoUrl == null || widget.photoUrl!.isEmpty)) {
       _attemptPhotoRecovery();
     }
   }
 
   Future<void> _attemptPhotoRecovery() async {
-    if (_recoveryAttempted || widget.uid == null) return;
+    if (_recoveryAttempted || widget.uid == null || widget.role == null) return;
     _recoveryAttempted = true;
 
     try {
-      final recovered = await PhotoRecoveryService.resolvePhotoUrl(widget.uid!);
+      final recovered = await PhotoRecoveryService.resolvePhotoUrl(widget.uid!, widget.role!);
       if (mounted && recovered != null && recovered.isNotEmpty) {
         setState(() => _recoveredPhotoUrl = recovered);
       }

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show ValueNotifier, kIsWeb;
+import 'package:flutter/foundation.dart' show ValueNotifier, kIsWeb, debugPrint;
 import 'package:flutter/painting.dart' show PaintingBinding;
 import 'local_data_service.dart';
 import 'package:path_provider/path_provider.dart';
@@ -257,6 +257,31 @@ class UserSession {
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();
     } catch (_) {}
+  }
+
+  /// Set the active account on successful login.
+  /// Clears image memory cache to prevent previous user's photo from showing.
+  /// Called from auth flows (Google, Apple, Email) when login completes.
+  static Future<void> setActiveAccount({
+    required String uid,
+    required String role,
+  }) async {
+    // Clear in-memory image cache from any previous account
+    // Disk cache stays intact (keyed by URL, safe across accounts)
+    try {
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+    } catch (_) {}
+
+    // Store active account markers for recovery chain validation
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cruise_active_uid', uid);
+    await prefs.setString('cruise_active_role', role);
+    
+    // Update cached UID for quick access
+    _cachedUid = uid;
+    
+    debugPrint('[UserSession] Active account set: uid=$uid, role=$role');
   }
 
   /// Get the saved role. Reads from user session first, falls back to mode key.

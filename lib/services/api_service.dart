@@ -1160,9 +1160,9 @@ class ApiService {
       final me = await getMe();
       final userId = int.tryParse(me?['id']?.toString() ?? '') ?? 0;
       final userUid = FirebaseAuth.instance.currentUser?.uid ?? userId.toString();
-      final role = me?['role']?.toString() ?? 'rider';
+      final role = (me?['role']?.toString() ?? 'rider').toLowerCase();
       final url =
-          await FirebaseStorageService.uploadProfilePhoto(filePath, userId);
+          await FirebaseStorageService.uploadProfilePhoto(filePath, userId, role);
       
       // Update Firestore so Dispatch shows the photo immediately
       unawaited(
@@ -1181,7 +1181,8 @@ class ApiService {
       
       // Save to all 4 tiers: SharedPreferences, Firebase Auth, Firestore, Storage
       // This ensures photos survive logouts, app updates, and device changes
-      unawaited(PhotoRecoveryService.savePhotoEveryWhere(userUid, url));
+      // Include role to prevent rider/driver photo cross-contamination
+      unawaited(PhotoRecoveryService.savePhotoEveryWhere(userUid, role, url));
       
       // Legacy: also save through UserSession
       unawaited(UserSession.savePhotoUrl(url));

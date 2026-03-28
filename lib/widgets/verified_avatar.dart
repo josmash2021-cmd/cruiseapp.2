@@ -12,6 +12,9 @@ class VerifiedAvatar extends StatelessWidget {
   final double radius;
   final String? fallbackName;
   final String? uid;
+  /// User role ('rider' or 'driver'). When uid is provided, role should also be provided.
+  /// Defaults to 'rider' if not specified.
+  final String? role;
   final bool isVerified;
 
   const VerifiedAvatar({
@@ -21,6 +24,7 @@ class VerifiedAvatar extends StatelessWidget {
     required this.radius,
     this.fallbackName,
     this.uid,
+    this.role,
     this.isVerified = false,
   });
 
@@ -33,6 +37,7 @@ class VerifiedAvatar extends StatelessWidget {
       size: radius * 2,
       isVerified: isVerified,
       uid: uid,
+      role: role,
     );
   }
 }

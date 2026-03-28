@@ -12,23 +12,29 @@ import 'package:flutter/foundation.dart';
 ///   2. Firebase Auth photoURL (fast — already in memory)
 ///   3. Firestore users doc (network — reliable &permanent)
 ///   4. Firebase Storage direct URL (accurate — source of truth)
+///
+/// ROLE ISOLATION: Every operation includes role ('rider' or 'driver')
+/// to prevent photos from one role contaminating the other.
 class PhotoRecoveryService {
-  /// UID-specific photo URL cache key in SharedPreferences
-  static String _photoUrlKeyForUid(String uid) => 'cruise_photo_url_$uid';
+  /// Role-specific photo URL cache key in SharedPreferences
+  /// Format: 'cruise_photo_url_{role}_{uid}' (rider_123, driver_456, etc.)
+  static String _photoUrlKeyForUid(String uid, String role) => 'cruise_photo_url_${role}_$uid';
 
   /// Primary recovery function — finds photo URL from 4 sources.
   ///
   /// Returns photoUrl if found, null otherwise.
   /// Automatically populates faster tiers when found in slower tiers.
-  static Future<String?> resolvePhotoUrl(String uid) async {
-    if (uid.isEmpty) return null;
+  /// @param uid User's Firebase UID or SQL ID
+  /// @param role 'rider' or 'driver' — ensures role isolation
+  static Future<String?> resolvePhotoUrl(String uid, String role) async {
+    if (uid.isEmpty || role.isEmpty) return null;
 
-    debugPrint('[PhotoRecovery] Starting resolution for uid=$uid');
+    debugPrint('[PhotoRecovery] Starting resolution for uid=$uid, role=$role');
 
     // ─── SOURCE 1: Local SharedPreferences (fastest) ────────────────────────
     try {
       final prefs = await SharedPreferences.getInstance();
-      final cached = prefs.getString(_photoUrlKeyForUid(uid));
+      final cached = prefs.getString(_photoUrlKeyForUid(uid, role));
       if (cached != null && cached.isNotEmpty && cached.startsWith('https')) {
         debugPrint('[PhotoRecovery] ✅ Found in SharedPreferences: $cached');
         return cached;
@@ -46,7 +52,7 @@ class PhotoRecoveryService {
         if (authUrl != null && authUrl.isNotEmpty && authUrl.startsWith('https')) {
           debugPrint('[PhotoRecovery] ✅ Found in Firebase Auth: $authUrl');
           // Backfill to SharedPreferences for next time
-          await _cachePhotoUrl(uid, authUrl);
+          await _cachePhotoUrl(uid, role, authUrl);
           return authUrl;
         }
       }
@@ -72,7 +78,7 @@ class PhotoRecoveryService {
         if (firestoreUrl != null && firestoreUrl.isNotEmpty && firestoreUrl.startsWith('https')) {
           debugPrint('[PhotoRecovery] ✅ Found in Firestore: $firestoreUrl');
           // Backfill to faster tiers
-          await _cachePhotoUrl(uid, firestoreUrl);
+          await _cachePhotoUrl(uid, role, firestoreUrl);
           await _updateFirebaseAuthPhotoUrl(firestoreUrl);
           return firestoreUrl;
         }
@@ -84,12 +90,14 @@ class PhotoRecoveryService {
     // ─── SOURCE 4: Firebase Storage direct URL construction ─────────────────
     try {
       final storage = FirebaseStorage.instance;
-      final ref = storage.ref('users/$uid/profile/photo.jpg');
+      // Role-specific storage path: riders/ or drivers/
+      final storagePath = 'photos/${role}s/$uid/profile.jpg';
+      final ref = storage.ref(storagePath);
       final url = await ref.getDownloadURL();
       if (url.isNotEmpty && url.startsWith('https')) {
         debugPrint('[PhotoRecovery] ✅ Found in Firebase Storage: $url');
         // Backfill to all faster tiers
-        await _cachePhotoUrl(uid, url);
+        await _cachePhotoUrl(uid, role, url);
         await _updateFirebaseAuthPhotoUrl(url);
         await _updateFirestorePhotoUrl(uid, url);
         return url;
@@ -99,16 +107,16 @@ class PhotoRecoveryService {
     }
 
     // ─── NO PHOTO FOUND ──────────────────────────────────────────────────────
-    debugPrint('[PhotoRecovery] ❌ No photo found for uid=$uid from any source');
+    debugPrint('[PhotoRecovery] ❌ No photo found for uid=$uid, role=$role from any source');
     return null;
   }
 
-  /// Save photoUrl to SharedPreferences cache — always UID-specific.
-  static Future<void> _cachePhotoUrl(String uid, String photoUrl) async {
+  /// Save photoUrl to SharedPreferences cache — always UID+role specific.
+  static Future<void> _cachePhotoUrl(String uid, String role, String photoUrl) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_photoUrlKeyForUid(uid), photoUrl);
-      debugPrint('[PhotoRecovery] Cached photo URL to SharedPreferences');
+      await prefs.setString(_photoUrlKeyForUid(uid, role), photoUrl);
+      debugPrint('[PhotoRecovery] Cached photo URL to SharedPreferences (role=$role)');
     } catch (e) {
       debugPrint('[PhotoRecovery] Failed to cache to SharedPreferences: $e');
     }
@@ -149,13 +157,16 @@ class PhotoRecoveryService {
   /// Manually save photoUrl to all tiers (called after successful upload).
   ///
   /// This ensures maximum redundancy: if any tier is lost, the other 3 survive.
-  static Future<void> savePhotoEveryWhere(String uid, String photoUrl) async {
-    if (uid.isEmpty || photoUrl.isEmpty) return;
+  /// @param uid User's Firebase UID or SQL ID
+  /// @param role 'rider' or 'driver' — ensures role isolation
+  /// @param photoUrl Firebase Storage download URL
+  static Future<void> savePhotoEveryWhere(String uid, String role, String photoUrl) async {
+    if (uid.isEmpty || role.isEmpty || photoUrl.isEmpty) return;
 
-    debugPrint('[PhotoRecovery] Saving photo URL to ALL tiers for uid=$uid');
+    debugPrint('[PhotoRecovery] Saving photo URL to ALL tiers for uid=$uid, role=$role');
 
     // Tier 1: SharedPreferences
-    await _cachePhotoUrl(uid, photoUrl);
+    await _cachePhotoUrl(uid, role, photoUrl);
 
     // Tier 2: Firebase Auth
     await _updateFirebaseAuthPhotoUrl(photoUrl);
@@ -166,17 +177,17 @@ class PhotoRecoveryService {
     debugPrint('[PhotoRecovery] ✅ Photo URL saved to all tiers');
   }
 
-  /// Clear photo URL from SharedPreferences only (used by logout).
+  /// Clear photo URL from SharedPreferences only for a specific role (used by logout).
   /// Does NOT clear Firestore or Cloud Storage — photos stay permanent.
   /// This is SAFE because:
   ///   - Firestore has a copy (Source 3)
   ///   - Firebase Storage has original (Source 4)
   ///   - Recovery chain finds them on next login
-  static Future<void> clearPhotoUrlCache(String uid) async {
+  static Future<void> clearPhotoUrlCache(String uid, String role) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_photoUrlKeyForUid(uid));
-      debugPrint('[PhotoRecovery] Cleared photo URL cache for sid=$uid (Firestore copy preserved)');
+      await prefs.remove(_photoUrlKeyForUid(uid, role));
+      debugPrint('[PhotoRecovery] Cleared photo URL cache for uid=$uid, role=$role (Firestore copy preserved)');
     } catch (e) {
       debugPrint('[PhotoRecovery] Failed to clear cache: $e');
     }

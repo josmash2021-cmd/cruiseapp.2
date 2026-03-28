@@ -27,8 +27,13 @@ class ProfileAvatar extends StatelessWidget {
   /// Override for the glow / shadow colour (defaults to gold).
   final Color? borderColor;
 
-  /// Optional UID forwarded to [UserProfilePhoto] for cache-keying.
+  /// User UID — When provided with role, enables recovery chain for photo persistence.
+  /// Prevents cross-account photo contamination.
   final String? uid;
+
+  /// User role — Should be provided with uid ('rider' or 'driver').
+  /// Ensures rider and driver photos never mix.
+  final String? role;
 
   const ProfileAvatar({
     super.key,
@@ -39,6 +44,7 @@ class ProfileAvatar extends StatelessWidget {
     this.isVerified = false,
     this.borderColor,
     this.uid,
+    this.role,
   });
 
   @override
@@ -85,6 +91,7 @@ class ProfileAvatar extends StatelessWidget {
                 radius: size / 2,
                 fallbackName: name,
                 uid: uid,
+                role: role,
                 noBorder: true,
               ),
             ),

@@ -482,6 +482,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                 isVerified: _isVerified,
                 borderColor: _tierColor,
                 uid: UserSession.currentUid,
+                role: 'driver',
               ),
               Positioned(
                 bottom: -2,

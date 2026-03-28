@@ -56,6 +56,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
     this.riderPhone = '',
     this.pickupInstructions = '',
     this.dropoffInstructions = '',
+    this.arrivedAtPickup = false,
   });
 
   final int tripId;
@@ -75,6 +76,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
   final String riderPhone;
   final String pickupInstructions;
   final String dropoffInstructions;
+  final bool arrivedAtPickup;
 
   @override
   State<DriverTripAcceptScreen> createState() => _DriverTripAcceptScreenState();
@@ -267,6 +269,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           routePoints:     widget.routePoints,
           riderPhone:      widget.riderPhone,
           startWithOverview: overview,
+          startInTripMode: widget.arrivedAtPickup,
         ),
       ),
     );
@@ -1443,12 +1446,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                       ),
-                      child: Text('Continue',
+                      child: Text(widget.arrivedAtPickup ? 'Start Trip' : 'Continue',
                         style: TextStyle(
                           fontSize: Responsive.sp(17), fontWeight: FontWeight.w800,
                           color: Colors.black)),
                     ),
                   ),
+                  if (!widget.arrivedAtPickup) ...[
                   SizedBox(height: Responsive.h(10)),
                   // Directions (outline)
                   SizedBox(
@@ -1469,6 +1473,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           color: Colors.white)),
                     ),
                   ),
+                  ],
                 ],
               ),
             ),

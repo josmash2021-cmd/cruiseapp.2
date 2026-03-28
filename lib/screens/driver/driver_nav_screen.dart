@@ -56,6 +56,7 @@ class DriverNavScreen extends StatefulWidget {
     this.routePoints,
     this.riderPhone = '',
     this.startWithOverview = false,
+    this.startInTripMode = false,
   });
 
   final int tripId;
@@ -72,6 +73,7 @@ class DriverNavScreen extends StatefulWidget {
   final List<LatLng>? routePoints;
   final String riderPhone;
   final bool startWithOverview;
+  final bool startInTripMode;
 
   @override
   State<DriverNavScreen> createState() => _DriverNavScreenState();
@@ -230,6 +232,12 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       dropoff: widget.dropoffLatLng,
     );
 
+    // If returning from detail page to start the trip, jump straight to
+    // arrivedPickup so _startRide() can call beginTrip().
+    if (widget.startInTripMode) {
+      _sm.arriveAtPickup();
+    }
+
     // If caller already pre-fetched a route, use it; else fetch now
     if (widget.routePoints != null && widget.routePoints!.length > 1) {
       _routePts = List.of(widget.routePoints!);
@@ -245,7 +253,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     }
 
     // Fetch proper nav route (step-by-step) regardless
-    _fetchRoute(widget.pickupLatLng);
+    _fetchRoute(widget.startInTripMode ? widget.dropoffLatLng : widget.pickupLatLng);
 
     // Start GPS
     _startGps();
@@ -450,9 +458,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         _showToast('Trip started — navigate to dropoff');
       }
     } else if (phase == TripPhase.arrivedPickup) {
-      _updateTripStatus('arrived_pickup',
-          extra: {'driverArrivedAt': FieldValue.serverTimestamp()});
-      _showToast('Rider notified — waiting for boarding');
+      if (!widget.startInTripMode) {
+        _updateTripStatus('arrived_pickup',
+            extra: {'driverArrivedAt': FieldValue.serverTimestamp()});
+        _showToast('Rider notified — waiting for boarding');
+      }
     } else if (phase == TripPhase.arrivedDropoff) {
       setState(() {
         _cameraFollowing = false;
@@ -1161,6 +1171,47 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _startWaitTimer();
   }
 
+  /// Tapped "Arrived" in bottom bar → update status & go back to trip detail.
+  void _arrivedAndGoBack() {
+    HapticFeedback.mediumImpact();
+    _sm.arriveAtPickup();
+    _updateTripStatus('arrived_pickup',
+        extra: {'driverArrivedAt': FieldValue.serverTimestamp()});
+
+    // Cancel timers / subscriptions before leaving
+    _gpsSub?.cancel();
+    _etaRefreshTimer?.cancel();
+    _iconPulseTimer?.cancel();
+    _destPinAnimTimer?.cancel();
+    _waitTimer?.cancel();
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = null;
+
+    Navigator.of(context).pushReplacement(
+      slideUpFadeRoute(
+        DriverTripAcceptScreen(
+          tripId:          widget.tripId,
+          riderName:       widget.riderName,
+          riderPhotoUrl:   widget.riderPhotoUrl,
+          riderRating:     widget.riderRating,
+          pickupLatLng:    widget.pickupLatLng,
+          dropoffLatLng:   widget.dropoffLatLng,
+          pickupAddress:   widget.pickupAddress,
+          dropoffAddress:  widget.dropoffAddress,
+          fare:            widget.fare,
+          vehicleType:     widget.vehicleType,
+          driverPos:       _pos,
+          distToPickupKm:  _distRemainingMi * 1.60934,
+          etaMinutes:      _etaMinutes,
+          routePoints:     _pickupDropoffRoute,
+          riderPhone:      widget.riderPhone,
+          arrivedAtPickup: true,
+        ),
+      ),
+    );
+  }
+
   void _startWaitTimer() {
     _waitStartedAt = DateTime.now();
     _waitSeconds = 0;
@@ -1409,6 +1460,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           etaMinutes:      _etaMinutes,
           routePoints:     _pickupDropoffRoute,
           riderPhone:      widget.riderPhone,
+          arrivedAtPickup: _phase == TripPhase.arrivedPickup,
         ),
       ),
     );
@@ -1732,20 +1784,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 child: Center(child: _buildResumeButton()),
               ),
 
-            // ── PHASE OVERLAY (arrived / finalize / complete) ─────────
-            if (_nearPickup && _phase == TripPhase.toPickup)
-              Positioned(
-                top: top + 80,
-                right: 12,
-                child: _buildArrivedBtn(),
-              ),
-            if (_phase == TripPhase.arrivedPickup)
-              Positioned(
-                bottom: bottomBarH + 8,
-                left: 12,
-                right: 12,
-                child: _buildArrivedAtPickupCard(),
-              ),
+            // ── PHASE OVERLAY (finalize / complete) ──────────────────
 
             // ── FINALIZAR VIAJE — slides up when near dropoff at low speed ──
             AnimatedPositioned(
@@ -1809,13 +1848,20 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-rotation-alignment', 'map'); } catch (_) {}
           _updateRouteAnnotation();
-          _updateDestPin(widget.pickupLatLng);
+          _updateDestPin(widget.startInTripMode ? widget.dropoffLatLng : widget.pickupLatLng);
           // Show pickup pin throughout the trip
           _updatePickupPin(widget.pickupLatLng);
-          // Cinematic entry: zoom out → draw route → zoom back
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) _startCinematicEntry();
-          });
+          if (widget.startInTripMode) {
+            // Auto-start ride after a short delay for the map to settle
+            Future.delayed(const Duration(milliseconds: 600), () {
+              if (mounted) _startRide();
+            });
+          } else {
+            // Cinematic entry: zoom out → draw route → zoom back
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (mounted) _startCinematicEntry();
+            });
+          }
         },
         onStyleLoadedListener: (_) async {
           if (_map != null) await MapTheme.applyNavyGold(_map!);
@@ -2231,39 +2277,71 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                   child: _riderAvatar(size: Responsive.w(36)),
                 ),
               ),
-              // Centered ETA / distance / arrival
+              // Centered ETA / distance / arrival / Arrived button
               Expanded(
                 child: Center(
-                  child: eta <= 2
-                      ? Text(
-                          'Arriving soon',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: false,
-                          style: TextStyle(
-                            color: _etaGreen,
-                            fontSize: Responsive.sp(16),
-                            fontWeight: FontWeight.w800,
-                          ))
-                      : Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text('$eta min',
+                  child: (_nearPickup && _phase == TripPhase.toPickup && _currentSpeedMph < 5)
+                      ? GestureDetector(
+                          onTap: _arrivedAndGoBack,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2E7D32),
+                              borderRadius: BorderRadius.circular(28),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF2E7D32).withValues(alpha: 0.5),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.location_on_rounded,
+                                    color: Colors.white, size: 18),
+                                const SizedBox(width: 7),
+                                Text('Arrived',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: Responsive.sp(16),
+                                    fontWeight: FontWeight.w800,
+                                  )),
+                              ],
+                            ),
+                          ),
+                        )
+                      : eta <= 2
+                          ? Text(
+                              'Arriving soon',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              softWrap: false,
                               style: TextStyle(
                                 color: _etaGreen,
-                                fontSize: Responsive.sp(22),
-                                fontWeight: FontWeight.w900,
-                                height: 1.0,
-                              )),
-                            const SizedBox(height: 2),
-                            Text('$distStr · $arrStr',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: Responsive.sp(12),
-                                fontWeight: FontWeight.w500,
-                              )),
-                          ],
-                        ),
+                                fontSize: Responsive.sp(16),
+                                fontWeight: FontWeight.w800,
+                              ))
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text('$eta min',
+                                  style: TextStyle(
+                                    color: _etaGreen,
+                                    fontSize: Responsive.sp(22),
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.0,
+                                  )),
+                                const SizedBox(height: 2),
+                                Text('$distStr · $arrStr',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.5),
+                                    fontSize: Responsive.sp(12),
+                                    fontWeight: FontWeight.w500,
+                                  )),
+                              ],
+                            ),
                 ),
               ),
               // Exit button

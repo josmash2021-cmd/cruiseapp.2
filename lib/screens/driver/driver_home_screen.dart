@@ -1073,6 +1073,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final dc = DriverColors.of(context);
     final panelH =
         _panelCollapsedH + (_panelExpandedH - _panelCollapsedH) * panelExtent;
+    final hasActiveTrip = _activeTripData != null;
 
     return GestureDetector(
       // Consume taps so panel never opens on tap — swipe-only
@@ -1254,7 +1255,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       ),
                       const SizedBox(height: 16),
                       // Go offline button
-                      if (_isStillOnline)
+                      if (_isStillOnline && !hasActiveTrip)
                         GestureDetector(
                           onTap: () {
                             HapticFeedback.mediumImpact();
@@ -1450,7 +1451,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     try {
       final snap = await FirebaseFirestore.instance
           .collection('trips')
-          .where('status', whereIn: const ['accepted', 'driver_arriving', 'in_progress'])
+          .where('status', whereIn: const ['accepted', 'driver_arriving', 'driver_arrived', 'in_progress'])
           .limit(25)
           .get();
 

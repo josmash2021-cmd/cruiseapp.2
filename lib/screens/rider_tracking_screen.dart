@@ -135,6 +135,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _carShadowAdded = false;
   bool _carUpdateInProgress = false; // guard: prevents 60fps async race conditions
   LatLng? _directTargetPos; // for GPS fallback: lerp target when off-route
+  double? _directTargetBearing; // RTDB bearing fallback when projection cannot be used
   bool _arrowImageAdded = false;
   bool _carEntranceStarted = false;
   bool _carEntranceComplete = false;

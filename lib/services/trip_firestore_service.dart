@@ -171,7 +171,7 @@ class TripFirestoreService {
 
   // ── Driver live-location ──────────────────────────────────────────────────
 
-  /// Throttle tracker so we don't write to Firestore more than once per 500 ms.
+  /// Throttle tracker so we don't write to Firestore more than once per 800 ms.
   static DateTime? _lastLocationWrite;
 
   /// Write driver's current GPS position to the trip document (~0.5 Hz).
@@ -183,7 +183,7 @@ class TripFirestoreService {
   ) async {
     final now = DateTime.now();
     if (_lastLocationWrite != null &&
-        now.difference(_lastLocationWrite!).inMilliseconds < 2000) {
+        now.difference(_lastLocationWrite!).inMilliseconds < 800) {
       return;
     }
     _lastLocationWrite = now;
@@ -192,6 +192,17 @@ class TripFirestoreService {
         'driverLat': lat,
         'driverLng': lng,
         'driverBearing': bearing,
+      });
+    } catch (_) {}
+  }
+
+  /// Clear live driver-location fields from Firestore once the trip is over.
+  static Future<void> clearDriverLocation(String tripId) async {
+    try {
+      await _trips.doc(tripId).update({
+        'driverLat': FieldValue.delete(),
+        'driverLng': FieldValue.delete(),
+        'driverBearing': FieldValue.delete(),
       });
     } catch (_) {}
   }

@@ -169,6 +169,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     if (userId != null) {
       _driverId = userId;
       _gpsService.startTracking(userId.toString());
+      _gpsService.setActiveTrip(widget.tripId.isEmpty ? null : widget.tripId);
     }
   }
 
@@ -398,9 +399,22 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   bool _startRideSwitching = false;
 
   void _onPhaseChanged(TripPhase phase) {
+    if (phase == TripPhase.arrivedPickup) {
+      unawaited(FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.tripId)
+          .update({'status': 'driver_arrived', 'driverArrivedAt': FieldValue.serverTimestamp()})
+          .catchError((_) {}));
+    }
+
     if (phase == TripPhase.onTrip && !_startRideSwitching) {
       _hasResumedOnce = false;
       _cameraFollowing = false;
+      unawaited(FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.tripId)
+          .update({'status': 'in_progress', 'startedAt': FieldValue.serverTimestamp()})
+          .catchError((_) {}));
       _switchToDropoffRoute();
     }
   }
@@ -1388,6 +1402,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
                 onFinishTrip: () async {
                   _sm.completeTrip();
                   final tid = int.tryParse(widget.tripId);
+                  await _gpsService.clearTripLocation();
+                  _gpsService.setActiveTrip(null);
+                  await TripFirestoreService.clearDriverLocation(widget.tripId);
                   if (tid != null) {
                     try {
                       await ApiService.updateTripStatus(tripId: tid, status: 'completed');
@@ -2302,6 +2319,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           _sm.completeTrip();
           final nav = Navigator.of(context);
           final tid = int.tryParse(widget.tripId);
+          await _gpsService.clearTripLocation();
+          _gpsService.setActiveTrip(null);
+          await TripFirestoreService.clearDriverLocation(widget.tripId);
           if (tid != null) {
             try {
               await ApiService.updateTripStatus(tripId: tid, status: 'completed');

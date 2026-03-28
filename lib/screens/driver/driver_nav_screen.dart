@@ -170,6 +170,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   // ── Pickup pin (visible throughout trip) ──────────────────────────────────
   mapbox.PointAnnotation? _pickupAnnot;
+  Uint8List? _pickupPinBytes;
+  AnimationController? _pickupPopCtrl;
+  Animation<double>? _pickupPopScale;
+  Animation<double>? _pickupPopFade;
+  Offset? _pickupPopOffset;
 
   // ── Driver icon pulse ─────────────────────────────────────────────────────
   Timer? _iconPulseTimer;
@@ -266,6 +271,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _pulseCtrl?.dispose();
+    _pickupPopCtrl?.dispose();
     _motion.dispose();
     super.dispose();
   }
@@ -279,6 +285,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     if (userId != null) {
       _driverId = userId;
       _gpsService.startTracking(userId.toString());
+      _gpsService.setActiveTrip(widget.tripId.toString());
     }
   }
 
@@ -422,7 +429,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       if (!_startRideSwitching) {
         _fetchRoute(widget.dropoffLatLng);
         _updateDestPin(widget.dropoffLatLng);
-        _updatePickupPin(widget.pickupLatLng);
+        _deletePickupPin();
         _updateTripStatus('rider_onboard',
             extra: {'tripStartedAt': FieldValue.serverTimestamp()});
         _showToast('Trip started — navigate to dropoff');
@@ -489,13 +496,24 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       await ApiService.updateTripStatus(tripId: widget.tripId, status: status);
     } catch (_) {}
     try {
-      final data = <String, dynamic>{'status': status};
+      final data = <String, dynamic>{'status': _normalizedFirestoreStatus(status)};
       if (extra != null) data.addAll(extra);
       await FirebaseFirestore.instance
           .collection('trips')
           .doc(widget.tripId.toString())
           .update(data);
     } catch (_) {}
+  }
+
+  String _normalizedFirestoreStatus(String status) {
+    switch (status) {
+      case 'arrived_pickup':
+        return 'driver_arrived';
+      case 'rider_onboard':
+        return 'in_progress';
+      default:
+        return status;
+    }
   }
 
   // =========================================================================
@@ -913,20 +931,95 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Future<void> _updatePickupPin(LatLng pickup) async {
     final mgr = _pointMgr;
     if (mgr == null) return;
-    if (_pickupAnnot != null) {
-      try { await mgr.delete(_pickupAnnot!); } catch (_) {}
-      _pickupAnnot = null;
-    }
-    final pinBytes = await _buildPickupPin();
+    _pickupPinBytes ??= await _buildPickupPin();
+    final pinBytes = _pickupPinBytes;
     if (pinBytes == null || !mounted) return;
-    _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(
-          coordinates: mapbox.Position(pickup.longitude, pickup.latitude)),
-      image: pinBytes,
-      iconSize: 1.0,
-      iconAnchor: mapbox.IconAnchor.BOTTOM,
-      iconOffset: [0, 0],
-    ));
+    final geometry = mapbox.Point(
+        coordinates: mapbox.Position(pickup.longitude, pickup.latitude));
+
+    if (_pickupAnnot == null) {
+      _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: geometry,
+        image: pinBytes,
+        iconSize: 1.0,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 0],
+      ));
+      return;
+    }
+
+    _pickupAnnot!
+      ..geometry = geometry
+      ..image = pinBytes
+      ..iconSize = 1.0
+      ..iconOpacity = 1.0;
+    try { await mgr.update(_pickupAnnot!); } catch (_) {}
+  }
+
+  Future<void> _deletePickupPin() async {
+    final mgr = _pointMgr;
+    final annot = _pickupAnnot;
+    if (mgr == null || annot == null) return;
+    try { await mgr.delete(annot); } catch (_) {}
+    _pickupAnnot = null;
+  }
+
+  Future<void> _startPickupPinPopout() async {
+    final annot = _pickupAnnot;
+    final map = _map;
+    if (annot == null || map == null) {
+      await _deletePickupPin();
+      return;
+    }
+
+    _pickupPinBytes ??= await _buildPickupPin();
+    final bytes = _pickupPinBytes;
+    if (!mounted || bytes == null) return;
+
+    try {
+      final px = await map.pixelForCoordinate(
+        mapbox.Point(
+          coordinates: mapbox.Position(
+            widget.pickupLatLng.longitude,
+            widget.pickupLatLng.latitude,
+          ),
+        ),
+      );
+      if (!mounted) return;
+
+      _pickupPopCtrl?.dispose();
+      _pickupPopCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 400),
+      );
+      _pickupPopScale = Tween<double>(begin: 1.0, end: 1.8).animate(
+        CurvedAnimation(parent: _pickupPopCtrl!, curve: Curves.easeOut),
+      );
+      _pickupPopFade = Tween<double>(begin: 1.0, end: 0.0).animate(
+        CurvedAnimation(parent: _pickupPopCtrl!, curve: Curves.easeIn),
+      );
+
+      annot.iconOpacity = 0.0;
+      try { await _pointMgr?.update(annot); } catch (_) {}
+
+      setState(() {
+        _pickupPopOffset = Offset(px.x.toDouble(), px.y.toDouble());
+      });
+
+      await _pickupPopCtrl!.forward();
+    } catch (_) {
+      // Fall through to deleting the annotation even if the overlay can't be rendered.
+    }
+
+    await _deletePickupPin();
+    if (!mounted) return;
+    setState(() {
+      _pickupPopOffset = null;
+    });
+    _pickupPopCtrl?.dispose();
+    _pickupPopCtrl = null;
+    _pickupPopScale = null;
+    _pickupPopFade = null;
   }
 
   // =========================================================================
@@ -1181,10 +1274,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
     _stopWaitTimer(); // End wait time when ride starts
     _startRideSwitching = true;
+    unawaited(_startPickupPinPopout());
     _sm.beginTrip(); // triggers _onPhaseChanged(TripPhase.onTrip)
-
-    // ── Cinematic route switch: fade old → fetch new → full cinematic ──
-    await _fadeOutRoute();
 
     // Fetch dropoff route
     final route = await RouteService.fetchNavRoute(
@@ -1199,14 +1290,15 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         _etaMinutes      = route.totalDurationMinutes;
       });
       _navService.startNavigation(route);
-
-      // Update route annotation and jump to nav position (no cinematic on ride start)
-      _updateRouteAnnotation();
+      await _deleteRouteAnnotations();
+      _animatedRoute = [];
+      await _drawRouteAnimated();
+    } else {
+      await _updateRouteAnnotation();
     }
 
     // Pin + status updates that _onPhaseChanged skipped
     _updateDestPin(widget.dropoffLatLng);
-    _updatePickupPin(widget.pickupLatLng);
     _updateTripStatus('rider_onboard',
         extra: {'tripStartedAt': FieldValue.serverTimestamp()});
     _showToast('Trip started — navigate to dropoff');
@@ -1224,6 +1316,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     HapticFeedback.heavyImpact();
     _sm.arriveAtDropoff();
     _sm.completeTrip();
+    await _gpsService.clearTripLocation();
+    _gpsService.setActiveTrip(null);
+    await TripFirestoreService.clearDriverLocation(widget.tripId.toString());
     await _updateTripStatus('completed',
         extra: {'completedAt': FieldValue.serverTimestamp()});
     if (!mounted) return;
@@ -1542,6 +1637,29 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           children: [
             // ── FULL MAP ─────────────────────────────────────────────────
             Positioned.fill(child: _buildMap()),
+
+            if (_pickupPopOffset != null &&
+                _pickupPinBytes != null &&
+                _pickupPopScale != null &&
+                _pickupPopFade != null)
+              Positioned(
+                left: _pickupPopOffset!.dx - 36,
+                top: _pickupPopOffset!.dy - 92,
+                child: IgnorePointer(
+                  child: FadeTransition(
+                    opacity: _pickupPopFade!,
+                    child: ScaleTransition(
+                      scale: _pickupPopScale!,
+                      child: Image.memory(
+                        _pickupPinBytes!,
+                        width: 72,
+                        height: 96,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
 
             // ── TOP HEADER ───────────────────────────────────────────────
             Positioned(top: 0, left: 0, right: 0, child: _buildNavHeader(top)),

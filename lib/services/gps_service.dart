@@ -16,6 +16,7 @@ class GpsService {
   GpsService._internal();
 
   final _database = FirebaseDatabase.instance;
+  static const Duration _uploadInterval = Duration(milliseconds: 800);
 
   Timer? _uploadTimer;
   LatLng? _lastUploadedPos;
@@ -23,7 +24,10 @@ class GpsService {
   double _currentHeading = 0;
   double _currentSpeed = 0;
   String? _activeDriverId;
+  String? _activeTripId;
   bool _presenceSetUp = false;
+  DateTime? _lastUploadAt;
+  StreamSubscription? _presenceSub;
 
   /// Whether the service is actively uploading.
   bool get isTracking => _uploadTimer != null;
@@ -37,13 +41,18 @@ class GpsService {
 
     _activeDriverId = driverId;
 
-    // Upload to Firebase every 2 s (throttled from 800 ms)
+    // Fallback heartbeat in case the caller pauses briefly between GPS updates.
     _uploadTimer = Timer.periodic(
-      const Duration(milliseconds: 2000),
-      (_) => _uploadToFirebase(),
+      _uploadInterval,
+      (_) => unawaited(_uploadToFirebase()),
     );
 
     _setupPresence(driverId);
+  }
+
+  /// Attach or detach the driver's active trip context.
+  void setActiveTrip(String? tripId) {
+    _activeTripId = tripId == null || tripId.isEmpty ? null : tripId;
   }
 
   /// Feed the latest GPS fix from the screen's Geolocator stream.
@@ -51,22 +60,54 @@ class GpsService {
     _currentPos = pos;
     _currentHeading = heading;
     _currentSpeed = speed;
+
+    final now = DateTime.now();
+    if (_lastUploadAt == null ||
+        now.difference(_lastUploadAt!) >= const Duration(milliseconds: 450)) {
+      unawaited(_uploadToFirebase());
+    }
   }
 
   /// Stop uploads, mark driver offline in RTDB.
   void stopTracking() {
     _uploadTimer?.cancel();
     _uploadTimer = null;
+    _presenceSub?.cancel();
+    _presenceSub = null;
 
     final id = _activeDriverId;
     if (id != null) {
-      _database.ref('drivers/$id/location').update({
-        'status': 'offline',
-        'timestamp': ServerValue.timestamp,
-      }).catchError((_) {});
+      if (_activeTripId == null) {
+        _database.ref('driver_locations/$id').remove().catchError((_) {});
+        _database.ref('drivers/$id/location').update({
+          'status': 'offline',
+          'timestamp': ServerValue.timestamp,
+        }).catchError((_) {});
+      }
     }
     _activeDriverId = null;
     _presenceSetUp = false;
+    _lastUploadedPos = null;
+    _lastUploadAt = null;
+  }
+
+  /// Remove the active trip location from RTDB when the ride ends or cancels.
+  Future<void> clearTripLocation() async {
+    final id = _activeDriverId;
+    if (id == null) {
+      _activeTripId = null;
+      return;
+    }
+
+    try {
+      await _database.ref('driver_locations/$id').remove();
+    } catch (e) {
+      debugPrint('GPS clear trip location error: $e');
+    } finally {
+      _activeTripId = null;
+      _lastUploadedPos = null;
+      _lastUploadAt = null;
+    }
   }
 
   void dispose() {
@@ -79,16 +120,22 @@ class GpsService {
     if (_currentPos == null || _activeDriverId == null) return;
     if (_currentPos == _lastUploadedPos) return; // no change
 
+    final payload = {
+      'lat': _currentPos!.latitude,
+      'lng': _currentPos!.longitude,
+      'bearing': _currentHeading,
+      'heading': _currentHeading,
+      'speed': _currentSpeed,
+      'tripId': _activeTripId,
+      'timestamp': ServerValue.timestamp,
+      'status': 'online',
+    };
+
     try {
-      await _database.ref('drivers/$_activeDriverId/location').set({
-        'lat': _currentPos!.latitude,
-        'lng': _currentPos!.longitude,
-        'heading': _currentHeading,
-        'speed': _currentSpeed,
-        'timestamp': ServerValue.timestamp,
-        'status': 'online',
-      });
+      await _database.ref('driver_locations/$_activeDriverId').set(payload);
+      await _database.ref('drivers/$_activeDriverId/location').set(payload);
       _lastUploadedPos = _currentPos;
+      _lastUploadAt = DateTime.now();
     } catch (e) {
       debugPrint('GPS upload error: $e');
     }
@@ -101,16 +148,18 @@ class GpsService {
     _presenceSetUp = true;
 
     final connectedRef = _database.ref('.info/connected');
-    connectedRef.onValue.listen((event) {
+    _presenceSub = connectedRef.onValue.listen((event) {
       if (event.snapshot.value == true) {
-        final locRef = _database.ref('drivers/$driverId/location');
+        final liveRef = _database.ref('driver_locations/$driverId');
+        final legacyRef = _database.ref('drivers/$driverId/location');
         // When this client disconnects, auto-set offline
-        locRef.onDisconnect().update({
+        liveRef.onDisconnect().remove();
+        legacyRef.onDisconnect().update({
           'status': 'offline',
           'timestamp': ServerValue.timestamp,
         });
         // Set online now
-        locRef.update({'status': 'online'});
+        legacyRef.update({'status': 'online'});
       }
     });
   }

@@ -6,25 +6,10 @@ part of '../screens/rider_tracking_screen.dart';
 
 extension _RiderTrackingController on _RiderTrackingScreenState {
 
-  /// Connect to Firestore for real-time driver location and trip status.
+  /// Connect to Firestore for trip status and RTDB for live driver movement.
   void _startRealTimeTracking() {
     final fsId = widget.firestoreTripId;
     if (fsId != null && fsId.isNotEmpty) {
-      // Watch driver location in real time
-      _driverLocSub = TripFirestoreService.watchDriverLocation(fsId).listen(
-        (ll) {
-          if (!mounted || _phase == _TrackPhase.completed) return;
-          if (_connectionLost) _setState(() => _connectionLost = false);
-          _onRealDriverLocation(ll);
-        },
-        onError: (error) {
-          debugPrint('[RiderTracking] Driver location listener error: $error');
-          if (mounted && !_connectionLost) {
-            _setState(() => _connectionLost = true);
-          }
-        },
-      );
-
       // Watch trip status changes
       _tripStatusSub = TripFirestoreService.watchTrip(fsId).listen(
         (data) {
@@ -60,8 +45,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
   }
 
-  /// Process real-time driver location from Firestore.
-  void _onRealDriverLocation(LatLng ll) {
+  /// Process real-time driver location from RTDB.
+  void _onRealDriverLocation(LatLng ll, {double? bearing}) {
     if (ll.latitude == 0 && ll.longitude == 0) return;
 
     bool usedRouteProjection = false;
@@ -81,6 +66,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Fallback: if projection didn't work, set a lerp target (never teleport _animPos)
     if (!usedRouteProjection) {
       _directTargetPos = ll;
+      _directTargetBearing = bearing;
     }
 
     // Update phase and distances
@@ -120,7 +106,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if ((status == 'arrived' || status == 'driver_arrived') && _phase == _TrackPhase.arriving) {
       _setState(() => _phase = _TrackPhase.arrived);
       _showRiderConfirmPickup();
-    } else if (status == 'in_trip' &&
+    } else if ((status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard') &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       _setState(() => _phase = _TrackPhase.onTrip);
       _popOutPickupPin();
@@ -166,7 +152,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _rtdbDriverLocSub?.cancel();
     _rtdbDriverId = driverId;
     _rtdbDriverLocSub = FirebaseDatabase.instance
-        .ref('drivers/$driverId/location')
+        .ref('driver_locations/$driverId')
         .onValue
         .listen((event) {
       if (!mounted || _phase == _TrackPhase.completed) return;
@@ -174,8 +160,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       final data = Map<String, dynamic>.from(event.snapshot.value as Map);
       final lat = (data['lat'] as num?)?.toDouble();
       final lng = (data['lng'] as num?)?.toDouble();
+      final bearing = (data['bearing'] as num?)?.toDouble();
       if (lat == null || lng == null) return;
-      _onRealDriverLocation(LatLng(lat, lng));
+      if (_connectionLost) _setState(() => _connectionLost = false);
+      _onRealDriverLocation(LatLng(lat, lng), bearing: bearing);
     }, onError: (_) {});
   }
 
@@ -384,11 +372,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       const lerpFactor = 0.08; // smooth catch-up, never teleport
       final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * lerpFactor;
       final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * lerpFactor;
+      final fallbackBearing = _directTargetBearing;
       final newBrg = _bearing(_animPos, LatLng(newLat, newLng));
       _animPos = LatLng(newLat, newLng);
       _driverPos = _animPos;
-      if (newBrg != 0) {
-        double db = newBrg - _animBearing;
+      final desiredBearing = newBrg != 0 ? newBrg : fallbackBearing;
+      if (desiredBearing != null) {
+        double db = desiredBearing - _animBearing;
         if (db > 180) db -= 360;
         if (db < -180) db += 360;
         _animBearing = (_animBearing + db * 0.05) % 360;

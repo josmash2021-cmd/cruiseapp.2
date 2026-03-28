@@ -533,6 +533,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Fit route bounds applying precise padding for top and bottom cards.
   /// Called after layout is ready so card heights can be measured.
+  /// During 'arriving' phase the driver's current animated position is included
+  /// so the camera always shows the full path from driver → pickup point.
   void _fitRouteBounds() {
     if (_polylineAnnotMgr == null || _routePts.isEmpty) return;
     
@@ -540,9 +542,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final topHeight = _topCardHeight;
     final bottomHeight = _bottomCardHeight;
     
-    // Calculate bounds from route points, pickup, and dropoff
+    // Always include pickup + dropoff + route.
+    // During arriving phase also include driver's current animated position
+    // so the entire remaining path is visible between the UI cards.
     final pts = <LatLng>[widget.pickupLatLng, widget.dropoffLatLng];
     pts.addAll(_routePts);
+    if (_phase == _TrackPhase.arriving && _animPos.latitude != 0) {
+      pts.add(_animPos);
+    }
     
     double minLat = pts[0].latitude, maxLat = pts[0].latitude;
     double minLng = pts[0].longitude, maxLng = pts[0].longitude;
@@ -553,9 +560,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       maxLng = math.max(maxLng, p.longitude);
     }
     
-    // Apply smooth padding with card measurements
-    final padding = math.max(topHeight, bottomHeight) + 48;
-    
+    // Apply card-aware padding: top bar height + 16, bottom bar height + 16, sides 24
     _map?.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],

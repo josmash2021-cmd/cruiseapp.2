@@ -7,11 +7,18 @@ part of '../../screens/rider_tracking_screen.dart';
 extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
 
   // ── Phase-based status text (top label) ──
+  // During 'arriving', the label is refined by ETA and distance to show
+  // progressively urgent messages as the driver gets closer.
   String get _topStatusText {
     final s = S.of(context);
     switch (_phase) {
       case _TrackPhase.arriving:
-        return s.driverEnRoute;
+        // Distance in meters: _distanceMiles * 1609.34
+        final distM = _distanceMiles * 1609.34;
+        if (distM <= 50) return s.driverAtPickupSpot;                 // ≤50m: at spot
+        if (_etaMinutes <= 2 || distM <= 300) return s.driverArrivingCard;  // ≤2min or ≤300m
+        if (_etaMinutes <= 5) return s.driverAlmostHereCard;           // ≤5min
+        return s.driverEnRoute;                                        // >5min
       case _TrackPhase.arrived:
         return s.driverHasArrived;
       case _TrackPhase.onTrip:
@@ -24,11 +31,16 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
   }
 
   // ── Phase-based bottom card text ──
+  // Mirrors _topStatusText logic: smart sub-states for 'arriving' phase.
   String get _bottomCardText {
     final s = S.of(context);
     switch (_phase) {
       case _TrackPhase.arriving:
-        return s.driverOnTheWayCard;
+        final distM = _distanceMiles * 1609.34;
+        if (distM <= 50) return s.driverWaitingAtPickup;              // ≤50m: waiting
+        if (_etaMinutes <= 2 || distM <= 300) return s.driverArrivingCard;
+        if (_etaMinutes <= 5) return s.driverAlmostHereCard;
+        return s.driverOnTheWayCard;                                   // >5min
       case _TrackPhase.arrived:
         return s.driverWaitingForYou;
       case _TrackPhase.onTrip:
@@ -44,7 +56,11 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
   Color get _dotColor {
     switch (_phase) {
       case _TrackPhase.arriving:
-        return const Color(0xFFFFD700); // Golden — driver en camino
+        final distM = _distanceMiles * 1609.34;
+        // Shift from gold → orange → red as driver gets very close
+        if (distM <= 50) return const Color(0xFFEF4444);  // red: at spot
+        if (_etaMinutes <= 2 || distM <= 300) return const Color(0xFFFF9500); // orange: arriving
+        return const Color(0xFFFFD700);                   // gold: on the way
       case _TrackPhase.arrived:
         return const Color(0xFF2196F3); // Blue — driver llegó al pickup
       case _TrackPhase.onTrip:

@@ -23,6 +23,7 @@ import '../services/trip_firestore_service.dart';
 import '../widgets/offline_banner.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/api_keys.dart';
 import 'chat_screen.dart';
 import '../services/chat_service.dart';
@@ -52,6 +53,7 @@ class RiderTrackingScreen extends StatefulWidget {
     required this.dropoffLatLng,
     this.routePoints,
     this.driverName = 'Driver',
+    this.driverPhone,
     this.driverRating = 4.9,
     this.vehicleMake = '',
     this.vehicleModel = '',
@@ -72,6 +74,7 @@ class RiderTrackingScreen extends StatefulWidget {
   final LatLng dropoffLatLng;
   final List<LatLng>? routePoints;
   final String driverName;
+  final String? driverPhone;
   final double driverRating;
   final String vehicleMake;
   final String vehicleModel;

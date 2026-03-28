@@ -879,6 +879,14 @@ class S {
       _es ? 'Llegando a tu destino' : 'Arriving at your destination';
   String get driverOnTheWayCard =>
       _es ? 'Conductor en camino' : 'Driver on the way';
+  String get driverAlmostHereCard =>
+      _es ? 'Tu conductor está casi aquí' : 'Your driver is almost here';
+  String get driverArrivingCard =>
+      _es ? '¡Tu conductor está llegando!' : 'Your driver is arriving!';
+  String get driverAtPickupSpot =>
+      _es ? 'Tu conductor está en el punto de recogida 📍' : 'Your driver is at the pickup spot 📍';
+  String get driverWaitingAtPickup =>
+      _es ? '¡El conductor te está esperando!' : 'Driver is waiting for you!';
   String get driverWaitingForYou =>
       _es ? 'Tu conductor te está esperando' : 'Your driver is waiting for you';
   String get onWayToDestinationCard =>

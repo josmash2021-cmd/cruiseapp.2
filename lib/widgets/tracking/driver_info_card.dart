@@ -228,11 +228,11 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                 ),
               ),
               SizedBox(width: Responsive.w(8)),
-              _buildCardIconBtn(icon: Icons.phone_rounded, onTap: () {}),
+              _buildCardIconBtn(icon: Icons.phone_rounded, onTap: _handleCallDriver),
               SizedBox(width: Responsive.w(8)),
               _buildCardIconBtn(
                 icon: Icons.share_rounded,
-                onTap: _handleShareTrip,
+                onTap: _handleShareDriverLocation,
               ),
               SizedBox(width: Responsive.w(8)),
               _buildMoreMenuButton(),
@@ -258,19 +258,74 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  void _handleShareTrip() {
-    final tripId = widget.firestoreTripId ?? widget.tripId?.toString() ?? 'unknown';
-    final shareText = '''🚗 Sigue mi viaje en tiempo real
+  /// Call the driver with a confirmation dialog before dialing.
+  void _handleCallDriver() {
+    final phone = widget.driverPhone;
+    final name = nh.displayName(widget.driverName, widget.rideName);
+    if (phone == null || phone.isEmpty) {
+      // No phone number available — show info snackbar
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Phone number not available for $name'),
+          backgroundColor: const Color(0xFF1A1A1A),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Call $name?',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          phone,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Call', style: TextStyle(color: Color(0xFFD4AF37), fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    ).then((confirmed) {
+      if (confirmed == true) {
+        launchUrl(Uri(scheme: 'tel', path: phone));
+      }
+    });
+  }
 
-Mi conductor está en camino.
-Puedes ver su ubicación aquí:
-https://cruiseapp.com/track/$tripId
+  /// Share a Google Maps deep-link to the driver's current GPS location.
+  /// Falls back to the trip tracking link if driver position is not yet known.
+  void _handleShareDriverLocation() {
+    final lat = _animPos.latitude;
+    final lng = _animPos.longitude;
+    final name = nh.displayName(widget.driverName, widget.rideName);
 
-Powered by Cruise''';
-    Share.share(
-      shareText,
-      subject: 'Seguimiento de viaje en tiempo real',
-    );
+    if (lat != 0 && lng != 0) {
+      // Driver live position known — share Google Maps link
+      final mapsUrl = 'https://maps.google.com/?q=$lat,$lng';
+      Share.share(
+        'My driver $name is at: $mapsUrl',
+        subject: 'Driver location',
+      );
+    } else {
+      // Fallback: share trip tracking link
+      final tripId = widget.firestoreTripId ?? widget.tripId?.toString() ?? 'unknown';
+      Share.share(
+        '🚗 Follow my ride in real time\nhttps://cruiseapp.com/track/$tripId\nPowered by Cruise',
+        subject: 'Real-time ride tracking',
+      );
+    }
   }
 
   Widget _buildMoreMenuButton() {

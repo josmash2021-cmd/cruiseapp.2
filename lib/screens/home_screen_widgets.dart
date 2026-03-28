@@ -143,11 +143,11 @@ extension _HomeScreenWidgets on _HomeScreenState {
       child: Row(
         children: [
           const SizedBox(width: 10),
-          // Car image — no border, no glow — picked by ride type
+          // Car photo — real vehicle image picked by ride type
           Image.asset(
             _getCarAssetForRideType(_activeRide?.rideName ?? ''),
-            width: 48,
-            height: 28,
+            width: 38,
+            height: 22,
             fit: BoxFit.contain,
           ),
           const SizedBox(width: 10),
@@ -854,43 +854,39 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
   Widget _buildProgressBar() {
     final progress = _tripProgress.clamp(0.0, 1.0);
-    const carSize = 40.0;
-    const barH = 6.0;
-    const totalH = carSize + 8;
+    const barH = 28.0;
+    const carW = 56.0;
+    const carH = 24.0;
 
     return LayoutBuilder(
       builder: (_, constraints) {
         final barW = constraints.maxWidth;
-        // Car center sits at the leading edge of the fill (tip of progress)
-        final carX = (barW * progress - carSize / 2).clamp(0.0, barW - carSize);
+        // Car center at tip of progress fill
+        final carX = (barW * progress - carW / 2).clamp(0.0, barW - carW);
 
         return SizedBox(
-          height: totalH,
+          height: barH,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
               // Bar track
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
+              Positioned.fill(
                 child: Container(
-                  height: barH,
                   decoration: BoxDecoration(
                     color: const Color(0xFF2A2A2A),
                     borderRadius: BorderRadius.circular(barH / 2),
                   ),
                 ),
               ),
-              // Animated yellow fill
+              // Animated gold fill
               Positioned(
                 left: 0,
+                top: 0,
                 bottom: 0,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 1000),
                   curve: Curves.easeInOut,
                   width: barW * progress,
-                  height: barH,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(barH / 2),
                     gradient: const LinearGradient(
@@ -903,16 +899,16 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   ),
                 ),
               ),
-              // Car image at leading edge — matches selected ride type
+              // Car image — centered vertically inside the bar
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 1000),
                 curve: Curves.easeInOut,
                 left: carX,
-                bottom: barH - 4,
+                top: (barH - carH) / 2,
                 child: Image.asset(
                   _getCarAssetForRideType(_activeRide?.rideName ?? ''),
-                  width: 44,
-                  height: 26,
+                  width: carW,
+                  height: carH,
                   fit: BoxFit.contain,
                 ),
               ),

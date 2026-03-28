@@ -52,15 +52,10 @@ const goldPinColor = Color(0xFFE8C547);
 // ── Luxury pin palette ──
 const _glassWhite = Color(0x66FFFFFF); // glass sheen
 
-// ── Pickup palette: emerald green ──
-const _pickupLight  = Color(0xFFB8F5CC);
-const _pickupMid    = Color(0xFF2ECC71);
-const _pickupDeep   = Color(0xFF1A6B3A);
-
-// ── Dropoff palette: bold red ──
-const _dropoffLight = Color(0xFFFFCDD2);
-const _dropoffMid   = Color(0xFFE53935);
-const _dropoffDeep  = Color(0xFF7B1010);
+// ── Gold palette (shared by pickup and dropoff) ──
+const _colorLight = Color(0xFFFFF8DC);
+const _colorMid   = Color(0xFFE8C547);
+const _colorDeep  = Color(0xFFB8860B);
 
 /// Cache for rendered pin bytes.
 final Map<String, Uint8List> _pinCache = {};
@@ -89,9 +84,9 @@ void _drawLuxuryPin(
   required GoldPinIcon icon,
   bool isPickup = true,
 }) {
-  final colorLight  = isPickup ? _pickupLight  : _dropoffLight;
-  final colorMid    = isPickup ? _pickupMid    : _dropoffMid;
-  final colorDeep   = isPickup ? _pickupDeep   : _dropoffDeep;
+  final colorLight  = _colorLight;
+  final colorMid    = _colorMid;
+  final colorDeep   = _colorDeep;
   // ── 1. Ground shadow ring — SEPARATED (creates floating illusion) ──
   canvas.drawOval(
     Rect.fromCenter(

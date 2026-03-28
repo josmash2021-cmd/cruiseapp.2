@@ -91,19 +91,12 @@ class GoldenPinPainter {
   double get _tipY   => _height - 1.0;
   double get _shadowY => _height - (_width * 0.07);
 
-  // ── Pickup palette: emerald green ──
-  static const _pickupLight = Color(0xFFB8F5CC);
-  static const _pickupMid   = Color(0xFF2ECC71);
-  static const _pickupDeep  = Color(0xFF1A6B3A);
-  static const _pickupRing  = Color(0xB882F5AA);
-  static const _pickupBorder = Color(0x7A9FFFBD);
-
-  // ── Dropoff palette: bold red ──
-  static const _dropoffLight = Color(0xFFFFCDD2);
-  static const _dropoffMid   = Color(0xFFE53935);
-  static const _dropoffDeep  = Color(0xFF7B1010);
-  static const _dropoffRing  = Color(0xB8FF8A80);
-  static const _dropoffBorder = Color(0x7AFFC0BB);
+  // ── Gold palette (used for both pickup and dropoff) ──
+  static const _goldLight  = Color(0xFFFFF5C4);
+  static const _goldMid    = Color(0xFFE4BD4A);
+  static const _goldDeep   = Color(0xFF9C6B12);
+  static const _goldRing   = Color(0xB8FFE4A0);
+  static const _goldBorder = Color(0x7AFFF1B8);
 
   void paint(Canvas canvas, Size canvasSize) {
     final cx      = _cx;
@@ -126,11 +119,11 @@ class GoldenPinPainter {
     );
 
     // ── 3. Premium metallic fill ──
-    final colorLight  = isPickup ? _pickupLight  : _dropoffLight;
-    final colorMid    = isPickup ? _pickupMid    : _dropoffMid;
-    final colorDeep   = isPickup ? _pickupDeep   : _dropoffDeep;
-    final colorRing   = isPickup ? _pickupRing   : _dropoffRing;
-    final colorBorder = isPickup ? _pickupBorder : _dropoffBorder;
+    const colorLight  = _goldLight;
+    const colorMid    = _goldMid;
+    const colorDeep   = _goldDeep;
+    const colorRing   = _goldRing;
+    const colorBorder = _goldBorder;
     canvas.drawPath(
       pinPath,
       Paint()

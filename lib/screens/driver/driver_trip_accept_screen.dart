@@ -913,10 +913,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (!mounted) return;
     _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
     _annotMgr = await ctrl.annotations.createPointAnnotationManager();
-    // Ground pins to map surface so they don't float in 3D tilt view
+    // Pins must billboard toward camera (viewport) so they stand upright in 3D tilt,
+    // NOT 'map' which flattens them onto the tilted surface.
     try {
-      await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-pitch-alignment', 'map');
-      await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-rotation-alignment', 'map');
+      await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-pitch-alignment', 'viewport');
+      await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-rotation-alignment', 'viewport');
+      await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-allow-overlap', true);
     } catch (_) {}
 
     // 1. Load route (cache-first — prevents straight-line bug)
@@ -947,7 +949,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
     final cam = await ctrl.cameraForCoordinateBounds(
       bounds,
-      mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
+      mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 60, right: 50),
       null, null, null, null,
     );
     if (!mounted) return;

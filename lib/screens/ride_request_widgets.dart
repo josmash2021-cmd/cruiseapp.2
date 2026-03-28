@@ -1203,24 +1203,45 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   // Animated status message
-                                  AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 280),
-                                    transitionBuilder: (child, anim) =>
-                                        FadeTransition(
-                                      opacity: CurvedAnimation(
-                                        parent: anim,
-                                        curve: Curves.easeInOut,
-                                      ),
-                                      child: child,
-                                    ),
-                                    child: Text(
-                                      statusMsg,
-                                      key: ValueKey(statusMsg),
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white,
-                                        letterSpacing: -0.2,
+                                  SizedBox(
+                                    height: 22,
+                                    child: AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 400),
+                                      switchInCurve: Curves.easeOutCubic,
+                                      switchOutCurve: Curves.easeInCubic,
+                                      transitionBuilder: (child, anim) {
+                                        final slideIn = Tween<Offset>(
+                                          begin: const Offset(0, 0.5),
+                                          end: Offset.zero,
+                                        ).animate(anim);
+                                        return SlideTransition(
+                                          position: slideIn,
+                                          child: FadeTransition(
+                                            opacity: anim,
+                                            child: child,
+                                          ),
+                                        );
+                                      },
+                                      layoutBuilder: (currentChild, previousChildren) {
+                                        return Stack(
+                                          alignment: AlignmentDirectional.centerStart,
+                                          children: [
+                                            ...previousChildren,
+                                            if (currentChild != null) currentChild,
+                                          ],
+                                        );
+                                      },
+                                      child: Text(
+                                        statusMsg,
+                                        key: ValueKey(statusMsg),
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                          letterSpacing: -0.2,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                   ),

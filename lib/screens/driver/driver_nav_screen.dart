@@ -1764,8 +1764,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   Widget _buildMap() {
-    return RepaintBoundary(
-      child: mapbox.MapWidget(
+    return SizedBox.expand(
+      child: RepaintBoundary(
+        child: mapbox.MapWidget(
       key: _mapKey,
       styleUri: MapboxConfig.styleNavigation,
       cameraOptions: mapbox.CameraOptions(
@@ -1806,6 +1807,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       },
       onScrollListener: (_) => _onCameraMoveStarted(),
     ),
+      ),
     );
   }
 

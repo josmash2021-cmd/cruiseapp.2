@@ -1,14 +1,11 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/analytics_service.dart';
-import '../services/user_session.dart';
 import 'payment_accounts_screen.dart';
 
 /// WalletScreen - Shows balance, transactions, and top-up functionality.
@@ -28,85 +25,38 @@ class _WalletScreenState extends State<WalletScreen> {
   List<Map<String, dynamic>> _transactions = [];
   String? _error;
 
-  StreamSubscription? _balanceSub;
-  StreamSubscription? _txnSub;
-
-  String get _uid => UserSession.currentUid;
-  String get _docId => 'sql_$_uid';
-
   @override
   void initState() {
     super.initState();
-    _attachListeners();
+    _loadWalletData();
   }
 
-  @override
-  void dispose() {
-    _balanceSub?.cancel();
-    _txnSub?.cancel();
-    super.dispose();
-  }
-
-  void _attachListeners() {
-    _balanceSub?.cancel();
-    _txnSub?.cancel();
-
-    if (_uid.isEmpty) {
-      setState(() {
-        _error = 'Not logged in';
-        _loading = false;
-      });
-      return;
-    }
-
+  Future<void> _loadWalletData() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
-
-    final userDoc = FirebaseFirestore.instance
-        .collection('users')
-        .doc(_docId);
-
-    // Real-time balance listener
-    _balanceSub = userDoc.snapshots().listen((snap) {
+    try {
+      final result = await ApiService.getWalletTransactions();
       if (!mounted) return;
-      final data = snap.data() ?? {};
+      final txns = (result['transactions'] as List? ?? []);
       setState(() {
-        _balance = (data['walletBalance'] as num?)?.toDouble() ?? 0.0;
-        _currency = data['walletCurrency'] as String? ?? 'USD';
-      });
-    }, onError: (e) {
-      debugPrint('[Wallet] balance listener error: $e');
-    });
-
-    // Real-time transactions listener
-    _txnSub = userDoc
-        .collection('transactions')
-        .orderBy('createdAt', descending: true)
-        .limit(20)
-        .snapshots()
-        .listen((snap) {
-      if (!mounted) return;
-      setState(() {
-        _transactions = snap.docs.map((d) {
-          final data = d.data();
-          data['id'] = d.id;
-          return data;
-        }).toList();
+        _balance = (result['balance'] as num?)?.toDouble() ?? 0.0;
+        _currency = result['currency'] as String? ?? 'USD';
+        _transactions = txns
+            .map((t) => Map<String, dynamic>.from(t as Map))
+            .toList();
         _loading = false;
-        _error = null;
       });
-    }, onError: (e) {
+    } catch (e) {
       if (!mounted) return;
-      debugPrint('[Wallet] transactions listener error: $e');
-      // If transactions collection doesn't exist yet, treat as empty
+      debugPrint('[Wallet] load error: $e');
       setState(() {
-        _transactions = [];
+        _error = 'Failed to load wallet';
         _loading = false;
-        _error = null;
       });
-    });
+    }
   }
 
   void _showSnack(String msg) {
@@ -149,25 +99,10 @@ class _WalletScreenState extends State<WalletScreen> {
         return;
       }
 
-      // Update Firestore balance + add transaction record
-      final userDoc = FirebaseFirestore.instance
-          .collection('users')
-          .doc(_docId);
-
-      await userDoc.set({
-        'walletBalance': FieldValue.increment(amount),
-      }, SetOptions(merge: true));
-
-      await userDoc.collection('transactions').add({
-        'type': 'topup',
-        'amount': amount,
-        'description': 'Added \$${amount.toStringAsFixed(2)} to wallet',
-        'createdAt': FieldValue.serverTimestamp(),
-        'status': 'completed',
-      });
-
       _showSnack('Successfully added \$${amount.toStringAsFixed(2)}!');
       AnalyticsService.instance.logEvent('wallet_top_up', parameters: {'amount': amount});
+      // Refresh balance + transactions from backend
+      await _loadWalletData();
     } catch (e) {
       _showSnack('Top-up failed. Please try again.');
     }
@@ -189,7 +124,7 @@ class _WalletScreenState extends State<WalletScreen> {
         actions: [
           IconButton(
             icon: Icon(Icons.refresh_rounded, color: c.textPrimary),
-            onPressed: _attachListeners,
+            onPressed: _loadWalletData,
           ),
         ],
       ),
@@ -230,7 +165,7 @@ class _WalletScreenState extends State<WalletScreen> {
           Text(_error!, style: const TextStyle(color: Colors.white70)),
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed: _attachListeners,
+            onPressed: _loadWalletData,
             style: ElevatedButton.styleFrom(backgroundColor: _gold),
             child: const Text('Retry', style: TextStyle(color: Colors.black)),
           ),
@@ -241,7 +176,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Widget _buildContent(AppColors c) {
     return RefreshIndicator(
-      onRefresh: () async => _attachListeners(),
+      onRefresh: () async => _loadWalletData(),
       color: _gold,
       child: ListView(
         padding: const EdgeInsets.all(20),
@@ -446,12 +381,11 @@ class _WalletScreenState extends State<WalletScreen> {
     final color = isCredit ? Colors.green : Colors.red;
 
     String formattedDate = '';
-    final createdAt = txn['createdAt'];
-    if (createdAt is Timestamp) {
-      formattedDate = DateFormat('MMM d, h:mm a').format(createdAt.toDate());
-    } else if (createdAt is String) {
+    // Backend returns 'created_at' (snake_case)
+    final createdAt = txn['created_at'] ?? txn['createdAt'];
+    if (createdAt is String && createdAt.isNotEmpty) {
       try {
-        formattedDate = DateFormat('MMM d, h:mm a').format(DateTime.parse(createdAt));
+        formattedDate = DateFormat('MMM d, h:mm a').format(DateTime.parse(createdAt).toLocal());
       } catch (_) {}
     }
 

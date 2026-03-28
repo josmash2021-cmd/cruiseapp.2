@@ -94,66 +94,12 @@ class GoldPinRenderer {
         ..color = Colors.white.withValues(alpha: 0.40),
     );
 
-    // 7. White icon inside bulb
-    final iconPaint = Paint()
-      ..color = Colors.white
-      ..isAntiAlias = true;
-    final iconShadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.18)
-      ..isAntiAlias = true;
-
-    if (withHouse) {
-      final hs = bulbR * 0.40;
-      final iconCy = bulbCy + hs * 0.15;
-      final roofS = Path()
-        ..moveTo(cx + 1, iconCy - hs * 1.05 + 1)
-        ..lineTo(cx - hs + 1, iconCy - hs * 0.05 + 1)
-        ..lineTo(cx + hs + 1, iconCy - hs * 0.05 + 1)
-        ..close();
-      canvas.drawPath(roofS, iconShadowPaint);
-      final roof = Path()
-        ..moveTo(cx, iconCy - hs * 1.05)
-        ..lineTo(cx - hs, iconCy - hs * 0.05)
-        ..lineTo(cx + hs, iconCy - hs * 0.05)
-        ..close();
-      canvas.drawPath(roof, iconPaint);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTRB(cx - hs * 0.65, iconCy - hs * 0.05, cx + hs * 0.65, iconCy + hs * 0.85),
-          Radius.circular(hs * 0.1),
-        ),
-        iconPaint,
-      );
-    } else if (!isPickup) {
-      final s = bulbR * 0.35;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(cx, bulbCy), width: s * 2, height: s * 2),
-          Radius.circular(s * 0.25),
-        ),
-        iconShadowPaint..color = Colors.black.withValues(alpha: 0.18),
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(cx - 1, bulbCy - 1), width: s * 2, height: s * 2),
-          Radius.circular(s * 0.25),
-        ),
-        iconPaint,
-      );
-    } else {
-      final s = bulbR * 0.38;
-      canvas.drawCircle(Offset(cx, bulbCy - s * 0.52), s * 0.42, iconPaint);
-      canvas.drawRRect(
-        RRect.fromRectAndCorners(
-          Rect.fromLTRB(cx - s * 0.75, bulbCy + s * 0.02, cx + s * 0.75, bulbCy + s * 0.85),
-          topLeft: Radius.circular(s * 0.75),
-          topRight: Radius.circular(s * 0.75),
-          bottomLeft: Radius.circular(s * 0.12),
-          bottomRight: Radius.circular(s * 0.12),
-        ),
-        iconPaint,
-      );
-    }
+    // 7. Transparent hole in bulb center
+    canvas.drawCircle(
+      const Offset(cx, bulbCy),
+      bulbR * 0.52,
+      Paint()..blendMode = BlendMode.clear,
+    );
 
     final pic = recorder.endRecording();
     final img = await pic.toImage(w.toInt(), h.toInt());

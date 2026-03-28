@@ -168,8 +168,12 @@ void _drawLuxuryPin(
       ..color = Colors.white.withValues(alpha: 0.35),
   );
 
-  // ── 7. Icon inside head ──
-  _drawPinIcon(canvas, icon, cx, headCY, r);
+  // ── 7. Transparent hole where icon would be ──
+  canvas.drawCircle(
+    Offset(cx, headCY),
+    r * 0.52,
+    Paint()..blendMode = BlendMode.clear,
+  );
 }
 
 /// Clean teardrop: full arc for head + smooth cubic taper to tip.

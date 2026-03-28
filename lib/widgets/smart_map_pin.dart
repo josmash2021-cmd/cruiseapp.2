@@ -185,8 +185,12 @@ class GoldenPinPainter {
         ..color = colorBorder,
     );
 
-    // ── 6. Icon (large and visible) ──
-    _drawIcon(canvas, icon, cx, headCY, r);
+    // ── 6. Transparent hole where icon would be ──
+    canvas.drawCircle(
+      Offset(cx, headCY),
+      r * 0.52,
+      Paint()..blendMode = BlendMode.clear,
+    );
   }
 
   Path _buildTeardrop(double cx, double headCY, double r, double tipY) {

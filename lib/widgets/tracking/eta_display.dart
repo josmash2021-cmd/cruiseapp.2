@@ -502,7 +502,7 @@ extension _RiderTrackingEtaDisplay on _RiderTrackingScreenState {
 
   Widget _driverRow(AppColors c) {
     final s = S.of(context);
-    final first = widget.driverName.split(' ').first;
+    final first = nh.displayName(widget.driverName, widget.rideName);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -510,8 +510,8 @@ extension _RiderTrackingEtaDisplay on _RiderTrackingScreenState {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 52,
-              height: 52,
+              width: Responsive.w(52),
+              height: Responsive.w(52),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.white.withValues(alpha: 0.1),
@@ -525,8 +525,8 @@ extension _RiderTrackingEtaDisplay on _RiderTrackingScreenState {
                   widget.driverName.isNotEmpty
                       ? widget.driverName[0].toUpperCase()
                       : 'D',
-                  style: const TextStyle(
-                    fontSize: 22,
+                  style: TextStyle(
+                    fontSize: Responsive.sp(22),
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
                   ),
@@ -537,12 +537,12 @@ extension _RiderTrackingEtaDisplay on _RiderTrackingScreenState {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.star, size: 14, color: Colors.white),
+                Icon(Icons.star, size: Responsive.sp(14), color: Colors.white),
                 const SizedBox(width: 2),
                 Text(
                   widget.driverRating.toStringAsFixed(1),
-                  style: const TextStyle(
-                    fontSize: 13,
+                  style: TextStyle(
+                    fontSize: Responsive.sp(13),
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
                   ),

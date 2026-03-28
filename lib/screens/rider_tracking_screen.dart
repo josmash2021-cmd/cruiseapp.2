@@ -32,7 +32,11 @@ import 'rider_confirm_pickup_screen.dart';
 import 'rider_rating_screen.dart';
 import '../l10n/app_localizations.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/verified_avatar.dart';
+import '../utils/responsive.dart';
+import '../utils/name_helper.dart' as nh;
+import '../services/user_session.dart';
 
 part '../controllers/rider_tracking_controller.dart';
 part '../widgets/tracking/driver_info_card.dart';

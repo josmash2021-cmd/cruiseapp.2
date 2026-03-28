@@ -22,6 +22,7 @@ import 'payout_methods_screen.dart';
 import 'driver_scheduled_trips_screen.dart';
 import '../about_screen.dart';
 import '../../l10n/app_localizations.dart';
+import '../../utils/responsive.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  CRUISE DRIVER — FULL-SCREEN MENU (Uber Driver style)
@@ -193,13 +194,13 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
                   child: Container(
-                    width: 40,
-                    height: 40,
+                    width: Responsive.w(40),
+                    height: Responsive.w(40),
                     decoration: BoxDecoration(
                       color: dc.glassBg,
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(Icons.close_rounded, color: dc.text, size: 22),
+                    child: Icon(Icons.close_rounded, color: dc.text, size: Responsive.sp(22)),
                   ),
                 ),
                 const Spacer(),
@@ -207,12 +208,12 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   S.of(context).menuTitle,
                   style: TextStyle(
                     color: dc.text,
-                    fontSize: 18,
+                    fontSize: Responsive.sp(18),
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 const Spacer(),
-                const SizedBox(width: 40), // balance close button
+                SizedBox(width: Responsive.w(40)), // balance close button
               ],
             ),
           ),
@@ -437,8 +438,8 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         ).push(slideFromRightRoute(const DriverProfileScreen()));
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.all(18),
+        margin: EdgeInsets.symmetric(horizontal: Responsive.w(16)),
+        padding: EdgeInsets.all(Responsive.w(18)),
         decoration: BoxDecoration(
           color: dc.card,
           borderRadius: BorderRadius.circular(20),
@@ -449,12 +450,12 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
             VerifiedAvatar(
                 photoUrl: _resolvedPhotoUrl,
                 photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
-                radius: 30,
+                radius: Responsive.w(30),
                 fallbackName: _driverName,
                 uid: UserSession.currentUid,
                 isVerified: _isVerified,
             ),
-            const SizedBox(width: 14),
+            SizedBox(width: Responsive.w(14)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -467,14 +468,14 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                                 _driverName,
                                 style: TextStyle(
                                   color: dc.text,
-                                  fontSize: 20,
+                                  fontSize: Responsive.sp(20),
                                   fontWeight: FontWeight.w800,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               )
                             : Container(
-                                height: 18,
-                                width: 120,
+                                height: Responsive.h(18),
+                                width: Responsive.w(120),
                                 decoration: BoxDecoration(
                                   color: Colors.white.withValues(alpha: 0.10),
                                   borderRadius: BorderRadius.circular(6),

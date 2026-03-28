@@ -24,6 +24,8 @@ import '../chat_screen.dart';
 import '../help_screen.dart';
 import 'driver_home_screen.dart';
 import 'driver_nav_screen.dart';
+import '../../utils/responsive.dart';
+import '../../utils/name_helper.dart' as nh;
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER TRIP ACCEPT SCREEN  — DoorDash-style trip details sheet
@@ -303,7 +305,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Widget _avatar() {
     return VerifiedAvatar(
       photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
-      radius: 33,
+      radius: Responsive.w(33),
       fallbackName: widget.riderName,
       isVerified: true,
     );
@@ -1173,7 +1175,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             // ── Header ────────────────────────────────────────────────────
             Container(
               color: _bg,
-              padding: EdgeInsets.fromLTRB(16, top + 10, 16, 14),
+              padding: EdgeInsets.fromLTRB(Responsive.w(16), top + 10, Responsive.w(16), Responsive.h(14)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1189,70 +1191,70 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           );
                         },
                         child: Container(
-                          width: 36, height: 36,
+                          width: Responsive.w(36), height: Responsive.w(36),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.07),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(Icons.chevron_left_rounded,
-                              color: Colors.white, size: 24),
+                          child: Icon(Icons.chevron_left_rounded,
+                              color: Colors.white, size: Responsive.sp(24)),
                         ),
                       ),
                       const Spacer(),
                       GestureDetector(
                         onTap: _showSafetyMenu,
                         child: Container(
-                          width: 36, height: 36,
+                          width: Responsive.w(36), height: Responsive.w(36),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.07),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Icon(Icons.shield_rounded,
-                              color: Colors.white.withValues(alpha: 0.75), size: 19),
+                              color: Colors.white.withValues(alpha: 0.75), size: Responsive.sp(19)),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      SizedBox(width: Responsive.w(10)),
                       GestureDetector(
                         onTap: _showHelpMenu,
                         child: Container(
-                          width: 36, height: 36,
+                          width: Responsive.w(36), height: Responsive.w(36),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.07),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Icon(Icons.help_outline_rounded,
-                              color: Colors.white.withValues(alpha: 0.75), size: 19),
+                              color: Colors.white.withValues(alpha: 0.75), size: Responsive.sp(19)),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: Responsive.h(16)),
                   // Title
-                  Text('Ride for ${widget.riderName}',
-                    style: const TextStyle(
-                      color: Colors.white, fontSize: 24,
+                  Text('Ride for ${nh.displayName(widget.riderName, widget.vehicleType)}',
+                    style: TextStyle(
+                      color: Colors.white, fontSize: Responsive.sp(24),
                       fontWeight: FontWeight.w800, height: 1.15)),
                   const SizedBox(height: 3),
                   Text(_timeLabel(),
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.42),
-                      fontSize: 13, fontWeight: FontWeight.w400)),
-                  const SizedBox(height: 16),
+                      fontSize: Responsive.sp(13), fontWeight: FontWeight.w400)),
+                  SizedBox(height: Responsive.h(16)),
                   // Rider row: avatar + info + call/msg
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       _avatar(),
-                      const SizedBox(width: 12),
+                      SizedBox(width: Responsive.w(12)),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(widget.riderName,
+                            Text(nh.displayName(widget.riderName, widget.vehicleType),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white, fontSize: 15,
+                              style: TextStyle(
+                                color: Colors.white, fontSize: Responsive.sp(15),
                                 fontWeight: FontWeight.w700)),
                             const SizedBox(height: 4),
                             _stars(widget.riderRating),
@@ -1260,13 +1262,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                             Text('${widget.riderRating.toStringAsFixed(1)} rating',
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.42),
-                                fontSize: 11)),
+                                fontSize: Responsive.sp(11))),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      SizedBox(width: Responsive.w(10)),
                       _actionBtn(Icons.phone_rounded, 'Call', _call),
-                      const SizedBox(width: 8),
+                      SizedBox(width: Responsive.w(8)),
                       _actionBtn(Icons.message_rounded, 'Message', _openChat),
                     ],
                   ),
@@ -1276,11 +1278,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
             // ── Map preview (tilt animation on enter) ─────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), Responsive.h(12)),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: SizedBox(
-                  height: 190,
+                  height: Responsive.h(190),
                   child: Stack(
                     children: [
                       RepaintBoundary(
@@ -1338,7 +1340,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
             // ── Pickup address card + hanging instructions ────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
               child: GestureDetector(
                 onTap: () => _showNavigationSheet(isPickup: true),
                 child: _infoRow(
@@ -1355,14 +1357,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             ),
             if (widget.pickupInstructions.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
                 child: _buildHangingInstruction(widget.pickupInstructions),
               ),
             const SizedBox(height: 8),
 
             // ── Dropoff address card + hanging instructions ───────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
               child: GestureDetector(
                 onTap: () => _showNavigationSheet(isPickup: false),
                 child: _infoRow(
@@ -1379,7 +1381,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             ),
             if (widget.dropoffInstructions.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
                 child: _buildHangingInstruction(widget.dropoffInstructions),
               ),
             const SizedBox(height: 10),
@@ -1388,13 +1390,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
             // ── Action buttons ────────────────────────────────────────────
             Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, bot + 18),
+              padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), bot + 18),
               child: Column(
                 children: [
                   // Continue (gold)
                   SizedBox(
                     width: double.infinity,
-                    height: 52,
+                    height: Responsive.h(52),
                     child: ElevatedButton(
                       onPressed: () => _goNavigate(overview: false),
                       style: ElevatedButton.styleFrom(
@@ -1404,17 +1406,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                       ),
-                      child: const Text('Continue',
+                      child: Text('Continue',
                         style: TextStyle(
-                          fontSize: 17, fontWeight: FontWeight.w800,
+                          fontSize: Responsive.sp(17), fontWeight: FontWeight.w800,
                           color: Colors.black)),
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  SizedBox(height: Responsive.h(10)),
                   // Directions (outline)
                   SizedBox(
                     width: double.infinity,
-                    height: 52,
+                    height: Responsive.h(52),
                     child: OutlinedButton(
                       onPressed: () => _goNavigate(overview: true),
                       style: OutlinedButton.styleFrom(
@@ -1424,9 +1426,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                       ),
-                      child: const Text('Directions',
+                      child: Text('Directions',
                         style: TextStyle(
-                          fontSize: 17, fontWeight: FontWeight.w600,
+                          fontSize: Responsive.sp(17), fontWeight: FontWeight.w600,
                           color: Colors.white)),
                     ),
                   ),

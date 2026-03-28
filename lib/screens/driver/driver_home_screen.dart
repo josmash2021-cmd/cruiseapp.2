@@ -35,6 +35,8 @@ import '../../widgets/gold_location_dot.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/velocity_aware_panel.dart';
+import '../../utils/responsive.dart';
+import '../../utils/name_helper.dart' as nh;
 
 /// ═══════════════════════════════════════════════════════════════
 ///  CRUISE DRIVER HOME — Premium dashboard with map, stats, go-online
@@ -807,7 +809,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         // Greeting
         Expanded(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: EdgeInsets.symmetric(horizontal: Responsive.w(16), vertical: Responsive.h(10)),
             decoration: BoxDecoration(
               color: dc.glassBg,
               borderRadius: BorderRadius.circular(28),
@@ -821,12 +823,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       ? UserSession.photoUrlNotifier.value
                       : (_photoUrl != null && _photoUrl!.startsWith('http') ? _photoUrl : null),
                   photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
-                  radius: 18,
+                  radius: Responsive.w(18),
                   fallbackName: _driverName,
                   uid: UserSession.currentUid,
                   isVerified: _isVerified,
                 ),
-                const SizedBox(width: 10),
+                SizedBox(width: Responsive.w(10)),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -836,15 +838,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         _getGreeting(context),
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 11,
+                          fontSize: Responsive.sp(11),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                       Text(
                         _driverName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Colors.white,
-                          fontSize: 15,
+                          fontSize: Responsive.sp(15),
                           fontWeight: FontWeight.w800,
                         ),
                         maxLines: 1,
@@ -857,7 +859,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   'CRUISE',
                   style: TextStyle(
                     color: _gold.withValues(alpha: 0.35),
-                    fontSize: 9,
+                    fontSize: Responsive.sp(9),
                     fontWeight: FontWeight.w800,
                     letterSpacing: 2,
                   ),
@@ -900,8 +902,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         clipBehavior: Clip.none,
         children: [
           Container(
-            width: 48,
-            height: 48,
+            width: Responsive.w(48),
+            height: Responsive.w(48),
             decoration: BoxDecoration(
               color: dc.glassBg,
               shape: BoxShape.circle,
@@ -913,15 +915,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 ),
               ],
             ),
-            child: Icon(icon, color: dc.text, size: 22),
+            child: Icon(icon, color: dc.text, size: Responsive.sp(22)),
           ),
           if (badge != null)
             Positioned(
               top: -2,
               right: -2,
               child: Container(
-                width: 18,
-                height: 18,
+                width: Responsive.w(18),
+                height: Responsive.w(18),
                 decoration: const BoxDecoration(
                   color: Color(0xFFEF4444),
                   shape: BoxShape.circle,
@@ -929,9 +931,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 child: Center(
                   child: Text(
                     '$badge',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Colors.white,
-                      fontSize: 10,
+                      fontSize: Responsive.sp(10),
                       fontWeight: FontWeight.w800,
                     ),
                   ),

@@ -30,6 +30,7 @@ import 'services/analytics_service.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
+import 'utils/responsive.dart';
 
 /// Global theme notifier so any screen can toggle night mode.
 final themeNotifier = ThemeNotifier();
@@ -333,16 +334,41 @@ class _UberCloneAppState extends State<UberCloneApp>
     return AnimatedBuilder(
       animation: Listenable.merge([themeNotifier, accessibilityNotifier]),
       builder: (context, _) {
-        return AnimatedTheme(
-          data: themeNotifier.isNightMode ? darkTheme : lightTheme,
+        final a11y = accessibilityNotifier;
+
+        // High contrast theme overrides
+        final ThemeData effectiveDark = a11y.highContrast
+            ? darkTheme.copyWith(
+                colorScheme: darkTheme.colorScheme.copyWith(
+                  primary: Colors.white,
+                  secondary: const Color(0xFFFFD700),
+                  surface: Colors.black,
+                ),
+                scaffoldBackgroundColor: Colors.black,
+              )
+            : darkTheme;
+        final ThemeData effectiveLight = a11y.highContrast
+            ? lightTheme.copyWith(
+                colorScheme: lightTheme.colorScheme.copyWith(
+                  primary: Colors.black,
+                  secondary: const Color(0xFFFFD700),
+                  surface: Colors.white,
+                ),
+              )
+            : lightTheme;
+
+        final selectedTheme = themeNotifier.isNightMode ? effectiveDark : effectiveLight;
+
+        Widget app = AnimatedTheme(
+          data: selectedTheme,
           duration: const Duration(milliseconds: 400),
           curve: Curves.easeInOut,
           child: MaterialApp(
             navigatorKey: _navigatorKey,
             debugShowCheckedModeBanner: false,
             themeMode: themeNotifier.mode,
-            theme: lightTheme,
-            darkTheme: darkTheme,
+            theme: effectiveLight,
+            darkTheme: effectiveDark,
             scrollBehavior: const SmoothScrollBehavior(),
             // Smooth page transitions for all routes
             onGenerateRoute: (settings) {
@@ -368,7 +394,8 @@ class _UberCloneAppState extends State<UberCloneApp>
             navigatorObservers: [AnalyticsService.instance.observer],
             home: const SplashScreen(),
             builder: (context, child) {
-              final scale = accessibilityNotifier.textScale;
+              Responsive.init(context);
+              final scale = a11y.textScale;
               return MediaQuery(
                 data: MediaQuery.of(context).copyWith(
                   textScaler: TextScaler.linear(scale),
@@ -381,6 +408,16 @@ class _UberCloneAppState extends State<UberCloneApp>
             },
           ),
         );
+
+        // Color blind filter wrapping
+        if (a11y.colorBlindMode != 'none') {
+          app = ColorFiltered(
+            colorFilter: _colorBlindFilter(a11y.colorBlindMode),
+            child: app,
+          );
+        }
+
+        return app;
       },
     );
   }
@@ -392,5 +429,39 @@ Widget _getPageForRoute(RouteSettings settings) {
   switch (settings.name) {
     default:
       return const SplashScreen();
+  }
+}
+
+/// Color blind simulation filter matrices.
+ColorFilter _colorBlindFilter(String mode) {
+  switch (mode) {
+    case 'protanopia':
+      return const ColorFilter.matrix(<double>[
+        0.567, 0.433, 0, 0, 0,
+        0.558, 0.442, 0, 0, 0,
+        0, 0.242, 0.758, 0, 0,
+        0, 0, 0, 1, 0,
+      ]);
+    case 'deuteranopia':
+      return const ColorFilter.matrix(<double>[
+        0.625, 0.375, 0, 0, 0,
+        0.7, 0.3, 0, 0, 0,
+        0, 0.3, 0.7, 0, 0,
+        0, 0, 0, 1, 0,
+      ]);
+    case 'tritanopia':
+      return const ColorFilter.matrix(<double>[
+        0.95, 0.05, 0, 0, 0,
+        0, 0.433, 0.567, 0, 0,
+        0, 0.475, 0.525, 0, 0,
+        0, 0, 0, 1, 0,
+      ]);
+    default:
+      return const ColorFilter.matrix(<double>[
+        1, 0, 0, 0, 0,
+        0, 1, 0, 0, 0,
+        0, 0, 1, 0, 0,
+        0, 0, 0, 1, 0,
+      ]);
   }
 }

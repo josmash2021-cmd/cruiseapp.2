@@ -31,6 +31,8 @@ import '../../services/trip_firestore_service.dart';
 import 'driver_safety_screen.dart';
 import 'driver_trip_accept_screen.dart';
 import 'driver_rate_rider_screen.dart';
+import '../../utils/responsive.dart';
+import '../../utils/name_helper.dart' as nh;
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER NAV SCREEN  — DoorDash-style full navigation
@@ -1444,16 +1446,16 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               // Rider info
               Row(
                 children: [
-                  _riderAvatar(size: 50),
-                  const SizedBox(width: 14),
+                  _riderAvatar(size: Responsive.w(50)),
+                  SizedBox(width: Responsive.w(14)),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(widget.riderName,
-                          style: const TextStyle(
+                        Text(nh.displayName(widget.riderName, widget.vehicleType),
+                          style: TextStyle(
                             color: Colors.white,
-                            fontSize: 17,
+                            fontSize: Responsive.sp(17),
                             fontWeight: FontWeight.w800)),
                         const SizedBox(height: 3),
                         Row(
@@ -2157,36 +2159,36 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 68,
+          height: Responsive.h(68),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const SizedBox(width: 12),
+              SizedBox(width: Responsive.w(12)),
               // Rider avatar — opens trip options
               GestureDetector(
                 onTap: _showTripOptions,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: _riderAvatar(size: 34),
+                  padding: EdgeInsets.symmetric(horizontal: Responsive.w(4)),
+                  child: _riderAvatar(size: Responsive.w(34)),
                 ),
               ),
               // Centered ETA / distance / arrival
               Expanded(
                 child: Center(
                   child: eta <= 2
-                      ? const Text('Arriving soon',
+                      ? Text('Arriving soon',
                           style: TextStyle(
                             color: _etaGreen,
-                            fontSize: 17,
+                            fontSize: Responsive.sp(17),
                             fontWeight: FontWeight.w800,
                           ))
                       : Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text('$eta min',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _etaGreen,
-                                fontSize: 22,
+                                fontSize: Responsive.sp(22),
                                 fontWeight: FontWeight.w900,
                                 height: 1.0,
                               )),
@@ -2194,7 +2196,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                             Text('$distStr · $arrStr',
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: 12,
+                                fontSize: Responsive.sp(12),
                                 fontWeight: FontWeight.w500,
                               )),
                           ],
@@ -2500,25 +2502,25 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           Row(
             children: [
               // Avatar
-              _riderAvatar(size: 46),
-              const SizedBox(width: 12),
+              _riderAvatar(size: Responsive.w(46)),
+              SizedBox(width: Responsive.w(12)),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(widget.riderName,
-                      style: const TextStyle(
-                        color: Colors.white, fontSize: 15,
+                    Text(nh.displayName(widget.riderName, widget.vehicleType),
+                      style: TextStyle(
+                        color: Colors.white, fontSize: Responsive.sp(15),
                         fontWeight: FontWeight.w700)),
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(Icons.star_rounded, color: _gold, size: 13),
-                        const SizedBox(width: 3),
+                        Icon(Icons.star_rounded, color: _gold, size: Responsive.sp(13)),
+                        SizedBox(width: Responsive.w(3)),
                         Text(widget.riderRating.toStringAsFixed(1),
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.7),
-                            fontSize: 12, fontWeight: FontWeight.w600)),
+                            fontSize: Responsive.sp(12), fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ],

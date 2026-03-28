@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/notification_service.dart';
+import '../services/user_session.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -18,12 +21,15 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   static const _gold = Color(0xFFE8C547);
 
   bool _systemEnabled = true; // phone-level permission
+  bool _masterEnabled = true; // app-level master toggle
   bool _rideUpdates = true;
   bool _promotions = true;
   bool _safety = true;
   bool _payment = true;
   bool _sounds = true;
   bool _vibrate = true;
+
+  String get _uid => UserSession.currentUid;
 
   @override
   void initState() {
@@ -54,21 +60,99 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
   Future<void> _load() async {
     await _checkSystemPermission();
+    // Load from local cache instantly (uid-keyed)
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
-      _rideUpdates = prefs.getBool('notif_ride') ?? true;
-      _promotions = prefs.getBool('notif_promo') ?? true;
-      _safety = prefs.getBool('notif_safety') ?? true;
-      _payment = prefs.getBool('notif_payment') ?? true;
-      _sounds = prefs.getBool('notif_sounds') ?? true;
-      _vibrate = prefs.getBool('notif_vibrate') ?? true;
+      _masterEnabled = prefs.getBool('notif_${_uid}_master') ?? true;
+      _rideUpdates = prefs.getBool('notif_${_uid}_rideUpdates') ?? true;
+      _promotions = prefs.getBool('notif_${_uid}_promotions') ?? true;
+      _safety = prefs.getBool('notif_${_uid}_safetyAlerts') ?? true;
+      _payment = prefs.getBool('notif_${_uid}_payment') ?? true;
+      _sounds = prefs.getBool('notif_${_uid}_sounds') ?? true;
+      _vibrate = prefs.getBool('notif_${_uid}_vibration') ?? true;
     });
+
+    // Then sync from Firestore
+    _loadFirestorePrefs();
   }
 
-  Future<void> _toggle(String key, bool value) async {
+  Future<void> _loadFirestorePrefs() async {
+    if (_uid.isEmpty) return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc('sql_$_uid')
+          .get();
+      if (!mounted) return;
+      final data = doc.data()?['notificationPrefs'] as Map<String, dynamic>? ?? {};
+      setState(() {
+        _masterEnabled = data['master'] as bool? ?? _masterEnabled;
+        _rideUpdates = data['rideUpdates'] as bool? ?? _rideUpdates;
+        _promotions = data['promotions'] as bool? ?? _promotions;
+        _safety = data['safetyAlerts'] as bool? ?? _safety;
+        _payment = data['payment'] as bool? ?? _payment;
+        _sounds = data['sounds'] as bool? ?? _sounds;
+        _vibrate = data['vibration'] as bool? ?? _vibrate;
+      });
+    } catch (e) {
+      debugPrint('[NotifSettings] Firestore load error: $e');
+    }
+  }
+
+  Future<void> _savePreference(String key, bool value) async {
+    // Save to uid-keyed SharedPreferences
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(key, value);
+    await prefs.setBool('notif_${_uid}_$key', value);
+
+    // Save to Firestore
+    if (_uid.isNotEmpty) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc('sql_$_uid')
+            .set({
+          'notificationPrefs': {key: value},
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('[NotifSettings] Firestore save error: $e');
+      }
+    }
+  }
+
+  Future<void> _applyFCMPreference(String topic, bool enabled) async {
+    try {
+      final fullTopic = '${_uid}_$topic';
+      if (enabled && _masterEnabled) {
+        await FirebaseMessaging.instance.subscribeToTopic(fullTopic);
+      } else {
+        await FirebaseMessaging.instance.unsubscribeFromTopic(fullTopic);
+      }
+    } catch (e) {
+      debugPrint('[NotifSettings] FCM topic error: $e');
+    }
+  }
+
+  Future<void> _togglePreference(String key, String fcmTopic, bool value, void Function(bool) setLocal) async {
+    setState(() => setLocal(value));
+    await _savePreference(key, value);
+    await _applyFCMPreference(fcmTopic, value);
+  }
+
+  Future<void> _handleMasterToggle(bool value) async {
+    setState(() => _masterEnabled = value);
+    await _savePreference('master', value);
+
+    // Subscribe/unsubscribe all FCM topics
+    final topics = {
+      'ride_updates': _rideUpdates,
+      'promotions': _promotions,
+      'safety': _safety,
+      'payment': _payment,
+    };
+    for (final entry in topics.entries) {
+      await _applyFCMPreference(entry.key, value && entry.value);
+    }
   }
 
   Future<void> _handleSystemToggle(bool value) async {
@@ -207,6 +291,18 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                         ],
                       ),
                     ),
+                    const SizedBox(height: 16),
+
+                    // ── Master app-level toggle ──
+                    _toggleItem(
+                      c,
+                      S.of(context).notificationsEnabled,
+                      _masterEnabled
+                          ? S.of(context).allNotificationsOn
+                          : S.of(context).allNotificationsOff,
+                      _masterEnabled,
+                      _handleMasterToggle,
+                    ),
                     const SizedBox(height: 24),
 
                     Text(
@@ -219,48 +315,46 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     ),
                     const SizedBox(height: 14),
 
-                    _toggleItem(
-                      c,
-                      S.of(context).rideUpdates,
-                      S.of(context).rideUpdatesDesc,
-                      _rideUpdates,
-                      (v) {
-                        setState(() => _rideUpdates = v);
-                        _toggle('notif_ride', v);
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    _toggleItem(
-                      c,
-                      S.of(context).promotionsOffers,
-                      S.of(context).promotionsDesc,
-                      _promotions,
-                      (v) {
-                        setState(() => _promotions = v);
-                        _toggle('notif_promo', v);
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    _toggleItem(
-                      c,
-                      S.of(context).safetyAlerts,
-                      S.of(context).safetyAlertsDesc,
-                      _safety,
-                      (v) {
-                        setState(() => _safety = v);
-                        _toggle('notif_safety', v);
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    _toggleItem(
-                      c,
-                      S.of(context).paymentNotif,
-                      S.of(context).paymentNotifDesc,
-                      _payment,
-                      (v) {
-                        setState(() => _payment = v);
-                        _toggle('notif_payment', v);
-                      },
+                    Opacity(
+                      opacity: _masterEnabled ? 1.0 : 0.4,
+                      child: IgnorePointer(
+                        ignoring: !_masterEnabled,
+                        child: Column(
+                          children: [
+                            _toggleItem(
+                              c,
+                              S.of(context).rideUpdates,
+                              S.of(context).rideUpdatesDesc,
+                              _rideUpdates,
+                              (v) => _togglePreference('rideUpdates', 'ride_updates', v, (val) => _rideUpdates = val),
+                            ),
+                            const SizedBox(height: 10),
+                            _toggleItem(
+                              c,
+                              S.of(context).promotionsOffers,
+                              S.of(context).promotionsDesc,
+                              _promotions,
+                              (v) => _togglePreference('promotions', 'promotions', v, (val) => _promotions = val),
+                            ),
+                            const SizedBox(height: 10),
+                            _toggleItem(
+                              c,
+                              S.of(context).safetyAlerts,
+                              S.of(context).safetyAlertsDesc,
+                              _safety,
+                              (v) => _togglePreference('safetyAlerts', 'safety', v, (val) => _safety = val),
+                            ),
+                            const SizedBox(height: 10),
+                            _toggleItem(
+                              c,
+                              S.of(context).paymentNotif,
+                              S.of(context).paymentNotifDesc,
+                              _payment,
+                              (v) => _togglePreference('payment', 'payment', v, (val) => _payment = val),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
 
                     const SizedBox(height: 28),
@@ -281,7 +375,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                       _sounds,
                       (v) {
                         setState(() => _sounds = v);
-                        _toggle('notif_sounds', v);
+                        _savePreference('sounds', v);
                       },
                     ),
                     const SizedBox(height: 10),
@@ -292,7 +386,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                       _vibrate,
                       (v) {
                         setState(() => _vibrate = v);
-                        _toggle('notif_vibrate', v);
+                        _savePreference('vibration', v);
                       },
                     ),
                     const SizedBox(height: 32),

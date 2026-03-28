@@ -262,6 +262,12 @@ class S {
       _es ? 'Notificaciones Habilitadas' : 'Notifications Enabled';
   String get notificationsDisabled =>
       _es ? 'Notificaciones Deshabilitadas' : 'Notifications Disabled';
+  String get allNotificationsOn => _es
+      ? 'Todas las notificaciones activas'
+      : 'All notifications are active';
+  String get allNotificationsOff => _es
+      ? 'Todas las notificaciones desactivadas'
+      : 'All notifications are turned off';
   String get syncedWithPhone => _es
       ? 'Sincronizado con la configuración de tu teléfono'
       : 'Synced with your phone settings';

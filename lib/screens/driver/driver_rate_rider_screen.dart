@@ -7,6 +7,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../../config/page_transitions.dart';
 import '../../widgets/verified_avatar.dart';
 import 'driver_online_screen.dart';
+import '../../utils/responsive.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER RATE RIDER SCREEN — Post-trip feedback
@@ -130,31 +131,31 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
       body: FadeTransition(
         opacity: _fadeAnim,
         child: Padding(
-          padding: EdgeInsets.fromLTRB(24, top + 24, 24, bot + 24),
+          padding: EdgeInsets.fromLTRB(Responsive.w(24), top + 24, Responsive.w(24), bot + 24),
           child: Column(
             children: [
-              const SizedBox(height: 20),
+              SizedBox(height: Responsive.h(20)),
               _buildAvatar(),
-              const SizedBox(height: 20),
+              SizedBox(height: Responsive.h(20)),
               Text(
                 '¿Cómo fue tu viaje\ncon $_firstName?',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.white,
-                  fontSize: 22,
+                  fontSize: Responsive.sp(22),
                   fontWeight: FontWeight.w700,
                   height: 1.3,
                 ),
               ),
-              const SizedBox(height: 32),
+              SizedBox(height: Responsive.h(32)),
               _buildStars(),
-              const SizedBox(height: 28),
+              SizedBox(height: Responsive.h(28)),
               if (_stars > 0) _buildTags(),
               const Spacer(),
               // Submit
               SizedBox(
                 width: double.infinity,
-                height: 52,
+                height: Responsive.h(52),
                 child: ElevatedButton(
                   onPressed: _stars > 0 && !_submitting ? _submit : null,
                   style: ElevatedButton.styleFrom(
@@ -204,7 +205,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
   Widget _buildAvatar() {
     return VerifiedAvatar(
       photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
-      radius: 44,
+      radius: Responsive.w(44),
       fallbackName: widget.riderName,
       isVerified: true,
     );

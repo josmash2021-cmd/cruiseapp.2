@@ -20,6 +20,8 @@ import '../../navigation/route_service.dart';
 import '../../pages/driver_navigation_page.dart';
 import '../../services/analytics_service.dart';
 import '../../widgets/gold_location_dot.dart';
+import '../../utils/responsive.dart';
+import '../../utils/name_helper.dart' as nh;
 
 /// Instacart-style driver offers screen.
 ///
@@ -276,25 +278,25 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
       builder: (ctx) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(Responsive.w(20)),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Why are you declining?',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 20,
+                    fontSize: Responsive.sp(20),
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 8),
-                const Text(
+                SizedBox(height: Responsive.h(8)),
+                Text(
                   'This helps us improve dispatching',
-                  style: TextStyle(color: Colors.grey, fontSize: 14),
+                  style: TextStyle(color: Colors.grey, fontSize: Responsive.sp(14)),
                 ),
-                const SizedBox(height: 20),
+                SizedBox(height: Responsive.h(20)),
                 ...reasons.map((reason) => ListTile(
                   title: Text(reason, style: const TextStyle(color: Colors.white)),
                   trailing: const Icon(Icons.chevron_right, color: Colors.grey),
@@ -877,14 +879,14 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                 ),
                 // Stats badges row
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                  padding: EdgeInsets.fromLTRB(Responsive.w(20), 0, Responsive.w(20), Responsive.h(16)),
                   child: Row(
                     children: [
                       _glassBadge(
                         Icons.person_outline_rounded,
-                        offer.riderName,
+                        nh.displayName(offer.riderName),
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(width: Responsive.w(8)),
                       _glassBadge(
                         Icons.star_rounded,
                         '4.9',

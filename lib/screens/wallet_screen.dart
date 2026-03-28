@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/analytics_service.dart';
+import '../services/user_session.dart';
 import 'payment_accounts_screen.dart';
 
 /// WalletScreen - Shows balance, transactions, and top-up functionality.
@@ -24,33 +28,81 @@ class _WalletScreenState extends State<WalletScreen> {
   List<Map<String, dynamic>> _transactions = [];
   String? _error;
 
+  StreamSubscription? _balanceSub;
+  StreamSubscription? _txnSub;
+
+  String get _uid => UserSession.currentUid;
+  String get _docId => 'sql_$_uid';
+
   @override
   void initState() {
     super.initState();
-    _loadWalletData();
+    _attachListeners();
   }
 
-  Future<void> _loadWalletData() async {
+  @override
+  void dispose() {
+    _balanceSub?.cancel();
+    _txnSub?.cancel();
+    super.dispose();
+  }
+
+  void _attachListeners() {
+    _balanceSub?.cancel();
+    _txnSub?.cancel();
+
+    if (_uid.isEmpty) {
+      setState(() {
+        _error = 'Not logged in';
+        _loading = false;
+      });
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
     });
-    try {
-      final data = await ApiService.getWalletTransactions(limit: 50);
+
+    final userDoc = FirebaseFirestore.instance
+        .collection('users')
+        .doc(_docId);
+
+    // Real-time balance listener
+    _balanceSub = userDoc.snapshots().listen((snap) {
+      if (!mounted) return;
+      final data = snap.data() ?? {};
+      setState(() {
+        _balance = (data['walletBalance'] as num?)?.toDouble() ?? 0.0;
+        _currency = data['walletCurrency'] as String? ?? 'USD';
+      });
+    }, onError: (e) {
+      debugPrint('[Wallet] balance listener error: $e');
+    });
+
+    // Real-time transactions listener
+    _txnSub = userDoc
+        .collection('transactions')
+        .orderBy('createdAt', descending: true)
+        .limit(20)
+        .snapshots()
+        .listen((snap) {
       if (!mounted) return;
       setState(() {
-        _balance = (data['balance'] as num?)?.toDouble() ?? 0.0;
-        _currency = data['currency'] as String? ?? 'USD';
-        _transactions = List<Map<String, dynamic>>.from(data['transactions'] ?? []);
+        _transactions = snap.docs.map((d) {
+          final data = d.data();
+          data['id'] = d.id;
+          return data;
+        }).toList();
         _loading = false;
       });
-    } catch (e) {
+    }, onError: (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Failed to load wallet data';
+        _error = 'Failed to load transactions';
         _loading = false;
       });
-    }
+    });
   }
 
   void _showSnack(String msg) {
@@ -84,13 +136,34 @@ class _WalletScreenState extends State<WalletScreen> {
     HapticFeedback.mediumImpact();
     _showSnack('Adding \$${amount.toStringAsFixed(2)} to wallet...');
     try {
+      // Process payment via existing Stripe backend
       final result = await ApiService.topUpWallet(amount: amount);
       if (!mounted) return;
-      final newBalance = (result['new_balance'] as num?)?.toDouble() ?? _balance;
-      setState(() => _balance = newBalance);
+      final status = result['status'] as String? ?? '';
+      if (status != 'success') {
+        _showSnack('Top-up failed. Please try again.');
+        return;
+      }
+
+      // Update Firestore balance + add transaction record
+      final userDoc = FirebaseFirestore.instance
+          .collection('users')
+          .doc(_docId);
+
+      await userDoc.set({
+        'walletBalance': FieldValue.increment(amount),
+      }, SetOptions(merge: true));
+
+      await userDoc.collection('transactions').add({
+        'type': 'topup',
+        'amount': amount,
+        'description': 'Added \$${amount.toStringAsFixed(2)} to wallet',
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'completed',
+      });
+
       _showSnack('Successfully added \$${amount.toStringAsFixed(2)}!');
       AnalyticsService.instance.logEvent('wallet_top_up', parameters: {'amount': amount});
-      await _loadWalletData(); // Refresh transactions
     } catch (e) {
       _showSnack('Top-up failed. Please try again.');
     }
@@ -112,7 +185,7 @@ class _WalletScreenState extends State<WalletScreen> {
         actions: [
           IconButton(
             icon: Icon(Icons.refresh_rounded, color: c.textPrimary),
-            onPressed: _loadWalletData,
+            onPressed: _attachListeners,
           ),
         ],
       ),
@@ -153,7 +226,7 @@ class _WalletScreenState extends State<WalletScreen> {
           Text(_error!, style: const TextStyle(color: Colors.white70)),
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed: _loadWalletData,
+            onPressed: _attachListeners,
             style: ElevatedButton.styleFrom(backgroundColor: _gold),
             child: const Text('Retry', style: TextStyle(color: Colors.black)),
           ),
@@ -164,7 +237,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Widget _buildContent(AppColors c) {
     return RefreshIndicator(
-      onRefresh: _loadWalletData,
+      onRefresh: () async => _attachListeners(),
       color: _gold,
       child: ListView(
         padding: const EdgeInsets.all(20),
@@ -358,20 +431,23 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Widget _buildTransactionItem(Map<String, dynamic> txn, AppColors c) {
-    final amount = (txn['amount'] as num?)?.toDouble() ?? 0.0;
+    final rawAmount = (txn['amount'] as num?)?.toDouble() ?? 0.0;
     final type = txn['type'] as String? ?? 'unknown';
     final desc = txn['description'] as String? ?? type;
-    final createdAt = txn['created_at'] as String?;
-    
-    final isCredit = amount > 0;
+    final status = txn['status'] as String? ?? 'completed';
+
+    final isCredit = type == 'topup' || type == 'refund' || type == 'promo';
+    final displayAmount = rawAmount.abs();
     final icon = _getTransactionIcon(type);
     final color = isCredit ? Colors.green : Colors.red;
 
     String formattedDate = '';
-    if (createdAt != null) {
+    final createdAt = txn['createdAt'];
+    if (createdAt is Timestamp) {
+      formattedDate = DateFormat('MMM d, h:mm a').format(createdAt.toDate());
+    } else if (createdAt is String) {
       try {
-        final dt = DateTime.parse(createdAt);
-        formattedDate = '${dt.month}/${dt.day} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
+        formattedDate = DateFormat('MMM d, h:mm a').format(DateTime.parse(createdAt));
       } catch (_) {}
     }
 
@@ -413,7 +489,7 @@ class _WalletScreenState extends State<WalletScreen> {
             ),
           ),
           Text(
-            '${isCredit ? '+' : ''}\$${amount.abs().toStringAsFixed(2)}',
+            '${isCredit ? '+' : '-'}\$${displayAmount.toStringAsFixed(2)}',
             style: TextStyle(
               color: color,
               fontSize: 15,
@@ -427,8 +503,10 @@ class _WalletScreenState extends State<WalletScreen> {
 
   IconData _getTransactionIcon(String type) {
     switch (type) {
+      case 'topup':
       case 'top-up':
         return Icons.add_circle_outline_rounded;
+      case 'payment':
       case 'ride-payment':
         return Icons.local_taxi_rounded;
       case 'refund':

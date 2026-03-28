@@ -23,8 +23,8 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     child: Center(
       child: Text(
         widget.driverName.isNotEmpty ? widget.driverName[0].toUpperCase() : 'D',
-        style: const TextStyle(
-          color: Color(0xFFD4AF37), fontSize: 18, fontWeight: FontWeight.w700,
+        style: TextStyle(
+          color: const Color(0xFFD4AF37), fontSize: Responsive.sp(18), fontWeight: FontWeight.w700,
         ),
       ),
     ),
@@ -65,7 +65,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
           ),
         ],
       ),
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(Responsive.w(14)),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -73,54 +73,54 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
           Row(
             children: [
               Container(
-                width: 8, height: 8,
+                width: Responsive.w(8), height: Responsive.w(8),
                 decoration: const BoxDecoration(
                   shape: BoxShape.circle,
                   color: Color(0xFFD4AF37),
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: Responsive.w(8)),
               Flexible(
                 child: Text(
                   statusLabel,
-                  style: const TextStyle(color: Color(0xFFD4AF37), fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.6),
+                  style: TextStyle(color: const Color(0xFFD4AF37), fontSize: Responsive.sp(11), fontWeight: FontWeight.w600, letterSpacing: 0.6),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: Responsive.h(10)),
           // Driver row
           Row(
             children: [
               // Driver photo with verified badge
               VerifiedAvatar(
                 photoUrl: widget.driverPhotoUrl,
-                radius: 22,
+                radius: Responsive.w(22),
                 fallbackName: widget.driverName,
                 isVerified: true,
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: Responsive.w(10)),
               // Name + rating
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.driverName,
-                      style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
+                      nh.displayName(widget.driverName, widget.rideName),
+                      style: TextStyle(color: Colors.white, fontSize: Responsive.sp(15), fontWeight: FontWeight.w700),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(Icons.star_rounded, color: Color(0xFFD4AF37), size: 14),
-                        const SizedBox(width: 3),
+                        Icon(Icons.star_rounded, color: const Color(0xFFD4AF37), size: Responsive.sp(14)),
+                        SizedBox(width: Responsive.w(3)),
                         Text(
                           widget.driverRating.toStringAsFixed(1),
-                          style: const TextStyle(color: Colors.white60, fontSize: 13),
+                          style: TextStyle(color: Colors.white60, fontSize: Responsive.sp(13)),
                         ),
                       ],
                     ),
@@ -132,7 +132,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: EdgeInsets.symmetric(horizontal: Responsive.w(10), vertical: Responsive.h(4)),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(6),
@@ -141,9 +141,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                       widget.vehiclePlate.isNotEmpty
                           ? widget.vehiclePlate.toUpperCase()
                           : '---',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.black,
-                        fontSize: 13,
+                        fontSize: Responsive.sp(13),
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.2,
                       ),
@@ -153,14 +153,14 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                     const SizedBox(height: 3),
                     Text(
                       vehicleLabel,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: Responsive.sp(10)),
                     ),
                   ],
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: Responsive.h(10)),
           // Action row: chat + call + more
           Row(
             children: [
@@ -183,7 +183,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                     children: [
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: EdgeInsets.symmetric(horizontal: Responsive.w(14), vertical: Responsive.h(10)),
                         decoration: BoxDecoration(
                           color: const Color(0xFF262626),
                           borderRadius: BorderRadius.circular(24),
@@ -191,7 +191,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                         ),
                         child: Text(
                           S.of(context).typeMessage,
-                          style: const TextStyle(color: Colors.white30, fontSize: 13),
+                          style: TextStyle(color: Colors.white30, fontSize: Responsive.sp(13)),
                         ),
                       ),
                       if (widget.tripId != null)
@@ -227,20 +227,15 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: Responsive.w(8)),
               _buildCardIconBtn(icon: Icons.phone_rounded, onTap: () {}),
-              const SizedBox(width: 8),
+              SizedBox(width: Responsive.w(8)),
               _buildCardIconBtn(
                 icon: Icons.share_rounded,
                 onTap: _handleShareTrip,
               ),
-              const SizedBox(width: 8),
-              _buildCardIconBtn(
-                icon: Icons.more_horiz_rounded,
-                onTap: _phase == _TrackPhase.onTrip
-                    ? _showCancelOnTripDialog
-                    : _showCancelDialog,
-              ),
+              SizedBox(width: Responsive.w(8)),
+              _buildMoreMenuButton(),
             ],
           ),
         ],
@@ -252,13 +247,13 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 40, height: 40,
+        width: Responsive.w(40), height: Responsive.w(40),
         decoration: BoxDecoration(
           color: const Color(0xFF262626),
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
-        child: Icon(icon, color: Colors.white60, size: 18),
+        child: Icon(icon, color: Colors.white60, size: Responsive.sp(18)),
       ),
     );
   }
@@ -278,14 +273,138 @@ Powered by Cruise''';
     );
   }
 
+  Widget _buildMoreMenuButton() {
+    return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      color: const Color(0xFF1a1a2e),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFc8a951), width: 1),
+      ),
+      onSelected: (value) {
+        if (value == 'cancel') {
+          _showCancelConfirmDialog();
+        } else if (value == 'support') {
+          _openSupportChat();
+        }
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem<String>(
+          value: 'cancel',
+          child: Row(
+            children: const [
+              Icon(Icons.cancel_outlined, color: Color(0xFFef4444), size: 20),
+              SizedBox(width: 12),
+              Text('Cancelar viaje',
+                style: TextStyle(color: Color(0xFFef4444), fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'support',
+          child: Row(
+            children: const [
+              Icon(Icons.headset_mic_outlined, color: Color(0xFFc8a951), size: 20),
+              SizedBox(width: 12),
+              Text('Contactar soporte',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ],
+      child: Container(
+        width: Responsive.w(40), height: Responsive.w(40),
+        decoration: BoxDecoration(
+          color: const Color(0xFF262626),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Icon(Icons.more_horiz_rounded, color: Colors.white60, size: Responsive.sp(18)),
+      ),
+    );
+  }
+
+  void _showCancelConfirmDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a2e),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFFc8a951), width: 1),
+        ),
+        title: const Text(
+          '¿Cancelar viaje?',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        content: const Text(
+          'Si cancelas ahora puede aplicar '
+          'una tarifa de cancelación.',
+          style: TextStyle(color: Colors.grey, fontSize: 14),
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('No, continuar',
+              style: TextStyle(color: Color(0xFFc8a951))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFef4444),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () async {
+              Navigator.pop(context);
+              LocalDataService.clearActiveRide();
+              if (widget.tripId != null) {
+                try {
+                  await ApiService.cancelTrip(widget.tripId!);
+                } catch (_) {}
+              }
+              if (!mounted) return;
+              Navigator.of(context).pushAndRemoveUntil(
+                PageRouteBuilder(
+                  pageBuilder: (_, __, ___) => const HomeScreen(),
+                  transitionsBuilder: (_, a, __, child) =>
+                      FadeTransition(opacity: a, child: child),
+                  transitionDuration: const Duration(milliseconds: 400),
+                ),
+                (_) => false,
+              );
+            },
+            child: const Text('Sí, cancelar',
+              style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openSupportChat() {
+    Navigator.of(context).push(
+      slideFromRightRoute(
+        ChatScreen(
+          recipientName: 'Support',
+          avatarInitial: 'S',
+          tripId: widget.tripId,
+        ),
+      ),
+    );
+  }
+
   Widget _buildBackButton(double topPad) {
     return Positioned(
       top: topPad + 10,
-      left: 16,
+      left: Responsive.w(16),
       child: GestureDetector(
         onTap: _navigateToHome,
         child: Container(
-          width: 40, height: 40,
+          width: Responsive.w(40), height: Responsive.w(40),
           decoration: BoxDecoration(
             color: const Color(0xFF1A1A1A).withValues(alpha: 0.9),
             shape: BoxShape.circle,
@@ -296,7 +415,7 @@ Powered by Cruise''';
               ),
             ],
           ),
-          child: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: 18),
+          child: Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: Responsive.sp(18)),
         ),
       ),
     );

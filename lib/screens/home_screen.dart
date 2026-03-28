@@ -46,6 +46,8 @@ import '../widgets/user_profile_photo.dart';
 import '../widgets/verified_avatar.dart';
 import '../widgets/offline_banner.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../utils/responsive.dart';
+import '../utils/name_helper.dart' as nh;
 
 part 'home_screen_controller.dart';
 part 'home_screen_map.dart';

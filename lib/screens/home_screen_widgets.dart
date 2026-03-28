@@ -55,7 +55,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 400),
       curve: Curves.easeInOutCubic,
-      height: 48,
+      height: Responsive.h(48),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1C22),
         borderRadius: BorderRadius.circular(28),
@@ -94,23 +94,23 @@ extension _HomeScreenWidgets on _HomeScreenState {
       behavior: HitTestBehavior.opaque,
       child: Row(
         children: [
-          const SizedBox(width: 16),
+          SizedBox(width: Responsive.w(16)),
           Icon(Icons.search_rounded,
-              color: Colors.white.withValues(alpha: 0.5), size: 20),
-          const SizedBox(width: 10),
+              color: Colors.white.withValues(alpha: 0.5), size: Responsive.sp(20)),
+          SizedBox(width: Responsive.w(10)),
           Expanded(
             child: Text(
               'Where to?',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 16,
+                fontSize: Responsive.sp(16),
                 fontWeight: FontWeight.w500,
               ),
             ),
           ),
           Container(
             margin: const EdgeInsets.only(right: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: EdgeInsets.symmetric(horizontal: Responsive.w(12), vertical: Responsive.h(6)),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(20),
@@ -119,12 +119,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.schedule_rounded, color: _gold, size: 14),
+                Icon(Icons.schedule_rounded, color: _gold, size: Responsive.sp(14)),
                 const SizedBox(width: 4),
                 Text('Now',
                     style: TextStyle(
                         color: _gold,
-                        fontSize: 13,
+                        fontSize: Responsive.sp(13),
                         fontWeight: FontWeight.w700)),
               ],
             ),
@@ -414,7 +414,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   _getGreeting().toUpperCase(),
                   style: TextStyle(
                     color: _gold,
-                    fontSize: 11,
+                    fontSize: Responsive.sp(11),
                     fontWeight: FontWeight.w800,
                     letterSpacing: 2.0,
                   ),
@@ -424,7 +424,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   displayName.isNotEmpty ? displayName : 'Rider',
                   style: TextStyle(
                     color: textMain,
-                    fontSize: 24,
+                    fontSize: Responsive.sp(24),
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.5,
                   ),
@@ -456,8 +456,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
             clipBehavior: Clip.none,
             children: [
               Container(
-                width: 44,
-                height: 44,
+                width: Responsive.w(44),
+                height: Responsive.w(44),
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   gradient: hasPhoto
@@ -548,8 +548,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
         clipBehavior: Clip.none,
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: Responsive.w(44),
+            height: Responsive.w(44),
             decoration: BoxDecoration(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.06)
@@ -568,7 +568,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
             child: Icon(
               icon,
               color: Colors.white.withValues(alpha: 0.4),
-              size: 22,
+              size: Responsive.sp(22),
             ),
           ),
           if (badge > 0)
@@ -583,9 +583,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 ),
                 child: Text(
                   badge > 9 ? '9+' : '$badge',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.black87,
-                    fontSize: 9,
+                    fontSize: Responsive.sp(9),
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -665,7 +665,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 400),
               curve: Curves.easeInOutCubic,
-              height: active ? 195 : 140,
+              height: active ? Responsive.h(195) : Responsive.h(140),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(28),
                 border: Border.all(
@@ -750,7 +750,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                       : isDark
                       ? Colors.white
                       : const Color(0xFF1C1C1E),
-                  fontSize: 28,
+                  fontSize: Responsive.sp(28),
                   fontWeight: FontWeight.w900,
                   letterSpacing: -1,
                 ),

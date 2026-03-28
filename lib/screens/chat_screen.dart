@@ -7,6 +7,8 @@ import '../services/api_service.dart';
 import '../services/chat_service.dart';
 import '../services/error_service.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/responsive.dart';
+import '../utils/name_helper.dart' as nh;
 
 /// Full-page chat screen — real-time via Firebase RTDB for trip chats,
 /// REST API polling for support chat.
@@ -251,8 +253,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           // Avatar
           Container(
-            width: 36,
-            height: 36,
+            width: Responsive.w(36),
+            height: Responsive.w(36),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: widget.isSupport
@@ -267,28 +269,28 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             child: Center(
               child: widget.isSupport
-                  ? Icon(Icons.support_agent_rounded, size: 18, color: _gold)
+                  ? Icon(Icons.support_agent_rounded, size: Responsive.sp(18), color: _gold)
                   : Text(
                       widget.avatarInitial ??
                           widget.recipientName[0].toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 14,
+                      style: TextStyle(
+                        fontSize: Responsive.sp(14),
                         fontWeight: FontWeight.w800,
                         color: Colors.white,
                       ),
                     ),
             ),
           ),
-          const SizedBox(width: 10),
+          SizedBox(width: Responsive.w(10)),
           // Name + status
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.isSupport ? s.cruiseSupport : widget.recipientName,
-                  style: const TextStyle(
-                    fontSize: 16,
+                  widget.isSupport ? s.cruiseSupport : nh.displayName(widget.recipientName),
+                  style: TextStyle(
+                    fontSize: Responsive.sp(16),
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
                   ),
@@ -297,18 +299,18 @@ class _ChatScreenState extends State<ChatScreen> {
                 Row(
                   children: [
                     Container(
-                      width: 6,
-                      height: 6,
+                      width: Responsive.w(6),
+                      height: Responsive.w(6),
                       decoration: const BoxDecoration(
                         color: Color(0xFF4CAF50),
                         shape: BoxShape.circle,
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: Responsive.w(4)),
                     Text(
                       widget.isSupport ? s.online : s.activeNow,
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: Responsive.sp(11),
                         color: Colors.white.withValues(alpha: 0.45),
                       ),
                     ),
@@ -462,9 +464,9 @@ class _ChatScreenState extends State<ChatScreen> {
           width: double.infinity,
           padding: const EdgeInsets.only(left: 20, bottom: 4, top: 2),
           child: Text(
-            '${widget.recipientName.split(' ').first} ${s.typing}',
+            '${nh.displayName(widget.recipientName)} ${s.typing}',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: Responsive.sp(12),
               fontStyle: FontStyle.italic,
               color: Colors.white.withValues(alpha: 0.4),
             ),

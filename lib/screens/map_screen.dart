@@ -45,6 +45,8 @@ import '../widgets/bouncing_button.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
 import 'pickup_dropoff_search_screen.dart';
+import '../utils/responsive.dart';
+import '../utils/name_helper.dart' as nh;
 
 part 'map_screen_controller.dart';
 part 'map_screen_map.dart';

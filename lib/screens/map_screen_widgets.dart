@@ -2520,7 +2520,7 @@ extension _MapScreenWidgets on _MapScreenState {
                       ),
                     ),
                     Text(
-                      S.of(context).driverOnTheWay(_driverName.split(' ').first),
+                      S.of(context).driverOnTheWay(nh.displayName(_driverName, _driverCar)),
                       style: TextStyle(
                         color: _c.textSecondary,
                         fontSize: 12,
@@ -2866,11 +2866,11 @@ extension _MapScreenWidgets on _MapScreenState {
               child: Row(
                 children: [
                   VerifiedAvatar(
-                    radius: 22,
+                    radius: Responsive.w(22),
                     fallbackName: _driverName,
                     isVerified: true,
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: Responsive.w(12)),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2878,11 +2878,11 @@ extension _MapScreenWidgets on _MapScreenState {
                         Row(
                           children: [
                             Text(
-                              _driverName,
+                              nh.displayName(_driverName, _driverCar),
                               style: TextStyle(
                                 color: _c.textPrimary,
                                 fontWeight: FontWeight.w700,
-                                fontSize: 15,
+                                fontSize: Responsive.sp(15),
                               ),
                             ),
                             const SizedBox(width: 6),
@@ -3049,20 +3049,20 @@ extension _MapScreenWidgets on _MapScreenState {
                         children: [
                           Text(
                             isArrived
-                                ? S.of(context).driverAtPickup(_driverName)
+                                ? S.of(context).driverAtPickup(nh.displayName(_driverName, _driverCar))
                                 : S.of(context).etaLabel(_driverEta),
                             style: TextStyle(
                               color: _c.textPrimary,
-                              fontSize: 16,
+                              fontSize: Responsive.sp(16),
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                           if (!isArrived)
                             Text(
-                              S.of(context).driverOnTheWay(_driverName),
+                              S.of(context).driverOnTheWay(nh.displayName(_driverName, _driverCar)),
                               style: TextStyle(
                                 color: _c.textSecondary,
-                                fontSize: 12,
+                                fontSize: Responsive.sp(12),
                               ),
                             ),
                         ],

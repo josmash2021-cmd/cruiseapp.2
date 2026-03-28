@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../services/api_service.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/responsive.dart';
+import '../utils/name_helper.dart' as nh;
 
 /// Result returned from the rating screen.
 class RideRating {
@@ -99,15 +101,15 @@ class _RideRatingScreenState extends State<RideRatingScreen>
         child: FadeTransition(
           opacity: _fade,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
+            padding: EdgeInsets.symmetric(horizontal: Responsive.w(28)),
             child: Column(
               children: [
-                const SizedBox(height: 60),
+                SizedBox(height: Responsive.h(60)),
 
                 // ── Driver avatar ──
                 Container(
-                  width: 90,
-                  height: 90,
+                  width: Responsive.w(90),
+                  height: Responsive.w(90),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: c.surface,
@@ -118,27 +120,27 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                   ),
                   child: Icon(
                     Icons.person_rounded,
-                    size: 48,
+                    size: Responsive.sp(48),
                     color: c.textTertiary,
                   ),
                 ),
-                const SizedBox(height: 20),
+                SizedBox(height: Responsive.h(20)),
 
                 Text(
                   S.of(context).howWasRide,
                   style: TextStyle(
-                    fontSize: 26,
+                    fontSize: Responsive.sp(26),
                     fontWeight: FontWeight.w800,
                     color: c.textPrimary,
                     letterSpacing: -0.5,
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: Responsive.h(8)),
                 Text(
-                  S.of(context).rateExperience(widget.driverName),
-                  style: TextStyle(fontSize: 15, color: c.textSecondary),
+                  S.of(context).rateExperience(nh.displayName(widget.driverName, widget.rideName)),
+                  style: TextStyle(fontSize: Responsive.sp(15), color: c.textSecondary),
                 ),
-                const SizedBox(height: 32),
+                SizedBox(height: Responsive.h(32)),
 
                 // ── Stars ──
                 Row(
@@ -148,7 +150,7 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                     return GestureDetector(
                       onTap: () => setState(() => _stars = i + 1),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        padding: EdgeInsets.symmetric(horizontal: Responsive.w(6)),
                         child: AnimatedScale(
                           scale: filled ? 1.15 : 1.0,
                           duration: const Duration(milliseconds: 200),
@@ -156,7 +158,7 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                             filled
                                 ? Icons.star_rounded
                                 : Icons.star_outline_rounded,
-                            size: 44,
+                            size: Responsive.sp(44),
                             color: filled
                                 ? _gold
                                 : c.textTertiary.withValues(alpha: 0.4),
@@ -173,19 +175,19 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                   child: Text(
                     _starLabel(context),
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: Responsive.sp(14),
                       fontWeight: FontWeight.w600,
                       color: _gold,
                     ),
                   ),
                 ),
-                const SizedBox(height: 40),
+                SizedBox(height: Responsive.h(40)),
 
                 // ── Tip section ──
                 Text(
                   S.of(context).addTip,
                   style: TextStyle(
-                    fontSize: 18,
+                    fontSize: Responsive.sp(18),
                     fontWeight: FontWeight.w700,
                     color: c.textPrimary,
                   ),
@@ -193,9 +195,9 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                 const SizedBox(height: 6),
                 Text(
                   S.of(context).tipGoesToDriver,
-                  style: TextStyle(fontSize: 14, color: c.textSecondary),
+                  style: TextStyle(fontSize: Responsive.sp(14), color: c.textSecondary),
                 ),
-                const SizedBox(height: 18),
+                SizedBox(height: Responsive.h(18)),
 
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -210,14 +212,14 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                     }),
                   ],
                 ),
-                const SizedBox(height: 28),
+                SizedBox(height: Responsive.h(28)),
 
                 // ── Comment ──
                 TextField(
                   controller: _commentController,
                   maxLines: 2,
                   maxLength: 200,
-                  style: TextStyle(fontSize: 14, color: c.textPrimary),
+                  style: TextStyle(fontSize: Responsive.sp(14), color: c.textPrimary),
                   decoration: InputDecoration(
                     hintText: S.of(context).leaveComment,
                     hintStyle: TextStyle(color: c.textTertiary),
@@ -239,7 +241,7 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                 // ── Submit ──
                 SizedBox(
                   width: double.infinity,
-                  height: 56,
+                  height: Responsive.h(56),
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _gold,

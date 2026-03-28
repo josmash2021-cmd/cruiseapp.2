@@ -748,7 +748,7 @@ extension _MapScreenController on _MapScreenState {
               }
               if (mounted) { LocalDataService.addNotification(
                 title: S.of(context).driverArrivedTitle,
-                message: S.of(context).driverArrivedMessage(_driverName),
+                message: S.of(context).driverArrivedMessage(nh.displayName(_driverName, _driverCar)),
                 type: 'ride',
               ); }
             }

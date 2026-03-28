@@ -202,6 +202,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       LocalDataService.clearActiveRide();
       _setState(() => _phase = _TrackPhase.completed);
       _arrivedDotPulse.stop();
+      // Save trip chat to inbox before navigating away
+      _saveChatToInbox();
       _goToRating();
     } else if (status == 'cancelled' || status == 'canceled') {
       final cancelledBy = data['cancelledBy']?.toString() ?? '';
@@ -254,6 +256,47 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       if (_connectionLost) _setState(() => _connectionLost = false);
       _onRealDriverLocation(LatLng(lat, lng), bearing: bearing);
     }, onError: (_) {});
+  }
+
+  Future<void> _saveChatToInbox() async {
+    final rideId = widget.firestoreTripId;
+    if (rideId == null || rideId.isEmpty) return;
+    final uid = UserSession.currentUid;
+    if (uid.isEmpty) return;
+    try {
+      final snap = await FirebaseDatabase.instance
+          .ref('chats/$rideId/messages')
+          .orderByChild('timestamp')
+          .get();
+      if (!snap.exists) return;
+      final msgs = <Map<String, dynamic>>[];
+      for (final child in snap.children) {
+        final val = child.value;
+        if (val is Map) msgs.add(Map<String, dynamic>.from(val));
+      }
+      if (msgs.isEmpty) return;
+      msgs.sort((a, b) =>
+          (a['timestamp'] as int? ?? 0).compareTo(b['timestamp'] as int? ?? 0));
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc('sql_$uid')
+          .collection('inbox_chats')
+          .doc(rideId)
+          .set({
+        'tripId': rideId,
+        'driverId': _rtdbDriverId ?? '',
+        'driverName': widget.driverName,
+        'driverPhotoUrl': widget.driverPhotoUrl ?? '',
+        'lastMessage': msgs.last['text'] ?? '',
+        'messageCount': msgs.length,
+        'createdAt': FieldValue.serverTimestamp(),
+        'expiresAt': Timestamp.fromDate(
+            DateTime.now().add(const Duration(hours: 5))),
+        'messages': msgs,
+      });
+    } catch (e) {
+      debugPrint('[Inbox] save chat error: $e');
+    }
   }
 
   void _goToRating() {

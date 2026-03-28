@@ -867,7 +867,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 below: 'road-label',
               );
               _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-              try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+              try {
+                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+              } catch (_) {}
               _updateAnnotations();
             },
             onStyleLoadedListener: (_) async {

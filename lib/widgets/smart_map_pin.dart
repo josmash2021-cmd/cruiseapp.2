@@ -195,12 +195,13 @@ class GoldenPinPainter {
         ..color = colorBorder,
     );
 
-    // ── 6. Transparent hole where icon would be ──
+    // ── 6. Dark circle background + icon inside the teardrop ──
     canvas.drawCircle(
       Offset(cx, headCY),
       r * 0.52,
-      Paint()..blendMode = BlendMode.clear,
+      Paint()..color = const Color(0xFF1A1A2E),
     );
+    _drawIcon(canvas, icon, cx, headCY, r);
   }
 
   Path _buildTeardrop(double cx, double headCY, double r, double tipY) {

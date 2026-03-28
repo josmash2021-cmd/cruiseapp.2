@@ -1895,7 +1895,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 ],
               ),
             ),
-            // "Then" next step sub-row
+            // "Then" next step sub-row OR destination address sub-row
             if (nextStep != null && !isOffRoute)
               Container(
                 color: bgSub,
@@ -1938,6 +1938,49 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                  ],
+                ),
+              )
+            else
+              // Show destination address when nav hasn't started yet
+              Container(
+                color: bgSub,
+                padding: const EdgeInsets.fromLTRB(16, 5, 16, 7),
+                child: Row(
+                  children: [
+                    Icon(
+                      _phase == TripPhase.toPickup
+                          ? Icons.radio_button_checked_rounded
+                          : Icons.location_on_rounded,
+                      color: _phase == TripPhase.toPickup
+                          ? const Color(0xFF4CAF50)
+                          : const Color(0xFFEF5350),
+                      size: 13,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _phase == TripPhase.toPickup || _phase == TripPhase.arrivedPickup
+                            ? widget.pickupAddress
+                            : widget.dropoffAddress,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.72),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (_etaMinutes > 0)
+                      Text(
+                        '$_etaMinutes min  ·  ${_distRemainingMi.toStringAsFixed(1)} mi',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1983,9 +2026,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   String get _phaseInstruction {
     switch (_phase) {
-      case TripPhase.toPickup:      return 'Head to pickup · ${widget.pickupAddress}';
+      case TripPhase.toPickup:      return 'Head to pickup';
       case TripPhase.arrivedPickup: return 'Arrived at pickup';
-      case TripPhase.onTrip:        return 'Head to dropoff · ${widget.dropoffAddress}';
+      case TripPhase.onTrip:        return 'Head to drop-off';
       case TripPhase.arrivedDropoff:return 'Arrived at destination';
       default:                       return 'Ready';
     }
@@ -2175,7 +2218,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: Responsive.h(68),
+          height: math.max(72.0, Responsive.h(72)),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -2185,17 +2228,21 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 onTap: _showTripOptions,
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: Responsive.w(4)),
-                  child: _riderAvatar(size: Responsive.w(34)),
+                  child: _riderAvatar(size: Responsive.w(36)),
                 ),
               ),
               // Centered ETA / distance / arrival
               Expanded(
                 child: Center(
                   child: eta <= 2
-                      ? Text('Arriving soon',
+                      ? Text(
+                          'Arriving soon',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
                           style: TextStyle(
                             color: _etaGreen,
-                            fontSize: Responsive.sp(17),
+                            fontSize: Responsive.sp(16),
                             fontWeight: FontWeight.w800,
                           ))
                       : Column(

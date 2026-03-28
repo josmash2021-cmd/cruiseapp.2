@@ -890,19 +890,34 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Future<List<LatLng>> _loadRoute() async {
     // Use cached route from offer pre-fetch (instant, no straight-line bug)
     if (widget.routePoints != null && widget.routePoints!.length >= 2) {
-      return widget.routePoints!;
+      final pts = List<LatLng>.from(widget.routePoints!);
+      // Snap exact endpoints so pins align perfectly with route line endpoints
+      pts[0] = widget.pickupLatLng;
+      pts[pts.length - 1] = widget.dropoffLatLng;
+      return pts;
     }
     // Fallback — fetch fresh pickup→dropoff only
     return _fetchRoutePoints(widget.pickupLatLng, widget.dropoffLatLng);
   }
 
-  Future<void> _onMapReady(mapbox.MapboxMap ctrl) async {
+  // onMapCreated — just capture the controller; style may not be loaded yet.
+  void _onMapReady(mapbox.MapboxMap ctrl) {
     _map = ctrl;
+  }
+
+  // onStyleLoadedListener — style is guaranteed ready here; run all setup.
+  Future<void> _onStyleLoaded(mapbox.StyleLoadedEventData _) async {
+    final ctrl = _map;
+    if (ctrl == null || !mounted) return;
     await MapTheme.applyNavyGold(ctrl);
     if (!mounted) return;
     _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
     _annotMgr = await ctrl.annotations.createPointAnnotationManager();
-    try { await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+    // Ground pins to map surface so they don't float in 3D tilt view
+    try {
+      await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-pitch-alignment', 'map');
+      await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-rotation-alignment', 'map');
+    } catch (_) {}
 
     // 1. Load route (cache-first — prevents straight-line bug)
     _routePoints = await _loadRoute();
@@ -1314,13 +1329,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                               widget.pickupLatLng.longitude,
                               widget.pickupLatLng.latitude,
                             )),
-                            zoom: 13.5,
-                            pitch: 55.0,
+                            zoom: 12.0,
+                            pitch: 0.0,
+                            bearing: 0.0,
                           ),
                           onMapCreated: _onMapReady,
-                          onStyleLoadedListener: (_) async {
-                            if (_map != null) await MapTheme.applyNavyGold(_map!);
-                          },
+                          onStyleLoadedListener: _onStyleLoaded,
                         ),
                       ),
                       // ETA chip

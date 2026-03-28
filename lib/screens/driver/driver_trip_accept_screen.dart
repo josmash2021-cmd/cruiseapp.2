@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:url_launcher/url_launcher.dart';
@@ -19,6 +20,7 @@ import '../../widgets/map/circular_pin_renderer.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../chat_screen.dart';
+import 'driver_home_screen.dart';
 import 'driver_nav_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -268,10 +270,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Phone / Message ───────────────────────────────────────────────────────
   Future<void> _call() async {
-    final phone = widget.riderPhone.trim();
+    String phone = widget.riderPhone.trim();
+    if (phone.isEmpty) {
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('trips')
+            .doc(widget.tripId.toString())
+            .get();
+        final data = snap.data();
+        phone = (data?['rider_phone'] ?? data?['passengerPhone'] ?? '').toString().trim();
+      } catch (_) {}
+    }
     if (phone.isEmpty) return;
-    final uri = Uri.parse('tel:$phone');
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -330,24 +344,24 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   Widget _actionBtn(IconData icon, String label, VoidCallback onTap) =>
-      GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: Colors.white, size: 16),
-              const SizedBox(width: 6),
-              Text(label,
-                style: const TextStyle(color: Colors.white, fontSize: 13,
-                    fontWeight: FontWeight.w600)),
-            ],
-          ),
+      OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: Color(0xFFFFD700), width: 1.5),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          foregroundColor: Colors.white,
+          backgroundColor: Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: const Color(0xFFFFD700), size: 16),
+            const SizedBox(width: 6),
+            Text(label,
+              style: const TextStyle(color: Colors.white, fontSize: 13,
+                  fontWeight: FontWeight.w600)),
+          ],
         ),
       );
 
@@ -695,45 +709,54 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     ]);
     if (!mounted) return;
 
-    // 3. Fit camera to show pickup + dropoff + full route
-    final fitPts = <mapbox.Point>[
-      mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
-      mapbox.Point(coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
-      // Include route polyline extremes so curved routes are never clipped
-      for (final rp in _routePoints)
-        mapbox.Point(coordinates: mapbox.Position(rp.longitude, rp.latitude)),
-    ];
-    final cam = await ctrl.cameraForCoordinatesPadding(
-      fitPts,
-      mapbox.CameraOptions(),
-      mapbox.MbxEdgeInsets(top: 50, left: 50, bottom: 50, right: 50),
-      null, null,
+    if (_routePoints.length < 2) return;
+    final routeCoordinates = _routePoints
+        .map((p) => mapbox.Position(p.longitude, p.latitude))
+        .toList();
+
+    // Build bounds from every route coordinate so the whole line is visible.
+    final minLat = routeCoordinates.map((c) => c.lat.toDouble()).reduce(math.min);
+    final maxLat = routeCoordinates.map((c) => c.lat.toDouble()).reduce(math.max);
+    final minLng = routeCoordinates.map((c) => c.lng.toDouble()).reduce(math.min);
+    final maxLng = routeCoordinates.map((c) => c.lng.toDouble()).reduce(math.max);
+    final bounds = mapbox.CoordinateBounds(
+      southwest: mapbox.Point(coordinates: mapbox.Position(minLng - 0.003, minLat - 0.003)),
+      northeast: mapbox.Point(coordinates: mapbox.Position(maxLng + 0.003, maxLat + 0.003)),
+      infiniteBounds: false,
     );
-    ctrl.flyTo(cam, mapbox.MapAnimationOptions(duration: 600));
-    await Future.delayed(const Duration(milliseconds: 650));
-    if (!mounted) return;
+    final cam = await ctrl.cameraForCoordinateBounds(
+      bounds,
+      mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
+      null,
+      null,
+      null,
+      null,
+    );
+    ctrl.setCamera(mapbox.CameraOptions(
+      center: cam.center,
+      zoom: (cam.zoom ?? 13) - 0.5,
+      bearing: 15.0,
+      pitch: 0,
+    ));
 
-    // 4. Smooth tilt 0° → 55° (1200ms easeInOutCubic)
-    _tiltAnim.addListener(_applyMapTilt);
-    _tiltCtrl.forward(from: 0);
+    // 4. Pins must use exact line endpoints (not geocoded address coords).
+    final pickupPoint = routeCoordinates.first;
+    final dropoffPoint = routeCoordinates.last;
 
-    // 5. After 500ms of tilt → pop pins in
-    await Future.delayed(const Duration(milliseconds: 500));
+    // 5. Pop pins in
     if (!mounted) return;
 
     _pinAnnots.clear();
     if (_annotMgr != null) {
       // Pickup pin — unified gold pin
       final pickupAnnot = await _annotMgr!.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(
-          widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
+        geometry: mapbox.Point(coordinates: pickupPoint),
         image: pinResults[0], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
       _pinAnnots.add(pickupAnnot);
       // Dropoff pin — unified gold pin
       final dropoffAnnot = await _annotMgr!.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(
-          widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
+        geometry: mapbox.Point(coordinates: dropoffPoint),
         image: pinResults[1], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
       _pinAnnots.add(dropoffAnnot);
@@ -744,7 +767,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
 
-    // 6. Draw single gold gloss route animated (1000ms)
+    // 6. Draw single gold gloss route animated (~1s regardless of route length)
     await _animateGoldRoute(
       points: _routePoints,
       duration: const Duration(milliseconds: 1000),
@@ -957,7 +980,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       GestureDetector(
                         onTap: () {
                           HapticFeedback.lightImpact();
-                          Navigator.pop(context);
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+                            (route) => false,
+                          );
                         },
                         child: Container(
                           width: 36, height: 36,

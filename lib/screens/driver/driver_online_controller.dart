@@ -1431,10 +1431,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _navState = null;
     _currentNavRoute = null;
     _navTimer?.cancel();
-    if (_tripId != null) {
+    final tripId = _tripId;
+    if (tripId != null) {
       try {
-        await ApiService.updateTripStatus(tripId: _tripId!, status: 'canceled');
+        await ApiService.updateTripStatus(tripId: tripId, status: 'canceled');
       } catch (_) {}
+      // Immediate Firestore sync so rider listener reacts in real time.
+      await TripFirestoreService.syncTripCancelled(
+        tripId.toString(),
+        cancelledBy: 'driver',
+        cancellationReason: 'driver_cancelled',
+        reason: 'Driver cancelled',
+      );
     }
     _setState(() {
       _phase = _Phase.searching;

@@ -1,7 +1,9 @@
 ﻿import 'dart:async';
 import 'dart:io' show File;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../models/lat_lng.dart';
 import '../../config/mapbox_config.dart';
@@ -22,6 +24,7 @@ import 'driver_earnings_screen.dart';
 import 'driver_trip_history_screen.dart';
 import 'driver_menu_screen.dart';
 import 'driver_online_screen.dart';
+import 'driver_trip_accept_screen.dart';
 import 'driver_inbox_screen.dart';
 import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
@@ -95,6 +98,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   bool _isStillOnline = false;
   Timer? _tripPollTimer;
   int? _driverId;
+  Map<String, dynamic>? _activeTripData;
 
   @override
   double get panelTravelHeight => _panelExpandedH - _panelCollapsedH;
@@ -159,6 +163,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // Resolve driver ID for trip polling
     _resolveDriverId();
+    _refreshActiveTripStatus();
     _registerFcmToken();
 
     // Entrance animations
@@ -455,6 +460,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!await _ensureVerified()) return;
     if (!mounted) return;
 
+    if (_activeTripData != null) {
+      await _resumeActiveTrip();
+      return;
+    }
+
     // Require profile photo before going online
     if (_photoUrl == null || _photoUrl!.isEmpty) {
       final result = await Navigator.of(context).push<String?>(
@@ -496,7 +506,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Future<void> _resolveDriverId() async {
     try {
       final id = await ApiService.getCurrentUserId();
-      if (id != null && mounted) _driverId = id;
+      if (id != null && mounted) {
+        _driverId = id;
+        await _refreshActiveTripStatus();
+      }
     } catch (_) {}
   }
 
@@ -521,6 +534,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       await _resolveDriverId();
       if (_driverId == null) return;
     }
+    await _refreshActiveTripStatus();
+    if (_activeTripData != null) return;
     try {
       final offers = await ApiService.getDriverPendingOffers(_driverId!);
       if (!mounted || !_isStillOnline) return;
@@ -534,6 +549,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   void _navigateToOnlineScreen() async {
+    if (_activeTripData != null) {
+      await _resumeActiveTrip();
+      return;
+    }
     if (!mounted) return;
     final result = await Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
@@ -1017,7 +1036,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      _isStillOnline
+                      (_activeTripData != null || _isStillOnline)
                           ? Icons.play_arrow_rounded
                           : Icons.power_settings_new_rounded,
                       color: Colors.black87,
@@ -1027,7 +1046,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   const SizedBox(width: 10),
                   Text(
                     _isVerified
-                        ? (_isStillOnline
+                    ? ((_activeTripData != null || _isStillOnline)
                               ? S.of(context).resumeOnline
                               : S.of(context).goOnline)
                         : S.of(context).verifyFirst,
@@ -1424,4 +1443,125 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   // Map style now from MapStyles.dark (config/map_styles.dart)
+
+  Future<void> _refreshActiveTripStatus() async {
+    final driverId = _driverId;
+    if (driverId == null) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('trips')
+          .where('status', whereIn: const ['accepted', 'driver_arriving', 'in_progress'])
+          .limit(25)
+          .get();
+
+      Map<String, dynamic>? active;
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final rawDriverId = data['driverId'];
+        final matches = rawDriverId == driverId || rawDriverId?.toString() == driverId.toString();
+        if (matches) {
+          active = {'_docId': doc.id, ...data};
+          break;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() => _activeTripData = active);
+    } catch (_) {
+      // Keep current UI state if this lookup fails.
+    }
+  }
+
+  Future<void> _resumeActiveTrip() async {
+    await _refreshActiveTripStatus();
+    final trip = _activeTripData;
+    if (!mounted || trip == null) return;
+
+    final pickupLat = _pickDouble(trip, ['pickupLat', 'pickup_lat']);
+    final pickupLng = _pickDouble(trip, ['pickupLng', 'pickup_lng']);
+    final dropoffLat = _pickDouble(trip, ['dropoffLat', 'dropoff_lat']);
+    final dropoffLng = _pickDouble(trip, ['dropoffLng', 'dropoff_lng']);
+    if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) {
+      return;
+    }
+
+    final pickup = LatLng(pickupLat, pickupLng);
+    final dropoff = LatLng(dropoffLat, dropoffLng);
+    final driverPos = _currentLatLng ?? pickup;
+    final tripId = _pickInt(trip, ['tripId', 'trip_id']) ?? int.tryParse((trip['_docId'] ?? '').toString()) ?? 0;
+    final riderName = _pickString(trip, ['riderName', 'rider_name', 'passengerName', 'passenger_name'], fallback: 'Rider');
+    final riderPhone = _pickString(trip, ['rider_phone', 'passengerPhone', 'passenger_phone']);
+    final pickupAddress = _pickString(trip, ['pickupAddress', 'pickup_address'], fallback: 'Pickup');
+    final dropoffAddress = _pickString(trip, ['dropoffAddress', 'dropoff_address'], fallback: 'Drop-off');
+    final fare = _pickDouble(trip, ['fare']) ?? 0;
+    final vehicleType = _pickString(trip, ['vehicleType', 'vehicle_type'], fallback: 'Ride');
+
+    final distKm = _haversineKm(driverPos, pickup);
+    final etaMinutes = ((distKm * 1000) / 17.88 / 60).ceil().clamp(1, 99);
+
+    await Navigator.of(context).push(
+      slideFromRightRoute(
+        DriverTripAcceptScreen(
+          tripId: tripId,
+          riderName: riderName,
+          riderPhotoUrl: _pickString(trip, ['riderPhotoUrl', 'rider_photo_url', 'passengerPhotoUrl']),
+          riderRating: _pickDouble(trip, ['riderRating', 'rider_rating']) ?? 4.8,
+          pickupLatLng: pickup,
+          dropoffLatLng: dropoff,
+          pickupAddress: pickupAddress,
+          dropoffAddress: dropoffAddress,
+          fare: fare,
+          vehicleType: vehicleType,
+          driverPos: driverPos,
+          distToPickupKm: distKm,
+          etaMinutes: etaMinutes,
+          riderPhone: riderPhone,
+          pickupInstructions: _pickString(trip, ['pickupInstructions', 'pickup_instructions']),
+          dropoffInstructions: _pickString(trip, ['dropoffInstructions', 'dropoff_instructions']),
+        ),
+      ),
+    );
+  }
+
+  double? _pickDouble(Map<String, dynamic> data, List<String> keys) {
+    for (final k in keys) {
+      final v = data[k];
+      if (v is num) return v.toDouble();
+      final parsed = double.tryParse(v?.toString() ?? '');
+      if (parsed != null) return parsed;
+    }
+    return null;
+  }
+
+  int? _pickInt(Map<String, dynamic> data, List<String> keys) {
+    for (final k in keys) {
+      final v = data[k];
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      final parsed = int.tryParse(v?.toString() ?? '');
+      if (parsed != null) return parsed;
+    }
+    return null;
+  }
+
+  String _pickString(Map<String, dynamic> data, List<String> keys, {String fallback = ''}) {
+    for (final k in keys) {
+      final v = data[k]?.toString().trim();
+      if (v != null && v.isNotEmpty) return v;
+    }
+    return fallback;
+  }
+
+  double _haversineKm(LatLng a, LatLng b) {
+    const r = 6371.0;
+    final dLat = (b.latitude - a.latitude) * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final sa = math.sin(dLat / 2);
+    final sb = math.sin(dLng / 2);
+    final aa = sa * sa +
+        math.cos(a.latitude * math.pi / 180) *
+            math.cos(b.latitude * math.pi / 180) *
+            sb * sb;
+    return r * 2 * math.atan2(math.sqrt(aa), math.sqrt(1 - aa));
+  }
 }

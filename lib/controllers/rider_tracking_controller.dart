@@ -129,6 +129,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _setState(() => _phase = _TrackPhase.completed);
       _goToRating();
     } else if (status == 'cancelled' || status == 'canceled') {
+      final cancelledBy = data['cancelledBy']?.toString() ?? '';
+      if (cancelledBy.isNotEmpty && cancelledBy != 'driver') return;
       if (!_cancelDialogShown) {
         _cancelDialogShown = true;
         _showDriverCancelledDialog();

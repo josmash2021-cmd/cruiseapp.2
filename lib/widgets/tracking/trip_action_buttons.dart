@@ -183,7 +183,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
-              child: Text(s.ok, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+              child: const Text('Buscar otro ride', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
             ),
           ),
         ],

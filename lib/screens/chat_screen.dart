@@ -128,6 +128,12 @@ class _ChatScreenState extends State<ChatScreen> {
         senderRole: _myRole,
         text: text,
       );
+      if (widget.tripId != null) {
+        unawaited(
+          ApiService.sendChatMessage(tripId: widget.tripId!, message: text)
+              .catchError((_) => <String, dynamic>{}),
+        );
+      }
     } else if (widget.isSupport) {
       setState(() {
         _supportMessages.add(

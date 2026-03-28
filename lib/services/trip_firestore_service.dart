@@ -151,11 +151,15 @@ class TripFirestoreService {
   /// Sync status: trip cancelled.
   static Future<void> syncTripCancelled(
     String tripId, {
+    String cancelledBy = 'driver',
+    String cancellationReason = 'driver_cancelled',
     String reason = 'Cancelled',
   }) async {
     try {
       unawaited(_trips.doc(tripId).update({
         'status': 'cancelled',
+        'cancelledBy': cancelledBy,
+        'cancellationReason': cancellationReason,
         'cancelReason': reason,
         'cancelledAt': FieldValue.serverTimestamp(),
       }));

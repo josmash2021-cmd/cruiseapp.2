@@ -6,6 +6,7 @@ import '../models/lat_lng.dart';
 import '../services/api_service.dart';
 import '../services/directions_service.dart';
 import '../services/places_service.dart';
+import '../services/cache_service.dart';
 import '../config/api_keys.dart';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -208,6 +209,42 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this); // M3: observe lifecycle
   }
 
+  /// Save trip state to persistent cache for instant recovery on app reopen.
+  /// Triggered after every state change.
+  Future<void> _saveTripStateToCache() async {
+    // Save trip ID when trip is active
+    final tripId = _state.tripId;
+    if (tripId != null && (_state.phase == RiderPhase.driverAssigned ||
+        _state.phase == RiderPhase.driverArriving ||
+        _state.phase == RiderPhase.onTrip)) {
+      await CacheService.saveActiveTripId(tripId.toString());
+      
+      // Save full trip data snapshot
+      final tripData = {
+        'tripId': tripId,
+        'phase': _state.phase.toString(),
+        'pickupAddress': _state.pickup?.address,
+        'pickupLat': _state.pickup?.lat,
+        'pickupLng': _state.pickup?.lng,
+        'dropoffAddress': _state.dropoff?.address,
+        'dropoffLat': _state.dropoff?.lat,
+        'dropoffLng': _state.dropoff?.lng,
+        'pickupLabel': _state.pickupLabel,
+        'dropoffLabel': _state.dropoffLabel,
+        'driverName': _state.driver?.name,
+        'driverId': _state.driver?.id,
+        'etaMinutes': _state.etaMinutes,
+        'createdAt': DateTime.now().toIso8601String(),
+      };
+      await CacheService.saveActiveTrip(tripData);
+    } else if (tripId == null || 
+        _state.phase == RiderPhase.completed ||
+        _state.phase == RiderPhase.cancelled) {
+      // Clear trip cache when no longer active
+      await CacheService.clearActiveTrip();
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // M3: when app returns to foreground with an active trip, re-sync state
@@ -233,6 +270,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         _timeoutTimer?.cancel();
         _state = _state.copyWith(phase: RiderPhase.completed);
         notifyListeners();
+        // Clear cache on completion
+        await CacheService.clearActiveTrip();
       } else if (tripStatus == 'cancelled' ||
           tripStatus == 'canceled' ||
           tripStatus == 'no_drivers') {
@@ -244,6 +283,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           cancelReason: 'El viaje fue cancelado mientras la app estaba en segundo plano.',
         );
         notifyListeners();
+        // Clear cache on cancellation
+        await CacheService.clearActiveTrip();
       }
     } catch (e) {
       debugPrint('⚠️ resume trip refresh failed: $e');
@@ -544,6 +585,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
       _state = _state.copyWith(tripId: tripId);
       notifyListeners();
+      
+      // Save trip to cache immediately on creation
+      await _saveTripStateToCache();
 
       // Poll dispatch status until a driver accepts
       _startDispatchPolling(tripId);
@@ -575,6 +619,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           cancelReason: 'No se encontró un driver disponible. Por favor intenta de nuevo.',
         );
         notifyListeners();
+        // Clear trip cache
+        unawaited(CacheService.clearActiveTrip());
       }
     });
 
@@ -607,6 +653,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
                     : null),
           );
           notifyListeners();
+          // Clear trip cache
+          await CacheService.clearActiveTrip();
         }
         // Otherwise keep polling (status is 'searching' or 'pending')
       } catch (e) {
@@ -655,6 +703,18 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       etaMinutes: _state.selectedOption?.etaMinutes ?? 5,
     );
     notifyListeners();
+    
+    // Save driver info and trip to cache (fire-and-forget)
+    unawaited(CacheService.saveDriver({
+      'id': driver.id,
+      'name': driver.name,
+      'rating': driver.rating,
+      'photoUrl': driver.photoUrl,
+      'vehicleMake': driver.vehicleMake,
+      'vehicleModel': driver.vehicleModel,
+      'vehicleColor': driver.vehicleColor,
+    }));
+    unawaited(_saveTripStateToCache());
   }
 
   /// Called by the UI after the "Driver Found" overlay finishes.
@@ -662,6 +722,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     if (_state.phase == RiderPhase.driverAssigned) {
       _state = _state.copyWith(phase: RiderPhase.driverArriving);
       notifyListeners();
+      // Save transition to cache
+      unawaited(_saveTripStateToCache());
     }
   }
 
@@ -695,6 +757,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
     _state = _state.copyWith(phase: RiderPhase.cancelled);
     notifyListeners();
+    
+    // Clear trip from cache
+    unawaited(CacheService.clearActiveTrip());
   }
 
   void reset() {
@@ -704,6 +769,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _isRequesting = false;
     _state = const RiderTripState();
     notifyListeners();
+    
+    // Clear trip from cache
+    unawaited(CacheService.clearActiveTrip());
   }
 
   @override

@@ -22,6 +22,7 @@ import 'services/security_service.dart';
 import 'services/user_session.dart';
 import 'services/local_data_service.dart';
 import 'services/local_cache.dart';
+import 'services/cache_service.dart';
 import 'services/map_cache_service.dart';
 import 'services/network_service.dart';
 import 'services/keep_alive_service.dart';
@@ -82,6 +83,10 @@ void main() async {
       // Only minimal sync work before runApp — everything else moves to
       // SplashScreen so the first frame paints instantly (no white flash).
       await SecurityService.init();
+      
+      // Initialize CacheService early — needed for instant data load on app open
+      await CacheService.initialize();
+      
       // Firebase MUST be initialized before ApiService.init() so the
       // Firestore dynamic tunnel URL read works on any network.
       try {

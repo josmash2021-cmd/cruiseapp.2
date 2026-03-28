@@ -12,6 +12,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'security_service.dart';
 import 'firebase_storage_service.dart';
+import 'photo_recovery_service.dart';
 import 'user_session.dart';
 import '../config/env.dart';
 
@@ -1158,23 +1159,33 @@ class ApiService {
     try {
       final me = await getMe();
       final userId = int.tryParse(me?['id']?.toString() ?? '') ?? 0;
+      final userUid = FirebaseAuth.instance.currentUser?.uid ?? userId.toString();
       final role = me?['role']?.toString() ?? 'rider';
       final url =
           await FirebaseStorageService.uploadProfilePhoto(filePath, userId);
+      
       // Update Firestore so Dispatch shows the photo immediately
       unawaited(
         FirebaseStorageService.updateFirestorePhotoUrl(userId, url, role),
       );
+      
       // Also update Firebase Auth photoURL for cross-device consistency
       unawaited(Future(() async {
         try {
           await FirebaseAuth.instance.currentUser?.updatePhotoURL(url);
         } catch (_) {}
       }));
+      
       // Sync URL back to backend DB so /auth/me returns the correct photo_url
       unawaited(_syncPhotoUrlToBackend(url, token));
-      // Save URL locally so it's available on next app start / other devices
+      
+      // Save to all 4 tiers: SharedPreferences, Firebase Auth, Firestore, Storage
+      // This ensures photos survive logouts, app updates, and device changes
+      unawaited(PhotoRecoveryService.savePhotoEveryWhere(userUid, url));
+      
+      // Legacy: also save through UserSession
       unawaited(UserSession.savePhotoUrl(url));
+      
       return url;
     } catch (e) {
       debugPrint('[ApiService] Firebase Storage upload failed, using backend: $e');

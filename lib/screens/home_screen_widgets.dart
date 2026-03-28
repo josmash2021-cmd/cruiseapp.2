@@ -257,6 +257,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 child: RepaintBoundary(child: _buildHeroCTA()),
               ),
 
+              // ── Hide everything below when a ride is active ──
+              if (_activeRide == null) ...[
               const SizedBox(height: 28),
 
               // ── Circular action buttons ──
@@ -336,6 +338,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   // ── Dock navigation ──
                   _buildDockNav(context, botPad),
                   SizedBox(height: botPad + 12),
+              ], // end if (_activeRide == null)
+
+              if (_activeRide != null)
+                const SizedBox(height: 20),
                 ],
               )),
               ],

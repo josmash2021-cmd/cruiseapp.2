@@ -206,6 +206,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
+    _arrivedDotPulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
     // Load car PNG based on ride type
     _loadCarIcon();
     _loadPins();
@@ -234,6 +238,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _tripStatusSub?.cancel();
     _statusPollTimer?.cancel();
     _etaPulse.dispose();
+    _arrivedDotPulse.dispose();
+    _routeFadeTimer?.cancel();
+    _startRidePhaseTimer?.cancel();
+    _markerAnimTimer?.cancel();
+    _cameraFollowTimer?.cancel();
     // Clean up map annotations so route/pins don't persist
     _cleanupMapAnnotations();
     super.dispose();
@@ -245,6 +254,52 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   // ── Camera: fit bounds to show full route (throttled, not every frame) ──
   DateTime _lastBoundsFit = DateTime(2000);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // FIX 1: ROUTE FITTING BETWEEN CARDS
+  // ══════════════════════════════════════════════════════════════════════════
+  // GlobalKeys to measure card heights for map padding
+  final GlobalKey _topCardKey = GlobalKey();
+  final GlobalKey _bottomCardKey = GlobalKey();
+
+  double get _topCardHeight {
+    final box = _topCardKey.currentContext?.findRenderObject() as RenderBox?;
+    return box?.size.height ?? 140.0;
+  }
+
+  double get _bottomCardHeight {
+    final box = _bottomCardKey.currentContext?.findRenderObject() as RenderBox?;
+    return box?.size.height ?? 80.0;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // FIX 2: DRIVER ARRIVED STATE
+  // ══════════════════════════════════════════════════════════════════════════
+  Timer? _routeFadeTimer;
+  double _routeOpacity = 1.0;
+  bool _arrivedStateInitialized = false;
+
+  // Pulsing golden dot animation for "arrived" state
+  late AnimationController _arrivedDotPulse;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // FIX 3 & 4: START RIDE ANIMATION & SMOOTH TRACKING
+  // ══════════════════════════════════════════════════════════════════════════
+  // Start ride animation phases
+  Timer? _startRidePhaseTimer;
+  int _startRidePhase = 0; // 0 = no animation, 1 = draw, 2 = zoom out, 3 = pause, 4 = zoom in, 5+ = follow mode
+  bool _startRideAnimationDone = false;
+
+  // Smooth car marker animation
+  LatLng _markerLastPos = const LatLng(0, 0);
+  LatLng _markerTargetPos = const LatLng(0, 0);
+  Timer? _markerAnimTimer;
+  int _markerAnimStep = 0;
+  bool _markAnimatingToTarget = false;
+
+  // Smooth camera follow (for real-time tracking after animation)
+  bool _shouldFollowDriver = false;
+  Timer? _cameraFollowTimer;
 
   @override
   Widget build(BuildContext context) {
@@ -271,7 +326,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 top: topPad + 10,
                 left: 16,
                 right: 16,
-                child: _buildDriverCard(),
+                child: KeyedSubtree(
+                  key: _topCardKey,
+                  child: _buildDriverCard(),
+                ),
               ),
               // LAYER 4: Resume button + Destination box (bottom)
               Positioned(
@@ -282,7 +340,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (_userMovedMap) _buildResumeButton(),
-                    _buildDestinationBox(),
+                    KeyedSubtree(
+                      key: _bottomCardKey,
+                      child: _buildDestinationBox(),
+                    ),
                   ],
                 ),
               ),

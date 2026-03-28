@@ -521,7 +521,54 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
     _setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _fitAllPoints();
+      if (mounted) {
+        _fitAllPoints();
+        // Fit route bounds after short delay to allow card measurements
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted) _fitRouteBounds();
+        });
+      }
+    });
+  }
+
+  /// Fit route bounds applying precise padding for top and bottom cards.
+  /// Called after layout is ready so card heights can be measured.
+  void _fitRouteBounds() {
+    if (_polylineAnnotMgr == null || _routePts.isEmpty) return;
+    
+    // Get actual card heights from GlobalKeys
+    final topHeight = _topCardHeight;
+    final bottomHeight = _bottomCardHeight;
+    
+    // Calculate bounds from route points, pickup, and dropoff
+    final pts = <LatLng>[widget.pickupLatLng, widget.dropoffLatLng];
+    pts.addAll(_routePts);
+    
+    double minLat = pts[0].latitude, maxLat = pts[0].latitude;
+    double minLng = pts[0].longitude, maxLng = pts[0].longitude;
+    for (final p in pts) {
+      minLat = math.min(minLat, p.latitude);
+      maxLat = math.max(maxLat, p.latitude);
+      minLng = math.min(minLng, p.longitude);
+      maxLng = math.max(maxLng, p.longitude);
+    }
+    
+    // Apply smooth padding with card measurements
+    final padding = math.max(topHeight, bottomHeight) + 48;
+    
+    _map?.cameraForCoordinatesPadding(
+      [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+       mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
+      mapbox.CameraOptions(bearing: 0, pitch: 20),
+      mapbox.MbxEdgeInsets(
+        top: topHeight + 16,
+        bottom: bottomHeight + 16,
+        left: 24,
+        right: 24,
+      ),
+      null, null,
+    ).then((cam) {
+      if (mounted && _map != null) _map!.setCamera(cam);
     });
   }
 
@@ -529,7 +576,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final now = DateTime.now();
     if (now.difference(_lastBoundsFit).inMilliseconds < 2000) return;
     _lastBoundsFit = now;
-    _updateCameraForRoute();
+    _fitRouteBounds();
   }
   
   Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
@@ -974,6 +1021,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // Cinematic intro: tilt + bearing + route draw + glow
     _startCinematicIntro();
 
+    // Fit route bounds with card padding after drawing
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fitRouteBounds();
+    });
+
     // Reveal pickup label after brief delay
     if (_pickupPinWithLabelBytes != null && !_pickupLabelRevealed) {
       Future.delayed(const Duration(milliseconds: 600), () {
@@ -1224,7 +1276,80 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // No-op: camera stays top-down always
   }
 
+  /// ──────────────────────────────────────────────────────────────────────────
+  /// FIX 2: DRIVER ARRIVED STATE
+  /// ──────────────────────────────────────────────────────────────────────────
+  
+  /// Handle driver arrival: fade route, zoom camera to driver location
+  Future<void> _handleDriverArrived() async {
+    if (_arrivedStateInitialized || _map == null) return;
+    _arrivedStateInitialized = true;
 
+    // STEP 1: Fade out the route polyline over 600ms
+    const fadeDuration = 600;
+    final startTime = DateTime.now();
+    _routeFadeTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) async {
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      final t = (elapsed / fadeDuration).clamp(0.0, 1.0);
+      _routeOpacity = 1.0 - t; // fade from 1.0 to 0.0
+      
+      // Update route polyline opacity if it exists
+      if (_remainingRouteAnnot != null && _polylineAnnotMgr != null) {
+        try {
+          final newOpacity = _routeOpacity;
+          _polylineAnnotMgr!.update(
+            _remainingRouteAnnot!..lineOpacity = newOpacity,
+          );
+        } catch (_) {}
+      }
+      
+      if (t >= 1.0) {
+        timer.cancel();
+        _routeFadeTimer = null;
+        // Remove route annotation entirely after fade completes
+        if (_remainingRouteAnnot != null && _polylineAnnotMgr != null) {
+          try { 
+            await _polylineAnnotMgr!.delete(_remainingRouteAnnot!); 
+          } catch (_) {}
+          _remainingRouteAnnot = null;
+        }
+        // Remove destination pin as well
+        if (_dropoffAnnot != null && _pointAnnotMgr != null) {
+          try { 
+            await _pointAnnotMgr!.delete(_dropoffAnnot!); 
+          } catch (_) {}
+          _dropoffAnnot = null;
+        }
+      }
+    });
+
+    // STEP 2: Animate camera to zoom in on driver location
+    // Zoom to 16.5 with 20 degree tilt
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_map == null || !mounted) return;
+      _map?.cameraForCoordinatesPadding(
+        [mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude))],
+        mapbox.CameraOptions(bearing: 0, pitch: 20.0, zoom: 16.5),
+        mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
+        null, null,
+      ).then((cam) {
+        if (_map != null && mounted) {
+          _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 800));
+        }
+      });
+    });
+
+    // Remove approach line if it exists
+    if (_approachAnnot != null && _polylineAnnotMgr != null) {
+      try { await _polylineAnnotMgr!.delete(_approachAnnot!); } catch (_) {}
+      _approachAnnot = null;
+    }
+  }
+
+  /// Fade and remove the route polyline (for arrived state)
+  Future<void> _fadeAndRemoveRoute() async {
+    // This is handled by _handleDriverArrived
+  }
 
   Future<void> _updateAnnotations() async {
     _updateCarSmooth();

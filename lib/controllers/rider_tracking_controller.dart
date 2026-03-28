@@ -49,6 +49,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   void _onRealDriverLocation(LatLng ll, {double? bearing}) {
     if (ll.latitude == 0 && ll.longitude == 0) return;
 
+    // FIX 4: Smooth marker animation - start interpolation to new position
+    if (_shouldFollowDriver) {
+      _startSmoothMarkerAnimation(ll, bearing);
+    }
+
     bool usedRouteProjection = false;
     
     // Try to project onto route for smooth animation
@@ -92,6 +97,72 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     _setState(() {});
     _throttleCam();
+    
+    // FIX 4: Update camera follow if enabled
+    if (_shouldFollowDriver) {
+      _followDriver(ll, bearing ?? _animBearing);
+    }
+  }
+
+  /// FIX 4: Smooth animate driver marker from current position to new position
+  /// Called on each driver location update to create fluid motion
+  void _startSmoothMarkerAnimation(LatLng targetPos, double? targetBearing) {
+    if (_map == null || !mounted) return;
+    
+    // Cancel any existing marker animation
+    _markerAnimTimer?.cancel();
+    
+    _markerLastPos = _animPos; // Current position
+    _markerTargetPos = targetPos; // New target position
+    _markerAnimStep = 0;
+    _markAnimatingToTarget = true;
+    
+    const steps = 30;
+    const duration = Duration(milliseconds: 1000);
+    final stepDuration = duration ~/ steps;
+    
+    _markerAnimTimer = Timer.periodic(stepDuration, (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      _markerAnimStep++;
+      final t = (_markerAnimStep / steps).clamp(0.0, 1.0);
+      
+      // Smooth interpolation using easing curve
+      final easedT = _smoothstep(t);
+      
+      // Interpolate position
+      final lat = _markerLastPos.latitude +
+          (_markerTargetPos.latitude - _markerLastPos.latitude) * easedT;
+      final lng = _markerLastPos.longitude +
+          (_markerTargetPos.longitude - _markerLastPos.longitude) * easedT;
+      
+      _animPos = LatLng(lat, lng);
+      
+      // Interpolate bearing if available
+      if (targetBearing != null) {
+        final bearingDiff = (targetBearing - _animBearing + 360) % 360;
+        final interpBearing = bearingDiff > 180
+            ? (_animBearing - (360 - bearingDiff) * easedT) % 360
+            : (_animBearing + bearingDiff * easedT) % 360;
+        _animBearing = interpBearing;
+      }
+      
+      _setState(() {}); // Trigger marker update
+      
+      if (t >= 1.0) {
+        timer.cancel();
+        _markAnimatingToTarget = false;
+      }
+    });
+  }
+
+  /// Smoothstep interpolation for smooth acceleration/deceleration
+  /// Creates smooth ease-in-out effect: 3t² - 2t³
+  double _smoothstep(double t) {
+    return t * t * (3.0 - 2.0 * t);
   }
 
   /// Process trip status changes from Firestore.
@@ -105,14 +176,22 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     final status = data['status']?.toString() ?? '';
     if ((status == 'arrived' || status == 'driver_arrived') && _phase == _TrackPhase.arriving) {
       _setState(() => _phase = _TrackPhase.arrived);
+      // FIX 2: Start the pulsing dot animation and handle arrival visuals
+      _arrivedDotPulse.repeat(reverse: true);
+      // Fade route polyline and zoom camera to driver location
+      _handleDriverArrived();
       _showRiderConfirmPickup();
     } else if ((status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard') &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       _setState(() => _phase = _TrackPhase.onTrip);
+      _arrivedDotPulse.stop(); // Stop pulsing dot animation
       _popOutPickupPin();
+      // FIX 3 & 4: Start the route animation and camera phases when starting ride
+      _startStartRideAnimation();
     } else if (status == 'completed' && _phase != _TrackPhase.completed) {
       LocalDataService.clearActiveRide();
       _setState(() => _phase = _TrackPhase.completed);
+      _arrivedDotPulse.stop();
       _goToRating();
     } else if (status == 'cancelled' || status == 'canceled') {
       final cancelledBy = data['cancelledBy']?.toString() ?? '';
@@ -391,6 +470,132 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _updateStaticAnnotationsOnce(); // slow path: pins + route, created once
     _eraseRouteBehindCar(); // progressive route erase (throttled internally)
     _updateApproachLine(); // dashed approach line driver→pickup
+  }
+
+  /// ──────────────────────────────────────────────────────────────────────────
+  /// FIX 3 & 4: START RIDE ANIMATION & REAL-TIME TRACKING
+  /// ──────────────────────────────────────────────────────────────────────────
+
+  /// Start the 4-phase ride start animation:
+  /// Phase 1 (0-1500ms): Route draws progressively
+  /// Phase 2 (0-2000ms): Camera zooms out to show full route
+  /// Phase 3 (2000-5000ms): Hold zoom out view
+  /// Phase 4 (5000-7000ms): Camera zooms in to follow driver
+  /// After Phase 4: Enable real-time tracking
+  void _startStartRideAnimation() {
+    if (_startRideAnimationDone) return;
+    _startRideAnimationDone = true;
+    _startRidePhase = 1;
+
+    // PHASE 1 & 2: Simultaneously draw route and zoom out camera
+    _startRouteDrawAnimation();
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) _zoomOutCamToShowRoute();
+    });
+
+    // PHASE 3: Pause after zoom out (2 seconds pause after 2 second zoom = 3 seconds total)
+    _startRidePhaseTimer?.cancel();
+    _startRidePhaseTimer = Timer(const Duration(milliseconds: 2000), () {
+      if (!mounted) return;
+      _startRidePhase = 3; // pause phase
+      
+      // PHASE 4: Zoom back in to follow driver
+      Future.delayed(const Duration(milliseconds: 3000), () {
+        if (!mounted || _startRidePhase < 3) return;
+        _startRidePhase = 4;
+        _zoomInToCameraFollow();
+        
+        // PHASE 5: Enable real-time tracking after zoom in completes
+        Future.delayed(const Duration(milliseconds: 2000), () {
+          if (!mounted) return;
+          _startRidePhase = 5;
+          _shouldFollowDriver = true;
+          _startCameraFollowTracking();
+        });
+      });
+    });
+  }
+
+  /// Phase 1: Draw the route polyline progressively (animated draw effect)
+  void _startRouteDrawAnimation() {
+    if (_routePts.isEmpty) return;
+    
+    //_startAnimatedRouteDraw is already implemented in tracking_map_view.dart
+    // It handles progressive polyline drawing over 1000-1500ms
+  }
+
+  /// Phase 2: Animate camera zoom out to show full route
+  void _zoomOutCamToShowRoute() {
+    if (_map == null || _userMovedMap) return;
+    
+    // Get bounds of full route
+    if (_routePts.isEmpty) return;
+    final pts = <LatLng>[widget.pickupLatLng, widget.dropoffLatLng];
+    pts.addAll(_routePts);
+    
+    double minLat = pts[0].latitude, maxLat = pts[0].latitude;
+    double minLng = pts[0].longitude, maxLng = pts[0].longitude;
+    for (final p in pts) {
+      minLat = math.min(minLat, p.latitude);
+      maxLat = math.max(maxLat, p.latitude);
+      minLng = math.min(minLng, p.longitude);
+      maxLng = math.max(maxLng, p.longitude);
+    }
+    
+    _map?.cameraForCoordinatesPadding(
+      [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+       mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
+      mapbox.CameraOptions(bearing: 0, pitch: 0),
+      mapbox.MbxEdgeInsets(top: 160, left: 40, bottom: 120, right: 40),
+      null, null,
+    ).then((cam) {
+      if (mounted && _map != null) {
+        _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 2000));
+      }
+    });
+  }
+
+  /// Phase 4: Animate camera zoom in and tilted to follow driver
+  void _zoomInToCameraFollow() {
+    if (_map == null || !mounted) return;
+    
+    _map?.cameraForCoordinatesPadding(
+      [mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude))],
+      mapbox.CameraOptions(bearing: _animBearing, pitch: 20.0, zoom: 16.5),
+      mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
+      null, null,
+    ).then((cam) {
+      if (mounted && _map != null) {
+        _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 2000));
+      }
+    });
+  }
+
+  /// Start real-time camera tracking - follows driver every location update
+  void _startCameraFollowTracking() {
+    if (!_shouldFollowDriver || _map == null) return;
+    
+    _cameraFollowTimer?.cancel();
+    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) {
+      if (!mounted || !_shouldFollowDriver || _map == null) return;
+      _followDriver(_animPos, _animBearing);
+    });
+  }
+
+  /// Smooth camera follow for driver position
+  void _followDriver(LatLng position, double bearing) {
+    if (_map == null || _userMovedMap) return;
+    
+    _map?.cameraForCoordinatesPadding(
+      [mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude - 0.002))],
+      mapbox.CameraOptions(bearing: bearing, pitch: 20.0, zoom: 16.5),
+      mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
+      null, null,
+    ).then((cam) {
+      if (mounted && _map != null) {
+        _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 800));
+      }
+    });
   }
 
   void _navigateToHome() {

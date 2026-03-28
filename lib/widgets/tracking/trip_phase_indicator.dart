@@ -9,10 +9,27 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
   // ── Destination + ETA box (floats at bottom) ──
   Widget _buildDestinationBox() {
     final s = S.of(context);
-    final destAddr = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.completed
-        ? (widget.dropoffLabel.trim().isNotEmpty ? widget.dropoffLabel : s.destinationLabel)
-        : (widget.pickupLabel.trim().isNotEmpty ? widget.pickupLabel : s.pickupLocation);
-    final statusTag = _phase == _TrackPhase.arrived
+    
+    // FIX 2 + FIX 5: Show arrival message OR real pickup address
+    String mainText;
+    Color textColor = Colors.white;
+    bool isArrivedState = _phase == _TrackPhase.arrived;
+    
+    if (isArrivedState) {
+      mainText = '¡Tu driver ya ha llegado!';
+      textColor = const Color(0xFFC8A951); // golden color
+    } else if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.completed) {
+      mainText = widget.dropoffLabel.trim().isNotEmpty 
+        ? widget.dropoffLabel 
+        : s.destinationLabel;
+    } else {
+      // FIX 5: Show real pickup address, not "Current location"
+      mainText = widget.pickupLabel.trim().isNotEmpty 
+        ? widget.pickupLabel 
+        : s.pickupLocation;
+    }
+
+    final statusTag = isArrivedState
         ? s.yourDriverArrivedExcl
         : (_phase == _TrackPhase.onTrip ? s.onTripToDestination : s.meetDriverAtPickup);
 
@@ -36,20 +53,54 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  statusTag,
-                  style: const TextStyle(
-                    color: Color(0xFFD4AF37),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.8,
-                  ),
+                // Status label with pulsing dot (FIX 2)
+                Row(
+                  children: [
+                    // FIX 2: Pulsing golden dot for arrived state
+                    if (isArrivedState)
+                      ScaleTransition(
+                        scale: Tween<double>(begin: 0.7, end: 1.3)
+                            .animate(_arrivedDotPulse),
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFFC8A951),
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFFD4AF37),
+                        ),
+                      ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        statusTag,
+                        style: const TextStyle(
+                          color: Color(0xFFD4AF37),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.8,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 2),
+                // FIX 2: Animate text color change to golden when arrived
                 Text(
-                  destAddr,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  mainText,
+                  style: TextStyle(
+                    color: textColor,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -60,38 +111,39 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
             ),
           ),
           const SizedBox(width: 12),
-          // ETA badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '$_etaMinutes',
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
+          // ETA badge (hidden when arrived)
+          if (!isArrivedState)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
-                ),
-                const Text(
-                  'min',
-                  style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
-                ),
-              ],
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$_etaMinutes',
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const Text(
+                    'min',
+                    style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

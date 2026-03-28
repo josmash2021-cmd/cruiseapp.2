@@ -89,10 +89,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           );
         }
       }
-    } else if (_phase == _TrackPhase.onTrip) {
+    } else if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination) {
       final dist = _hav(ll, widget.dropoffLatLng);
       _distanceMiles = dist;
       _etaMinutes = (dist / 0.5).ceil().clamp(1, 99);
+      // Transition to nearDestination when ETA <= 2 min
+      if (_etaMinutes <= 2 && _phase == _TrackPhase.onTrip) {
+        _setState(() => _phase = _TrackPhase.nearDestination);
+      } else if (_etaMinutes > 2 && _phase == _TrackPhase.nearDestination) {
+        // Transition back if driver moved away (re-routing)
+        _setState(() => _phase = _TrackPhase.onTrip);
+      }
     }
 
     _setState(() {});
@@ -184,6 +191,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     } else if ((status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard') &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       _setState(() => _phase = _TrackPhase.onTrip);
+    } else if ((status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard') &&
+        _phase == _TrackPhase.nearDestination) {
+      // Already near destination — don't reset to onTrip
       _arrivedDotPulse.stop(); // Stop pulsing dot animation
       _popOutPickupPin();
       // FIX 3 & 4: Start the route animation and camera phases when starting ride
@@ -333,6 +343,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           _phase = _TrackPhase.arrived;
         case 'onTrip':
           _phase = _TrackPhase.onTrip;
+        case 'nearDestination':
+          _phase = _TrackPhase.nearDestination;
         default:
           _phase = _TrackPhase.arriving;
       }
@@ -382,6 +394,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         phaseStr = 'arrived';
       case _TrackPhase.onTrip:
         phaseStr = 'onTrip';
+      case _TrackPhase.nearDestination:
+        phaseStr = 'nearDestination';
       default:
         phaseStr = 'arriving';
     }

@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/mapbox_config.dart';
@@ -20,6 +21,7 @@ import '../../widgets/map/circular_pin_renderer.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../chat_screen.dart';
+import '../help_screen.dart';
 import 'driver_home_screen.dart';
 import 'driver_nav_screen.dart';
 
@@ -567,18 +569,219 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       items: [
         _SheetItem(Icons.location_on_rounded, 'Problem with pickup address',
             'The pickup location is incorrect or unclear',
-            () => Navigator.pop(context)),
+            () { Navigator.pop(context); _showPickupProblem(); }),
         _SheetItem(Icons.flag_rounded, 'Problem with dropoff address',
             'The dropoff location is incorrect or unclear',
-            () => Navigator.pop(context)),
+            () { Navigator.pop(context); _showDropoffProblem(); }),
         _SheetItem(Icons.directions_car_rounded, 'Problem with trip',
             'Other issue with this trip',
-            () => Navigator.pop(context)),
+            () { Navigator.pop(context); _showTripProblem(); }),
         _SheetItem(Icons.support_agent_rounded, 'Contact Support',
             'Speak with a support agent',
-            () => Navigator.pop(context)),
+            () { Navigator.pop(context); _openSupportChat(); }),
       ],
     );
+  }
+
+  // ── Help button 1 — Pickup address problem ─────────────────────────────
+  void _showPickupProblem() {
+    _showReportSheet(
+      title: 'Problema con dirección de recogida',
+      type: 'pickup_address_problem',
+      reasons: [
+        'La dirección es incorrecta',
+        'No puedo encontrar el lugar',
+        'El rider no está en la ubicación',
+        'Otra razón',
+      ],
+    );
+  }
+
+  // ── Help button 2 — Dropoff address problem ────────────────────────────
+  void _showDropoffProblem() {
+    _showReportSheet(
+      title: 'Problema con dirección de destino',
+      type: 'dropoff_address_problem',
+      reasons: [
+        'La dirección es incorrecta',
+        'No puedo llegar a ese lugar',
+        'El destino no existe',
+        'Otra razón',
+      ],
+    );
+  }
+
+  // ── Help button 3 — Trip problem ───────────────────────────────────────
+  void _showTripProblem() {
+    _showReportSheet(
+      title: 'Problema con el viaje',
+      type: 'trip_problem',
+      reasons: [
+        'El rider no aparece',
+        'El rider canceló de forma inapropiada',
+        'Problema de seguridad',
+        'El viaje fue modificado sin mi consentimiento',
+        'Otra razón',
+      ],
+    );
+  }
+
+  // ── Help button 4 — Contact Support (live chat) ────────────────────────
+  void _openSupportChat() {
+    HapticFeedback.lightImpact();
+    Navigator.of(context).push(
+      slideFromRightRoute(const CruiseSupportChatScreen()),
+    );
+  }
+
+  // ── Generic report bottom sheet ────────────────────────────────────────
+  void _showReportSheet({
+    required String title,
+    required String type,
+    required List<String> reasons,
+  }) {
+    final bot = MediaQuery.of(context).padding.bottom;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1a1a2e),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          border: Border(top: BorderSide(color: Color(0xFFc8a951), width: 1)),
+        ),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, bot + 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(title, style: const TextStyle(
+                color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(height: 14),
+            ...reasons.map((reason) => _reportOption(ctx, reason, type)),
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Text('Cancelar',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.42),
+                    fontSize: 14, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _reportOption(BuildContext ctx, String reason, String type) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(ctx);
+        if (type == 'trip_problem' && reason == 'Problema de seguridad') {
+          _showSafetyConfirmation(reason, type);
+        } else {
+          _submitReport(type: type, reason: reason, urgent: false);
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0d0d1a),
+          borderRadius: BorderRadius.circular(12),
+          border: const Border(left: BorderSide(color: Color(0xFFc8a951), width: 2)),
+        ),
+        child: Row(children: [
+          Expanded(child: Text(reason,
+            style: const TextStyle(color: Colors.white, fontSize: 14,
+              fontWeight: FontWeight.w700))),
+          const Icon(Icons.chevron_right_rounded, color: Color(0xFFc8a951), size: 20),
+        ]),
+      ),
+    );
+  }
+
+  // ── Safety emergency confirmation ──────────────────────────────────────
+  void _showSafetyConfirmation(String reason, String type) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a2e),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('¿Necesitas ayuda de emergencia?',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 17)),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _submitReport(type: type, reason: reason, urgent: true);
+            },
+            child: Text('No, solo reportar',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _submitReport(type: type, reason: reason, urgent: true);
+              launchUrl(Uri.parse('tel:911'));
+            },
+            child: const Text('Sí, llamar al 911',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Submit report to Firestore ─────────────────────────────────────────
+  Future<void> _submitReport({
+    required String type,
+    required String reason,
+    required bool urgent,
+  }) async {
+    try {
+      final driverId = FirebaseAuth.instance.currentUser?.uid ?? '';
+      await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.tripId.toString())
+          .collection('reports')
+          .add({
+        'type': type,
+        'reason': reason,
+        'reportedAt': FieldValue.serverTimestamp(),
+        'tripId': widget.tripId,
+        'driverId': driverId,
+        if (urgent) 'urgent': true,
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Reporte enviado. El equipo lo revisará.'),
+        backgroundColor: Color(0xFF1a1a2e),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Error al enviar reporte: $e'),
+        backgroundColor: Colors.red,
+      ));
+    }
   }
 
   void _showSheet({

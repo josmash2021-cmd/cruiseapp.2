@@ -87,7 +87,7 @@ class RiderTrackingScreen extends StatefulWidget {
   State<RiderTrackingScreen> createState() => _RiderTrackingScreenState();
 }
 
-enum _TrackPhase { arriving, arrived, onTrip, completed }
+enum _TrackPhase { arriving, arrived, onTrip, nearDestination, completed }
 enum _PinIcon { house, store, airplane, person }
 
 const String _carSourceId = 'car-source';

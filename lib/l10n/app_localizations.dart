@@ -863,6 +863,26 @@ class S {
       : '$firstName is waiting at the pickup spot in a $color $model.';
   String get onTripToDestination =>
       _es ? 'En viaje al destino' : 'On trip to destination';
+  String get driverEnRoute =>
+      _es ? 'Tu conductor está en camino' : 'Your driver is on the way';
+  String get driverHasArrived =>
+      _es ? 'Tu conductor ha llegado' : 'Your driver has arrived';
+  String get onWayToDestination =>
+      _es ? 'En camino a tu destino' : 'On the way to your destination';
+  String get arrivingAtDestination =>
+      _es ? 'Llegando a tu destino' : 'Arriving at your destination';
+  String get driverOnTheWayCard =>
+      _es ? 'Conductor en camino' : 'Driver on the way';
+  String get driverWaitingForYou =>
+      _es ? 'Tu conductor te está esperando' : 'Your driver is waiting for you';
+  String get onWayToDestinationCard =>
+      _es ? 'En camino a tu destino' : 'On the way to your destination';
+  String get arrivingAtDestinationCard =>
+      _es ? 'Llegando a tu destino' : 'Arriving at your destination';
+  String get waitingForDriver =>
+      _es ? 'Buscando conductor...' : 'Looking for a driver...';
+  String get waitingForDriverCard =>
+      _es ? 'Esperando conductor...' : 'Waiting for driver...';
   String get youHaveArrived => _es ? '¡Has llegado!' : 'You have arrived!';
   String get whatWentWell => _es ? '¿Qué salió bien?' : 'What went well?';
   String get showMore => _es ? 'Mostrar más' : 'Show more';
@@ -1995,7 +2015,6 @@ class S {
   String get okButton => _es ? 'OK' : 'OK';
   String arrivalTime(String time) => _es ? 'Llegada $time' : 'Arrival $time';
   String etaLabel(String eta) => 'ETA $eta';
-  String get driverEnRoute => _es ? 'Conductor en camino' : 'Driver en route';
   String get addOrChange => _es ? 'Agregar o\nCambiar' : 'Add or\nChange';
   String get howsYourRide =>
       _es ? '¿Cómo va tu viaje?' : "How's your ride going?";

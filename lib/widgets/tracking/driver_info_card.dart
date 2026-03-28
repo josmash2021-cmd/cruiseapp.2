@@ -41,6 +41,8 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
         statusLabel = s.yourDriverArrivedExcl;
       case _TrackPhase.onTrip:
         statusLabel = s.onTripToDestination;
+      case _TrackPhase.nearDestination:
+        statusLabel = s.arrivingAtDestination;
       case _TrackPhase.completed:
         statusLabel = s.youHaveArrived;
     }

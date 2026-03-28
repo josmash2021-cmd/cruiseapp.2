@@ -6,32 +6,62 @@ part of '../../screens/rider_tracking_screen.dart';
 
 extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
 
+  // ── Phase-based status text (top label) ──
+  String get _topStatusText {
+    final s = S.of(context);
+    switch (_phase) {
+      case _TrackPhase.arriving:
+        return s.driverEnRoute;
+      case _TrackPhase.arrived:
+        return s.driverHasArrived;
+      case _TrackPhase.onTrip:
+        return s.onWayToDestination;
+      case _TrackPhase.nearDestination:
+        return s.arrivingAtDestination;
+      case _TrackPhase.completed:
+        return s.onWayToDestination;
+    }
+  }
+
+  // ── Phase-based bottom card text ──
+  String get _bottomCardText {
+    final s = S.of(context);
+    switch (_phase) {
+      case _TrackPhase.arriving:
+        return s.driverOnTheWayCard;
+      case _TrackPhase.arrived:
+        return s.driverWaitingForYou;
+      case _TrackPhase.onTrip:
+        return s.onWayToDestinationCard;
+      case _TrackPhase.nearDestination:
+        return s.arrivingAtDestinationCard;
+      case _TrackPhase.completed:
+        return s.onWayToDestinationCard;
+    }
+  }
+
+  // ── Phase-based dot color ──
+  Color get _dotColor {
+    switch (_phase) {
+      case _TrackPhase.arriving:
+        return const Color(0xFFFFD700); // Golden — driver en camino
+      case _TrackPhase.arrived:
+        return const Color(0xFF2196F3); // Blue — driver llegó al pickup
+      case _TrackPhase.onTrip:
+        return const Color(0xFFFFD700); // Golden — en camino al destino
+      case _TrackPhase.nearDestination:
+        return const Color(0xFFFFD700); // Golden — llegando
+      case _TrackPhase.completed:
+        return const Color(0xFFFFD700);
+    }
+  }
+
   // ── Destination + ETA box (floats at bottom) ──
   Widget _buildDestinationBox() {
-    final s = S.of(context);
-    
-    // FIX 2 + FIX 5: Show arrival message OR real pickup address
-    String mainText;
-    Color textColor = Colors.white;
-    bool isArrivedState = _phase == _TrackPhase.arrived;
-    
-    if (isArrivedState) {
-      mainText = '¡Tu driver ya ha llegado!';
-      textColor = const Color(0xFFC8A951); // golden color
-    } else if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.completed) {
-      mainText = widget.dropoffLabel.trim().isNotEmpty 
-        ? widget.dropoffLabel 
-        : s.destinationLabel;
-    } else {
-      // FIX 5: Show real pickup address, not "Current location"
-      mainText = widget.pickupLabel.trim().isNotEmpty 
-        ? widget.pickupLabel 
-        : s.pickupLocation;
-    }
-
-    final statusTag = isArrivedState
-        ? s.yourDriverArrivedExcl
-        : (_phase == _TrackPhase.onTrip ? s.onTripToDestination : s.meetDriverAtPickup);
+    final bool isArrivedState = _phase == _TrackPhase.arrived;
+    final String topText = _topStatusText;
+    final String bottomText = _bottomCardText;
+    final Color dotColor = _dotColor;
 
     return Container(
       decoration: BoxDecoration(
@@ -53,59 +83,73 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Status label with pulsing dot (FIX 2)
+                // Status label with phase-based dot color
                 Row(
                   children: [
-                    // FIX 2: Pulsing golden dot for arrived state
+                    // Phase-based dot: pulsing on arrived, animated color transitions
                     if (isArrivedState)
                       ScaleTransition(
                         scale: Tween<double>(begin: 0.7, end: 1.3)
                             .animate(_arrivedDotPulse),
-                        child: Container(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 500),
                           width: 8,
                           height: 8,
-                          decoration: const BoxDecoration(
+                          decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: Color(0xFFC8A951),
+                            color: dotColor,
                           ),
                         ),
                       )
                     else
-                      Container(
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 500),
                         width: 8,
                         height: 8,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Color(0xFFD4AF37),
+                          color: dotColor,
                         ),
                       ),
                     const SizedBox(width: 8),
                     Flexible(
-                      child: Text(
-                        statusTag,
-                        style: const TextStyle(
-                          color: Color(0xFFD4AF37),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.8,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 400),
+                        transitionBuilder: (child, anim) =>
+                            FadeTransition(opacity: anim, child: child),
+                        child: Text(
+                          topText,
+                          key: ValueKey(topText),
+                          style: TextStyle(
+                            color: dotColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.8,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 2),
-                // FIX 2: Animate text color change to golden when arrived
-                Text(
-                  mainText,
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
+                // Bottom card text — changes per phase with smooth fade
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  transitionBuilder: (child, anim) =>
+                      FadeTransition(opacity: anim, child: child),
+                  child: Text(
+                    bottomText,
+                    key: ValueKey(bottomText),
+                    style: TextStyle(
+                      color: isArrivedState ? const Color(0xFFC8A951) : Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

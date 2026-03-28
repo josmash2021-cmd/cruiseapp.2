@@ -468,6 +468,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
   Future<void> _runCinematicSequence() async {
     // ── Phase 1: Centered overview (instant via setCamera) ──
     await _zoomToShowRoute();
+    if (!mounted) return;
 
     // ── Phase 2: Tilt down to 55° (1.5s) ──
     final dest = _sm.phase == TripPhase.onTrip
@@ -485,9 +486,11 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
     );
     await Future.delayed(const Duration(milliseconds: 1600));
+    if (!mounted) return;
 
     // ── Phase 3: Pause 2 seconds ──
     await Future.delayed(const Duration(milliseconds: 2000));
+    if (!mounted) return;
 
     // ── Phase 4: Rotate +15° and zoom in (1.5s) ──
     _map?.flyTo(
@@ -501,6 +504,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
     );
     await Future.delayed(const Duration(milliseconds: 1600));
+    if (!mounted) return;
 
     // ── Phase 5: Final zoom to nav position with lookahead (1s) ──
     final ahead = _lookaheadPoint(_pos, _bearing, 120);
@@ -515,11 +519,10 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
       mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
     );
     await Future.delayed(const Duration(milliseconds: 1100));
+    if (!mounted) return;
 
     // Enable locked navigation camera
-    if (mounted) {
-      setState(() => _cameraFollowing = true);
-    }
+    setState(() => _cameraFollowing = true);
   }
 
   Future<void> _zoomToShowRoute() async {

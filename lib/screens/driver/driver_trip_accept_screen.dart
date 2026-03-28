@@ -899,6 +899,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Future<void> _onMapReady(mapbox.MapboxMap ctrl) async {
     _map = ctrl;
     await MapTheme.applyNavyGold(ctrl);
+    if (!mounted) return;
     _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
     _annotMgr = await ctrl.annotations.createPointAnnotationManager();
     try { await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
@@ -909,8 +910,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     // 2. Build unified gold teardrop pins in parallel (don't place yet)
     final pinResults = await Future.wait([
-      renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // pickup
-      renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32),  // dropoff
+      renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),
+      renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32),
     ]);
     if (!mounted) return;
 
@@ -932,66 +933,72 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final cam = await ctrl.cameraForCoordinateBounds(
       bounds,
       mapbox.MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
-      null,
-      null,
-      null,
-      null,
+      null, null, null, null,
     );
-    // Set an initial camera close to the route center, then animate.
+    if (!mounted) return;
+
+    // Phase 1: Set camera to route overview — flat, no tilt/bearing yet.
     ctrl.setCamera(mapbox.CameraOptions(
       center: cam.center,
-      zoom: (cam.zoom ?? 13) - 2.5,
+      zoom: (cam.zoom ?? 13) - 0.5,
       bearing: 0,
       pitch: 0,
     ));
 
-    // Animate to full route bounds with tilt + bearing.
-    await Future.delayed(const Duration(milliseconds: 200));
+    // Phase 2: Wait 700ms then fire cinematic tilt+bearing (matches rider).
+    await Future.delayed(const Duration(milliseconds: 700));
     if (!mounted) return;
-    await ctrl.flyTo(
+
+    // Random bearing 5–15° left or right — same as rider's cinematic.
+    final rng = math.Random();
+    final degrees = 5.0 + rng.nextDouble() * 10.0;
+    final randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
+
+    // Kick off tilt to 55° + random bearing (1200ms) — don't await; run concurrently.
+    ctrl.flyTo(
       mapbox.CameraOptions(
         center: cam.center,
         zoom: (cam.zoom ?? 13) - 0.5,
-        bearing: 15.0,
-        pitch: 20.0,
+        bearing: randomBearing,
+        pitch: 55.0,
       ),
       mapbox.MapAnimationOptions(duration: 1200),
     );
 
-    // 4. Pins must use exact line endpoints (not geocoded address coords).
-    final pickupPoint = routeCoordinates.first;
-    final dropoffPoint = routeCoordinates.last;
-
-    // 5. Pop pins in
+    // Phase 3: Place pins + pop them at 500ms into the tilt (mid-animation).
+    await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
+
+    final pickupPoint  = routeCoordinates.first;
+    final dropoffPoint = routeCoordinates.last;
 
     _pinAnnots.clear();
     if (_annotMgr != null) {
-      // Pickup pin — unified gold pin
       final pickupAnnot = await _annotMgr!.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: pickupPoint),
         image: pinResults[0], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
+      if (!mounted) return;
       _pinAnnots.add(pickupAnnot);
-      // Dropoff pin — unified gold pin
       final dropoffAnnot = await _annotMgr!.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: dropoffPoint),
         image: pinResults[1], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
+      if (!mounted) return;
       _pinAnnots.add(dropoffAnnot);
     }
-    // Animate pin pop: 0.01 → 1.15 → 0.95 → 1.0
+    // Spring pop: 0.01 → 1.15 → 0.95 → 1.0
     _pinPopAnim.addListener(_updatePinScale);
     _pinPopCtrl.forward(from: 0);
+
+    // Phase 4: Gold route draw 300ms after pin pop starts.
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
 
-    // 6. Draw single gold gloss route animated (~1s regardless of route length)
     await _animateGoldRoute(
       points: _routePoints,
       duration: const Duration(milliseconds: 1000),
     );
-    if (!mounted) return;
   }
 
   void _updatePinScale() {

@@ -492,9 +492,18 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       });
       _navService.startNavigation(route);
       _updateRouteAnnotation();
-      if (widget.startWithOverview && _phase == TripPhase.toPickup) {
+      // Only show overview camera if the cinematic hasn't already taken control.
+      // When _cinematicDone is true the cinematic is running or done — let it own the camera.
+      if (widget.startWithOverview && _phase == TripPhase.toPickup && !_cinematicDone) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _animateCameraOverview(_pos, dest);
+        });
+      }
+      // If map is ready but cinematic hasn't fired yet (route loaded after map),
+      // trigger it now so it always plays exactly once.
+      if (_mapReady && !_cinematicDone) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _startCinematicEntry();
         });
       }
     } else if (_routePts.length > 1) {
@@ -625,6 +634,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
     // ── Phase 1: Centered overview (instant via setCamera) ──
     await _zoomToShowRoute();
+    if (!mounted) return;
 
     // ── Phase 2: Tilt down to 55° (1.5s) ──
     // Compute initial bearing toward destination
@@ -643,9 +653,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
     );
     await Future.delayed(const Duration(milliseconds: 1600));
+    if (!mounted) return;
 
     // ── Phase 3: Pause 2 seconds ──
     await Future.delayed(const Duration(milliseconds: 2000));
+    if (!mounted) return;
 
     // ── Phase 4: Rotate +15° and zoom in (1.5s) ──
     _map?.flyTo(
@@ -659,6 +671,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
     );
     await Future.delayed(const Duration(milliseconds: 1600));
+    if (!mounted) return;
 
     // ── Phase 5: Final zoom to nav position with lookahead (1s) ──
     final ahead = _lookaheadPoint(_pos, _bearing, 120);
@@ -673,6 +686,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
     );
     await Future.delayed(const Duration(milliseconds: 1100));
+    if (!mounted) return;
 
     // Enable locked navigation camera
     setState(() {

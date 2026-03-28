@@ -43,6 +43,7 @@ import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
 import 'scheduled_rides_screen.dart';
 import 'searching_driver_screen.dart';
+import 'home_screen.dart';
 
 part 'ride_request_controller.dart';
 part 'ride_request_map.dart';

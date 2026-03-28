@@ -1424,6 +1424,13 @@ extension _RideRequestController on _RideRequestScreenState {
             onPressed: () {
               Navigator.of(ctx).pop();
               _cancelSearching();
+              // Navigate to home screen with fade transition
+              if (mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  smoothFadeRoute(const HomeScreen()),
+                  (_) => false,
+                );
+              }
             },
             child: Text(
               S.of(context).yesCancelBtn,

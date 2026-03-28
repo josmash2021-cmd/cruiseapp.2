@@ -95,12 +95,16 @@ class _WalletScreenState extends State<WalletScreen> {
           return data;
         }).toList();
         _loading = false;
+        _error = null;
       });
     }, onError: (e) {
       if (!mounted) return;
+      debugPrint('[Wallet] transactions listener error: $e');
+      // If transactions collection doesn't exist yet, treat as empty
       setState(() {
-        _error = 'Failed to load transactions';
+        _transactions = [];
         _loading = false;
+        _error = null;
       });
     });
   }

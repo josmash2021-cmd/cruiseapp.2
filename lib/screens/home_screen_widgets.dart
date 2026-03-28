@@ -143,16 +143,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
       child: Row(
         children: [
           const SizedBox(width: 10),
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _gold.withValues(alpha: 0.15),
-              border: Border.all(color: _gold.withValues(alpha: 0.4)),
-            ),
-            child: const Icon(Icons.directions_car_rounded,
-                color: _gold, size: 16),
+          // Car image — no border, no glow — picked by ride type
+          Image.asset(
+            _getCarAssetForRideType(_activeRide?.rideName ?? ''),
+            width: 48,
+            height: 28,
+            fit: BoxFit.contain,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -907,13 +903,18 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   ),
                 ),
               ),
-              // Car pin at leading edge — NO glow, NO shadow
+              // Car image at leading edge — matches selected ride type
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 1000),
                 curve: Curves.easeInOut,
                 left: carX,
-                bottom: barH - 10,
-                child: const RideCarIcon(size: 40),
+                bottom: barH - 4,
+                child: Image.asset(
+                  _getCarAssetForRideType(_activeRide?.rideName ?? ''),
+                  width: 44,
+                  height: 26,
+                  fit: BoxFit.contain,
+                ),
               ),
             ],
           ),
@@ -932,18 +933,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Clean car icon — no border, no glow
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                color: _gold.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: const Center(
-                child: RideCarIcon(size: 32),
-              ),
+            // Car image — sized to look proportional, no frame
+            Image.asset(
+              _getCarAssetForRideType(_activeRide?.rideName ?? ''),
+              width: 72,
+              height: 44,
+              fit: BoxFit.contain,
             ),
             const SizedBox(width: 14),
             Expanded(

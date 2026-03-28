@@ -180,6 +180,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                     clipBehavior: Clip.none,
                     children: [
                       Container(
+                        width: double.infinity,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
                           color: const Color(0xFF262626),
@@ -257,6 +258,21 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
         ),
         child: Icon(icon, color: Colors.white60, size: 18),
       ),
+    );
+  }
+
+  void _handleShareTrip() {
+    final tripId = widget.firestoreTripId ?? widget.tripId?.toString() ?? 'unknown';
+    final shareText = '''🚗 Sigue mi viaje en tiempo real
+
+Mi conductor está en camino.
+Puedes ver su ubicación aquí:
+https://cruiseapp.com/track/$tripId
+
+Powered by Cruise''';
+    Share.share(
+      shareText,
+      subject: 'Seguimiento de viaje en tiempo real',
     );
   }
 

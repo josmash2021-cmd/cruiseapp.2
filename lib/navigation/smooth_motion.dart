@@ -8,7 +8,7 @@ import '../models/lat_lng.dart';
 class SmoothMotion {
   SmoothMotion({
     required this.onTick,
-    this.lerpFactor = 0.15,
+    this.lerpFactor = 0.22,          // higher = snappier catch-up
     this.enablePrediction = true,
   });
 
@@ -27,7 +27,12 @@ class SmoothMotion {
   double _currentBearing = 0;
   LatLng _target = const LatLng(0, 0);
   double _targetBearing = 0;
-  
+
+  // -- Velocity prediction --
+  /// Smoothed velocity in degrees/second, derived from successive pushTarget calls.
+  LatLng _velocity = const LatLng(0, 0);
+  DateTime? _lastPushTime;
+
   // -- Physics state for tilt --
   double _currentCurveTilt = 0;
   double _lastBearingVelocity = 0;
@@ -37,6 +42,9 @@ class SmoothMotion {
   /// Minimum movement in degrees (lat or lng) before we accept a new bearing.
   /// ~2e-5° ≈ 2.2 metres. Prevents bearing flips from GPS noise when stopped.
   static const double _minMoveDeg = 2e-5;
+
+  /// How many seconds ahead to predict. 200 ms compensates typical GPS→render lag.
+  static const double _predictionSec = 0.20;
 
 
   Ticker? _ticker;
@@ -67,8 +75,27 @@ class SmoothMotion {
   /// Because [bearing] always comes from the route polyline segment (not raw
   /// GPS heading), it is always trusted — no large-jump clamping is needed.
   void pushTarget(LatLng pos, double bearing) {
-    final dLat = (pos.latitude - _target.latitude).abs();
+    final now = DateTime.now();
+
+    final dLat = (pos.latitude  - _target.latitude).abs();
     final dLng = (pos.longitude - _target.longitude).abs();
+
+    // Compute smoothed velocity from successive pushTarget calls so the
+    // prediction step can project slightly ahead of the GPS target.
+    if (_lastPushTime != null) {
+      final dtSec = now.difference(_lastPushTime!).inMicroseconds / 1e6;
+      if (dtSec > 0 && dtSec < 2.0) {
+        final rawVLat = (pos.latitude  - _target.latitude)  / dtSec;
+        final rawVLng = (pos.longitude - _target.longitude) / dtSec;
+        // Light smoothing (α=0.35) so noise doesn't corrupt prediction.
+        _velocity = LatLng(
+          _lerpD(_velocity.latitude,  rawVLat, 0.35),
+          _lerpD(_velocity.longitude, rawVLng, 0.35),
+        );
+      }
+    }
+    _lastPushTime = now;
+
     _target = pos;
     if (dLat > _minMoveDeg || dLng > _minMoveDeg) {
       _targetBearing = bearing;
@@ -90,10 +117,19 @@ class SmoothMotion {
     // Bearing uses a higher factor for snappier turns
     final brgF = 1.0 - math.pow(1.0 - (lerpFactor * 2.0).clamp(0.0, 0.95), dt * 60);
 
+    // Predictive target: project velocity _predictionSec ahead to pre-compensate
+    // the GPS→animation pipeline latency (~150-250 ms on device).
+    final LatLng lerpTarget = enablePrediction
+        ? LatLng(
+            _target.latitude  + _velocity.latitude  * _predictionSec,
+            _target.longitude + _velocity.longitude * _predictionSec,
+          )
+        : _target;
+
     // Lerp position
     _current = LatLng(
-      _lerpD(_current.latitude, _target.latitude, posF),
-      _lerpD(_current.longitude, _target.longitude, posF),
+      _lerpD(_current.latitude,  lerpTarget.latitude,  posF),
+      _lerpD(_current.longitude, lerpTarget.longitude, posF),
     );
 
     // Lerp bearing (shortest-arc)

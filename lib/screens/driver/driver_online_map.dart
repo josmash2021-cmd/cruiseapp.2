@@ -8,6 +8,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
   /// Update the driver car / golden dot annotation on the Mapbox map.
   Future<void> _updateDriverAnnotation() async {
+    if (!mounted) return;
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null) return;
 
@@ -84,7 +85,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await Future.delayed(const Duration(milliseconds: 16));
       if (!mounted) return;
       _dotPopScale = (i / riseSteps) * 1.15;
-      _updateDriverAnnotation();
+      await _updateDriverAnnotation(); // await so frames don't pile up
     }
     // Phase 2: bounce back 1.15 → 1.0 over ~150 ms (9 frames × 16 ms)
     const bounceSteps = 9;
@@ -92,10 +93,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await Future.delayed(const Duration(milliseconds: 16));
       if (!mounted) return;
       _dotPopScale = 1.15 - (0.15 * (i / bounceSteps));
-      _updateDriverAnnotation();
+      await _updateDriverAnnotation(); // await so frames don't pile up
     }
     _dotPopScale = 1.0;
-    if (mounted) _updateDriverAnnotation();
+    if (mounted) await _updateDriverAnnotation();
   }
 
   /// Snap a raw GPS coordinate to the nearest point on the active route polyline.

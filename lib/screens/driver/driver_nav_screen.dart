@@ -97,7 +97,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   mapbox.MapboxMap? _map;
   bool _mapReady = false;
   mapbox.PolylineAnnotationManager? _polyMgr;
-  mapbox.PointAnnotationManager? _pointMgr;
+  mapbox.PointAnnotationManager? _pointMgr;   // pickup/dropoff pins
+  mapbox.PointAnnotationManager? _arrowMgr;   // driver arrow only
   mapbox.PolylineAnnotation? _routeAnnot;
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
@@ -376,15 +377,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _pos     = pos;
     _bearing = bearing;
 
+    // Update annotation every vsync frame — must stay in sync with setCamera
+    // below (also per-frame) so the pin never lags behind the moving camera.
+    _updateCarAnnotation(pos, bearing);
+
     final now = DateTime.now();
-
-    // Throttle annotation to ~30 fps (every 33 ms).
-    if (_lastAnnotUpdate == null ||
-        now.difference(_lastAnnotUpdate!).inMilliseconds > 33) {
-      _lastAnnotUpdate = now;
-      _updateCarAnnotation(pos, bearing);
-    }
-
     // Throttle UI rebuild to ~4 Hz (every 250 ms) — speed, ETA, instructions.
     if (_lastUIUpdate == null ||
         now.difference(_lastUIUpdate!).inMilliseconds > 250) {
@@ -513,7 +510,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     if (trimTo < 1) return;
     _routePts = _routePts.sublist(trimTo);
     _lastSegIdx = 1; // reset segment index relative to new list
-    _updateRouteSource();
+    // Skip annotation update while the draw animation owns the annotation;
+    // the animation's final frame will write the correct trimmed geometry.
+    if (!_routeAnimating) _updateRouteSource();
   }
 
   /// Update just the polyline geometry without recreating annotations.
@@ -586,6 +585,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   /// Cinematic camera sequence: overview → tilt 55° → pause 2s → rotate 15° + zoom → final nav.
   Future<void> _runCinematicSequence() async {
+    // Disable camera follow FIRST so _onMotionTick's setCamera doesn't
+    // cancel the flyTo animations every 33 ms.
+    if (mounted) setState(() { _cameraFollowing = false; _isOverview = true; });
+
     // ── Phase 1: Centered overview (instant via setCamera) ──
     await _zoomToShowRoute();
 
@@ -774,7 +777,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _iconPulseScale -= step;
       if (_iconPulseScale <= 1.55) _iconPulseUp = true;
     }
-    final mgr = _pointMgr;
+    final mgr = _arrowMgr;
     final annot = _driverAnnot;
     if (mgr == null || annot == null) return;
     annot.iconSize = _iconPulseScale;
@@ -830,7 +833,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   }
 
   Future<void> _updateCarAnnotation(LatLng pos, double bearing) async {
-    final mgr   = _pointMgr;
+    final mgr   = _arrowMgr;
     final bytes = _arrowBytes;
     if (mgr == null || bytes == null) return;
     final geom = mapbox.Point(
@@ -842,9 +845,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         iconSize: 1.6,
         iconRotate: bearing,
       ));
-      try {
-        await _map?.style.setStyleLayerProperty(mgr.id, 'icon-rotation-alignment', 'map');
-      } catch (_) {}
     } else {
       _driverAnnot!.geometry   = geom;
       _driverAnnot!.iconRotate = bearing;
@@ -1247,10 +1247,16 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Future<void> _exitNav() async {
     HapticFeedback.lightImpact();
 
-    // Cancel GPS stream before leaving
+    // Cancel all running timers/tickers before leaving so nothing fires
+    // against the popped widget or its annotation managers.
     _gpsSub?.cancel();
     _etaRefreshTimer?.cancel();
     _iconPulseTimer?.cancel();
+    _destPinAnimTimer?.cancel();
+    _waitTimer?.cancel();
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = null;
 
     // Navigate back to ride detail screen (pushReplacement because
     // DriverTripAcceptScreen used pushReplacement to get here)
@@ -1620,8 +1626,17 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager(
           below: "road-label",
         );
+        // Pin manager (pickup / dropoff pins) — pitch-aligned to viewport so
+        // they stand upright at 55° nav pitch instead of lying flat on the map.
         _pointMgr = await ctrl.annotations.createPointAnnotationManager();
         try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+        try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
+
+        // Arrow manager (driver icon only) — rotation-alignment 'map' so
+        // iconRotate tracks geographic bearing, not screen-space bearing.
+        _arrowMgr = await ctrl.annotations.createPointAnnotationManager();
+        try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+        try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-rotation-alignment', 'map'); } catch (_) {}
         _updateRouteAnnotation();
         _updateDestPin(widget.pickupLatLng);
         // Show pickup pin throughout the trip

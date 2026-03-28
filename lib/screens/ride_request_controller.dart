@@ -216,8 +216,13 @@ extension _RideRequestController on _RideRequestScreenState {
         if (s.pickup != null && s.dropoff != null) {
           _placeMarkersOnly();
         }
-        // Draw polyline + cinematic only when REAL route arrives (once)
-        if (s.route != null && s.route!.points.length > 2) {
+        // Draw polyline + cinematic only when REAL route arrives (once).
+        // The estimated route has ≤11 straight-line points; real routes have 20+.
+        // Also require rideOptions to be populated (only set after real route).
+        // Allow fallback draw if route fetch failed but options were generated.
+        if (s.route != null &&
+            s.rideOptions.isNotEmpty &&
+            (s.route!.points.length > 15 || s.routeFetchFailed)) {
           _fetchingRoute = false;
           if (!_cinematicDone) {
             _drawRoute();

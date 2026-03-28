@@ -50,10 +50,17 @@ GoldPinIcon detectPinIcon(String label) {
 const goldPinColor = Color(0xFFE8C547);
 
 // ── Luxury pin palette ──
-const _goldLight  = Color(0xFFFFF8DC); // ivory-gold highlight
-const _goldMid    = Color(0xFFE8C547); // primary gold
-const _goldDeep   = Color(0xFFB8860B); // dark gold shadow
 const _glassWhite = Color(0x66FFFFFF); // glass sheen
+
+// ── Pickup palette: emerald green ──
+const _pickupLight  = Color(0xFFB8F5CC);
+const _pickupMid    = Color(0xFF2ECC71);
+const _pickupDeep   = Color(0xFF1A6B3A);
+
+// ── Dropoff palette: bold red ──
+const _dropoffLight = Color(0xFFFFCDD2);
+const _dropoffMid   = Color(0xFFE53935);
+const _dropoffDeep  = Color(0xFF7B1010);
 
 /// Cache for rendered pin bytes.
 final Map<String, Uint8List> _pinCache = {};
@@ -80,7 +87,11 @@ void _drawLuxuryPin(
   required double tipY,
   required double shadowY,
   required GoldPinIcon icon,
+  bool isPickup = true,
 }) {
+  final colorLight  = isPickup ? _pickupLight  : _dropoffLight;
+  final colorMid    = isPickup ? _pickupMid    : _dropoffMid;
+  final colorDeep   = isPickup ? _pickupDeep   : _dropoffDeep;
   // ── 1. Ground shadow ring — SEPARATED (creates floating illusion) ──
   canvas.drawOval(
     Rect.fromCenter(
@@ -119,7 +130,7 @@ void _drawLuxuryPin(
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
   );
 
-  // ── 4. Gold gradient fill ──
+  // ── 4. Gradient fill ──
   final gradRect = Rect.fromLTWH(cx - r, headCY - r, r * 2, tipY - headCY + r);
   canvas.drawPath(
     tearPath,
@@ -127,7 +138,7 @@ void _drawLuxuryPin(
       ..shader = ui.Gradient.linear(
         Offset(cx - r * 0.5, headCY - r),
         Offset(cx + r * 0.5, tipY),
-        [_goldLight, _goldMid, _goldDeep],
+        [colorLight, colorMid, colorDeep],
         [0.0, 0.45, 1.0],
       ),
   );
@@ -286,6 +297,7 @@ Future<Uint8List> renderGoldPinBytes({
     tipY: tipY,
     shadowY: shadowY,
     icon: effectiveIcon,
+    isPickup: isPickup,
   );
 
   final picture = recorder.endRecording();

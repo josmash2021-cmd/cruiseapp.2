@@ -76,10 +76,10 @@ IconData _iconDataFor(CircularPinIcon icon) {
   }
 }
 
-/// Renders a golden teardrop map pin as PNG bytes.
+/// Renders a teardrop map pin as PNG bytes.
 /// 
 /// [icon] — icon type to render inside the pin head
-/// [isPickup] — true for pickup, false for dropoff (currently both use golden style)
+/// [isPickup] — true → emerald green (pickup), false → bold red (dropoff)
 /// [radius] — base radius; final pin width = radius * 2 + 16
 /// 
 /// Results are cached by (icon, isPickup, radius) key for performance.
@@ -92,6 +92,7 @@ Future<Uint8List> renderCircularPinBytes({
   return buildGoldenPinBytes(
     icon: _iconDataFor(icon),
     size: pinSize,
+    isPickup: isPickup,
   );
 }
 

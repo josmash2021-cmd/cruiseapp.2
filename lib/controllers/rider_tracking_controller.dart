@@ -191,6 +191,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     } else if ((status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard') &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       _setState(() => _phase = _TrackPhase.onTrip);
+      _arrivedDotPulse.stop();
+      _popOutPickupPin();
+      _startStartRideAnimation();
     } else if ((status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard') &&
         _phase == _TrackPhase.nearDestination) {
       // Already near destination — don't reset to onTrip
@@ -576,9 +579,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Phase 1: Draw the route polyline progressively (animated draw effect)
   void _startRouteDrawAnimation() {
     if (_routePts.isEmpty) return;
-    
-    //_startAnimatedRouteDraw is already implemented in tracking_map_view.dart
-    // It handles progressive polyline drawing over 1000-1500ms
+    // Add dropoff pin if not yet added
+    _addDropoffPin();
+    // Reset route draw flag so it can draw fresh
+    _routeDrawDone = false;
+    _startAnimatedRouteDraw();
   }
 
   /// Phase 2: Animate camera zoom out to show full route

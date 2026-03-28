@@ -511,13 +511,21 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _driverPos = widget.pickupLatLng;
     _animPos = _driverPos;
 
-    // 4) Calculate pickup → dropoff distance
-    double acc = 0;
-    for (int i = 0; i + 1 < _routePts.length; i++) {
-      acc += _hav(_routePts[i], _routePts[i + 1]);
+    // 4) Calculate initial distance
+    // During arriving phase: show distance from pickup to driver (will update from GPS)
+    // During onTrip: use full route distance
+    if (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived) {
+      // Will be overridden by real GPS in _onRealDriverLocation
+      _distanceMiles = 0;
+      _etaMinutes = 1;
+    } else {
+      double acc = 0;
+      for (int i = 0; i + 1 < _routePts.length; i++) {
+        acc += _hav(_routePts[i], _routePts[i + 1]);
+      }
+      _distanceMiles = acc;
+      _etaMinutes = (acc / 0.5).ceil().clamp(1, 99);
     }
-    _distanceMiles = acc;
-    _etaMinutes = (acc / 0.5).ceil().clamp(1, 99);
 
     _setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -542,14 +550,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final topHeight = _topCardHeight;
     final bottomHeight = _bottomCardHeight;
     
-    // Always include pickup + dropoff + route.
-    // During arriving phase also include driver's current animated position
-    // so the entire remaining path is visible between the UI cards.
+    // During arriving: fit driver→pickup only (no dropoff/route)
+    if (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived) {
+      _fitArrivingBounds();
+      return;
+    }
+    // During onTrip+: include pickup + dropoff + route.
     final pts = <LatLng>[widget.pickupLatLng, widget.dropoffLatLng];
     pts.addAll(_routePts);
-    if (_phase == _TrackPhase.arriving && _animPos.latitude != 0) {
-      pts.add(_animPos);
-    }
     
     double minLat = pts[0].latitude, maxLat = pts[0].latitude;
     double minLng = pts[0].longitude, maxLng = pts[0].longitude;
@@ -1024,10 +1032,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       ));
     } catch (_) {}
 
-    // Dropoff pin — always visible so rider can see destination
-    _addDropoffPin();
+    // Dropoff pin — only visible during onTrip, not during arriving
+    if (_phase != _TrackPhase.arriving && _phase != _TrackPhase.arrived) {
+      _addDropoffPin();
+    }
 
-    // Cinematic intro: tilt + bearing + route draw + glow
+    // Cinematic intro: fit camera (no route draw during arriving)
     _startCinematicIntro();
 
     // Fit route bounds with card padding after drawing
@@ -1258,31 +1268,50 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
   }
 
-  /// Map intro: fit camera flat → animated route draw → glow pulse.
-  /// Always top-down (pitch=0, bearing=0) — no cinematic tilt.
+  /// Map intro: fit camera flat.
+  /// Route polyline is NOT drawn during arriving phase — only when ride starts.
   Future<void> _startCinematicIntro() async {
-    if (_cinematicDone || _map == null) {
-      _startAnimatedRouteDraw();
-      return;
-    }
+    if (_cinematicDone || _map == null) return;
     _cinematicDone = true;
 
     // Keep camera flat always
     _cinematicPitch = 0;
     _cinematicBearing = 0;
 
-    // 1. Fit camera flat
-    _updateCameraForRoute();
-    await Future.delayed(const Duration(milliseconds: 100));
-    if (!mounted) return;
-
-    // 2. Animated route draw
-    _startAnimatedRouteDraw();
-
+    // Fit camera to driver → pickup (not full route) during arriving
+    _fitArrivingBounds();
   }
 
   void _applyCinematicCamera() {
     // No-op: camera stays top-down always
+  }
+
+  /// Fit camera to show driver → pickup during arriving phase.
+  void _fitArrivingBounds() {
+    if (_map == null) return;
+    final pts = <LatLng>[widget.pickupLatLng];
+    if (_animPos.latitude != 0) pts.add(_animPos);
+    if (pts.length < 2) pts.add(widget.pickupLatLng); // fallback
+
+    double minLat = pts[0].latitude, maxLat = pts[0].latitude;
+    double minLng = pts[0].longitude, maxLng = pts[0].longitude;
+    for (final p in pts) {
+      minLat = math.min(minLat, p.latitude);
+      maxLat = math.max(maxLat, p.latitude);
+      minLng = math.min(minLng, p.longitude);
+      maxLng = math.max(maxLng, p.longitude);
+    }
+    _map?.cameraForCoordinatesPadding(
+      [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+       mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
+      mapbox.CameraOptions(bearing: 0, pitch: 0, zoom: 15.0),
+      mapbox.MbxEdgeInsets(top: 180, left: 50, bottom: 140, right: 50),
+      null, null,
+    ).then((cam) {
+      if (mounted && _map != null) {
+        _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 600));
+      }
+    });
   }
 
   /// ──────────────────────────────────────────────────────────────────────────

@@ -907,31 +907,13 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   ),
                 ),
               ),
-              // Car pin at leading edge
+              // Car pin at leading edge — NO glow, NO shadow
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 1000),
                 curve: Curves.easeInOut,
                 left: carX,
                 bottom: barH - 10,
-                child: Container(
-                  decoration: BoxDecoration(
-                    boxShadow: [
-                      BoxShadow(
-                        color: _gold.withValues(alpha: 0.30),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Image(
-                    image: AssetImage(_getCarAssetForRideType(
-                      _activeRide?.rideName ?? 'comfort',
-                    )),
-                    width: carSize,
-                    height: carSize,
-                    fit: BoxFit.contain,
-                  ),
-                ),
+                child: const RideCarIcon(size: 40),
               ),
             ],
           ),
@@ -950,23 +932,17 @@ extension _HomeScreenWidgets on _HomeScreenState {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            // Clean car icon — no border, no glow
             Container(
               width: 54,
               height: 54,
               decoration: BoxDecoration(
-                color: _gold.withValues(alpha: 0.15),
+                color: _gold.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _gold.withValues(alpha: 0.4),
-                  width: 1,
-                ),
               ),
               clipBehavior: Clip.antiAlias,
-              child: const Image(
-                image: AssetImage('assets/images/logoapp.png'),
-                width: double.infinity,
-                height: double.infinity,
-                fit: BoxFit.cover,
+              child: const Center(
+                child: RideCarIcon(size: 32),
               ),
             ),
             const SizedBox(width: 14),
@@ -1037,6 +1013,13 @@ extension _HomeScreenWidgets on _HomeScreenState {
   }
 
   // ─── Circular action buttons ───
+  
+  String get _remainingLabel {
+    if (_remainingSeconds <= 0) return '0 min';
+    final mins = _remainingSeconds ~/ 60;
+    return '$mins min';
+  }
+
   Widget _buildCircularActions() {
     final active = _activeRide != null;
     return Row(
@@ -2366,4 +2349,19 @@ class _CarIconPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_CarIconPainter old) => false;
+}
+
+// ════════════════════════════════════════════════════════════
+//  RIDE CAR ICON — uses the detail painter above
+// ════════════════════════════════════════════════════════════
+
+class RideCarIcon extends StatelessWidget {
+  final double size;
+  const RideCarIcon({this.size = 28, super.key});
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    size: Size(size, size),
+    painter: _CarIconPainter(),
+  );
 }

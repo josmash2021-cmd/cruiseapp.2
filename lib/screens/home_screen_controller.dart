@@ -72,6 +72,7 @@ extension _HomeScreenController on _HomeScreenState {
   void _startCountdown(int etaMinutes) {
     _totalSeconds = etaMinutes * 60;
     _remainingSeconds = _totalSeconds;
+    _tripStartTime = DateTime.now();
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(
       const Duration(seconds: 1),
@@ -87,6 +88,162 @@ extension _HomeScreenController on _HomeScreenState {
         });
       },
     );
+
+    // Also start listening for driver location if active ride exists
+    if (_activeRide != null && _miniMapController != null) {
+      _listenToDriverLocation();
+    }
+  }
+
+  // ─── Driver location tracking for active trip ───
+
+  void _listenToDriverLocation() {
+    if (_activeRide == null || _miniMapController == null) return;
+    
+    // Cancel existing subscription
+    _driverLocationSub?.cancel();
+    
+    // Listen to driver location from Firestore (ride document has driver_id)
+    final tripId = _activeRide!.firestoreTripId;
+    if (tripId == null) return;
+
+    // Get driver ID from trip data first, then subscribe to their location
+    FirebaseFirestore.instance
+        .collection('trips')
+        .doc(tripId)
+        .snapshots()
+        .listen((tripSnap) async {
+      if (!mounted) return;
+      
+      final driverId = tripSnap.data()?['driver_id']?.toString();
+      if (driverId == null) return;
+
+      // Subscribe to this driver's location in RTDB
+      _driverLocationSub?.cancel();
+      _driverLocationSub = FirebaseDatabase.instance
+          .ref('driver_locations/$driverId')
+          .onValue
+          .listen((event) {
+        if (!mounted) return;
+        
+        final data = event.snapshot.value as Map<dynamic, dynamic>?;
+        if (data == null) return;
+
+        final newLat = (data['lat'] as num?)?.toDouble() ?? 0.0;
+        final newLng = (data['lng'] as num?)?.toDouble() ?? 0.0;
+        final bearing = (data['bearing'] as num?)?.toDouble() ?? 0.0;
+
+        _setState(() {
+          _driverLocation = LatLng(newLat, newLng);
+          _driverBearing = bearing;
+        });
+
+        // Animate driver car to new position
+        _animateDriverCar(LatLng(newLat, newLng), bearing);
+      });
+    });
+
+    // Also listen for trip completion
+    _tripStatusSub?.cancel();
+    _tripStatusSub = FirebaseFirestore.instance
+        .collection('trips')
+        .doc(tripId)
+        .snapshots()
+        .listen((tripSnap) {
+      if (!mounted) return;
+      
+      final status = tripSnap.data()?['status']?.toString() ?? '';
+      if (status == 'completed') {
+        _onTripCompleted();
+      }
+    });
+  }
+
+  void _animateDriverCar(LatLng target, double bearing) {
+    // Start from current interpolated position
+    _driverAnimFrom = _interpolatedDriverLoc;
+    _driverAnimTo = target;
+    _driverAnimProgress = 0.0;
+
+    // Restart ticker if needed
+    if (_driverTicker != null && _driverTicker!.isActive) {
+      _driverAnimNeedsRestart = true;
+    } else {
+      _driverAnimNeedsRestart = true;
+      _driverTicker?.dispose();
+      _driverTicker = createTicker(_onDriverAnimTickWrapper);
+      _driverTicker!.start();
+    }
+
+    // Update map annotation
+    _updateDriverMarker(target, bearing);
+  }
+
+  void _onDriverAnimTickWrapper(Duration elapsed) {
+    if (_driverAnimNeedsRestart) {
+      _driverAnimStart = elapsed;
+      _driverAnimNeedsRestart = false;
+    }
+    _onDriverAnimTick(elapsed);
+  }
+
+  void _onDriverAnimTick(Duration elapsed) {
+    if (_driverAnimFrom == null || _driverAnimTo == null) return;
+    final dt = (elapsed - _driverAnimStart).inMilliseconds;
+    _driverAnimProgress = (dt / 500.0).clamp(0.0, 1.0); // 500ms interpolation
+    
+    if (!mounted) return;
+    _setState(() {
+      // Trigger rebuild to update marker position
+    });
+  }
+
+  Future<void> _updateDriverMarker(LatLng position, double bearing) async {
+    if (_miniMapController == null) return;
+
+    try {
+      // For now, just update internal state. Real marker rendering would need polyline/annotation
+      // This will be displayed on the route polyline visualization
+    } catch (e) {
+      debugPrint('Error updating driver marker: $e');
+    }
+  }
+
+  void _onTripCompleted() {
+    if (!mounted) return;
+
+    // Cancel subscriptions
+    _driverLocationSub?.cancel();
+    _tripStatusSub?.cancel();
+    _driverTicker?.dispose();
+
+    // Animate transition back to normal state
+    _setState(() {
+      _activeRide = null;
+      _driverLocation = null;
+      _countdownTimer?.cancel();
+    });
+
+    // Reset map to home
+    if (_miniMapController != null && _currentLatLng != null) {
+      _miniMapController!.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+            coordinates: mapbox.Position(
+              _currentLatLng!.longitude,
+              _currentLatLng!.latitude,
+            ),
+          ),
+          zoom: 15.0,
+          pitch: 0,
+          bearing: 0,
+        ),
+        mapbox.MapAnimationOptions(duration: 800),
+      );
+    }
+
+    // Refresh saved data to update UI
+    _loadSavedData();
   }
 
   void _showPlaceOptions(String label, String address, VoidCallback editTap) {

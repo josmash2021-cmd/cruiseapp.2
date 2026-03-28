@@ -45,6 +45,7 @@ import '../widgets/gold_location_dot.dart';
 import '../widgets/user_profile_photo.dart';
 import '../widgets/verified_avatar.dart';
 import '../widgets/offline_banner.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 part 'home_screen_controller.dart';
 part 'home_screen_map.dart';
@@ -134,6 +135,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   LatLng? _locAnimTo;        // target (latest GPS)
   double _locAnimProgress = 1.0; // 0→1
   Duration _locAnimStart = Duration.zero;
+  bool _locAnimNeedsRestart = false;
+
+  // ── Active trip driver tracking ──
+  LatLng? _driverLocation;
+  double _driverBearing = 0.0;
+  mapbox.PointAnnotation? _driverMarkerAnnot;
+  mapbox.PolylineAnnotation? _tripRouteAnnot;
+  StreamSubscription<DatabaseEvent>? _driverLocationSub;
+  Ticker? _driverTicker;
+  LatLng? _driverAnimFrom;
+  LatLng? _driverAnimTo;
+  double _driverAnimProgress = 1.0;
+  Duration _driverAnimStart = Duration.zero;
+  bool _driverAnimNeedsRestart = false;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _tripStatusSub;
+
+  DateTime? _tripStartTime;
 
   /// Interpolated position for the current animation frame.
   LatLng get _interpolatedLatLng {
@@ -145,10 +163,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     );
   }
 
+  /// Interpolated driver car position.
+  LatLng get _interpolatedDriverLoc {
+    if (_driverAnimFrom == null || _driverAnimTo == null) return _driverLocation ?? const LatLng(0, 0);
+    final t = _easedProgress(_driverAnimProgress);
+    return LatLng(
+      _driverAnimFrom!.latitude + (_driverAnimTo!.latitude - _driverAnimFrom!.latitude) * t,
+      _driverAnimFrom!.longitude + (_driverAnimTo!.longitude - _driverAnimFrom!.longitude) * t,
+    );
+  }
+
   /// Called by the Ticker on every vsync frame during location animation.
   int _lastAnnotUpdateMs = 0;
-
-  bool _locAnimNeedsRestart = false;
 
   Future<void> _updateMiniMapAnnotation() async {
     // Guard: prevent concurrent updates that create multiple pins
@@ -288,6 +314,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _sheetController.dispose();
     _miniDot.dispose();
     _locTicker?.dispose();
+    _driverTicker?.dispose();
     _shimmerController.dispose();
     _boltFlashCtrl.dispose();
     _clockRotateCtrl.dispose();
@@ -297,6 +324,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _countdownTimer?.cancel();
     _locationSub?.cancel();
     _zonesSub?.cancel();
+    _driverLocationSub?.cancel();
+    _tripStatusSub?.cancel();
     super.dispose();
   }
 

@@ -3118,3 +3118,42 @@ extension _MapScreenWidgets on _MapScreenState {
     );
   }
 }
+
+/// Small white floating chip displayed next to a route endpoint pin.
+/// Appears at the coordinate-mapped screen position (updated on map idle).
+class _PinInfoChip extends StatelessWidget {
+  final String text;
+  const _PinInfoChip({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 180),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.22),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Color(0xFF111111),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            height: 1.0,
+          ),
+        ),
+      ),
+    );
+  }
+}

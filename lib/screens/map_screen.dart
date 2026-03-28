@@ -137,6 +137,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Uint8List? _goldPinIconBytes;
   Uint8List? _dropoffPinIconBytes;
 
+  // ── Floating label chip screen-space positions (updated on map idle) ────
+  Offset? _pickupLabelOffset;
+  Offset? _dropoffLabelOffset;
+
   // Mapbox controller & annotation managers
   mapbox.MapboxMap? _mapController;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
@@ -290,8 +294,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _goldPinIconBytes,
       iconSize: 1.0,
-      iconAnchor: mapbox.IconAnchor.BOTTOM, // tip of teardrop sits on the coordinate
+      iconAnchor: mapbox.IconAnchor.CENTER, // circle centre sits on the coordinate
     ));
+    _refreshPinLabelOffsets();
   }
 
   Future<void> _setDropoffAnnotation(LatLng position) async {
@@ -302,8 +307,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _dropoffPinIconBytes ?? _goldPinIconBytes,
       iconSize: 1.0,
-      iconAnchor: mapbox.IconAnchor.BOTTOM, // tip of teardrop sits on the coordinate
+      iconAnchor: mapbox.IconAnchor.CENTER, // circle centre sits on the coordinate
     ));
+    _refreshPinLabelOffsets();
   }
 
   @override
@@ -387,14 +393,43 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _loadPinIcons() async {
-    _goldPinIconBytes = await _buildGoldPin(isPickup: true);
-    _dropoffPinIconBytes = await _buildGoldPin(
-      withHouse: true,
-      isPickup: false,
-    );
+    // Use flat circle pins: person icon (pickup) and home icon (dropoff).
+    // These circle pins align to iconAnchor.CENTER, matching the exact
+    // route polyline endpoints without any visual offset.
+    _goldPinIconBytes    = await _buildRouteDotPin(isPickup: true);
+    _dropoffPinIconBytes = await _buildRouteDotPin(isPickup: false);
     if (!mounted) return;
-    // Refresh annotations with new icon bytes
     if (_currentPosition != null) _setPickupAnnotation(_currentPosition!);
+  }
+
+  /// Convert pickup/dropoff coordinates to screen pixels so the floating label
+  /// chips can be placed at the exact pin positions via Positioned widgets.
+  /// Called on map-idle and after any annotation geometry change.
+  Future<void> _refreshPinLabelOffsets() async {
+    final mc = _mapController;
+    if (mc == null || !mounted) return;
+    Offset? pOff, dOff;
+    if (_currentPosition != null) {
+      try {
+        final px = await mc.pixelForCoordinate(mapbox.Point(
+            coordinates: mapbox.Position(
+              _currentPosition!.longitude, _currentPosition!.latitude)));
+        pOff = Offset(px.x.toDouble(), px.y.toDouble());
+      } catch (_) {}
+    }
+    if (_dropoffPosition != null) {
+      try {
+        final px = await mc.pixelForCoordinate(mapbox.Point(
+            coordinates: mapbox.Position(
+              _dropoffPosition!.longitude, _dropoffPosition!.latitude)));
+        dOff = Offset(px.x.toDouble(), px.y.toDouble());
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() {
+      _pickupLabelOffset  = pOff;
+      _dropoffLabelOffset = dOff;
+    });
   }
 
   Future<void> _applyStartupIntent() async {
@@ -1572,6 +1607,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               onMapCreated: _onMapCreated,
               onStyleLoadedListener: _onStyleLoaded,
               onScrollListener: (_) => _onCameraMoveStarted(),
+              onMapIdleListener: (_) => _refreshPinLabelOffsets(),
               onTapListener: (mapbox.MapContentGestureContext ctx) {
                 _onMapTap(LatLng(ctx.point.coordinates.lat.toDouble(), ctx.point.coordinates.lng.toDouble()));
               },
@@ -1662,6 +1698,34 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               right: 60,
               child: _buildRiderNavHeader(),
             ),
+
+          // Floating pin label chips at the exact route endpoint positions.
+          // Visible during loading / options stages when both pins are on screen.
+          if (_dropoffPosition != null &&
+              _dropoffLabelOffset != null &&
+              _dropoffLabelOffset!.dx > 30 &&
+              (_stage == RideStage.options || _stage == RideStage.loading))
+            Positioned(
+              left: _dropoffLabelOffset!.dx + 20,
+              top:  _dropoffLabelOffset!.dy - 14,
+              child: _PinInfoChip(
+                text: _tripDuration != '-- min' && _dropoffAddress.isNotEmpty
+                    ? '$_tripDuration \u00b7 ${_dropoffAddress.length > 20 ? "${_dropoffAddress.substring(0, 20)}\u2026" : _dropoffAddress}'
+                    : (_dropoffAddress.length > 22
+                        ? '${_dropoffAddress.substring(0, 22)}\u2026'
+                        : _dropoffAddress),
+              ),
+            ),
+          if (_currentPosition != null &&
+              _pickupLabelOffset != null &&
+              _pickupLabelOffset!.dx > 30 &&
+              (_stage == RideStage.options || _stage == RideStage.loading))
+            Positioned(
+              left: _pickupLabelOffset!.dx + 20,
+              top:  _pickupLabelOffset!.dy - 14,
+              child: const _PinInfoChip(text: '\u2022 Current location'),
+            ),
+
           Positioned(
             left: 10,
             right: 10,

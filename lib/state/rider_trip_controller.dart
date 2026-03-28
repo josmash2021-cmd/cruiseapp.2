@@ -353,16 +353,18 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final origin = LatLng(_state.pickup!.lat, _state.pickup!.lng);
     final dest = LatLng(_state.dropoff!.lat, _state.dropoff!.lng);
 
-    // INSTANT: Show estimated route (straight line) immediately for smooth UX
+    // INSTANT: Show estimated route (straight line) for map preview only.
+    // Do NOT emit rideOptions yet — prices from straight-line distance are
+    // inaccurate and cause a visible price change when the real route arrives.
+    // The shimmer loading state stays visible until real prices are ready.
     final estimatedRoute = _directions.getEstimatedRoute(
       origin: origin,
       destination: dest,
     );
-    final estimatedOptions = _generateRideOptions(estimatedRoute);
     _state = _state.copyWith(
       phase: RiderPhase.previewRoute,
       route: estimatedRoute,
-      rideOptions: estimatedOptions,
+      rideOptions: const [],
       selectedOption: null,
       routeFetchFailed: false,
     );
@@ -398,8 +400,12 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         routeFetchFailed: false,
       );
     } else {
-      // Route failed — keep estimated route but signal retry is available
-      _state = _state.copyWith(routeFetchFailed: true);
+      // Route failed — fall back to estimated-route prices so user sees something
+      final fallbackOptions = _generateRideOptions(estimatedRoute);
+      _state = _state.copyWith(
+        routeFetchFailed: true,
+        rideOptions: fallbackOptions,
+      );
     }
     notifyListeners();
   }

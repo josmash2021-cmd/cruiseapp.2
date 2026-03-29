@@ -190,11 +190,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null) return;
     await _clearPickupDropoffAnnotations();
-    final bytes = await _buildCirclePin(const Color(0xFF4CAF50), 22);
+    final bytes = await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32);
     _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
       image: bytes,
       iconSize: 1.0,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
     ));
   }
 
@@ -202,11 +203,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null) return;
     await _clearPickupDropoffAnnotations();
-    final bytes = await _buildRingPin(Colors.white, 22);
+    final bytes = await renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32);
     _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
       image: bytes,
       iconSize: 1.0,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
     ));
   }
 
@@ -214,17 +216,19 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null) return;
     await _clearPickupDropoffAnnotations();
-    final pickupBytes  = await _buildCirclePin(const Color(0xFF4CAF50), 22);
-    final dropoffBytes = await _buildRingPin(Colors.white, 22);
+    final pickupBytes  = await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32);
+    final dropoffBytes = await renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32);
     _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
       image: pickupBytes,
       iconSize: 1.0,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
     ));
     _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
       image: dropoffBytes,
       iconSize: 1.0,
+      iconAnchor: mapbox.IconAnchor.BOTTOM,
     ));
   }
 
@@ -605,49 +609,6 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return pts;
   }
 
-
-  /// Solid filled circle pin (e.g. driver dot, pickup dot)
-  Future<Uint8List?> _buildCirclePin(Color fill, double radius) async {
-    final s = (radius * 2 + 8).roundToDouble();
-    final rec = ui.PictureRecorder();
-    final c   = Canvas(rec, Rect.fromLTWH(0, 0, s, s));
-    final cx  = s / 2;
-    // Shadow
-    c.drawCircle(Offset(cx, cx + 2), radius,
-        Paint()
-          ..color = Colors.black.withValues(alpha: 0.35)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
-    // White border
-    c.drawCircle(Offset(cx, cx), radius, Paint()..color = Colors.white);
-    // Fill
-    c.drawCircle(Offset(cx, cx), radius - 3, Paint()..color = fill);
-    final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
-  }
-
-  /// Ring-only pin (e.g. dropoff marker — white ring, dark center)
-  Future<Uint8List?> _buildRingPin(Color ringColor, double radius) async {
-    final s = (radius * 2 + 8).roundToDouble();
-    final rec = ui.PictureRecorder();
-    final c   = Canvas(rec, Rect.fromLTWH(0, 0, s, s));
-    final cx  = s / 2;
-    // Shadow
-    c.drawCircle(Offset(cx, cx + 2), radius,
-        Paint()
-          ..color = Colors.black.withValues(alpha: 0.35)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
-    // White ring
-    c.drawCircle(Offset(cx, cx), radius, Paint()..color = ringColor);
-    // Dark inner
-    c.drawCircle(Offset(cx, cx), radius - 5,
-        Paint()..color = const Color(0xFF0A0C12));
-    // White center dot
-    c.drawCircle(Offset(cx, cx), 4, Paint()..color = ringColor);
-    final img   = await rec.endRecording().toImage(s.toInt(), s.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes?.buffer.asUint8List();
-  }
 
   Future<void> _closePreview() async {
     _routePulseCtrl?.stop();

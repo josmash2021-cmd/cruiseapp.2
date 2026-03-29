@@ -1780,6 +1780,7 @@ class ApiService {
     String? terminal,
     String? pickupZone,
     String? notes,
+    String? stripePaymentIntentId,
   }) async {
     final h = await _authHeaders();
     final res = await _client
@@ -1803,6 +1804,8 @@ class ApiService {
             if (terminal != null) 'terminal': terminal,
             if (pickupZone != null) 'pickup_zone': pickupZone,
             if (notes != null) 'notes': notes,
+            if (stripePaymentIntentId != null)
+              'stripe_payment_intent_id': stripePaymentIntentId,
           }),
         )
         .timeout(const Duration(seconds: 10));
@@ -2360,11 +2363,13 @@ class ApiService {
     String currency = 'usd',
     String? paymentMethodId,
     int? tripId,
+    bool holdOnly = false,
   }) async {
     final h = await _authHeaders();
     final body = <String, dynamic>{
       'amount': amountCents,
       'currency': currency,
+      if (holdOnly) 'hold_only': true,
     };
     if (paymentMethodId != null) body['payment_method_id'] = paymentMethodId;
     if (tripId != null) body['trip_id'] = tripId;
@@ -2373,6 +2378,21 @@ class ApiService {
           Uri.parse('$_baseUrl/payments/create-intent'),
           headers: {...h, 'Content-Type': 'application/json'},
           body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Capture a previously authorized (held) PaymentIntent.
+  /// Called when the trip is completed to finalize the charge.
+  static Future<Map<String, dynamic>> capturePaymentIntent(
+    String paymentIntentId,
+  ) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/payments/capture/$paymentIntentId'),
+          headers: h,
         )
         .timeout(const Duration(seconds: 15));
     return _parse(res);

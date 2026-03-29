@@ -342,8 +342,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       displayLabel = '${label.substring(0, cut).trimRight()}\u2026';
     }
 
-    const pinW = 100.0;
-    const pinH = 130.0;
+    // Scale the 2x pin image to a logical display size, keeping aspect ratio.
+    // Pin tip MUST land at the very bottom of the canvas for iconAnchor.BOTTOM.
+    const pinDisplayW = 100.0;
+    final pinDisplayH = pinDisplayW * pinImg.height / pinImg.width; // ≈110
+    final canvasH = pinDisplayH; // canvas height = pin height → tip at bottom
 
     // Measure label text
     final textPainter = TextPainter(
@@ -360,12 +363,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     const gap = 8.0;
     const dotSize = 10.0;
     final labelW = hPad + dotSize + gap + textPainter.width + hPad + 8;
-    const labelH = 70.0;
+    final labelH = math.min(70.0, canvasH * 0.60);
     const pinLabelGap = 8.0;
 
     // Pickup label on right, dropoff on left
     final labelOnLeft = !isPickup;
-    final rawW = pinW + pinLabelGap + labelW;
+    final rawW = pinDisplayW + pinLabelGap + labelW;
 
     double pinX, labelX;
     if (labelOnLeft) {
@@ -373,11 +376,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       pinX = labelW + pinLabelGap;
     } else {
       pinX = 0;
-      labelX = pinW + pinLabelGap;
+      labelX = pinDisplayW + pinLabelGap;
     }
 
     // Pad canvas so pin tip is at bottom-center
-    final pinTipX = pinX + pinW / 2;
+    final pinTipX = pinX + pinDisplayW / 2;
     final leftMargin = pinTipX;
     final rightMargin = rawW - pinTipX;
     final maxM = math.max(leftMargin, rightMargin);
@@ -386,13 +389,17 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
     final adjPinX = pinX + leftPad;
     final adjLabelX = labelX + leftPad;
-    final labelY = (pinH - labelH) / 2;
+    // Label vertically centered on the pin head (≈32% from pin top)
+    final pinHeadCY = pinDisplayH * 0.32;
+    final labelY = (pinHeadCY - labelH / 2).clamp(0.0, canvasH - labelH);
 
     final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, paddedW, pinH));
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, paddedW, canvasH));
 
-    // Draw the pre-rendered pin image
-    canvas.drawImage(pinImg, Offset(adjPinX, 0), Paint());
+    // Draw the pre-rendered pin image scaled to fit — tip at canvas bottom
+    final srcRect = Rect.fromLTWH(0, 0, pinImg.width.toDouble(), pinImg.height.toDouble());
+    final dstRect = Rect.fromLTWH(adjPinX, 0, pinDisplayW, pinDisplayH);
+    canvas.drawImageRect(pinImg, srcRect, dstRect, Paint());
 
     // Draw label box
     final bgRect = RRect.fromRectAndRadius(
@@ -422,7 +429,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     textPainter.paint(canvas, Offset(x, labelY + (labelH - textPainter.height) / 2));
 
     final picture = recorder.endRecording();
-    final img = await picture.toImage(paddedW.ceil(), pinH.toInt());
+    final img = await picture.toImage(paddedW.ceil(), canvasH.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
     return byteData!.buffer.asUint8List();
   }
@@ -544,7 +551,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// During 'arriving' phase the driver's current animated position is included
   /// so the camera always shows the full path from driver → pickup point.
   void _fitRouteBounds() {
-    if (_polylineAnnotMgr == null || _routePts.isEmpty) return;
+    if (_map == null || _routePts.isEmpty) return;
     
     // Get actual card heights from GlobalKeys
     final topHeight = _topCardHeight;
@@ -555,8 +562,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _fitArrivingBounds();
       return;
     }
-    // During onTrip+: include pickup + dropoff + route.
+    // During onTrip+: include pickup + dropoff + driver + route.
     final pts = <LatLng>[widget.pickupLatLng, widget.dropoffLatLng];
+    if (_animPos.latitude != 0) pts.add(_animPos);
     pts.addAll(_routePts);
     
     double minLat = pts[0].latitude, maxLat = pts[0].latitude;
@@ -568,16 +576,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       maxLng = math.max(maxLng, p.longitude);
     }
     
-    // Apply card-aware padding: top bar height + 16, bottom bar height + 16, sides 24
+    // Apply card-aware padding: route always fits between top and bottom cards
     _map?.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
-      mapbox.CameraOptions(bearing: 0, pitch: 20),
+      mapbox.CameraOptions(bearing: 0, pitch: 0),
       mapbox.MbxEdgeInsets(
-        top: topHeight + 16,
-        bottom: bottomHeight + 16,
-        left: 24,
-        right: 24,
+        top: topHeight + 24,
+        bottom: bottomHeight + 24,
+        left: 32,
+        right: 32,
       ),
       null, null,
     ).then((cam) {
@@ -597,33 +605,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   void _updateCameraForRoute() {
-    if (_map == null || _userMovedMap || _routePts.isEmpty) return;
-    
-    // Fit bounds to show full route + driver + pins (dropoff always visible)
-    final pts = <LatLng>[_animPos, widget.pickupLatLng, widget.dropoffLatLng];
-    // Include route extremes for a tight fit
-    for (final p in _routePts) {
-      pts.add(p);
-    }
-    
-    double mnLat = pts[0].latitude, mxLat = pts[0].latitude;
-    double mnLng = pts[0].longitude, mxLng = pts[0].longitude;
-    for (final p in pts) {
-      mnLat = math.min(mnLat, p.latitude);
-      mxLat = math.max(mxLat, p.latitude);
-      mnLng = math.min(mnLng, p.longitude);
-      mxLng = math.max(mxLng, p.longitude);
-    }
-    
-    _map!.cameraForCoordinatesPadding(
-      [mapbox.Point(coordinates: mapbox.Position(mnLng, mnLat)),
-       mapbox.Point(coordinates: mapbox.Position(mxLng, mxLat))],
-      mapbox.CameraOptions(bearing: 0, pitch: 20),
-      mapbox.MbxEdgeInsets(top: 160, left: 40, bottom: 120, right: 40),
-      null, null,
-    ).then((cam) {
-      if (mounted && _map != null) _map!.setCamera(cam);
-    });
+    if (_map == null || _routePts.isEmpty) return;
+    _fitRouteBounds();
   }
 
   /// Blend two bearings with smooth interpolation
@@ -641,49 +624,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   // ── Compute ideal bounds and set as smooth target ──
   void _updateCamTarget() {
-    if (_map == null || _userMovedMap) return;
-    // Always include driver, pickup, and dropoff so all pins are visible
-    final pts = <LatLng>[_animPos, widget.pickupLatLng, widget.dropoffLatLng];
-    double mnLat = pts[0].latitude, mxLat = pts[0].latitude;
-    double mnLng = pts[0].longitude, mxLng = pts[0].longitude;
-    for (final p in pts) {
-      mnLat = math.min(mnLat, p.latitude);
-      mxLat = math.max(mxLat, p.latitude);
-      mnLng = math.min(mnLng, p.longitude);
-      mxLng = math.max(mxLng, p.longitude);
-    }
-    // Smooth padding proportional to span
-    final latSpan = mxLat - mnLat;
-    final lngSpan = mxLng - mnLng;
-    final span = math.max(latSpan, lngSpan);
-    final padFrac = span > 0.01 ? 0.10 : 0.18;
-    final pad = span * padFrac;
-    const minPad = 0.0003;
-    final lp = math.max(pad, minPad);
-
-    _tgtSWLat = mnLat - lp;
-    _tgtSWLng = mnLng - lp;
-    _tgtNELat = mxLat + lp;
-    _tgtNELng = mxLng + lp;
-
-    // First call → snap immediately (no lerp delay)
-    if (!_camInitialized) {
-      _camSWLat = _tgtSWLat;
-      _camSWLng = _tgtSWLng;
-      _camNELat = _tgtNELat;
-      _camNELng = _tgtNELng;
-      _camInitialized = true;
-      _programmaticCam = true;
-      _map!.cameraForCoordinatesPadding(
-        [mapbox.Point(coordinates: mapbox.Position(_camSWLng, _camSWLat)),
-         mapbox.Point(coordinates: mapbox.Position(_camNELng, _camNELat))],
-        mapbox.CameraOptions(bearing: 0, pitch: 20),
-        mapbox.MbxEdgeInsets(top: 160, left: 40, bottom: 120, right: 40),
-        null, null,
-      ).then((cam) {
-        if (mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 500));
-      });
-    }
+    if (_map == null) return;
+    _fitRouteBounds();
   }
 
   void _fitAllPoints() {
@@ -691,9 +633,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   void _recenter() {
-    _setState(() => _userMovedMap = false);
-    _camInitialized = false; // force re-fit
-    _updateCameraForRoute();
+    _fitRouteBounds();
   }
 
   double _hav(LatLng a, LatLng b) {
@@ -862,11 +802,21 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                   widget.pickupLatLng.latitude,
                 ),
               ),
-              zoom: 14.0, pitch: 20.0,
+              zoom: 14.0, pitch: 0.0,
             ),
             textureView: true,
             onMapCreated: (ctrl) async {
               _map = ctrl;
+              // Lock map: disable all user gestures
+              ctrl.gestures.updateSettings(mapbox.GesturesSettings(
+                scrollEnabled: false,
+                pinchToZoomEnabled: false,
+                doubleTapToZoomInEnabled: false,
+                doubleTouchToZoomOutEnabled: false,
+                rotateEnabled: false,
+                pitchEnabled: false,
+                quickZoomEnabled: false,
+              ));
               ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
               ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
               ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
@@ -884,9 +834,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
             },
             onStyleLoadedListener: (_) async {
               if (_map != null) await _applyDarkNavyGoldTheme(_map!);
-            },
-            onScrollListener: (_) {
-              if (!_userMovedMap) _setState(() => _userMovedMap = true);
             },
           ),
         ),
@@ -1305,7 +1252,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
       mapbox.CameraOptions(bearing: 0, pitch: 0, zoom: 15.0),
-      mapbox.MbxEdgeInsets(top: 180, left: 50, bottom: 140, right: 50),
+      mapbox.MbxEdgeInsets(top: _topCardHeight + 24, left: 50, bottom: _bottomCardHeight + 24, right: 50),
       null, null,
     ).then((cam) {
       if (mounted && _map != null) {
@@ -1367,7 +1314,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       if (_map == null || !mounted) return;
       _map?.cameraForCoordinatesPadding(
         [mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude))],
-        mapbox.CameraOptions(bearing: 0, pitch: 20.0, zoom: 16.5),
+        mapbox.CameraOptions(bearing: 0, pitch: 0.0, zoom: 16.5),
         mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
         null, null,
       ).then((cam) {

@@ -186,6 +186,7 @@ class PaymentIntentIn(BaseModel):
     currency: str = "usd"
     payment_method_id: Optional[str] = None
     trip_id: Optional[int] = None
+    hold_only: bool = False
 
 
 class PayPalOrderIn(BaseModel):
@@ -218,6 +219,7 @@ class DispatchRequestIn(BaseModel):
     pickup_zone: Optional[str] = None
     notes: Optional[str] = None
     scheduled_at: Optional[str] = None
+    stripe_payment_intent_id: Optional[str] = None
 
 
 # ═══════════════════════════════════════════════════════

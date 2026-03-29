@@ -88,6 +88,10 @@ async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get
         else:
             intent_params["automatic_payment_methods"] = {"enabled": True}
 
+        # Hold-only: authorize but do NOT capture yet (capture on trip completion)
+        if body.hold_only:
+            intent_params["capture_method"] = "manual"
+
         if body.trip_id:
             intent_params["metadata"]["trip_id"] = str(body.trip_id)
 
@@ -120,7 +124,25 @@ async def get_payment_intent(intent_id: str, user: User = Depends(_get_current_u
         raise HTTPException(400, str(e.user_message or e))
 
 
-# -- PayPal token exchange (proxied through backend � never expose secret to client) --
+@router.post("/payments/capture/{intent_id}", dependencies=[Depends(_verify_api_key)])
+async def capture_payment_intent(intent_id: str, user: User = Depends(_get_current_user)):
+    """Capture a previously authorized (held) PaymentIntent.
+    Called when a trip is completed to finalize the charge."""
+    if not _HAS_STRIPE:
+        return {"payment_intent_id": intent_id, "status": "succeeded", "captured": True}
+    try:
+        intent = _stripe_mod.PaymentIntent.capture(intent_id)
+        return {
+            "payment_intent_id": intent.id,
+            "status": intent.status,
+            "amount": intent.amount,
+            "captured": intent.status == "succeeded",
+        }
+    except _stripe_mod.error.StripeError as e:
+        raise HTTPException(400, str(e.user_message or e))
+
+
+# -- PayPal token exchange (proxied through backend — never expose secret to client) --
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
 PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "")
 PAYPAL_SANDBOX = os.getenv("PAYPAL_SANDBOX", "true").lower() == "true"

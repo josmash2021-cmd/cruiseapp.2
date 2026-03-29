@@ -183,6 +183,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   String? _savedCardLast4;
   String? _savedCardBrand;
   bool _isProcessingPayment = false;
+  String? _heldPaymentIntentId;
 
   // ── Map interaction state ──
   bool _userMovedMap = false;

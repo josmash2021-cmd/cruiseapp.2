@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../config/app_theme.dart';
+import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import '../services/places_service.dart';
 import '../l10n/app_localizations.dart';
+import 'pickup_dropoff_search_screen.dart';
+import 'ride_request_screen.dart';
+import 'schedule_picker_sheet.dart';
 
 /// Premium Scheduled Rides screen for riders.
 /// Shows upcoming and past scheduled/airport rides with cancel ability.
@@ -181,11 +186,71 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     }
   }
 
+  Future<void> _startScheduleFlow() async {
+    final isDark = AppColors.of(context).isDark;
+
+    // Step 1: Show the calendar + time picker
+    final result = await showModalBottomSheet<(DateTime, bool)>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SchedulePickerSheet(isDark: isDark),
+    );
+
+    if (result == null || !mounted) return;
+    final (scheduledAt, isAirport) = result;
+
+    // Step 2: Open search screen for destination
+    final searchResult = await Navigator.of(context).push<Map<String, dynamic>>(
+      sharedAxisZRoute(
+        const PickupDropoffSearchScreen(),
+        opaque: false,
+      ),
+    );
+
+    if (searchResult == null || !mounted) return;
+
+    final pickupDetails = searchResult['pickup'] as PlaceDetails?;
+    final dropoffDetails = searchResult['dropoff'] as PlaceDetails?;
+    final pickupLabel = searchResult['pickupLabel'] as String? ?? '';
+    final dropoffLabel = searchResult['dropoffLabel'] as String? ?? '';
+
+    if (dropoffDetails == null) return;
+
+    final effectiveDropoffLabel =
+        dropoffLabel.isNotEmpty ? dropoffLabel : dropoffDetails.address;
+
+    // Step 3: Open ride request screen with scheduledAt + search results
+    await Navigator.of(context).push(
+      slideUpFadeRoute(
+        RideRequestScreen(
+          scheduledAt: scheduledAt,
+          isAirportTrip: isAirport,
+          initialPickupDetails: pickupDetails,
+          initialDropoffDetails: dropoffDetails,
+          initialPickupLabel: pickupLabel,
+          initialDropoffLabel: effectiveDropoffLabel,
+          initialDropoffAddress: effectiveDropoffLabel,
+        ),
+      ),
+    );
+
+    // Refresh list after booking
+    if (mounted) _loadTrips();
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
       backgroundColor: c.bg,
+      floatingActionButton: _trips.isNotEmpty
+          ? FloatingActionButton(
+              onPressed: _startScheduleFlow,
+              backgroundColor: _gold,
+              child: const Icon(Icons.add_rounded, color: Colors.black87, size: 28),
+            )
+          : null,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
@@ -240,15 +305,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                   ),
                 ],
               ),
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [_gold.withValues(alpha: 0.08), c.bg],
-                  ),
-                ),
-              ),
+              background: Container(color: c.bg),
             ),
           ),
 
@@ -340,7 +397,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
           ),
           const SizedBox(height: 24),
           GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: _startScheduleFlow,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
               decoration: BoxDecoration(

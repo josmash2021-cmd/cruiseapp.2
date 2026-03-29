@@ -732,6 +732,7 @@ extension _RideRequestController on _RideRequestScreenState {
       await _createScheduledTrip();
       return;
     }
+    _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
     _ctrl.requestRide();
   }
 
@@ -779,6 +780,7 @@ extension _RideRequestController on _RideRequestScreenState {
     }
     if (!mounted) return;
 
+    _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
     _ctrl.requestRide();
   }
 
@@ -810,11 +812,12 @@ extension _RideRequestController on _RideRequestScreenState {
     }
   }
 
-  /// Apple Pay: present native Apple Pay sheet via Stripe.
+  /// Apple Pay: present native Apple Pay sheet via Stripe (hold only).
   Future<bool> _confirmApplePay(int amountCents, String label) async {
     try {
-      final piResult = await ApiService.createPaymentIntent(amountCents: amountCents);
+      final piResult = await ApiService.createPaymentIntent(amountCents: amountCents, holdOnly: true);
       final clientSecret = piResult['client_secret'] as String?;
+      _heldPaymentIntentId = piResult['payment_intent_id'] as String?;
       if (clientSecret == null || clientSecret.startsWith('mock_')) return true;
 
       await stripe.Stripe.instance.confirmPlatformPayPaymentIntent(
@@ -839,11 +842,12 @@ extension _RideRequestController on _RideRequestScreenState {
     }
   }
 
-  /// Google Pay: present native Google Pay sheet via Stripe.
+  /// Google Pay: present native Google Pay sheet via Stripe (hold only).
   Future<bool> _confirmGooglePay(int amountCents, String label) async {
     try {
-      final piResult = await ApiService.createPaymentIntent(amountCents: amountCents);
+      final piResult = await ApiService.createPaymentIntent(amountCents: amountCents, holdOnly: true);
       final clientSecret = piResult['client_secret'] as String?;
+      _heldPaymentIntentId = piResult['payment_intent_id'] as String?;
       if (clientSecret == null || clientSecret.startsWith('mock_')) return true;
 
       await stripe.Stripe.instance.confirmPlatformPayPaymentIntent(
@@ -877,7 +881,7 @@ extension _RideRequestController on _RideRequestScreenState {
     return result == true;
   }
 
-  /// Credit/debit card: charge saved card via Stripe PaymentIntent.
+  /// Credit/debit card: authorize (hold) saved card via Stripe PaymentIntent.
   Future<bool> _confirmCard(int amountCents) async {
     final pmId = await LocalDataService.getStripePaymentMethodId();
     if (!mounted) return false;
@@ -888,7 +892,9 @@ extension _RideRequestController on _RideRequestScreenState {
     final piResult = await ApiService.createPaymentIntent(
       amountCents: amountCents,
       paymentMethodId: pmId,
+      holdOnly: true,
     );
+    _heldPaymentIntentId = piResult['payment_intent_id'] as String?;
     final clientSecret = piResult['client_secret'] as String?;
     final status = piResult['status'] as String?;
     if (clientSecret == null || clientSecret.startsWith('mock_')) return true;
@@ -980,29 +986,52 @@ extension _RideRequestController on _RideRequestScreenState {
 
       if (!mounted) return;
 
-      // Show success and navigate to scheduled rides
+      // Pop back to home and show booking confirmation
+      Navigator.of(context).pop();
+      final isEs = Localizations.localeOf(context).languageCode == 'es';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: const Color(0xFFE8C547),
-          content: Text(
-            S.of(context).rideScheduledSuccess,
-            style: const TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.w700,
-            ),
+          backgroundColor: const Color(0xFF1E1E1E),
+          duration: const Duration(seconds: 5),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: Color(0xFFE8C547), size: 22),
+                  const SizedBox(width: 10),
+                  Text(
+                    isEs ? '¡Reserva completada!' : 'Booking confirmed!',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                isEs
+                    ? 'Te avisaremos cuando tengas un driver asignado.'
+                    : 'We\'ll notify you when a driver is assigned.',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
           ),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         ),
       );
-
-      // Pop back to home, then push scheduled rides
-      Navigator.of(context).pop();
-      Navigator.of(
-        context,
-      ).push(slideFromRightRoute(const ScheduledRidesScreen()));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1153,7 +1182,6 @@ extension _RideRequestController on _RideRequestScreenState {
                     onTap: () {
                       _setState(() => _selectedPaymentMethod = id);
                       Navigator.pop(ctx);
-                      _showPaymentSheet(c, option);
                     },
                     child: Container(
                       margin: const EdgeInsets.only(bottom: 6),

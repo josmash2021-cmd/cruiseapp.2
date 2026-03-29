@@ -146,12 +146,32 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
 
 async def _charge_trip(trip, db: AsyncSession) -> dict:
     """Charge the rider's default Stripe payment method for a completed trip.
+    If a payment hold (authorization) exists, capture it instead of creating a new charge.
     Returns a dict with status and payment_intent_id."""
     if not _HAS_STRIPE:
         trip.payment_status = "paid"
         await db.commit()
         return {"status": "mock_paid", "payment_intent_id": None}
 
+    # If there's an existing hold (authorized PaymentIntent), capture it
+    if trip.stripe_payment_intent_id:
+        try:
+            existing = _stripe_mod.PaymentIntent.retrieve(trip.stripe_payment_intent_id)
+            if existing.status == "requires_capture":
+                intent = _stripe_mod.PaymentIntent.capture(trip.stripe_payment_intent_id)
+                trip.payment_status = "paid" if intent.status == "succeeded" else "failed"
+                await db.commit()
+                logging.info("[Capture] Trip %s hold captured — status: %s", trip.id, intent.status)
+                return {"status": intent.status, "payment_intent_id": intent.id, "amount": intent.amount}
+            elif existing.status == "succeeded":
+                trip.payment_status = "paid"
+                await db.commit()
+                return {"status": "succeeded", "payment_intent_id": existing.id, "amount": existing.amount}
+        except _stripe_mod.error.StripeError as e:
+            logging.error("[Capture] Failed for trip %s: %s", trip.id, e)
+            # Fall through to create new charge
+
+    # No existing hold — charge the saved card directly
     # Find rider's default Stripe card
     pm_r = await db.execute(
         select(RiderPaymentMethod).where(

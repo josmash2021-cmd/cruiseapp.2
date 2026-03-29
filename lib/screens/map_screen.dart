@@ -296,7 +296,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _goldPinIconBytes,
       iconSize: 1.0,
-      iconAnchor: mapbox.IconAnchor.CENTER, // circle centre sits on the coordinate
+      iconAnchor: mapbox.IconAnchor.BOTTOM, // pin tip sits on the coordinate
     ));
     _refreshPinLabelOffsets();
   }
@@ -309,7 +309,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
       image: _dropoffPinIconBytes ?? _goldPinIconBytes,
       iconSize: 1.0,
-      iconAnchor: mapbox.IconAnchor.CENTER, // circle centre sits on the coordinate
+      iconAnchor: mapbox.IconAnchor.BOTTOM, // pin tip sits on the coordinate
     ));
     _refreshPinLabelOffsets();
   }
@@ -395,9 +395,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _loadPinIcons() async {
-    // Use flat circle pins: person icon (pickup) and home icon (dropoff).
-    // These circle pins align to iconAnchor.CENTER, matching the exact
-    // route polyline endpoints without any visual offset.
+    // Golden teardrop pins for pickup (person) and dropoff (home).
+    // These pins use iconAnchor.BOTTOM so the tip sits exactly on the coordinate.
     _goldPinIconBytes    = await _buildRouteDotPin(isPickup: true);
     _dropoffPinIconBytes = await _buildRouteDotPin(isPickup: false);
     if (!mounted) return;

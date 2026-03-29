@@ -507,6 +507,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
   // ─── Request ride ───────────────────────────────────────────
 
+  String? _heldPaymentIntentId;
+  void setHeldPaymentIntentId(String? id) => _heldPaymentIntentId = id;
+
   Future<void> requestRide() async {
     // Fix 2: prevent double-tap from spawning duplicate requests
     if (_isRequesting) return;
@@ -582,6 +585,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         dropoffLng: dropoff.lng,
         fare: _state.selectedOption?.priceEstimate,
         vehicleType: _state.selectedOption?.name,
+        stripePaymentIntentId: _heldPaymentIntentId,
       );
 
       final tripId = result['trip_id'] as int?;

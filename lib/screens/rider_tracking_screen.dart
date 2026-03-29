@@ -189,13 +189,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   double _tgtTraveledM = 0;
   final double _tgtBrg = 0;
   Timer? _camTimer;
-  bool _userMovedMap = false;
-  bool _programmaticCam = false;
-
-  // ── Smooth camera bounds (60fps lerp) ──
-  double _camSWLat = 0, _camSWLng = 0, _camNELat = 0, _camNELng = 0;
-  double _tgtSWLat = 0, _tgtSWLng = 0, _tgtNELat = 0, _tgtNELng = 0;
-  bool _camInitialized = false;
 
   // ── Real-time tracking via Firestore ──
   StreamSubscription<LatLng>? _driverLocSub;
@@ -346,7 +339,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_userMovedMap) _buildResumeButton(),
                     KeyedSubtree(
                       key: _bottomCardKey,
                       child: _buildDestinationBox(),

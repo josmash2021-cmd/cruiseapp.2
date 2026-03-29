@@ -559,20 +559,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       if (!mounted) return;
       _startRidePhase = 3; // pause phase
       
-      // PHASE 4: Zoom back in to follow driver
-      Future.delayed(const Duration(milliseconds: 3000), () {
-        if (!mounted || _startRidePhase < 3) return;
-        _startRidePhase = 4;
-        _zoomInToCameraFollow();
-        
-        // PHASE 5: Enable real-time tracking after zoom in completes
-        Future.delayed(const Duration(milliseconds: 2000), () {
-          if (!mounted) return;
-          _startRidePhase = 5;
-          _shouldFollowDriver = true;
-          _startCameraFollowTracking();
-        });
-      });
+      // Stay in top-down route-fit view — no zoom-in follow
+      _startRidePhase = 5;
     });
   }
 
@@ -588,49 +576,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   /// Phase 2: Animate camera zoom out to show full route
   void _zoomOutCamToShowRoute() {
-    if (_map == null || _userMovedMap) return;
-    
-    // Get bounds of full route
-    if (_routePts.isEmpty) return;
-    final pts = <LatLng>[widget.pickupLatLng, widget.dropoffLatLng];
-    pts.addAll(_routePts);
-    
-    double minLat = pts[0].latitude, maxLat = pts[0].latitude;
-    double minLng = pts[0].longitude, maxLng = pts[0].longitude;
-    for (final p in pts) {
-      minLat = math.min(minLat, p.latitude);
-      maxLat = math.max(maxLat, p.latitude);
-      minLng = math.min(minLng, p.longitude);
-      maxLng = math.max(maxLng, p.longitude);
-    }
-    
-    _map?.cameraForCoordinatesPadding(
-      [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
-       mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
-      mapbox.CameraOptions(bearing: 0, pitch: 0),
-      mapbox.MbxEdgeInsets(top: 160, left: 40, bottom: 120, right: 40),
-      null, null,
-    ).then((cam) {
-      if (mounted && _map != null) {
-        _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 2000));
-      }
-    });
+    _fitRouteBounds();
   }
 
   /// Phase 4: Animate camera zoom in and tilted to follow driver
   void _zoomInToCameraFollow() {
-    if (_map == null || !mounted) return;
-    
-    _map?.cameraForCoordinatesPadding(
-      [mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude))],
-      mapbox.CameraOptions(bearing: _animBearing, pitch: 20.0, zoom: 16.5),
-      mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
-      null, null,
-    ).then((cam) {
-      if (mounted && _map != null) {
-        _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 2000));
-      }
-    });
+    _fitRouteBounds();
   }
 
   /// Start real-time camera tracking - follows driver every location update
@@ -646,18 +597,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   /// Smooth camera follow for driver position
   void _followDriver(LatLng position, double bearing) {
-    if (_map == null || _userMovedMap) return;
-    
-    _map?.cameraForCoordinatesPadding(
-      [mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude - 0.002))],
-      mapbox.CameraOptions(bearing: bearing, pitch: 20.0, zoom: 16.5),
-      mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
-      null, null,
-    ).then((cam) {
-      if (mounted && _map != null) {
-        _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 800));
-      }
-    });
+    _fitRouteBounds();
   }
 
   void _navigateToHome() {

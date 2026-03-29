@@ -18,48 +18,14 @@ extension _MapScreenMap on _MapScreenState {
     );
   }
 
-  /// Flat white-circle pin for route endpoints: person icon (pickup) / home icon (dropoff).
-  /// Uses iconAnchor.CENTER so the circle centre sits exactly on the coordinate —
-  /// aligning perfectly with the first/last point of the route polyline.
+  /// Golden teardrop pin for route endpoints.
+  /// Uses iconAnchor.BOTTOM so the pin tip sits exactly on the coordinate.
   Future<Uint8List> _buildRouteDotPin({required bool isPickup}) async {
-    const double d  = 64.0;
-    const double cx = d / 2, cy = d / 2;
-    const double r  = 20.0;
-    final rec = ui.PictureRecorder();
-    final c   = Canvas(rec, Rect.fromLTWH(0, 0, d, d));
-    // Soft drop-shadow
-    c.drawCircle(
-      Offset(cx, cy + 2), r + 2,
-      Paint()
-        ..color      = Colors.black.withValues(alpha: 0.28)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    return renderCircularPinBytes(
+      icon: isPickup ? CircularPinIcon.person : CircularPinIcon.home,
+      isPickup: isPickup,
+      radius: 32,
     );
-    // White fill
-    c.drawCircle(Offset(cx, cy), r, Paint()..color = Colors.white);
-    // Gold ring
-    c.drawCircle(Offset(cx, cy), r,
-      Paint()
-        ..color       = const Color(0xFFE8C547)
-        ..style       = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
-    );
-    // Icon (person for pickup, home for dropoff)
-    final iconData = isPickup ? Icons.person : Icons.home;
-    final tp = TextPainter(textDirection: ui.TextDirection.ltr)
-      ..text = TextSpan(
-        text: String.fromCharCode(iconData.codePoint),
-        style: TextStyle(
-          fontFamily: iconData.fontFamily,
-          package:    iconData.fontPackage,
-          color:      isPickup ? const Color(0xFF1565C0) : const Color(0xFF222222),
-          fontSize:   20,
-        ),
-      )
-      ..layout();
-    tp.paint(c, Offset(cx - tp.width / 2, cy - tp.height / 2));
-    final img   = await rec.endRecording().toImage(d.toInt(), d.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes!.buffer.asUint8List();
   }
 
   void _onCameraMove(LatLng position) {

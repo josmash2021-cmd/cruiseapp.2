@@ -258,12 +258,11 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  /// Call the driver with a confirmation dialog before dialing.
+  /// Call the driver — shows an iOS-style action sheet then dials directly.
   void _handleCallDriver() {
     final phone = widget.driverPhone;
     final name = nh.displayName(widget.driverName, widget.rideName);
     if (phone == null || phone.isEmpty) {
-      // No phone number available — show info snackbar
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Phone number not available for $name'),
@@ -273,29 +272,69 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       );
       return;
     }
-    showDialog<bool>(
+
+    // Format phone for display (e.g. +13965483672 → +1 (396) 548-3672)
+    String displayPhone = phone;
+    final digits = phone.replaceAll(RegExp(r'[^\d]'), '');
+    if (digits.length == 11 && digits.startsWith('1')) {
+      displayPhone = '+1 (${digits.substring(1, 4)}) ${digits.substring(4, 7)}-${digits.substring(7)}';
+    } else if (digits.length == 10) {
+      displayPhone = '+1 (${digits.substring(0, 3)}) ${digits.substring(3, 6)}-${digits.substring(6)}';
+    }
+
+    showModalBottomSheet<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          'Call $name?',
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-        ),
-        content: Text(
-          phone,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Call button
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF007AFF),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    'Call $displayPhone',
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              // Cancel button
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2A2A2E),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Call', style: TextStyle(color: Color(0xFFD4AF37), fontWeight: FontWeight.w700)),
-          ),
-        ],
+        ),
       ),
     ).then((confirmed) {
       if (confirmed == true) {

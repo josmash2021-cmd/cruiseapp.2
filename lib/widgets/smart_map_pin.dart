@@ -93,135 +93,151 @@ class GoldenPinPainter {
   final bool isPickup;
 
   double get _width  => size;
-  double get _height => size * 1.1;
+  double get _height => size * 1.50;
   double get _cx     => _width / 2;
-  double get _r      => _width * 0.29;
-  double get _headCY => _r + _width * 0.06;
+  double get _r      => _width * 0.33;
+  double get _headCY => _r + _width * 0.08;
   // Keep tip at image bottom so IconAnchor.BOTTOM pins exactly at coordinates.
-  double get _tipY   => _height - 1.0;
-  double get _shadowY => _height - (_width * 0.07);
+  double get _tipY   => _height;
 
-  // ── Gold palette (used for both pickup and dropoff) ──
-  static const _goldLight  = Color(0xFFFFF5C4);
-  static const _goldMid    = Color(0xFFE4BD4A);
-  static const _goldDeep   = Color(0xFF9C6B12);
-  static const _goldRing   = Color(0xB8FFE4A0);
-  static const _goldBorder = Color(0x7AFFF1B8);
+  // ── Gold palette ──
+  static const _goldLight = Color(0xFFFFE88A);
+  static const _goldMid   = Color(0xFFD4A520);
+  static const _goldDeep  = Color(0xFF8B6914);
 
   void paint(Canvas canvas, Size canvasSize) {
-    final cx      = _cx;
-    final r       = _r;
-    final headCY  = _headCY;
-    final tipY    = _tipY;
-    final shadowY = _shadowY;
+    final cx     = _cx;
+    final r      = _r;
+    final headCY = _headCY;
+    final tipY   = _tipY;
 
-    // No detached ground shadow: avoid any floating illusion.
+    // ── 1. Golden tail (cone shape) ──
+    final tailPath = _buildTail(cx, headCY, r, tipY);
 
-    // ── 1. Teardrop path ──
-    final pinPath = _buildTeardrop(cx, headCY, r, tipY);
-
-    // Minimal body shadow for depth, without visual lift from the map.
+    // Shadow behind tail
     canvas.drawPath(
-      pinPath.shift(const Offset(0, 1.2)),
+      tailPath.shift(const Offset(0, 2.5)),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.13)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+        ..color = Colors.black.withValues(alpha: 0.30)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
     );
 
-    // ── 3. Premium metallic fill ──
-    const colorLight  = _goldLight;
-    const colorMid    = _goldMid;
-    const colorDeep   = _goldDeep;
-    const colorRing   = _goldRing;
-    const colorBorder = _goldBorder;
+    // Gold gradient fill
     canvas.drawPath(
-      pinPath,
+      tailPath,
       Paint()
         ..shader = ui.Gradient.linear(
-          Offset(cx - r * 0.5, headCY - r),
-          Offset(cx + r * 0.5, tipY),
-          [colorLight, colorMid, colorDeep],
-          [0.0, 0.42, 1.0],
+          Offset(cx, headCY + r * 0.2),
+          Offset(cx, tipY),
+          [_goldLight, _goldMid, _goldDeep],
+          [0.0, 0.50, 1.0],
         ),
     );
 
-    // Center ring only (transparent fill) around the icon.
-    canvas.drawCircle(
-      Offset(cx, headCY),
-      r * 0.61,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.35
-        ..color = colorRing,
-    );
-
-    // Inner crisp highlight ring for the glossy/luxury look.
-    canvas.drawCircle(
-      Offset(cx, headCY),
-      r * 0.50,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.9
-        ..color = const Color(0x88FFFFFF),
-    );
-
-    // ── 4. Glass sheen — white oval highlight top-left ──
+    // Left-side shine on the tail
     canvas.save();
-    canvas.clipPath(pinPath);
+    canvas.clipPath(tailPath);
     canvas.drawOval(
       Rect.fromCenter(
-        center: Offset(cx - r * 0.28, headCY - r * 0.25),
-        width: r * 0.90,
-        height: r * 0.60,
+        center: Offset(cx - r * 0.40, headCY + r * 1.0),
+        width: r * 0.5,
+        height: r * 2.0,
       ),
       Paint()
-        ..color = const Color(0x66FFFFFF)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
-    );
-    // Micro-specular dot
-    canvas.drawCircle(
-      Offset(cx - r * 0.32, headCY - r * 0.32),
-      r * 0.14,
-      Paint()..color = Colors.white.withValues(alpha: 0.85),
+        ..color = Colors.white.withValues(alpha: 0.14)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
     canvas.restore();
 
-    // ── 5. Thin bright border around full pin ──
-    canvas.drawPath(
-      pinPath,
+    // Bright golden accent at the tip point
+    final tipGlow = Paint()
+      ..color = const Color(0xFFFFD54F)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+    canvas.drawCircle(Offset(cx, tipY - r * 0.04), r * 0.06, tipGlow);
+
+    // ── 2. Thin golden arc — upper crescent only ──
+    // Arc covers from ~210° to ~330° (the upper portion, leaving bottom open)
+    // In Canvas angles: 0 = right, π/2 = bottom, π = left, -π/2 = top
+    // Start at bottom-left (~210°), sweep clockwise through top to bottom-right (~330°)
+    final arcRect = Rect.fromCircle(center: Offset(cx, headCY), radius: r);
+    canvas.drawArc(
+      arcRect,
+      -math.pi * 1.17,   // start at ~210° (bottom-left of circle)
+      math.pi * 1.34,     // sweep ~240° clockwise through top
+      false,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.25
-        ..color = colorBorder,
+        ..strokeWidth = 1.6
+        ..strokeCap = StrokeCap.round
+        ..shader = ui.Gradient.sweep(
+          Offset(cx, headCY),
+          [
+            const Color(0xAAFFE4A0),
+            const Color(0xFFD4AF37),
+            const Color(0xFFA07810),
+            const Color(0xFFD4AF37),
+            const Color(0xAAFFE4A0),
+          ],
+          [0.0, 0.25, 0.5, 0.75, 1.0],
+        ),
     );
 
-    // ── 6. Dark circle background + icon inside the teardrop ──
+    // ── 3. White glow behind icon — fully transparent center ──
+    // Outer soft halo
     canvas.drawCircle(
       Offset(cx, headCY),
-      r * 0.52,
-      Paint()..color = const Color(0xFF1A1A2E),
+      r * 0.65,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.12)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.55),
     );
+    // Inner brighter core
+    canvas.drawCircle(
+      Offset(cx, headCY),
+      r * 0.35,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.22)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.35),
+    );
+
+    // ── 4. White icon ──
     _drawIcon(canvas, icon, cx, headCY, r);
   }
 
-  Path _buildTeardrop(double cx, double headCY, double r, double tipY) {
-    const taper = 0.58;
-    final rx = cx + r * math.sin(taper);
-    final ry = headCY + r * math.cos(taper);
-    final lx = cx - r * math.sin(taper);
+  /// Tail shape: wide V from circle sides down to sharp tip.
+  Path _buildTail(double cx, double headCY, double r, double tipY) {
+    // Spread angle from bottom-center of circle (~55°)
+    const spread = 0.90;
+    final rx = cx + r * math.sin(spread);
+    final ry = headCY + r * math.cos(spread);
+    final lx = cx - r * math.sin(spread);
+    final ly = ry;
     return Path()
       ..moveTo(cx, tipY)
-      ..cubicTo(cx + r * 0.14, tipY - (tipY - ry) * 0.38,
-                rx + r * 0.08, ry + (tipY - ry) * 0.20, rx, ry)
-      ..arcToPoint(Offset(lx, ry),
-          radius: Radius.circular(r), clockwise: false, largeArc: true)
-      ..cubicTo(lx - r * 0.08, ry + (tipY - ry) * 0.20,
-                cx - r * 0.14, tipY - (tipY - ry) * 0.38, cx, tipY)
+      // Right side: tip curves up to right edge of circle
+      ..cubicTo(
+        cx + r * 0.10, tipY - (tipY - ry) * 0.38,
+        rx - r * 0.08, ry + (tipY - ry) * 0.22,
+        rx, ry,
+      )
+      // Short arc across bottom of circle (connects right to left)
+      ..arcToPoint(
+        Offset(lx, ly),
+        radius: Radius.circular(r),
+        clockwise: false,
+        largeArc: false,
+      )
+      // Left side: left edge of circle curves down to tip
+      ..cubicTo(
+        lx + r * 0.08, ly + (tipY - ly) * 0.22,
+        cx - r * 0.10, tipY - (tipY - ly) * 0.38,
+        cx, tipY,
+      )
       ..close();
   }
 
   void _drawIcon(Canvas canvas, IconData iconData, double cx, double cy, double r) {
-    final iconSize = r * 1.18;
+    final iconSize = r * 1.0;
     final tp = TextPainter(
       text: TextSpan(
         text: String.fromCharCode(iconData.codePoint),
@@ -229,8 +245,11 @@ class GoldenPinPainter {
           fontSize: iconSize,
           fontFamily: iconData.fontFamily,
           package: iconData.fontPackage,
-          color: const Color(0xFFF8FBFF),
-          shadows: const [Shadow(color: Color(0x66000000), blurRadius: 4)],
+          color: Colors.white,
+          shadows: const [
+            Shadow(color: Color(0x99FFFFFF), blurRadius: 10),
+            Shadow(color: Color(0x44FFFFFF), blurRadius: 20),
+          ],
         ),
       ),
       textDirection: TextDirection.ltr,

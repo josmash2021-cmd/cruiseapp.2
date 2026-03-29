@@ -382,6 +382,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                         mapbox.MapAnimationOptions(duration: 800),
                                       );
                                     }
+
                                   },
                                   child: _buildRideOptionCard(
                                     c,
@@ -416,137 +417,129 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   ),
 
                   const SizedBox(height: 6),
-                  Divider(
-                    height: 1,
-                    color: Colors.white.withValues(alpha: 0.08),
-                  ),
-                  const SizedBox(height: 6),
 
-                  // Payment Method + Request Ride buttons — hidden during shimmer, fade in when ready
-                  AnimatedOpacity(
-                    opacity: _optionsLoaded ? 1.0 : 0.0,
+                  // Payment Method + Request button — visible after car selection
+                  AnimatedSize(
                     duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    child: AnimatedSize(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                      child: _optionsLoaded
-                          ? Column(
-                              mainAxisSize: MainAxisSize.min,
+                    curve: Curves.easeInOutCubic,
+                    child: option != null
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Column(
                               children: [
-                                // Payment Method — dark gray fill
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                                  child: GestureDetector(
-                                    onTap: () => _showPaymentMethodPicker(c, option),
-                                    child: Container(
-                                      width: double.infinity,
-                                      height: 52,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF2A2A2A),
-                                        borderRadius: BorderRadius.circular(14),
+                                // ── Payment Method button ──
+                                GestureDetector(
+                                  onTap: () => _showPaymentMethodPicker(c, option),
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.06),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(alpha: 0.08),
                                       ),
-                                      child: const Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Text(
-                                            'Payment Method',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w700,
-                                              letterSpacing: 0.2,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        AnimatedSwitcher(
+                                          duration: const Duration(milliseconds: 350),
+                                          switchInCurve: Curves.easeOut,
+                                          switchOutCurve: Curves.easeIn,
+                                          child: SizedBox(
+                                            key: ValueKey('logo_$_selectedPaymentMethod'),
+                                            child: _paymentLogoWidget(
+                                              _selectedPaymentMethod,
+                                              32,
                                             ),
                                           ),
-                                          SizedBox(width: 6),
-                                          Icon(
-                                            Icons.chevron_right,
-                                            color: Colors.white,
-                                            size: 18,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: AnimatedSwitcher(
+                                            duration: const Duration(milliseconds: 350),
+                                            switchInCurve: Curves.easeOut,
+                                            switchOutCurve: Curves.easeIn,
+                                            child: Align(
+                                              key: ValueKey(_selectedPaymentMethod),
+                                              alignment: Alignment.centerLeft,
+                                              child: Text(
+                                                _paymentLabel(_selectedPaymentMethod),
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                        Icon(
+                                          Icons.keyboard_arrow_down_rounded,
+                                          color: Colors.white.withValues(alpha: 0.5),
+                                          size: 22,
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
                                 const SizedBox(height: 10),
-
-                                // Request Ride button — flat 2D, gold border
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                                  child: AnimatedBuilder(
-                                    animation: _shakeAnim,
-                                    builder: (_, child) => Transform.translate(
-                                      offset: Offset(_shakeAnim.value, 0),
-                                      child: child,
-                                    ),
-                                    child: GestureDetector(
-                                      onTap: option != null && !_isProcessingPayment
-                                          ? () => _startRideDirectly(c, option)
-                                          : option == null && !_isProcessingPayment
-                                              ? () => _shakeCtrl.forward(from: 0)
-                                              : null,
-                                      child: Container(
-                                        width: double.infinity,
-                                        height: 56,
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF0D0D0D),
-                                          borderRadius: BorderRadius.circular(14),
-                                          border: Border.all(
-                                            color: option != null
-                                                ? const Color(0xFFFFD700)
-                                                : const Color(0xFFFFD700).withValues(alpha: 0.3),
-                                            width: 1.5,
-                                          ),
-                                        ),
-                                        child: _isProcessingPayment
-                                            ? const Center(
-                                                child: SizedBox(
-                                                  width: 24,
-                                                  height: 24,
-                                                  child: CircularProgressIndicator(
-                                                    strokeWidth: 2.5,
-                                                    color: Colors.white70,
-                                                  ),
-                                                ),
-                                              )
-                                            : Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 20),
-                                                child: Row(
-                                                  children: [
-                                                    _buildPaymentLogo(),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: AnimatedSwitcher(
-                                                        duration: const Duration(milliseconds: 300),
-                                                        child: Text(
-                                                          option != null
-                                                              ? 'Pay · \$${option.priceEstimate.toStringAsFixed(2)}'
-                                                              : S.of(context).pickYourOption,
-                                                          key: ValueKey(option?.id),
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow.ellipsis,
-                                                          style: TextStyle(
-                                                            color: option != null
-                                                                ? Colors.white
-                                                                : Colors.white38,
-                                                            fontSize: 16,
-                                                            fontWeight: FontWeight.w700,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
+                                // ── Request Ride button ──
+                                GestureDetector(
+                                  onTap: _isProcessingPayment
+                                      ? null
+                                      : () => _startRideDirectly(c, option),
+                                  child: Container(
+                                    width: double.infinity,
+                                    height: 52,
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xFFE8C547),
+                                          Color(0xFFD4A520),
+                                        ],
                                       ),
+                                      borderRadius: BorderRadius.circular(14),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFFD4A520)
+                                              .withValues(alpha: 0.35),
+                                          blurRadius: 12,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Center(
+                                      child: _isProcessingPayment
+                                          ? const SizedBox(
+                                              width: 22,
+                                              height: 22,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.5,
+                                                color: Colors.black,
+                                              ),
+                                            )
+                                          : Text(
+                                              widget.scheduledAt != null
+                                                  ? S.of(context).bookScheduledRide
+                                                  : S.of(context).requestRide,
+                                              style: const TextStyle(
+                                                color: Colors.black,
+                                                fontSize: 17,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: -0.3,
+                                              ),
+                                            ),
                                     ),
                                   ),
                                 ),
                               ],
-                            )
-                          : const SizedBox.shrink(),
-                    ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
                   ),
                   const SizedBox(height: 8),
                 ],
@@ -615,24 +608,41 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOutCubic,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
+        // Gold crystal / glass effect when selected
         color: selected
-            ? Colors.white.withValues(alpha: 0.08)
+            ? const Color(0xFF1A1708)
             : const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: selected
-              ? _cardGold.withValues(alpha: 0.55)
+              ? _cardGold.withValues(alpha: 0.65)
               : Colors.white.withValues(alpha: 0.06),
           width: selected ? 1.5 : 1.0,
         ),
+        gradient: selected
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF2A2210),
+                  Color(0xFF1A1708),
+                  Color(0xFF221E0C),
+                ],
+              )
+            : null,
         boxShadow: selected
             ? [
                 BoxShadow(
-                  color: _cardGold.withValues(alpha: 0.15),
-                  blurRadius: 20,
+                  color: _cardGold.withValues(alpha: 0.20),
+                  blurRadius: 24,
                   offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: _cardGold.withValues(alpha: 0.08),
+                  blurRadius: 40,
+                  spreadRadius: 2,
                 ),
               ]
             : [
@@ -643,12 +653,36 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ),
               ],
       ),
-      child: Row(
+      child: Stack(
         children: [
-          // Car image — HD crisp rendering
+          // Crystal overlay shine for selected card
+          if (selected)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          _cardGold.withValues(alpha: 0.08),
+                          Colors.transparent,
+                          _cardGold.withValues(alpha: 0.04),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          Row(
+        children: [
+          // Car image — HD crisp rendering (bigger)
           SizedBox(
-            width: 108,
-            height: 72,
+            width: 130,
+            height: 88,
             child: Image.asset(
               _carAssetForOption(opt.name),
               fit: BoxFit.contain,
@@ -675,6 +709,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   animation: badgeAnim,
                   builder: (_, __) {
                     final t = badgeAnim.value;
+                    // Pulsing outer glow intensity
+                    final glowAlpha = (0.35 + 0.25 * math.sin(t * 2 * math.pi)).clamp(0.0, 1.0);
                     return Stack(
                       alignment: Alignment.center,
                       children: [
@@ -685,8 +721,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             borderRadius: BorderRadius.circular(20),
                             boxShadow: [
                               BoxShadow(
-                                color: accent.withValues(alpha: 0.45),
-                                blurRadius: 14,
+                                color: accent.withValues(alpha: glowAlpha),
+                                blurRadius: 16 + 6 * math.sin(t * 2 * math.pi),
                                 offset: const Offset(0, 2),
                               ),
                             ],
@@ -708,22 +744,44 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             ],
                           ),
                         ),
-                        // VIP: diagonal shimmer sweep
-                        if (isVIP)
+                        // VIP: dual-layer gold shimmer
+                        if (isVIP) ...[
+                          // Layer 1 — wide soft gold glow
                           Positioned.fill(
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(20),
                               child: IgnorePointer(
                                 child: Transform.translate(
-                                  offset: Offset(160 * (t * 2.4 - 0.8), 0),
+                                  offset: Offset(200 * (t * 2.0 - 0.5), 0),
+                                  child: Container(
+                                    width: 56,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(colors: [
+                                        Colors.transparent,
+                                        const Color(0xFFFFE88A).withValues(alpha: 0.35),
+                                        Colors.transparent,
+                                      ]),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Layer 2 — thin bright white streak
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: IgnorePointer(
+                                child: Transform.translate(
+                                  offset: Offset(180 * (t * 2.6 - 0.8), 0),
                                   child: Transform.rotate(
-                                    angle: 0.4,
+                                    angle: 0.35,
                                     child: Container(
-                                      width: 28,
+                                      width: 14,
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(colors: [
                                           Colors.transparent,
-                                          Colors.white.withValues(alpha: 0.55),
+                                          Colors.white.withValues(alpha: 0.7),
                                           Colors.transparent,
                                         ]),
                                       ),
@@ -733,31 +791,54 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               ),
                             ),
                           ),
-                        // Premium: white flash pulse
+                        ],
+                        // Premium: sleek metallic diagonal sweep
                         if (isPremium)
                           Positioned.fill(
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(20),
                               child: IgnorePointer(
-                                child: Opacity(
-                                  opacity: (() {
-                                    final d = (t - 0.5).abs();
-                                    return (1.0 - d * 5.5).clamp(0.0, 0.35);
-                                  })(),
-                                  child: Container(color: Colors.white),
+                                child: Transform.translate(
+                                  offset: Offset(180 * (t * 2.4 - 0.7), 0),
+                                  child: Transform.rotate(
+                                    angle: 0.3,
+                                    child: Container(
+                                      width: 22,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(colors: [
+                                          Colors.transparent,
+                                          Colors.white.withValues(alpha: 0.55),
+                                          const Color(0xFFE0E0E0).withValues(alpha: 0.25),
+                                          Colors.transparent,
+                                        ]),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        // Comfort: green glow pulse
+                        // Comfort: sweeping green light
                         if (isComfort)
                           Positioned.fill(
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(20),
                               child: IgnorePointer(
-                                child: Opacity(
-                                  opacity: (0.12 + 0.18 * math.sin(t * 2 * math.pi)).clamp(0.0, 0.35),
-                                  child: Container(color: accent),
+                                child: Transform.translate(
+                                  offset: Offset(180 * (t * 2.4 - 0.7), 0),
+                                  child: Transform.rotate(
+                                    angle: 0.3,
+                                    child: Container(
+                                      width: 26,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(colors: [
+                                          Colors.transparent,
+                                          const Color(0xFF81C784).withValues(alpha: 0.5),
+                                          Colors.transparent,
+                                        ]),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -856,10 +937,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               ],
             ],
           ),
-        ],
-      ),
-    ),   // ← closes AnimatedContainer
-    );   // ← closes AnimatedScale
+        ],   // Row children
+      ),     // Row
+        ],   // Stack children  
+      ),     // Stack
+    ),       // AnimatedContainer
+    );       // AnimatedScale
   }
 
   Widget _chipWidget(IconData icon, String label) {

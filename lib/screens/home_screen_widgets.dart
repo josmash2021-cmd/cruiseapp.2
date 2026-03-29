@@ -143,8 +143,18 @@ extension _HomeScreenWidgets on _HomeScreenState {
       child: Row(
         children: [
           const SizedBox(width: 10),
-          // Car icon
-          Icon(Icons.directions_car_rounded, color: _gold, size: 22),
+          // Car icon inside gold circle
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: _gold, width: 1.5),
+            ),
+            child: Center(
+              child: Icon(Icons.directions_car_rounded, color: _gold, size: 16),
+            ),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -221,9 +231,11 @@ extension _HomeScreenWidgets on _HomeScreenState {
             borderRadius: BorderRadius.vertical(top: Radius.circular(r)),
             child: CustomScrollView(
               controller: sc,
-              physics: const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
+              physics: _activeRide != null
+                  ? const NeverScrollableScrollPhysics()
+                  : const BouncingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
+                    ),
               slivers: [
                 SliverToBoxAdapter(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -334,6 +346,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 ],
 
                   const SizedBox(height: 32),
+
+                  // ── Scheduled ride indicator ──
+                  if (_nextScheduledRide != null)
+                    _buildScheduledRideIndicator(context),
 
                   // ── Dock navigation ──
                   _buildDockNav(context, botPad),
@@ -855,23 +871,28 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
   Widget _buildProgressBar() {
     final progress = _tripProgress.clamp(0.0, 1.0);
-    const barH = 28.0;
-    const carW = 56.0;
-    const carH = 24.0;
+    const barH = 14.0;
+    const carSize = 38.0;
+    // Total height accounts for car overflowing the bar
+    const totalH = carSize;
 
     return LayoutBuilder(
       builder: (_, constraints) {
         final barW = constraints.maxWidth;
-        // Car center at tip of progress fill
-        final carX = (barW * progress - carW / 2).clamp(0.0, barW - carW);
+        // Car right edge at tip of progress fill
+        final carX = (barW * progress - carSize + 4).clamp(0.0, barW - carSize);
 
         return SizedBox(
-          height: barH,
+          height: totalH,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              // Bar track
-              Positioned.fill(
+              // Bar track — vertically centered
+              Positioned(
+                left: 0,
+                right: 0,
+                top: (totalH - barH) / 2,
+                height: barH,
                 child: Container(
                   decoration: BoxDecoration(
                     color: const Color(0xFF2A2A2A),
@@ -882,8 +903,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
               // Animated gold fill
               Positioned(
                 left: 0,
-                top: 0,
-                bottom: 0,
+                top: (totalH - barH) / 2,
+                height: barH,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 1000),
                   curve: Curves.easeInOut,
@@ -900,16 +921,16 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   ),
                 ),
               ),
-              // Car image — centered vertically inside the bar
+              // Car image — bigger, stuck to the tip of the progress bar
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 1000),
                 curve: Curves.easeInOut,
                 left: carX,
-                top: (barH - carH) / 2,
+                top: (totalH - carSize) / 2,
                 child: Image.asset(
                   _getCarAssetForRideType(_activeRide?.rideName ?? ''),
-                  width: carW,
-                  height: carH,
+                  width: carSize,
+                  height: carSize,
                   fit: BoxFit.contain,
                 ),
               ),
@@ -930,8 +951,16 @@ extension _HomeScreenWidgets on _HomeScreenState {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Car icon
-            Icon(Icons.directions_car_rounded, color: _gold, size: 28),
+            // Logo image in rounded square
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/images/logoapp.png',
+                width: 42,
+                height: 42,
+                fit: BoxFit.cover,
+              ),
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -1416,6 +1445,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
           animation: badgeAnim,
           builder: (_, __) {
             final t = badgeAnim.value;
+            // Pulsing outer glow intensity
+            final glowAlpha = (0.35 + 0.25 * math.sin(t * 2 * math.pi)).clamp(0.0, 1.0);
             return Stack(
               alignment: Alignment.center,
               children: [
@@ -1427,8 +1458,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: accent.withValues(alpha: 0.45),
-                        blurRadius: 14,
+                        color: accent.withValues(alpha: glowAlpha),
+                        blurRadius: 16 + 6 * math.sin(t * 2 * math.pi),
                         offset: const Offset(0, 2),
                       ),
                     ],
@@ -1454,22 +1485,44 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     ],
                   ),
                 ),
-                // VIP: diagonal shimmer sweep across the badge
-                if (isVIP)
+                // VIP: dual-layer gold shimmer
+                if (isVIP) ...[
+                  // Layer 1 — wide soft gold glow
                   Positioned.fill(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(20),
                       child: IgnorePointer(
                         child: Transform.translate(
-                          offset: Offset(160 * (t * 2.4 - 0.8), 0),
+                          offset: Offset(200 * (t * 2.0 - 0.5), 0),
+                          child: Container(
+                            width: 56,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(colors: [
+                                Colors.transparent,
+                                const Color(0xFFFFE88A).withValues(alpha: 0.35),
+                                Colors.transparent,
+                              ]),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Layer 2 — thin bright white streak
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: IgnorePointer(
+                        child: Transform.translate(
+                          offset: Offset(180 * (t * 2.6 - 0.8), 0),
                           child: Transform.rotate(
-                            angle: 0.4,
+                            angle: 0.35,
                             child: Container(
-                              width: 28,
+                              width: 14,
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(colors: [
                                   Colors.transparent,
-                                  Colors.white.withValues(alpha: 0.55),
+                                  Colors.white.withValues(alpha: 0.7),
                                   Colors.transparent,
                                 ]),
                               ),
@@ -1479,31 +1532,54 @@ extension _HomeScreenWidgets on _HomeScreenState {
                       ),
                     ),
                   ),
-                // Premium: white flash pulse
+                ],
+                // Premium: sleek metallic diagonal sweep
                 if (isPremium)
                   Positioned.fill(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(20),
                       child: IgnorePointer(
-                        child: Opacity(
-                          opacity: (() {
-                            final d = (t - 0.5).abs();
-                            return (1.0 - d * 5.5).clamp(0.0, 0.35);
-                          })(),
-                          child: Container(color: Colors.white),
+                        child: Transform.translate(
+                          offset: Offset(180 * (t * 2.4 - 0.7), 0),
+                          child: Transform.rotate(
+                            angle: 0.3,
+                            child: Container(
+                              width: 22,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(colors: [
+                                  Colors.transparent,
+                                  Colors.white.withValues(alpha: 0.55),
+                                  const Color(0xFFE0E0E0).withValues(alpha: 0.25),
+                                  Colors.transparent,
+                                ]),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                // Comfort: green glow pulse
+                // Comfort: sweeping green light
                 if (isComfort)
                   Positioned.fill(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(20),
                       child: IgnorePointer(
-                        child: Opacity(
-                          opacity: (0.12 + 0.18 * math.sin(t * 2 * math.pi)).clamp(0.0, 0.35),
-                          child: Container(color: accent),
+                        child: Transform.translate(
+                          offset: Offset(180 * (t * 2.4 - 0.7), 0),
+                          child: Transform.rotate(
+                            angle: 0.3,
+                            child: Container(
+                              width: 26,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(colors: [
+                                  Colors.transparent,
+                                  const Color(0xFF81C784).withValues(alpha: 0.5),
+                                  Colors.transparent,
+                                ]),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -1537,8 +1613,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 ),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: accent.withValues(alpha: 0.30),
-                  width: isVIP ? 1.5 : 1.0,
+                  color: _gold.withValues(alpha: 0.30),
+                  width: 1.5,
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -1547,7 +1623,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     offset: const Offset(0, 10),
                   ),
                   BoxShadow(
-                    color: accent.withValues(alpha: isVIP ? 0.15 : 0.08),
+                    color: _gold.withValues(alpha: isVIP ? 0.15 : 0.10),
                     blurRadius: 36,
                     offset: const Offset(0, 6),
                   ),
@@ -1613,19 +1689,53 @@ extension _HomeScreenWidgets on _HomeScreenState {
                           width: screenW * 0.38,
                           height: 130,
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                            child: Image.asset(
-                              'assets/images/${v['image']}',
-                              fit: BoxFit.contain,
-                              filterQuality: FilterQuality.high,
-                              isAntiAlias: true,
-                              alignment: Alignment.centerRight,
-                              cacheWidth: 300,
-                              errorBuilder: (ctx, err, st) => Icon(
-                                Icons.directions_car_rounded,
-                                color: accent.withValues(alpha: 0.5),
-                                size: 50,
-                              ),
+                            padding: const EdgeInsets.fromLTRB(4, 10, 16, 4),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                // Car image — shifted left from edge
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  bottom: 16,
+                                  child: Image.asset(
+                                    'assets/images/${v['image']}',
+                                    fit: BoxFit.contain,
+                                    filterQuality: FilterQuality.high,
+                                    isAntiAlias: true,
+                                    alignment: Alignment.center,
+                                    cacheWidth: 300,
+                                    errorBuilder: (ctx, err, st) => Icon(
+                                      Icons.directions_car_rounded,
+                                      color: accent.withValues(alpha: 0.5),
+                                      size: 50,
+                                    ),
+                                  ),
+                                ),
+                                // Fade shadow under car — 3D floating effect
+                                Positioned(
+                                  bottom: 6,
+                                  left: 16,
+                                  right: 16,
+                                  child: Container(
+                                    height: 18,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(50),
+                                      gradient: RadialGradient(
+                                        center: Alignment.center,
+                                        radius: 0.9,
+                                        colors: [
+                                          Colors.black.withValues(alpha: 0.35),
+                                          Colors.black.withValues(alpha: 0.10),
+                                          Colors.transparent,
+                                        ],
+                                        stops: const [0.0, 0.5, 1.0],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -2157,6 +2267,64 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Scheduled ride indicator ───
+  Widget _buildScheduledRideIndicator(BuildContext ctx) {
+    final ride = _nextScheduledRide!;
+    final sa = ride['scheduled_at']?.toString() ?? '';
+    final dt = DateTime.tryParse(sa);
+    final isEs = Localizations.localeOf(ctx).languageCode == 'es';
+    final label = isEs ? 'Tienes un viaje reservado' : 'You have a scheduled ride';
+    final dateStr = dt != null
+        ? DateFormat(isEs ? "d 'de' MMM, h:mm a" : 'MMM d, h:mm a',
+                isEs ? 'es' : 'en')
+            .format(dt.toLocal())
+        : '';
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(ctx).push(
+          slideFromRightRoute(const ScheduledRidesScreen()),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: _gold.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _gold.withValues(alpha: 0.30), width: 1),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today_rounded, color: _gold, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: TextStyle(
+                        color: _gold,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      )),
+                  if (dateStr.isNotEmpty)
+                    Text(dateStr,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 12,
+                        )),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                color: _gold.withValues(alpha: 0.6), size: 22),
           ],
         ),
       ),

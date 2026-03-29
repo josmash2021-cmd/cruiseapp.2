@@ -576,8 +576,11 @@ extension _RideRequestMap on _RideRequestScreenState {
     final s = _ctrl.state;
     if (s.route == null) return;
     _showPinLabels = true;
-    // Use road-snapped route points as-is from the directions API
     final pts = List<LatLng>.from(s.route!.points);
+    // Replace (not add) first/last points with exact pin coords so the line
+    // touches the pin tip without adding any off-road segment.
+    if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
+    if (pts.length > 1 && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
     _buildRouteMarkers();
     // Always replay cinematic — reset state and re-trigger
     _resetCinematic();
@@ -616,6 +619,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     final route = _ctrl.state.route;
     if (route == null || route.points.isEmpty) return;
     final pts = List<LatLng>.from(route.points);
+    final s = _ctrl.state;
+    // Replace (not add) first/last points so line touches pin exactly
+    if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
+    if (pts.length > 1 && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
     _showPinLabels = true;
     _buildRouteMarkers();
     _resetCinematic();
@@ -666,6 +673,12 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (!mounted) return;
     await _animateGoldRoute(pts, const Duration(milliseconds: 1000));
     if (!mounted) return;
+
+    // 5. Flatten map back to 0° pitch so pins sit on the ground (not floating)
+    _mapCtrl!.flyTo(
+      mapbox.CameraOptions(pitch: 0.0, bearing: 0.0),
+      mapbox.MapAnimationOptions(duration: 800),
+    );
 
     _cinematicDone = true;
   }

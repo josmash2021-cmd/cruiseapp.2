@@ -715,14 +715,13 @@ extension _MapScreenWidgets on _MapScreenState {
                           borderRadius: BorderRadius.circular(16),
                           child: Row(
                             children: [
-                              // LEFT — Info section
-                              Expanded(
-                                flex: 5,
+                              // LEFT — Badge + Car
+                              SizedBox(
+                                width: 140,
                                 child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                                  padding: const EdgeInsets.fromLTRB(12, 12, 4, 10),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       // Badge
                                       Container(
@@ -743,6 +742,32 @@ extension _MapScreenWidgets on _MapScreenState {
                                           ],
                                         ),
                                       ),
+                                      const SizedBox(height: 6),
+                                      // Car image
+                                      Image.asset(
+                                        _rideCarAsset(ride.name),
+                                        height: 70,
+                                        fit: BoxFit.contain,
+                                        filterQuality: FilterQuality.high,
+                                        cacheWidth: 240,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          Icons.directions_car_rounded,
+                                          size: 48,
+                                          color: _c.textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              // RIGHT — Info + Price
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(4, 14, 14, 14),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
                                       // Title + description
                                       Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -762,80 +787,33 @@ extension _MapScreenWidgets on _MapScreenState {
                                           ),
                                         ],
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              // RIGHT — Car + road
-                              Expanded(
-                                flex: 4,
-                                child: Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    // 3D road perspective
-                                    Positioned.fill(
-                                      child: CustomPaint(
-                                        painter: _RoadPerspectivePainter(color: accent, isSelected: selected),
-                                      ),
-                                    ),
-                                    // Car image floating above road
-                                    Positioned(
-                                      bottom: 12,
-                                      left: -8,
-                                      right: 4,
-                                      child: Transform(
-                                        alignment: Alignment.center,
-                                        transform: Matrix4.identity()
-                                          ..setEntry(3, 2, 0.001)
-                                          ..rotateY(-0.15),
-                                        child: Image.asset(
-                                          _rideCarAsset(ride.name),
-                                          height: 75,
-                                          fit: BoxFit.contain,
-                                          filterQuality: FilterQuality.high,
-                                          cacheWidth: 240,
-                                          errorBuilder: (_, __, ___) => Icon(
-                                            Icons.directions_car_rounded,
-                                            size: 48,
-                                            color: _c.textSecondary,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    // Price top-right
-                                    Positioned(
-                                      top: 12,
-                                      right: 12,
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                      // Price + checkmark row
+                                      Row(
                                         children: [
                                           Text(
                                             ride.price,
                                             style: TextStyle(color: accent, fontSize: 16, fontWeight: FontWeight.w800),
                                           ),
+                                          const SizedBox(width: 6),
                                           const Text(
                                             'est. fare',
                                             style: TextStyle(color: Colors.white38, fontSize: 10),
                                           ),
+                                          const Spacer(),
+                                          if (selected)
+                                            Container(
+                                              width: 22,
+                                              height: 22,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: accent,
+                                              ),
+                                              child: const Icon(Icons.check_rounded, color: Colors.black, size: 14),
+                                            ),
                                         ],
                                       ),
-                                    ),
-                                    // Checkmark when selected
-                                    if (selected)
-                                      Positioned(
-                                        bottom: 12,
-                                        right: 12,
-                                        child: Container(
-                                          width: 22,
-                                          height: 22,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: accent,
-                                          ),
-                                          child: const Icon(Icons.check_rounded, color: Colors.black, size: 14),
-                                        ),
-                                      ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],

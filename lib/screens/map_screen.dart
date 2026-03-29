@@ -297,7 +297,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       image: _goldPinIconBytes,
       iconSize: 1.0,
       iconAnchor: mapbox.IconAnchor.BOTTOM, // pin tip sits on the coordinate
-      iconOffset: [0, 4],
+      iconOffset: [0, 0],
     ));
     _refreshPinLabelOffsets();
   }
@@ -311,7 +311,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       image: _dropoffPinIconBytes ?? _goldPinIconBytes,
       iconSize: 1.0,
       iconAnchor: mapbox.IconAnchor.BOTTOM, // pin tip sits on the coordinate
-      iconOffset: [0, 4],
+      iconOffset: [0, 0],
     ));
     _refreshPinLabelOffsets();
   }

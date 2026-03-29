@@ -165,6 +165,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   mapbox.PolylineAnnotationManager? _miniMapPolyMgr;
   mapbox.PointAnnotationManager? _miniMapCarMgr;
   mapbox.PointAnnotation? _driverCarAnnot;
+  Uint8List? _cachedCarBytes; // avoid rootBundle.load on every driver update
   bool _rideRouteDrawn = false;
   double _routeProgress = 0.0; // 0→1 based on driver position along route
   List<LatLng> _routeLatLngs = []; // cached route points
@@ -857,7 +858,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   }
 
   Future<void> _loadSavedData() async {
-    // Check if a new monthly promo needs to be generated
+    // Promo generation must finish first (it writes data read below)
     final newPromoGenerated =
         await LocalDataService.generateMonthlyPromoIfNeeded();
     if (newPromoGenerated) {
@@ -869,36 +870,29 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       );
     }
 
-    final favorites = await LocalDataService.getFavorites();
-    final trips = await LocalDataService.getTripHistory();
-    final topDestinations = await LocalDataService.getTopDestinations(limit: 3);
-    final notifications = await LocalDataService.getNotifications();
-    final user = await UserSession.getUser();
-    final hasPromo = await LocalDataService.hasActivePromo();
-    final activeRide = await LocalDataService.getActiveRide();
-    final verified = await LocalDataService.isIdentityVerified();
-    // Load next scheduled ride
-    Map<String, dynamic>? nextScheduled;
-    try {
-      final userId = await ApiService.getCurrentUserId();
-      if (userId != null) {
-        final trips = await ApiService.getScheduledTrips(userId);
-        if (trips.isNotEmpty) {
-          // Find the next upcoming trip
-          final now = DateTime.now();
-          for (final t in trips) {
-            final sa = t['scheduled_at'];
-            if (sa != null) {
-              final dt = DateTime.tryParse(sa.toString());
-              if (dt != null && dt.isAfter(now)) {
-                nextScheduled = t;
-                break;
-              }
-            }
-          }
-        }
-      }
-    } catch (_) {}
+    // Fire ALL independent reads in parallel — single await instead of 10+
+    final results = await Future.wait([
+      LocalDataService.getFavorites(),          // 0
+      LocalDataService.getTripHistory(),        // 1
+      LocalDataService.getTopDestinations(limit: 3), // 2
+      LocalDataService.getNotifications(),      // 3
+      UserSession.getUser(),                    // 4
+      LocalDataService.hasActivePromo(),        // 5
+      LocalDataService.getActiveRide(),         // 6
+      LocalDataService.isIdentityVerified(),    // 7
+      _loadNextScheduledRide(),                 // 8
+    ]);
+
+    final favorites = results[0] as List<FavoritePlace>;
+    final trips = results[1] as List<TripHistoryItem>;
+    final topDestinations = results[2] as List<FrequentDestination>;
+    final notifications = results[3] as List<AppNotificationItem>;
+    final user = results[4] as Map<String, dynamic>?;
+    final hasPromo = results[5] as bool;
+    final activeRide = results[6] as ActiveRideInfo?;
+    final verified = results[7] as bool;
+    final nextScheduled = results[8] as Map<String, dynamic>?;
+
     if (!mounted) return;
     setState(() {
       _favorites = favorites;
@@ -928,6 +922,29 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     if (_panelLocked && activeRide == null) {
       _unlockPanel();
     }
+  }
+
+  /// Extracted so it can run in parallel with local reads.
+  Future<Map<String, dynamic>?> _loadNextScheduledRide() async {
+    try {
+      final userId = await ApiService.getCurrentUserId();
+      if (userId != null) {
+        final trips = await ApiService.getScheduledTrips(userId);
+        if (trips.isNotEmpty) {
+          final now = DateTime.now();
+          for (final t in trips) {
+            final sa = t['scheduled_at'];
+            if (sa != null) {
+              final dt = DateTime.tryParse(sa.toString());
+              if (dt != null && dt.isAfter(now)) {
+                return t;
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   int get _unreadNotifications {

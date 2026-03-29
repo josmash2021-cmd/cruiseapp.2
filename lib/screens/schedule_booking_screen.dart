@@ -42,7 +42,8 @@ class ScheduleBookingScreen extends StatefulWidget {
 class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
-  static const _birminghamDefault = LatLng(33.5186, -86.8104);
+  // Map center — starts at rider GPS, falls back to Birmingham
+  LatLng _mapCenter = const LatLng(33.5186, -86.8104);
 
   final _places = PlacesService(ApiKeys.webServices);
   final _directions = DirectionsService(ApiKeys.webServices);
@@ -116,6 +117,29 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     _pickupFocus.addListener(() => setState(() {}));
     _dropoffFocus.addListener(() => setState(() {}));
     _buildPinBytes();
+    _resolveGpsCenter();
+  }
+
+  /// Get rider's real-time GPS and center the map there.
+  Future<void> _resolveGpsCenter() async {
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      ).timeout(const Duration(seconds: 5));
+      final loc = LatLng(pos.latitude, pos.longitude);
+      _mapCenter = loc;
+      if (_mapCtrl != null && _pickupLatLng == null) {
+        _mapCtrl!.flyTo(
+          mapbox.CameraOptions(
+            center: mapbox.Point(coordinates: mapbox.Position(loc.longitude, loc.latitude)),
+            zoom: 14.0,
+          ),
+          mapbox.MapAnimationOptions(duration: 800),
+        );
+      }
+    } catch (_) {
+      // Keep default center
+    }
   }
 
   Future<void> _buildPinBytes() async {
@@ -212,8 +236,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     _debounce = Timer(const Duration(milliseconds: 320), () async {
       final results = await _places.autocomplete(
         q,
-        latitude: _pickupLatLng?.latitude ?? _birminghamDefault.latitude,
-        longitude: _pickupLatLng?.longitude ?? _birminghamDefault.longitude,
+        latitude: _pickupLatLng?.latitude ?? _mapCenter.latitude,
+        longitude: _pickupLatLng?.longitude ?? _mapCenter.longitude,
       );
       if (!mounted) return;
       setState(() {
@@ -233,8 +257,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     _debounce = Timer(const Duration(milliseconds: 320), () async {
       final results = await _places.autocomplete(
         q,
-        latitude: _pickupLatLng?.latitude ?? _birminghamDefault.latitude,
-        longitude: _pickupLatLng?.longitude ?? _birminghamDefault.longitude,
+        latitude: _pickupLatLng?.latitude ?? _mapCenter.latitude,
+        longitude: _pickupLatLng?.longitude ?? _mapCenter.longitude,
       );
       if (!mounted) return;
       setState(() {
@@ -1142,8 +1166,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                     mapbox.MapWidget(
                       styleUri: MapboxConfig.styleDark,
                       cameraOptions: mapbox.CameraOptions(
-                        center: mapbox.Point(coordinates: mapbox.Position(_birminghamDefault.longitude, _birminghamDefault.latitude)),
-                        zoom: 12.0,
+                        center: mapbox.Point(coordinates: mapbox.Position(_mapCenter.longitude, _mapCenter.latitude)),
+                        zoom: 14.0,
                       ),
                       onMapCreated: (ctrl) async {
                         _mapCtrl = ctrl;

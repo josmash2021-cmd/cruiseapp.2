@@ -675,30 +675,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             ),
           Row(
         children: [
-          // Car image — HD crisp rendering (bigger)
+          // Left — Badge above car
           SizedBox(
             width: 130,
-            height: 88,
-            child: Image.asset(
-              _carAssetForOption(opt.name),
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
-              isAntiAlias: true,
-              alignment: Alignment.center,
-              cacheWidth: 216,
-              errorBuilder: (_, e, s) => Icon(
-                Icons.directions_car_rounded,
-                size: 36,
-                color: Colors.white.withValues(alpha: 0.5),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-
-          // Info column
-          Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 // Tier badge — animated gradient pill (matches home_screen)
                 AnimatedBuilder(
@@ -843,7 +824,34 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     );
                   },
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
+                // Car image
+                SizedBox(
+                  height: 80,
+                  child: Image.asset(
+                    _carAssetForOption(opt.name),
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    isAntiAlias: true,
+                    alignment: Alignment.center,
+                    cacheWidth: 216,
+                    errorBuilder: (_, e, s) => Icon(
+                      Icons.directions_car_rounded,
+                      size: 36,
+                      color: Colors.white.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+
+          // Info column
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 // Description
                 Text(
                   opt.description,

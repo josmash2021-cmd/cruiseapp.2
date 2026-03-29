@@ -875,7 +875,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       image: _goldPinIcon!,
       iconSize: 0.65,
       iconAnchor: mapbox.IconAnchor.BOTTOM,
-      iconOffset: [0, 4],
+      iconOffset: [0, 0],
     ));
     // Simple gold pin for dropoff
     _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
@@ -883,7 +883,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       image: _goldPinIcon!,
       iconSize: 0.65,
       iconAnchor: mapbox.IconAnchor.BOTTOM,
-      iconOffset: [0, 4],
+      iconOffset: [0, 0],
     ));
     // Fit camera to show both markers
     _fitRoute([
@@ -954,7 +954,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           image: bytes,
           iconSize: scale,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: [0, 4],
+          iconOffset: [0, 0],
         ));
       }
     }
@@ -976,7 +976,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           image: bytes,
           iconSize: scale,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: [0, 4],
+          iconOffset: [0, 0],
         ));
       }
     }

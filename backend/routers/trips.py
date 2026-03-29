@@ -55,14 +55,19 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
     data = body.model_dump()
     # SECURITY: Force rider_id to be the authenticated user (prevent spoofing)
     data["rider_id"] = user.id
-    # Parse scheduled_at string → datetime
+    # Parse scheduled_at string → datetime (naive UTC, no tzinfo)
     raw_sa = data.get("scheduled_at")
     if raw_sa:
         if isinstance(raw_sa, str):
             try:
-                data["scheduled_at"] = datetime.fromisoformat(raw_sa.replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(raw_sa.replace("Z", "+00:00"))
+                # Strip timezone info → naive UTC (matches TIMESTAMP WITHOUT TIME ZONE column)
+                data["scheduled_at"] = parsed.replace(tzinfo=None)
             except ValueError:
                 data["scheduled_at"] = None
+        elif hasattr(raw_sa, 'tzinfo') and raw_sa.tzinfo is not None:
+            # Already a datetime but timezone-aware → make naive
+            data["scheduled_at"] = raw_sa.replace(tzinfo=None)
         # If it's already a datetime, keep it
         if data.get("scheduled_at") is not None:
             data["status"] = "scheduled"

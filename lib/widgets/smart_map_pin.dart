@@ -93,9 +93,9 @@ class GoldenPinPainter {
   final bool isPickup;
 
   double get _width  => size;
-  double get _height => size * 1.50;
+  double get _height => size * 1.30;
   double get _cx     => _width / 2;
-  double get _r      => _width * 0.38;
+  double get _r      => _width * 0.42;
   double get _headCY => _r + _width * 0.08;
   double get _tipY   => _height;
 
@@ -154,15 +154,12 @@ class GoldenPinPainter {
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
     canvas.drawCircle(Offset(cx, tipY - r * 0.04), r * 0.06, tipGlow);
 
-    // ── 2. Thin golden arc — upper crescent only ──
-    // Arc covers from ~210° to ~330° (the upper portion, leaving bottom open)
-    // In Canvas angles: 0 = right, π/2 = bottom, π = left, -π/2 = top
-    // Start at bottom-left (~210°), sweep clockwise through top to bottom-right (~330°)
+    // ── 2. Full golden ring around circle ──
     final arcRect = Rect.fromCircle(center: Offset(cx, headCY), radius: r);
     canvas.drawArc(
       arcRect,
-      -math.pi * 1.17,   // start at ~210° (bottom-left of circle)
-      math.pi * 1.34,     // sweep ~240° clockwise through top
+      0,
+      math.pi * 2,     // full 360°
       false,
       Paint()
         ..style = PaintingStyle.stroke
@@ -203,10 +200,10 @@ class GoldenPinPainter {
     _drawIcon(canvas, icon, cx, headCY, r);
   }
 
-  /// Tail shape: wide V from circle sides down to sharp tip.
+  /// Tail shape: narrow V from circle bottom down to sharp tip.
   Path _buildTail(double cx, double headCY, double r, double tipY) {
-    // Spread angle from bottom-center of circle (~55°)
-    const spread = 0.90;
+    // Narrower spread so tail doesn't overlap the circle
+    const spread = 0.55;
     final rx = cx + r * math.sin(spread);
     final ry = headCY + r * math.cos(spread);
     final lx = cx - r * math.sin(spread);

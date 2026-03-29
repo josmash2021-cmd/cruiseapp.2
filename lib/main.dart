@@ -81,34 +81,21 @@ void main() async {
         };
       }
 
-      // Only minimal sync work before runApp — everything else moves to
-      // SplashScreen so the first frame paints instantly (no white flash).
-      await SecurityService.init();
-      
-      // Initialize CacheService early — needed for instant data load on app open
-      await CacheService.initialize();
-      
-      // Firebase MUST be initialized before ApiService.init() so the
-      // Firestore dynamic tunnel URL read works on any network.
-      try {
-        await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform,
-        );
-        // Firestore persistence: unlimited cache for instant offline reads
-        firestore.FirebaseFirestore.instance.settings = const firestore.Settings(
-          persistenceEnabled: true,
-          cacheSizeBytes: firestore.Settings.CACHE_SIZE_UNLIMITED,
-        );
-      } catch (e) {
-        debugPrint('[Firebase] early init error: $e');
-      }
-      await ApiService.init();
+      // ── Parallel startup: independent inits run concurrently ──
+      // Group 1: no dependencies between these
+      await Future.wait([
+        SecurityService.init(),
+        CacheService.initialize(),
+        LocalDataService.init(),
+        LocalCache.init(),
+        _initFirebase(),
+      ]);
 
-      // Init Firebase Analytics
-      await AnalyticsService.instance.init();
-
-      // Init local Hive cache (fast, sync reads after this)
-      await LocalCache.init();
+      // Group 2: depend on Firebase being ready
+      await Future.wait([
+        ApiService.init(),
+        AnalyticsService.instance.init(),
+      ]);
 
       // Limit in-memory image cache to prevent OOM on long sessions
       PaintingBinding.instance.imageCache.maximumSizeBytes = 200 * 1024 * 1024; // 200 MB
@@ -128,6 +115,21 @@ void main() async {
       }
     },
   );
+}
+
+/// Firebase init extracted so it can run in Future.wait with other services.
+Future<void> _initFirebase() async {
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    firestore.FirebaseFirestore.instance.settings = const firestore.Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: firestore.Settings.CACHE_SIZE_UNLIMITED,
+    );
+  } catch (e) {
+    debugPrint('[Firebase] early init error: $e');
+  }
 }
 
 /// Heavy async init that runs while the splash animation plays.

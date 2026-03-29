@@ -70,8 +70,7 @@ final Map<String, Uint8List> _pinCache = {};
 //    │       │           │
 //    │     tail          │
 //    │       ▼           │  tip at y=86
-//    │                   │
-//    │   ░░shadow░░      │  ellipse y=100 — SEPARATED from tip
+//    │   ░░shadow░░      │  ellipse at tip
 //    └───────────────────┘
 // ═══════════════════════════════════════════════════════════════════
 void _drawLuxuryPin(
@@ -87,10 +86,10 @@ void _drawLuxuryPin(
   final colorLight  = _colorLight;
   final colorMid    = _colorMid;
   final colorDeep   = _colorDeep;
-  // ── 1. Ground shadow ring — SEPARATED (creates floating illusion) ──
+  // ── 1. Ground shadow ring — at pin tip ──
   canvas.drawOval(
     Rect.fromCenter(
-      center: Offset(cx, shadowY),
+      center: Offset(cx, tipY),
       width: r * 1.4,
       height: r * 0.32,
     ),
@@ -168,17 +167,17 @@ void _drawLuxuryPin(
       ..color = Colors.white.withValues(alpha: 0.35),
   );
 
-  // ── 7. Transparent hole where icon would be ──
+  // ── 7. Transparent hole for icon ──
   canvas.drawCircle(
     Offset(cx, headCY),
-    r * 0.52,
+    r * 0.58,
     Paint()..blendMode = BlendMode.clear,
   );
 }
 
 /// Clean teardrop: full arc for head + smooth cubic taper to tip.
 Path _buildTeardrop(double cx, double headCY, double r, double tipY) {
-  const taper = 0.58; // radians from bottom of circle where taper starts
+  const taper = 0.45; // narrower spread so tail doesn't overlap circle
   final rx = cx + r * math.sin(taper);
   final ry = headCY + r * math.cos(taper);
   final lx = cx - r * math.sin(taper);
@@ -278,12 +277,12 @@ Future<Uint8List> renderGoldPinBytes({
   if (_pinCache.containsKey(key)) return _pinCache[key]!;
 
   const double w = 80;
-  const double h = 88;
+  const double h = 78;
   const double cx = w / 2;
-  const double r = 23.0;
+  const double r = 26.0;
   const double headCY = r + 6;
-  const double tipY = 76.0;
-  const double shadowY = 82.0; // SEPARATED from tip
+  const double tipY = 68.0;
+  const double shadowY = 68.0; // Aligned with tip — no floating gap
 
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));

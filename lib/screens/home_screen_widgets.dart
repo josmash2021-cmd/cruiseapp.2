@@ -1630,9 +1630,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ),
               child: Stack(
                 children: [
-                  // Ambient glow top-right (static)
+                  // Ambient glow top-left (static)
                   Positioned(
-                    right: -50, top: -30,
+                    left: -50, top: -30,
                     child: Container(
                       width: 200, height: 200,
                       decoration: BoxDecoration(
@@ -1649,11 +1649,43 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // Left: description + features
+                        // Left: badge above car
+                        SizedBox(
+                          width: screenW * 0.38,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 10, 4, 8),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Badge above car
+                                animatedBadge,
+                                const SizedBox(height: 6),
+                                // Car image
+                                SizedBox(
+                                  height: 100,
+                                  child: Image.asset(
+                                    'assets/images/${v['image']}',
+                                    fit: BoxFit.contain,
+                                    filterQuality: FilterQuality.high,
+                                    isAntiAlias: true,
+                                    alignment: Alignment.center,
+                                    cacheWidth: 300,
+                                    errorBuilder: (ctx, err, st) => Icon(
+                                      Icons.directions_car_rounded,
+                                      color: accent.withValues(alpha: 0.5),
+                                      size: 50,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        // Right: description + features
                         Expanded(
                           flex: 5,
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 16, 8, 16),
+                            padding: const EdgeInsets.fromLTRB(8, 16, 20, 16),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
@@ -1679,38 +1711,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
                                     letterSpacing: 0.3,
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        // Right: car image + badge below
-                        SizedBox(
-                          width: screenW * 0.38,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(4, 10, 16, 8),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // Car image — no shadow
-                                SizedBox(
-                                  height: 100,
-                                  child: Image.asset(
-                                    'assets/images/${v['image']}',
-                                    fit: BoxFit.contain,
-                                    filterQuality: FilterQuality.high,
-                                    isAntiAlias: true,
-                                    alignment: Alignment.center,
-                                    cacheWidth: 300,
-                                    errorBuilder: (ctx, err, st) => Icon(
-                                      Icons.directions_car_rounded,
-                                      color: accent.withValues(alpha: 0.5),
-                                      size: 50,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                // Badge below car
-                                animatedBadge,
                               ],
                             ),
                           ),

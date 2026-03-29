@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -156,8 +156,21 @@ class LocalDataService {
   static const _promoKey = 'active_promo_v1';
   static const _promoMonthKey = 'promo_month_v1';
 
+  /// Cached SharedPreferences instance â€” avoids 38 platform channel calls.
+  static SharedPreferences? _prefs;
+
+  /// Call once at app startup (before any reads).
+  static Future<void> init() async {
+    _prefs ??= await SharedPreferences.getInstance();
+  }
+
+  static SharedPreferences get _p {
+    assert(_prefs != null, 'LocalDataService.init() was not called');
+    return _prefs!;
+  }
+
   static Future<List<FavoritePlace>> getFavorites() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final raw = prefs.getString(_favoritesKey);
     if (raw == null || raw.isEmpty) return [];
 
@@ -186,7 +199,7 @@ class LocalDataService {
         .toList();
     filtered.insert(0, favorite);
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setString(
       _favoritesKey,
       jsonEncode(filtered.map((item) => item.toJson()).toList()),
@@ -202,7 +215,7 @@ class LocalDataService {
               label.toLowerCase().trim(),
         )
         .toList();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setString(
       _favoritesKey,
       jsonEncode(filtered.map((item) => item.toJson()).toList()),
@@ -210,7 +223,7 @@ class LocalDataService {
   }
 
   static Future<List<TripHistoryItem>> getTripHistory() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final raw = prefs.getString(_tripHistoryKey);
     if (raw == null || raw.isEmpty) return [];
 
@@ -234,7 +247,7 @@ class LocalDataService {
     final existing = await getTripHistory();
     final updated = [trip, ...existing].take(25).toList();
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setString(
       _tripHistoryKey,
       jsonEncode(updated.map((item) => item.toJson()).toList()),
@@ -247,7 +260,7 @@ class LocalDataService {
     final clean = address.trim();
     if (clean.isEmpty) return;
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final raw = prefs.getString(_usageKey);
     Map<String, dynamic> usage = {};
 
@@ -268,7 +281,7 @@ class LocalDataService {
   static Future<List<FrequentDestination>> getTopDestinations({
     int limit = 5,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final raw = prefs.getString(_usageKey);
     if (raw == null || raw.isEmpty) return [];
 
@@ -292,7 +305,7 @@ class LocalDataService {
   }
 
   static Future<List<AppNotificationItem>> getNotifications() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final raw = prefs.getString(_notificationsKey);
     if (raw == null || raw.isEmpty) return [];
 
@@ -328,7 +341,7 @@ class LocalDataService {
     );
 
     final updated = [notification, ...existing].take(50).toList();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setString(
       _notificationsKey,
       jsonEncode(updated.map((item) => item.toJson()).toList()),
@@ -342,27 +355,27 @@ class LocalDataService {
     final updated = notifications
         .map((item) => item.copyWith(read: true))
         .toList();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setString(
       _notificationsKey,
       jsonEncode(updated.map((item) => item.toJson()).toList()),
     );
   }
 
-  // ── Payment linking ──
+  // â”€â”€ Payment linking â”€â”€
 
   static const _linkedPaymentsKey = 'linked_payments_v1';
 
   /// Returns a Set of linked payment method IDs (e.g. 'google_pay', 'paypal', 'credit_card').
   static Future<Set<String>> getLinkedPaymentMethods() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final list = prefs.getStringList(_linkedPaymentsKey) ?? [];
     return list.toSet();
   }
 
   /// Mark a payment method as linked.
   static Future<void> linkPaymentMethod(String id) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final current = prefs.getStringList(_linkedPaymentsKey) ?? [];
     if (!current.contains(id)) {
       current.add(id);
@@ -372,13 +385,13 @@ class LocalDataService {
 
   /// Mark a payment method as unlinked.
   static Future<void> unlinkPaymentMethod(String id) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final current = prefs.getStringList(_linkedPaymentsKey) ?? [];
     current.remove(id);
     await prefs.setStringList(_linkedPaymentsKey, current);
   }
 
-  // ── Credit card last 4 + brand ──
+  // â”€â”€ Credit card last 4 + brand â”€â”€
 
   static const _cardLast4Key = 'credit_card_last4';
   static const _cardBrandKey = 'credit_card_brand';
@@ -386,47 +399,47 @@ class LocalDataService {
 
   /// Save the Stripe PaymentMethod ID for charging later.
   static Future<void> saveStripePaymentMethodId(String pmId) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setString(_stripePaymentMethodIdKey, pmId);
   }
 
   /// Get the stored Stripe PaymentMethod ID (null if none).
   static Future<String?> getStripePaymentMethodId() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     return prefs.getString(_stripePaymentMethodIdKey);
   }
 
   /// Save the last 4 digits of a linked credit card.
   static Future<void> saveCreditCardLast4(String last4) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setString(_cardLast4Key, last4);
   }
 
   /// Get the stored last 4 digits (null if no card saved).
   static Future<String?> getCreditCardLast4() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     return prefs.getString(_cardLast4Key);
   }
 
   /// Save the card brand (e.g. 'visa', 'mastercard', 'amex').
   static Future<void> saveCreditCardBrand(String brand) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setString(_cardBrandKey, brand);
   }
 
   /// Get the stored card brand (null if no card saved).
   static Future<String?> getCreditCardBrand() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     return prefs.getString(_cardBrandKey);
   }
 
   static Future<List<String>?> getStringList(String key) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     return prefs.getStringList(key);
   }
 
   static Future<void> saveStringList(String key, List<String> value) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setStringList(key, value);
   }
 
@@ -474,7 +487,7 @@ class LocalDataService {
     return 'card';
   }
 
-  // ── Promo / Discount system ──
+  // â”€â”€ Promo / Discount system â”€â”€
 
   /// Returns the current month key, e.g. '2025-01'.
   static String _currentMonthKey() {
@@ -484,7 +497,7 @@ class LocalDataService {
 
   /// Check whether there is an active (unused) promo.
   static Future<bool> hasActivePromo() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final raw = prefs.getString(_promoKey);
     if (raw == null || raw.isEmpty) return false;
     try {
@@ -497,7 +510,7 @@ class LocalDataService {
 
   /// Get the active promo details (null if none or already used).
   static Future<Map<String, dynamic>?> getActivePromo() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final raw = prefs.getString(_promoKey);
     if (raw == null || raw.isEmpty) return null;
     try {
@@ -518,7 +531,7 @@ class LocalDataService {
 
   /// Mark the active promo as used.
   static Future<void> usePromo() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final raw = prefs.getString(_promoKey);
     if (raw == null || raw.isEmpty) return;
     try {
@@ -530,20 +543,20 @@ class LocalDataService {
 
   /// Check if first-ride 10% promo has been used.
   static Future<bool> getPromoUsed() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     return prefs.getBool('first_ride_promo_used') ?? false;
   }
 
   /// Mark first-ride 10% promo as used.
   static Future<void> setPromoUsed() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setBool('first_ride_promo_used', true);
   }
 
   /// Generate a monthly promo if none exists for the current month.
   /// Returns true if a new promo was created, false if it already existed.
   static Future<bool> generateMonthlyPromoIfNeeded() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final lastMonth = prefs.getString(_promoMonthKey) ?? '';
     final currentMonth = _currentMonthKey();
 
@@ -561,16 +574,16 @@ class LocalDataService {
     return true;
   }
 
-  // ── Active Ride State ──
+  // â”€â”€ Active Ride State â”€â”€
   static const _activeRideKey = 'active_ride_v1';
 
   static Future<void> setActiveRide(ActiveRideInfo ride) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setString(_activeRideKey, jsonEncode(ride.toJson()));
   }
 
   static Future<ActiveRideInfo?> getActiveRide() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     final raw = prefs.getString(_activeRideKey);
     if (raw == null) return null;
     try {
@@ -581,23 +594,23 @@ class LocalDataService {
   }
 
   static Future<void> clearActiveRide() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.remove(_activeRideKey);
   }
 
-  // ── Identity verification ──
+  // â”€â”€ Identity verification â”€â”€
 
   static const _verifiedKey = 'identity_verified_v1';
   static const _docTypeKey = 'id_document_type_v1';
   static const _biometricKey = 'biometric_login_enabled';
 
   static Future<bool> isIdentityVerified() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     return prefs.getBool(_verifiedKey) ?? false;
   }
 
   static Future<void> setIdentityVerified(String documentType) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setBool(_verifiedKey, true);
     await prefs.setString(_docTypeKey, documentType);
   }
@@ -605,33 +618,33 @@ class LocalDataService {
   static const _driverApprovalKey = 'driver_approval_status_v1';
 
   static Future<void> setDriverApprovalStatus(String status) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setString(_driverApprovalKey, status);
   }
 
   static Future<String> getDriverApprovalStatus() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     return prefs.getString(_driverApprovalKey) ?? 'none';
   }
 
   static Future<String?> getIdDocumentType() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     return prefs.getString(_docTypeKey);
   }
 
   static Future<bool> isBiometricLoginEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     return prefs.getBool(_biometricKey) ?? false;
   }
 
   static Future<void> setBiometricLogin(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.setBool(_biometricKey, enabled);
   }
 
   /// Clear ALL user-specific data on logout so accounts are independent.
   static Future<void> clearAllUserData() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _p;
     await prefs.remove(_favoritesKey);
     await prefs.remove(_tripHistoryKey);
     await prefs.remove(_usageKey);

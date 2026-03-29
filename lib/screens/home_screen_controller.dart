@@ -47,9 +47,7 @@ extension _HomeScreenController on _HomeScreenState {
       ),
     ).then((pos) {
       if (!mounted) return;
-      _setState(() {
-        _currentLatLng = LatLng(pos.latitude, pos.longitude);
-      });
+      _currentLatLng = LatLng(pos.latitude, pos.longitude);
       _animateToLocation(_currentLatLng!);
     }).catchError((_) {});
     // Start continuous location stream
@@ -62,7 +60,7 @@ extension _HomeScreenController on _HomeScreenState {
     ).listen((Position p) {
       if (!mounted) return;
       final ll = LatLng(p.latitude, p.longitude);
-      _setState(() => _currentLatLng = ll);
+      _currentLatLng = ll;
       _animateToLocation(ll);
     });
   }
@@ -197,9 +195,16 @@ extension _HomeScreenController on _HomeScreenState {
     _driverAnimProgress = (dt / 500.0).clamp(0.0, 1.0); // 500ms interpolation
     
     if (!mounted) return;
-    _setState(() {
-      // Trigger rebuild to update marker position
-    });
+    // Update map annotation directly — no full widget rebuild needed
+    final pos = _interpolatedDriverLoc;
+    final annot = _driverCarAnnot;
+    final mgr = _miniMapCarMgr;
+    if (annot != null && mgr != null) {
+      annot.geometry = mapbox.Point(
+        coordinates: mapbox.Position(pos.longitude, pos.latitude),
+      );
+      mgr.update(annot);
+    }
   }
 
   Future<void> _updateDriverMarker(LatLng position, double bearing) async {
@@ -212,17 +217,20 @@ extension _HomeScreenController on _HomeScreenState {
       final mgr = _miniMapCarMgr;
       if (mgr == null) return;
 
-      // Load car image bytes
-      final rideType = (_activeRide?.rideName ?? '').toLowerCase();
-      final carAsset = rideType == 'vip'
-          ? 'assets/images/cruisert1.png'
-          : rideType == 'premium'
-              ? 'assets/images/cruisert2.png'
-              : rideType == 'comfort'
-                  ? 'assets/images/cruisert3.png'
-                  : 'assets/images/cruisert2.png';
-      final byteData = await rootBundle.load(carAsset);
-      final bytes = byteData.buffer.asUint8List();
+      // Load car image bytes (cached after first load)
+      if (_cachedCarBytes == null) {
+        final rideType = (_activeRide?.rideName ?? '').toLowerCase();
+        final carAsset = rideType == 'vip'
+            ? 'assets/images/cruisert1.png'
+            : rideType == 'premium'
+                ? 'assets/images/cruisert2.png'
+                : rideType == 'comfort'
+                    ? 'assets/images/cruisert3.png'
+                    : 'assets/images/cruisert2.png';
+        final byteData = await rootBundle.load(carAsset);
+        _cachedCarBytes = byteData.buffer.asUint8List();
+      }
+      final bytes = _cachedCarBytes!;
 
       if (_driverCarAnnot != null) {
         // Update existing annotation position
@@ -371,7 +379,7 @@ extension _HomeScreenController on _HomeScreenState {
       final newProgress = (distAtClosest / totalDist).clamp(0.0, 1.0);
       // Only update if moving forward (prevent backward jumps)
       if (newProgress >= _routeProgress) {
-        _setState(() => _routeProgress = newProgress);
+        _routeProgress = newProgress;
       }
     }
   }

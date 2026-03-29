@@ -206,9 +206,10 @@ class DirectionsService {
       final mapboxFuture = _requestMapboxRoute(origin: origin, destination: destination)
           .timeout(const Duration(seconds: 4), onTimeout: () => null);
 
-      // Wait for all, take the first non-null result (prefer Google > OSRM > Mapbox)
+      // Wait for all, take the first non-null result (prefer Mapbox > Google > OSRM)
+      // Mapbox route aligns best with Mapbox map tiles for accurate road overlay
       final results = await Future.wait([googleFuture, osrmFuture, mapboxFuture]);
-      result = results[0] ?? results[1] ?? results[2];
+      result = results[2] ?? results[0] ?? results[1];
 
       if (result != null) {
         debugPrint('[Route] Got route with ${result.points.length} points (attempt ${attempt + 1})');

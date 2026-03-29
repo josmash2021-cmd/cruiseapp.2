@@ -763,6 +763,7 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
                     const SizedBox(height: 32),
                     // Was this helpful?
                     Container(
+                      width: double.infinity,
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: c.surface,
@@ -801,23 +802,27 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
                               ],
                             )
                           else
-                            Icon(
-                              _helpful
-                                  ? Icons.check_circle_rounded
-                                  : Icons.support_agent_rounded,
-                              color: _helpful ? const Color(0xFFE8C547) : _gold,
-                              size: 32,
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _helpful
+                                      ? Icons.check_circle_rounded
+                                      : Icons.support_agent_rounded,
+                                  color: _helpful ? const Color(0xFFE8C547) : _gold,
+                                  size: 28,
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _helpful ? 'Glad it helped!' : 'We\'ll connect you with our team.',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: c.textSecondary,
+                                  ),
+                                ),
+                              ],
                             ),
-                          if (_voted && !_helpful) ...[
-                            const SizedBox(height: 12),
-                            Text(
-                              'We\'ll connect you with our team.',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: c.textSecondary,
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),

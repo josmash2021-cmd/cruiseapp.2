@@ -1203,27 +1203,23 @@ extension _RideRequestController on _RideRequestScreenState {
                       ),
                       child: Row(
                         children: [
-                          if (id == 'apple_pay' || id == 'google_pay')
-                            Expanded(child: _nativePayLogoWide(id))
-                          else ...[    
+                          if (id == 'apple_pay')
+                            const Icon(Icons.apple, color: Colors.white, size: 24)
+                          else if (id == 'google_pay')
+                            const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 24)
+                          else
                             _paymentLogoWidget(id, 36),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    label,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              label,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ],
+                          ),
                           if (selected)
                             Icon(
                               Icons.check_circle_rounded,

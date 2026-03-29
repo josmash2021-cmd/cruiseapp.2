@@ -1654,6 +1654,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
+                        // Left: description + features
                         Expanded(
                           flex: 5,
                           child: Padding(
@@ -1662,8 +1663,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                animatedBadge,
-                                const SizedBox(height: 10),
                                 Text(
                                   v['desc'] as String,
                                   style: TextStyle(
@@ -1679,7 +1678,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                                   v['features'] as String,
                                   softWrap: true,
                                   style: TextStyle(
-                                    color: accent.withValues(alpha: 0.85),
+                                    color: _gold.withValues(alpha: 0.85),
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                     letterSpacing: 0.3,
@@ -1689,20 +1688,17 @@ extension _HomeScreenWidgets on _HomeScreenState {
                             ),
                           ),
                         ),
+                        // Right: car image + badge below
                         SizedBox(
                           width: screenW * 0.38,
-                          height: 130,
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(4, 10, 16, 4),
-                            child: Stack(
-                              alignment: Alignment.center,
+                            padding: const EdgeInsets.fromLTRB(4, 10, 16, 8),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                // Car image — shifted left from edge
-                                Positioned(
-                                  top: 0,
-                                  left: 0,
-                                  right: 0,
-                                  bottom: 16,
+                                // Car image — no shadow
+                                SizedBox(
+                                  height: 100,
                                   child: Image.asset(
                                     'assets/images/${v['image']}',
                                     fit: BoxFit.contain,
@@ -1717,28 +1713,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
                                     ),
                                   ),
                                 ),
-                                // Fade shadow under car — 3D floating effect
-                                Positioned(
-                                  bottom: 6,
-                                  left: 16,
-                                  right: 16,
-                                  child: Container(
-                                    height: 18,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(50),
-                                      gradient: RadialGradient(
-                                        center: Alignment.center,
-                                        radius: 0.9,
-                                        colors: [
-                                          Colors.black.withValues(alpha: 0.35),
-                                          Colors.black.withValues(alpha: 0.10),
-                                          Colors.transparent,
-                                        ],
-                                        stops: const [0.0, 0.5, 1.0],
-                                      ),
-                                    ),
-                                  ),
-                                ),
+                                const SizedBox(height: 6),
+                                // Badge below car
+                                animatedBadge,
                               ],
                             ),
                           ),

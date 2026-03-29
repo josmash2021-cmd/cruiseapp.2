@@ -235,8 +235,11 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         backgroundColor: Colors.transparent,
         body: Column(
           children: [
-            // ── Header with fields (stays fully opaque) ──
-            Container(
+            // ── Header with fields (frosted glass) ──
+            ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                child: Container(
               padding: EdgeInsets.only(
                 top: topPad + 8,
                 left: 16,
@@ -244,10 +247,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                 bottom: 16,
               ),
               decoration: BoxDecoration(
-                color: c.panel,
+                color: Colors.black.withValues(alpha: 0.40),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withValues(alpha: 0.15),
                     blurRadius: 12,
                     offset: const Offset(0, 2),
                   ),
@@ -353,6 +356,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
               ),
             ),
 
+            ),
+            ),
             // ── Loading bar ──
             if (_loading)
               LinearProgressIndicator(
@@ -685,10 +690,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.75),
+              color: Colors.white.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.15),
+                color: Colors.white.withValues(alpha: 0.10),
               ),
             ),
             child: ListTile(

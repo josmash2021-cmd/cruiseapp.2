@@ -978,15 +978,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           Positioned(
             top: topPad + 12,
             left: 20,
-            right: 64,
+            right: 20,
             child: _buildWhereToBar(),
-          ),
-
-          // ── Notification button floating top-right ──
-          Positioned(
-            top: topPad + 12,
-            right: 16,
-            child: _buildMapFab(),
           ),
 
           // ── Draggable bottom sheet ──

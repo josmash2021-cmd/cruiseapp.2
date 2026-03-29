@@ -284,53 +284,55 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       displayPhone = '+1 (${digits.substring(0, 3)}) ${digits.substring(3, 6)}-${digits.substring(6)}';
     }
 
-    showModalBottomSheet<bool>(
+    showDialog<bool>(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      barrierColor: Colors.black54,
+      builder: (ctx) => Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 48),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2C2C2E),
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               // Call button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(ctx).pop(true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF007AFF),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    elevation: 0,
+              GestureDetector(
+                onTap: () => Navigator.of(ctx).pop(true),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  decoration: const BoxDecoration(
+                    border: Border(bottom: BorderSide(color: Color(0xFF3A3A3C), width: 0.5)),
                   ),
                   child: Text(
                     'Call $displayPhone',
-                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF4AB4F7),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.none,
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
               // Cancel button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(ctx).pop(false),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2A2A2E),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    elevation: 0,
-                  ),
+              GestureDetector(
+                onTap: () => Navigator.of(ctx).pop(false),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 18),
                   child: const Text(
                     'Cancel',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w500),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w400,
+                      decoration: TextDecoration.none,
+                    ),
                   ),
                 ),
               ),
@@ -356,20 +358,23 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     final name = nh.displayName(widget.driverName, widget.rideName);
 
     if (lat != 0 && lng != 0) {
-      // Driver live position known — share Google Maps link
+      // Driver live position known — share live Google Maps link
       final mapsUrl = 'https://maps.google.com/?q=$lat,$lng';
       Share.share(
-        'My Cruise driver $name is heading to pick me up!\n'
-        'Track live: $mapsUrl',
-        subject: 'Live driver location',
+        'I\'m on a Cruise ride! My driver $name is on the way.\n\n'
+        '📍 Live location: $mapsUrl\n\n'
+        'From: ${widget.pickupLabel}\n'
+        'To: ${widget.dropoffLabel}\n\n'
+        'Track my ride in real time!',
+        subject: 'My Cruise ride — live tracking',
       );
     } else {
       // Fallback: share pickup/dropoff info
       Share.share(
-        'I\'m on a Cruise ride with $name.\n'
+        'I\'m on a Cruise ride with $name!\n\n'
         'From: ${widget.pickupLabel}\n'
-        'To: ${widget.dropoffLabel}\n'
-        'Powered by Cruise',
+        'To: ${widget.dropoffLabel}\n\n'
+        'Powered by Cruise 🚗',
         subject: 'My Cruise ride',
       );
     }

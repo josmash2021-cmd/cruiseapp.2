@@ -624,9 +624,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
   Widget _buildHeroCTA() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final active = _activeRide != null;
-    final verifyDisabled = !_isVerified;
     final zoneBlocked = !_serviceZoneActive && _activeServiceStates.isNotEmpty;
-    final disabled = !active && (verifyDisabled || zoneBlocked);
+    final disabled = !active && zoneBlocked;
     return GestureDetector(
       onTap: () async {
         if (active) {
@@ -773,22 +772,18 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 ),
               ),
               const SizedBox(height: 8),
-              if (disabled)
+              if (disabled && zoneBlocked)
                 Row(
                   children: [
                     Icon(
-                      zoneBlocked
-                          ? Icons.location_off_rounded
-                          : Icons.lock_rounded,
+                      Icons.location_off_rounded,
                       color: Colors.white.withValues(alpha: 0.35),
                       size: 14,
                     ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        zoneBlocked
-                            ? S.of(context).noDriversInState
-                            : S.of(context).verifyIdentityToRide,
+                        S.of(context).noDriversInState,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.35),
                           fontSize: 12,

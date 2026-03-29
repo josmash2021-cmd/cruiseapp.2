@@ -633,6 +633,7 @@ extension _HomeScreenController on _HomeScreenState {
           tripId: ride.tripId,
           firestoreTripId: ride.firestoreTripId,
           driverPhotoUrl: ride.driverPhotoUrl,
+          driverId: ride.driverId,
           onTripComplete: () {
             LocalDataService.clearActiveRide();
             Navigator.of(context).pop();

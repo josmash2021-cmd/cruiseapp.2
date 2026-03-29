@@ -470,6 +470,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       driverLng: _animPos.longitude,
       traveledMeters: _traveledM,
       driverPhotoUrl: activeRide.driverPhotoUrl,
+      driverId: activeRide.driverId,
       etaMinutes: activeRide.etaMinutes,
     );
 

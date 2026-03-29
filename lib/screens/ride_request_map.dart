@@ -1052,6 +1052,7 @@ extension _RideRequestMap on _RideRequestScreenState {
         tripId: s.tripId,
         firestoreTripId: s.firestoreTripId,
         driverPhotoUrl: s.driver?.photoUrl,
+        driverId: s.driver?.id,
         etaMinutes: s.selectedOption?.etaMinutes,
       ),
     );
@@ -1066,6 +1067,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           driverName: s.driver?.name ?? 'Driver',
           driverRating: s.driver?.rating ?? 4.9,
           driverPhotoUrl: s.driver?.photoUrl,
+          driverId: s.driver?.id,
           driverPhone: s.driver?.phone,
           vehicleMake: s.driver?.vehicleMake ?? 'Toyota',
           vehicleModel: s.driver?.vehicleModel ?? 'Camry',

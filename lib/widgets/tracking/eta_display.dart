@@ -236,6 +236,8 @@ extension _RiderTrackingEtaDisplay on _RiderTrackingScreenState {
                     photoUrl: widget.driverPhotoUrl,
                     radius: 22,
                     fallbackName: widget.driverName,
+                    uid: widget.driverId,
+                    role: 'driver',
                     isVerified: true,
                   ),
                 ],

@@ -67,6 +67,7 @@ class RiderTrackingScreen extends StatefulWidget {
     this.tripId,
     this.firestoreTripId,
     this.driverPhotoUrl,
+    this.driverId,
     this.onTripComplete,
   });
 
@@ -88,6 +89,7 @@ class RiderTrackingScreen extends StatefulWidget {
   final int? tripId;
   final String? firestoreTripId;
   final String? driverPhotoUrl;
+  final String? driverId;
   final VoidCallback? onTripComplete;
 
   @override

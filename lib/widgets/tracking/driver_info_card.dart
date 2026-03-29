@@ -99,6 +99,8 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                 photoUrl: widget.driverPhotoUrl,
                 radius: Responsive.w(22),
                 fallbackName: widget.driverName,
+                uid: widget.driverId,
+                role: 'driver',
                 isVerified: true,
               ),
               SizedBox(width: Responsive.w(10)),

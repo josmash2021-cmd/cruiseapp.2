@@ -684,6 +684,7 @@ class ActiveRideInfo {
   final double? driverLng;
   final double? traveledMeters;
   final String? driverPhotoUrl;
+  final String? driverId;
   final int? etaMinutes;
 
   const ActiveRideInfo({
@@ -710,6 +711,7 @@ class ActiveRideInfo {
     this.driverLng,
     this.traveledMeters,
     this.driverPhotoUrl,
+    this.driverId,
     this.etaMinutes,
   });
 
@@ -737,6 +739,7 @@ class ActiveRideInfo {
     'driverLng': driverLng,
     'traveledMeters': traveledMeters,
     'driverPhotoUrl': driverPhotoUrl,
+    'driverId': driverId,
     'etaMinutes': etaMinutes,
   };
 
@@ -768,6 +771,7 @@ class ActiveRideInfo {
     driverLng: (j['driverLng'] as num?)?.toDouble(),
     traveledMeters: (j['traveledMeters'] as num?)?.toDouble(),
     driverPhotoUrl: j['driverPhotoUrl'] as String?,
+    driverId: j['driverId'] as String?,
     etaMinutes: j['etaMinutes'] as int?,
   );
 }

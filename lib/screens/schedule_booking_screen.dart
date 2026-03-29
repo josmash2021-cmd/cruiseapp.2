@@ -24,6 +24,7 @@ import '../services/notification_service.dart';
 import '../services/places_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
+import '../utils/app_toast.dart';
 import 'airport_terminal_sheet.dart';
 import 'payment_accounts_screen.dart';
 import 'scheduled_rides_screen.dart';
@@ -120,7 +121,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     _resolveGpsCenter();
   }
 
-  /// Get rider's real-time GPS and center the map there.
+  /// Get rider's real-time GPS, center the map, and fill pickup with real address.
   Future<void> _resolveGpsCenter() async {
     try {
       final pos = await Geolocator.getCurrentPosition(
@@ -128,7 +129,20 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
       ).timeout(const Duration(seconds: 5));
       final loc = LatLng(pos.latitude, pos.longitude);
       _mapCenter = loc;
-      if (_mapCtrl != null && _pickupLatLng == null) {
+      // Reverse geocode to get the real street address for the pickup field
+      final address = await _places
+          .reverseGeocode(lat: pos.latitude, lng: pos.longitude)
+          .timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      if (address != null && address.isNotEmpty && _pickupAddress.isEmpty) {
+        setState(() {
+          _pickupAddress = address;
+          _pickupCtrl.text = address;
+          _pickupLatLng = loc;
+        });
+      }
+      // Fly the map to the GPS location
+      if (_mapCtrl != null) {
         _mapCtrl!.flyTo(
           mapbox.CameraOptions(
             center: mapbox.Point(coordinates: mapbox.Position(loc.longitude, loc.latitude)),
@@ -536,6 +550,12 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
     setState(() => _isBooking = true);
 
+    // Pre-capture localized strings before async gaps
+    final localRideScheduledTitle = S.of(context).rideScheduled;
+    final localRideScheduledMsg = S.of(context).rideScheduledMsg(
+      DateFormat('MMM d \'at\' h:mm a').format(widget.scheduledAt),
+    );
+
     try {
       final riderId = await ApiService.getCurrentUserId();
       if (riderId == null) throw Exception('Not logged in');
@@ -569,21 +589,18 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
       final tripId = tripData['id'] as int?;
 
-      // 1-hour notification
+      // Fire-and-forget: local notification (non-blocking)
       if (tripId != null) {
-        try {
-          await NotificationService.scheduleRideReminder(
-            tripId: tripId,
-            rideTime: widget.scheduledAt,
-            pickup: _pickupAddress,
-            dropoff: _dropoffAddress,
-          );
-        } catch (_) {}
+        NotificationService.scheduleRideReminder(
+          tripId: tripId,
+          rideTime: widget.scheduledAt,
+          pickup: _pickupAddress,
+          dropoff: _dropoffAddress,
+        ).catchError((_) {});
       }
 
-      // Mirror to Firestore for dispatch admin
-      try {
-        final session = await UserSession.getUser();
+      // Fire-and-forget: Firestore mirror (non-blocking)
+      UserSession.getUser().then((session) {
         final milesStr = _tripMiles.replaceAll(RegExp(r'[^\d.]'), '');
         final km = (double.tryParse(milesStr) ?? 0.0) * 1.60934;
         final durStr = _tripDuration.replaceAll(RegExp(r'[^\d]'), '');
@@ -591,7 +608,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
         final name =
             '${session?['firstName'] ?? ''} ${session?['lastName'] ?? ''}'
                 .trim();
-        await TripFirestoreService.submitRideRequest(
+        TripFirestoreService.submitRideRequest(
           passengerName: name.isEmpty ? 'Passenger' : name,
           passengerPhone: session?['phone'] ?? '',
           pickupAddress: _pickupAddress,
@@ -607,57 +624,30 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
           paymentMethod: _selectedPaymentMethod,
           scheduledAt: widget.scheduledAt,
           isAirportTrip: isAirport,
-        );
-      } catch (_) {}
+        ).catchError((_) => '');
+      }).catchError((_) {});
 
-      if (!mounted) return;
-      final schedTitle = S.of(context).rideScheduled;
-      final schedMsg = S.of(context).rideScheduledMsg(
-        DateFormat('MMM d \'at\' h:mm a').format(widget.scheduledAt),
-      );
-      await LocalDataService.addNotification(
-        title: schedTitle,
-        message: schedMsg,
+      // Fire-and-forget: local notification record
+      LocalDataService.addNotification(
+        title: localRideScheduledTitle,
+        message: localRideScheduledMsg,
         type: 'ride',
-      );
+      ).catchError((_) {});
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: _gold,
-          content: Text(
-            S
-                .of(context)
-                .scheduledForDate(
-                  DateFormat('MMM d · h:mm a').format(widget.scheduledAt),
-                ),
-            style: const TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          duration: const Duration(seconds: 3),
+
+      // Show success toast at top (uses root overlay — survives navigation)
+      AppToast.success(
+        context,
+        S.of(context).scheduledForDate(
+          DateFormat('MMM d · h:mm a').format(widget.scheduledAt),
         ),
       );
 
-      // Pop all the way back and show booking confirmation
-      final fareVal = fare;
-      final vehicleTypeName = _rides[_selectedRide].name;
+      // Navigate immediately to ScheduledRidesScreen with booking ready
       Navigator.of(context).popUntil((r) => r.isFirst);
       Navigator.of(context).push(
-        slideFromRightRoute(
-          RideBookingConfirmedScreen(
-            scheduledAt: widget.scheduledAt,
-            pickupAddress: _pickupAddress,
-            dropoffAddress: _dropoffAddress,
-            vehicleType: vehicleTypeName,
-            fare: fareVal,
-          ),
-        ),
+        slideFromRightRoute(const ScheduledRidesScreen()),
       );
     } catch (e) {
       if (mounted) _showErr(S.of(context).failedToBook('$e'));
@@ -667,14 +657,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
   }
 
   void _showErr(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: const Color(0xFFFF5252),
-        content: Text(msg, style: const TextStyle(color: Colors.white)),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+    AppToast.error(context, msg);
   }
 
   // ── Payment ──────────────────────────────────────────────────────────
@@ -1181,6 +1164,15 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                         setState(() => _mapReady = true);
                         if (_pickupLatLng != null && _dropoffLatLng != null) {
                           _fitMap();
+                        } else if (_pickupLatLng != null) {
+                          // Center on GPS location when only pickup is set
+                          _mapCtrl!.flyTo(
+                            mapbox.CameraOptions(
+                              center: mapbox.Point(coordinates: mapbox.Position(_pickupLatLng!.longitude, _pickupLatLng!.latitude)),
+                              zoom: 14.0,
+                            ),
+                            mapbox.MapAnimationOptions(duration: 600),
+                          );
                         }
                       },
                       onStyleLoadedListener: (_) async {

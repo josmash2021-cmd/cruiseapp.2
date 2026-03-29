@@ -1,11 +1,20 @@
+﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
+import '../config/api_keys.dart';
 import '../config/app_theme.dart';
+import '../config/map_theme.dart';
+import '../config/mapbox_config.dart';
 import '../config/page_transitions.dart';
+import '../models/lat_lng.dart';
 import '../services/api_service.dart';
+import '../services/directions_service.dart';
 import '../services/notification_service.dart';
 import '../services/places_service.dart';
+import '../utils/app_toast.dart';
+import '../widgets/map/circular_pin_renderer.dart';
 import '../l10n/app_localizations.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
@@ -155,34 +164,11 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       // Also cancel the scheduled notification reminder
       await NotificationService.cancelRideReminder(tripId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: _gold,
-          content: Text(
-            S.of(context).rideCancelled,
-            style: const TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
+      AppToast.success(context, S.of(context).rideCancelled);
       _loadTrips();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFFF5252),
-          content: Text(
-            S.of(context).failedToCancel(e.toString()),
-            style: const TextStyle(color: Colors.white),
-          ),
-        ),
-      );
+      AppToast.error(context, S.of(context).failedToCancel(e.toString()));
     }
   }
 
@@ -254,7 +240,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // ── Premium App Bar ──
+          // â”€â”€ Premium App Bar â”€â”€
           SliverAppBar(
             expandedHeight: 140,
             pinned: true,
@@ -289,7 +275,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
             ),
           ),
 
-          // ── Content ──
+          // â”€â”€ Content â”€â”€
           if (_loading)
             const SliverFillRemaining(
               child: Center(
@@ -417,9 +403,9 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   }
 }
 
-// ─── Trip Card Widget ───────────────────────────────────────────────────────
+// â”€â”€â”€ Trip Card Widget â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-class _TripCard extends StatelessWidget {
+class _TripCard extends StatefulWidget {
   final Map<String, dynamic> trip;
   final int index;
   final VoidCallback onCancel;
@@ -430,277 +416,542 @@ class _TripCard extends StatelessWidget {
     required this.onCancel,
   });
 
+  @override
+  State<_TripCard> createState() => _TripCardState();
+}
+
+class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
+
+  // â”€â”€ Expand state â”€â”€
+  bool _expanded = false;
+  bool _mapEverExpanded = false; // once true, keep MapWidget in tree
+
+  // â”€â”€ Mini map â”€â”€
+  mapbox.MapboxMap? _mapCtrl;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PolylineAnnotationManager? _polyAnnotMgr;
+  mapbox.PolylineAnnotation? _routeAnnot;
+  final List<mapbox.PointAnnotation> _markerAnnots = [];
+  AnimationController? _routeAnimCtrl;
+  bool _routeLoaded = false;
+  bool _routeLoading = false;
+  String _tripDuration = '';
+
+  double? get _pickupLat => (widget.trip['pickup_lat'] as num?)?.toDouble();
+  double? get _pickupLng => (widget.trip['pickup_lng'] as num?)?.toDouble();
+  double? get _dropoffLat => (widget.trip['dropoff_lat'] as num?)?.toDouble();
+  double? get _dropoffLng => (widget.trip['dropoff_lng'] as num?)?.toDouble();
+  bool get _hasCoords =>
+      _pickupLat != null && _pickupLng != null && _dropoffLat != null && _dropoffLng != null;
+
+  @override
+  void dispose() {
+    _routeAnimCtrl?.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() {
+      _expanded = !_expanded;
+      if (_expanded) _mapEverExpanded = true;
+    });
+  }
+
+  Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
+    _mapCtrl = ctrl;
+    ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+    ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+    _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+    try {
+      await ctrl.style.setStyleLayerProperty(
+          _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+    } catch (_) {}
+    _polyAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+    if (_hasCoords && mounted) _loadRouteAndAnimate();
+  }
+
+  Future<void> _loadRouteAndAnimate() async {
+    if (_routeLoading || _routeLoaded || !_hasCoords) return;
+    if (!mounted) setState(() => _routeLoading = true);
+    setState(() => _routeLoading = true);
+    try {
+      final pickup = LatLng(_pickupLat!, _pickupLng!);
+      final dropoff = LatLng(_dropoffLat!, _dropoffLng!);
+      final dirs = DirectionsService(ApiKeys.webServices);
+      final route = await dirs.getRoute(origin: pickup, destination: dropoff);
+      if (!mounted || !_expanded) return;
+      if (route == null) return;
+      setState(() {
+        _tripDuration = route.durationText;
+        _routeLoaded = true;
+      });
+      // Fit camera
+      await _fitCamera([pickup, dropoff]);
+      // Place pins
+      await _placePins(pickup, dropoff);
+      // Animate golden route line
+      await _animateRoute(route.points);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _routeLoading = false);
+    }
+  }
+
+  Future<void> _fitCamera(List<LatLng> pts) async {
+    if (_mapCtrl == null || pts.length < 2) return;
+    final lats = pts.map((p) => p.latitude).toList()..sort();
+    final lngs = pts.map((p) => p.longitude).toList()..sort();
+    try {
+      final cam = await _mapCtrl!.cameraForCoordinatesPadding(
+        [
+          mapbox.Point(coordinates: mapbox.Position(lngs.first, lats.first)),
+          mapbox.Point(coordinates: mapbox.Position(lngs.last, lats.last)),
+        ],
+        mapbox.CameraOptions(),
+        mapbox.MbxEdgeInsets(top: 40, left: 30, bottom: 50, right: 30),
+        null,
+        null,
+      );
+      await _mapCtrl!.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));
+    } catch (_) {}
+  }
+
+  Future<void> _placePins(LatLng pickup, LatLng dropoff) async {
+    if (_pointAnnotMgr == null) return;
+    for (final a in _markerAnnots) {
+      try { await _pointAnnotMgr!.delete(a); } catch (_) {}
+    }
+    _markerAnnots.clear();
+    final pickupBytes =
+        await renderCircularPinBytes(icon: CircularPinIcon.dot, isPickup: true, radius: 28);
+    final dropBytes =
+        await renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 28);
+    if (!mounted) return;
+    try {
+      final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(pickup.longitude, pickup.latitude)),
+        image: pickupBytes,
+        iconSize: 0.9,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 0],
+      ));
+      _markerAnnots.add(a);
+    } catch (_) {}
+    try {
+      final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(dropoff.longitude, dropoff.latitude)),
+        image: dropBytes,
+        iconSize: 0.9,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 0],
+      ));
+      _markerAnnots.add(a);
+    } catch (_) {}
+  }
+
+  Future<void> _animateRoute(List<LatLng> points) async {
+    if (_polyAnnotMgr == null || points.length < 2) return;
+    _routeAnimCtrl?.dispose();
+    _routeAnimCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    final completer = Completer<void>();
+    int lastCount = 0;
+    _routeAnimCtrl!.addListener(() async {
+      if (!mounted) {
+        _routeAnimCtrl?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      final eased = Curves.easeInOutSine.transform(_routeAnimCtrl!.value);
+      final count = (eased * points.length).round().clamp(2, points.length);
+      if (count != lastCount) {
+        lastCount = count;
+        final coords = points
+            .sublist(0, count)
+            .map((p) => mapbox.Position(p.longitude, p.latitude))
+            .toList();
+        final geo = mapbox.LineString(coordinates: coords);
+        if (_routeAnnot == null) {
+          try {
+            _routeAnnot = await _polyAnnotMgr!.create(
+              mapbox.PolylineAnnotationOptions(
+                geometry: geo,
+                lineColor: const Color(0xFFFFD700).toARGB32(),
+                lineWidth: 4.5,
+                lineJoin: mapbox.LineJoin.ROUND,
+              ),
+            );
+          } catch (_) {}
+        } else {
+          _routeAnnot!.geometry = geo;
+          try { await _polyAnnotMgr!.update(_routeAnnot!); } catch (_) {}
+        }
+      }
+    });
+    _routeAnimCtrl!.addStatusListener((s) {
+      if (s == AnimationStatus.completed && !completer.isCompleted) {
+        completer.complete();
+      }
+    });
+    _routeAnimCtrl!.forward();
+    return completer.future;
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final dateFmt = DateFormat('EEE, MMM d');
     final timeFmt = DateFormat('h:mm a');
-    final isAirport = trip['is_airport'] == true;
-    final status = trip['status'] as String? ?? 'scheduled';
-    final pickup = trip['pickup_address'] as String? ?? '';
-    final dropoff = trip['dropoff_address'] as String? ?? '';
-    final fare = (trip['fare'] as num?)?.toDouble();
-    final vehicleType = trip['vehicle_type'] as String? ?? 'Comfort';
-    final terminal = trip['terminal'] as String?;
-    final airportCode = trip['airport_code'] as String?;
-    final pickupZone = trip['pickup_zone'] as String?;
-    final notes = trip['notes'] as String?;
+    final isAirport = widget.trip['is_airport'] == true;
+    final status = widget.trip['status'] as String? ?? 'scheduled';
+    final pickup = widget.trip['pickup_address'] as String? ?? '';
+    final dropoff = widget.trip['dropoff_address'] as String? ?? '';
+    final fare = (widget.trip['fare'] as num?)?.toDouble();
+    final vehicleType = widget.trip['vehicle_type'] as String? ?? 'Comfort';
+    final terminal = widget.trip['terminal'] as String?;
+    final airportCode = widget.trip['airport_code'] as String?;
+    final pickupZone = widget.trip['pickup_zone'] as String?;
+    final notes = widget.trip['notes'] as String?;
 
     DateTime? scheduledAt;
-    if (trip['scheduled_at'] != null) {
+    if (widget.trip['scheduled_at'] != null) {
       try {
-        scheduledAt = DateTime.parse(trip['scheduled_at'] as String);
+        scheduledAt = DateTime.parse(widget.trip['scheduled_at'] as String);
       } catch (_) {}
     }
 
     final isPast = scheduledAt != null && scheduledAt.isBefore(DateTime.now());
     final canCancel = status == 'scheduled' && !isPast;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1D24),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isAirport
-              ? const Color(0xFF4285F4).withValues(alpha: 0.25)
-              : Colors.white.withValues(alpha: 0.06),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+    return GestureDetector(
+      onTap: _hasCoords ? _toggle : null,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1D24),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: _expanded
+                ? _gold.withValues(alpha: 0.35)
+                : isAirport
+                    ? const Color(0xFF4285F4).withValues(alpha: 0.25)
+                    : Colors.white.withValues(alpha: 0.06),
           ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Header with date and badges
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-            decoration: BoxDecoration(
-              color: isAirport
-                  ? const Color(0xFF4285F4).withValues(alpha: 0.06)
-                  : _gold.withValues(alpha: 0.04),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            // â”€â”€ Header with date and badges â”€â”€
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              decoration: BoxDecoration(
+                color: isAirport
+                    ? const Color(0xFF4285F4).withValues(alpha: 0.06)
+                    : _gold.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.vertical(
+                  top: const Radius.circular(20),
+                  bottom: _expanded ? Radius.zero : Radius.zero,
+                ),
+              ),
+              child: Row(
+                children: [
+                  if (scheduledAt != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isAirport
+                            ? const Color(0xFF4285F4).withValues(alpha: 0.12)
+                            : _gold.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isAirport
+                            ? Icons.flight_takeoff_rounded
+                            : Icons.schedule_rounded,
+                        color: isAirport ? const Color(0xFF4285F4) : _gold,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          dateFmt.format(scheduledAt),
+                          style: TextStyle(
+                            color: c.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          timeFmt.format(scheduledAt),
+                          style: TextStyle(color: c.textSecondary, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const Spacer(),
+                  if (isAirport)
+                    _badge(
+                      icon: Icons.flight_rounded,
+                      label: airportCode ?? 'Airport',
+                      color: const Color(0xFF4285F4),
+                    ),
+                  const SizedBox(width: 6),
+                  _statusBadge(status, isPast),
+                  if (_hasCoords) ...[
+                    const SizedBox(width: 6),
+                    AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 300),
+                      child: Icon(
+                        Icons.expand_more_rounded,
+                        color: _gold.withValues(alpha: 0.7),
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            child: Row(
-              children: [
-                // Date/time
-                if (scheduledAt != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: isAirport
-                          ? const Color(0xFF4285F4).withValues(alpha: 0.12)
-                          : _gold.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      isAirport
-                          ? Icons.flight_takeoff_rounded
-                          : Icons.schedule_rounded,
-                      color: isAirport ? const Color(0xFF4285F4) : _gold,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
+
+            // â”€â”€ Route info â”€â”€
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        dateFmt.format(scheduledAt),
-                        style: TextStyle(
-                          color: c.textPrimary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: _gold,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: _gold.withValues(alpha: 0.3),
+                            width: 3,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        timeFmt.format(scheduledAt),
-                        style: TextStyle(color: c.textSecondary, fontSize: 13),
+                      Container(width: 1.5, height: 28, color: Colors.white12),
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: isAirport
+                              ? const Color(0xFF4285F4)
+                              : Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: (isAirport
+                                    ? const Color(0xFF4285F4)
+                                    : Colors.white)
+                                .withValues(alpha: 0.3),
+                            width: 3,
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ],
-                const Spacer(),
-                // Badges
-                if (isAirport)
-                  _badge(
-                    icon: Icons.flight_rounded,
-                    label: airportCode ?? 'Airport',
-                    color: const Color(0xFF4285F4),
-                  ),
-                const SizedBox(width: 6),
-                _statusBadge(status, isPast),
-              ],
-            ),
-          ),
-
-          // Route info
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Route dots
-                Column(
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: _gold,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _gold.withValues(alpha: 0.3),
-                          width: 3,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          pickup.isNotEmpty ? pickup : 'Pickup location',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: c.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 18),
+                        Text(
+                          dropoff.isNotEmpty ? dropoff : 'Dropoff location',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: c.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                    Container(width: 1.5, height: 28, color: Colors.white12),
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: isAirport
-                            ? const Color(0xFF4285F4)
-                            : Colors.white,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color:
-                              (isAirport
-                                      ? const Color(0xFF4285F4)
-                                      : Colors.white)
-                                  .withValues(alpha: 0.3),
-                          width: 3,
+                  ),
+                ],
+              ),
+            ),
+
+            // â”€â”€ Info chips â”€â”€
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              child: Row(
+                children: [
+                  _infoChip(Icons.directions_car_outlined, vehicleType, c),
+                  if (fare != null && fare > 0) ...[
+                    const SizedBox(width: 8),
+                    _infoChip(
+                      Icons.attach_money_rounded,
+                      '\$${fare.toStringAsFixed(2)}',
+                      c,
+                    ),
+                  ],
+                  if (terminal != null) ...[
+                    const SizedBox(width: 8),
+                    _infoChip(Icons.door_front_door_outlined, terminal, c),
+                  ],
+                  if (pickupZone != null) ...[
+                    const SizedBox(width: 8),
+                    _infoChip(Icons.pin_drop_outlined, pickupZone, c),
+                  ],
+                ],
+              ),
+            ),
+
+            // â”€â”€ Notes â”€â”€
+            if (notes != null && notes.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Row(
+                  children: [
+                    Icon(Icons.note_outlined, size: 14, color: c.textSecondary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        notes,
+                        style: TextStyle(
+                          color: c.textSecondary,
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        pickup.isNotEmpty ? pickup : 'Pickup location',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: c.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      Text(
-                        dropoff.isNotEmpty ? dropoff : 'Dropoff location',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: c.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Details row: vehicle, fare, terminal
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-            child: Row(
-              children: [
-                _infoChip(Icons.directions_car_outlined, vehicleType, c),
-                if (fare != null && fare > 0) ...[
-                  const SizedBox(width: 8),
-                  _infoChip(
-                    Icons.attach_money_rounded,
-                    '\$${fare.toStringAsFixed(2)}',
-                    c,
-                  ),
-                ],
-                if (terminal != null) ...[
-                  const SizedBox(width: 8),
-                  _infoChip(Icons.door_front_door_outlined, terminal, c),
-                ],
-                if (pickupZone != null) ...[
-                  const SizedBox(width: 8),
-                  _infoChip(Icons.pin_drop_outlined, pickupZone, c),
-                ],
-              ],
-            ),
-          ),
-
-          // Notes
-          if (notes != null && notes.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              child: Row(
-                children: [
-                  Icon(Icons.note_outlined, size: 14, color: c.textSecondary),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      notes,
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
               ),
-            ),
 
-          // Cancel button
-          if (canCancel)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-              child: SizedBox(
-                width: double.infinity,
-                child: GestureDetector(
-                  onTap: onCancel,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFF5252).withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFFFF5252).withValues(alpha: 0.2),
+            // â”€â”€ Cancel button â”€â”€
+            if (canCancel)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: GestureDetector(
+                    onTap: widget.onCancel,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF5252).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFFFF5252).withValues(alpha: 0.2),
+                        ),
                       ),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Cancel Ride',
-                        style: TextStyle(
-                          color: Color(0xFFFF5252),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
+                      child: const Center(
+                        child: Text(
+                          'Cancel Ride',
+                          style: TextStyle(
+                            color: Color(0xFFFF5252),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
+              )
+            else
+              const SizedBox(height: 14),
+
+            // â”€â”€ Expandable mini map â”€â”€
+            if (_hasCoords)
+              AnimatedSize(
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOutCubic,
+                child: _mapEverExpanded
+                    ? SizedBox(
+                        height: _expanded ? 200.0 : 0.0,
+                        child: _buildMiniMap(),
+                      )
+                    : const SizedBox.shrink(),
               ),
-            )
-          else
-            const SizedBox(height: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMiniMap() {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+      child: Stack(
+        children: [
+          mapbox.MapWidget(
+            styleUri: MapboxConfig.styleDark,
+            cameraOptions: mapbox.CameraOptions(
+              center: mapbox.Point(
+                coordinates: mapbox.Position(_pickupLng!, _pickupLat!),
+              ),
+              zoom: 13.0,
+            ),
+            onMapCreated: _onMapCreated,
+            onStyleLoadedListener: (_) async {
+              if (_mapCtrl != null) await MapTheme.applyNavyGold(_mapCtrl!);
+            },
+          ),
+          if (_routeLoading)
+            const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFFE8C547),
+                strokeWidth: 2.5,
+              ),
+            ),
+          if (_routeLoaded && _tripDuration.isNotEmpty)
+            Positioned(
+              bottom: 12,
+              right: 12,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                  ),
+                ),
+                child: Text(
+                  '$_tripDuration trip',
+                  style: const TextStyle(
+                    color: Color(0xFFE8C547),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -749,13 +1000,13 @@ class _TripCard extends StatelessWidget {
       label = 'Expired';
     } else if (status == 'driver_en_route' || status == 'arrived') {
       color = const Color(0xFF2ECC71);
-      label = '✓ Driver Assigned';
+      label = 'âœ“ Driver Assigned';
     } else if (status == 'in_trip') {
       color = const Color(0xFFE8C547);
-      label = '🚗 In Progress';
+      label = 'ðŸš— In Progress';
     } else if (status == 'scheduled' || status == 'requested') {
       color = Colors.orange;
-      label = '⏳ Pending Driver';
+      label = 'â³ Pending Driver';
     } else {
       color = const Color(0xFF4CAF50);
       label = 'Upcoming';

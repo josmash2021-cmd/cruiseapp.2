@@ -547,9 +547,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   /// Fit route bounds applying precise padding for top and bottom cards.
-  /// Called after layout is ready so card heights can be measured.
-  /// During 'arriving' phase the driver's current animated position is included
-  /// so the camera always shows the full path from driver → pickup point.
+  /// Always shows the FULL overview: pickup + dropoff + driver + route.
   void _fitRouteBounds() {
     if (_map == null || _routePts.isEmpty) return;
     
@@ -557,12 +555,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final topHeight = _topCardHeight;
     final bottomHeight = _bottomCardHeight;
     
-    // During arriving: fit driver→pickup only (no dropoff/route)
-    if (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived) {
-      _fitArrivingBounds();
-      return;
-    }
-    // During onTrip+: include pickup + dropoff + driver + route.
+    // Always include ALL points: pickup, dropoff, driver, full route
     final pts = <LatLng>[widget.pickupLatLng, widget.dropoffLatLng];
     if (_animPos.latitude != 0) pts.add(_animPos);
     pts.addAll(_routePts);
@@ -1215,50 +1208,25 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
   }
 
-  /// Map intro: fit camera flat.
-  /// Route polyline is NOT drawn during arriving phase — only when ride starts.
+  /// Map intro: fit camera to show full route overview (no animation).
   Future<void> _startCinematicIntro() async {
     if (_cinematicDone || _map == null) return;
     _cinematicDone = true;
 
-    // Keep camera flat always
     _cinematicPitch = 0;
     _cinematicBearing = 0;
 
-    // Fit camera to driver → pickup (not full route) during arriving
-    _fitArrivingBounds();
+    // Always show full route overview instantly
+    _fitRouteBounds();
   }
 
   void _applyCinematicCamera() {
     // No-op: camera stays top-down always
   }
 
-  /// Fit camera to show driver → pickup during arriving phase.
+  /// Fit camera to show full route overview (delegates to _fitRouteBounds).
   void _fitArrivingBounds() {
-    if (_map == null) return;
-    final pts = <LatLng>[widget.pickupLatLng];
-    if (_animPos.latitude != 0) pts.add(_animPos);
-    if (pts.length < 2) pts.add(widget.pickupLatLng); // fallback
-
-    double minLat = pts[0].latitude, maxLat = pts[0].latitude;
-    double minLng = pts[0].longitude, maxLng = pts[0].longitude;
-    for (final p in pts) {
-      minLat = math.min(minLat, p.latitude);
-      maxLat = math.max(maxLat, p.latitude);
-      minLng = math.min(minLng, p.longitude);
-      maxLng = math.max(maxLng, p.longitude);
-    }
-    _map?.cameraForCoordinatesPadding(
-      [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
-       mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
-      mapbox.CameraOptions(bearing: 0, pitch: 0, zoom: 15.0),
-      mapbox.MbxEdgeInsets(top: _topCardHeight + 24, left: 50, bottom: _bottomCardHeight + 24, right: 50),
-      null, null,
-    ).then((cam) {
-      if (mounted && _map != null) {
-        _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 600));
-      }
-    });
+    _fitRouteBounds();
   }
 
   /// ──────────────────────────────────────────────────────────────────────────
@@ -1308,20 +1276,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       }
     });
 
-    // STEP 2: Animate camera to zoom in on driver location
-    // Zoom to 16.5 with 20 degree tilt
+    // STEP 2: Keep showing full route overview (no zoom in)
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_map == null || !mounted) return;
-      _map?.cameraForCoordinatesPadding(
-        [mapbox.Point(coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude))],
-        mapbox.CameraOptions(bearing: 0, pitch: 0.0, zoom: 16.5),
-        mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
-        null, null,
-      ).then((cam) {
-        if (_map != null && mounted) {
-          _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 800));
-        }
-      });
+      _fitRouteBounds();
     });
 
     // Remove approach line if it exists

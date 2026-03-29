@@ -338,7 +338,10 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       ),
     ).then((confirmed) {
       if (confirmed == true) {
-        launchUrl(Uri(scheme: 'tel', path: phone));
+        launchUrl(
+          Uri.parse('tel:$phone'),
+          mode: LaunchMode.externalApplication,
+        );
       }
     });
   }
@@ -354,15 +357,18 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       // Driver live position known — share Google Maps link
       final mapsUrl = 'https://maps.google.com/?q=$lat,$lng';
       Share.share(
-        'My driver $name is at: $mapsUrl',
-        subject: 'Driver location',
+        'My Cruise driver $name is heading to pick me up!\n'
+        'Track live: $mapsUrl',
+        subject: 'Live driver location',
       );
     } else {
-      // Fallback: share trip tracking link
-      final tripId = widget.firestoreTripId ?? widget.tripId?.toString() ?? 'unknown';
+      // Fallback: share pickup/dropoff info
       Share.share(
-        '🚗 Follow my ride in real time\nhttps://cruiseapp.com/track/$tripId\nPowered by Cruise',
-        subject: 'Real-time ride tracking',
+        'I\'m on a Cruise ride with $name.\n'
+        'From: ${widget.pickupLabel}\n'
+        'To: ${widget.dropoffLabel}\n'
+        'Powered by Cruise',
+        subject: 'My Cruise ride',
       );
     }
   }

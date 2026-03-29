@@ -233,7 +233,7 @@ workflows:
       groups:
         - default
       flutter: stable
-      xcode: latest
+      xcode: 16.2
       cocoapods: 1.15.2
       vars:
         <<: *shared_vars
@@ -295,7 +295,7 @@ workflows:
         distribution_type: ad_hoc
         bundle_identifier: com.cruiseinride.app
       flutter: stable
-      xcode: latest
+      xcode: 16.2
       cocoapods: 1.15.2
       vars:
         <<: *shared_vars
@@ -337,7 +337,7 @@ workflows:
       groups:
         - default
       flutter: stable
-      xcode: latest
+      xcode: 16.2
       cocoapods: 1.15.2
       vars:
         <<: *shared_vars

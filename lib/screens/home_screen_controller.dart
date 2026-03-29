@@ -89,10 +89,14 @@ extension _HomeScreenController on _HomeScreenState {
       },
     );
 
-    // Also start listening for driver location if active ride exists
+    // Draw route on home screen map + start driver tracking
     if (_activeRide != null && _miniMapController != null) {
+      _drawRouteOnMap();
       _listenToDriverLocation();
     }
+
+    // Ensure fade controller is at full opacity for active ride
+    _rideFadeCtrl.value = 1.0;
   }
 
   // ─── Driver location tracking for active trip ───
@@ -199,14 +203,219 @@ extension _HomeScreenController on _HomeScreenState {
   }
 
   Future<void> _updateDriverMarker(LatLng position, double bearing) async {
-    if (_miniMapController == null) return;
+    final ctrl = _miniMapController;
+    if (ctrl == null) return;
 
     try {
-      // For now, just update internal state. Real marker rendering would need polyline/annotation
-      // This will be displayed on the route polyline visualization
+      // Ensure car annotation manager exists
+      _miniMapCarMgr ??= await ctrl.annotations.createPointAnnotationManager();
+      final mgr = _miniMapCarMgr;
+      if (mgr == null) return;
+
+      // Load car image bytes
+      final rideType = (_activeRide?.rideName ?? '').toLowerCase();
+      final carAsset = rideType == 'vip'
+          ? 'assets/images/cruisert1.png'
+          : rideType == 'premium'
+              ? 'assets/images/cruisert2.png'
+              : rideType == 'comfort'
+                  ? 'assets/images/cruisert3.png'
+                  : 'assets/images/cruisert2.png';
+      final byteData = await rootBundle.load(carAsset);
+      final bytes = byteData.buffer.asUint8List();
+
+      if (_driverCarAnnot != null) {
+        // Update existing annotation position
+        _driverCarAnnot!.geometry = mapbox.Point(
+          coordinates: mapbox.Position(position.longitude, position.latitude),
+        );
+        mgr.update(_driverCarAnnot!);
+      } else {
+        // Create new annotation
+        _driverCarAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(
+            coordinates: mapbox.Position(position.longitude, position.latitude),
+          ),
+          image: bytes,
+          iconSize: 0.55,
+          iconOffset: [0, 0],
+          iconAnchor: mapbox.IconAnchor.CENTER,
+        ));
+      }
+
+      // Update route progress based on driver position
+      _updateRouteProgress(position);
     } catch (e) {
       debugPrint('Error updating driver marker: $e');
     }
+  }
+
+  /// Draw the gold route polyline on the home screen map.
+  Future<void> _drawRouteOnMap() async {
+    if (_rideRouteDrawn) return;
+    final ride = _activeRide;
+    final ctrl = _miniMapController;
+    if (ride == null || ctrl == null) return;
+    if (ride.routePoints.isEmpty) return;
+
+    _rideRouteDrawn = true;
+    _routeLatLngs = ride.routePoints.map((p) => LatLng(p[0], p[1])).toList();
+
+    try {
+      // Create polyline annotation manager
+      _miniMapPolyMgr ??= await ctrl.annotations.createPolylineAnnotationManager();
+      final mgr = _miniMapPolyMgr;
+      if (mgr == null) return;
+
+      // Build coordinate list
+      final coords = _routeLatLngs
+          .map((ll) => mapbox.Position(ll.longitude, ll.latitude))
+          .toList();
+      if (coords.length < 2) return;
+
+      // Draw gold route line
+      _tripRouteAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: coords),
+        lineColor: const Color(0xFFFFD700).toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+
+      // Fit camera to show the whole route
+      _fitCameraToRoute();
+    } catch (e) {
+      debugPrint('Error drawing route on home map: $e');
+    }
+  }
+
+  /// Fit the camera to show the full route with padding.
+  void _fitCameraToRoute() {
+    if (_routeLatLngs.isEmpty || _miniMapController == null) return;
+
+    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    for (final ll in _routeLatLngs) {
+      if (ll.latitude < minLat) minLat = ll.latitude;
+      if (ll.latitude > maxLat) maxLat = ll.latitude;
+      if (ll.longitude < minLng) minLng = ll.longitude;
+      if (ll.longitude > maxLng) maxLng = ll.longitude;
+    }
+
+    // Also include driver location if available
+    if (_driverLocation != null) {
+      final dl = _driverLocation!;
+      if (dl.latitude < minLat) minLat = dl.latitude;
+      if (dl.latitude > maxLat) maxLat = dl.latitude;
+      if (dl.longitude < minLng) minLng = dl.longitude;
+      if (dl.longitude > maxLng) maxLng = dl.longitude;
+    }
+
+    _miniMapController!.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(
+          coordinates: mapbox.Position(
+            (minLng + maxLng) / 2,
+            (minLat + maxLat) / 2,
+          ),
+        ),
+        zoom: _calculateZoomForBounds(minLat, maxLat, minLng, maxLng),
+        pitch: 0,
+        bearing: 0,
+      ),
+      mapbox.MapAnimationOptions(duration: 800),
+    );
+  }
+
+  double _calculateZoomForBounds(double minLat, double maxLat, double minLng, double maxLng) {
+    final latDiff = maxLat - minLat;
+    final lngDiff = maxLng - minLng;
+    final maxDiff = math.max(latDiff, lngDiff);
+    if (maxDiff <= 0) return 15.0;
+    // Approximate zoom: smaller bounds → higher zoom
+    final zoom = 14.0 - (math.log(maxDiff * 111) / math.ln2);
+    return zoom.clamp(10.0, 17.0);
+  }
+
+  /// Compute how far along the route the driver is (0.0→1.0).
+  void _updateRouteProgress(LatLng driverPos) {
+    if (_routeLatLngs.length < 2) return;
+
+    double totalDist = 0;
+    double closestDist = double.infinity;
+    double distAtClosest = 0;
+    double runningDist = 0;
+
+    for (int i = 0; i < _routeLatLngs.length - 1; i++) {
+      final a = _routeLatLngs[i];
+      final b = _routeLatLngs[i + 1];
+      final segLen = _haversine(a, b);
+      totalDist += segLen;
+    }
+
+    runningDist = 0;
+    for (int i = 0; i < _routeLatLngs.length - 1; i++) {
+      final a = _routeLatLngs[i];
+      final b = _routeLatLngs[i + 1];
+      final segLen = _haversine(a, b);
+
+      // Project driver onto this segment
+      final proj = _projectOntoSegment(driverPos, a, b);
+      final dist = _haversine(driverPos, proj);
+      if (dist < closestDist) {
+        closestDist = dist;
+        distAtClosest = runningDist + _haversine(a, proj);
+      }
+      runningDist += segLen;
+    }
+
+    if (totalDist > 0) {
+      final newProgress = (distAtClosest / totalDist).clamp(0.0, 1.0);
+      // Only update if moving forward (prevent backward jumps)
+      if (newProgress >= _routeProgress) {
+        _setState(() => _routeProgress = newProgress);
+      }
+    }
+  }
+
+  /// Haversine distance in meters.
+  static double _haversine(LatLng a, LatLng b) {
+    const R = 6371000.0;
+    final dLat = (b.latitude - a.latitude) * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final sLat = math.sin(dLat / 2);
+    final sLng = math.sin(dLng / 2);
+    final h = sLat * sLat +
+        math.cos(a.latitude * math.pi / 180) *
+            math.cos(b.latitude * math.pi / 180) *
+            sLng * sLng;
+    return 2 * R * math.asin(math.sqrt(h));
+  }
+
+  /// Project point P onto segment AB, clamped to [A, B].
+  static LatLng _projectOntoSegment(LatLng p, LatLng a, LatLng b) {
+    final dx = b.longitude - a.longitude;
+    final dy = b.latitude - a.latitude;
+    if (dx == 0 && dy == 0) return a;
+    final t = ((p.longitude - a.longitude) * dx + (p.latitude - a.latitude) * dy) /
+        (dx * dx + dy * dy);
+    final tc = t.clamp(0.0, 1.0);
+    return LatLng(a.latitude + tc * dy, a.longitude + tc * dx);
+  }
+
+  /// Clear all route annotations from the home screen map.
+  Future<void> _clearRouteFromMap() async {
+    try {
+      if (_tripRouteAnnot != null && _miniMapPolyMgr != null) {
+        await _miniMapPolyMgr!.delete(_tripRouteAnnot!);
+        _tripRouteAnnot = null;
+      }
+      if (_driverCarAnnot != null && _miniMapCarMgr != null) {
+        await _miniMapCarMgr!.delete(_driverCarAnnot!);
+        _driverCarAnnot = null;
+      }
+    } catch (_) {}
+    _rideRouteDrawn = false;
+    _routeProgress = 0.0;
+    _routeLatLngs = [];
   }
 
   void _onTripCompleted() {
@@ -216,34 +425,44 @@ extension _HomeScreenController on _HomeScreenState {
     _driverLocationSub?.cancel();
     _tripStatusSub?.cancel();
     _driverTicker?.dispose();
+    _countdownTimer?.cancel();
 
-    // Animate transition back to normal state
-    _setState(() {
-      _activeRide = null;
-      _driverLocation = null;
-      _countdownTimer?.cancel();
-    });
+    // Fade out ride UI, then reset state
+    _rideFadeCtrl.reverse().then((_) async {
+      if (!mounted) return;
 
-    // Reset map to home
-    if (_miniMapController != null && _currentLatLng != null) {
-      _miniMapController!.flyTo(
-        mapbox.CameraOptions(
-          center: mapbox.Point(
-            coordinates: mapbox.Position(
-              _currentLatLng!.longitude,
-              _currentLatLng!.latitude,
+      // Clear map annotations
+      await _clearRouteFromMap();
+
+      _setState(() {
+        _activeRide = null;
+        _driverLocation = null;
+      });
+
+      // Reset map to home
+      if (_miniMapController != null && _currentLatLng != null) {
+        _miniMapController!.flyTo(
+          mapbox.CameraOptions(
+            center: mapbox.Point(
+              coordinates: mapbox.Position(
+                _currentLatLng!.longitude,
+                _currentLatLng!.latitude,
+              ),
             ),
+            zoom: 15.0,
+            pitch: 0,
+            bearing: 0,
           ),
-          zoom: 15.0,
-          pitch: 0,
-          bearing: 0,
-        ),
-        mapbox.MapAnimationOptions(duration: 800),
-      );
-    }
+          mapbox.MapAnimationOptions(duration: 800),
+        );
+      }
 
-    // Refresh saved data to update UI
-    _loadSavedData();
+      // Fade in normal content
+      _rideFadeCtrl.forward();
+
+      // Refresh saved data to update UI
+      _loadSavedData();
+    });
   }
 
   void _showPlaceOptions(String label, String address, VoidCallback editTap) {

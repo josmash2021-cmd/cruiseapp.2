@@ -40,6 +40,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
         _miniMapAnnotMgr =
             await ctrl.annotations.createPointAnnotationManager();
         _updateMiniMapAnnotation();
+        // Draw route if there's an active ride
+        if (_activeRide != null) {
+          _drawRouteOnMap();
+        }
       },
       onStyleLoadedListener: (_) async {
         if (_miniMapController != null) {

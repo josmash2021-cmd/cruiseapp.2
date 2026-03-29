@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:geocoding/geocoding.dart';
@@ -160,6 +161,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
   DateTime? _tripStartTime;
 
+  // ── Live route on home map ──
+  mapbox.PolylineAnnotationManager? _miniMapPolyMgr;
+  mapbox.PointAnnotationManager? _miniMapCarMgr;
+  mapbox.PointAnnotation? _driverCarAnnot;
+  bool _rideRouteDrawn = false;
+  double _routeProgress = 0.0; // 0→1 based on driver position along route
+  List<LatLng> _routeLatLngs = []; // cached route points
+
+  // ── Ride completion fade ──
+  late AnimationController _rideFadeCtrl;
+
   /// Interpolated position for the current animation frame.
   LatLng get _interpolatedLatLng {
     if (_locAnimFrom == null || _locAnimTo == null) return _currentLatLng ?? const LatLng(0, 0);
@@ -242,6 +254,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat();
+    _rideFadeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+      value: 1.0, // fully visible
+    );
     // Flash bolt every 2 seconds
     Future.doWhile(() async {
       await Future.delayed(const Duration(seconds: 2));
@@ -339,6 +356,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _boltFlashCtrl.dispose();
     _clockRotateCtrl.dispose();
     _promoShimmerCtrl.dispose();
+    _rideFadeCtrl.dispose();
     _driverCheckTimer?.cancel();
     _accountStatusTimer?.cancel();
     _countdownTimer?.cancel();
@@ -923,7 +941,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
     return Scaffold(
       backgroundColor: const Color(0xFF07080D),
-      body: Stack(
+      body: FadeTransition(
+        opacity: _rideFadeCtrl,
+        child: Stack(
         children: [
           // Offline connectivity banner
           const Positioned(
@@ -992,10 +1012,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
         ],
       ),
+      ),
     );
   }
 
   double get _tripProgress {
+    // Use real route progress from driver location when available
+    if (_routeProgress > 0.01) return _routeProgress;
+    // Fall back to countdown-based progress
     if (_totalSeconds == 0) return 0.0;
     return 1.0 - (_remainingSeconds / _totalSeconds);
   }

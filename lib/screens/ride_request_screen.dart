@@ -142,6 +142,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _cinematicDone = false;
   bool _hasAppliedSelectionTilt = false;
   bool _labelsRevealed = false;
+  bool _placingMarkers = false; // guard against concurrent pin duplication
   AnimationController? _labelPopCtrl;
   Animation<double>? _labelPopAnim;
   LatLng? _center;

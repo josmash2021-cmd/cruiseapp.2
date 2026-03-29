@@ -212,17 +212,17 @@ extension _RideRequestController on _RideRequestScreenState {
       case RiderPhase.selectingRide:
         // Show bottom sheet immediately
         _sheetCtrl.forward();
-        // Place markers immediately (no polyline until real route)
-        if (s.pickup != null && s.dropoff != null) {
+        // Place markers immediately but only if real route isn't ready yet.
+        // Once the real route arrives _drawRoute/_rebuildMarkers takes over —
+        // running both concurrently creates duplicate orphaned pins.
+        final hasRealRoute = s.route != null &&
+            s.rideOptions.isNotEmpty &&
+            s.route!.points.length > 15;
+        if (s.pickup != null && s.dropoff != null && !hasRealRoute) {
           _placeMarkersOnly();
         }
         // Draw polyline + cinematic only when REAL route arrives (once).
-        // The estimated route has ≤11 straight-line points; real routes have 20+.
-        // Also require rideOptions to be populated (only set after real route).
-        // Allow fallback draw if route fetch failed but options were generated.
-        if (s.route != null &&
-            s.rideOptions.isNotEmpty &&
-            s.route!.points.length > 15) {
+        if (hasRealRoute) {
           _fetchingRoute = false;
           if (!_cinematicDone) {
             _drawRoute();

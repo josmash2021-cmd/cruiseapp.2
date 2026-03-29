@@ -859,33 +859,38 @@ extension _RideRequestMap on _RideRequestScreenState {
 
   /// Place pickup/dropoff markers immediately and fit camera, even before route loads.
   Future<void> _placeMarkersOnly() async {
-    final s = _ctrl.state;
-    if (s.pickup == null || s.dropoff == null) return;
-    final mgr = _pointAnnotMgr;
-    if (mgr == null || _goldPinIcon == null) return;
+    if (_placingMarkers) return; // prevent concurrent duplicate creation
+    _placingMarkers = true;
+    try {
+      final s = _ctrl.state;
+      if (s.pickup == null || s.dropoff == null) return;
+      final mgr = _pointAnnotMgr;
+      if (mgr == null || _goldPinIcon == null) return;
 
-    // Simple gold pin for pickup
-    _pickupAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
-      image: _goldPinIcon!,
-      iconSize: 0.65,
-      iconAnchor: mapbox.IconAnchor.BOTTOM,
-      iconOffset: [0, 0],
-    ));
-    // Simple gold pin for dropoff
-    _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
-      image: _goldPinIcon!,
-      iconSize: 0.65,
-      iconAnchor: mapbox.IconAnchor.BOTTOM,
-      iconOffset: [0, 0],
-    ));
-    // Fit camera to show both markers
-    _fitRoute([
-      LatLng(s.pickup!.lat, s.pickup!.lng),
-      LatLng(s.dropoff!.lat, s.dropoff!.lng),
-    ]);
-    if (mounted) _setState(() {});
+      // Only create if not already placed (synchronous check before any await)
+      _pickupAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
+        image: _goldPinIcon!,
+        iconSize: 0.65,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 0],
+      ));
+      _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
+        image: _goldPinIcon!,
+        iconSize: 0.65,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 0],
+      ));
+      // Fit camera to show both markers
+      _fitRoute([
+        LatLng(s.pickup!.lat, s.pickup!.lng),
+        LatLng(s.dropoff!.lat, s.dropoff!.lng),
+      ]);
+      if (mounted) _setState(() {});
+    } finally {
+      _placingMarkers = false;
+    }
   }
 
   Future<void> _buildRouteMarkers() async {

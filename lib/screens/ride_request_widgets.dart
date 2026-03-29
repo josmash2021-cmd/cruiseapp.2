@@ -186,7 +186,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
         : s.selectedOption;
     final screenH = MediaQuery.of(context).size.height;
-    final sheetH = (screenH * 0.58).clamp(320.0, 540.0) + bottomPad;
+    final sheetH = (screenH * 0.65).clamp(380.0, 620.0) + bottomPad;
 
     return Positioned(
       left: 0,

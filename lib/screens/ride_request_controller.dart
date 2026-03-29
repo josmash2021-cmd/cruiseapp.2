@@ -438,7 +438,7 @@ extension _RideRequestController on _RideRequestScreenState {
       case RiderPhase.previewRoute:
       case RiderPhase.selectingRide:
         final screenH = MediaQuery.of(context).size.height;
-        final h = (screenH * 0.58).clamp(320.0, 540.0);
+        final h = (screenH * 0.65).clamp(380.0, 620.0);
         return h + bottomPad;
       case RiderPhase.requesting:
       case RiderPhase.searchingDriver:

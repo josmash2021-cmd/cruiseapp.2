@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' if (dart.library.html) 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -45,7 +46,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Map<String, String>? _user;
   List<FavoritePlace> _favorites = [];
-  bool _loading = false;
+  bool _loading = true;
   bool _isVerified = false;
   bool _emailVerified = false;
 
@@ -349,13 +350,20 @@ class _AccountScreenState extends State<AccountScreen> {
     if (_loading) {
       return Scaffold(
         backgroundColor: c.bg,
-        body: const Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: CircularProgressIndicator(
+            color: const Color(0xFFE8C547),
+            strokeWidth: 2.5,
+          ),
+        ),
       );
     }
 
-    final firstName = _user?['firstName'] ?? 'User';
+    final firstName = _user?['firstName'];
     final lastName = _user?['lastName'] ?? '';
-    final fullName = '$firstName $lastName'.trim();
+    final fullName = (firstName != null && firstName.isNotEmpty)
+        ? '$firstName $lastName'.trim()
+        : (FirebaseAuth.instance.currentUser?.displayName ?? '');
     final photoPath = _user?['photoPath'] ?? '';
     final photoUrl = _user?['photoUrl'] ?? UserSession.photoUrlNotifier.value;
 
@@ -412,6 +420,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     radius: 35,
                     fallbackName: fullName,
                     uid: _user?['userId'],
+                    role: _user?['role'] ?? 'rider',
                     isVerified: _isVerified,
                   ),
                 ],

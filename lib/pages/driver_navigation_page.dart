@@ -1227,7 +1227,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
     _destPinBytes ??= await renderCircularPinBytes(
       icon: CircularPinIcon.flag,
       isPickup: _sm.phase == TripPhase.toPickup,
-      radius: 32,
+      radius: 44,
     );
     if (_destAnnot == null) {
       _destAnnot = await mgr.create(mapbox.PointAnnotationOptions(

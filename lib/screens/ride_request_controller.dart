@@ -10,7 +10,7 @@ extension _RideRequestController on _RideRequestScreenState {
     _goldPinIcon = await renderCircularPinBytes(
       icon: CircularPinIcon.dot,
       isPickup: true,
-      radius: 32,
+      radius: 44,
     );
     if (mounted) _setState(() {});
   }
@@ -19,7 +19,7 @@ extension _RideRequestController on _RideRequestScreenState {
     return renderCircularPinBytes(
       icon: CircularPinIcon.dot,
       isPickup: true,
-      radius: 32,
+      radius: 44,
     );
   }
 

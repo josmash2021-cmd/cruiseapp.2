@@ -24,7 +24,7 @@ extension _MapScreenMap on _MapScreenState {
     return renderCircularPinBytes(
       icon: isPickup ? CircularPinIcon.person : CircularPinIcon.home,
       isPickup: isPickup,
-      radius: 32,
+      radius: 44,
     );
   }
 

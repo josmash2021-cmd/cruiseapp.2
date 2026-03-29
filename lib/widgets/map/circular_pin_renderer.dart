@@ -86,7 +86,7 @@ IconData _iconDataFor(CircularPinIcon icon) {
 Future<Uint8List> renderCircularPinBytes({
   CircularPinIcon icon = CircularPinIcon.dot,
   bool isPickup = true,
-  double radius = 32.0,
+  double radius = 44.0,
 }) async {
   final pinSize = (radius * 2 + 16).roundToDouble();
   return buildGoldenPinBytes(

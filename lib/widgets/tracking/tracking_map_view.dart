@@ -317,7 +317,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       case _PinIcon.airplane: circIcon = CircularPinIcon.airplane; break;
       case _PinIcon.person:   circIcon = CircularPinIcon.person; break;
     }
-    return renderCircularPinBytes(icon: circIcon, isPickup: isPickup, radius: 32);
+    return renderCircularPinBytes(icon: circIcon, isPickup: isPickup, radius: 44);
   }
 
   /// Renders a gold pin + address label as a single combined bitmap.

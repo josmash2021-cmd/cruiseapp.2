@@ -709,11 +709,11 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (mgr == null) return;
     final s = _pinPopAnim?.value ?? 1.0;
     if (_pickupAnnot != null) {
-      _pickupAnnot!.iconSize = s * 0.85;
+      _pickupAnnot!.iconSize = s * 0.65;
       mgr.update(_pickupAnnot!);
     }
     if (_dropoffAnnot != null) {
-      _dropoffAnnot!.iconSize = s * 0.85;
+      _dropoffAnnot!.iconSize = s * 0.65;
       mgr.update(_dropoffAnnot!);
     }
   }
@@ -736,19 +736,19 @@ extension _RideRequestMap on _RideRequestScreenState {
     _labelPopAnim = TweenSequence<double>([
       // Shrink from current scale to accommodate wider bitmap
       TweenSequenceItem(
-        tween: Tween(begin: 0.40, end: 0.92)
+        tween: Tween(begin: 0.32, end: 0.72)
             .chain(CurveTween(curve: Curves.easeOutCubic)),
         weight: 55,
       ),
       // Overshoot
       TweenSequenceItem(
-        tween: Tween(begin: 0.92, end: 0.82)
+        tween: Tween(begin: 0.72, end: 0.62)
             .chain(CurveTween(curve: Curves.easeInOut)),
         weight: 20,
       ),
       // Settle
       TweenSequenceItem(
-        tween: Tween(begin: 0.82, end: 0.85)
+        tween: Tween(begin: 0.62, end: 0.65)
             .chain(CurveTween(curve: Curves.elasticOut)),
         weight: 25,
       ),
@@ -760,7 +760,7 @@ extension _RideRequestMap on _RideRequestScreenState {
   void _updateLabelScales() {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
-    final s = _labelPopAnim?.value ?? 0.85;
+    final s = _labelPopAnim?.value ?? 0.65;
     if (_pickupAnnot != null) {
       _pickupAnnot!.iconSize = s;
       mgr.update(_pickupAnnot!);
@@ -873,15 +873,17 @@ extension _RideRequestMap on _RideRequestScreenState {
     _pickupAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
       image: _goldPinIcon!,
-      iconSize: 0.85,
+      iconSize: 0.65,
       iconAnchor: mapbox.IconAnchor.BOTTOM,
+      iconOffset: [0, 4],
     ));
     // Simple gold pin for dropoff
     _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
       image: _goldPinIcon!,
-      iconSize: 0.85,
+      iconSize: 0.65,
       iconAnchor: mapbox.IconAnchor.BOTTOM,
+      iconOffset: [0, 4],
     ));
     // Fit camera to show both markers
     _fitRoute([
@@ -932,7 +934,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (mgr == null) return;
 
     // During cinematic, pins start tiny and use pin-ONLY bitmaps (labels animate in later)
-    final scale = (!_cinematicDone || (_pinPopCtrl?.isAnimating ?? false)) ? 0.01 : 0.85;
+    final scale = (!_cinematicDone || (_pinPopCtrl?.isAnimating ?? false)) ? 0.01 : 0.65;
     final useLabels = _labelsRevealed;
 
     // Pickup marker
@@ -952,7 +954,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           image: bytes,
           iconSize: scale,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: [0, 0],
+          iconOffset: [0, 4],
         ));
       }
     }
@@ -974,7 +976,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           image: bytes,
           iconSize: scale,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: [0, 0],
+          iconOffset: [0, 4],
         ));
       }
     }

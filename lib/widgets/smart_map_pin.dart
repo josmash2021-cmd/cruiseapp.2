@@ -95,9 +95,8 @@ class GoldenPinPainter {
   double get _width  => size;
   double get _height => size * 1.50;
   double get _cx     => _width / 2;
-  double get _r      => _width * 0.33;
+  double get _r      => _width * 0.38;
   double get _headCY => _r + _width * 0.08;
-  // Keep tip at image bottom so IconAnchor.BOTTOM pins exactly at coordinates.
   double get _tipY   => _height;
 
   // ── Gold palette ──
@@ -237,7 +236,7 @@ class GoldenPinPainter {
   }
 
   void _drawIcon(Canvas canvas, IconData iconData, double cx, double cy, double r) {
-    final iconSize = r * 1.0;
+    final iconSize = r * 1.15;
     final tp = TextPainter(
       text: TextSpan(
         text: String.fromCharCode(iconData.codePoint),

@@ -462,12 +462,16 @@ async def get_rider_scheduled_trips(rider_id: int, user: User = Depends(_get_cur
     """Get all scheduled (future) trips for a rider."""
     if user.id != rider_id and user.role != "admin":
         raise HTTPException(403, "Not authorized")
-    result = await db.execute(
-        select(Trip).where(
-            and_(Trip.rider_id == rider_id, Trip.status.in_(["scheduled", "requested"]), Trip.scheduled_at.isnot(None))
-        ).order_by(Trip.scheduled_at.asc())
-    )
-    return [_trip_dict_for_user(t, user) for t in result.scalars().all()]
+    try:
+        result = await db.execute(
+            select(Trip).where(
+                and_(Trip.rider_id == rider_id, Trip.status.in_(["scheduled", "requested"]), Trip.scheduled_at.isnot(None))
+            ).order_by(Trip.scheduled_at.asc())
+        )
+        return [_trip_dict_for_user(t, user) for t in result.scalars().all()]
+    except Exception as e:
+        logging.error(f"get_rider_scheduled_trips error: {e}")
+        raise HTTPException(500, f"Failed to load scheduled trips: {str(e)}")
 
 @router.get("/trips/scheduled/driver/{driver_id}", dependencies=[Depends(_verify_api_key)])
 async def get_driver_scheduled_trips(driver_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

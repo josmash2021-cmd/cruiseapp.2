@@ -115,24 +115,66 @@ class _WalletScreenState extends State<WalletScreen> {
 
     return Scaffold(
       backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: _backButton(c),
-        centerTitle: true,
-        title: Text(loc.wallet, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.refresh_rounded, color: c.textPrimary),
-            onPressed: _loadWalletData,
-          ),
-        ],
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 8),
+
+            // ── Back button + refresh ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: c.border),
+                      ),
+                      child: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: c.textPrimary),
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: _loadWalletData,
+                    child: Icon(Icons.refresh_rounded, color: c.textPrimary, size: 22),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 28),
+
+            // ── Title ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                loc.wallet,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: c.textPrimary,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // ── Content ──
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator(color: _gold))
+                  : _error != null
+                      ? _buildError()
+                      : _buildContent(c),
+            ),
+          ],
+        ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _gold))
-          : _error != null
-              ? _buildError()
-              : _buildContent(c),
     );
   }
 

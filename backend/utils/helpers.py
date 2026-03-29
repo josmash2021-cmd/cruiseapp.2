@@ -90,49 +90,54 @@ def _user_dict(u) -> dict:
 
 
 def _trip_dict(t) -> dict:
-    d = {
-        "id": t.id,
-        "rider_id": t.rider_id,
-        "driver_id": t.driver_id,
-        "pickup_address": t.pickup_address,
-        "dropoff_address": t.dropoff_address,
-        "pickup_lat": t.pickup_lat,
-        "pickup_lng": t.pickup_lng,
-        "dropoff_lat": t.dropoff_lat,
-        "dropoff_lng": t.dropoff_lng,
-        "fare": t.fare,
-        "vehicle_type": t.vehicle_type,
-        "status": t.status,
-        "scheduled_at": t.scheduled_at.isoformat() if t.scheduled_at else None,
-        "is_airport": t.is_airport or False,
-        "airport_code": t.airport_code,
-        "terminal": t.terminal,
-        "pickup_zone": t.pickup_zone,
-        "notes": t.notes,
-        "cancel_reason": t.cancel_reason,
-        "payment_status": t.payment_status or "unpaid",
-        "surge_multiplier": t.surge_multiplier or 1.0,
-        "base_fare": t.base_fare,
-        "cancellation_fee": t.cancellation_fee or 0.0,
-        "tip_amount": t.tip_amount or 0.0,
-        "wait_time_minutes": t.wait_time_minutes or 0,
-        "wait_time_charge": t.wait_time_charge or 0.0,
-        "distance": t.distance,
-        "duration": t.duration,
-        "driver_earnings": t.driver_earnings,
-        "platform_fee": t.platform_fee,
-        "refund_status": t.refund_status,
-        "refund_amount": t.refund_amount or 0.0,
-        "per_mile_rate": t.per_mile_rate,
-        "per_minute_rate": t.per_minute_rate,
-        "share_token": t.share_token,
-        "created_at": t.created_at.isoformat() if t.created_at else None,
-        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
-    }
-    if t.pickup_lat and t.dropoff_lat:
-        d["distance_miles"] = round(_haversine(t.pickup_lat, t.pickup_lng, t.dropoff_lat, t.dropoff_lng) * 0.621371, 1)
-        d["duration_minutes"] = max(round(d["distance_miles"] * 2.5), 3) if d["distance_miles"] else None
-    return d
+    try:
+        d = {
+            "id": t.id,
+            "rider_id": getattr(t, "rider_id", None),
+            "driver_id": getattr(t, "driver_id", None),
+            "pickup_address": getattr(t, "pickup_address", None),
+            "dropoff_address": getattr(t, "dropoff_address", None),
+            "pickup_lat": getattr(t, "pickup_lat", None),
+            "pickup_lng": getattr(t, "pickup_lng", None),
+            "dropoff_lat": getattr(t, "dropoff_lat", None),
+            "dropoff_lng": getattr(t, "dropoff_lng", None),
+            "fare": getattr(t, "fare", None),
+            "vehicle_type": getattr(t, "vehicle_type", None),
+            "status": getattr(t, "status", None),
+            "scheduled_at": t.scheduled_at.isoformat() if getattr(t, "scheduled_at", None) else None,
+            "is_airport": getattr(t, "is_airport", False) or False,
+            "airport_code": getattr(t, "airport_code", None),
+            "terminal": getattr(t, "terminal", None),
+            "pickup_zone": getattr(t, "pickup_zone", None),
+            "notes": getattr(t, "notes", None),
+            "cancel_reason": getattr(t, "cancel_reason", None),
+            "payment_status": getattr(t, "payment_status", None) or "unpaid",
+            "surge_multiplier": getattr(t, "surge_multiplier", None) or 1.0,
+            "base_fare": getattr(t, "base_fare", None),
+            "cancellation_fee": getattr(t, "cancellation_fee", None) or 0.0,
+            "tip_amount": getattr(t, "tip_amount", None) or 0.0,
+            "wait_time_minutes": getattr(t, "wait_time_minutes", None) or 0,
+            "wait_time_charge": getattr(t, "wait_time_charge", None) or 0.0,
+            "distance": getattr(t, "distance", None),
+            "duration": getattr(t, "duration", None),
+            "driver_earnings": getattr(t, "driver_earnings", None),
+            "platform_fee": getattr(t, "platform_fee", None),
+            "refund_status": getattr(t, "refund_status", None),
+            "refund_amount": getattr(t, "refund_amount", None) or 0.0,
+            "per_mile_rate": getattr(t, "per_mile_rate", None),
+            "per_minute_rate": getattr(t, "per_minute_rate", None),
+            "share_token": getattr(t, "share_token", None),
+            "created_at": t.created_at.isoformat() if getattr(t, "created_at", None) else None,
+            "updated_at": t.updated_at.isoformat() if getattr(t, "updated_at", None) else None,
+        }
+        if d.get("pickup_lat") and d.get("dropoff_lat"):
+            d["distance_miles"] = round(_haversine(d["pickup_lat"], d["pickup_lng"], d["dropoff_lat"], d["dropoff_lng"]) * 0.621371, 1)
+            d["duration_minutes"] = max(round(d["distance_miles"] * 2.5), 3) if d["distance_miles"] else None
+        return d
+    except Exception as e:
+        import logging
+        logging.error(f"_trip_dict error for trip {getattr(t, 'id', '?')}: {e}")
+        return {"id": getattr(t, "id", None), "status": getattr(t, "status", None), "error": str(e)}
 
 
 def _vehicle_dict(v) -> dict:

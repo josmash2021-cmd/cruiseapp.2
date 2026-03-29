@@ -782,12 +782,17 @@ class _SettingsScreenState extends State<_SettingsScreen> {
               // ── Back button ──
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: Icon(
-                    Icons.arrow_back_rounded,
+                    Icons.arrow_back_ios_new_rounded,
                     color: c.textPrimary,
-                    size: 24,
+                    size: 18,
                   ),
                 ),
               ),

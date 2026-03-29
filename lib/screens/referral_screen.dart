@@ -126,28 +126,32 @@ class _ReferralScreenState extends State<ReferralScreen> {
           SliverAppBar(
             backgroundColor: _surface,
             pinned: true,
-            expandedHeight: 100,
-            leading: IconButton(
-              icon: Container(
-                width: 38,
-                height: 38,
+            expandedHeight: 140,
+            surfaceTintColor: Colors.transparent,
+            leading: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                margin: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.arrow_back_rounded,
-                    color: Colors.white, size: 20),
+                child: const Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
               ),
-              onPressed: () => Navigator.pop(context),
             ),
             flexibleSpace: const FlexibleSpaceBar(
-              titlePadding: EdgeInsets.only(left: 56, bottom: 16),
+              titlePadding: EdgeInsets.only(left: 20, bottom: 16),
               title: Text(
                 'Invite Friends',
                 style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                ),
               ),
             ),
           ),

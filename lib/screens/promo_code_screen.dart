@@ -150,45 +150,46 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                 children: [
                   const SizedBox(height: 8),
 
-                  // ── Header ──
+                  // ── Back button ──
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Row(
-                      children: [
-                        GestureDetector(
-                          onTap: () => Navigator.of(context).pop(),
-                          child: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: c.surface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: c.isDark
-                                  ? null
-                                  : Border.all(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.06,
-                                      ),
-                                    ),
-                            ),
-                            child: Icon(
-                              Icons.arrow_back_ios_new_rounded,
-                              color: c.textPrimary,
-                              size: 18,
-                            ),
-                          ),
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: c.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: c.isDark
+                              ? null
+                              : Border.all(
+                                  color: Colors.black.withValues(
+                                    alpha: 0.06,
+                                  ),
+                                ),
                         ),
-                        const SizedBox(width: 16),
-                        Text(
-                          S.of(context).promotions,
-                          style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w800,
-                            color: c.textPrimary,
-                            letterSpacing: -0.5,
-                          ),
+                        child: Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: c.textPrimary,
+                          size: 18,
                         ),
-                      ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+
+                  // ── Title ──
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Text(
+                      S.of(context).promotions,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: c.textPrimary,
+                        letterSpacing: -0.5,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),

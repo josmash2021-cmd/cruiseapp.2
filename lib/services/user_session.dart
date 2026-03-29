@@ -168,12 +168,18 @@ class UserSession {
             : '';
         final cachedUrl = uidUrl.isNotEmpty ? uidUrl : (existingUser?['photoUrl'] ?? '');
         final resolvedUrl = serverPhotoUrl.isNotEmpty ? serverPhotoUrl : cachedUrl;
+        // Preserve existing cached name/photo if server returns empty
+        final sFirstName = profile['first_name']?.toString() ?? '';
+        final sLastName = profile['last_name']?.toString() ?? '';
+        final firstName = sFirstName.isNotEmpty ? sFirstName : (existingUser?['firstName'] ?? '');
+        final lastName = sLastName.isNotEmpty ? sLastName : (existingUser?['lastName'] ?? '');
+        final resolvedPhotoPath = cachedPhotoPath.isNotEmpty ? cachedPhotoPath : (existingUser?['photoPath'] ?? '');
         await saveUser(
-          firstName: profile['first_name']?.toString() ?? '',
-          lastName: profile['last_name']?.toString() ?? '',
+          firstName: firstName,
+          lastName: lastName,
           email: profile['email']?.toString() ?? '',
           phone: profile['phone']?.toString() ?? '',
-          photoPath: cachedPhotoPath,
+          photoPath: resolvedPhotoPath,
           photoUrl: resolvedUrl,
           gender: profile['gender']?.toString() ?? '',
           userId: int.tryParse(profileUid),
@@ -199,8 +205,8 @@ class UserSession {
                   await prefs.setString(_photoKeyForUid(profileUid), path);
                 }
                 await saveUser(
-                  firstName: profile['first_name']?.toString() ?? '',
-                  lastName: profile['last_name']?.toString() ?? '',
+                  firstName: firstName,
+                  lastName: lastName,
                   email: profile['email']?.toString() ?? '',
                   phone: profile['phone']?.toString() ?? '',
                   photoPath: path,

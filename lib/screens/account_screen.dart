@@ -819,17 +819,6 @@ class _SettingsScreenState extends State<_SettingsScreen> {
               const SizedBox(height: 10),
               _settingsItem(
                 c,
-                icon: Icons.place_rounded,
-                label: S.of(context).savedAddresses,
-                onTap: () {
-                  Navigator.of(context).push(
-                    slideFromRightRoute(const SavedAddressesScreen()),
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
-              _settingsItem(
-                c,
                 icon: Icons.notifications_outlined,
                 label: S.of(context).notifications,
                 onTap: () {
@@ -860,52 +849,6 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                 },
               ),
               const SizedBox(height: 10),
-              if (_biometricAvailable)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: c.surface,
-                      borderRadius: BorderRadius.circular(14),
-                      border: c.isDark
-                          ? null
-                          : Border.all(
-                              color: Colors.black.withValues(alpha: 0.06),
-                            ),
-                    ),
-                    child: Row(
-                      children: [
-                        AnimatedBiometricIcon(
-                          size: 24,
-                          color: c.textPrimary,
-                          type: _biometricType,
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(
-                            _biometricType == BiometricIconType.faceId
-                                ? 'Face ID'
-                                : 'Fingerprint',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: c.textPrimary,
-                            ),
-                          ),
-                        ),
-                        Switch.adaptive(
-                          value: _biometricEnabled,
-                          activeThumbColor: const Color(0xFFE8C547),
-                          onChanged: _toggleBiometric,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               _settingsItem(
                 c,
                 icon: Icons.info_outline_rounded,

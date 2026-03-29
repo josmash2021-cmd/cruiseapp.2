@@ -635,14 +635,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         boxShadow: selected
             ? [
                 BoxShadow(
-                  color: _cardGold.withValues(alpha: 0.20),
-                  blurRadius: 24,
+                  color: _cardGold.withValues(alpha: 0.10),
+                  blurRadius: 48,
+                  spreadRadius: -4,
                   offset: const Offset(0, 4),
-                ),
-                BoxShadow(
-                  color: _cardGold.withValues(alpha: 0.08),
-                  blurRadius: 40,
-                  spreadRadius: 2,
                 ),
               ]
             : [
@@ -1782,27 +1778,29 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             .createPointAnnotationManager();
                         try { await ctrl.style.setStyleLayerProperty(pointMgr.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
                         final pickupBytes =
-                            await GoldPinRenderer.render(isPickup: true);
+                            await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 44);
                         await pointMgr.create(mapbox.PointAnnotationOptions(
                           geometry: mapbox.Point(
                             coordinates:
                                 mapbox.Position(pickup.lng, pickup.lat),
                           ),
                           image: pickupBytes,
-                          iconSize: 0.5,
+                          iconSize: 0.65,
                           iconAnchor: mapbox.IconAnchor.BOTTOM,
+                          iconOffset: [0, 4],
                         ));
                         if (dropoff != null) {
                           final dropoffBytes =
-                              await GoldPinRenderer.render(isPickup: false);
+                              await renderCircularPinBytes(icon: CircularPinIcon.home, isPickup: false, radius: 44);
                           await pointMgr.create(mapbox.PointAnnotationOptions(
                             geometry: mapbox.Point(
                               coordinates:
                                   mapbox.Position(dropoff.lng, dropoff.lat),
                             ),
                             image: dropoffBytes,
-                            iconSize: 0.5,
+                            iconSize: 0.65,
                             iconAnchor: mapbox.IconAnchor.BOTTOM,
+                            iconOffset: [0, 4],
                           ));
                         }
                       },

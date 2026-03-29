@@ -55,17 +55,31 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
     data = body.model_dump()
     # SECURITY: Force rider_id to be the authenticated user (prevent spoofing)
     data["rider_id"] = user.id
-    # Parse scheduled_at string ? datetime
-    if data.get("scheduled_at") and isinstance(data["scheduled_at"], str):
-        try:
-            data["scheduled_at"] = datetime.fromisoformat(data["scheduled_at"].replace("Z", "+00:00"))
+    # Parse scheduled_at string → datetime
+    raw_sa = data.get("scheduled_at")
+    if raw_sa:
+        if isinstance(raw_sa, str):
+            try:
+                data["scheduled_at"] = datetime.fromisoformat(raw_sa.replace("Z", "+00:00"))
+            except ValueError:
+                data["scheduled_at"] = None
+        # If it's already a datetime, keep it
+        if data.get("scheduled_at") is not None:
             data["status"] = "scheduled"
-        except ValueError:
-            data["scheduled_at"] = None
-    trip = Trip(**data)
-    db.add(trip)
-    await db.commit()
-    await db.refresh(trip)
+    # Remove None optional fields that Trip doesn't accept as None kwargs
+    data = {k: v for k, v in data.items() if v is not None or k in (
+        "fare", "vehicle_type", "scheduled_at", "airport_code", "terminal",
+        "pickup_zone", "notes",
+    )}
+    try:
+        trip = Trip(**data)
+        db.add(trip)
+        await db.commit()
+        await db.refresh(trip)
+    except Exception as e:
+        logging.error("create_trip DB error: %s", e)
+        await db.rollback()
+        raise HTTPException(500, f"Failed to create trip: {e}")
 
     # Sync trip to Firestore for dispatch_app
     if _HAS_FIRESTORE:

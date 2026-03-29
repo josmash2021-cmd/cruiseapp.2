@@ -254,6 +254,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _loadSavedData();
     _loadPromoUsed();
     _fetchCurrentLocation();
+    // Eagerly load cached user name so greeting never shows "Rider"
+    UserSession.getUser().then((user) {
+      if (user != null && mounted && _firstName.isEmpty) {
+        setState(() {
+          _firstName = user['firstName'] ?? '';
+          _lastName = user['lastName'] ?? '';
+          final path = user['photoPath'] ?? '';
+          _photoPath = path.isNotEmpty ? path : null;
+          final url = user['photoUrl'] ?? UserSession.photoUrlNotifier.value;
+          _photoUrl = url.isNotEmpty ? url : null;
+        });
+      }
+    });
     _miniDot.build(() {
       if (mounted) _updateMiniMapAnnotation();
     });

@@ -277,12 +277,12 @@ Future<Uint8List> renderGoldPinBytes({
   if (_pinCache.containsKey(key)) return _pinCache[key]!;
 
   const double w = 80;
-  const double h = 78;
+  const double h = 68;    // match tipY so pin tip is at exact canvas bottom
   const double cx = w / 2;
   const double r = 26.0;
   const double headCY = r + 6;
   const double tipY = 68.0;
-  const double shadowY = 68.0; // Aligned with tip — no floating gap
+  const double shadowY = 68.0;
 
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));

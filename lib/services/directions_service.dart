@@ -453,25 +453,16 @@ class DirectionsService {
     return 2 * r * math.asin(math.sqrt(h));
   }
 
-  /// Anchor route so it starts at [origin] and ends at [destination].
-  /// Only prepends/appends if the decoded route's first/last point
-  /// is more than 100 m from the requested origin/destination.
+  /// Return the route points as-is from the directions API.
+  /// APIs already snap start/end to the nearest road — adding raw user
+  /// coordinates would create off-road straight-line segments.
   List<LatLng> _anchorRoutePoints(
     List<LatLng> input,
     LatLng origin,
     LatLng destination,
   ) {
     if (input.isEmpty) return [origin, destination];
-
-    final out = <LatLng>[];
-    if (_haversineMeters(origin, input.first) > 100) {
-      out.add(origin);
-    }
-    out.addAll(input);
-    if (_haversineMeters(destination, input.last) > 100) {
-      out.add(destination);
-    }
-    return out;
+    return input;
   }
 
   List<LatLng> _decodePolyline(String poly) {

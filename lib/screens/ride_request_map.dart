@@ -576,10 +576,8 @@ extension _RideRequestMap on _RideRequestScreenState {
     final s = _ctrl.state;
     if (s.route == null) return;
     _showPinLabels = true;
-    // Force polyline endpoints to land exactly on the pickup/dropoff pins
+    // Use road-snapped route points as-is from the directions API
     final pts = List<LatLng>.from(s.route!.points);
-    if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
-    if (pts.isNotEmpty && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
     _buildRouteMarkers();
     // Always replay cinematic — reset state and re-trigger
     _resetCinematic();
@@ -618,9 +616,6 @@ extension _RideRequestMap on _RideRequestScreenState {
     final route = _ctrl.state.route;
     if (route == null || route.points.isEmpty) return;
     final pts = List<LatLng>.from(route.points);
-    final s = _ctrl.state;
-    if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
-    if (pts.isNotEmpty && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
     _showPinLabels = true;
     _buildRouteMarkers();
     _resetCinematic();

@@ -222,7 +222,7 @@ extension _RideRequestController on _RideRequestScreenState {
         // Allow fallback draw if route fetch failed but options were generated.
         if (s.route != null &&
             s.rideOptions.isNotEmpty &&
-            (s.route!.points.length > 15 || s.routeFetchFailed)) {
+            s.route!.points.length > 15) {
           _fetchingRoute = false;
           if (!_cinematicDone) {
             _drawRoute();
@@ -438,7 +438,7 @@ extension _RideRequestController on _RideRequestScreenState {
       case RiderPhase.previewRoute:
       case RiderPhase.selectingRide:
         final screenH = MediaQuery.of(context).size.height;
-        final h = (screenH * 0.45).clamp(320.0, 420.0);
+        final h = (screenH * 0.58).clamp(320.0, 540.0);
         return h + bottomPad;
       case RiderPhase.requesting:
       case RiderPhase.searchingDriver:

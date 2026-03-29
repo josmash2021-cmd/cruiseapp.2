@@ -95,6 +95,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   // Scheduled ride indicator
   Map<String, dynamic>? _nextScheduledRide;
 
+  // Imminent scheduled ride (≤30 min away)
+  Timer? _imminentRideTimer;
+  int _minutesUntilRide = 0;
+
+  bool get _hasImminentRide {
+    if (_nextScheduledRide == null || _activeRide != null) return false;
+    final sa = _nextScheduledRide!['scheduled_at']?.toString();
+    if (sa == null) return false;
+    final dt = DateTime.tryParse(sa);
+    if (dt == null) return false;
+    final diff = dt.difference(DateTime.now()).inMinutes;
+    return diff <= 30 && diff >= 0;
+  }
+
+  void _updateImminentRide() {
+    if (_nextScheduledRide == null) {
+      _minutesUntilRide = 0;
+      return;
+    }
+    final sa = _nextScheduledRide!['scheduled_at']?.toString();
+    if (sa == null) return;
+    final dt = DateTime.tryParse(sa);
+    if (dt == null) return;
+    final diff = dt.difference(DateTime.now()).inMinutes;
+    if (mounted) setState(() => _minutesUntilRide = diff.clamp(0, 9999));
+  }
+
   // Active ride state
   ActiveRideInfo? _activeRide;
 
@@ -294,6 +321,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       const Duration(seconds: 30),
       (_) => _checkDriversOnline(),
     );
+    // Imminent ride timer — refreshes every 15 seconds
+    _imminentRideTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _updateImminentRide(),
+    );
     // Start account status polling immediately
     _checkAccountStatus();
     _accountStatusTimer = Timer.periodic(
@@ -330,6 +362,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _driverCheckTimer?.cancel();
       _accountStatusTimer?.cancel();
       _countdownTimer?.cancel();
+      _imminentRideTimer?.cancel();
     } else if (state == AppLifecycleState.resumed) {
       _checkDriversOnline();
       _driverCheckTimer = Timer.periodic(
@@ -340,6 +373,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _accountStatusTimer = Timer.periodic(
         const Duration(seconds: 30),
         (_) => _checkAccountStatus(),
+      );
+      _updateImminentRide();
+      _imminentRideTimer = Timer.periodic(
+        const Duration(seconds: 15),
+        (_) => _updateImminentRide(),
       );
     }
   }
@@ -361,6 +399,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _driverCheckTimer?.cancel();
     _accountStatusTimer?.cancel();
     _countdownTimer?.cancel();
+    _imminentRideTimer?.cancel();
     _locationSub?.cancel();
     _zonesSub?.cancel();
     _driverLocationSub?.cancel();
@@ -917,6 +956,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     if (activeRide != null) {
       _startCountdown(activeRide.etaMinutes ?? 10);
     }
+
+    // Update imminent ride countdown
+    _updateImminentRide();
 
     // Panel lock: unlock if no active ride, keep locked otherwise
     if (_panelLocked && activeRide == null) {

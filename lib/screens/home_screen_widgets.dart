@@ -624,12 +624,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
   Widget _buildHeroCTA() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final active = _activeRide != null;
+    final imminent = _hasImminentRide;
     final zoneBlocked = !_serviceZoneActive && _activeServiceStates.isNotEmpty;
-    final disabled = !active && zoneBlocked;
+    final disabled = !active && !imminent && zoneBlocked;
     return GestureDetector(
       onTap: () async {
         if (active) {
           _resumeActiveRide();
+          return;
+        }
+        if (imminent) {
+          Navigator.of(context).push(
+            slideFromRightRoute(const ScheduledRidesScreen()),
+          );
           return;
         }
         if (zoneBlocked) {
@@ -681,14 +688,14 @@ extension _HomeScreenWidgets on _HomeScreenState {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 400),
               curve: Curves.easeInOutCubic,
-              height: active ? Responsive.h(195) : Responsive.h(140),
+              height: (active || imminent) ? Responsive.h(195) : Responsive.h(140),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(28),
                 border: Border.all(
-                  color: active
+                  color: (active || imminent)
                       ? _gold.withValues(alpha: 0.4)
                       : Colors.transparent,
-                  width: active ? 1.5 : 0,
+                  width: (active || imminent) ? 1.5 : 0,
                 ),
               ),
               child: CustomPaint(
@@ -720,10 +727,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     borderRadius: BorderRadius.circular(28),
                     boxShadow: [
                       BoxShadow(
-                        color: active
+                        color: (active || imminent)
                             ? _gold.withValues(alpha: 0.15 + 0.1 * ((v * 3.14).clamp(0, 1)))
                             : _gold.withValues(alpha: 0.06 + 0.08 * ((v * 3.14).clamp(0, 1))),
-                        blurRadius: active ? 20 + 10 * v : 30 + 15 * v,
+                        blurRadius: (active || imminent) ? 20 + 10 * v : 30 + 15 * v,
                         offset: const Offset(0, 10),
                       ),
                     ],
@@ -736,7 +743,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         FadeTransition(opacity: anim, child: child),
                     child: active
                         ? _buildHeroRideInProgress()
-                        : _buildHeroWhereToContent(isDark, disabled, zoneBlocked),
+                        : imminent
+                            ? _buildHeroUpcomingRide()
+                            : _buildHeroWhereToContent(isDark, disabled, zoneBlocked),
                   ),
                 ),
               ),
@@ -1000,7 +1009,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Now',
+              'Driver',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.24),
                 fontSize: 11,
@@ -1015,7 +1024,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ),
             ),
             Text(
-              'Destination',
+              (_activeRide?.phase == 'onTrip' || _activeRide?.phase == 'nearDestination')
+                  ? 'Dropoff'
+                  : 'Pickup',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.24),
                 fontSize: 11,
@@ -1024,6 +1035,167 @@ extension _HomeScreenWidgets on _HomeScreenState {
           ],
         ),
       ],
+    );
+  }
+
+  // ─── "Your ride starts in X min" card for imminent scheduled rides ───
+  Widget _buildHeroUpcomingRide() {
+    final mins = _minutesUntilRide;
+    final isEs = Localizations.localeOf(context).languageCode == 'es';
+    final title = isEs
+        ? 'Tu viaje empieza en $mins min'
+        : 'Your ride starts in $mins min';
+    final subtitle = isEs ? 'Toca para ver detalles' : 'Tap for details';
+
+    return Column(
+      key: const ValueKey('hero_upcoming_ride'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Top row: icon + text + chevron
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/images/logoapp.png',
+                width: 42,
+                height: 42,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.38),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white.withValues(alpha: 0.24),
+              size: 20,
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        // Progress bar (static at 0)
+        _buildUpcomingProgressBar(),
+        const SizedBox(height: 8),
+        // Labels: Driver — X min — Pickup
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Driver',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.24),
+                fontSize: 11,
+              ),
+            ),
+            Text(
+              '$mins min',
+              style: const TextStyle(
+                color: Color(0xFFFFD700),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              'Pickup',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.24),
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUpcomingProgressBar() {
+    // Animated pulsing bar at ~10% to indicate "waiting"
+    const barH = 14.0;
+    const carSize = 38.0;
+    const totalH = carSize;
+
+    return LayoutBuilder(
+      builder: (_, constraints) {
+        final barW = constraints.maxWidth;
+        const progress = 0.05; // small sliver to show "starting soon"
+        final carX = (barW * progress - carSize + 4).clamp(0.0, barW - carSize);
+
+        return SizedBox(
+          height: totalH,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Bar track
+              Positioned(
+                left: 0, right: 0,
+                top: (totalH - barH) / 2,
+                height: barH,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A2A2A),
+                    borderRadius: BorderRadius.circular(barH / 2),
+                  ),
+                ),
+              ),
+              // Pulsing gold fill
+              Positioned(
+                left: 0,
+                top: (totalH - barH) / 2,
+                height: barH,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 1000),
+                  curve: Curves.easeInOut,
+                  width: barW * progress,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(barH / 2),
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFFFFC200),
+                        Color(0xFFFFD700),
+                        Color(0xFFFFE566),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // Car at start
+              Positioned(
+                left: carX,
+                top: (totalH - carSize) / 2,
+                child: Image.asset(
+                  'assets/images/cruisert2.png',
+                  width: carSize,
+                  height: carSize,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

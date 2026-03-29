@@ -16,6 +16,7 @@ import '../services/places_service.dart';
 import '../utils/app_toast.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../l10n/app_localizations.dart';
+import 'help_screen.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
 import 'schedule_picker_sheet.dart';
@@ -122,53 +123,13 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     }
   }
 
-  Future<void> _cancelTrip(int tripId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1D24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          S.of(ctx).cancelRideQuestion,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        content: Text(
-          S.of(ctx).cancelRideConfirm,
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              S.of(ctx).keep,
-              style: const TextStyle(color: Colors.white54),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              S.of(ctx).cancelRideBtn,
-              style: const TextStyle(color: Color(0xFFFF5252)),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
+  Future<bool> _cancelTrip(int tripId) async {
     try {
       await ApiService.cancelTrip(tripId);
-      // Also cancel the scheduled notification reminder
       await NotificationService.cancelRideReminder(tripId);
-      if (!mounted) return;
-      AppToast.success(context, S.of(context).rideCancelled);
-      _loadTrips();
-    } catch (e) {
-      if (!mounted) return;
-      AppToast.error(context, S.of(context).failedToCancel(e.toString()));
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -317,6 +278,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                       trip: _trips[i],
                       index: i,
                       onCancel: () => _cancelTrip(_trips[i]['id'] as int),
+                      onCancelComplete: _loadTrips,
                     ),
                   ),
                   childCount: _trips.length,
@@ -408,12 +370,14 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 class _TripCard extends StatefulWidget {
   final Map<String, dynamic> trip;
   final int index;
-  final VoidCallback onCancel;
+  final Future<bool> Function() onCancel;
+  final VoidCallback onCancelComplete;
 
   const _TripCard({
     required this.trip,
     required this.index,
     required this.onCancel,
+    required this.onCancelComplete,
   });
 
   @override
@@ -423,7 +387,40 @@ class _TripCard extends StatefulWidget {
 class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
 
-  // â”€â”€ Expand state â”€â”€
+  // -- Cancel state --
+  bool _cancelling = false;
+  late final AnimationController _removeCtrl;
+  late final Animation<double> _removeFade;
+  late final Animation<double> _removeSize;
+
+  @override
+  void initState() {
+    super.initState();
+    _removeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _removeFade = Tween<double>(begin: 1.0, end: 0.0)
+        .animate(CurvedAnimation(parent: _removeCtrl, curve: Curves.easeIn));
+    _removeSize = Tween<double>(begin: 1.0, end: 0.0)
+        .animate(CurvedAnimation(parent: _removeCtrl, curve: Curves.easeInCubic));
+  }
+
+  Future<void> _handleCancel() async {
+    setState(() => _cancelling = true);
+    final ok = await widget.onCancel();
+    if (!mounted) return;
+    if (ok) {
+      AppToast.success(context, S.of(context).rideCancelled);
+      await _removeCtrl.forward();
+      if (mounted) widget.onCancelComplete();
+    } else {
+      setState(() => _cancelling = false);
+      AppToast.error(context, S.of(context).failedToCancel(''));
+    }
+  }
+
+  // -- Expand state --
   bool _expanded = false;
   bool _mapEverExpanded = false; // once true, keep MapWidget in tree
 
@@ -447,6 +444,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _removeCtrl.dispose();
     _routeAnimCtrl?.dispose();
     super.dispose();
   }
@@ -626,9 +624,19 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     }
 
     final isPast = scheduledAt != null && scheduledAt.isBefore(DateTime.now());
-    final canCancel = status == 'scheduled' && !isPast;
+    final minutesUntil = scheduledAt != null
+        ? scheduledAt.difference(DateTime.now()).inMinutes
+        : 0;
+    final canCancel = status == 'scheduled' && !isPast && minutesUntil > 60;
+    final showContactSupport =
+        status == 'scheduled' && !isPast && minutesUntil <= 60 && minutesUntil > 0;
 
-    return GestureDetector(
+    return SizeTransition(
+      sizeFactor: _removeSize,
+      axisAlignment: -1.0,
+      child: FadeTransition(
+        opacity: _removeFade,
+        child: GestureDetector(
       onTap: _hasCoords ? _toggle : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
@@ -851,14 +859,40 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                 ),
               ),
 
-            // â”€â”€ Cancel button â”€â”€
-            if (canCancel)
+            // -- Cancel / Contact support --
+            if (_cancelling)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        color: Color(0xFFFF5252),
+                        strokeWidth: 2,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Cancelling ride...',
+                      style: TextStyle(
+                        color: Color(0xFFFF5252),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (canCancel)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                 child: SizedBox(
                   width: double.infinity,
                   child: GestureDetector(
-                    onTap: widget.onCancel,
+                    onTap: _handleCancel,
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
@@ -874,6 +908,40 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                           style: TextStyle(
                             color: Color(0xFFFF5252),
                             fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            else if (showContactSupport)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        slideFromRightRoute(const HelpScreen()),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          S.of(context).contactSupport,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w600,
                             fontSize: 14,
                           ),
                         ),
@@ -900,6 +968,8 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
           ],
         ),
       ),
+    ),
+    ),
     );
   }
 

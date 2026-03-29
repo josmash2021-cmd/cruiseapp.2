@@ -555,6 +555,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final topHeight = _topCardHeight;
     final bottomHeight = _bottomCardHeight;
     
+    // Safe-area insets + card offsets from rider_tracking_screen build()
+    final mq = MediaQuery.of(context).padding;
+    final topPad = mq.top;   // safe area top
+    final bottomPad = mq.bottom; // safe area bottom
+    
     // Always include ALL points: pickup, dropoff, driver, full route
     final pts = <LatLng>[widget.pickupLatLng, widget.dropoffLatLng];
     if (_animPos.latitude != 0) pts.add(_animPos);
@@ -569,20 +574,24 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       maxLng = math.max(maxLng, p.longitude);
     }
     
-    // Apply card-aware padding: route always fits between top and bottom cards
+    // Padding = safe area + card offset + card height + breathing room
+    // Top card: positioned at topPad + 10, height = topHeight
+    // Bottom card: positioned at bottomPad + 16, height = bottomHeight
     _map?.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
       mapbox.CameraOptions(bearing: 0, pitch: 0),
       mapbox.MbxEdgeInsets(
-        top: topHeight + 24,
-        bottom: bottomHeight + 24,
+        top: topPad + 10 + topHeight + 16,
+        bottom: bottomPad + 16 + bottomHeight + 16,
         left: 32,
         right: 32,
       ),
       null, null,
     ).then((cam) {
-      if (mounted && _map != null) _map!.setCamera(cam);
+      if (mounted && _map != null) {
+        _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 800));
+      }
     });
   }
 

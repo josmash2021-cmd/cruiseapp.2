@@ -575,10 +575,27 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
 
+      // Resolve addresses — reverse geocode if label is missing or generic
+      var pickupAddr = _state.pickupLabel;
+      var dropoffAddr = _state.dropoffLabel;
+      final places = PlacesService(ApiKeys.webServices);
+      if (pickupAddr.isEmpty || pickupAddr.toLowerCase() == 'current location') {
+        try {
+          final resolved = await places.reverseGeocode(lat: pickup.lat, lng: pickup.lng);
+          if (resolved != null && resolved.isNotEmpty) pickupAddr = resolved;
+        } catch (_) {}
+      }
+      if (dropoffAddr.isEmpty || dropoffAddr.toLowerCase() == 'current location') {
+        try {
+          final resolved = await places.reverseGeocode(lat: dropoff.lat, lng: dropoff.lng);
+          if (resolved != null && resolved.isNotEmpty) dropoffAddr = resolved;
+        } catch (_) {}
+      }
+
       final result = await ApiService.dispatchRideRequest(
         riderId: userId,
-        pickupAddress: _state.pickupLabel.isNotEmpty ? _state.pickupLabel : 'current location',
-        dropoffAddress: _state.dropoffLabel.isNotEmpty ? _state.dropoffLabel : 'current location',
+        pickupAddress: pickupAddr.isNotEmpty ? pickupAddr : 'current location',
+        dropoffAddress: dropoffAddr.isNotEmpty ? dropoffAddr : 'current location',
         pickupLat: pickup.lat,
         pickupLng: pickup.lng,
         dropoffLat: dropoff.lat,

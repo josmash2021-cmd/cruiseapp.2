@@ -174,6 +174,32 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     }
   }
 
+  /// Distance: prefer backend fare breakdown over local trip data
+  String get _effectiveMiles {
+    final fbMiles = (_fareBreakdown?['distance_miles'] as num?)?.toDouble();
+    if (fbMiles != null && fbMiles > 0) {
+      return '${fbMiles.toStringAsFixed(1)} mi';
+    }
+    final local = trip.miles;
+    if (local.isNotEmpty && local != '-- mi' && local != '0.0 mi' && local != '0.00 mi') {
+      return local;
+    }
+    return '0.0 mi';
+  }
+
+  /// Duration: prefer backend fare breakdown over local trip data
+  String get _effectiveDuration {
+    final fbMin = (_fareBreakdown?['duration_minutes'] as num?)?.toInt();
+    if (fbMin != null && fbMin > 0) {
+      return '$fbMin min';
+    }
+    final local = trip.duration;
+    if (local.isNotEmpty && local != '-- min' && local != '0 min') {
+      return local;
+    }
+    return '0 min';
+  }
+
   // ── Share receipt as text ──
   Future<void> _shareReceipt() async {
     final date = _formatDate(trip.createdAt);
@@ -408,12 +434,12 @@ Thank you for riding with Cruise!
                               ),
                             ),
                             const SizedBox(height: 16),
-                            _detailRow(c, Icons.straighten_rounded, S.of(context).distance, trip.miles),
+                            _detailRow(c, Icons.straighten_rounded, S.of(context).distance, _effectiveMiles),
                             Padding(
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               child: Divider(color: c.divider, height: 1),
                             ),
-                            _detailRow(c, Icons.schedule_rounded, S.of(context).duration, trip.duration),
+                            _detailRow(c, Icons.schedule_rounded, S.of(context).duration, _effectiveDuration),
                             if (_fareBreakdown?['payment_method'] != null) ...[
                               Padding(
                                 padding: const EdgeInsets.symmetric(vertical: 12),

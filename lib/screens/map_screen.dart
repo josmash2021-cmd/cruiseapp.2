@@ -2428,9 +2428,25 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (!mounted) return;
     _driverSnapIdx = 0; // reset snap cursor on ride complete
 
+    // Resolve pickup address if it's a placeholder
+    var resolvedPickup = _pickupAddress;
+    if (resolvedPickup.isEmpty ||
+        resolvedPickup == 'Current location' ||
+        resolvedPickup.startsWith('--')) {
+      if (_currentPosition != null) {
+        try {
+          final addr = await _places.reverseGeocode(
+            lat: _currentPosition!.latitude,
+            lng: _currentPosition!.longitude,
+          );
+          if (addr != null && addr.isNotEmpty) resolvedPickup = addr;
+        } catch (_) {}
+      }
+    }
+
     final completedRide = _rides[_selectedRide];
     final completedTrip = TripHistoryItem(
-      pickup: _pickupAddress,
+      pickup: resolvedPickup,
       dropoff: _dropoffAddress,
       rideName: completedRide.name,
       price: completedRide.price,

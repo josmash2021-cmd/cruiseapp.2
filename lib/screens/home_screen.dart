@@ -45,6 +45,7 @@ import '../services/user_session.dart';
 import 'welcome_screen.dart';
 import 'account_deactivated_screen.dart';
 import '../widgets/gold_location_dot.dart';
+import '../widgets/smart_map_pin.dart';
 import '../widgets/user_profile_photo.dart';
 import '../widgets/verified_avatar.dart';
 import '../widgets/offline_banner.dart';
@@ -192,6 +193,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   mapbox.PolylineAnnotationManager? _miniMapPolyMgr;
   mapbox.PointAnnotationManager? _miniMapCarMgr;
   mapbox.PointAnnotation? _driverCarAnnot;
+  mapbox.PointAnnotation? _dropoffPinAnnot;
   Uint8List? _cachedCarBytes; // avoid rootBundle.load on every driver update
   bool _rideRouteDrawn = false;
   double _routeProgress = 0.0; // 0→1 based on driver position along route
@@ -231,6 +233,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     try {
       final mgr = _miniMapAnnotMgr;
       if (mgr == null) return;
+
+      // Hide gold dot when an active ride route is drawn (route + car + dropoff shown instead)
+      if (_rideRouteDrawn && _activeRide != null) {
+        if (_miniMapAnnot != null) {
+          try { await mgr.delete(_miniMapAnnot!); } catch (_) {}
+          _miniMapAnnot = null;
+        }
+        return;
+      }
+
       final bytes = _miniDot.currentBytes;
       if (bytes == null) return;
       final pos = _interpolatedLatLng;

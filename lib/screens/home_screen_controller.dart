@@ -289,10 +289,43 @@ extension _HomeScreenController on _HomeScreenState {
         lineJoin: mapbox.LineJoin.ROUND,
       ));
 
+      // Add dropoff pin at the end of the route
+      await _addDropoffPin(ride);
+
+      // Hide the gold location dot now that route is visible
+      _updateMiniMapAnnotation();
+
       // Fit camera to show the whole route
       _fitCameraToRoute();
     } catch (e) {
       debugPrint('Error drawing route on home map: $e');
+    }
+  }
+
+  /// Place a gold dropoff pin on the home map.
+  Future<void> _addDropoffPin(ActiveRideInfo ride) async {
+    final ctrl = _miniMapController;
+    if (ctrl == null) return;
+    if (ride.dropoffLat == 0 && ride.dropoffLng == 0) return;
+
+    try {
+      final pinMgr = _miniMapAnnotMgr ??
+          await ctrl.annotations.createPointAnnotationManager();
+      final pinBytes = await buildGoldenPinBytes(
+        icon: Icons.location_on_rounded,
+        size: 64,
+      );
+      _dropoffPinAnnot = await pinMgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(
+          coordinates: mapbox.Position(ride.dropoffLng, ride.dropoffLat),
+        ),
+        image: pinBytes,
+        iconSize: 0.7,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 4],
+      ));
+    } catch (e) {
+      debugPrint('Error adding dropoff pin: $e');
     }
   }
 
@@ -419,6 +452,10 @@ extension _HomeScreenController on _HomeScreenState {
       if (_driverCarAnnot != null && _miniMapCarMgr != null) {
         await _miniMapCarMgr!.delete(_driverCarAnnot!);
         _driverCarAnnot = null;
+      }
+      if (_dropoffPinAnnot != null && _miniMapAnnotMgr != null) {
+        await _miniMapAnnotMgr!.delete(_dropoffPinAnnot!);
+        _dropoffPinAnnot = null;
       }
     } catch (_) {}
     _rideRouteDrawn = false;

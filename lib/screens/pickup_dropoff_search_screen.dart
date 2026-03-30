@@ -59,6 +59,9 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   String _pickupLabel = '';
   String _dropoffLabel = '';
 
+  double? _resolvedLat;
+  double? _resolvedLng;
+
   @override
   void initState() {
     super.initState();
@@ -66,11 +69,16 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     _pickupLabel = widget.initialPickupText;
 
     if (widget.initialPickupLat != null && widget.initialPickupLng != null) {
+      _resolvedLat = widget.initialPickupLat;
+      _resolvedLng = widget.initialPickupLng;
       _pickupDetails = PlaceDetails(
         address: widget.initialPickupText,
         lat: widget.initialPickupLat!,
         lng: widget.initialPickupLng!,
       );
+    } else {
+      // No GPS coords passed — resolve from device location
+      _resolveGpsPickup();
     }
 
     // Auto-focus dropoff
@@ -78,6 +86,41 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       _dropoffFocus.requestFocus();
     });
     _loadFavorites();
+  }
+
+  Future<void> _resolveGpsPickup() async {
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      ).timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      _resolvedLat = pos.latitude;
+      _resolvedLng = pos.longitude;
+      final address = await _placesService
+          .reverseGeocode(lat: pos.latitude, lng: pos.longitude)
+          .timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      if (address != null && address.isNotEmpty) {
+        setState(() {
+          _pickupDetails = PlaceDetails(
+            address: address,
+            lat: pos.latitude,
+            lng: pos.longitude,
+          );
+          _pickupLabel = address;
+          _pickupCtrl.text = address;
+        });
+      } else {
+        // At least store coords so "Choose on map" uses GPS center
+        _pickupDetails = PlaceDetails(
+          address: widget.initialPickupText,
+          lat: pos.latitude,
+          lng: pos.longitude,
+        );
+      }
+    } catch (_) {
+      // GPS unavailable — keep "Current location" text
+    }
   }
 
   Future<void> _loadFavorites() async {
@@ -111,8 +154,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     try {
       final results = await _placesService.autocomplete(
         query,
-        latitude: widget.initialPickupLat,
-        longitude: widget.initialPickupLng,
+        latitude: _resolvedLat ?? widget.initialPickupLat,
+        longitude: _resolvedLng ?? widget.initialPickupLng,
       );
       if (mounted) {
         setState(() {
@@ -191,8 +234,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       // First try autocomplete to get the best match
       final results = await _placesService.autocomplete(
         query,
-        latitude: widget.initialPickupLat,
-        longitude: widget.initialPickupLng,
+        latitude: _resolvedLat ?? widget.initialPickupLat,
+        longitude: _resolvedLng ?? widget.initialPickupLng,
       );
 
       if (results.isNotEmpty && mounted) {
@@ -204,8 +247,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       // Fallback: direct geocode if autocomplete returned nothing
       final exact = await _placesService.geocodeAddress(
         query,
-        latitude: widget.initialPickupLat,
-        longitude: widget.initialPickupLng,
+        latitude: _resolvedLat ?? widget.initialPickupLat,
+        longitude: _resolvedLng ?? widget.initialPickupLng,
       );
 
       if (exact != null && mounted) {
@@ -504,8 +547,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         final pickupResult = await Navigator.of(context).push<Map<String, dynamic>>(
           slideFromRightRoute(
             MapPickerScreen(
-              initialLat: widget.initialPickupLat,
-              initialLng: widget.initialPickupLng,
+              initialLat: _resolvedLat ?? widget.initialPickupLat,
+              initialLng: _resolvedLng ?? widget.initialPickupLng,
               isPickup: true,
             ),
           ),
@@ -525,8 +568,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         final dropoffResult = await Navigator.of(context).push<Map<String, dynamic>>(
           slideFromRightRoute(
             MapPickerScreen(
-              initialLat: widget.initialPickupLat,
-              initialLng: widget.initialPickupLng,
+              initialLat: _resolvedLat ?? widget.initialPickupLat,
+              initialLng: _resolvedLng ?? widget.initialPickupLng,
               isPickup: false,
             ),
           ),
@@ -546,8 +589,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         final result = await Navigator.of(context).push<Map<String, dynamic>>(
           slideFromRightRoute(
             MapPickerScreen(
-              initialLat: widget.initialPickupLat,
-              initialLng: widget.initialPickupLng,
+              initialLat: _resolvedLat ?? widget.initialPickupLat,
+              initialLng: _resolvedLng ?? widget.initialPickupLng,
               isPickup: false,
             ),
           ),
@@ -596,8 +639,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       builder: (_) => _PlacesAutocompleteSheet(
         title: S.of(context).setAddressTitle(item.title),
         hint: S.of(context).searchAddressFor(item.title.toLowerCase()),
-        initialLat: widget.initialPickupLat,
-        initialLng: widget.initialPickupLng,
+        initialLat: _resolvedLat ?? widget.initialPickupLat,
+        initialLng: _resolvedLng ?? widget.initialPickupLng,
       ),
     );
     if (pickedAddress == null || pickedAddress.isEmpty || !mounted) return;
@@ -615,8 +658,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     try {
       final details = await _placesService.geocodeAddress(
         address,
-        latitude: widget.initialPickupLat,
-        longitude: widget.initialPickupLng,
+        latitude: _resolvedLat ?? widget.initialPickupLat,
+        longitude: _resolvedLng ?? widget.initialPickupLng,
       );
       if (details != null && mounted) {
         setState(() {

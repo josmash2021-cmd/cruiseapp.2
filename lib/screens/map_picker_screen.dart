@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
@@ -53,6 +54,33 @@ class _MapPickerScreenState extends State<MapPickerScreen>
     ]).animate(CurvedAnimation(parent: _settleCtrl, curve: Curves.easeOut));
     if (widget.initialLat != null && widget.initialLng != null) {
       _center = LatLng(widget.initialLat!, widget.initialLng!);
+    } else {
+      _resolveGpsCenter();
+    }
+  }
+
+  /// When no initial coordinates are provided, fly map to the user's GPS location.
+  Future<void> _resolveGpsCenter() async {
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      ).timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      _center = LatLng(pos.latitude, pos.longitude);
+      final map = _mapCtrl;
+      if (map != null) {
+        await map.flyTo(
+          mapbox.CameraOptions(
+            center: mapbox.Point(
+              coordinates: mapbox.Position(pos.longitude, pos.latitude),
+            ),
+            zoom: 15.0,
+          ),
+          mapbox.MapAnimationOptions(duration: 800),
+        );
+      }
+    } catch (_) {
+      // GPS unavailable — keep default center
     }
   }
 

@@ -194,14 +194,16 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   RiderTripState _state = const RiderTripState();
   RiderTripState get state => _state;
 
-  static const Duration _dispatchPollInterval = Duration(seconds: 1);
+  static const Duration _dispatchPollInterval = Duration(seconds: 3);
 
   final DirectionsService _directions = DirectionsService(ApiKeys.webServices);
 
   Timer? _searchTimer;
   Timer? _pollTimer;
   Timer? _timeoutTimer; // Fix 1: client-side search timeout
+  StreamSubscription<Map<String, dynamic>>? _tripSseSub; // SSE stream sub
   bool _isRequesting = false; // Fix 2: anti-double-tap guard
+  bool _sseConnected = false; // true when SSE stream is active
   double _surgeMultiplier = 1.0; // Surge pricing multiplier from backend
   /// True while RiderTrackingScreen is on the navigation stack.
   /// Prevents _refreshActiveTripOnResume from falsely transitioning to cancelled.
@@ -634,10 +636,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   void _startDispatchPolling(int tripId) {
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
+    _tripSseSub?.cancel();
+    _sseConnected = false;
 
     // Fix 1: hard client-side timeout — 4 minutes max searching
     _timeoutTimer = Timer(const Duration(minutes: 4), () {
       _pollTimer?.cancel();
+      _tripSseSub?.cancel();
       _isRequesting = false;
       if (_state.phase == RiderPhase.searchingDriver ||
           _state.phase == RiderPhase.requesting) {
@@ -653,6 +658,45 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       }
     });
 
+    // ── SSE: real-time instant push from backend ──
+    _tripSseSub = ApiService.streamTripStatus(tripId).listen(
+      (event) {
+        _sseConnected = true;
+        final status = event['status']?.toString() ?? '';
+        debugPrint('🔴 SSE trip_update: status=$status');
+
+        if (status == 'driver_en_route' || status == 'accepted') {
+          _pollTimer?.cancel();
+          _tripSseSub?.cancel();
+          _timeoutTimer?.cancel();
+          _isRequesting = false;
+          _onDriverMatched(event, tripId);
+        } else if (status == 'cancelled' || status == 'no_drivers' || status == 'expired') {
+          _pollTimer?.cancel();
+          _tripSseSub?.cancel();
+          _timeoutTimer?.cancel();
+          _isRequesting = false;
+          _state = _state.copyWith(
+            phase: RiderPhase.cancelled,
+            cancelReason: status == 'no_drivers'
+                ? 'No hay drivers disponibles cerca de tu zona en estos momentos'
+                : null,
+          );
+          notifyListeners();
+          unawaited(CacheService.clearActiveTrip());
+        }
+      },
+      onError: (e) {
+        debugPrint('⚠️ SSE stream error, polling is active as fallback: $e');
+        _sseConnected = false;
+      },
+      onDone: () {
+        debugPrint('ℹ️ SSE stream ended, polling continues as fallback');
+        _sseConnected = false;
+      },
+    );
+
+    // ── Polling fallback (slower interval since SSE handles instant updates) ──
     Future<void> checkStatus(Timer? timer) async {
       try {
         final status = await ApiService.getDispatchStatus(tripId);
@@ -660,6 +704,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
         if (tripStatus == 'accepted' || tripStatus == 'driver_en_route') {
           timer?.cancel();
+          _tripSseSub?.cancel();
           _timeoutTimer?.cancel();
           _isRequesting = false;
           _onDriverMatched(status, tripId);
@@ -668,6 +713,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
             tripStatus == 'expired' ||
             tripStatus == 'canceled') {
           timer?.cancel();
+          _tripSseSub?.cancel();
           _timeoutTimer?.cancel();
           _isRequesting = false;
           // Extract cancel reason from trip data
@@ -691,7 +737,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
-    // Immediate first check to avoid waiting for the first timer tick.
+    // Immediate first check to avoid waiting for SSE connection setup.
     checkStatus(null);
 
     _pollTimer = Timer.periodic(_dispatchPollInterval, (timer) async {
@@ -774,6 +820,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _searchTimer?.cancel();
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
+    _tripSseSub?.cancel();
+    _sseConnected = false;
     _isRequesting = false;
 
     // Cancel on backend if we have a trip ID
@@ -810,6 +858,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _searchTimer?.cancel();
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
+    _tripSseSub?.cancel();
     super.dispose();
   }
 }

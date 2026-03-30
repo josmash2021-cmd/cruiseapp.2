@@ -173,7 +173,7 @@ def _sanitize_string(value: str) -> str:
 #  JWT token creation
 # ═══════════════════════════════════════════════════════
 
-def _create_token(user_id: int, device_fp: str = "") -> str:
+def _create_token(user_id: int, device_fp: str = "", role: str = "", status: str = "active") -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
     payload = {
         "sub": str(user_id),
@@ -184,6 +184,10 @@ def _create_token(user_id: int, device_fp: str = "") -> str:
     }
     if device_fp:
         payload["dfp"] = device_fp[:16]
+    if role:
+        payload["role"] = role
+    if status:
+        payload["st"] = status
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
@@ -204,8 +208,15 @@ def _create_login_token(user_id: int) -> str:
 
 
 # ═══════════════════════════════════════════════════════
-#  Auth dependencies
+#  Auth dependencies (with in-memory user cache for hot paths)
 # ═══════════════════════════════════════════════════════
+
+_user_cache: dict = {}  # user_id -> (User, timestamp)
+_USER_CACHE_TTL = 30.0  # seconds — refresh from DB every 30s
+
+def invalidate_user_cache(user_id: int):
+    """Call when user status/role changes (block, delete, role upgrade)."""
+    _user_cache.pop(user_id, None)
 
 async def _get_current_user(
     authorization: str = Header(None),
@@ -221,12 +232,24 @@ async def _get_current_user(
         user_id = int(payload["sub"])
     except (JWTError, ValueError):
         raise HTTPException(401, "Invalid token")
+
+    # Fast path: serve from in-memory cache
+    now = time.monotonic()
+    cached = _user_cache.get(user_id)
+    if cached and (now - cached[1]) < _USER_CACHE_TTL:
+        user = cached[0]
+        if (user.status or "active") in ("deleted", "blocked"):
+            raise HTTPException(403, f"Account {user.status}")
+        return user
+
+    # Slow path: DB lookup + cache
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(401, "User not found")
     if (user.status or "active") in ("deleted", "blocked"):
         raise HTTPException(403, f"Account {user.status}")
+    _user_cache[user_id] = (user, now)
     return user
 
 

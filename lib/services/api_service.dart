@@ -1861,6 +1861,53 @@ class ApiService {
     }
   }
 
+  // ── SSE real-time stream for rider trip status ──
+  /// Returns a stream of trip status events with full driver info on match.
+  /// Falls back gracefully — if SSE fails, caller should use polling.
+  static Stream<Map<String, dynamic>> streamTripStatus(int tripId) async* {
+    try {
+      final h = await _authHeaders();
+      final request = http.Request(
+        'GET',
+        Uri.parse('$_baseUrl/dispatch/trip/$tripId/stream'),
+      );
+      request.headers.addAll(h);
+      final response = await _client.send(request);
+      if (response.statusCode != 200) return;
+
+      String buffer = '';
+      await for (final chunk in response.stream.transform(utf8.decoder)) {
+        buffer += chunk;
+        while (buffer.contains('\n\n')) {
+          final idx = buffer.indexOf('\n\n');
+          final block = buffer.substring(0, idx);
+          buffer = buffer.substring(idx + 2);
+
+          String? eventType;
+          String? data;
+          for (final line in block.split('\n')) {
+            if (line.startsWith('event: ')) {
+              eventType = line.substring(7);
+            } else if (line.startsWith('data: ')) {
+              data = line.substring(6);
+            }
+          }
+
+          if (eventType == 'trip_update' && data != null) {
+            try {
+              final parsed = jsonDecode(data);
+              if (parsed is Map<String, dynamic>) {
+                yield parsed;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[ApiService] Trip SSE stream error: $e');
+    }
+  }
+
   /// Driver polls for their pending ride offers (returns a LIST now).
   static Future<List<Map<String, dynamic>>> getDriverPendingOffers(
     int driverId,

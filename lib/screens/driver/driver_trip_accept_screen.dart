@@ -144,39 +144,33 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _resolveGenericAddresses();
     _fadeCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 420),
+      duration: const Duration(milliseconds: 200),
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
 
-    // Slide-up animation: 400ms from bottom
+    // Slide-up animation: fast snap
     _slideCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 200),
     )..forward();
     _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.08),
+      begin: const Offset(0, 0.04),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
 
-    // Tilt: start at 55° for instant 3D view (no flat start)
+    // Tilt controller (kept for compat, no longer animated)
     _tiltCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1),
     );
-    _tiltAnim = Tween<double>(begin: 55.0, end: 55.0).animate(
-      CurvedAnimation(parent: _tiltCtrl, curve: Curves.easeInOutCubic),
-    );
+    _tiltAnim = Tween<double>(begin: 0.0, end: 0.0).animate(_tiltCtrl);
 
-    // Pin pop: 0 → 1.15 → 0.95 → 1.0 (spring overshoot)
+    // Pin pop controller (kept for compat, pins placed at full size now)
     _pinPopCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 1),
     );
-    _pinPopAnim = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.01, end: 1.15), weight: 60),
-      TweenSequenceItem(tween: Tween(begin: 1.15, end: 0.95), weight: 20),
-      TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.0), weight: 20),
-    ]).animate(CurvedAnimation(parent: _pinPopCtrl, curve: Curves.easeOut));
+    _pinPopAnim = Tween<double>(begin: 1.0, end: 1.0).animate(_pinPopCtrl);
   }
 
   @override
@@ -912,94 +906,112 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Future<void> _onStyleLoaded(mapbox.StyleLoadedEventData _) async {
     final ctrl = _map;
     if (ctrl == null || !mounted) return;
-    await MapTheme.applyNavyGold(ctrl);
-    if (!mounted) return;
-    _polyMgr  = await ctrl.annotations.createPolylineAnnotationManager();
-    _annotMgr = await ctrl.annotations.createPointAnnotationManager();
-    // Pins must billboard toward camera (viewport) so they stand upright in 3D tilt,
-    // NOT 'map' which flattens them onto the tilted surface.
-    try {
-      await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-pitch-alignment', 'viewport');
-      await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-rotation-alignment', 'viewport');
-      await ctrl.style.setStyleLayerProperty(_annotMgr!.id, 'icon-allow-overlap', true);
-    } catch (_) {}
 
-    // 1. Load route (cache-first — prevents straight-line bug)
-    _routePoints = await _loadRoute();
+    // Fire all independent setup in parallel for speed.
+    final setupFutures = <Future>[
+      MapTheme.applyNavyGold(ctrl),
+      ctrl.annotations.createPolylineAnnotationManager().then((m) => _polyMgr = m),
+      ctrl.annotations.createPointAnnotationManager().then((m) async {
+        _annotMgr = m;
+        try {
+          // 'map' alignment keeps pins flat on the map surface at the exact coordinate,
+          // so they don't float in the air when the camera tilts.
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'map');
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'viewport');
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-allow-overlap', true);
+        } catch (_) {}
+      }),
+    ];
+    await Future.wait(setupFutures);
     if (!mounted) return;
 
-    // 2. Build unified gold teardrop pins in parallel (don't place yet)
-    final pinResults = await Future.wait([
+    // Load route + render pins in parallel.
+    final results = await Future.wait([
+      _loadRoute(),
       renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),
       renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32),
     ]);
     if (!mounted) return;
 
-    if (_routePoints.length < 2) return;
-    final routeCoordinates = _routePoints
-        .map((p) => mapbox.Position(p.longitude, p.latitude))
-        .toList();
+    _routePoints = results[0] as List<LatLng>;
+    final pickupPinBytes = results[1] as Uint8List;
+    final dropoffPinBytes = results[2] as Uint8List;
 
-    // Build bounds from every route coordinate so the whole line is visible.
-    final minLat = routeCoordinates.map((c) => c.lat.toDouble()).reduce(math.min);
-    final maxLat = routeCoordinates.map((c) => c.lat.toDouble()).reduce(math.max);
-    final minLng = routeCoordinates.map((c) => c.lng.toDouble()).reduce(math.min);
-    final maxLng = routeCoordinates.map((c) => c.lng.toDouble()).reduce(math.max);
+    if (_routePoints.length < 2) return;
+
+    // Include driver position + pickup + dropoff + route in bounds so everything is visible.
+    final allPoints = [
+      widget.driverPos,
+      widget.pickupLatLng,
+      widget.dropoffLatLng,
+      ..._routePoints,
+    ];
+    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    for (final p in allPoints) {
+      if (p.latitude  < minLat) minLat = p.latitude;
+      if (p.latitude  > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
     final bounds = mapbox.CoordinateBounds(
-      southwest: mapbox.Point(coordinates: mapbox.Position(minLng - 0.003, minLat - 0.003)),
-      northeast: mapbox.Point(coordinates: mapbox.Position(maxLng + 0.003, maxLat + 0.003)),
+      southwest: mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+      northeast: mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
       infiniteBounds: false,
     );
+    // Compute a small auto-bearing based on route direction for a pleasant angle.
+    final rBearing = _routeBearing(_routePoints);
+    // Offset by ~15° for a cinematic slight rotation.
+    final prettBearing = (rBearing + 15.0) % 360;
+
     final cam = await ctrl.cameraForCoordinateBounds(
       bounds,
-      mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 60, right: 50),
-      null, null, null, null,
+      mapbox.MbxEdgeInsets(top: 20, left: 20, bottom: 30, right: 20),
+      prettBearing,
+      45, // pitch = 45 so bounds calc accounts for tilt
+      null, null,
     );
     if (!mounted) return;
 
-    // Random bearing 5–15° left or right for cinematic feel.
-    final rng = math.Random();
-    final degrees = 5.0 + rng.nextDouble() * 10.0;
-    final randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
-
-    // Phase 1: Set camera to route overview with tilt immediately.
+    // Set camera: 45° tilt with slight rotation for pleasant preview.
     ctrl.setCamera(mapbox.CameraOptions(
       center: cam.center,
-      zoom: (cam.zoom ?? 13) - 0.5,
-      bearing: randomBearing,
-      pitch: 55.0,
+      zoom: ((cam.zoom ?? 13) + 0.5).clamp(12.0, 15.5),
+      bearing: prettBearing,
+      pitch: 45.0,
     ));
 
-    // Phase 2: Place pins immediately (no delay).
-
-    // Use exact pickup/dropoff coordinates for pin placement (not route endpoints)
-    final pickupPoint  = mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
+    // Place pins at exact coordinates immediately at full size.
+    // CENTER anchor so the pin dot sits exactly on the map coordinate.
+    final pickupPoint = mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
     final dropoffPoint = mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
 
     _pinAnnots.clear();
     if (_annotMgr != null) {
-      final pickupAnnot = await _annotMgr!.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: pickupPoint),
-        image: pinResults[0], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-      ));
-      if (!mounted) return;
-      _pinAnnots.add(pickupAnnot);
-      final dropoffAnnot = await _annotMgr!.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: dropoffPoint),
-        image: pinResults[1], iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-      ));
-      if (!mounted) return;
-      _pinAnnots.add(dropoffAnnot);
+      final pins = await Future.wait([
+        _annotMgr!.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: pickupPoint),
+          image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
+        )),
+        _annotMgr!.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: dropoffPoint),
+          image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
+        )),
+      ]);
+      _pinAnnots.addAll(pins);
     }
-    // Spring pop: 0.01 → 1.15 → 0.95 → 1.0
-    _pinPopAnim.addListener(_updatePinScale);
-    _pinPopCtrl.forward(from: 0);
 
-    // Phase 3: Gold route draw starts concurrently with pin pop.
-    await _animateGoldRoute(
-      points: _routePoints,
-      duration: const Duration(milliseconds: 800),
-    );
+    // Draw route instantly (no animation — fast load).
+    if (_polyMgr != null && _routePoints.length >= 2) {
+      final coords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+      _routeAnnot = await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: coords),
+        lineColor: const Color(0xFFFFD700).toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    }
+
+    // No tilt animation needed — camera already starts at 45°.
   }
 
   void _updatePinScale() {
@@ -1014,6 +1026,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   void _applyMapTilt() {
     if (_map == null || !mounted) return;
     _map!.setCamera(mapbox.CameraOptions(pitch: _tiltAnim.value));
+  }
+
+  /// Compute overall bearing of the route (start → end) for camera orientation.
+  double _routeBearing(List<LatLng> pts) {
+    if (pts.length < 2) return 0;
+    final a = pts.first;
+    final b = pts.last;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final lat1 = a.latitude * math.pi / 180;
+    final lat2 = b.latitude * math.pi / 180;
+    final y = math.sin(dLng) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) -
+        math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
+    return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
   }
 
   /// Fetch route points: Google Directions → OSRM → straight line
@@ -1407,54 +1433,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
             const Spacer(),
 
-            // ── Action buttons ────────────────────────────────────────────
+            // ── Slide to start ───────────────────────────────────────────
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), bot + 18),
-              child: widget.arrivedAtPickup
-                  ? _buildSlideStartTrip()
-                  : Column(
-                      children: [
-                        // Continue (gold)
-                        SizedBox(
-                          width: double.infinity,
-                          height: Responsive.h(52),
-                          child: ElevatedButton(
-                            onPressed: () => _goNavigate(overview: false),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _gold,
-                              foregroundColor: Colors.black,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14)),
-                            ),
-                            child: Text('Continue',
-                              style: TextStyle(
-                                fontSize: Responsive.sp(17), fontWeight: FontWeight.w800,
-                                color: Colors.black)),
-                          ),
-                        ),
-                        SizedBox(height: Responsive.h(10)),
-                        // Directions (outline)
-                        SizedBox(
-                          width: double.infinity,
-                          height: Responsive.h(52),
-                          child: OutlinedButton(
-                            onPressed: () => _goNavigate(overview: true),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              side: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.22)),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14)),
-                            ),
-                            child: Text('Directions',
-                              style: TextStyle(
-                                fontSize: Responsive.sp(17), fontWeight: FontWeight.w600,
-                                color: Colors.white)),
-                          ),
-                        ),
-                      ],
-                    ),
+              child: _buildSlideStartTrip(),
             ),
           ],
         ),

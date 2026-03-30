@@ -82,8 +82,10 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     user.is_online = body.is_online
     await db.commit()
 
-    # Invalidate nearby cache since a driver moved
-    _nearby_cache.clear()
+    # Invalidate nearby cache cells near this driver's new position
+    _stale = [k for k in _nearby_cache if abs(k[0] - round(body.lat, 3)) < 0.01 and abs(k[1] - round(body.lng, 3)) < 0.01]
+    for k in _stale:
+        _nearby_cache.pop(k, None)
 
     # Push driver location to riders watching active trips via SSE (sub-second)
     # Find active trip for this driver

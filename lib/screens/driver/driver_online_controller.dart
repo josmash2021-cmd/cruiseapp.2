@@ -789,11 +789,53 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _startPolling() {
     _pollT?.cancel();
+    _offerSseSub?.cancel();
+    _sseActive = false;
+
+    // SSE real-time stream (instant offer push from backend)
+    if (_driverId != null) {
+      _offerSseSub = ApiService.streamDriverOffers(_driverId!).listen(
+        (offers) {
+          _sseActive = true;
+          debugPrint('SSE offers: ${offers.length}');
+          if (!mounted || _phase != _Phase.searching) return;
+          _applyOffers(offers);
+        },
+        onError: (e) {
+          debugPrint('SSE offers error: $e');
+          _sseActive = false;
+        },
+        onDone: () {
+          debugPrint('SSE offers stream ended, polling continues');
+          _sseActive = false;
+        },
+      );
+    }
+
+    // Polling fallback (slower since SSE handles instant delivery)
     _poll();
-    _pollT = Timer.periodic(const Duration(seconds: 2), (_) {
+    _pollT = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || _phase != _Phase.searching) return;
       _poll();
     });
+  }
+
+  /// Apply incoming offers to UI (shared by SSE + polling).
+  void _applyOffers(List<Map<String, dynamic>> offers) {
+    if (offers.isNotEmpty && _pendingOffers.isEmpty) {
+      HapticFeedback.heavyImpact();
+    }
+    final hadOffers = _pendingOffers.isNotEmpty;
+    _setState(() {
+      _pendingOffers = offers;
+      _currentOfferIndex = _currentOfferIndex.clamp(0, offers.length - 1);
+      if (offers.isNotEmpty && !hadOffers) _hideFindingBar = true;
+      if (offers.isEmpty && hadOffers) _hideFindingBar = false;
+    });
+    _preFetchOfferRoutes(offers);
+    if (offers.isNotEmpty && !hadOffers) {
+      _autoTriggerRoutePreview(offers.first);
+    }
   }
 
   Future<void> _poll() async {
@@ -818,26 +860,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
     try {
       final offers = await ApiService.getDriverPendingOffers(_driverId!);
-      debugPrint('ðŸ“¡ Poll result: ${offers.length} offer(s)');
       if (!mounted || _phase != _Phase.searching) return;
-      if (offers.isNotEmpty && _pendingOffers.isEmpty) {
-        HapticFeedback.heavyImpact();
-      }
-      final hadOffers = _pendingOffers.isNotEmpty;
-      _setState(() {
-        _pendingOffers = offers;
-        _currentOfferIndex = _currentOfferIndex.clamp(0, offers.length - 1);
-        // Hide finding bar when offers appear, show when all dismissed
-        if (offers.isNotEmpty && !hadOffers) _hideFindingBar = true;
-        if (offers.isEmpty && hadOffers) _hideFindingBar = false;
-      });
-      _preFetchOfferRoutes(offers);
-      // Auto-trigger cinematic route preview when first offer arrives
-      if (offers.isNotEmpty && !hadOffers) {
-        _autoTriggerRoutePreview(offers.first);
-      }
+      _applyOffers(offers);
     } catch (e) {
-      debugPrint('âŒ Poll error: $e');
+      debugPrint('Poll error: $e');
     } finally {
       _isPollingOffers = false;
     }
@@ -849,9 +875,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  //  RIDE OFFER ACTIONS (Spark-style: persistent cards)
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Future<void> _acceptOffer(Map<String, dynamic> r) async {
     // Prevent double-tap
     final oid = (r['offer_id'] ?? r['id'] ?? '').toString();

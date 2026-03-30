@@ -1,12 +1,13 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List
+from typing import Optional, List, Any
 
+_HAS_FIELD_FILTER: bool = False
 try:
     from google.cloud.firestore_v1.base_query import FieldFilter
     _HAS_FIELD_FILTER = True
 except ImportError:
-    _HAS_FIELD_FILTER = False
+    pass
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
@@ -14,15 +15,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, SupportChat, SupportMessage, ActionRequest,
 )
-from utils.security import (
+from utils.security import (  # type: ignore[attr-defined]
     _get_current_user, _verify_api_key, _require_dispatch_auth,
     _security_audit_log,
 )
-from utils.helpers import utc_now, _support_msg_dict
-from services.fcm_service import _send_fcm_push
+from utils.helpers import utc_now, _support_msg_dict  # type: ignore[attr-defined]
+from services.fcm_service import _send_fcm_push  # type: ignore[attr-defined]
 from config import (
-    ANTHROPIC_API_KEY, _HAS_CLAUDE,
-    firestore_sync, _HAS_FIRESTORE,
+    ANTHROPIC_API_KEY, _HAS_CLAUDE,  # type: ignore[attr-defined]
+    firestore_sync, _HAS_FIRESTORE,  # type: ignore[attr-defined]
 )
 from support_cache import find_cached_response, add_natural_variation, claude_health, maybe_cache_response
 
@@ -87,9 +88,9 @@ def _has_cancel_intent(text: str) -> bool:
     return any(k in t for k in _CANCEL_INTENT)
 
 
-async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict:
+async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[str, Any]:
     """Gather comprehensive context about the user for smarter bot responses."""
-    ctx: dict = {"has_active_trip": False, "active_trip": None, "recent_trips": [],
+    ctx: dict[str, Any] = {"has_active_trip": False, "active_trip": None, "recent_trips": [],
                  "user": None, "trip_summary": ""}
 
     # User info
@@ -114,7 +115,7 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict:
     if active_trip:
         ctx["has_active_trip"] = True
         driver_name = None
-        if active_trip.driver_id:
+        if active_trip.driver_id is not None:
             dr_r = await db.execute(select(User).where(User.id == active_trip.driver_id))
             driver = dr_r.scalar_one_or_none()
             if driver:
@@ -173,13 +174,13 @@ async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
             return "No tienes un viaje activo en este momento para cancelar."
         return "You don't have an active trip to cancel right now."
 
-    trip.status = "canceled"
-    trip.cancel_reason = "Canceled via support chat"
-    trip.updated_at = datetime.utcnow()
+    trip.status = "canceled"  # type: ignore[assignment]
+    trip.cancel_reason = "Canceled via support chat"  # type: ignore[assignment]
+    trip.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)  # type: ignore[assignment]
     await db.flush()
     if _HAS_FIRESTORE:
         try:
-            firestore_sync.sync_trip_status(trip_id=trip.id, status="canceled", cancel_reason=trip.cancel_reason)
+            firestore_sync.sync_trip_status(trip_id=int(trip.id), status="canceled", cancel_reason=str(trip.cancel_reason))
         except Exception:
             pass
     if lang.startswith("es"):
@@ -187,10 +188,10 @@ async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
     return f"Your trip #{trip.id} from {trip.pickup_address} to {trip.dropoff_address} has been successfully canceled. You won't be charged."
 
 
-def _score_categories(text: str) -> list:
+def _score_categories(text: str) -> list[tuple[str, int]]:
     """Score all categories by keyword match count and return sorted list."""
     t = text.lower()
-    scores = []
+    scores: list[tuple[str, int]] = []
     for cat, data in _AI_CATEGORIES.items():
         score = sum(1 for k in data["keywords"] if k in t)
         if score > 0:
@@ -451,7 +452,7 @@ _CLOSING_RESPONSES_EN = [
 ]
 
 
-def _match_keywords(text: str, keywords: list) -> bool:
+def _match_keywords(text: str, keywords: list[str]) -> bool:
     t = text.lower()
     return any(k in t for k in keywords)
 
@@ -560,10 +561,10 @@ _GENERAL_CHAT_RESPONSES = {
 # ═══════════════════════════════════════════════════════
 
 # Action request reminder tasks: {request_id: asyncio.Task}
-_action_reminder_tasks: dict[int, "asyncio.Task"] = {}
+_action_reminder_tasks: dict[int, asyncio.Task[None]] = {}
 
 
-def _build_claude_system_prompt(agent_name: str, user_type: str, lang: str, ctx: dict) -> str:
+def _build_claude_system_prompt(agent_name: str, user_type: str, lang: str, ctx: dict[str, Any]) -> str:
     """Build the system prompt for Claude matching what the Flutter frontend expects."""
     is_es = lang.startswith("es")
     lang_label = "Spanish (formal usted)" if is_es else "English"
@@ -672,7 +673,7 @@ EMERGENCY (if user mentions danger, accident, or emergency):
 """
 
 
-async def _get_chat_history(chat_id: int, db: AsyncSession, limit: int = 10) -> list[dict]:
+async def _get_chat_history(chat_id: int, db: AsyncSession, limit: int = 10) -> list[dict[str, str]]:
     """Fetch recent chat messages for Claude conversation context. Trimmed to 10 for cost."""
     result = await db.execute(
         select(SupportMessage).where(SupportMessage.chat_id == chat_id)
@@ -739,7 +740,7 @@ async def _call_claude_api(system_prompt: str, messages: list[dict], user_msg: s
     return None
 
 
-def _parse_action_markers(response: str) -> tuple[str, list[dict]]:
+def _parse_action_markers(response: str) -> tuple[str, list[dict[str, Any]]]:
     """Extract ||REQUEST:...|| action markers from Claude response.
     Returns (clean_message, list_of_action_dicts).
     Handles both well-formed and malformed markers (partial pipes, missing closing, etc.)
@@ -771,7 +772,7 @@ async def _create_action_request(
     user_name: str, agent_name: str, db: AsyncSession
 ) -> int | None:
     """Create an ActionRequest in the DB and sync to Firestore. Returns request ID."""
-    details: dict = {}
+    details: dict[str, Any] = {}
     if action_type == "request-refund":
         details = {
             "trip_id": params[0] if len(params) > 0 else "latest",
@@ -857,7 +858,7 @@ async def _create_action_request(
     if _HAS_FIRESTORE:
         try:
             from google.cloud.firestore_v1 import SERVER_TIMESTAMP
-            firestore_sync._fs_db.collection("pending_reminders").document(str(ar.id)).set({
+            firestore_sync._fs_db.collection("pending_reminders").document(str(ar.id)).set({  # type: ignore[attr-defined]
                 "request_id": ar.id,
                 "chat_id": chat.id,
                 "user_name": user_name,
@@ -933,7 +934,7 @@ async def _action_request_reminder(request_id: int, chat_id: int, user_name: str
         # Clean up Firestore reminder when done
         if _HAS_FIRESTORE:
             try:
-                firestore_sync._fs_db.collection("pending_reminders").document(str(request_id)).delete()
+                firestore_sync._fs_db.collection("pending_reminders").document(str(request_id)).delete()  # type: ignore[attr-defined]
             except Exception:
                 pass
 
@@ -943,7 +944,7 @@ async def _rehydrate_pending_reminders():
     if not _HAS_FIRESTORE:
         return
     try:
-        docs = firestore_sync._fs_db.collection("pending_reminders").where(filter=FieldFilter("status", "==", "pending")).stream() if _HAS_FIELD_FILTER else firestore_sync._fs_db.collection("pending_reminders").where("status", "==", "pending").stream()
+        docs = firestore_sync._fs_db.collection("pending_reminders").where(filter=FieldFilter("status", "==", "pending")).stream() if _HAS_FIELD_FILTER else firestore_sync._fs_db.collection("pending_reminders").where("status", "==", "pending").stream()  # type: ignore[attr-defined]
         count = 0
         for doc in docs:
             data = doc.to_dict()

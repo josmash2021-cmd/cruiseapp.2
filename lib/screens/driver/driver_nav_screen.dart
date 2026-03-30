@@ -625,11 +625,58 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Future<void> _startCinematicEntry() async {
     if (_routePts.length < 2 || _cinematicDone) return;
     _cinematicDone = true;
-    // Phase 1: Show overview with route visible, wait for "Start Trip" tap
-    if (mounted) setState(() { _cameraFollowing = false; _isOverview = true; });
+
+    // Compute initial bearing from route so arrow points correctly from start.
+    if (_routePts.length >= 2) {
+      _bearing = _bearingBetween(_routePts[0], _routePts[1]);
+      _motion.teleport(_pos, _bearing);
+    }
+
+    // Phase 1: Top-down overview — show full route for 5 seconds.
+    setState(() { _cameraFollowing = false; _isOverview = true; });
+    _updateRouteAnnotation();
     await _zoomToShowRoute();
     if (!mounted) return;
-    setState(() => _waitingForStart = true);
+
+    // Hold overview for 5 seconds.
+    await Future.delayed(const Duration(seconds: 5));
+    if (!mounted) return;
+
+    // Phase 2: Transition — flyTo 45° nav view centred on driver.
+    final dest = _phase == TripPhase.onTrip
+        ? widget.dropoffLatLng
+        : widget.pickupLatLng;
+    final routeBearing = _bearingBetween(_pos, dest);
+    _bearing = routeBearing;
+    final ahead = _lookaheadPoint(_pos, routeBearing, 120);
+
+    // Delete static route before redrawing animated.
+    await _deleteRouteAnnotations();
+    if (!mounted) return;
+
+    _map?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(
+            coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
+        zoom: _navZoom,
+        bearing: routeBearing,
+        pitch: _navTilt,
+      ),
+      mapbox.MapAnimationOptions(duration: 2000, startDelay: 0),
+    );
+    // Wait for flyTo to finish.
+    await Future.delayed(const Duration(milliseconds: 2200));
+    if (!mounted) return;
+
+    // Phase 3: Draw route progressively.
+    await _drawRouteAnimated();
+    if (!mounted) return;
+
+    // Lock camera to driver.
+    setState(() {
+      _cameraFollowing = true;
+      _isOverview = false;
+    });
   }
 
   /// Jump directly to locked nav position (no animation). Used on re-entry.
@@ -654,16 +701,16 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     HapticFeedback.mediumImpact();
     setState(() => _waitingForStart = false);
 
-    // Fade out current route
-    await _fadeOutRoute();
-    if (!mounted) return;
-
-    // Animate camera to 45° nav view
     final dest = _phase == TripPhase.onTrip
         ? widget.dropoffLatLng
         : widget.pickupLatLng;
     final routeBearing = _bearingBetween(_pos, dest);
+    _bearing = routeBearing;
     final ahead = _lookaheadPoint(_pos, routeBearing, 120);
+
+    await _deleteRouteAnnotations();
+    if (!mounted) return;
+
     _map?.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
@@ -672,17 +719,14 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         bearing: routeBearing,
         pitch: _navTilt,
       ),
-      mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
+      mapbox.MapAnimationOptions(duration: 2000, startDelay: 0),
     );
-    await Future.delayed(const Duration(milliseconds: 1600));
+    await Future.delayed(const Duration(milliseconds: 2200));
     if (!mounted) return;
 
-    // Redraw route with progressive animation
-    _animatedRoute = [];
     await _drawRouteAnimated();
     if (!mounted) return;
 
-    // Enable locked navigation camera
     setState(() {
       _cameraFollowing = true;
       _isOverview = false;
@@ -770,7 +814,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         _routeDrawTicker?.stop();
         _routeAnimating = false;
         _animatedRoute = List.from(_routePts);
-        // Finalize: ensure the annotation has the full route geometry
         _updateRouteAnnotationAnimated(_routePts);
         if (!completer.isCompleted) completer.complete();
       }
@@ -781,12 +824,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   /// Fade out current route before switching segments.
   Future<void> _fadeOutRoute() async {
-    for (double opacity = 1.0; opacity >= 0; opacity -= 0.1) {
-      _routeOpacity = opacity;
-      _updateRouteOpacity();
-      await Future.delayed(const Duration(milliseconds: 30));
-    }
-    // Clear annotations
     final mgr = _polyMgr;
     if (mgr != null) {
       if (_routeAnnot != null) { try { await mgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
@@ -924,31 +961,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   /// Pop/bounce animation for destination pin (elasticOut curve, 450ms).
   void _animateDestPinPop() {
     _destPinAnimTimer?.cancel();
-    const totalMs = 450;
-    const steps = 45;
-    const stepMs = totalMs ~/ steps;
-    int i = 0;
-    _destPinAnimTimer = Timer.periodic(const Duration(milliseconds: stepMs), (t) {
-      i++;
-      final progress = i / steps;
-      // ElasticOut curve approximation
-      final raw = math.pow(2, -10 * progress) * math.sin((progress - 0.1) * 5 * math.pi) + 1;
-      _destPinScale = raw.clamp(0.0, 1.2);
-      final annot = _destAnnot;
-      final mgr = _pointMgr;
-      if (annot != null && mgr != null) {
-        annot.iconSize = _destPinScale;
-        mgr.update(annot).catchError((_) {});
-      }
-      if (i >= steps) {
-        t.cancel();
-        // Settle to 1.0
-        if (annot != null && mgr != null) {
-          annot.iconSize = 1.0;
-          mgr.update(annot).catchError((_) {});
-        }
-      }
-    });
+    _destPinScale = 1.0;
+    final annot = _destAnnot;
+    final mgr = _pointMgr;
+    if (annot != null && mgr != null) {
+      annot.iconSize = 1.0;
+      mgr.update(annot).catchError((_) {});
+    }
   }
 
   /// Show a persistent pickup pin (gold teardrop) at pickup location.
@@ -989,61 +1008,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   }
 
   Future<void> _startPickupPinPopout() async {
-    final annot = _pickupAnnot;
-    final map = _map;
-    if (annot == null || map == null) {
-      await _deletePickupPin();
-      return;
-    }
-
-    _pickupPinBytes ??= await _buildPickupPin();
-    final bytes = _pickupPinBytes;
-    if (!mounted || bytes == null) return;
-
-    try {
-      final px = await map.pixelForCoordinate(
-        mapbox.Point(
-          coordinates: mapbox.Position(
-            widget.pickupLatLng.longitude,
-            widget.pickupLatLng.latitude,
-          ),
-        ),
-      );
-      if (!mounted) return;
-
-      _pickupPopCtrl?.dispose();
-      _pickupPopCtrl = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 400),
-      );
-      _pickupPopScale = Tween<double>(begin: 1.0, end: 1.8).animate(
-        CurvedAnimation(parent: _pickupPopCtrl!, curve: Curves.easeOut),
-      );
-      _pickupPopFade = Tween<double>(begin: 1.0, end: 0.0).animate(
-        CurvedAnimation(parent: _pickupPopCtrl!, curve: Curves.easeIn),
-      );
-
-      annot.iconOpacity = 0.0;
-      try { await _pointMgr?.update(annot); } catch (_) {}
-
-      setState(() {
-        _pickupPopOffset = Offset(px.x.toDouble(), px.y.toDouble());
-      });
-
-      await _pickupPopCtrl!.forward();
-    } catch (_) {
-      // Fall through to deleting the annotation even if the overlay can't be rendered.
-    }
-
     await _deletePickupPin();
-    if (!mounted) return;
-    setState(() {
-      _pickupPopOffset = null;
-    });
-    _pickupPopCtrl?.dispose();
-    _pickupPopCtrl = null;
-    _pickupPopScale = null;
-    _pickupPopFade = null;
   }
 
   // =========================================================================
@@ -1084,14 +1049,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     final lngDiff = (a.longitude - b.longitude).abs();
     final span = math.max(latDiff, lngDiff);
     final zoom = span > 0 ? (math.log(360 / span) / math.ln2).clamp(8.0, 14.5) : 13.0;
-    _map?.flyTo(
+    _map?.setCamera(
       mapbox.CameraOptions(
         center: mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
         zoom: zoom,
         bearing: 0,
         pitch: 0,
       ),
-      mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
     );
   }
 
@@ -1110,7 +1074,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _isOverview      = false;
       _hasResumedOnce  = true;
     });
-    // Offset ahead so driver pin sits in lower third
     final ahead = _lookaheadPoint(_pos, _bearing, 120);
     _map?.flyTo(
       mapbox.CameraOptions(
@@ -1356,22 +1319,21 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       });
       _navService.startNavigation(route);
 
-      // ── Phase 3: Overview of pickup→dropoff before animating to nav ──
+      // ── Set up dropoff route with overview + animated transition ──
       _updateDestPin(widget.dropoffLatLng);
       await _deleteRouteAnnotations();
-      await _updateRouteAnnotation(); // static route for overview
 
-      // Show top-down overview of pickup→dropoff
+      // Overview of dropoff route for 3 seconds.
+      _updateRouteAnnotation();
       setState(() { _cameraFollowing = false; _isOverview = true; });
       _animateCameraOverview(_pos, widget.dropoffLatLng);
-      await Future.delayed(const Duration(milliseconds: 2000));
+      await Future.delayed(const Duration(seconds: 3));
       if (!mounted) return;
 
-      // Fade route + animate camera to 45° nav view
-      await _fadeOutRoute();
-      if (!mounted) return;
-
+      // Transition to nav view.
+      await _deleteRouteAnnotations();
       final routeBearing = _bearingBetween(_pos, widget.dropoffLatLng);
+      _bearing = routeBearing;
       final ahead = _lookaheadPoint(_pos, routeBearing, 120);
       _map?.flyTo(
         mapbox.CameraOptions(
@@ -1381,13 +1343,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           bearing: routeBearing,
           pitch: _navTilt,
         ),
-        mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
+        mapbox.MapAnimationOptions(duration: 2000, startDelay: 0),
       );
-      await Future.delayed(const Duration(milliseconds: 1600));
+      await Future.delayed(const Duration(milliseconds: 2200));
       if (!mounted) return;
 
-      // Redraw route with progressive animation
-      _animatedRoute = [];
       await _drawRouteAnimated();
     } else {
       _updateDestPin(widget.dropoffLatLng);
@@ -1742,29 +1702,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             // ── FULL MAP ─────────────────────────────────────────────────
             Positioned.fill(child: _buildMap()),
 
-            if (_pickupPopOffset != null &&
-                _pickupPinBytes != null &&
-                _pickupPopScale != null &&
-                _pickupPopFade != null)
-              Positioned(
-                left: _pickupPopOffset!.dx - 36,
-                top: _pickupPopOffset!.dy - 92,
-                child: IgnorePointer(
-                  child: FadeTransition(
-                    opacity: _pickupPopFade!,
-                    child: ScaleTransition(
-                      scale: _pickupPopScale!,
-                      child: Image.memory(
-                        _pickupPinBytes!,
-                        width: 72,
-                        height: 96,
-                        gaplessPlayback: true,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
             // ── TOP HEADER ───────────────────────────────────────────────
             Positioned(top: 0, left: 0, right: 0, child: _buildNavHeader(top)),
 
@@ -1773,13 +1710,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               left: 16,
               top: top + 110,
               child: _buildSpeedOverlay(top + 110),
-            ),
-
-            // ── RIGHT FAB COLUMN ─────────────────────────────────────────
-            Positioned(
-              right: 12,
-              bottom: bottomBarH + 16,
-              child: _buildRightFabs(),
             ),
 
             // ── BOTTOM BAR ────────────────────────────────────────────────
@@ -1798,55 +1728,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 right: 0,
                 child: Center(child: _buildResumeButton()),
               ),
-
-            // ── START TRIP (overview state — Phase 1 entry) ──────────────
-            if (_waitingForStart)
-              Positioned(
-                bottom: bottomBarH + 16,
-                left: 24,
-                right: 24,
-                child: _buildStartTripOverlayButton(),
-              ),
-
-            // ── SLIDE ARRIVED (near pickup — Phase 1 end) ────────────────
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOutCubic,
-              bottom: (_nearPickup && _phase == TripPhase.toPickup && !_waitingForStart)
-                  ? bottomBarH + 8
-                  : -100,
-              left: 24,
-              right: 24,
-              child: _buildSlideAction(
-                label: 'Arrived',
-                color: const Color(0xFF2E7D32),
-                onComplete: _arrivedAndGoBack,
-              ),
-            ),
-
-            // ── PHASE OVERLAY (finalize / complete) ──────────────────
-
-            // ── SLIDE FINISH TRIP — slides up when near dropoff ──
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOutCubic,
-              bottom: (_showFinalizeButton && !_completing)
-                  ? bottomBarH + 8
-                  : -100,
-              left: 24,
-              right: 24,
-              child: _buildFinalizeButton(),
-            ),
-
-            // ── VIAJE FINALIZADO OVERLAY (full-screen, on top of map) ──
-            IgnorePointer(
-              ignoring: !_showCompletionOverlay,
-              child: AnimatedOpacity(
-                opacity: _showCompletionOverlay ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 500),
-                child: _buildCompletionOverlay(),
-              ),
-            ),
           ],
         ),
       ),
@@ -1892,13 +1773,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           // Show pickup pin throughout the trip
           _updatePickupPin(widget.pickupLatLng);
           if (widget.startInTripMode) {
-            // Auto-start ride after a short delay for the map to settle
             Future.delayed(const Duration(milliseconds: 600), () {
               if (mounted) _startRide();
             });
           } else {
-            // Cinematic entry: zoom out → draw route → zoom back
-            Future.delayed(const Duration(milliseconds: 500), () {
+            Future.delayed(const Duration(milliseconds: 600), () {
               if (mounted) _startCinematicEntry();
             });
           }

@@ -185,6 +185,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // â”€â”€ Request data (for active trip after acceptance) â”€â”€
   Timer? _pollT;
+  StreamSubscription<List<Map<String, dynamic>>>? _offerSseSub;
+  bool _sseActive = false;
   String _riderName = '';
   String _riderInit = '';
   String _riderPhotoUrl = '';
@@ -356,6 +358,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
       _pollT?.cancel();
+      _offerSseSub?.cancel();
+      _sseActive = false;
       _clock?.cancel();
       _goldDot.dispose();
     } else if (state == AppLifecycleState.resumed) {
@@ -373,6 +377,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _doneCtrl.dispose();
     _searchPulse.dispose();
     _pollT?.cancel();
+    _offerSseSub?.cancel();
     _clock?.cancel();
     _navTimer?.cancel();
     _goldDot.dispose();

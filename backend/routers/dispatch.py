@@ -422,13 +422,33 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                 logging.error("Firestore sync on accept_offer failed: %s", e)
         asyncio.create_task(_sync_firestore_accept())
 
-    # ── SSE instant push to rider watching this trip ──
+    # ── SSE instant push to rider watching this trip (with FULL driver info) ──
     if trip:
-        asyncio.create_task(event_bus.push_trip_update(trip.id, {
-            "status": "driver_en_route",
-            "trip_id": trip.id,
-            "driver_id": driver_id,
-        }))
+        async def _push_sse_with_driver():
+            try:
+                async with SessionLocal() as _db2:
+                    drv_r = await _db2.execute(select(User).where(User.id == driver_id))
+                    drv = drv_r.scalar_one_or_none()
+                    veh_r = await _db2.execute(select(Vehicle).where(Vehicle.user_id == driver_id))
+                    veh = veh_r.scalar_one_or_none()
+                await event_bus.push_trip_update(trip.id, {
+                    "status": "driver_en_route",
+                    "trip_id": trip.id,
+                    "driver_id": driver_id,
+                    "driver_name": f"{drv.first_name} {drv.last_name}" if drv else "Driver",
+                    "driver_phone": drv.phone if drv else "",
+                    "driver_photo_url": drv.photo_url or "" if drv else "",
+                    "driver_rating": 4.9,
+                    "driver_trips": 0,
+                    "vehicle_make": veh.make if veh else "",
+                    "vehicle_model": veh.model if veh else "",
+                    "vehicle_color": veh.color if veh else "",
+                    "vehicle_plate": veh.plate if veh else "",
+                    "vehicle_year": str(veh.year) if veh else "",
+                })
+            except Exception as e:
+                logging.error("SSE push with driver info failed: %s", e)
+        asyncio.create_task(_push_sse_with_driver())
 
     # ── Push + SMS notification to rider when driver accepts ──
     if trip:
@@ -439,13 +459,13 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
             drv2 = drv_result2.scalar_one_or_none()
             driver_display = f"{drv2.first_name} {drv2.last_name}" if drv2 else "Your driver"
 
-            # Push notification via FCM
+            # Push notification via FCM (works for ALL trip types)
             if rider and rider.fcm_token:
                 _send_fcm_push(
                     rider.fcm_token,
-                    title="Driver Assigned! 🚗",
-                    body=f"Your scheduled ride has a driver. {driver_display} will arrive on time.",
-                    data={"type": "scheduled_confirmed", "trip_id": str(trip.id)},
+                    title="Driver Found! 🚗",
+                    body=f"{driver_display} is on the way to pick you up.",
+                    data={"type": "driver_assigned", "trip_id": str(trip.id), "driver_id": str(driver_id)},
                 )
 
             # SMS via Twilio (non-blocking — don't slow down accept response)
@@ -524,46 +544,61 @@ async def reject_offer(
 
     return {"status": "rejected", "reason_stored": reason is not None}
 
+# ── In-memory cache for accepted dispatch status ──
+_dispatch_status_cache: dict = {}  # trip_id -> (data, timestamp)
+_DISPATCH_STATUS_CACHE_TTL = 3.0  # seconds
+
 @router.get("/dispatch/trip/status", dependencies=[Depends(_verify_api_key)])
 async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Trip).where(Trip.id == trip_id))
-    trip = result.scalar_one_or_none()
-    if not trip:
+    # Fast path: serve from cache (riders poll every 3s)
+    _now = time.monotonic()
+    _cached = _dispatch_status_cache.get(trip_id)
+    if _cached and (_now - _cached[1]) < _DISPATCH_STATUS_CACHE_TTL:
+        return _cached[0]
+
+    # Single JOIN query instead of 4 separate queries
+    from sqlalchemy.orm import aliased
+    DriverUser = aliased(User)
+    row = await db.execute(
+        select(Trip, DispatchOffer, DriverUser, Vehicle)
+        .outerjoin(DispatchOffer, and_(
+            DispatchOffer.trip_id == Trip.id,
+            DispatchOffer.status == "accepted",
+        ))
+        .outerjoin(DriverUser, DriverUser.id == DispatchOffer.driver_id)
+        .outerjoin(Vehicle, Vehicle.user_id == DispatchOffer.driver_id)
+        .where(Trip.id == trip_id)
+    )
+    result = row.first()
+    if not result:
         return {"status": "not_found"}
 
-    offer_result = await db.execute(
-        select(DispatchOffer).where(and_(DispatchOffer.trip_id == trip_id, DispatchOffer.status == "accepted"))
-    )
-    accepted = offer_result.scalar_one_or_none()
-
-    if accepted:
-        driver_result = await db.execute(select(User).where(User.id == accepted.driver_id))
-        driver = driver_result.scalar_one_or_none()
-        # Fetch vehicle info for this driver
-        veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == accepted.driver_id))
-        veh = veh_result.scalar_one_or_none()
-        flat_driver = {}
-        if driver:
-            flat_driver = {
-                "driver_id": driver.id,
-                "driver_name": f"{driver.first_name} {driver.last_name}",
-                "driver_phone": driver.phone,
-                "driver_photo_url": driver.photo_url or "",
-                "driver_rating": 4.9,
-                "driver_trips": 0,
-                "vehicle_make": veh.make if veh else "",
-                "vehicle_model": veh.model if veh else "",
-                "vehicle_color": veh.color if veh else "",
-                "vehicle_plate": veh.plate if veh else "",
-                "vehicle_year": str(veh.year) if veh else "",
-            }
-        return {
+    trip, accepted, driver, veh = result
+    if accepted and driver:
+        flat_driver = {
+            "driver_id": driver.id,
+            "driver_name": f"{driver.first_name} {driver.last_name}",
+            "driver_phone": driver.phone,
+            "driver_photo_url": driver.photo_url or "",
+            "driver_rating": 4.9,
+            "driver_trips": 0,
+            "vehicle_make": veh.make if veh else "",
+            "vehicle_model": veh.model if veh else "",
+            "vehicle_color": veh.color if veh else "",
+            "vehicle_plate": veh.plate if veh else "",
+            "vehicle_year": str(veh.year) if veh else "",
+        }
+        response = {
             "status": trip.status,
             **flat_driver,
             "driver": _user_dict(driver) if driver else None,
             "trip": _trip_dict(trip),
         }
-    return {"status": trip.status, "driver": None, "trip": _trip_dict(trip)}
+    else:
+        response = {"status": trip.status, "driver": None, "trip": _trip_dict(trip)}
+
+    _dispatch_status_cache[trip_id] = (response, _now)
+    return response
 
 # ═══════════════════════════════════════════════════════
 #  ADMIN / DISPATCH ENDPOINTS

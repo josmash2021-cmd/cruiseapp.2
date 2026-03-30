@@ -289,7 +289,7 @@ _CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIG
     "http://localhost:3000",
     "http://localhost:8000",
 ]
-app.add_middleware(GZipMiddleware, minimum_size=500)
+app.add_middleware(GZipMiddleware, minimum_size=2000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
@@ -380,6 +380,7 @@ async def ip_blacklist_middleware(request: Request, call_next):
 # Hot paths that should skip expensive middleware operations (checksum, etc.)
 _HOT_PATHS = {
     "/dispatch/driver/pending", "/drivers/nearby", "/health",
+    "/dispatch/trip/status", "/auth/me", "/auth/account-status",
 }
 _SSE_PREFIX = "/dispatch/driver/pending/stream", "/dispatch/trip/"
 

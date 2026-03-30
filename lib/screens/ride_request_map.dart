@@ -674,12 +674,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     await _animateGoldRoute(pts, const Duration(milliseconds: 1000));
     if (!mounted) return;
 
-    // 5. Flatten map back to 0° pitch so pins sit on the ground (not floating)
-    _mapCtrl!.flyTo(
-      mapbox.CameraOptions(pitch: 0.0, bearing: 0.0),
-      mapbox.MapAnimationOptions(duration: 800),
-    );
-
+    // Camera stays tilted — no reset to flat
     _cinematicDone = true;
   }
 
@@ -886,20 +881,20 @@ extension _RideRequestMap on _RideRequestScreenState {
         image: _goldPinIcon!,
         iconSize: 0.65,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 4],
+        iconOffset: [0, 0],
       ));
       _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
         image: _goldPinIcon!,
         iconSize: 0.65,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 4],
+        iconOffset: [0, 0],
       ));
-      // Fit camera to show both markers
+      // Fit camera to show both markers (preserve tilt if cinematic already ran)
       _fitRoute([
         LatLng(s.pickup!.lat, s.pickup!.lng),
         LatLng(s.dropoff!.lat, s.dropoff!.lng),
-      ]);
+      ], preserveCamera: _cinematicDone);
       if (mounted) _setState(() {});
     } finally {
       _placingMarkers = false;
@@ -967,7 +962,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           image: bytes,
           iconSize: scale,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: [0, 4],
+          iconOffset: [0, 0],
         ));
       }
     }
@@ -989,7 +984,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           image: bytes,
           iconSize: scale,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: [0, 4],
+          iconOffset: [0, 0],
         ));
       }
     }

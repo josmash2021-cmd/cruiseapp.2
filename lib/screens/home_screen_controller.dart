@@ -322,7 +322,7 @@ extension _HomeScreenController on _HomeScreenState {
         image: pinBytes,
         iconSize: 0.7,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 4],
+        iconOffset: [0, 0],
       ));
     } catch (e) {
       debugPrint('Error adding dropoff pin: $e');

@@ -886,14 +886,14 @@ extension _RideRequestMap on _RideRequestScreenState {
         image: _goldPinIcon!,
         iconSize: 0.65,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
+        iconOffset: [0, 4],
       ));
       _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
         image: _goldPinIcon!,
         iconSize: 0.65,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
+        iconOffset: [0, 4],
       ));
       // Fit camera to show both markers
       _fitRoute([
@@ -967,7 +967,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           image: bytes,
           iconSize: scale,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: [0, 0],
+          iconOffset: [0, 4],
         ));
       }
     }
@@ -989,7 +989,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           image: bytes,
           iconSize: scale,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: [0, 0],
+          iconOffset: [0, 4],
         ));
       }
     }

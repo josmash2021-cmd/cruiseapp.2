@@ -977,7 +977,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         image: _pickupPinBytes!,
         iconSize: 1.05,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
+        iconOffset: [0, 4],
       ));
     } catch (_) {}
 
@@ -1015,7 +1015,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         image: _dropoffPinBytes!,
         iconSize: 0.01,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
+        iconOffset: [0, 4],
       ));
       // Animate pin pop: 0.01 → 1.15 → 0.95 → 1.05 over 500ms
       _animateDropoffPinPop();

@@ -198,18 +198,30 @@ class DirectionsService {
       ).then((data) {
         if (data == null) return null;
         return _parseGoogleRoute(data, origin, destination);
-      }).timeout(const Duration(seconds: 4), onTimeout: () => null);
+      }).timeout(const Duration(seconds: 6), onTimeout: () => null);
 
       final osrmFuture = _requestOsrmRoute(origin: origin, destination: destination)
-          .timeout(const Duration(seconds: 4), onTimeout: () => null);
+          .timeout(const Duration(seconds: 6), onTimeout: () => null);
 
       final mapboxFuture = _requestMapboxRoute(origin: origin, destination: destination)
-          .timeout(const Duration(seconds: 4), onTimeout: () => null);
+          .timeout(const Duration(seconds: 8), onTimeout: () => null);
 
       // Wait for all, take the first non-null result (prefer Mapbox > Google > OSRM)
       // Mapbox route aligns best with Mapbox map tiles for accurate road overlay
       final results = await Future.wait([googleFuture, osrmFuture, mapboxFuture]);
-      result = results[2] ?? results[0] ?? results[1];
+      final mapbox = results[2];
+      final google = results[0];
+      final osrm = results[1];
+      if (mapbox != null) {
+        debugPrint('[Route] Using Mapbox provider (${mapbox.points.length} points)');
+        result = mapbox;
+      } else if (google != null) {
+        debugPrint('[Route] Mapbox failed, using Google provider (${google.points.length} points)');
+        result = google;
+      } else if (osrm != null) {
+        debugPrint('[Route] Mapbox+Google failed, using OSRM provider (${osrm.points.length} points)');
+        result = osrm;
+      }
 
       if (result != null) {
         debugPrint('[Route] Got route with ${result.points.length} points (attempt ${attempt + 1})');
@@ -392,7 +404,7 @@ class DirectionsService {
         '&access_token=${MapboxConfig.accessToken}',
       );
       debugPrint('[Route] Mapbox request URL: $url');
-      final res = await http.get(url).timeout(const Duration(seconds: 5));
+      final res = await http.get(url).timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return null;
       final data = jsonDecode(res.body);
       final routes = data['routes'] as List?;
@@ -426,9 +438,10 @@ class DirectionsService {
     }
   }
 
-  /// Filter out points with invalid lat/lng that would cause rendering issues.
+  /// Filter out points with invalid lat/lng or outliers that jump off-road.
   List<LatLng> _validatePoints(List<LatLng> points) {
-    return points.where((p) {
+    // Step 1: remove globally invalid coordinates
+    final valid = points.where((p) {
       final validLat = p.latitude >= -90 && p.latitude <= 90;
       final validLng = p.longitude >= -180 && p.longitude <= 180;
       if (!validLat || !validLng) {
@@ -437,6 +450,29 @@ class DirectionsService {
       }
       return true;
     }).toList();
+
+    if (valid.length < 3) return valid;
+
+    // Step 2: remove outlier points that jump far from both neighbors
+    // (likely coordinate glitches that cause route to go off-road)
+    final cleaned = <LatLng>[valid.first];
+    for (int i = 1; i < valid.length - 1; i++) {
+      final prev = valid[i - 1];
+      final curr = valid[i];
+      final next = valid[i + 1];
+      final dPrev = _haversineMeters(prev, curr);
+      final dNext = _haversineMeters(curr, next);
+      final dDirect = _haversineMeters(prev, next);
+      // If point is >500m from both neighbors AND removing it shortens the path
+      // significantly, it's likely an outlier
+      if (dPrev > 500 && dNext > 500 && dDirect < (dPrev + dNext) * 0.3) {
+        debugPrint('[Route] Filtered outlier point: $curr (dPrev=${dPrev.toInt()}m dNext=${dNext.toInt()}m)');
+        continue;
+      }
+      cleaned.add(curr);
+    }
+    cleaned.add(valid.last);
+    return cleaned;
   }
 
   /// Haversine distance in meters between two points.

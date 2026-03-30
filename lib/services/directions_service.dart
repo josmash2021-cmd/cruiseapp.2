@@ -368,12 +368,34 @@ class DirectionsService {
       }
 
       bestRoute ??= routes.first as Map<String, dynamic>;
-      final geometry = bestRoute['geometry']?.toString();
       final durationSeconds = (bestRoute['duration'] as num?)?.toInt() ?? 0;
       final distanceMeters = (bestRoute['distance'] as num?)?.toInt() ?? 0;
-      if (geometry == null || geometry.isEmpty) return null;
 
-      final decoded = _decodePolyline(geometry);
+      // Prefer step-level geometry — follows every road segment precisely
+      final detailedPoints = <LatLng>[];
+      final legs = bestRoute['legs'] as List?;
+      if (legs != null) {
+        for (final leg in legs) {
+          final steps = (leg['steps'] as List?) ?? [];
+          for (final step in steps) {
+            final stepGeometry = step['geometry']?.toString();
+            if (stepGeometry != null && stepGeometry.isNotEmpty) {
+              detailedPoints.addAll(_decodePolyline(stepGeometry));
+            }
+          }
+        }
+      }
+
+      List<LatLng> decoded;
+      if (detailedPoints.length >= 2) {
+        decoded = detailedPoints;
+        debugPrint('[Route] OSRM steps → ${decoded.length} points');
+      } else {
+        final geometry = bestRoute['geometry']?.toString();
+        if (geometry == null || geometry.isEmpty) return null;
+        decoded = _decodePolyline(geometry);
+        debugPrint('[Route] OSRM overview → ${decoded.length} points');
+      }
       if (decoded.isEmpty) return null;
 
       final validated = _validatePoints(decoded);
@@ -411,17 +433,39 @@ class DirectionsService {
       if (routes == null || routes.isEmpty) return null;
 
       final route = routes[0] as Map<String, dynamic>;
-      final coords = route['geometry']?['coordinates'] as List?;
-      if (coords == null || coords.isEmpty) return null;
-
-      // Mapbox GeoJSON: coordinates are [longitude, latitude]
-      final points = coords
-          .map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
-          .toList();
-      debugPrint('[Route] Mapbox parsed ${points.length} points. First 5: ${points.take(5).toList()}');
-
       final distanceMeters = (route['distance'] as num?)?.toInt() ?? 0;
       final durationSeconds = (route['duration'] as num?)?.toInt() ?? 0;
+
+      // Prefer step-level geometry — follows every road segment precisely
+      final detailedPoints = <LatLng>[];
+      final legs = route['legs'] as List?;
+      if (legs != null) {
+        for (final leg in legs) {
+          final steps = (leg['steps'] as List?) ?? [];
+          for (final step in steps) {
+            final stepCoords = step['geometry']?['coordinates'] as List?;
+            if (stepCoords != null) {
+              detailedPoints.addAll(stepCoords.map(
+                (c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
+              ));
+            }
+          }
+        }
+      }
+
+      // Fall back to overview geometry if steps unavailable
+      List<LatLng> points;
+      if (detailedPoints.length >= 2) {
+        points = detailedPoints;
+        debugPrint('[Route] Mapbox steps → ${points.length} points');
+      } else {
+        final coords = route['geometry']?['coordinates'] as List?;
+        if (coords == null || coords.isEmpty) return null;
+        points = coords
+            .map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
+            .toList();
+        debugPrint('[Route] Mapbox overview → ${points.length} points');
+      }
 
       final validated = _validatePoints(points);
       final anchored = _anchorRoutePoints(validated, origin, destination);

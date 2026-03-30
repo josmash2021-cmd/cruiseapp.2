@@ -1,5 +1,5 @@
 """Cruise Backend — Shared configuration, env vars, and state."""
-import os, logging
+import os, logging, time
 from datetime import datetime
 
 # ── Owner / Dispatch ──
@@ -22,15 +22,18 @@ _HAS_CLAUDE = bool(ANTHROPIC_API_KEY)
 # ── OTP ──
 _otp_store: dict = {}
 _OTP_TTL = 300
+_MAX_OTP_ENTRIES = 3000  # cap for memory safety
 
 # ── Dispatch cache ──
 _pending_cache: dict = {}
-_PENDING_CACHE_TTL = 8.0  # Covers 2 polling cycles (5s interval); invalidated on accept/reject
+_PENDING_CACHE_TTL = 2.0  # Short TTL — offers are time-critical; invalidated on accept/reject
+_MAX_PENDING_CACHE = 2000
 OFFER_TIMEOUT_SECONDS = 20
 
 # ── Nearby drivers cache (in-memory, short TTL) ──
 _nearby_cache: dict = {}  # key=(lat_rounded, lng_rounded, radius) -> (timestamp, result)
 _NEARBY_CACHE_TTL = 5.0  # seconds — invalidated per-cell on driver location update
+_MAX_NEARBY_CACHE = 1000
 
 # ── EmailJS ──
 EMAILJS_SERVICE_ID = os.getenv("EMAILJS_SERVICE_ID", "")
@@ -48,6 +51,34 @@ _watchdog_stats = {
     "firebase_failures": 0, "firebase_reconnects": 0,
 }
 _TUNNEL_URL_FILE = os.path.join(os.path.dirname(__file__), "tunnel_url.txt")
+
+
+def sweep_caches():
+    """Evict expired entries from all in-memory caches. Call periodically."""
+    now = time.monotonic()
+    # OTP
+    _expired = [k for k, v in _otp_store.items() if now - v.get("ts", 0) > _OTP_TTL]
+    for k in _expired:
+        _otp_store.pop(k, None)
+    if len(_otp_store) > _MAX_OTP_ENTRIES:
+        _otp_store.clear()
+    # Pending
+    _expired = [k for k, v in _pending_cache.items() if now - v[0] > _PENDING_CACHE_TTL]
+    for k in _expired:
+        _pending_cache.pop(k, None)
+    if len(_pending_cache) > _MAX_PENDING_CACHE:
+        # Evict oldest half instead of nuking everything
+        sorted_keys = sorted(_pending_cache, key=lambda k: _pending_cache[k][0])
+        for k in sorted_keys[:len(sorted_keys) // 2]:
+            _pending_cache.pop(k, None)
+    # Nearby
+    _expired = [k for k, v in _nearby_cache.items() if now - v[0] > _NEARBY_CACHE_TTL]
+    for k in _expired:
+        _nearby_cache.pop(k, None)
+    if len(_nearby_cache) > _MAX_NEARBY_CACHE:
+        sorted_keys = sorted(_nearby_cache, key=lambda k: _nearby_cache[k][0])
+        for k in sorted_keys[:len(sorted_keys) // 2]:
+            _nearby_cache.pop(k, None)
 
 # ── Directories ──
 PHOTOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "photos")

@@ -19,11 +19,11 @@ _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {"timeout": 30, "check_same_thread": False}
 else:
-    _engine_kwargs["pool_size"] = 30
-    _engine_kwargs["max_overflow"] = 40
+    _engine_kwargs["pool_size"] = 50
+    _engine_kwargs["max_overflow"] = 80
     _engine_kwargs["pool_pre_ping"] = True
-    _engine_kwargs["pool_recycle"] = 600
-    _engine_kwargs["pool_timeout"] = 5
+    _engine_kwargs["pool_recycle"] = 300
+    _engine_kwargs["pool_timeout"] = 10
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
@@ -58,7 +58,7 @@ class User(Base):
     password_plain = Column(String(255), nullable=True)
     photo_url = Column(Text, nullable=True)
     role = Column(String(20), default="rider")
-    is_online = Column(Boolean, default=False)
+    is_online = Column(Boolean, default=False, index=True)
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     is_verified = Column(Boolean, default=False)
@@ -119,8 +119,8 @@ class ConsentLog(Base):
 class Trip(Base):
     __tablename__ = "trips"
     id = Column(Integer, primary_key=True, index=True)
-    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    driver_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     pickup_address = Column(Text, nullable=False)
     dropoff_address = Column(Text, nullable=False)
     pickup_lat = Column(Float, nullable=False)
@@ -129,7 +129,7 @@ class Trip(Base):
     dropoff_lng = Column(Float, nullable=False)
     fare = Column(Float, nullable=True)
     vehicle_type = Column(String(30), nullable=True)
-    status = Column(String(30), default="requested")
+    status = Column(String(30), default="requested", index=True)
     scheduled_at = Column(DateTime, nullable=True)
     is_airport = Column(Boolean, default=False)
     airport_code = Column(String(10), nullable=True)
@@ -161,7 +161,7 @@ class Trip(Base):
     ac_guaranteed = Column(Boolean, default=False)
     silent_ride = Column(Boolean, default=False)
     wheelchair_accessible = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -181,9 +181,9 @@ class FareSplit(Base):
 class DispatchOffer(Base):
     __tablename__ = "dispatch_offers"
     id = Column(Integer, primary_key=True, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    status = Column(String(20), default="pending")
+    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False, index=True)
+    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    status = Column(String(20), default="pending", index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -622,3 +622,18 @@ async def migrate_postgres(conn):
         logging.info("support_messages.sender_id made nullable")
     except Exception as _e:
         logging.warning("support_messages.sender_id nullable migration: %s", _e)
+
+    # ── Performance indexes for hot-path queries ──
+    _indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_users_role_online ON users (role, is_online) WHERE is_online = true",
+        "CREATE INDEX IF NOT EXISTS idx_users_online_location ON users (is_online, lat, lng) WHERE is_online = true AND lat IS NOT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_dispatch_driver_status ON dispatch_offers (driver_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_dispatch_trip_status ON dispatch_offers (trip_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_trips_driver_status ON trips (driver_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_trips_rider_status ON trips (rider_id, status)",
+    ]
+    for idx_sql in _indexes:
+        try:
+            await conn.execute(text(idx_sql))
+        except Exception as _e:
+            logging.warning("Index migration skip: %s", _e)

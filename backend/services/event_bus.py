@@ -46,6 +46,7 @@ class EventBus:
         """Push new/updated offers to all connected SSE streams for this driver."""
         queues = self._driver_queues.get(driver_id, set())
         if not queues:
+            logger.warning("[SSE] No SSE clients for driver %d — offer will be delivered via polling", driver_id)
             return
         event: dict[str, Any] = {"type": "offers_update", "data": offers, "ts": time.time()}
         dead: list[asyncio.Queue[dict[str, Any]]] = []

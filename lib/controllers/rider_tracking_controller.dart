@@ -245,12 +245,20 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   void _startRtdbDriverListener(String driverId) {
     _rtdbDriverLocSub?.cancel();
     _rtdbDriverId = driverId;
+    DateTime? lastRtdbUpdate;
     _rtdbDriverLocSub = FirebaseDatabase.instance
         .ref('driver_locations/$driverId')
         .onValue
         .listen((event) {
       if (!mounted || _phase == _TrackPhase.completed) return;
       if (event.snapshot.value == null) return;
+      // Throttle: max 2 updates/sec to avoid excessive rebuilds
+      final now = DateTime.now();
+      if (lastRtdbUpdate != null &&
+          now.difference(lastRtdbUpdate!).inMilliseconds < 500) {
+        return;
+      }
+      lastRtdbUpdate = now;
       final data = Map<String, dynamic>.from(event.snapshot.value as Map);
       final lat = (data['lat'] as num?)?.toDouble();
       final lng = (data['lng'] as num?)?.toDouble();
@@ -616,7 +624,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (!_shouldFollowDriver || _map == null) return;
     
     _cameraFollowTimer?.cancel();
-    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) {
+    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 2000), (_) {
       if (!mounted || !_shouldFollowDriver || _map == null) return;
       _followDriver(_animPos, _animBearing);
     });

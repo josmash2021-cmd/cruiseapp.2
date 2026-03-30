@@ -155,7 +155,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // Start account status polling immediately
     _checkAccountStatus();
     _accountStatusTimer = Timer.periodic(
-      const Duration(seconds: 30),
+      const Duration(seconds: 300),
       (_) => _checkAccountStatus(),
     );
 
@@ -361,7 +361,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       _posStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 1, // 1 meter for maximum smooth movement
+          distanceFilter: 5, // 5 meters — battery-friendly, still smooth
         ),
       ).listen((p) {
         if (!mounted) return;
@@ -517,7 +517,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   void _startTripPolling() {
     _tripPollTimer?.cancel();
-    _tripPollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+    _tripPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (!mounted || !_isStillOnline) {
         _tripPollTimer?.cancel();
         return;

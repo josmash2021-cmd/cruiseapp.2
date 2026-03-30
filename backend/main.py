@@ -97,7 +97,7 @@ from services.email_sms_service import _send_email
 # ── Configuration (env vars, shared state) ─────────────────────
 from config import (
     _SERVER_START_TIME, _watchdog_stats, _HAS_FIRESTORE, firestore_sync,
-    STRIPE_SECRET, PHOTOS_DIR, UPLOADS_DIR,
+    STRIPE_SECRET, PHOTOS_DIR, UPLOADS_DIR, sweep_caches,
 )
 
 def _next_tuesday_2am() -> datetime:
@@ -245,13 +245,31 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_backup_scheduler())
         logging.info("💾 DB Backup Scheduler ACTIVE — backing up every 6 hours")
 
+        # Periodic cache sweep (memory safety for 1500+ users)
+        async def _cache_sweep_loop():
+            while True:
+                await asyncio.sleep(60)
+                try:
+                    sweep_caches()
+                except Exception:
+                    pass
+        asyncio.create_task(_cache_sweep_loop())
+
     asyncio.create_task(_bg_init())
     yield
     # Cleanup on shutdown
     await security_guardian.stop_heartbeat()
     await guardian_agent.stop()
 
-app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None)
+# Use orjson for 2-10x faster JSON serialization if available
+try:
+    import orjson
+    from fastapi.responses import ORJSONResponse
+    _default_response_class = ORJSONResponse
+except ImportError:
+    _default_response_class = JSONResponse
+
+app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None, default_response_class=_default_response_class)
 
 # ── Router modules ─────────────────────────────────────────────
 from routers.auth import router as auth_router
@@ -302,6 +320,11 @@ app.add_middleware(
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
+    _path = request.url.path
+    # Skip heavy header computation on high-frequency API paths
+    if _path in _HOT_PATHS or any(_path.startswith(p) for p in _SSE_PREFIX):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
@@ -327,9 +350,10 @@ async def security_headers_middleware(request: Request, call_next):
 
 # -- LAYER 3: Rate Limiting (per-IP, anti-DDoS) --------
 _rate_buckets: dict[str, collections.deque] = {}
-_RATE_LIMIT = 500         # max requests per window (SSE + polling needs headroom)
+_RATE_LIMIT = 1200        # max requests per IP per window (1500 users + SSE + polling)
 _RATE_WINDOW = 60         # per this many seconds
 _rate_cleanup_ts = 0.0    # last bucket cleanup timestamp
+_MAX_RATE_BUCKETS = 5000  # cap bucket dict to prevent memory leak
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
@@ -345,12 +369,17 @@ async def rate_limit_middleware(request: Request, call_next):
     if len(bucket) >= _RATE_LIMIT:
         return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
     bucket.append(now)
-    # Periodic cleanup of stale buckets (every 5 min)
-    if now - _rate_cleanup_ts > 300:
+    # Periodic cleanup of stale buckets (every 2 min) + cap total size
+    if now - _rate_cleanup_ts > 120:
         _rate_cleanup_ts = now
         stale = [ip for ip, dq in _rate_buckets.items() if not dq or dq[-1] < now - _RATE_WINDOW]
         for ip in stale:
             del _rate_buckets[ip]
+        # Cap total buckets to prevent memory leak from many unique IPs
+        if len(_rate_buckets) > _MAX_RATE_BUCKETS:
+            _sorted = sorted(_rate_buckets, key=lambda k: _rate_buckets[k][-1] if _rate_buckets[k] else 0)
+            for ip in _sorted[:len(_rate_buckets) - _MAX_RATE_BUCKETS]:
+                del _rate_buckets[ip]
     return await call_next(request)
 
 # -- LAYER 4: Request Size Limit (anti-payload bomb) ---
@@ -381,6 +410,7 @@ async def ip_blacklist_middleware(request: Request, call_next):
 _HOT_PATHS = {
     "/dispatch/driver/pending", "/drivers/nearby", "/health",
     "/dispatch/trip/status", "/auth/me", "/auth/account-status",
+    "/drivers/vehicle", "/drivers/earnings",
 }
 _SSE_PREFIX = "/dispatch/driver/pending/stream", "/dispatch/trip/"
 

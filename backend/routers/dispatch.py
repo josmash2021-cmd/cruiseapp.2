@@ -396,6 +396,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
         raise HTTPException(404, "Offer not found")
     offer.status = "accepted"
     _pending_cache.pop(driver_id, None)  # L3: invalidate cache so next poll is fresh
+    _dispatch_status_cache.pop(offer.trip_id, None)  # invalidate status cache on accept
 
     trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id))
     trip = trip_result.scalar_one_or_none()

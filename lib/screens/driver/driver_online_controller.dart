@@ -812,10 +812,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       );
     }
 
-    // Polling fallback (slower since SSE handles instant delivery)
+    // Polling fallback (slower when SSE is active, never fully skipped)
     _poll();
+    int pollTick = 0;
     _pollT = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || _phase != _Phase.searching) return;
+      pollTick++;
+      // When SSE is delivering, poll every 3rd tick (15s) as safety net
+      if (_sseActive && pollTick % 3 != 0) return;
       _poll();
     });
   }

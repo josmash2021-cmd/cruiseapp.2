@@ -98,8 +98,8 @@ void main() async {
       ]);
 
       // Limit in-memory image cache to prevent OOM on long sessions
-      PaintingBinding.instance.imageCache.maximumSizeBytes = 200 * 1024 * 1024; // 200 MB
-      PaintingBinding.instance.imageCache.maximumSize = 1000;
+      PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024; // 50 MB — prevents OOM on low-end devices
+      PaintingBinding.instance.imageCache.maximumSize = 500;
 
       MapboxOptions.setAccessToken(MapboxConfig.accessToken);
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);

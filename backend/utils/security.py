@@ -213,6 +213,7 @@ def _create_login_token(user_id: int) -> str:
 
 _user_cache: dict = {}  # user_id -> (User, timestamp)
 _USER_CACHE_TTL = 30.0  # seconds — refresh from DB every 30s
+_MAX_USER_CACHE = 2000  # cap entries to prevent memory leak
 
 def invalidate_user_cache(user_id: int):
     """Call when user status/role changes (block, delete, role upgrade)."""
@@ -250,6 +251,10 @@ async def _get_current_user(
     if (user.status or "active") in ("deleted", "blocked"):
         raise HTTPException(403, f"Account {user.status}")
     _user_cache[user_id] = (user, now)
+    # Evict oldest entries if cache exceeds cap
+    if len(_user_cache) > _MAX_USER_CACHE:
+        _oldest = min(_user_cache, key=lambda k: _user_cache[k][1])
+        _user_cache.pop(_oldest, None)
     return user
 
 
@@ -315,26 +320,37 @@ def _verify_api_key(
         _security_audit_log("nonce_replay", client_ip, f"nonce={x_nonce[:8]}...")
         raise HTTPException(401, "Replay detected")
 
-    _candidates = set()
-    for fp_val in [x_device_fp, "dispatch", x_device_fp[:16] if len(x_device_fp) > 16 else None, ""]:
-        if fp_val is None:
-            continue
-        if fp_val:
-            msg = f"{x_api_key}:{x_timestamp}:{x_nonce}:{fp_val}"
-        else:
-            msg = f"{x_api_key}:{x_timestamp}:{x_nonce}"
-        _candidates.add(hmac.new(HMAC_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest())
+    _msg_primary = f"{x_api_key}:{x_timestamp}:{x_nonce}:{x_device_fp}"
+    _sig_primary = hmac.new(HMAC_SECRET.encode(), _msg_primary.encode(), hashlib.sha256).hexdigest()
+    if hmac.compare_digest(_sig_primary, x_signature):
+        _security_audit_log("auth_ok", client_ip, f"v={x_client_version}")
+        return
 
-    sig_ok = any(hmac.compare_digest(c, x_signature) for c in _candidates)
-    if not sig_ok:
-        logging.warning("[HMAC-DBG] key=%s ts=%s nonce=%s fp=%s sig=%s candidates=%s",
-                        x_api_key[:8], x_timestamp, x_nonce[:8], x_device_fp[:16],
-                        x_signature[:16], [c[:16] for c in _candidates])
-        _record_violation(client_ip)
-        _security_audit_log("sig_mismatch", client_ip, f"fp={x_device_fp[:8]}")
-        raise HTTPException(401, "Invalid signature")
+    # Fallback: truncated fingerprint (older clients send only 16 chars)
+    if len(x_device_fp) > 16:
+        _msg = f"{x_api_key}:{x_timestamp}:{x_nonce}:{x_device_fp[:16]}"
+        if hmac.compare_digest(hmac.new(HMAC_SECRET.encode(), _msg.encode(), hashlib.sha256).hexdigest(), x_signature):
+            _security_audit_log("auth_ok", client_ip, f"v={x_client_version}")
+            return
 
-    _security_audit_log("auth_ok", client_ip, f"v={x_client_version}")
+    # Fallback: dispatch key
+    _msg_disp = f"{x_api_key}:{x_timestamp}:{x_nonce}:dispatch"
+    if hmac.compare_digest(hmac.new(HMAC_SECRET.encode(), _msg_disp.encode(), hashlib.sha256).hexdigest(), x_signature):
+        _security_audit_log("auth_ok", client_ip, f"v={x_client_version}")
+        return
+
+    # Fallback: no fingerprint
+    _msg_bare = f"{x_api_key}:{x_timestamp}:{x_nonce}"
+    if hmac.compare_digest(hmac.new(HMAC_SECRET.encode(), _msg_bare.encode(), hashlib.sha256).hexdigest(), x_signature):
+        _security_audit_log("auth_ok", client_ip, f"v={x_client_version}")
+        return
+
+    logging.warning("[HMAC-DBG] key=%s ts=%s nonce=%s fp=%s sig=%s",
+                    x_api_key[:8], x_timestamp, x_nonce[:8], x_device_fp[:16],
+                    x_signature[:16])
+    _record_violation(client_ip)
+    _security_audit_log("sig_mismatch", client_ip, f"fp={x_device_fp[:8]}")
+    raise HTTPException(401, "Invalid signature")
 
 
 # dispatch_sessions is shared with main.py — set by main module

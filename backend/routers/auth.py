@@ -18,7 +18,7 @@ from utils.security import (
     _get_current_user, _verify_api_key, _require_dispatch_auth,
     _check_login_throttle, _record_login_failure, _clear_login_failures,
     _security_audit_log, _sanitize_string, _record_violation,
-    _verify_dispatch_key,
+    _verify_dispatch_key, invalidate_user_cache,
     JWT_SECRET, JWT_ALGORITHM, DEV_SKIP_AUTH,
 )
 from utils.helpers import utc_now, _user_dict, _haversine
@@ -67,7 +67,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.deletion_requested_at = None
                 await db.commit()
                 await db.refresh(existing)
-                token = _create_token(existing.id)
+                token = _create_token(existing.id, role=existing.role, status=existing.status or "active")
                 refresh = _create_refresh_token(existing.id)
                 return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
             raise HTTPException(409, "Email already registered")
@@ -85,7 +85,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.deletion_requested_at = None
                 await db.commit()
                 await db.refresh(existing)
-                token = _create_token(existing.id)
+                token = _create_token(existing.id, role=existing.role, status=existing.status or "active")
                 refresh = _create_refresh_token(existing.id)
                 return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
             raise HTTPException(409, "Phone already registered")
@@ -161,7 +161,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logging.error("n8n trigger on register failed: %s", e)
 
-    token = _create_token(user.id)
+    token = _create_token(user.id, role=user.role, status=user.status or "active")
     refresh = _create_refresh_token(user.id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
 
@@ -557,7 +557,7 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
     if not user:
         raise HTTPException(404, "User not found")
 
-    token = _create_token(user.id)
+    token = _create_token(user.id, role=user.role, status=user.status or "active")
     refresh = _create_refresh_token(user.id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
 
@@ -647,7 +647,7 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
         await db.commit()
         await db.refresh(user)
 
-    token = _create_token(user.id)
+    token = _create_token(user.id, role=user.role, status=user.status or "active")
     refresh = _create_refresh_token(user.id)
     return {
         "access_token": token,
@@ -679,7 +679,7 @@ async def refresh_token(request: Request, authorization: str = Header(None), db:
     if st in ("deleted", "blocked", "deactivated"):
         raise HTTPException(403, f"Account {st}")
     device_fp = request.headers.get("x-device-fp", "")
-    new_access = _create_token(user.id, device_fp)
+    new_access = _create_token(user.id, device_fp, role=user.role, status=user.status or "active")
     new_refresh = _create_refresh_token(user.id)
     _security_audit_log("TOKEN_REFRESHED", request.client.host if request.client else "unknown", f"user_id={user.id}")
     return {"access_token": new_access, "refresh_token": new_refresh, "token_type": "bearer"}
@@ -687,17 +687,20 @@ async def refresh_token(request: Request, authorization: str = Header(None), db:
 @router.get("/auth/me", dependencies=[Depends(_verify_api_key)])
 async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # Mark rider as online when they call /auth/me (heartbeat)
-    if user.role != "driver":
-        result = await db.execute(select(User).where(User.id == user.id))
-        db_user = result.scalar_one_or_none()
-        if db_user and not db_user.is_online:
-            db_user.is_online = True
+    if user.role != "driver" and not user.is_online:
+        try:
+            await db.execute(
+                User.__table__.update().where(User.__table__.c.id == user.id).values(is_online=True)
+            )
             await db.commit()
+            user.is_online = True
             if _HAS_FIRESTORE:
                 try:
-                    firestore_sync.sync_client_online(db_user.id, True)
+                    firestore_sync.sync_client_online(user.id, True)
                 except Exception:
                     pass
+        except Exception:
+            pass
     return _user_dict(user)
 
 @router.post("/auth/offline", dependencies=[Depends(_verify_api_key)])
@@ -1443,25 +1446,36 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
     return {"ok": True, "message": f"Driver {user_id} rejected", "status": "rejected", "approval_status": "rejected"}
 
 
+_account_status_cache: dict = {}  # user_id -> (status_str, monotonic_ts)
+_ACCOUNT_STATUS_CACHE_TTL = 15.0  # seconds — Firestore check at most every 15s
+
 @router.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])
 async def account_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Check if account is active, blocked, or deleted (dispatch can change this via Firestore)."""
-    result = await db.execute(select(User).where(User.id == user.id))
-    db_user = result.scalar_one_or_none()
-    if not db_user:
-        raise HTTPException(404, "User not found")
+    import time as _time
+    _now = _time.monotonic()
+    _cached = _account_status_cache.get(user.id)
+    if _cached and (_now - _cached[1]) < _ACCOUNT_STATUS_CACHE_TTL:
+        return {"status": _cached[0]}
+
+    current_status = user.status or "active"
     # Sync status from Firestore (dispatch may have blocked/deleted)
     if _HAS_FIRESTORE:
         try:
-            collection = "drivers" if db_user.role == "driver" else "clients"
-            fs_status = firestore_sync.get_account_status(db_user.id, collection)
-            if fs_status and fs_status != (db_user.status or "active"):
-                db_user.status = fs_status
+            collection = "drivers" if user.role == "driver" else "clients"
+            fs_status = firestore_sync.get_account_status(user.id, collection)
+            if fs_status and fs_status != current_status:
+                await db.execute(
+                    User.__table__.update().where(User.__table__.c.id == user.id).values(status=fs_status)
+                )
                 await db.commit()
-                await db.refresh(db_user)
+                current_status = fs_status
+                invalidate_user_cache(user.id)
         except Exception as e:
             logging.error("Firestore account status check failed: %s", e)
-    return {"status": db_user.status or "active"}
+
+    _account_status_cache[user.id] = (current_status, _now)
+    return {"status": current_status}
 
 # ═══════════════════════════════════════════════════════
 #  REFERRAL ENDPOINTS

@@ -331,18 +331,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _checkDriversOnline();
     _listenServiceZones();
     _driverCheckTimer = Timer.periodic(
-      const Duration(seconds: 30),
+      const Duration(seconds: 120),
       (_) => _checkDriversOnline(),
     );
-    // Imminent ride timer — refreshes every 15 seconds
+    // Imminent ride timer — refreshes every 60 seconds
     _imminentRideTimer = Timer.periodic(
-      const Duration(seconds: 15),
+      const Duration(seconds: 60),
       (_) => _updateImminentRide(),
     );
     // Start account status polling immediately
     _checkAccountStatus();
     _accountStatusTimer = Timer.periodic(
-      const Duration(seconds: 30),
+      const Duration(seconds: 300),
       (_) => _checkAccountStatus(),
     );
     UserSession.photoNotifier.addListener(_onPhotoChanged);
@@ -379,17 +379,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     } else if (state == AppLifecycleState.resumed) {
       _checkDriversOnline();
       _driverCheckTimer = Timer.periodic(
-        const Duration(seconds: 30),
+        const Duration(seconds: 120),
         (_) => _checkDriversOnline(),
       );
       _checkAccountStatus();
       _accountStatusTimer = Timer.periodic(
-        const Duration(seconds: 30),
+        const Duration(seconds: 300),
         (_) => _checkAccountStatus(),
       );
       _updateImminentRide();
       _imminentRideTimer = Timer.periodic(
-        const Duration(seconds: 15),
+        const Duration(seconds: 60),
         (_) => _updateImminentRide(),
       );
     }

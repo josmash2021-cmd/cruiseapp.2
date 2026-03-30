@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, text
+from sqlalchemy import select, func, and_, text, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, Vehicle, Document, Rating,
@@ -38,6 +38,7 @@ async def admin_list_users(
         query = query.where(User.role == role)
     if status:
         query = query.where(User.status == status)
+    limit = min(limit, 500)  # Cap max results
     query = query.order_by(User.id.desc()).offset(offset).limit(limit)
     result = await db.execute(query)
     users = result.scalars().all()
@@ -71,28 +72,37 @@ async def admin_list_trips(
     db: AsyncSession = Depends(get_db),
 ):
     """List all trips with optional status filter. For dispatch admin panel."""
+    limit = min(limit, 500)  # Cap max results
     query = select(Trip)
     if status:
         query = query.where(Trip.status == status)
     query = query.order_by(Trip.id.desc()).offset(offset).limit(limit)
     result = await db.execute(query)
     trips = result.scalars().all()
+
+    # Batch-load rider and driver names in 2 queries instead of N+1
+    rider_ids = {t.rider_id for t in trips if t.rider_id}
+    driver_ids = {t.driver_id for t in trips if t.driver_id}
+    all_user_ids = rider_ids | driver_ids
+
+    users_map = {}
+    if all_user_ids:
+        users_r = await db.execute(
+            select(User.id, User.first_name, User.last_name, User.phone)
+            .where(User.id.in_(all_user_ids))
+        )
+        for uid, fn, ln, phone in users_r.all():
+            users_map[uid] = (f"{fn} {ln}", phone or "")
+
     out = []
     for t in trips:
         td = _trip_dict(t)
-        # Attach rider/driver names
-        if t.rider_id:
-            r = await db.execute(select(User).where(User.id == t.rider_id))
-            rider = r.scalar_one_or_none()
-            if rider:
-                td["rider_name"] = f"{rider.first_name} {rider.last_name}"
-                td["rider_phone"] = rider.phone or ""
-        if t.driver_id:
-            d = await db.execute(select(User).where(User.id == t.driver_id))
-            driver = d.scalar_one_or_none()
-            if driver:
-                td["driver_name"] = f"{driver.first_name} {driver.last_name}"
-                td["driver_phone"] = driver.phone or ""
+        if t.rider_id and t.rider_id in users_map:
+            td["rider_name"] = users_map[t.rider_id][0]
+            td["rider_phone"] = users_map[t.rider_id][1]
+        if t.driver_id and t.driver_id in users_map:
+            td["driver_name"] = users_map[t.driver_id][0]
+            td["driver_phone"] = users_map[t.driver_id][1]
         out.append(td)
     return out
 
@@ -175,73 +185,68 @@ async def admin_delete_trip(trip_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.get("/admin/stats", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_dashboard_stats(db: AsyncSession = Depends(get_db)):
-    """Dashboard statistics for the dispatch panel."""
+    """Dashboard statistics for the dispatch panel. Uses SQL aggregates for speed."""
     now = datetime.utcnow()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    # Today
-    today_q = await db.execute(select(Trip).where(Trip.created_at >= today_start))
-    today_trips = today_q.scalars().all()
-    today_completed = [t for t in today_trips if t.status == "completed"]
-    today_cancelled = [t for t in today_trips if t.status in ("canceled", "cancelled")]
+    # ── All trip stats in ONE query using conditional aggregates ──
+    trip_stats_q = await db.execute(
+        select(
+            # Today
+            func.sum(case((Trip.created_at >= today_start, 1), else_=0)).label("today_trips"),
+            func.sum(case((and_(Trip.created_at >= today_start, Trip.status == "completed"), 1), else_=0)).label("today_completed"),
+            func.sum(case((and_(Trip.created_at >= today_start, Trip.status.in_(["canceled", "cancelled"])), 1), else_=0)).label("today_cancelled"),
+            func.coalesce(func.sum(case((and_(Trip.created_at >= today_start, Trip.status == "completed"), Trip.fare), else_=0)), 0).label("today_revenue"),
+            # Week
+            func.sum(case((Trip.created_at >= week_start, 1), else_=0)).label("week_trips"),
+            func.coalesce(func.sum(case((and_(Trip.created_at >= week_start, Trip.status == "completed"), Trip.fare), else_=0)), 0).label("week_revenue"),
+            # Month
+            func.sum(case((Trip.created_at >= month_start, 1), else_=0)).label("month_trips"),
+            func.coalesce(func.sum(case((and_(Trip.created_at >= month_start, Trip.status == "completed"), Trip.fare), else_=0)), 0).label("month_revenue"),
+            # Active
+            func.sum(case((Trip.status.in_(["requested", "driver_en_route", "arrived", "in_trip"]), 1), else_=0)).label("active_trips"),
+            # Total
+            func.count().label("total_trips"),
+        )
+    )
+    ts = trip_stats_q.one()
 
-    # Week
-    week_q = await db.execute(select(Trip).where(Trip.created_at >= week_start))
-    week_trips = week_q.scalars().all()
-    week_completed = [t for t in week_trips if t.status == "completed"]
+    # ── User counts in ONE query ──
+    user_stats_q = await db.execute(
+        select(
+            func.count().label("total_users"),
+            func.sum(case((User.role == "rider", 1), else_=0)).label("total_riders"),
+            func.sum(case((User.role == "driver", 1), else_=0)).label("total_drivers"),
+            func.sum(case((and_(User.role == "driver", User.is_online == True), 1), else_=0)).label("online_drivers"),
+            func.sum(case((User.verification_status == "pending", 1), else_=0)).label("pending_verifications"),
+        )
+    )
+    us = user_stats_q.one()
 
-    # Month
-    month_q = await db.execute(select(Trip).where(Trip.created_at >= month_start))
-    month_trips = month_q.scalars().all()
-    month_completed = [t for t in month_trips if t.status == "completed"]
-
-    # Active
-    active_q = await db.execute(select(Trip).where(Trip.status.in_(["requested", "driver_en_route", "arrived", "in_trip"])))
-    active_count = len(active_q.scalars().all())
-
-    # Online drivers
-    online_q = await db.execute(select(User).where(User.role == "driver", User.is_online == True))
-    online_drivers = len(online_q.scalars().all())
-
-    # Total drivers
-    total_drivers_q = await db.execute(select(User).where(User.role == "driver"))
-    total_drivers = len(total_drivers_q.scalars().all())
-
-    # Total users and riders
-    total_users_q = await db.execute(select(User))
-    total_users = len(total_users_q.scalars().all())
-    total_riders_q = await db.execute(select(User).where(User.role == "rider"))
-    total_riders = len(total_riders_q.scalars().all())
     # Open chats
-    open_chats_q = await db.execute(select(SupportChat).where(SupportChat.status == "open"))
-    open_chats = len(open_chats_q.scalars().all())
-    # Pending verifications
-    pending_verif_q = await db.execute(select(User).where(User.verification_status == "pending"))
-    pending_verifications = len(pending_verif_q.scalars().all())
-    # Total trips
-    all_trips_q = await db.execute(select(Trip))
-    total_trips = len(all_trips_q.scalars().all())
+    open_chats_q = await db.execute(select(func.count()).select_from(SupportChat).where(SupportChat.status == "open"))
+    open_chats = open_chats_q.scalar() or 0
 
     return {
-        "total_users": total_users,
-        "total_drivers": total_drivers,
-        "total_riders": total_riders,
+        "total_users": us.total_users or 0,
+        "total_drivers": us.total_drivers or 0,
+        "total_riders": us.total_riders or 0,
         "open_chats": open_chats,
-        "pending_verifications": pending_verifications,
-        "total_trips": total_trips,
-        "today_trips": len(today_trips),
-        "today_revenue": sum(t.fare or 0 for t in today_completed),
-        "today_completed": len(today_completed),
-        "today_cancelled": len(today_cancelled),
-        "week_trips": len(week_trips),
-        "week_revenue": sum(t.fare or 0 for t in week_completed),
-        "month_trips": len(month_trips),
-        "month_revenue": sum(t.fare or 0 for t in month_completed),
-        "active_trips": active_count,
-        "online_drivers": online_drivers,
-        "completion_rate": round(len(today_completed) / max(len(today_trips), 1) * 100, 1),
+        "pending_verifications": us.pending_verifications or 0,
+        "total_trips": ts.total_trips or 0,
+        "today_trips": ts.today_trips or 0,
+        "today_revenue": float(ts.today_revenue or 0),
+        "today_completed": ts.today_completed or 0,
+        "today_cancelled": ts.today_cancelled or 0,
+        "week_trips": ts.week_trips or 0,
+        "week_revenue": float(ts.week_revenue or 0),
+        "month_trips": ts.month_trips or 0,
+        "month_revenue": float(ts.month_revenue or 0),
+        "active_trips": ts.active_trips or 0,
+        "online_drivers": us.online_drivers or 0,
+        "completion_rate": round((ts.today_completed or 0) / max(ts.today_trips or 0, 1) * 100, 1),
     }
 
 @router.post("/admin/dispatch", dependencies=[Depends(_require_dispatch_auth)])
@@ -256,9 +261,17 @@ async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_d
     if not trip:
         raise HTTPException(404, "Trip not found")
 
-    # Find nearest online driver
+    # Find nearest online driver — bounding box pre-filter in SQL
+    _search_radius = 30  # km
+    _lat_delta = _search_radius / 111.0
+    _lng_delta = _search_radius / (111.0 * max(math.cos(math.radians(trip.pickup_lat)), 0.01))
     drivers_q = await db.execute(
-        select(User).where(User.role == "driver", User.is_online == True, User.status == "active")
+        select(User).where(
+            User.role == "driver", User.is_online == True, User.status == "active",
+            User.lat.isnot(None), User.lng.isnot(None),
+            User.lat >= trip.pickup_lat - _lat_delta, User.lat <= trip.pickup_lat + _lat_delta,
+            User.lng >= trip.pickup_lng - _lng_delta, User.lng <= trip.pickup_lng + _lng_delta,
+        )
     )
     drivers = drivers_q.scalars().all()
     if not drivers:

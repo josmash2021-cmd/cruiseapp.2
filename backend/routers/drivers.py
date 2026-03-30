@@ -121,9 +121,18 @@ async def get_nearby_drivers(
     if _cached and (_now - _cached[0]) < _NEARBY_CACHE_TTL:
         return _cached[1]
 
+    # Bounding box pre-filter in SQL (~0.009° per km at equator)
+    _lat_delta = radius_km / 111.0
+    _lng_delta = radius_km / (111.0 * max(math.cos(math.radians(lat)), 0.01))
+
     result = await db.execute(
         select(User.id, User.lat, User.lng, User.first_name, User.last_name)
-        .where(and_(User.role == "driver", User.is_online == True, User.lat.isnot(None), User.lng.isnot(None)))
+        .where(and_(
+            User.role == "driver", User.is_online == True,
+            User.lat.isnot(None), User.lng.isnot(None),
+            User.lat >= lat - _lat_delta, User.lat <= lat + _lat_delta,
+            User.lng >= lng - _lng_delta, User.lng <= lng + _lng_delta,
+        ))
     )
     nearby = []
     for d_id, d_lat, d_lng, d_first, d_last in result.all():
@@ -143,7 +152,7 @@ async def get_rider_trips(rider_id: int, user: User = Depends(_get_current_user)
     # Ownership check: riders can only see their own trips
     if user.id != rider_id and user.role != "admin":
         raise HTTPException(403, "Not authorized to view these trips")
-    result = await db.execute(select(Trip).where(Trip.rider_id == rider_id).order_by(Trip.created_at.desc()))
+    result = await db.execute(select(Trip).where(Trip.rider_id == rider_id).order_by(Trip.created_at.desc()).limit(100))
     return [_trip_dict(t) for t in result.scalars().all()]
 
 @router.get("/drivers/{driver_id}/trips", dependencies=[Depends(_verify_api_key)])
@@ -151,7 +160,7 @@ async def get_driver_trips(driver_id: int, user: User = Depends(_get_current_use
     # Ownership check: drivers can only see their own trips
     if user.id != driver_id and user.role != "admin":
         raise HTTPException(403, "Not authorized to view these trips")
-    result = await db.execute(select(Trip).where(Trip.driver_id == driver_id).order_by(Trip.created_at.desc()))
+    result = await db.execute(select(Trip).where(Trip.driver_id == driver_id).order_by(Trip.created_at.desc()).limit(100))
     return [_driver_visible_trip_dict(t) for t in result.scalars().all()]
 
 # ═══════════════════════════════════════════════════════
@@ -613,43 +622,42 @@ async def refund_to_wallet(trip_id: int, amount: float, reason: str = "Ride refu
 
 @router.get("/drivers/{driver_id}/stats", dependencies=[Depends(_verify_api_key)])
 async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Compute real acceptance rate, on-time rate, etc. from dispatch_offers and trips."""
-    # Count offers
-    total_offers_r = await db.execute(
-        select(func.count(DispatchOffer.id)).where(DispatchOffer.driver_id == driver_id)
+    """Compute real acceptance rate, on-time rate, etc. — 2 queries instead of 5."""
+    from sqlalchemy import case as sql_case, literal_column
+
+    # Single query: all offer counts via CASE
+    offer_r = await db.execute(
+        select(
+            func.count(DispatchOffer.id).label("total"),
+            func.sum(sql_case((DispatchOffer.status == "accepted", 1), else_=0)).label("accepted"),
+            func.sum(sql_case((DispatchOffer.status == "rejected", 1), else_=0)).label("rejected"),
+        ).where(DispatchOffer.driver_id == driver_id)
     )
-    total_offers = total_offers_r.scalar() or 0
+    offer_row = offer_r.one()
+    total_offers = offer_row.total or 0
+    accepted = int(offer_row.accepted or 0)
+    rejected = int(offer_row.rejected or 0)
 
-    accepted_r = await db.execute(
-        select(func.count(DispatchOffer.id)).where(
-            and_(DispatchOffer.driver_id == driver_id, DispatchOffer.status == "accepted")
-        )
+    # Single query: trip counts + avg rating via subquery
+    trip_r = await db.execute(
+        select(
+            func.count(Trip.id).label("total"),
+            func.sum(sql_case((Trip.status == "completed", 1), else_=0)).label("completed"),
+            func.sum(sql_case((Trip.status == "canceled", 1), else_=0)).label("canceled"),
+        ).where(Trip.driver_id == driver_id)
     )
-    accepted = accepted_r.scalar() or 0
+    trip_row = trip_r.one()
+    total_trips = trip_row.total or 0
+    completed = int(trip_row.completed or 0)
+    canceled = int(trip_row.canceled or 0)
 
-    rejected_r = await db.execute(
-        select(func.count(DispatchOffer.id)).where(
-            and_(DispatchOffer.driver_id == driver_id, DispatchOffer.status == "rejected")
-        )
-    )
-    rejected = rejected_r.scalar() or 0
-
-    # Trips
-    trips_r = await db.execute(select(Trip).where(Trip.driver_id == driver_id))
-    trips = trips_r.scalars().all()
-    completed = sum(1 for t in trips if t.status == "completed")
-    canceled = sum(1 for t in trips if t.status == "canceled")
-    total_trips = len(trips)
-
-    # Average rating
+    # Average rating (lightweight index scan)
     ratings_r = await db.execute(
         select(func.avg(Rating.stars)).where(Rating.to_user_id == driver_id)
     )
     avg_rating = ratings_r.scalar()
 
     acceptance_rate = (accepted / total_offers * 100) if total_offers > 0 else 100.0
-    # On-time rate: trips completed without being canceled after driver_en_route
-    late_canceled = sum(1 for t in trips if t.status == "canceled" and t.cancel_reason)
     on_time_rate = round(((completed / total_trips) * 100), 1) if total_trips > 0 else 100.0
 
     return {

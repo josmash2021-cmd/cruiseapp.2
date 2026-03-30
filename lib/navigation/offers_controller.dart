@@ -30,8 +30,8 @@ class OffersController {
     _startSSE(); // try SSE for sub-second delivery
     // Reduced polling to 8s — SSE handles real-time, polling is safety net
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-      if (!_sseActive) _poll();
+    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!_sseActive) _poll(); // Only poll when SSE is down
     });
   }
 

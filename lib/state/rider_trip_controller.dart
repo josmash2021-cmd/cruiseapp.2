@@ -696,8 +696,12 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       },
     );
 
-    // ── Polling fallback (slower interval since SSE handles instant updates) ──
+    // ── Polling fallback (slower when SSE is active, never fully skipped) ──
+    int pollTick = 0;
     Future<void> checkStatus(Timer? timer) async {
+      pollTick++;
+      // When SSE is delivering, poll every 3rd tick (~9s) as safety net
+      if (_sseConnected && pollTick % 3 != 0) return;
       try {
         final status = await ApiService.getDispatchStatus(tripId);
         final tripStatus = status['status']?.toString() ?? '';

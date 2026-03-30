@@ -245,7 +245,7 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 1,
+            distanceFilter: 3, // 3m — SmoothMotion interpolates between updates
           ),
         ).listen((pos) {
           if (!mounted) return;
@@ -373,9 +373,9 @@ class _DriverNavigationPageState extends State<DriverNavigationPage>
           .then((_) { if (mounted) _routeSyncInFlight = false; });
     }
 
-    // Throttle UI rebuild to ~4 Hz (every 250 ms) — speed, ETA, instructions.
+    // Throttle UI rebuild to ~2 Hz (every 500 ms) — speed, ETA, instructions.
     if (_lastUIUpdate == null ||
-        now.difference(_lastUIUpdate!).inMilliseconds > 250) {
+        now.difference(_lastUIUpdate!).inMilliseconds > 500) {
       _lastUIUpdate = now;
       setState(() {});
     }

@@ -148,6 +148,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   bool   _completing       = false;
   double _slideVal         = 0;
   bool   _slid             = false;
+  bool   _waitingForStart  = false;
 
   // ── Dropoff finalize & completion ─────────────────────────────────────────
   bool   _showFinalizeButton   = false;
@@ -372,16 +373,16 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     // Auto-proximity check for phase transitions
     _sm.checkProximity(raw);
 
-    // Show "Arrived at Pickup" button when within 50 m
-    if (_phase == TripPhase.toPickup && !_nearPickup) {
-      if (_hav(raw, widget.pickupLatLng) < 0.05 && mounted) {
+    // Show slide "Arrived" when ≤ 1 min ETA or within ~100 m of pickup
+    if (_phase == TripPhase.toPickup && !_nearPickup && !_waitingForStart) {
+      if ((_etaMinutes <= 1 || _hav(raw, widget.pickupLatLng) < 0.10) && mounted) {
         setState(() => _nearPickup = true);
       }
     }
 
-    // Show "Finalizar Viaje" button within 80 m of dropoff at low speed
+    // Show slide "Finish Trip" when ≤ 1 min ETA or within ~100 m of dropoff
     if (_phase == TripPhase.onTrip && !_showFinalizeButton) {
-      if (_hav(raw, widget.dropoffLatLng) < 0.08 && p.speed < 1.5) {
+      if ((_etaMinutes <= 1 || _hav(raw, widget.dropoffLatLng) < 0.10) && mounted) {
         setState(() => _showFinalizeButton = true);
       }
     }
@@ -614,10 +615,15 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   /// Full cinematic entry: plays once per trip on first screen entry.
+  /// Shows top-down overview and waits for driver to tap "Start Trip".
   Future<void> _startCinematicEntry() async {
     if (_routePts.length < 2 || _cinematicDone) return;
     _cinematicDone = true;
-    await _runCinematicSequence();
+    // Phase 1: Show overview with route visible, wait for "Start Trip" tap
+    if (mounted) setState(() { _cameraFollowing = false; _isOverview = true; });
+    await _zoomToShowRoute();
+    if (!mounted) return;
+    setState(() => _waitingForStart = true);
   }
 
   /// Jump directly to locked nav position (no animation). Used on re-entry.
@@ -636,66 +642,38 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     });
   }
 
-  /// Cinematic camera sequence: overview → tilt 55° → pause 2s → rotate 15° + zoom → final nav.
-  Future<void> _runCinematicSequence() async {
-    // Disable camera follow FIRST so _onMotionTick's setCamera doesn't
-    // cancel the flyTo animations every 33 ms.
-    if (mounted) setState(() { _cameraFollowing = false; _isOverview = true; });
+  /// Called when driver taps "Start Trip" on the overview. Animates from
+  /// top-down to 45° nav view with route fade + redraw.
+  Future<void> _beginNavigation() async {
+    HapticFeedback.mediumImpact();
+    setState(() => _waitingForStart = false);
 
-    // ── Phase 1: Centered overview (instant via setCamera) ──
-    await _zoomToShowRoute();
+    // Fade out current route
+    await _fadeOutRoute();
     if (!mounted) return;
 
-    // ── Phase 2: Tilt down to 55° (1.5s) ──
-    // Compute initial bearing toward destination
+    // Animate camera to 45° nav view
     final dest = _phase == TripPhase.onTrip
         ? widget.dropoffLatLng
         : widget.pickupLatLng;
     final routeBearing = _bearingBetween(_pos, dest);
-    _map?.flyTo(
-      mapbox.CameraOptions(
-        center: mapbox.Point(
-            coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
-        zoom: 15.0,
-        bearing: routeBearing,
-        pitch: 55,
-      ),
-      mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
-    );
-    await Future.delayed(const Duration(milliseconds: 1600));
-    if (!mounted) return;
-
-    // ── Phase 3: Pause 2 seconds ──
-    await Future.delayed(const Duration(milliseconds: 2000));
-    if (!mounted) return;
-
-    // ── Phase 4: Rotate +15° and zoom in (1.5s) ──
-    _map?.flyTo(
-      mapbox.CameraOptions(
-        center: mapbox.Point(
-            coordinates: mapbox.Position(_pos.longitude, _pos.latitude)),
-        zoom: 16.5,
-        bearing: routeBearing + 15,
-        pitch: 55,
-      ),
-      mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
-    );
-    await Future.delayed(const Duration(milliseconds: 1600));
-    if (!mounted) return;
-
-    // ── Phase 5: Final zoom to nav position with lookahead (1s) ──
-    final ahead = _lookaheadPoint(_pos, _bearing, 120);
+    final ahead = _lookaheadPoint(_pos, routeBearing, 120);
     _map?.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
             coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
         zoom: _navZoom,
-        bearing: _bearing,
+        bearing: routeBearing,
         pitch: _navTilt,
       ),
-      mapbox.MapAnimationOptions(duration: 1000, startDelay: 0),
+      mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
     );
-    await Future.delayed(const Duration(milliseconds: 1100));
+    await Future.delayed(const Duration(milliseconds: 1600));
+    if (!mounted) return;
+
+    // Redraw route with progressive animation
+    _animatedRoute = [];
+    await _drawRouteAnimated();
     if (!mounted) return;
 
     // Enable locked navigation camera
@@ -1371,15 +1349,46 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         _etaMinutes      = route.totalDurationMinutes;
       });
       _navService.startNavigation(route);
+
+      // ── Phase 3: Overview of pickup→dropoff before animating to nav ──
+      _updateDestPin(widget.dropoffLatLng);
       await _deleteRouteAnnotations();
+      await _updateRouteAnnotation(); // static route for overview
+
+      // Show top-down overview of pickup→dropoff
+      setState(() { _cameraFollowing = false; _isOverview = true; });
+      _animateCameraOverview(_pos, widget.dropoffLatLng);
+      await Future.delayed(const Duration(milliseconds: 2000));
+      if (!mounted) return;
+
+      // Fade route + animate camera to 45° nav view
+      await _fadeOutRoute();
+      if (!mounted) return;
+
+      final routeBearing = _bearingBetween(_pos, widget.dropoffLatLng);
+      final ahead = _lookaheadPoint(_pos, routeBearing, 120);
+      _map?.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+              coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
+          zoom: _navZoom,
+          bearing: routeBearing,
+          pitch: _navTilt,
+        ),
+        mapbox.MapAnimationOptions(duration: 1500, startDelay: 0),
+      );
+      await Future.delayed(const Duration(milliseconds: 1600));
+      if (!mounted) return;
+
+      // Redraw route with progressive animation
       _animatedRoute = [];
       await _drawRouteAnimated();
     } else {
+      _updateDestPin(widget.dropoffLatLng);
       await _updateRouteAnnotation();
     }
 
-    // Pin + status updates that _onPhaseChanged skipped
-    _updateDestPin(widget.dropoffLatLng);
+    // Pin + status updates
     _updateTripStatus('rider_onboard',
         extra: {'tripStartedAt': FieldValue.serverTimestamp()});
     _showToast('Trip started — navigate to dropoff');
@@ -1776,7 +1785,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             ),
 
             // ── RESUME BUTTON (shown when user pans away) ─────────────
-            if (!_cameraFollowing && !_isOverview)
+            if (!_cameraFollowing && !_isOverview && !_waitingForStart)
               Positioned(
                 bottom: bottomBarH + 8,
                 left: 0,
@@ -1784,9 +1793,34 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 child: Center(child: _buildResumeButton()),
               ),
 
+            // ── START TRIP (overview state — Phase 1 entry) ──────────────
+            if (_waitingForStart)
+              Positioned(
+                bottom: bottomBarH + 16,
+                left: 24,
+                right: 24,
+                child: _buildStartTripOverlayButton(),
+              ),
+
+            // ── SLIDE ARRIVED (near pickup — Phase 1 end) ────────────────
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOutCubic,
+              bottom: (_nearPickup && _phase == TripPhase.toPickup && !_waitingForStart)
+                  ? bottomBarH + 8
+                  : -100,
+              left: 24,
+              right: 24,
+              child: _buildSlideAction(
+                label: 'Arrived',
+                color: const Color(0xFF2E7D32),
+                onComplete: _arrivedAndGoBack,
+              ),
+            ),
+
             // ── PHASE OVERLAY (finalize / complete) ──────────────────
 
-            // ── FINALIZAR VIAJE — slides up when near dropoff at low speed ──
+            // ── SLIDE FINISH TRIP — slides up when near dropoff ──
             AnimatedPositioned(
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeOutCubic,
@@ -2277,42 +2311,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                   child: _riderAvatar(size: Responsive.w(36)),
                 ),
               ),
-              // Centered ETA / distance / arrival / Arrived button
+              // Centered ETA / distance / arrival
               Expanded(
                 child: Center(
-                  child: (_nearPickup && _phase == TripPhase.toPickup && _currentSpeedMph < 5)
-                      ? GestureDetector(
-                          onTap: _arrivedAndGoBack,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF2E7D32),
-                              borderRadius: BorderRadius.circular(28),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF2E7D32).withValues(alpha: 0.5),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.location_on_rounded,
-                                    color: Colors.white, size: 18),
-                                const SizedBox(width: 7),
-                                Text('Arrived',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: Responsive.sp(16),
-                                    fontWeight: FontWeight.w800,
-                                  )),
-                              ],
-                            ),
-                          ),
-                        )
-                      : eta <= 2
+                  child: eta <= 2
                           ? Text(
                               'Arriving soon',
                               maxLines: 1,
@@ -2703,38 +2705,173 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   }
 
   // =========================================================================
-  //  FINALIZAR VIAJE BUTTON
+  //  START TRIP OVERLAY BUTTON (shown during overview before nav starts)
   // =========================================================================
 
-  Widget _buildFinalizeButton() {
+  Widget _buildStartTripOverlayButton() {
     return SizedBox(
       width: double.infinity,
       height: 58,
       child: ElevatedButton(
-        onPressed: _completing ? null : _completeTrip,
+        onPressed: _beginNavigation,
         style: ElevatedButton.styleFrom(
           backgroundColor: _gold,
-          disabledBackgroundColor: _gold.withValues(alpha: 0.5),
           foregroundColor: Colors.black,
-          elevation: 0,
+          elevation: 8,
+          shadowColor: _gold.withValues(alpha: 0.5),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+            borderRadius: BorderRadius.circular(16)),
         ),
-        child: _completing
-            ? const SizedBox(
-                width: 24, height: 24,
-                child: CircularProgressIndicator(
-                  color: Colors.black, strokeWidth: 2.5))
-            : const Text(
-                'Finalizar Viaje',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.navigation_rounded, color: Colors.black, size: 22),
+            SizedBox(width: 10),
+            Text('Start Trip',
+              style: TextStyle(
+                color: Colors.black,
+                fontSize: 18,
+                fontWeight: FontWeight.w800)),
+          ],
+        ),
       ),
+    );
+  }
+
+  // =========================================================================
+  //  SLIDE ACTION WIDGET (reusable slide-to-confirm)
+  // =========================================================================
+
+  Widget _buildSlideAction({
+    required String label,
+    required Color color,
+    required VoidCallback onComplete,
+  }) {
+    const height = 62.0;
+    const thumbW = 62.0;
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF111318),
+        borderRadius: BorderRadius.circular(height / 2),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          final trackW = constraints.maxWidth;
+          final maxDrag = trackW - thumbW - 4;
+          return SizedBox(
+            height: height,
+            child: Stack(
+              children: [
+                // Fill
+                Positioned(
+                  left: 0, top: 0, bottom: 0,
+                  width: (_slideVal * maxDrag + thumbW).clamp(thumbW.toDouble(), trackW),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          color.withValues(alpha: 0.45),
+                          color.withValues(alpha: 0.10),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(height / 2),
+                    ),
+                  ),
+                ),
+                // Label
+                Center(
+                  child: AnimatedOpacity(
+                    opacity: 1.0 - _slideVal,
+                    duration: const Duration(milliseconds: 100),
+                    child: Text('$label  →',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.70),
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                // Thumb
+                Positioned(
+                  left: 2 + _slideVal * maxDrag,
+                  top: 3, bottom: 3,
+                  child: GestureDetector(
+                    onHorizontalDragUpdate: (d) {
+                      if (_slid) return;
+                      setState(() {
+                        _slideVal = (_slideVal + d.delta.dx / maxDrag)
+                            .clamp(0.0, 1.0);
+                      });
+                      if (_slideVal >= 0.88) {
+                        setState(() => _slid = true);
+                        HapticFeedback.heavyImpact();
+                        onComplete();
+                      }
+                    },
+                    onHorizontalDragEnd: (_) {
+                      if (!_slid) {
+                        setState(() => _slideVal = 0);
+                      }
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 80),
+                      width: thumbW - 4,
+                      decoration: BoxDecoration(
+                        color: _slid ? color.withValues(alpha: 0.8) : color,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.5),
+                            blurRadius: 12,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        _slid ? Icons.check_rounded : Icons.chevron_right_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // =========================================================================
+  //  FINALIZAR VIAJE BUTTON (slide-to-confirm)
+  // =========================================================================
+
+  Widget _buildFinalizeButton() {
+    if (_completing) {
+      return Container(
+        height: 62,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: _gold.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(31),
+        ),
+        child: const SizedBox(
+          width: 24, height: 24,
+          child: CircularProgressIndicator(
+            color: Colors.white, strokeWidth: 2.5)),
+      );
+    }
+    return _buildSlideAction(
+      label: 'Finish Trip',
+      color: _gold,
+      onComplete: _completeTrip,
     );
   }
 

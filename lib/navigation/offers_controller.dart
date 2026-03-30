@@ -8,8 +8,8 @@ import '../models/ride_offer.dart';
 import '../services/api_service.dart';
 import '../services/analytics_service.dart';
 
-/// Controller that polls the backend for pending ride offers and exposes
-/// them via a [ValueNotifier] so the UI rebuilds automatically.
+/// Controller that uses SSE (Server-Sent Events) for instant offer delivery
+/// with automatic fallback to HTTP polling if SSE is unavailable.
 class OffersController {
   /// Current driver position — set before calling [start].
   LatLng driverLatLng = const LatLng(0, 0);
@@ -20,13 +20,70 @@ class OffersController {
   Timer? _pollTimer;
   int? _driverId;
   final Set<String> _acceptingOffers = {}; // Fix H6: anti-double-accept guard
+  StreamSubscription? _sseSub;
+  bool _sseActive = false;
 
-  /// Start polling for offers.
+  /// Start SSE stream + polling fallback for offers.
   void start({int? driverId}) {
     _driverId = driverId;
     _poll(); // immediate first fetch
+    _startSSE(); // try SSE for sub-second delivery
+    // Reduced polling to 8s — SSE handles real-time, polling is safety net
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) => _poll());
+    _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (!_sseActive) _poll();
+    });
+  }
+
+  void _startSSE() async {
+    final id = _driverId ?? await _resolveDriverId();
+    if (id == null) return;
+
+    _sseSub?.cancel();
+    _sseSub = ApiService.streamDriverOffers(id).listen(
+      (offers) {
+        _sseActive = true;
+        _applyOffers(offers);
+      },
+      onError: (e) {
+        debugPrint('[SSE] Stream error: $e — falling back to polling');
+        _sseActive = false;
+      },
+      onDone: () {
+        _sseActive = false;
+        debugPrint('[SSE] Stream closed — reconnecting in 3s');
+        // Auto-reconnect SSE after brief delay
+        Future.delayed(const Duration(seconds: 3), () {
+          if (_pollTimer != null) _startSSE();
+        });
+      },
+    );
+  }
+
+  void _applyOffers(List<Map<String, dynamic>> raw) {
+    final offers = raw.map((json) {
+      final offer = RideOffer.fromJson(json);
+      if (offer.distanceToPickupKm <= 0) {
+        final km = _haversineKm(driverLatLng, offer.pickupLatLng);
+        return RideOffer(
+          offerId: offer.offerId,
+          riderName: offer.riderName,
+          pickupAddress: offer.pickupAddress,
+          dropoffAddress: offer.dropoffAddress,
+          pickupLatLng: offer.pickupLatLng,
+          dropoffLatLng: offer.dropoffLatLng,
+          fareUsd: offer.fareUsd,
+          distanceToPickupKm: km,
+          estimatedMinutes:
+              offer.estimatedMinutes > 0 ? offer.estimatedMinutes : (km / 0.5).ceil().clamp(1, 99),
+          vehicleType: offer.vehicleType,
+          riderPhotoUrl: offer.riderPhotoUrl,
+          riderRating: offer.riderRating,
+        );
+      }
+      return offer;
+    }).toList();
+    offersNotifier.value = offers;
   }
 
   Future<void> _poll() async {
@@ -37,31 +94,7 @@ class OffersController {
       if (id == null) return;
 
       final raw = await ApiService.getDriverPendingOffers(id);
-      final offers = raw.map((json) {
-        final offer = RideOffer.fromJson(json);
-        // Compute distance to pickup if not provided by server
-        if (offer.distanceToPickupKm <= 0) {
-          final km = _haversineKm(driverLatLng, offer.pickupLatLng);
-          return RideOffer(
-            offerId: offer.offerId,
-            riderName: offer.riderName,
-            pickupAddress: offer.pickupAddress,
-            dropoffAddress: offer.dropoffAddress,
-            pickupLatLng: offer.pickupLatLng,
-            dropoffLatLng: offer.dropoffLatLng,
-            fareUsd: offer.fareUsd,
-            distanceToPickupKm: km,
-            estimatedMinutes:
-                offer.estimatedMinutes > 0 ? offer.estimatedMinutes : (km / 0.5).ceil().clamp(1, 99),
-            vehicleType: offer.vehicleType,
-            riderPhotoUrl: offer.riderPhotoUrl,
-            riderRating: offer.riderRating,
-          );
-        }
-        return offer;
-      }).toList();
-
-      offersNotifier.value = offers;
+      _applyOffers(raw);
     } catch (e) {
       debugPrint('OffersController poll error: $e');
     }
@@ -145,6 +178,9 @@ class OffersController {
 
   void dispose() {
     _pollTimer?.cancel();
+    _pollTimer = null;
+    _sseSub?.cancel();
+    _sseSub = null;
     offersNotifier.dispose();
   }
 

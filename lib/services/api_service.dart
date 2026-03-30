@@ -1812,6 +1812,55 @@ class ApiService {
     return _parse(res);
   }
 
+  // ── SSE real-time stream for driver pending offers ──
+  /// Returns a stream of offer events. Each event is a list of pending offers.
+  /// Falls back gracefully — if SSE fails, caller should use polling.
+  static Stream<List<Map<String, dynamic>>> streamDriverOffers(int driverId) async* {
+    try {
+      final h = await _authHeaders();
+      final request = http.Request(
+        'GET',
+        Uri.parse('$_baseUrl/dispatch/driver/pending/stream?driver_id=$driverId'),
+      );
+      request.headers.addAll(h);
+      final response = await _client.send(request);
+      if (response.statusCode != 200) return;
+
+      String buffer = '';
+      await for (final chunk in response.stream.transform(utf8.decoder)) {
+        buffer += chunk;
+        // Parse SSE events from buffer
+        while (buffer.contains('\n\n')) {
+          final idx = buffer.indexOf('\n\n');
+          final block = buffer.substring(0, idx);
+          buffer = buffer.substring(idx + 2);
+
+          String? eventType;
+          String? data;
+          for (final line in block.split('\n')) {
+            if (line.startsWith('event: ')) {
+              eventType = line.substring(7);
+            } else if (line.startsWith('data: ')) {
+              data = line.substring(6);
+            }
+          }
+
+          if (eventType == 'offers_update' && data != null) {
+            try {
+              final parsed = jsonDecode(data);
+              if (parsed is List) {
+                yield parsed.cast<Map<String, dynamic>>();
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[ApiService] SSE stream error: $e');
+      // Stream ends — caller should fall back to polling
+    }
+  }
+
   /// Driver polls for their pending ride offers (returns a LIST now).
   static Future<List<Map<String, dynamic>>> getDriverPendingOffers(
     int driverId,

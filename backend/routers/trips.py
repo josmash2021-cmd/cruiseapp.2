@@ -15,6 +15,7 @@ from utils.security import (
 from utils.helpers import utc_now, _haversine, _trip_dict
 from services.fcm_service import _send_fcm_push
 from services.n8n_webhooks import fire as _n8n_fire
+from services.event_bus import event_bus
 from config import (
     PUBLIC_URL, STRIPE_SECRET, _HAS_STRIPE, _stripe_mod,
     firestore_sync, _HAS_FIRESTORE,
@@ -386,12 +387,22 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     await db.commit()
     await db.refresh(trip)
 
-    # Sync status to Firestore
+    # ── SSE instant push to riders watching this trip (sub-second) ──
+    asyncio.create_task(event_bus.push_trip_update(trip.id, {
+        "status": status,
+        "trip_id": trip.id,
+        "driver_id": trip.driver_id,
+        "fare": float(trip.fare or 0),
+    }))
+
+    # Sync status to Firestore (non-blocking)
     if _HAS_FIRESTORE:
-        try:
-            firestore_sync.sync_trip_status(trip_id=trip.id, status=status)
-        except Exception as e:
-            logging.error("Firestore sync on update_trip_status failed: %s", e)
+        def _sync_fs():
+            try:
+                firestore_sync.sync_trip_status(trip_id=trip.id, status=status)
+            except Exception as e:
+                logging.error("Firestore sync on update_trip_status failed: %s", e)
+        asyncio.get_event_loop().run_in_executor(None, _sync_fs)
 
     # Auto-charge rider when trip is completed
     charge_result = None

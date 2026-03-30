@@ -2,7 +2,7 @@ import os, time, math, secrets, logging, json, re, base64, asyncio, collections,
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
-from fastapi.responses import JSONResponse, FileResponse, Response
+from fastapi.responses import JSONResponse, FileResponse, Response, StreamingResponse
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
@@ -24,6 +24,7 @@ from config import (
     firestore_sync, _HAS_FIRESTORE,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER,
 )
+from services.event_bus import event_bus
 
 router = APIRouter()
 
@@ -243,6 +244,20 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         db.add(offer)
         await db.commit()
         await db.refresh(offer)
+        # ── SSE instant push to driver (sub-second delivery) ──
+        _pending_cache.pop(assigned.id, None)  # Invalidate cache so SSE and poll both get fresh data
+        estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+        asyncio.create_task(event_bus.push_driver_offer(assigned.id, [{
+            "offer_id": offer.id,
+            "rider_name": f"{user.first_name} {user.last_name}",
+            "rider_phone": user.phone or "",
+            "rider_photo_url": user.photo_url or "",
+            "created_at": offer.created_at.isoformat() if offer.created_at else None,
+            "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
+            **_trip_dict(trip),
+            "fare": estimated_driver_fare,
+            "driver_earnings": estimated_driver_fare,
+        }]))
         # ── FCM push to assigned driver ──
         if assigned.fcm_token:
             rider_name = f"{user.first_name} {user.last_name}"
@@ -264,16 +279,15 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     if _cached and (_now - _cached[0]) < _PENDING_CACHE_TTL:
         return _cached[1]
 
+    # Single JOIN query — fetch offers + trips + riders in ONE roundtrip (fixes N+1)
     result = await db.execute(
-        select(DispatchOffer, Trip)
+        select(DispatchOffer, Trip, User)
         .join(Trip, DispatchOffer.trip_id == Trip.id)
+        .outerjoin(User, Trip.rider_id == User.id)
         .where(and_(DispatchOffer.driver_id == driver_id, DispatchOffer.status == "pending"))
     )
     offers = []
-    for offer, trip in result.all():
-        # Lookup rider name and phone for the offer card
-        rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-        rider = rider_result.scalar_one_or_none()
+    for offer, trip, rider in result.all():
         rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
         rider_phone = rider.phone or "" if rider else ""
         rider_photo_url = rider.photo_url or "" if rider else ""
@@ -291,6 +305,85 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
         })
     _pending_cache[driver_id] = (time.monotonic(), offers)  # L3: cache for TTL
     return offers
+
+
+# ── SSE stream: real-time driver offers (sub-second delivery) ──
+
+@router.get("/dispatch/driver/pending/stream")
+async def driver_pending_sse(
+    request: Request,
+    driver_id: int = Query(...),
+    user: User = Depends(_get_current_user),
+):
+    """SSE stream for driver pending offers.
+    Delivers new offers in <200ms instead of 5s polling.
+    Falls back gracefully — clients can use this OR polling."""
+    queue = event_bus.subscribe_driver(driver_id)
+
+    async def _generate():
+        try:
+            # Send initial heartbeat so client knows connection is active
+            yield f"event: connected\ndata: {{\"driver_id\": {driver_id}}}\n\n"
+            while True:
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive ping every 25s to prevent proxy timeout
+                    yield f"event: ping\ndata: {{\"ts\": {time.time()}}}\n\n"
+        finally:
+            event_bus.unsubscribe_driver(driver_id, queue)
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ── SSE stream: real-time trip updates (for riders) ──
+
+@router.get("/dispatch/trip/{trip_id}/stream")
+async def trip_status_sse(
+    request: Request,
+    trip_id: int,
+    user: User = Depends(_get_current_user),
+):
+    """SSE stream for trip status + driver location.
+    Riders get instant updates when driver_en_route, arrived, etc."""
+    queue = event_bus.subscribe_trip(trip_id)
+
+    async def _generate():
+        try:
+            yield f"event: connected\ndata: {{\"trip_id\": {trip_id}}}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+                except asyncio.TimeoutError:
+                    yield f"event: ping\ndata: {{\"ts\": {time.time()}}}\n\n"
+        finally:
+            event_bus.unsubscribe_trip(trip_id, queue)
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 
 @router.post("/dispatch/driver/accept", dependencies=[Depends(_verify_api_key)])
 async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -311,20 +404,31 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
         trip.status = "driver_en_route"
     await db.commit()
 
-    # Sync to Firestore so rider sees driver assigned in real time
+    # Sync to Firestore so rider sees driver assigned in real time (non-blocking)
     if _HAS_FIRESTORE and trip:
-        try:
-            drv_result = await db.execute(select(User).where(User.id == driver_id))
-            drv = drv_result.scalar_one_or_none()
-            firestore_sync.sync_trip_status(
-                trip_id=trip.id, status="driver_en_route",
-                driver_id=driver_id,
-                driver_name=f"{drv.first_name} {drv.last_name}" if drv else None,
-                driver_phone=drv.phone if drv else None,
-                driver_photo_url=drv.photo_url or "" if drv else None,
-            )
-        except Exception as e:
-            logging.error("Firestore sync on accept_offer failed: %s", e)
+        async def _sync_firestore_accept():
+            try:
+                async with SessionLocal() as _db:
+                    drv_result = await _db.execute(select(User).where(User.id == driver_id))
+                    drv = drv_result.scalar_one_or_none()
+                    firestore_sync.sync_trip_status(
+                        trip_id=trip.id, status="driver_en_route",
+                        driver_id=driver_id,
+                        driver_name=f"{drv.first_name} {drv.last_name}" if drv else None,
+                        driver_phone=drv.phone if drv else None,
+                        driver_photo_url=drv.photo_url or "" if drv else None,
+                    )
+            except Exception as e:
+                logging.error("Firestore sync on accept_offer failed: %s", e)
+        asyncio.create_task(_sync_firestore_accept())
+
+    # ── SSE instant push to rider watching this trip ──
+    if trip:
+        asyncio.create_task(event_bus.push_trip_update(trip.id, {
+            "status": "driver_en_route",
+            "trip_id": trip.id,
+            "driver_id": driver_id,
+        }))
 
     # ── Push + SMS notification to rider when driver accepts ──
     if trip:
@@ -344,19 +448,21 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                     data={"type": "scheduled_confirmed", "trip_id": str(trip.id)},
                 )
 
-            # SMS via Twilio
+            # SMS via Twilio (non-blocking — don't slow down accept response)
             if rider and rider.phone and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER:
-                try:
-                    from twilio.rest import Client as TwilioClient
-                    twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-                    twilio_client.messages.create(
-                        to=rider.phone,
-                        from_=TWILIO_PHONE_NUMBER,
-                        body=f"Cruise: Your ride has been confirmed! {driver_display} will be your driver. Open the app for details.",
-                    )
-                    logging.info("[SMS] Scheduled ride confirmation sent to %s", rider.phone[-4:])
-                except Exception as sms_err:
-                    logging.warning("[SMS] Failed to send scheduled confirmation: %s", sms_err)
+                def _send_sms():
+                    try:
+                        from twilio.rest import Client as TwilioClient
+                        twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+                        twilio_client.messages.create(
+                            to=rider.phone,
+                            from_=TWILIO_PHONE_NUMBER,
+                            body=f"Cruise: Your ride has been confirmed! {driver_display} will be your driver. Open the app for details.",
+                        )
+                        logging.info("[SMS] Scheduled ride confirmation sent to %s", rider.phone[-4:])
+                    except Exception as sms_err:
+                        logging.warning("[SMS] Failed to send scheduled confirmation: %s", sms_err)
+                asyncio.get_event_loop().run_in_executor(None, _send_sms)
         except Exception as notif_err:
             logging.warning("[Notify] Failed to notify rider on accept: %s", notif_err)
 

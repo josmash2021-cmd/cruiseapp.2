@@ -263,6 +263,7 @@ from routers.voice import router as voice_router
 from routers.payments import router as payments_router
 from routers.admin import router as admin_router
 from routers.misc import router as misc_router
+from services.event_bus import event_bus
 
 app.include_router(auth_router)
 app.include_router(trips_router)
@@ -319,11 +320,16 @@ async def security_headers_middleware(request: Request, call_next):
 
 # -- LAYER 3: Rate Limiting (per-IP, anti-DDoS) --------
 _rate_buckets: dict[str, collections.deque] = {}
-_RATE_LIMIT = 300         # max requests per window (mobile polling needs headroom)
+_RATE_LIMIT = 500         # max requests per window (SSE + polling needs headroom)
 _RATE_WINDOW = 60         # per this many seconds
+_rate_cleanup_ts = 0.0    # last bucket cleanup timestamp
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
+    global _rate_cleanup_ts
+    # Skip rate limiting for SSE streams (they're long-lived connections)
+    if request.url.path.endswith("/stream"):
+        return await call_next(request)
     client_ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
     bucket = _rate_buckets.setdefault(client_ip, collections.deque())
@@ -332,6 +338,12 @@ async def rate_limit_middleware(request: Request, call_next):
     if len(bucket) >= _RATE_LIMIT:
         return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
     bucket.append(now)
+    # Periodic cleanup of stale buckets (every 5 min)
+    if now - _rate_cleanup_ts > 300:
+        _rate_cleanup_ts = now
+        stale = [ip for ip, dq in _rate_buckets.items() if not dq or dq[-1] < now - _RATE_WINDOW]
+        for ip in stale:
+            del _rate_buckets[ip]
     return await call_next(request)
 
 # -- LAYER 4: Request Size Limit (anti-payload bomb) ---
@@ -358,15 +370,23 @@ async def ip_blacklist_middleware(request: Request, call_next):
         return JSONResponse({"detail": "Access denied"}, status_code=403)
     return await call_next(request)
 
+# Hot paths that should skip expensive middleware operations (checksum, etc.)
+_HOT_PATHS = {
+    "/dispatch/driver/pending", "/drivers/nearby", "/health",
+}
+_SSE_PREFIX = "/dispatch/driver/pending/stream", "/dispatch/trip/"
+
 @app.middleware("http")
 async def crash_protection_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
-        # L8: Response integrity checksum � read body, compute SHA-256, re-wrap
-        if hasattr(response, 'body'):
-            body_bytes = response.body
-            checksum = hashlib.sha256(body_bytes).hexdigest()
-            response.headers["X-Response-Checksum"] = checksum
+        # Skip SHA-256 checksum for high-frequency hot paths and SSE streams
+        _path = request.url.path
+        if _path not in _HOT_PATHS and not any(_path.startswith(p) for p in _SSE_PREFIX):
+            if hasattr(response, 'body'):
+                body_bytes = response.body
+                checksum = hashlib.sha256(body_bytes).hexdigest()
+                response.headers["X-Response-Checksum"] = checksum
         return response
     except Exception as e:
         import traceback as _tb
@@ -424,6 +444,7 @@ async def health(x_api_key: str = Header(default="")):
             "security": security_guardian.get_status(),
             "guardian": guardian_agent.get_status(),
             "backup": _backup_status(),
+            "sse": event_bus.get_stats(),
             "timestamp": datetime.utcnow().isoformat(),
         }
 

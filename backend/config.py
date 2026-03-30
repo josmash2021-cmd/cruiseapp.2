@@ -25,8 +25,12 @@ _OTP_TTL = 300
 
 # ── Dispatch cache ──
 _pending_cache: dict = {}
-_PENDING_CACHE_TTL = 3.0
+_PENDING_CACHE_TTL = 4.0  # Match ~5s polling interval; invalidated on accept/reject
 OFFER_TIMEOUT_SECONDS = 20
+
+# ── Nearby drivers cache (in-memory, short TTL) ──
+_nearby_cache: dict = {}  # key=(lat_rounded, lng_rounded, radius) -> (timestamp, result)
+_NEARBY_CACHE_TTL = 3.0  # seconds
 
 # ── EmailJS ──
 EMAILJS_SERVICE_ID = os.getenv("EMAILJS_SERVICE_ID", "")

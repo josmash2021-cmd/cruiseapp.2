@@ -118,6 +118,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   late final Animation<double> _pinPopAnim;
   final List<mapbox.PointAnnotation> _pinAnnots = [];
 
+  // ── Slide-to-confirm state ──
+  double _slideVal = 0;
+  bool   _slid     = false;
+
   // ── Trip distance pickup→dropoff ─────────────────────────────────────────
   double get _tripKm {
     const r = 6371.0;
@@ -893,11 +897,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Future<List<LatLng>> _loadRoute() async {
     // Use cached route from offer pre-fetch (instant, no straight-line bug)
     if (widget.routePoints != null && widget.routePoints!.length >= 2) {
-      final pts = List<LatLng>.from(widget.routePoints!);
-      // Snap exact endpoints so pins align perfectly with route line endpoints
-      pts[0] = widget.pickupLatLng;
-      pts[pts.length - 1] = widget.dropoffLatLng;
-      return pts;
+      return List<LatLng>.from(widget.routePoints!);
     }
     // Fallback — fetch fresh pickup→dropoff only
     return _fetchRoutePoints(widget.pickupLatLng, widget.dropoffLatLng);
@@ -957,40 +957,24 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
     if (!mounted) return;
 
-    // Phase 1: Set camera to route overview — flat, no tilt/bearing yet.
-    ctrl.setCamera(mapbox.CameraOptions(
-      center: cam.center,
-      zoom: (cam.zoom ?? 13) - 0.5,
-      bearing: 0,
-      pitch: 0,
-    ));
-
-    // Phase 2: Wait 700ms then fire cinematic tilt+bearing (matches rider).
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-
-    // Random bearing 5–15° left or right — same as rider's cinematic.
+    // Random bearing 5–15° left or right for cinematic feel.
     final rng = math.Random();
     final degrees = 5.0 + rng.nextDouble() * 10.0;
     final randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
 
-    // Kick off tilt to 55° + random bearing (1200ms) — don't await; run concurrently.
-    ctrl.flyTo(
-      mapbox.CameraOptions(
-        center: cam.center,
-        zoom: (cam.zoom ?? 13) - 0.5,
-        bearing: randomBearing,
-        pitch: 55.0,
-      ),
-      mapbox.MapAnimationOptions(duration: 1200),
-    );
+    // Phase 1: Set camera to route overview with tilt immediately.
+    ctrl.setCamera(mapbox.CameraOptions(
+      center: cam.center,
+      zoom: (cam.zoom ?? 13) - 0.5,
+      bearing: randomBearing,
+      pitch: 55.0,
+    ));
 
-    // Phase 3: Place pins + pop them at 500ms into the tilt (mid-animation).
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
+    // Phase 2: Place pins immediately (no delay).
 
-    final pickupPoint  = routeCoordinates.first;
-    final dropoffPoint = routeCoordinates.last;
+    // Use exact pickup/dropoff coordinates for pin placement (not route endpoints)
+    final pickupPoint  = mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
+    final dropoffPoint = mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
 
     _pinAnnots.clear();
     if (_annotMgr != null) {
@@ -1011,13 +995,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _pinPopAnim.addListener(_updatePinScale);
     _pinPopCtrl.forward(from: 0);
 
-    // Phase 4: Gold route draw 300ms after pin pop starts.
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
-
+    // Phase 3: Gold route draw starts concurrently with pin pop.
     await _animateGoldRoute(
       points: _routePoints,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 800),
     );
   }
 
@@ -1050,7 +1031,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         if (routes != null && routes.isNotEmpty) {
           final positions = _decodePoly(routes[0]['geometry'] as String);
           final pts = positions.map((p) => LatLng(p.lat.toDouble(), p.lng.toDouble())).toList();
-          if (pts.isNotEmpty) { pts[0] = o; pts[pts.length - 1] = d; }
           return pts;
         }
       }
@@ -1073,7 +1053,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             final pts = coords
                 .map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
                 .toList();
-            if (pts.isNotEmpty) { pts[0] = o; pts[pts.length - 1] = d; }
             return pts;
           }
         }
@@ -1431,55 +1410,157 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             // ── Action buttons ────────────────────────────────────────────
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), bot + 18),
-              child: Column(
-                children: [
-                  // Continue (gold)
-                  SizedBox(
-                    width: double.infinity,
-                    height: Responsive.h(52),
-                    child: ElevatedButton(
-                      onPressed: () => _goNavigate(overview: false),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _gold,
-                        foregroundColor: Colors.black,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                      ),
-                      child: Text(widget.arrivedAtPickup ? 'Start Trip' : 'Continue',
-                        style: TextStyle(
-                          fontSize: Responsive.sp(17), fontWeight: FontWeight.w800,
-                          color: Colors.black)),
+              child: widget.arrivedAtPickup
+                  ? _buildSlideStartTrip()
+                  : Column(
+                      children: [
+                        // Continue (gold)
+                        SizedBox(
+                          width: double.infinity,
+                          height: Responsive.h(52),
+                          child: ElevatedButton(
+                            onPressed: () => _goNavigate(overview: false),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _gold,
+                              foregroundColor: Colors.black,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                            ),
+                            child: Text('Continue',
+                              style: TextStyle(
+                                fontSize: Responsive.sp(17), fontWeight: FontWeight.w800,
+                                color: Colors.black)),
+                          ),
+                        ),
+                        SizedBox(height: Responsive.h(10)),
+                        // Directions (outline)
+                        SizedBox(
+                          width: double.infinity,
+                          height: Responsive.h(52),
+                          child: OutlinedButton(
+                            onPressed: () => _goNavigate(overview: true),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.22)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                            ),
+                            child: Text('Directions',
+                              style: TextStyle(
+                                fontSize: Responsive.sp(17), fontWeight: FontWeight.w600,
+                                color: Colors.white)),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  if (!widget.arrivedAtPickup) ...[
-                  SizedBox(height: Responsive.h(10)),
-                  // Directions (outline)
-                  SizedBox(
-                    width: double.infinity,
-                    height: Responsive.h(52),
-                    child: OutlinedButton(
-                      onPressed: () => _goNavigate(overview: true),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.22)),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                      ),
-                      child: Text('Directions',
-                        style: TextStyle(
-                          fontSize: Responsive.sp(17), fontWeight: FontWeight.w600,
-                          color: Colors.white)),
-                    ),
-                  ),
-                  ],
-                ],
-              ),
             ),
           ],
         ),
       ),
+      ),
+    );
+  }
+
+  // ── Slide-to-confirm "Start Trip" widget ────────────────────────────────
+  Widget _buildSlideStartTrip() {
+    const height = 62.0;
+    const thumbW = 62.0;
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF111318),
+        borderRadius: BorderRadius.circular(height / 2),
+        border: Border.all(color: _gold.withValues(alpha: 0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          final trackW = constraints.maxWidth;
+          final maxDrag = trackW - thumbW - 4;
+          return SizedBox(
+            height: height,
+            child: Stack(
+              children: [
+                // Fill
+                Positioned(
+                  left: 0, top: 0, bottom: 0,
+                  width: (_slideVal * maxDrag + thumbW).clamp(thumbW.toDouble(), trackW),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          _gold.withValues(alpha: 0.45),
+                          _gold.withValues(alpha: 0.10),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(height / 2),
+                    ),
+                  ),
+                ),
+                // Label
+                Center(
+                  child: AnimatedOpacity(
+                    opacity: 1.0 - _slideVal,
+                    duration: const Duration(milliseconds: 100),
+                    child: const Text('Start Trip  →',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                // Thumb
+                Positioned(
+                  left: 2 + _slideVal * maxDrag,
+                  top: 3, bottom: 3,
+                  child: GestureDetector(
+                    onHorizontalDragUpdate: (d) {
+                      if (_slid) return;
+                      setState(() {
+                        _slideVal = (_slideVal + d.delta.dx / maxDrag)
+                            .clamp(0.0, 1.0);
+                      });
+                      if (_slideVal >= 0.88) {
+                        setState(() => _slid = true);
+                        HapticFeedback.heavyImpact();
+                        _goNavigate(overview: false);
+                      }
+                    },
+                    onHorizontalDragEnd: (_) {
+                      if (!_slid) setState(() => _slideVal = 0);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 80),
+                      width: thumbW - 4,
+                      decoration: BoxDecoration(
+                        color: _slid ? _gold.withValues(alpha: 0.8) : _gold,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: 0.5),
+                            blurRadius: 12,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        _slid ? Icons.check_rounded : Icons.chevron_right_rounded,
+                        color: Colors.black,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

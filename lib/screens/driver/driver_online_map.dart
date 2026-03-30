@@ -359,27 +359,19 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // Place pins using pre-built images (or build now as fallback)
     final dropoffAddr = (offer['dropoff_address'] ?? '') as String;
     final placeType = cached?.dropoffPlaceType ?? _detectPlaceType(dropoffAddr);
-    Uint8List? driverPinImg = cached?.driverPin;
     Uint8List? pickupPinImg = cached?.pickupPin;
     Uint8List? dropoffPinImg = cached?.dropoffPin;
-    if (driverPinImg == null || pickupPinImg == null || dropoffPinImg == null) {
+    if (pickupPinImg == null || dropoffPinImg == null) {
       final pinResults = await Future.wait([
-        renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // driver position
         renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // pickup
         renderCircularPinBytes(icon: _goldPinIconFor(placeType), isPickup: false, radius: 32), // dropoff
       ]);
-      driverPinImg ??= pinResults[0];
-      pickupPinImg ??= pinResults[1];
-      dropoffPinImg ??= pinResults[2];
+      pickupPinImg ??= pinResults[0];
+      dropoffPinImg ??= pinResults[1];
     }
 
     final pointMgr = _pointAnnotMgr;
     if (pointMgr != null && mounted) {
-      // Driver pin — person icon showing driver's current position
-      _prevDriverAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-        image: driverPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-      ));
       // Pickup pin — person icon
       _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
@@ -453,7 +445,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
       final scale = springScale(progress);
 
-      for (final annot in [_prevDriverAnnot, _prevPickupAnnot, _prevDropoffAnnot]) {
+      for (final annot in [_prevPickupAnnot, _prevDropoffAnnot]) {
         if (annot != null) {
           annot.iconSize = scale;
           try { await pointMgr.update(annot); } catch (_) {}
@@ -605,7 +597,6 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         o.longitude + (d.longitude - o.longitude) * t,
       );
     });
-    if (pts.isNotEmpty) { pts[0] = o; pts[pts.length - 1] = d; }
     return pts;
   }
 

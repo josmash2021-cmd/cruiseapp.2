@@ -449,9 +449,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       Future.wait<Object?>([
         _fetchRouteWithMetrics(_pos!, pickupLL),                                    // [0] segOne + metrics
         _fetchRouteWithMetrics(pickupLL, dropoffLL),                                // [1] segTwo + metrics
-        renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // [2] driver pos pin
-        renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // [3] pickup pin
-        renderCircularPinBytes(icon: _goldPinIconFor(placeType), isPickup: false, radius: 32), // [4] dropoff pin
+        renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // [2] pickup pin
+        renderCircularPinBytes(icon: _goldPinIconFor(placeType), isPickup: false, radius: 32), // [3] dropoff pin
       ]).then((results) {
         if (!mounted) return;
         final seg1 = results[0] as ({List<LatLng> pts, double? durSec, double? distM});
@@ -461,9 +460,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           segTwo: seg2.pts,
           cachedAt: DateTime.now(),
           dropoffPlaceType: placeType,
-          driverPin: results[2] as Uint8List?,
-          pickupPin: results[3] as Uint8List?,
-          dropoffPin: results[4] as Uint8List?,
+          pickupPin: results[2] as Uint8List?,
+          dropoffPin: results[3] as Uint8List?,
           driverToPickupMin: seg1.durSec != null ? seg1.durSec! / 60.0 : null,
           driverToPickupKm: seg1.distM != null ? seg1.distM! / 1000.0 : null,
           pickupToDropoffMin: seg2.durSec != null ? seg2.durSec! / 60.0 : null,
@@ -613,8 +611,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// Dynamic bottom padding for the GoogleMap based on active overlays
   double get _mapBottomPadding {
     final screenH = MediaQuery.of(context).size.height;
-    if (_previewingOffer != null) return screenH * 0.42;
-    if (_phase == _Phase.searching && _pendingOffers.isNotEmpty) return screenH * 0.42;
+    if (_previewingOffer != null) return screenH * 0.48;
+    if (_phase == _Phase.searching && _pendingOffers.isNotEmpty) return screenH * 0.48;
     if (_phase == _Phase.enRouteToPickup) return 270;
     if (_phase == _Phase.arrivedAtPickup) return 290;
     if (_phase == _Phase.routeSummary) return 330;
@@ -1177,7 +1175,6 @@ class _CachedOfferRoute {
   final List<LatLng> segTwo;
   final DateTime cachedAt;
   final _PlaceType dropoffPlaceType;
-  final Uint8List? driverPin;
   final Uint8List? pickupPin;
   final Uint8List? dropoffPin;
   final double? driverToPickupMin;
@@ -1189,7 +1186,6 @@ class _CachedOfferRoute {
     required this.segTwo,
     required this.cachedAt,
     this.dropoffPlaceType = _PlaceType.home,
-    this.driverPin,
     this.pickupPin,
     this.dropoffPin,
     this.driverToPickupMin,

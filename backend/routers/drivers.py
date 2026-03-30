@@ -26,7 +26,9 @@ from config import (
     PUBLIC_URL, STRIPE_SECRET, _HAS_STRIPE, _stripe_mod,
     CHECKR_API_KEY, CHECKR_BASE_URL,
     firestore_sync, _HAS_FIRESTORE,
+    _nearby_cache, _NEARBY_CACHE_TTL,
 )
+from services.event_bus import event_bus
 
 router = APIRouter()
 
@@ -59,43 +61,80 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
 #  DRIVER  ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
+# In-memory driver location store for ultra-fast reads (bypasses DB for location)
+_driver_locations: dict = {}  # driver_id -> {"lat": float, "lng": float, "is_online": bool, "ts": float}
+
 @router.patch("/drivers/{driver_id}/location", dependencies=[Depends(_verify_api_key)])
 async def update_driver_location(driver_id: int, body: DriverLocationIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # Ownership check: only the driver themselves can update their location
     if user.id != driver_id:
         raise HTTPException(403, "Not authorized to update this driver's location")
-    result = await db.execute(select(User).where(User.id == driver_id))
-    driver = result.scalar_one_or_none()
-    if not driver:
-        raise HTTPException(404, "Driver not found")
-    driver.lat = body.lat
-    driver.lng = body.lng
-    driver.is_online = body.is_online
+
+    # Update in-memory location cache FIRST (instant for nearby reads)
+    _driver_locations[driver_id] = {
+        "lat": body.lat, "lng": body.lng,
+        "is_online": body.is_online, "ts": time.monotonic(),
+    }
+
+    # Update DB (lightweight — no SELECT needed, use the authenticated user object)
+    user.lat = body.lat
+    user.lng = body.lng
+    user.is_online = body.is_online
     await db.commit()
 
-    # Sync driver location to Firestore
-    if _HAS_FIRESTORE:
-        try:
-            firestore_sync.sync_driver_location(driver_id, body.lat, body.lng, body.is_online)
-        except Exception as e:
-            logging.error("Firestore sync on driver location failed: %s", e)
+    # Invalidate nearby cache since a driver moved
+    _nearby_cache.clear()
 
-    return {"status": "ok", "lat": driver.lat, "lng": driver.lng, "is_online": driver.is_online}
+    # Push driver location to riders watching active trips via SSE (sub-second)
+    # Find active trip for this driver
+    active_trip = await db.execute(
+        select(Trip.id).where(
+            and_(Trip.driver_id == driver_id, Trip.status.in_(["driver_en_route", "arrived", "in_progress"]))
+        ).limit(1)
+    )
+    trip_row = active_trip.scalar_one_or_none()
+    if trip_row:
+        asyncio.create_task(event_bus.push_driver_location(trip_row, driver_id, body.lat, body.lng))
+
+    # Sync driver location to Firestore (non-blocking)
+    if _HAS_FIRESTORE:
+        def _sync_fs():
+            try:
+                firestore_sync.sync_driver_location(driver_id, body.lat, body.lng, body.is_online)
+            except Exception as e:
+                logging.error("Firestore sync on driver location failed: %s", e)
+        asyncio.get_event_loop().run_in_executor(None, _sync_fs)
+
+    return {"status": "ok", "lat": body.lat, "lng": body.lng, "is_online": body.is_online}
 
 @router.get("/drivers/nearby", dependencies=[Depends(_verify_api_key)])
 async def get_nearby_drivers(
     lat: float = Query(...), lng: float = Query(...), radius_km: float = Query(15.0),
     user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db),
 ):
+    # Cache key: round coordinates to ~100m grid for cache hits from same area
+    _cache_key = (round(lat, 3), round(lng, 3), radius_km)
+    _now = time.monotonic()
+    _cached = _nearby_cache.get(_cache_key)
+    if _cached and (_now - _cached[0]) < _NEARBY_CACHE_TTL:
+        return _cached[1]
+
     result = await db.execute(
-        select(User).where(and_(User.role == "driver", User.is_online == True, User.lat.isnot(None), User.lng.isnot(None)))
+        select(User.id, User.lat, User.lng, User.first_name, User.last_name)
+        .where(and_(User.role == "driver", User.is_online == True, User.lat.isnot(None), User.lng.isnot(None)))
     )
-    drivers = result.scalars().all()
-    nearby = [
-        {"id": d.id, "lat": d.lat, "lng": d.lng, "name": f"{d.first_name} {d.last_name}"}
-        for d in drivers if _haversine(lat, lng, d.lat or 0, d.lng or 0) <= radius_km
-    ]
-    return {"count": len(nearby), "drivers": nearby}
+    nearby = []
+    for d_id, d_lat, d_lng, d_first, d_last in result.all():
+        # Use in-memory location if fresher than DB
+        mem = _driver_locations.get(d_id)
+        if mem and mem["is_online"]:
+            d_lat, d_lng = mem["lat"], mem["lng"]
+        if _haversine(lat, lng, d_lat or 0, d_lng or 0) <= radius_km:
+            nearby.append({"id": d_id, "lat": d_lat, "lng": d_lng, "name": f"{d_first} {d_last}"})
+
+    response = {"count": len(nearby), "drivers": nearby}
+    _nearby_cache[_cache_key] = (_now, response)
+    return response
 
 @router.get("/riders/{rider_id}/trips", dependencies=[Depends(_verify_api_key)])
 async def get_rider_trips(rider_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

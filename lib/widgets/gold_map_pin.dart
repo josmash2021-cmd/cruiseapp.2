@@ -50,8 +50,6 @@ GoldPinIcon detectPinIcon(String label) {
 const goldPinColor = Color(0xFFE8C547);
 
 // ── Luxury pin palette ──
-const _glassWhite = Color(0x66FFFFFF); // glass sheen
-
 // ── Gold palette (shared by pickup and dropoff) ──
 const _colorLight = Color(0xFFFFF8DC);
 const _colorMid   = Color(0xFFE8C547);
@@ -86,46 +84,10 @@ void _drawLuxuryPin(
   final colorLight  = _colorLight;
   final colorMid    = _colorMid;
   final colorDeep   = _colorDeep;
-  // ── 1. Ground shadow ring — at pin tip ──
-  canvas.drawOval(
-    Rect.fromCenter(
-      center: Offset(cx, tipY),
-      width: r * 1.4,
-      height: r * 0.32,
-    ),
-    Paint()
-      ..color = Colors.black.withValues(alpha: 0.22)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-  );
-
-  // ── 2. Build teardrop path ──
-  final path = Path()
-    ..moveTo(cx, tipY)
-    ..cubicTo(cx + r * 0.20, tipY - (tipY - headCY) * 0.35,
-              cx + r * 0.95, headCY + r * 0.75,
-              cx + r, headCY)
-    ..arcTo(
-      Rect.fromCircle(center: Offset(cx, headCY), radius: r),
-      0, -math.pi * 2, false,
-    )
-    ..cubicTo(cx - r * 0.95, headCY + r * 0.75,
-              cx - r * 0.20, tipY - (tipY - headCY) * 0.35,
-              cx, tipY)
-    ..close();
-
-  // Alternate clean teardrop: arc + cubic taper
+  // ── 1. Build teardrop path ──
   final tearPath = _buildTeardrop(cx, headCY, r, tipY);
 
-  // ── 3. Drop shadow behind pin ──
-  canvas.drawPath(
-    tearPath.shift(const Offset(0, 4)),
-    Paint()
-      ..color = Colors.black.withValues(alpha: 0.28)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
-  );
-
-  // ── 4. Gradient fill ──
-  final gradRect = Rect.fromLTWH(cx - r, headCY - r, r * 2, tipY - headCY + r);
+  // ── 2. Gradient fill ──
   canvas.drawPath(
     tearPath,
     Paint()
@@ -137,28 +99,7 @@ void _drawLuxuryPin(
       ),
   );
 
-  // ── 5. Glass sheen — white oval on upper-left of head ──
-  canvas.save();
-  canvas.clipPath(tearPath);
-  canvas.drawOval(
-    Rect.fromCenter(
-      center: Offset(cx - r * 0.28, headCY - r * 0.25),
-      width: r * 0.90,
-      height: r * 0.60,
-    ),
-    Paint()
-      ..color = _glassWhite
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
-  );
-  // Secondary micro-specular dot
-  canvas.drawCircle(
-    Offset(cx - r * 0.32, headCY - r * 0.32),
-    r * 0.14,
-    Paint()..color = Colors.white.withValues(alpha: 0.85),
-  );
-  canvas.restore();
-
-  // ── 6. Thin bright-gold outer border ──
+  // ── 3. Thin bright-gold outer border ──
   canvas.drawPath(
     tearPath,
     Paint()

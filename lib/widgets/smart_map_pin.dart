@@ -113,14 +113,6 @@ class GoldenPinPainter {
     // ── 1. Golden tail (cone shape) ──
     final tailPath = _buildTail(cx, headCY, r, tipY);
 
-    // Shadow behind tail
-    canvas.drawPath(
-      tailPath.shift(const Offset(0, 2.5)),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
-    );
-
     // Gold gradient fill
     canvas.drawPath(
       tailPath,
@@ -132,27 +124,6 @@ class GoldenPinPainter {
           [0.0, 0.50, 1.0],
         ),
     );
-
-    // Left-side shine on the tail
-    canvas.save();
-    canvas.clipPath(tailPath);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(cx - r * 0.40, headCY + r * 1.0),
-        width: r * 0.5,
-        height: r * 2.0,
-      ),
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.14)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
-    canvas.restore();
-
-    // Bright golden accent at the tip point
-    final tipGlow = Paint()
-      ..color = const Color(0xFFFFD54F)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
-    canvas.drawCircle(Offset(cx, tipY - r * 0.04), r * 0.06, tipGlow);
 
     // ── 2. Full golden ring around circle ──
     final arcRect = Rect.fromCircle(center: Offset(cx, headCY), radius: r);
@@ -178,25 +149,7 @@ class GoldenPinPainter {
         ),
     );
 
-    // ── 3. White glow behind icon — fully transparent center ──
-    // Outer soft halo
-    canvas.drawCircle(
-      Offset(cx, headCY),
-      r * 0.65,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.12)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.55),
-    );
-    // Inner brighter core
-    canvas.drawCircle(
-      Offset(cx, headCY),
-      r * 0.35,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.22)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.35),
-    );
-
-    // ── 4. White icon ──
+    // ── 3. White icon ──
     _drawIcon(canvas, icon, cx, headCY, r);
   }
 
@@ -242,10 +195,6 @@ class GoldenPinPainter {
           fontFamily: iconData.fontFamily,
           package: iconData.fontPackage,
           color: Colors.white,
-          shadows: const [
-            Shadow(color: Color(0x99FFFFFF), blurRadius: 10),
-            Shadow(color: Color(0x44FFFFFF), blurRadius: 20),
-          ],
         ),
       ),
       textDirection: TextDirection.ltr,

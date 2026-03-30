@@ -35,15 +35,7 @@ class GoldPinRenderer {
     const bulbCy = 50.0;
     const tipY = h - 6.0;
 
-    // 1. Drop shadow
-    canvas.drawOval(
-      Rect.fromCenter(center: const Offset(cx, tipY + 2), width: 28, height: 8),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-
-    // 2. Tail (teardrop)
+    // 1. Tail (teardrop)
     final tail = Path()
       ..moveTo(cx - 18, bulbCy + bulbR * 0.55)
       ..quadraticBezierTo(cx - 6, tipY - 10, cx, tipY)
@@ -51,16 +43,7 @@ class GoldPinRenderer {
       ..close();
     canvas.drawPath(tail, Paint()..color = _gold);
 
-    // 3. Outer glow ring
-    canvas.drawCircle(
-      const Offset(cx, bulbCy),
-      bulbR + 4,
-      Paint()
-        ..color = _gold.withValues(alpha: 0.25)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-
-    // 4. Main bulb (radial gradient)
+    // 2. Main bulb (radial gradient)
     final bulbGrad = Paint()
       ..shader = ui.Gradient.radial(
         const Offset(cx - bulbR * 0.25, bulbCy - bulbR * 0.25),
@@ -70,21 +53,7 @@ class GoldPinRenderer {
       );
     canvas.drawCircle(const Offset(cx, bulbCy), bulbR, bulbGrad);
 
-    // 5. 3D highlight
-    canvas.drawCircle(
-      Offset(cx - bulbR * 0.28, bulbCy - bulbR * 0.28),
-      bulbR * 0.38,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.45)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
-    canvas.drawCircle(
-      Offset(cx - bulbR * 0.22, bulbCy - bulbR * 0.22),
-      bulbR * 0.12,
-      Paint()..color = Colors.white.withValues(alpha: 0.75),
-    );
-
-    // 6. Outer border ring
+    // 3. Outer border ring
     canvas.drawCircle(
       const Offset(cx, bulbCy),
       bulbR,

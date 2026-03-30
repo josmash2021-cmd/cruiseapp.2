@@ -42,7 +42,6 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   // ── controllers ──
   late final AnimationController _radarCtrl;    // 2400 ms – radar pulse rings
   late final AnimationController _glowCtrl;     // 1200 ms – car glow + scale
-  late final AnimationController _orbitCtrl;    // 3000 ms – orbiting dots
   late final AnimationController _particleCtrl; // 4000 ms – floating particles
   late final AnimationController _progressCtrl; // 4000 ms – progress bar (finite)
   late final AnimationController _shimmerCtrl;  // 2000 ms – text shimmer
@@ -78,13 +77,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
 
-    // ── 3. Orbiting dots ──
-    _orbitCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3000),
-    )..repeat();
-
-    // ── 4. Particle drift ──
+    // ── 3. Particle drift ──
     _particleCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 4000),
@@ -160,7 +153,6 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   void dispose() {
     _radarCtrl.dispose();
     _glowCtrl.dispose();
-    _orbitCtrl.dispose();
     _particleCtrl.dispose();
     _progressCtrl.dispose();
     _shimmerCtrl.dispose();
@@ -179,7 +171,6 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     setState(() => _paymentDeclined = true);
     _progressCtrl.stop();
     _radarCtrl.stop();
-    _orbitCtrl.stop();
     _glowCtrl.stop();
     Future.delayed(const Duration(milliseconds: 2000), () {
       if (!mounted) return;
@@ -292,17 +283,6 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
                           ),
                         ),
                       ),
-                      // Orbiting dots
-                      AnimatedBuilder(
-                        animation: _orbitCtrl,
-                        builder: (_, __) => CustomPaint(
-                          size: const Size(220, 220),
-                          painter: _OrbitDotsPainter(
-                            progress: _orbitCtrl.value,
-                            color: _gold,
-                          ),
-                        ),
-                      ),
                       // Car icon with glow
                       _buildCarIcon(),
                     ],
@@ -343,14 +323,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
                     ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '1 of 3',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.3),
-                    fontSize: 13,
-                  ),
-                ),
+
               ],
             ),
           ),
@@ -545,35 +518,6 @@ class _RadarRingsPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RadarRingsPainter old) => true;
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-//  ORBITING DOTS PAINTER
-// ═════════════════════════════════════════════════════════════════════════
-
-class _OrbitDotsPainter extends CustomPainter {
-  final double progress;
-  final Color color;
-  _OrbitDotsPainter({required this.progress, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    const orbitRadius = 55.0;
-    const dotRadius = 3.0;
-    final baseAngle = progress * 2 * pi;
-    final paint = Paint()..color = color;
-
-    for (int i = 0; i < 3; i++) {
-      final angle = baseAngle + i * (2 * pi / 3);
-      final dx = center.dx + cos(angle) * orbitRadius;
-      final dy = center.dy + sin(angle) * orbitRadius;
-      canvas.drawCircle(Offset(dx, dy), dotRadius, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_OrbitDotsPainter old) => old.progress != progress;
 }
 
 // ═════════════════════════════════════════════════════════════════════════

@@ -1011,41 +1011,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   }) {
     const goldAccent = Color(0xFFE8C547);
     const rejectRed = Color(0xFFE53935);
-    final totalMins = etaToPickup + tripEta;
-    final totalMiles = distToPickupMi + tripDistMi;
 
     return Column(
       key: const ValueKey('compact'),
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── ROW 1: Rating (left) · Comfort badge (center) · X reject (right) ──
+        // ── ROW 1: Service badge (left) · X reject (right) ──
         Row(
           children: [
-            // Rating badge
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: goldAccent.withValues(alpha: 0.2)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.star_rounded, color: goldAccent, size: 14),
-                  const SizedBox(width: 3),
-                  Text(
-                    rating.toStringAsFixed(1),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Spacer(),
             // Service tier badge (Comfort/VIP/Premium)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1101,29 +1075,45 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
         const SizedBox(height: 4),
 
-        // ── ROW 2: Price (centered) + Tips label ──
+        // ── ROW 2: Price (left-aligned, bigger) + Rating · Tips ──
         Text(
           '\$${fare.toStringAsFixed(2)}',
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 26,
+            fontSize: 32,
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 1),
-        Text(
-          '+ Tips',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.4),
-            fontSize: 12,
-          ),
+        const SizedBox(height: 2),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.star_rounded, color: goldAccent, size: 13),
+            const SizedBox(width: 3),
+            Text(
+              rating.toStringAsFixed(1),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '+ Tips',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 12,
+              ),
+            ),
+          ],
         ),
 
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
 
-        // ── ROW 3: Route indicator (gold ● line ■ with addresses) ──
+        // ── ROW 3: Route indicator (gold ● line ■ with addresses + inline metrics) ──
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(
             color: const Color(0xFF1A1A1A),
             borderRadius: BorderRadius.circular(12),
@@ -1150,7 +1140,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     // Gold vertical line
                     Container(
                       width: 2,
-                      height: 22,
+                      height: 28,
                       color: const Color(0xFFD4A843).withValues(alpha: 0.4),
                     ),
                     const SizedBox(height: 4),
@@ -1188,7 +1178,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         fontSize: 11,
                       ),
                     ),
-                    const SizedBox(height: 1),
+                    const SizedBox(height: 2),
                     Text(
                       pickupAddr,
                       style: const TextStyle(
@@ -1199,7 +1189,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 10),
                     // Dropoff info
                     Text(
                       '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
@@ -1208,7 +1198,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         fontSize: 11,
                       ),
                     ),
-                    const SizedBox(height: 1),
+                    const SizedBox(height: 2),
                     Text(
                       dropoffAddr,
                       style: const TextStyle(
@@ -1226,26 +1216,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ),
         ),
 
-        const SizedBox(height: 4),
-
-        // ── ROW 4: Time + Miles chips (compact) ──
-        Row(
-          children: [
-            Expanded(child: _buildOfferChip(
-              icon: Icons.timer_outlined,
-              value: '$totalMins min',
-              label: 'Total time',
-            )),
-            const SizedBox(width: 5),
-            Expanded(child: _buildOfferChip(
-              icon: Icons.straighten_rounded,
-              value: '${totalMiles.toStringAsFixed(1)} mi',
-              label: 'Total distance',
-            )),
-          ],
-        ),
-
-        const SizedBox(height: 2),
+        const SizedBox(height: 6),
 
         // ── Divider ──
         Container(

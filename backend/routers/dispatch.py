@@ -539,9 +539,39 @@ async def reject_offer(
         drivers = drivers_result.scalars().all()
         drivers_sorted = sorted(drivers, key=lambda d: _haversine(trip.pickup_lat, trip.pickup_lng, d.lat or 0, d.lng or 0))
         if drivers_sorted:
-            new_offer = DispatchOffer(trip_id=trip.id, driver_id=drivers_sorted[0].id)
+            next_driver = drivers_sorted[0]
+            new_offer = DispatchOffer(trip_id=trip.id, driver_id=next_driver.id)
             db.add(new_offer)
             await db.commit()
+            await db.refresh(new_offer)
+            # ── SSE instant push to next driver ──
+            _pending_cache.pop(next_driver.id, None)
+            estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+            # Fetch rider info for the push payload
+            rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider = rider_result.scalar_one_or_none()
+            rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
+            rider_phone = rider.phone or "" if rider else ""
+            rider_photo = rider.photo_url or "" if rider else ""
+            asyncio.create_task(event_bus.push_driver_offer(next_driver.id, [{
+                "offer_id": new_offer.id,
+                "rider_name": rider_name,
+                "rider_phone": rider_phone,
+                "rider_photo_url": rider_photo,
+                "created_at": new_offer.created_at.isoformat() if new_offer.created_at else None,
+                "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
+                **_trip_dict(trip),
+                "fare": estimated_driver_fare,
+                "driver_earnings": estimated_driver_fare,
+            }]))
+            # ── FCM push to next driver ──
+            if next_driver.fcm_token:
+                _send_fcm_push(
+                    next_driver.fcm_token,
+                    title="🚗 New Ride Request",
+                    body=f"{rider_name} • {(trip.pickup_address or '')[:50]}",
+                    data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(new_offer.id)},
+                )
 
     return {"status": "rejected", "reason_stored": reason is not None}
 

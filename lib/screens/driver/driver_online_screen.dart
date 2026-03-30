@@ -842,7 +842,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             if (_phase == _Phase.searching &&
                 _pendingOffers.isNotEmpty)
               Positioned(
-                bottom: -16,
+                bottom: -30,
                 left: 0,
                 right: 0,
                 child: _rideOfferCards(

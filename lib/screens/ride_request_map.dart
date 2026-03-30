@@ -141,9 +141,15 @@ extension _RideRequestMap on _RideRequestScreenState {
     const labelH = 95.0;
     const pinLabelGap = 12.0;
 
+    // ── Pin display dimensions (GoldenPinPainter: height = width × 1.30) ──
+    // The 2× image must be scaled to its logical size before drawing.
+    const double pinDisplayW = pinSize;
+    const double pinDisplayH = pinSize * 1.30; // includes full tail down to the tip
+
     // ── Unpadded layout ──
-    final rawW = pinSize + pinLabelGap + labelW;
-    final totalH = math.max(pinSize, labelH);
+    final rawW = pinDisplayW + pinLabelGap + labelW;
+    // Canvas height = full pin height so tip lands at canvas bottom for iconAnchor.BOTTOM
+    final totalH = math.max(pinDisplayH, labelH);
 
     double pinX, labelX;
     if (labelOnLeft) {
@@ -151,13 +157,14 @@ extension _RideRequestMap on _RideRequestScreenState {
       pinX = labelW + pinLabelGap;
     } else {
       pinX = 0;
-      labelX = pinSize + pinLabelGap;
+      labelX = pinDisplayW + pinLabelGap;
     }
-    final double pinY = (totalH - pinSize) / 2;
-    final double labelY = (totalH - labelH) / 2;
+    final double pinY = 0.0; // pin top at canvas top → tip exactly at canvas bottom
+    // Label centred on pin head (head is at width×0.50 from top ≈ 38.5% of total height)
+    final double labelY = (pinDisplayH * 0.385 - labelH / 2.0).clamp(0.0, totalH - labelH);
 
     // ── Pad canvas so pin tip is at bottom-center ──
-    final pinTipX = pinX + pinSize / 2;
+    final pinTipX = pinX + pinDisplayW / 2;
     final leftMargin = pinTipX;
     final rightMargin = rawW - pinTipX;
     final maxM = math.max(leftMargin, rightMargin);
@@ -180,11 +187,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     final codec = await ui.instantiateImageCodec(pinBytes);
     final frame = await codec.getNextFrame();
     final pinImage = frame.image;
-    canvas.drawImage(
-      pinImage,
-      Offset(adjPinX, pinY),
-      Paint(),
-    );
+    // Scale the 2× image into the logical display rect so the tip lands at canvas bottom
+    final srcRect = Rect.fromLTWH(0, 0, pinImage.width.toDouble(), pinImage.height.toDouble());
+    final dstRect = Rect.fromLTWH(adjPinX, pinY, pinDisplayW, pinDisplayH);
+    canvas.drawImageRect(pinImage, srcRect, dstRect, Paint());
 
     // If airport, overlay a golden departure icon on the pin head
     if (icon == _PinIcon.airplane) {
@@ -192,7 +198,7 @@ extension _RideRequestMap on _RideRequestScreenState {
         text: TextSpan(
           text: String.fromCharCode(Icons.flight_takeoff_rounded.codePoint),
           style: TextStyle(
-            fontSize: pinSize * 0.34,
+            fontSize: pinDisplayW * 0.34,
             fontFamily: Icons.flight_takeoff_rounded.fontFamily,
             package: Icons.flight_takeoff_rounded.fontPackage,
             color: Colors.white,
@@ -200,11 +206,11 @@ extension _RideRequestMap on _RideRequestScreenState {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      final headCY = pinY + pinSize * 0.32 + pinSize * 0.04;
+      final headCY = pinY + pinDisplayH * 0.385; // head centre at 38.5% of pin height
       iconTp.paint(
         canvas,
         Offset(
-          adjPinX + pinSize / 2 - iconTp.width / 2,
+          adjPinX + pinDisplayW / 2 - iconTp.width / 2,
           headCY - iconTp.height / 2,
         ),
       );
@@ -629,7 +635,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     _startCinematicSequence(pts);
   }
 
-  /// Cinematic map animation: fit → tilt 55° + random bearing → pin pop → gold route draw → glow
+  /// Cinematic map animation: fit → tilt 30° + random bearing → pin pop → gold route draw → glow
   Future<void> _startCinematicSequence(List<LatLng> pts) async {
     if (!mounted || _mapCtrl == null) return;
 
@@ -643,10 +649,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     await Future.delayed(const Duration(milliseconds: 700));
     if (!mounted) return;
 
-    // 2. Tilt 0° → 55° + bearing 0° → random, simultaneously (1200ms)
+    // 2. Tilt 0° → 30° + bearing 0° → random, simultaneously (1200ms)
     _tiltCtrl?.dispose();
     _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
-    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+    _tiltAnim = Tween<double>(begin: 0.0, end: 30.0).animate(
       CurvedAnimation(parent: _tiltCtrl!, curve: Curves.easeInOutCubic),
     );
     _bearingCtrl?.dispose();

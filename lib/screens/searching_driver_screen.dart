@@ -6,11 +6,27 @@ import 'package:flutter/material.dart';
 /// orbiting dots, floating particles, shimmer text, and a gleaming
 /// progress bar.  Auto-pops after exactly 4 seconds.
 class SearchingDriverScreen extends StatefulWidget {
-  const SearchingDriverScreen({super.key, this.onCancel});
+  const SearchingDriverScreen({
+    super.key,
+    this.onCancel,
+    this.paymentCallback,
+    this.onPaymentDeclined,
+    this.initiallyDeclined = false,
+  });
 
   /// Called when the rider confirms they want to cancel the ride.
-  /// Navigation back to home is handled by the caller.
   final VoidCallback? onCancel;
+
+  /// If provided, called ~800 ms into the animation to authorize payment.
+  /// Return true = approved, false = user cancelled, throws = bank declined.
+  final Future<bool> Function()? paymentCallback;
+
+  /// Called just before popping when payment was declined by the bank.
+  final VoidCallback? onPaymentDeclined;
+
+  /// Start immediately in the payment-declined state (used when native pay
+  /// sheet was shown before this screen and the bank rejected the charge).
+  final bool initiallyDeclined;
 
   @override
   State<SearchingDriverScreen> createState() => _SearchingDriverScreenState();
@@ -34,6 +50,9 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
 
   // ── derived animations for 4 radar rings ──
   late final Animation<double> _ring1, _ring2, _ring3, _ring4;
+
+  // ── declined state ──
+  bool _paymentDeclined = false;
 
   // ── particles (20 total) ──
   late final List<_Particle> _particles;
@@ -112,6 +131,29 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat();
+
+    // ── 8. Payment handling ──
+    if (widget.initiallyDeclined) {
+      // Native pay sheet already ran and was declined — show error immediately
+      WidgetsBinding.instance.addPostFrameCallback((_) => _handleDeclined());
+    } else if (widget.paymentCallback != null) {
+      // Card / sandbox: fire payment during the loading animation
+      Future.delayed(const Duration(milliseconds: 800), () async {
+        if (!mounted) return;
+        try {
+          final ok = await widget.paymentCallback!();
+          if (!mounted) return;
+          if (!ok) {
+            // User explicitly cancelled from payment sheet
+            widget.onCancel?.call();
+            Navigator.of(context).pop(true);
+          }
+          // success — let progress bar auto-pop at 4 s
+        } catch (_) {
+          if (mounted) _handleDeclined();
+        }
+      });
+    }
   }
 
   @override
@@ -132,6 +174,20 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   // ═══════════════════════════════════════════════════════════════════════
   //  BUILD
   // ═══════════════════════════════════════════════════════════════════════
+  void _handleDeclined() {
+    if (!mounted || _paymentDeclined) return;
+    setState(() => _paymentDeclined = true);
+    _progressCtrl.stop();
+    _radarCtrl.stop();
+    _orbitCtrl.stop();
+    _glowCtrl.stop();
+    Future.delayed(const Duration(milliseconds: 2000), () {
+      if (!mounted) return;
+      widget.onPaymentDeclined?.call();
+      Navigator.of(context).pop();
+    });
+  }
+
   void _showCancelDialog() {
     showDialog<void>(
       context: context,
@@ -347,6 +403,17 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   //  SHIMMER TEXT
   // ═══════════════════════════════════════════════════════════════════════
   Widget _buildShimmerText() {
+    if (_paymentDeclined) {
+      return const Text(
+        'Payment Declined',
+        style: TextStyle(
+          color: Color(0xFFFF4444),
+          fontSize: 22,
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0.5,
+        ),
+      );
+    }
     return AnimatedBuilder(
       animation: _shimmerCtrl,
       builder: (_, __) {
@@ -384,6 +451,16 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   //  PROGRESS BAR WITH GLEAM
   // ═══════════════════════════════════════════════════════════════════════
   Widget _buildProgressBar() {
+    if (_paymentDeclined) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(2),
+        child: const SizedBox(
+          width: double.infinity,
+          height: 3,
+          child: ColoredBox(color: Color(0xFFFF4444)),
+        ),
+      );
+    }
     return AnimatedBuilder(
       animation: Listenable.merge([_progressCtrl, _barGleamCtrl]),
       builder: (_, __) {
@@ -413,12 +490,22 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
 //  ROUTE BUILDER
 // ═════════════════════════════════════════════════════════════════════════
 
-Route<bool> searchingDriverRoute({VoidCallback? onCancel}) {
+Route<bool> searchingDriverRoute({
+  VoidCallback? onCancel,
+  Future<bool> Function()? paymentCallback,
+  VoidCallback? onPaymentDeclined,
+  bool initiallyDeclined = false,
+}) {
   return PageRouteBuilder<bool>(
     opaque: true,
     transitionDuration: const Duration(milliseconds: 280),
     reverseTransitionDuration: const Duration(milliseconds: 220),
-    pageBuilder: (_, __, ___) => SearchingDriverScreen(onCancel: onCancel),
+    pageBuilder: (_, __, ___) => SearchingDriverScreen(
+      onCancel: onCancel,
+      paymentCallback: paymentCallback,
+      onPaymentDeclined: onPaymentDeclined,
+      initiallyDeclined: initiallyDeclined,
+    ),
     transitionsBuilder: (_, anim, __, child) {
       return FadeTransition(
         opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),

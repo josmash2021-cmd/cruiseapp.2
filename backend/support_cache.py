@@ -13,6 +13,12 @@ import logging
 import threading
 from typing import Optional
 
+try:
+    from google.cloud.firestore_v1.base_query import FieldFilter
+    _HAS_FIELD_FILTER = True
+except ImportError:
+    _HAS_FIELD_FILTER = False
+
 log = logging.getLogger("support_cache")
 _rng = random.Random()
 
@@ -497,7 +503,7 @@ def _load_from_firestore() -> list[dict]:
     if not _HAS_FIRESTORE_CACHE or not _firestore_db:
         return []
     try:
-        docs = _firestore_db.collection("support_cache").where("active", "==", True).stream()
+        docs = _firestore_db.collection("support_cache").where(filter=FieldFilter("active", "==", True)).stream() if _HAS_FIELD_FILTER else _firestore_db.collection("support_cache").where("active", "==", True).stream()
         entries = []
         for doc in docs:
             data = doc.to_dict()
@@ -565,6 +571,12 @@ def _promote_candidate_if_ready(user_msg: str, ai_response: str, category: str, 
     try:
         # Find similar candidates (same category, recent)
         candidates = _firestore_db.collection("support_cache_candidates") \
+            .where(filter=FieldFilter("category", "==", category)) \
+            .where(filter=FieldFilter("user_satisfied", "==", True)) \
+            .order_by("created_at") \
+            .limit(50) \
+            .stream() if _HAS_FIELD_FILTER else \
+            _firestore_db.collection("support_cache_candidates") \
             .where("category", "==", category) \
             .where("user_satisfied", "==", True) \
             .order_by("created_at") \

@@ -6,12 +6,14 @@ import '../services/directions_service.dart';
 import '../services/navigation_service.dart';
 
 /// Convenience wrapper that fetches a [NavRoute] (with turn-by-turn steps)
-/// using a fallback chain: Google Directions → OSRM → Mapbox.
+/// using a fallback chain: Google+OSRM in parallel → Mapbox last resort.
 class RouteService {
+  static const _primaryTimeoutMs = 3000; // 3s — fast enough to feel instant
+
   /// Fetch a navigation-grade route between [origin] and [destination].
   ///
-  /// Tries Google Directions API first (best quality). If that fails,
-  /// falls back to OSRM, then Mapbox — both with step-by-step instructions.
+  /// Fires Google Directions and OSRM simultaneously, takes whichever
+  /// resolves first with valid steps. Falls back to Mapbox only if both fail.
   /// Returns `null` only if all providers fail.
   static Future<NavRoute?> fetchNavRoute({
     required LatLng origin,
@@ -19,40 +21,50 @@ class RouteService {
   }) async {
     final directions = DirectionsService(ApiKeys.webServices);
 
-    // 1. Google Directions API (primary — best quality steps)
-    try {
-      final data = await directions.getRawDirectionsResponse(
-        origin: origin,
-        destination: destination,
-      );
-      if (data != null) {
-        final route = NavigationService.fromDirectionsResponse(data);
-        if (route != null && route.steps.isNotEmpty) {
-          debugPrint('[RouteService] Google → ${route.steps.length} steps, ${route.overviewPolyline.length} pts');
-          return route;
+    // Helper that wraps a provider call with a timeout and swallows errors
+    Future<NavRoute?> tryGoogle() async {
+      try {
+        final data = await directions.getRawDirectionsResponse(
+          origin: origin,
+          destination: destination,
+        ).timeout(const Duration(milliseconds: _primaryTimeoutMs));
+        if (data != null) {
+          final route = NavigationService.fromDirectionsResponse(data);
+          if (route != null && route.steps.isNotEmpty) {
+            debugPrint('[RouteService] Google → ${route.steps.length} steps');
+            return route;
+          }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+      return null;
+    }
 
-    // 2. OSRM fallback (free, good step quality)
-    try {
-      debugPrint('[RouteService] Google failed, trying OSRM…');
-      final osrmData = await directions.getRawOsrmResponse(
-        origin: origin,
-        destination: destination,
-      );
-      if (osrmData != null) {
-        final route = NavigationService.fromOsrmResponse(osrmData);
-        if (route != null && route.steps.isNotEmpty) {
-          debugPrint('[RouteService] OSRM → ${route.steps.length} steps, ${route.overviewPolyline.length} pts');
-          return route;
+    Future<NavRoute?> tryOsrm() async {
+      try {
+        final data = await directions.getRawOsrmResponse(
+          origin: origin,
+          destination: destination,
+        ).timeout(const Duration(milliseconds: _primaryTimeoutMs));
+        if (data != null) {
+          final route = NavigationService.fromOsrmResponse(data);
+          if (route != null && route.steps.isNotEmpty) {
+            debugPrint('[RouteService] OSRM → ${route.steps.length} steps');
+            return route;
+          }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+      return null;
+    }
 
-    // 3. Mapbox fallback (uses access token already configured)
+    // 1+2. Race Google and OSRM — use whichever wins
+    final results = await Future.wait([tryGoogle(), tryOsrm()]);
+    for (final r in results) {
+      if (r != null) return r;
+    }
+
+    // 3. Mapbox last resort (no extra timeout — already waited 3s above)
     try {
-      debugPrint('[RouteService] OSRM failed, trying Mapbox…');
+      debugPrint('[RouteService] Google+OSRM failed, trying Mapbox…');
       final mbxData = await directions.getRawMapboxResponse(
         origin: origin,
         destination: destination,
@@ -60,7 +72,7 @@ class RouteService {
       if (mbxData != null) {
         final route = NavigationService.fromMapboxResponse(mbxData);
         if (route != null && route.steps.isNotEmpty) {
-          debugPrint('[RouteService] Mapbox → ${route.steps.length} steps, ${route.overviewPolyline.length} pts');
+          debugPrint('[RouteService] Mapbox → ${route.steps.length} steps');
           return route;
         }
       }

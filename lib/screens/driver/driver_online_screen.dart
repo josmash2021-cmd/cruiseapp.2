@@ -410,6 +410,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
 
   double _targetHeading = 0;
+  int _lastUiRebuildMs = 0; // throttle: only rebuild widget tree at ~15fps
 
   /// Pre-fetch routes for incoming offers so they are cached before card tap.
   void _preFetchOfferRoutes(List<Map<String, dynamic>> offers) {

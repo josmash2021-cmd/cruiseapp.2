@@ -540,8 +540,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Start the ride start animation:
   /// 1. Camera zooms out to show full route (800ms flyTo)
   /// 2. Dropoff pin appears
-  /// 3. Gold route line draws progressively from pickup → dropoff (2000ms)
-  /// 4. Camera stays in full overview for real-time tracking
+  /// Start the ride start animation sequence:
+  /// 1. Camera top-down showing full route (800 ms flyTo)
+  /// 2. Route draws progressively pickup → dropoff (2 s)
+  /// 3. Camera flies to 45° centred on driver (1.5 s)
+  /// 4. Route fades out (600 ms)
+  /// 5. Route redraws from driver position → dropoff (2 s)
+  /// 6. Enable 45° follow camera for real-time tracking
   void _startStartRideAnimation() {
     if (_startRideAnimationDone) return;
     _startRideAnimationDone = true;
@@ -550,12 +555,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // PHASE 1: Add dropoff pin immediately
     _addDropoffPin();
 
-    // PHASE 2: Zoom out to show full route (triggers flyTo 800ms)
+    // PHASE 2: Zoom out to top-down full route overview (800 ms flyTo)
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) _fitRouteBounds();
     });
 
-    // PHASE 3: Start route draw animation after camera fits (800ms flyTo + 200ms buffer)
+    // PHASE 3: Animated route draw pickup → dropoff (2 s)
     Future.delayed(const Duration(milliseconds: 1000), () {
       if (!mounted) return;
       _startRidePhase = 2;
@@ -563,11 +568,28 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _startAnimatedRouteDraw();
     });
 
-    // Mark complete after route finishes drawing (1000ms + 2000ms draw = 3000ms)
-    _startRidePhaseTimer?.cancel();
-    _startRidePhaseTimer = Timer(const Duration(milliseconds: 3200), () {
+    // PHASE 4: Fly camera to 45° on driver (1.5 s)
+    Future.delayed(const Duration(milliseconds: 3200), () {
       if (!mounted) return;
-      _startRidePhase = 5; // done — real-time tracking
+      _startRidePhase = 3;
+      _flyToDriverAt45();
+    });
+
+    // PHASE 5: Fade out route (600 ms)
+    Future.delayed(const Duration(milliseconds: 4800), () {
+      if (!mounted) return;
+      _startRidePhase = 4;
+      _fadeRouteForRideStart();
+    });
+
+    // PHASE 6: Redraw route + enable 45° follow camera
+    _startRidePhaseTimer?.cancel();
+    _startRidePhaseTimer = Timer(const Duration(milliseconds: 5600), () {
+      if (!mounted) return;
+      _routeDrawDone = false;
+      _startAnimatedRouteDraw(); // redraw from current driver position → dropoff
+      _useNavCamera = true;      // switch _followDriver() to tilt mode
+      _startRidePhase = 5;       // done — real-time tracking
     });
   }
 
@@ -602,7 +624,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   /// Smooth camera follow for driver position
   void _followDriver(LatLng position, double bearing) {
-    _fitRouteBounds();
+    if (_useNavCamera) {
+      _flyToDriverAt45();
+    } else {
+      _fitRouteBounds();
+    }
   }
 
   void _navigateToHome() {

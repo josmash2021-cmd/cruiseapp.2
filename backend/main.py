@@ -279,13 +279,20 @@ app.include_router(misc_router)
 #  8 LAYERS OF SECURITY PROTECTION
 # ═══════════════════════════════════════════════════════
 
-# -- LAYER 1: CORS � Allow mobile-app connections from any origin ----
+# -- LAYER 1: CORS — Allow mobile-app + known web origins ----
 # Mobile apps (Flutter) don't send browser-origin headers; CORS does not
 # protect native traffic.  Real security is in L5-L10 (API key, HMAC, JWT).
+_CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [
+    "https://www.cruiseinride.com",
+    "https://cruiseinride.com",
+    "https://cruiseapp2-production.up.railway.app",
+    "http://localhost:3000",
+    "http://localhost:8000",
+]
 app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Timestamp", "X-Nonce", "X-Signature"],

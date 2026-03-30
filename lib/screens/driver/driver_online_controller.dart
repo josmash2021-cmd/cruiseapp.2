@@ -27,8 +27,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (_driverId == null) {
       debugPrint('âŒ Could not get driver ID after 3 attempts');
     }
-    await _locate();
-    await _buildVehicleIcons();
+    // Run GPS + icon loading in parallel — they are independent
+    await Future.wait([_locate(), _buildVehicleIcons()]);
     // Gate: check verification / background check status before going online
     await _verifyDriverApproval();
     _goOnlineBackend();
@@ -750,8 +750,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Unified camera following (single source of truth for all phases)
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
     if (_phase == _Phase.searching) {
-      // Searching: smooth top-down follow using lerped position
-      _map?.flyTo(
+      // Searching: instant camera update — setCamera avoids animation conflicts at 60fps
+      _map?.setCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
               coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
@@ -759,12 +759,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           bearing: 0,
           pitch: 0,
         ),
-        mapbox.MapAnimationOptions(duration: 800),
       );
     } else if (isNav && _cameraFollowing) {
       // Navigation: 2.5D chase cam using lerped position + bearing
       _cameraBearing = _heading;
-      _map?.flyTo(
+      _map?.setCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
               coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
@@ -772,12 +771,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           bearing: _heading,
           pitch: 55,
         ),
-        mapbox.MapAnimationOptions(duration: 600),
       );
     }
 
     _updateDriverAnnotation();
-    _setState(() {});
+    // Throttle widget-tree rebuilds to ~15fps — map annotation updates every frame
+    // but Flutter setState only fires 4x/sec so buttons stay responsive.
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (nowMs - _lastUiRebuildMs >= 66) {
+      _lastUiRebuildMs = nowMs;
+      _setState(() {});
+    }
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -786,7 +790,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _startPolling() {
     _pollT?.cancel();
     _poll();
-    _pollT = Timer.periodic(const Duration(seconds: 1), (_) {
+    _pollT = Timer.periodic(const Duration(seconds: 2), (_) {
       if (!mounted || _phase != _Phase.searching) return;
       _poll();
     });
@@ -840,8 +844,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   void _startClock() {
-    _clock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) _setState(() => _online += const Duration(seconds: 1));
+    _clock = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted) _setState(() => _online += const Duration(seconds: 5));
     });
   }
 

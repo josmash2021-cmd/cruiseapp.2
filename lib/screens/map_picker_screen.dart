@@ -198,9 +198,11 @@ class _MapPickerScreenState extends State<MapPickerScreen>
           ),
 
           // Center pin — fixed while map moves underneath
+          // Offset = -(widget_height/2) = -(size*1.1/2) = -(56*1.1/2) ≈ -31
+          // so pin tip (at widget bottom) lands exactly at screen/map center.
           Center(
             child: Transform.translate(
-              offset: const Offset(0, -36),
+              offset: const Offset(0, -31),
               child: ScaleTransition(
                 scale: _settleAnim,
                 child: CircularMapPin(
@@ -212,10 +214,10 @@ class _MapPickerScreenState extends State<MapPickerScreen>
             ),
           ),
 
-          // Shadow dot on map under pin tip
+          // Shadow dot directly under pin tip (1px below map center for depth)
           Center(
             child: Transform.translate(
-              offset: const Offset(0, 4),
+              offset: const Offset(0, 1),
               child: Container(
                 width: 8,
                 height: 4,

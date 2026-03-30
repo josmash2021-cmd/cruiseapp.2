@@ -382,14 +382,14 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     await Future.delayed(const Duration(milliseconds: 800));
     if (!mounted) return;
 
-    // 2. Tilt 0° → 55° + random bearing (1200ms)
+    // 2. Tilt 0° → 30° + random bearing (1200ms)
     final rng = math.Random();
     final degrees = 5.0 + rng.nextDouble() * 10.0;
     final randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
 
     _tiltCtrl?.dispose();
     _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
-    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+    _tiltAnim = Tween<double>(begin: 0.0, end: 30.0).animate(
       CurvedAnimation(parent: _tiltCtrl!, curve: Curves.easeInOutCubic),
     );
     _bearingCtrl?.dispose();
@@ -408,7 +408,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     if (!mounted) return;
 
     // 4. Save camera state
-    _cinematicPitch = 55.0;
+    _cinematicPitch = 30.0;
     _cinematicBearing = randomBearing;
     _cinematicDone = true;
   }
@@ -1160,7 +1160,9 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                         ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
                         _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                         try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-                        _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+                        _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+                          below: 'road-label',
+                        );
                         setState(() => _mapReady = true);
                         if (_pickupLatLng != null && _dropoffLatLng != null) {
                           _fitMap();

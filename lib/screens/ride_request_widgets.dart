@@ -233,6 +233,42 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   ),
                   const SizedBox(height: 8),
 
+                  // Payment declined banner
+                  if (_showPaymentDeclinedBanner)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3D0000),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: const Color(0xFFB71C1C), width: 1),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline_rounded,
+                                color: Color(0xFFEF9A9A), size: 18),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Payment declined. Try a different method.',
+                                style: TextStyle(
+                                    color: Color(0xFFEF9A9A), fontSize: 13),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => _setState(
+                                  () => _showPaymentDeclinedBanner = false),
+                              child: const Icon(Icons.close_rounded,
+                                  color: Color(0xFFEF9A9A), size: 18),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
                   // Title — tappable to collapse/expand
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -1795,7 +1831,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                           image: pickupBytes,
                           iconSize: 0.65,
                           iconAnchor: mapbox.IconAnchor.BOTTOM,
-                          iconOffset: [0, 4],
+                          iconOffset: [0, 0],
                         ));
                         if (dropoff != null) {
                           final dropoffBytes =
@@ -1808,7 +1844,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             image: dropoffBytes,
                             iconSize: 0.65,
                             iconAnchor: mapbox.IconAnchor.BOTTOM,
-                            iconOffset: [0, 4],
+                            iconOffset: [0, 0],
                           ));
                         }
                       },

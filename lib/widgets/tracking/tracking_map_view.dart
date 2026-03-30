@@ -977,7 +977,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         image: _pickupPinBytes!,
         iconSize: 1.05,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 4],
+        iconOffset: [0, 0],
       ));
     } catch (_) {}
 
@@ -1015,7 +1015,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         image: _dropoffPinBytes!,
         iconSize: 0.01,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 4],
+        iconOffset: [0, 0],
       ));
       // Animate pin pop: 0.01 → 1.15 → 0.95 → 1.05 over 500ms
       _animateDropoffPinPop();
@@ -1310,6 +1310,59 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// Fade and remove the route polyline (for arrived state)
   Future<void> _fadeAndRemoveRoute() async {
     // This is handled by _handleDriverArrived
+  }
+
+  /// Animate camera to 45° locked nav follow centred on driver position.
+  /// Called during the ride-start animation sequence (Phase 4).
+  void _flyToDriverAt45() {
+    if (_map == null) return;
+    final bearing = _animBearing;
+    _map!.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(
+          coordinates:
+              mapbox.Position(_animPos.longitude, _animPos.latitude),
+        ),
+        zoom: 16.5,
+        bearing: bearing,
+        pitch: 45.0,
+      ),
+      mapbox.MapAnimationOptions(duration: 1500),
+    );
+  }
+
+  /// Fade out route polyline over 600 ms then clear it so it can be redrawn.
+  /// Unlike [_handleDriverArrived], this does NOT remove the dropoff pin.
+  void _fadeRouteForRideStart() {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null) return;
+
+    _routeFadeTimer?.cancel();
+    const fadeDuration = 600;
+    final startTime = DateTime.now();
+    _routeFadeTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) async {
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      final t = (elapsed / fadeDuration).clamp(0.0, 1.0);
+      final opacity = 1.0 - t;
+
+      if (_remainingRouteAnnot != null) {
+        try {
+          polyMgr.update(_remainingRouteAnnot!..lineOpacity = opacity);
+        } catch (_) {}
+      }
+
+      if (t >= 1.0) {
+        timer.cancel();
+        _routeFadeTimer = null;
+        if (_remainingRouteAnnot != null) {
+          try {
+            await polyMgr.delete(_remainingRouteAnnot!);
+          } catch (_) {}
+          _remainingRouteAnnot = null;
+        }
+        _routeDrawDone = false; // allow next redraw
+      }
+    });
   }
 
   Future<void> _updateAnnotations() async {

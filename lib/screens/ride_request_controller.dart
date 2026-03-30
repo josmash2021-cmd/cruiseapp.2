@@ -714,10 +714,8 @@ extension _RideRequestController on _RideRequestScreenState {
       setSheetState(() => _isProcessingPayment = false);
       _setState(() => _isProcessingPayment = false);
       debugPrint('Payment error: $e');
-      _showDeclinedDialog(
-        title: S.of(context).paymentDeclined,
-        message: 'Payment could not be processed. Please try again or use a different payment method.',
-      );
+      Navigator.of(context).pop(); // close payment modal
+      _setState(() => _showPaymentDeclinedBanner = true);
       return;
     }
 
@@ -738,44 +736,61 @@ extension _RideRequestController on _RideRequestScreenState {
 
   /// Processes payment directly from the route preview sheet.
   Future<void> _startRideDirectly(AppColors c, RideOption? option) async {
+    if (option == null) return;
     final nav = Navigator.of(context);
-    _setState(() => _isProcessingPayment = true);
 
-    try {
-      final success = await _confirmNativePayment(option);
-      if (!mounted) return;
-      if (!success) {
-        _setState(() => _isProcessingPayment = false);
-        return; // User cancelled — stay on screen
+    // Native pay (Apple/Google Pay/PayPal): OS sheet must appear first.
+    // Card / sandbox: payment runs inside the searching screen animation.
+    final bool isNativePay = !AppConfig.sandboxPayments &&
+        (_selectedPaymentMethod == 'apple_pay' ||
+            _selectedPaymentMethod == 'google_pay' ||
+            _selectedPaymentMethod == 'paypal');
+
+    bool nativePayFailed = false;
+    if (isNativePay) {
+      _setState(() => _isProcessingPayment = true);
+      try {
+        final ok = await _confirmNativePayment(option);
+        if (!mounted) return;
+        if (!ok) {
+          _setState(() => _isProcessingPayment = false);
+          return; // user dismissed OS sheet — stay on screen
+        }
+      } catch (e) {
+        if (!mounted) return;
+        debugPrint('Native payment error: $e');
+        nativePayFailed = true;
       }
-    } catch (e) {
-      if (!mounted) return;
       _setState(() => _isProcessingPayment = false);
-      debugPrint('Payment error: $e');
-      _showDeclinedDialog(
-        title: S.of(context).paymentDeclined,
-        message: 'Payment could not be processed. Please try again or use a different payment method.',
-      );
-      return;
     }
 
     if (!mounted) return;
-    _setState(() => _isProcessingPayment = false);
     if (widget.applyPromo) await LocalDataService.setPromoUsed();
-    AnalyticsService.instance.logRideRequested(option?.name ?? 'unknown', option?.priceEstimate ?? 0);
+    AnalyticsService.instance
+        .logRideRequested(option.name, option.priceEstimate);
 
     if (_ctrl.state.scheduledAt != null) {
       await _createScheduledTrip();
       return;
     }
 
-    // Show premium "Searching" animation before requesting the ride
+    bool paymentDeclinedFlag = false;
+
     final cancelled = await nav.push<bool>(
-      searchingDriverRoute(onCancel: _cancelSearching),
+      searchingDriverRoute(
+        onCancel: _cancelSearching,
+        paymentCallback: isNativePay ? null : () => _confirmNativePayment(option),
+        initiallyDeclined: nativePayFailed,
+        onPaymentDeclined: () => paymentDeclinedFlag = true,
+      ),
     );
+
     if (cancelled == true) {
-      // Rider confirmed cancel — _cancelSearching already ran; pop back to home
       if (mounted) Navigator.of(context).pop();
+      return;
+    }
+    if (nativePayFailed || paymentDeclinedFlag) {
+      if (mounted) _setState(() => _showPaymentDeclinedBanner = true);
       return;
     }
     if (!mounted) return;

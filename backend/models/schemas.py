@@ -135,6 +135,7 @@ class CreateTripIn(BaseModel):
     terminal: Optional[str] = None
     pickup_zone: Optional[str] = None
     notes: Optional[str] = None
+    stripe_payment_intent_id: Optional[str] = None
 
 
 class AcceptTripIn(BaseModel):

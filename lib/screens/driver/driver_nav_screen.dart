@@ -514,7 +514,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       // trigger it now so it always plays exactly once.
       if (_mapReady && !_cinematicDone) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _startCinematicEntry();
+          if (!mounted) return;
+          if (widget.startWithOverview) {
+            _startCinematicEntry();
+          } else {
+            _cinematicDone = true;
+            _jumpToNavPosition(); // Snap to 45° nav camera immediately
+          }
         });
       }
     } else if (_routePts.length > 1) {
@@ -1044,9 +1050,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   //  CAMERA
   // =========================================================================
 
-  // Navigation camera: 55° tilt, zoom 17.5, centered on driver
+  // Navigation camera: 45° tilt, zoom 17.5, centered on driver
   static const double _navZoom = 17.5;
-  static const double _navTilt = 55.0;
+  static const double _navTilt = 45.0;
   static const double _pinOffsetRatio = 0.35;
 
   // _animateCamera is no longer used — camera follow is handled directly

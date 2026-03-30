@@ -1,6 +1,12 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
+
+try:
+    from google.cloud.firestore_v1.base_query import FieldFilter
+    _HAS_FIELD_FILTER = True
+except ImportError:
+    _HAS_FIELD_FILTER = False
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
@@ -937,7 +943,7 @@ async def _rehydrate_pending_reminders():
     if not _HAS_FIRESTORE:
         return
     try:
-        docs = firestore_sync._fs_db.collection("pending_reminders").where("status", "==", "pending").stream()
+        docs = firestore_sync._fs_db.collection("pending_reminders").where(filter=FieldFilter("status", "==", "pending")).stream() if _HAS_FIELD_FILTER else firestore_sync._fs_db.collection("pending_reminders").where("status", "==", "pending").stream()
         count = 0
         for doc in docs:
             data = doc.to_dict()

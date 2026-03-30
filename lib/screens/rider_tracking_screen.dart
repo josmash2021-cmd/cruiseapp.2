@@ -302,6 +302,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // Smooth camera follow (for real-time tracking after animation)
   bool _shouldFollowDriver = false;
   Timer? _cameraFollowTimer;
+  bool _useNavCamera = false; // When true: follow driver at 45° pitch
 
   @override
   Widget build(BuildContext context) {

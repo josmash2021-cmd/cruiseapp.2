@@ -63,6 +63,7 @@ class ConnectionKeeper:
         self._firestore_db = firestore_db
         self._db_reconnect_count = 0
         self._db_latency_ms = 0.0
+        self._start_time = time.time()  # track startup for warmup grace
 
     def set_db_session_maker(self, session_maker):
         """Set the database session maker after initialization"""
@@ -88,9 +89,16 @@ class ConnectionKeeper:
                     self._last_db_ping = time.time()
 
                     if latency > 2000:
-                        logger.warning(
-                            f"⚠️ DB ping slow: {latency:.0f}ms — connection may need refresh"
-                        )
+                        # Suppress slow-ping warnings during startup warmup (first 90s)
+                        uptime = time.time() - self._start_time
+                        if uptime > 90:
+                            logger.warning(
+                                f"⚠️ DB ping slow: {latency:.0f}ms — connection may need refresh"
+                            )
+                        else:
+                            logger.info(
+                                f"DB ping {latency:.0f}ms during warmup ({uptime:.0f}s uptime) — normal"
+                            )
 
             except Exception as e:
                 logger.error(f"❌ DB ping failed: {e}")

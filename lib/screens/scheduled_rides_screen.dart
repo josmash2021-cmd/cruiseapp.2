@@ -508,7 +508,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
           mapbox.Point(coordinates: mapbox.Position(lngs.first, lats.first)),
           mapbox.Point(coordinates: mapbox.Position(lngs.last, lats.last)),
         ],
-        mapbox.CameraOptions(),
+        mapbox.CameraOptions(pitch: 55),
         mapbox.MbxEdgeInsets(top: 40, left: 30, bottom: 50, right: 30),
         null,
         null,
@@ -736,79 +736,86 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
               ),
             ),
 
-            // â”€â”€ Route info â”€â”€
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Column(
-                    children: [
-                      Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: _gold,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: _gold.withValues(alpha: 0.3),
-                            width: 3,
-                          ),
-                        ),
-                      ),
-                      Container(width: 1.5, height: 28, color: Colors.white12),
-                      Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: isAirport
-                              ? const Color(0xFF4285F4)
-                              : Colors.white,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: (isAirport
-                                    ? const Color(0xFF4285F4)
-                                    : Colors.white)
-                                .withValues(alpha: 0.3),
-                            width: 3,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+
+            // ── Route info (hidden when expanded) ──
+            AnimatedCrossFade(
+              firstChild: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Column(
                       children: [
-                        Text(
-                          pickup.isNotEmpty ? pickup : 'Pickup location',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: c.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: _gold,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: _gold.withValues(alpha: 0.3),
+                              width: 3,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 18),
-                        Text(
-                          dropoff.isNotEmpty ? dropoff : 'Dropoff location',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: c.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                        Container(width: 1.5, height: 28, color: Colors.white12),
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: isAirport
+                                ? const Color(0xFF4285F4)
+                                : Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: (isAirport
+                                      ? const Color(0xFF4285F4)
+                                      : Colors.white)
+                                  .withValues(alpha: 0.3),
+                              width: 3,
+                            ),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            pickup.isNotEmpty ? pickup : 'Pickup location',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: c.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            dropoff.isNotEmpty ? dropoff : 'Dropoff location',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: c.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              secondChild: const SizedBox(width: double.infinity, height: 0),
+              crossFadeState: _expanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 300),
             ),
-
             // â”€â”€ Info chips â”€â”€
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
@@ -859,6 +866,22 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                 ),
               ),
 
+
+            // ── Expandable mini map (before cancel button) ──
+            if (_hasCoords)
+              AnimatedSize(
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOutCubic,
+                child: _mapEverExpanded
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                        child: SizedBox(
+                          height: _expanded ? 200.0 : 0.0,
+                          child: _buildMiniMap(),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
             // -- Cancel / Contact support --
             if (_cancelling)
               Padding(
@@ -953,18 +976,6 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
             else
               const SizedBox(height: 14),
 
-            // â”€â”€ Expandable mini map â”€â”€
-            if (_hasCoords)
-              AnimatedSize(
-                duration: const Duration(milliseconds: 350),
-                curve: Curves.easeOutCubic,
-                child: _mapEverExpanded
-                    ? SizedBox(
-                        height: _expanded ? 200.0 : 0.0,
-                        child: _buildMiniMap(),
-                      )
-                    : const SizedBox.shrink(),
-              ),
           ],
         ),
       ),
@@ -975,7 +986,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
 
   Widget _buildMiniMap() {
     return ClipRRect(
-      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+      borderRadius: BorderRadius.circular(16),
       child: Stack(
         children: [
           mapbox.MapWidget(
@@ -1022,6 +1033,68 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                 ),
               ),
             ),
+          // ── Address labels on map ──
+          if (_routeLoaded) ...[
+            Positioned(
+              top: 10,
+              left: 10,
+              right: 60,
+              child: _mapAddressLabel(
+                widget.trip['pickup_address'] as String? ?? '',
+                _gold,
+                true,
+              ),
+            ),
+            Positioned(
+              bottom: 10,
+              left: 10,
+              right: 60,
+              child: _mapAddressLabel(
+                widget.trip['dropoff_address'] as String? ?? '',
+                widget.trip['is_airport'] == true
+                    ? const Color(0xFF4285F4)
+                    : Colors.white,
+                false,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _mapAddressLabel(String address, Color dotColor, bool isPickup) {
+    if (address.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: dotColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 7),
+          Flexible(
+            child: Text(
+              address,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1059,6 +1132,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
   Widget _statusBadge(String status, bool isPast) {
     Color color;
     String label;
+    IconData? icon;
     if (status == 'canceled') {
       color = const Color(0xFFFF5252);
       label = 'Canceled';
@@ -1070,13 +1144,16 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
       label = 'Expired';
     } else if (status == 'driver_en_route' || status == 'arrived') {
       color = const Color(0xFF2ECC71);
-      label = 'âœ“ Driver Assigned';
+      label = 'Viaje Confirmado';
+      icon = Icons.directions_car_rounded;
     } else if (status == 'in_trip') {
       color = const Color(0xFFE8C547);
-      label = 'ðŸš— In Progress';
+      label = 'In Progress';
+      icon = Icons.directions_car_rounded;
     } else if (status == 'scheduled' || status == 'requested') {
       color = Colors.orange;
-      label = 'â³ Pending Driver';
+      label = 'Pending Driver';
+      icon = Icons.directions_car_rounded;
     } else {
       color = const Color(0xFF4CAF50);
       label = 'Upcoming';
@@ -1087,13 +1164,27 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          color: color,
-          fontWeight: FontWeight.w700,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: color),
+            if (status == 'driver_en_route' || status == 'arrived')
+              Padding(
+                padding: const EdgeInsets.only(left: 1),
+                child: Icon(Icons.check_rounded, size: 10, color: color),
+              ),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

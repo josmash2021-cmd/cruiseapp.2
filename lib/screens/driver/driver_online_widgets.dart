@@ -380,11 +380,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 ],
               ),
             ),
-            // ── Horizontal swipeable offer cards ──
+            // ── Horizontal swipeable offer cards (responsive) ──
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOutCubic,
-              height: (MediaQuery.of(context).size.height * 0.37).clamp(230, 320).toDouble(),
+              height: _offerCardHeight(context),
               child: PageView.builder(
                 controller: _offerPageCtrl,
                 onPageChanged: (index) {
@@ -1259,6 +1259,18 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         ),
       ],
     );
+  }
+
+  /// Responsive card height: adapts to screen so Accept button never gets cut.
+  double _offerCardHeight(BuildContext context) {
+    final screenH = MediaQuery.of(context).size.height;
+    final topPad = MediaQuery.of(context).padding.top;
+    final botPad = MediaQuery.of(context).padding.bottom;
+    // Available height below the map area (roughly 55% of screen is card zone)
+    // Card content: badge(44) + price(50) + addresses(~110) + divider(5) + button(48) + padding(12) ≈ 270
+    // Ensure at least 280 so Accept is never clipped, and scale up on big screens
+    final computed = (screenH * 0.38).clamp(280.0, 360.0);
+    return computed;
   }
 
   /// Chip widget for time/distance display on offer card (compact).

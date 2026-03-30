@@ -292,10 +292,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final coords = points
         .map((p) => mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
         .toList();
+    // Use generous bottom padding so route + pins sit well above the offer card
+    final screenH = MediaQuery.of(context).size.height;
+    final cardArea = (_pendingOffers.isNotEmpty || _previewingOffer != null)
+        ? (screenH * 0.45).clamp(220, 380).toDouble()
+        : 60.0;
     _map!.cameraForCoordinatesPadding(
       coords,
       mapbox.CameraOptions(pitch: 20),
-      mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: _mapBottomPadding + 60, right: 60),
+      mapbox.MbxEdgeInsets(top: 100, left: 60, bottom: cardArea + 40, right: 60),
       null, null,
     ).then((cam) {
       if (mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
@@ -372,15 +377,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
     final pointMgr = _pointAnnotMgr;
     if (pointMgr != null && mounted) {
-      // Pickup pin — person icon
+      // Pickup pin — person icon (CENTER anchor = pin sits exactly at coordinate)
       _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
-        image: pickupPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+        image: pickupPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
       ));
       // Dropoff pin — smart icon (house/store/airplane)
       _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
-        image: dropoffPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+        image: dropoffPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
       ));
 
       // Animate pin pop: scale 0.01 → 1.2 → 0.9 → 1.0 over 600ms

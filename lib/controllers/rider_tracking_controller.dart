@@ -537,40 +537,44 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// FIX 3 & 4: START RIDE ANIMATION & REAL-TIME TRACKING
   /// ──────────────────────────────────────────────────────────────────────────
 
-  /// Start the 4-phase ride start animation:
-  /// Phase 1 (0-1500ms): Route draws progressively
-  /// Phase 2 (0-2000ms): Camera zooms out to show full route
-  /// Phase 3 (2000-5000ms): Hold zoom out view
-  /// Phase 4 (5000-7000ms): Camera zooms in to follow driver
-  /// After Phase 4: Enable real-time tracking
+  /// Start the ride start animation:
+  /// 1. Camera zooms out to show full route (800ms flyTo)
+  /// 2. Dropoff pin appears
+  /// 3. Gold route line draws progressively from pickup → dropoff (2000ms)
+  /// 4. Camera stays in full overview for real-time tracking
   void _startStartRideAnimation() {
     if (_startRideAnimationDone) return;
     _startRideAnimationDone = true;
     _startRidePhase = 1;
 
-    // PHASE 1 & 2: Simultaneously draw route and zoom out camera
-    _startRouteDrawAnimation();
+    // PHASE 1: Add dropoff pin immediately
+    _addDropoffPin();
+
+    // PHASE 2: Zoom out to show full route (triggers flyTo 800ms)
     Future.delayed(const Duration(milliseconds: 100), () {
-      if (mounted) _zoomOutCamToShowRoute();
+      if (mounted) _fitRouteBounds();
     });
 
-    // PHASE 3: Pause after zoom out (2 seconds pause after 2 second zoom = 3 seconds total)
-    _startRidePhaseTimer?.cancel();
-    _startRidePhaseTimer = Timer(const Duration(milliseconds: 2000), () {
+    // PHASE 3: Start route draw animation after camera fits (800ms flyTo + 200ms buffer)
+    Future.delayed(const Duration(milliseconds: 1000), () {
       if (!mounted) return;
-      _startRidePhase = 3; // pause phase
-      
-      // Stay in top-down route-fit view — no zoom-in follow
-      _startRidePhase = 5;
+      _startRidePhase = 2;
+      _routeDrawDone = false;
+      _startAnimatedRouteDraw();
+    });
+
+    // Mark complete after route finishes drawing (1000ms + 2000ms draw = 3000ms)
+    _startRidePhaseTimer?.cancel();
+    _startRidePhaseTimer = Timer(const Duration(milliseconds: 3200), () {
+      if (!mounted) return;
+      _startRidePhase = 5; // done — real-time tracking
     });
   }
 
   /// Phase 1: Draw the route polyline progressively (animated draw effect)
   void _startRouteDrawAnimation() {
     if (_routePts.isEmpty) return;
-    // Add dropoff pin if not yet added
     _addDropoffPin();
-    // Reset route draw flag so it can draw fresh
     _routeDrawDone = false;
     _startAnimatedRouteDraw();
   }

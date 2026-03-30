@@ -260,7 +260,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  /// Call the driver — shows an iOS-style action sheet then dials directly.
+  /// Call the driver — launches native phone dialer directly.
   void _handleCallDriver() {
     final phone = widget.driverPhone;
     final name = nh.displayName(widget.driverName, widget.rideName);
@@ -275,79 +275,10 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       return;
     }
 
-    // Format phone for display (e.g. +13965483672 → +1 (396) 548-3672)
-    String displayPhone = phone;
-    final digits = phone.replaceAll(RegExp(r'[^\d]'), '');
-    if (digits.length == 11 && digits.startsWith('1')) {
-      displayPhone = '+1 (${digits.substring(1, 4)}) ${digits.substring(4, 7)}-${digits.substring(7)}';
-    } else if (digits.length == 10) {
-      displayPhone = '+1 (${digits.substring(0, 3)}) ${digits.substring(3, 6)}-${digits.substring(6)}';
-    }
-
-    showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (ctx) => Center(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 48),
-          decoration: BoxDecoration(
-            color: const Color(0xFF2C2C2E),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Call button
-              GestureDetector(
-                onTap: () => Navigator.of(ctx).pop(true),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  decoration: const BoxDecoration(
-                    border: Border(bottom: BorderSide(color: Color(0xFF3A3A3C), width: 0.5)),
-                  ),
-                  child: Text(
-                    'Call $displayPhone',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFF4AB4F7),
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      decoration: TextDecoration.none,
-                    ),
-                  ),
-                ),
-              ),
-              // Cancel button
-              GestureDetector(
-                onTap: () => Navigator.of(ctx).pop(false),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  child: const Text(
-                    'Cancel',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w400,
-                      decoration: TextDecoration.none,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ).then((confirmed) {
-      if (confirmed == true) {
-        launchUrl(
-          Uri.parse('tel:$phone'),
-          mode: LaunchMode.externalApplication,
-        );
-      }
-    });
+    launchUrl(
+      Uri.parse('tel:$phone'),
+      mode: LaunchMode.externalApplication,
+    );
   }
 
   /// Share a Google Maps deep-link to the driver's current GPS location.

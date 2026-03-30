@@ -1085,26 +1085,35 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     });
   }
 
-  /// Animated route draw: progressively reveals the 4-layer gold gloss route
+  /// Animated route draw: progressively reveals the gold route line to dropoff
   void _startAnimatedRouteDraw() {
     if (_routeDrawDone || _routePts.length < 2) return;
     _routeDrawDone = true;
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null) return;
 
+    // Delete any existing route annotation so we draw fresh
+    if (_remainingRouteAnnot != null) {
+      try { polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
+      _remainingRouteAnnot = null;
+    }
+
     final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
     final totalPts = allCoords.length;
-    const drawDurationMs = 1000;
+    const drawDurationMs = 2000; // 2 seconds for visible animation
     final startTime = DateTime.now();
 
-    // Create all 4 layers with just 2 initial points
+    // Create route layer with just 2 initial points
     final initGeom = mapbox.LineString(coordinates: allCoords.sublist(0, 2));
     _createRouteLayers(polyMgr, initGeom);
 
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
     _routeDrawTicker = createTicker((_) {
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
       final t = (elapsed / drawDurationMs).clamp(0.0, 1.0);
-      final count = (2 + (totalPts - 2) * _easeOutCubic(t)).round().clamp(2, totalPts);
+      final eased = _easeOutCubic(t);
+      final count = (2 + (totalPts - 2) * eased).round().clamp(2, totalPts);
       final geom = mapbox.LineString(coordinates: allCoords.sublist(0, count));
       _updateRouteLayers(polyMgr, geom);
       if (t >= 1.0) {

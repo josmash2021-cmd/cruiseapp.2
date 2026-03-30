@@ -1831,7 +1831,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                               children: [
                                 // Badge above car
                                 animatedBadge,
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 2),
                                 // Car image
                                 SizedBox(
                                   height: 100,
@@ -1866,7 +1866,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                                   v['desc'] as String,
                                   style: TextStyle(
                                     color: Colors.white.withValues(alpha: 0.9),
-                                    fontSize: 15,
+                                    fontSize: 16,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: -0.3,
                                     height: 1.2,
@@ -1878,7 +1878,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                                   softWrap: true,
                                   style: TextStyle(
                                     color: _gold.withValues(alpha: 0.85),
-                                    fontSize: 11,
+                                    fontSize: 12.5,
                                     fontWeight: FontWeight.w600,
                                     letterSpacing: 0.3,
                                   ),

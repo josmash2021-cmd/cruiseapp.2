@@ -99,6 +99,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   mapbox.PointAnnotationManager? _annotMgr;
   mapbox.PolylineAnnotationManager? _polyMgr;
 
+  // ── Start Trip → Continue/Directions fade ──
+  bool _tripStarted = false;
+  late final AnimationController _btnFadeCtrl;
+  late final Animation<double>   _btnFadeAnim;
+
   // ── Resolved addresses (replace generic placeholders) ──
   late String _pickupAddr;
   late String _dropoffAddr;
@@ -158,12 +163,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
 
-    // Tilt controller (kept for compat, no longer animated)
+    // Tilt controller: smooth 0° → 55° camera tilt
     _tiltCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1),
+      duration: const Duration(milliseconds: 1400),
     );
-    _tiltAnim = Tween<double>(begin: 0.0, end: 0.0).animate(_tiltCtrl);
+    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+      CurvedAnimation(parent: _tiltCtrl, curve: Curves.easeInOutCubic),
+    );
+    _tiltCtrl.addListener(_applyMapTilt);
 
     // Pin pop controller (kept for compat, pins placed at full size now)
     _pinPopCtrl = AnimationController(
@@ -171,6 +179,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       duration: const Duration(milliseconds: 1),
     );
     _pinPopAnim = Tween<double>(begin: 1.0, end: 1.0).animate(_pinPopCtrl);
+
+    // Button fade controller for Start Trip → Continue/Directions transition
+    _btnFadeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _btnFadeAnim = CurvedAnimation(parent: _btnFadeCtrl, curve: Curves.easeOut);
   }
 
   @override
@@ -179,6 +194,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _slideCtrl.dispose();
     _tiltCtrl.dispose();
     _pinPopCtrl.dispose();
+    _btnFadeCtrl.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routePoints = [];
@@ -897,9 +913,30 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return _fetchRoutePoints(widget.pickupLatLng, widget.dropoffLatLng);
   }
 
-  // onMapCreated — just capture the controller; style may not be loaded yet.
+  // onMapCreated — capture controller + disable all gestures for preview perf.
   void _onMapReady(mapbox.MapboxMap ctrl) {
     _map = ctrl;
+    // Disable all interaction — this is a read-only preview map.
+    ctrl.gestures.updateSettings(mapbox.GesturesSettings(
+      scrollEnabled: false,
+      rotateEnabled: false,
+      pinchToZoomEnabled: false,
+      doubleTapToZoomInEnabled: false,
+      doubleTouchToZoomOutEnabled: false,
+      pitchEnabled: false,
+      quickZoomEnabled: false,
+      simultaneousRotateAndPinchToZoomEnabled: false,
+    ));
+    // Hide compass + attribution for clean preview.
+    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+    ctrl.attribution.updateSettings(mapbox.AttributionSettings(
+      iconColor: 0x00000000,
+      position: mapbox.OrnamentPosition.BOTTOM_LEFT,
+    ));
+    ctrl.logo.updateSettings(mapbox.LogoSettings(
+      position: mapbox.OrnamentPosition.BOTTOM_LEFT,
+      marginLeft: -100,
+    ));
   }
 
   // onStyleLoadedListener — style is guaranteed ready here; run all setup.
@@ -914,9 +951,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ctrl.annotations.createPointAnnotationManager().then((m) async {
         _annotMgr = m;
         try {
-          // 'map' alignment keeps pins flat on the map surface at the exact coordinate,
-          // so they don't float in the air when the camera tilts.
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'map');
+          // 'viewport' keeps pins upright even when camera is tilted.
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-allow-overlap', true);
         } catch (_) {}
@@ -967,21 +1003,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       bounds,
       mapbox.MbxEdgeInsets(top: 20, left: 20, bottom: 30, right: 20),
       prettBearing,
-      45, // pitch = 45 so bounds calc accounts for tilt
+      55, // pitch = 55 so bounds calc accounts for final tilt
       null, null,
     );
     if (!mounted) return;
 
-    // Set camera: 45° tilt with slight rotation for pleasant preview.
+    // Start top-down (pitch 0), then animate to 55° after a brief pause.
+    final targetZoom = ((cam.zoom ?? 13) + 0.5).clamp(12.0, 15.5);
     ctrl.setCamera(mapbox.CameraOptions(
       center: cam.center,
-      zoom: ((cam.zoom ?? 13) + 0.5).clamp(12.0, 15.5),
+      zoom: targetZoom,
       bearing: prettBearing,
-      pitch: 45.0,
+      pitch: 0.0,
     ));
 
     // Place pins at exact coordinates immediately at full size.
-    // CENTER anchor so the pin dot sits exactly on the map coordinate.
+    // BOTTOM anchor so the teardrop tip points exactly at the coordinate.
     final pickupPoint = mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
     final dropoffPoint = mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
 
@@ -990,11 +1027,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       final pins = await Future.wait([
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: pickupPoint),
-          image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
+          image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
         )),
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: dropoffPoint),
-          image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
+          image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
         )),
       ]);
       _pinAnnots.addAll(pins);
@@ -1011,7 +1048,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ));
     }
 
-    // No tilt animation needed — camera already starts at 45°.
+    // Start tilt animation after a brief pause for the top-down preview.
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) _tiltCtrl.forward();
+    });
   }
 
   void _updatePinScale() {
@@ -1325,59 +1365,112 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             // ── Map preview (tilt animation on enter) ─────────────────
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), Responsive.h(12)),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: SizedBox(
-                  height: Responsive.h(190),
-                  child: Stack(
-                    children: [
-                      RepaintBoundary(
-                        child: mapbox.MapWidget(
-                          styleUri: MapboxConfig.styleDark,
-                          cameraOptions: mapbox.CameraOptions(
-                            center: mapbox.Point(coordinates: mapbox.Position(
-                              widget.pickupLatLng.longitude,
-                              widget.pickupLatLng.latitude,
-                            )),
-                            zoom: 12.0,
-                            pitch: 0.0,
-                            bearing: 0.0,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _gold.withValues(alpha: 0.12),
+                      blurRadius: 24,
+                      spreadRadius: -2,
+                      offset: const Offset(0, 8),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.50),
+                      blurRadius: 32,
+                      spreadRadius: 2,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: SizedBox(
+                    height: Responsive.h(190),
+                    child: Stack(
+                      children: [
+                        RepaintBoundary(
+                          child: mapbox.MapWidget(
+                            styleUri: MapboxConfig.styleDark,
+                            cameraOptions: mapbox.CameraOptions(
+                              center: mapbox.Point(coordinates: mapbox.Position(
+                                widget.pickupLatLng.longitude,
+                                widget.pickupLatLng.latitude,
+                              )),
+                              zoom: 12.0,
+                              pitch: 0.0,
+                              bearing: 0.0,
+                            ),
+                            onMapCreated: _onMapReady,
+                            onStyleLoadedListener: _onStyleLoaded,
                           ),
-                          onMapCreated: _onMapReady,
-                          onStyleLoadedListener: _onStyleLoaded,
                         ),
-                      ),
-                      // ETA chip
-                      Positioned(
-                        top: 10, right: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.72),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '$_tripEta min trip',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
+                        // 3D fade vignette — top edge
+                        Positioned(
+                          top: 0, left: 0, right: 0,
+                          height: 28,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.black.withValues(alpha: 0.45),
+                                  Colors.transparent,
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      // Mapbox attribution — plain text, no box
-                      Positioned(
-                        bottom: 5, left: 8,
-                        child: Text(' Mapbox',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.45),
-                            fontSize: 9,
+                        // 3D fade vignette — bottom edge
+                        Positioned(
+                          bottom: 0, left: 0, right: 0,
+                          height: 36,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  Colors.black.withValues(alpha: 0.55),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                        // ETA chip
+                        Positioned(
+                          top: 10, right: 10,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.72),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$_tripEta min trip',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Mapbox attribution — plain text, no box
+                        Positioned(
+                          bottom: 5, left: 8,
+                          child: Text(' Mapbox',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.45),
+                              fontSize: 9,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1433,10 +1526,19 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
             const Spacer(),
 
-            // ── Slide to start ───────────────────────────────────────────
+            // ── Slide to start / Continue+Directions ─────────────────────
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), bot + 18),
-              child: _buildSlideStartTrip(),
+              child: _tripStarted
+                  ? FadeTransition(
+                      opacity: _btnFadeAnim,
+                      child: _buildContinueDirections(),
+                    )
+                  : AnimatedOpacity(
+                      opacity: _slid ? 0.0 : 1.0,
+                      duration: const Duration(milliseconds: 300),
+                      child: _buildSlideStartTrip(),
+                    ),
             ),
           ],
         ),
@@ -1511,7 +1613,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       if (_slideVal >= 0.88) {
                         setState(() => _slid = true);
                         HapticFeedback.heavyImpact();
-                        _goNavigate(overview: false);
+                        // Fade out slider, then show Continue/Directions
+                        Future.delayed(const Duration(milliseconds: 300), () {
+                          if (!mounted) return;
+                          setState(() => _tripStarted = true);
+                          _btnFadeCtrl.forward();
+                        });
                       }
                     },
                     onHorizontalDragEnd: (_) {
@@ -1544,6 +1651,51 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           );
         },
       ),
+    );
+  }
+
+  // ── Continue / Directions buttons (shown after slide) ───────────────────
+  Widget _buildContinueDirections() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Continue button — gold filled
+        SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: ElevatedButton(
+            onPressed: () => _goNavigate(overview: false),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _gold,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              elevation: 0,
+            ),
+            child: const Text('Continue',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Directions button — outlined
+        SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: OutlinedButton(
+            onPressed: () => _goNavigate(overview: true),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.white24, width: 1.5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Directions',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          ),
+        ),
+      ],
     );
   }
 }

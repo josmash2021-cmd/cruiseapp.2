@@ -201,6 +201,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
   // ── Ride completion fade ──
   late AnimationController _rideFadeCtrl;
+  bool _didAutoResumeRide = false; // prevent re-opening tracking on every _loadSavedData
 
   /// Interpolated position for the current animation frame.
   LatLng get _interpolatedLatLng {
@@ -967,6 +968,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     // Start ride countdown if there's an active ride
     if (activeRide != null) {
       _startCountdown(activeRide.etaMinutes ?? 10);
+      // Auto-open tracking screen on app restart with active ride (once)
+      if (!_didAutoResumeRide) {
+        _didAutoResumeRide = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _activeRide != null) _resumeActiveRide();
+        });
+      }
     }
 
     // Update imminent ride countdown

@@ -1177,7 +1177,13 @@ class ApiService {
       }));
       
       // Sync URL back to backend DB so /auth/me returns the correct photo_url
-      unawaited(_syncPhotoUrlToBackend(url, token));
+      // MUST await — fire-and-forget causes race conditions where photo_url stays NULL
+      try {
+        await _syncPhotoUrlToBackend(url, token);
+      } catch (_) {
+        debugPrint('[ApiService] photo sync to backend failed, retrying...');
+        unawaited(_syncPhotoUrlToBackend(url, token)); // one retry, fire-and-forget
+      }
       
       // Save to all 4 tiers: SharedPreferences, Firebase Auth, Firestore, Storage
       // This ensures photos survive logouts, app updates, and device changes

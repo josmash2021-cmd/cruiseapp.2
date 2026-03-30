@@ -749,7 +749,11 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     updates.pop("last_name", None)
     for key in _SAFE_SELF_UPDATE_FIELDS:
         if key in updates:
-            setattr(db_user, key, updates[key])
+            val = updates[key]
+            # Never allow photo_url to be set to None or empty — use /auth/photo-url to set it
+            if key == "photo_url" and (not val or not isinstance(val, str) or not val.startswith("http")):
+                continue
+            setattr(db_user, key, val)
     # Update device tracking fields
     for key in _DEVICE_FIELDS:
         if key in updates:

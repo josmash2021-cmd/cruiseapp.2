@@ -119,6 +119,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
   mapbox.PolylineAnnotation? _remainingRouteAnnot;  // single gloss gold line (5px)
+  mapbox.PolylineAnnotation? _dimmedRouteAnnot; // dimmed full route (pickup→dropoff)
   mapbox.PolylineAnnotation? _approachAnnot; // dashed line driver→pickup
   final double _cameraBearing = 0;
   Uint8List? _pickupPinBytes;
@@ -177,6 +178,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   final int _pollFailCount = 0;
   bool _cancelDialogShown = false; // guard: prevents duplicate cancel dialogs
 
+  // ── Mutable driver photo URL (updated from Firestore) ──
+  String? _driverPhotoUrl;
+
+  // ── Bottom bar phase transition state ──
+  bool _tripJustStarted = false; // brief "Your trip has started" message
+  Timer? _tripStartedTimer;
+
   int _pickupIdx = 0;
 
   /// Cumulative distance array — _segDist[i] = total meters from start to point i.
@@ -204,6 +212,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   @override
   void initState() {
     super.initState();
+    _driverPhotoUrl = widget.driverPhotoUrl;
     _etaPulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -246,6 +255,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _startRidePhaseTimer?.cancel();
     _markerAnimTimer?.cancel();
     _cameraFollowTimer?.cancel();
+    _tripStartedTimer?.cancel();
     // Clean up map annotations so route/pins don't persist
     _cleanupMapAnnotations();
     super.dispose();

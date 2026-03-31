@@ -57,6 +57,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         try { await polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
         _remainingRouteAnnot = null;
       }
+      if (_dimmedRouteAnnot != null) {
+        try { await polyMgr.delete(_dimmedRouteAnnot!); } catch (_) {}
+        _dimmedRouteAnnot = null;
+      }
       if (_approachAnnot != null) {
         try { await polyMgr.delete(_approachAnnot!); } catch (_) {}
         _approachAnnot = null;
@@ -970,6 +974,17 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_routePts.length < 2) return;
     _staticAnnotsDone = true; // mark before await to prevent double-creation
 
+    // ── Draw dimmed full route (pickup→dropoff) always visible ──
+    final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    try {
+      _dimmedRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: allCoords),
+        lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    } catch (_) {}
+
     // Pickup pin — always visible
     try {
       _pickupAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
@@ -981,12 +996,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       ));
     } catch (_) {}
 
-    // Dropoff pin — only visible during onTrip, not during arriving
-    if (_phase != _TrackPhase.arriving && _phase != _TrackPhase.arrived) {
-      _addDropoffPin();
-    }
+    // Dropoff pin — always visible from start
+    _addDropoffPin();
 
-    // Cinematic intro: fit camera (no route draw during arriving)
+    // Cinematic intro: fit camera
     _startCinematicIntro();
 
     // Fit route bounds with card padding after drawing
@@ -999,6 +1012,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       Future.delayed(const Duration(milliseconds: 600), () {
         if (!mounted) return;
         _revealPickupLabel();
+      });
+    }
+    // Reveal dropoff label after brief delay
+    if (_dropoffPinWithLabelBytes != null && !_dropoffLabelRevealed) {
+      Future.delayed(const Duration(milliseconds: 1200), () {
+        if (!mounted) return;
+        _revealDropoffLabel();
       });
     }
   }
@@ -1185,6 +1205,15 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       if (_remainingRouteAnnot != null) mgr.update(_remainingRouteAnnot!..geometry = geom);
     } catch (_) {}
   }
+
+  /// Remove the dimmed route (called when transitioning to onTrip gloss route)
+  void _removeDimmedRoute() {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || _dimmedRouteAnnot == null) return;
+    try { mgr.delete(_dimmedRouteAnnot!); } catch (_) {}
+    _dimmedRouteAnnot = null;
+  }
+
   void _updateApproachLine() {
     // Throttle: update every 500ms
     final now = DateTime.now();
@@ -1194,9 +1223,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final mgr = _polylineAnnotMgr;
     if (mgr == null) return;
 
-    // Only show during arriving phase, when driver is far from pickup
-    final distToPickup = _hav(_animPos, widget.pickupLatLng) * 1609.34; // meters
-    final shouldShow = _phase == _TrackPhase.arriving && distToPickup > 200;
+    // Only show during arriving phase
+    final shouldShow = _phase == _TrackPhase.arriving;
 
     if (!shouldShow) {
       // Remove existing approach line
@@ -1214,11 +1242,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     ]);
 
     if (_approachAnnot == null) {
-      // Create approach line: thin, faint gold, dashed feel via low opacity
+      // Gloss gold line (matches main route style) from driver → pickup
       mgr.create(mapbox.PolylineAnnotationOptions(
         geometry: geom,
-        lineColor: const Color(0xFFD4AF37).withValues(alpha: 0.35).toARGB32(),
-        lineWidth: 2.5,
+        lineColor: const Color(0xFFFFD700).toARGB32(),
+        lineWidth: 5.0,
         lineJoin: mapbox.LineJoin.ROUND,
       )).then((annot) { _approachAnnot = annot; }).catchError((_) {});
     } else {

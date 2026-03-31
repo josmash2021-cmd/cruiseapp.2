@@ -96,7 +96,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
             children: [
               // Driver photo with verified badge
               VerifiedAvatar(
-                photoUrl: widget.driverPhotoUrl,
+                photoUrl: _driverPhotoUrl,
                 radius: Responsive.w(22),
                 fallbackName: widget.driverName,
                 uid: widget.driverId,

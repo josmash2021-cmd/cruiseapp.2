@@ -72,7 +72,7 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     }
   }
 
-  // ── Phase-based single status text (for arrived / onTrip / nearDestination) ──
+  // ── Phase-based single status text (for arrived / onTrip brief / nearDestination) ──
   String get _singleStatusText {
     final s = S.of(context);
     switch (_phase) {
@@ -81,7 +81,7 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
       case _TrackPhase.arrived:
         return s.driverHasArrived;
       case _TrackPhase.onTrip:
-        return s.onWayToDestination;
+        return _tripJustStarted ? s.tripStartedTitle : s.onWayToDestination;
       case _TrackPhase.nearDestination:
         return s.arrivingAtDestination;
       case _TrackPhase.completed:
@@ -91,9 +91,24 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
 
   // ── Destination + ETA box (floats at bottom) ──
   Widget _buildDestinationBox() {
-    final bool isArriving = _phase == _TrackPhase.arriving;
-    final bool isArrivedState = _phase == _TrackPhase.arrived;
     final Color dotColor = _dotColor;
+
+    // Determine which content to show:
+    // 1. arriving → full row with status + ETA badge (pickup ETA)
+    // 2. arrived → single centered text with pulsing dot
+    // 3. onTrip + _tripJustStarted → single centered "Your trip has started"
+    // 4. onTrip / nearDestination → row with status + ETA badge (dropoff ETA)
+    Widget content;
+    if (_phase == _TrackPhase.arriving) {
+      content = _buildArrivingContent(dotColor);
+    } else if (_phase == _TrackPhase.arrived) {
+      content = _buildSingleLineContent(dotColor, true);
+    } else if (_phase == _TrackPhase.onTrip && _tripJustStarted) {
+      content = _buildSingleLineContent(dotColor, false);
+    } else {
+      // onTrip (steady) or nearDestination or completed — show dropoff ETA
+      content = _buildOnTripContent(dotColor);
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -114,9 +129,7 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
         switchOutCurve: Curves.easeInCubic,
         transitionBuilder: (child, anim) =>
             FadeTransition(opacity: anim, child: child),
-        child: isArriving
-            ? _buildArrivingContent(dotColor)
-            : _buildSingleLineContent(dotColor, isArrivedState),
+        child: content,
       ),
     );
   }
@@ -272,6 +285,108 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// OnTrip / NearDestination: status + ETA badge (dropoff ETA)
+  Widget _buildOnTripContent(Color dotColor) {
+    final String topText = _topStatusText;
+    final String bottomText = _bottomCardText;
+
+    return Row(
+      key: ValueKey('ontrip_${_phase}_$_etaMinutes'),
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: dotColor,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 400),
+                      transitionBuilder: (child, anim) =>
+                          FadeTransition(opacity: anim, child: child),
+                      child: Text(
+                        topText,
+                        key: ValueKey(topText),
+                        style: TextStyle(
+                          color: dotColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.8,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 400),
+                transitionBuilder: (child, anim) =>
+                    FadeTransition(opacity: anim, child: child),
+                child: Text(
+                  bottomText,
+                  key: ValueKey(bottomText),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        // ETA badge (dropoff ETA)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$_etaMinutes',
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Text(
+                'min',
+                style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
+              ),
+            ],
           ),
         ),
       ],

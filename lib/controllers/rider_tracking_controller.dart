@@ -180,6 +180,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _startRtdbDriverListener(did);
     }
 
+    // Update driver photo URL from Firestore if we don't have one yet
+    if ((_driverPhotoUrl == null || _driverPhotoUrl!.isEmpty)) {
+      final fsPhoto = data['driverPhotoUrl']?.toString() ??
+          data['driver_photo_url']?.toString();
+      if (fsPhoto != null && fsPhoto.isNotEmpty && fsPhoto.startsWith('http')) {
+        _setState(() => _driverPhotoUrl = fsPhoto);
+      }
+    }
+
     final status = data['status']?.toString() ?? '';
     if ((status == 'arrived' || status == 'driver_arrived') && _phase == _TrackPhase.arriving) {
       _setState(() => _phase = _TrackPhase.arrived);
@@ -190,7 +199,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _showRiderConfirmPickup();
     } else if ((status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard') &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
-      _setState(() => _phase = _TrackPhase.onTrip);
+      _setState(() {
+        _phase = _TrackPhase.onTrip;
+        _tripJustStarted = true;
+      });
+      _tripStartedTimer?.cancel();
+      _tripStartedTimer = Timer(const Duration(seconds: 4), () {
+        if (mounted) _setState(() => _tripJustStarted = false);
+      });
       _arrivedDotPulse.stop();
       _popOutPickupPin();
       _startStartRideAnimation();
@@ -560,15 +576,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _startRideAnimationDone = true;
     _startRidePhase = 1;
 
-    // PHASE 1: Add dropoff pin immediately
-    _addDropoffPin();
+    // Remove the dimmed route — we'll draw a bright gloss one instead
+    _removeDimmedRoute();
 
     // PHASE 2: Zoom out to top-down full route overview (800 ms flyTo)
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) _fitRouteBounds();
     });
 
-    // PHASE 3: Animated route draw pickup → dropoff (2 s)
+    // PHASE 3: Animated gloss route draw pickup → dropoff (2 s)
     Future.delayed(const Duration(milliseconds: 1000), () {
       if (!mounted) return;
       _startRidePhase = 2;

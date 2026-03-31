@@ -192,6 +192,9 @@ async def lifespan(app: FastAPI):
         for _attempt in range(5):
             try:
                 async with engine.begin() as conn:
+                    # Advisory lock: serialize DDL across Railway replicas to prevent deadlocks
+                    if not IS_SQLITE:
+                        await conn.execute(text("SELECT pg_advisory_lock(42424242)"))
                     await conn.run_sync(Base.metadata.create_all)
                     if IS_SQLITE:
                         await conn.execute(text("PRAGMA journal_mode=WAL"))
@@ -204,6 +207,7 @@ async def lifespan(app: FastAPI):
                         await _migrate_add_columns(conn)
                     else:
                         await _migrate_postgres(conn)
+                        await conn.execute(text("SELECT pg_advisory_unlock(42424242)"))
                 logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
                 break
             except Exception as _e:

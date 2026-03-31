@@ -529,14 +529,7 @@ async def migrate_add_columns(conn):
 
 async def migrate_postgres(conn):
     """Add missing columns to PostgreSQL tables.
-    Uses a PostgreSQL advisory lock to prevent deadlocks when multiple
-    Railway replicas start simultaneously and race to alter the same tables."""
-    # Acquire advisory lock (key 42424242) — blocks if another process holds it
-    try:
-        await conn.execute(text("SELECT pg_advisory_lock(42424242)"))
-    except Exception as _e:
-        logging.warning("Advisory lock failed, running migrations without lock: %s", _e)
-
+    Caller must hold pg_advisory_lock(42424242) to prevent deadlocks."""
     migrations = [
         ("users", "password_plain", "VARCHAR(255)"),
         ("users", "id_photo_url", "TEXT"),
@@ -648,9 +641,3 @@ async def migrate_postgres(conn):
                 await conn.execute(text(idx_sql))
         except Exception as _e:
             logging.warning("Index migration skip: %s", _e)
-
-    # Release advisory lock so other replicas can proceed
-    try:
-        await conn.execute(text("SELECT pg_advisory_unlock(42424242)"))
-    except Exception:
-        pass

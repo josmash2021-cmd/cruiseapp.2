@@ -233,10 +233,12 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       dropoff: widget.dropoffLatLng,
     );
 
-    // If returning from detail page to start the trip, jump straight to
-    // arrivedPickup so _startRide() can call beginTrip().
+    // If returning from detail page after Start Ride, advance phase to onTrip.
     if (widget.startInTripMode) {
+      _startRideSwitching = true;
       _sm.arriveAtPickup();
+      _sm.beginTrip();
+      _startRideSwitching = false;
     }
 
     // If caller already pre-fetched a route, use it; else fetch now
@@ -605,7 +607,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   Future<void> _refreshEtaRoute() async {
-    if (!mounted || _isRerouting) { return; }
+    if (!mounted || _isRerouting || _routeAnimating) { return; }
     if (_phase == TripPhase.arrivedPickup ||
         _phase == TripPhase.arrivedDropoff ||
         _phase == TripPhase.completed) {
@@ -1746,6 +1748,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           }
           if (widget.startInTripMode) {
             // Returning from TripAcceptScreen after Start Ride → direct chase
+            _cinematicDone = true;
             Future.delayed(const Duration(milliseconds: 400), () {
               if (!mounted) return;
               _deletePickupPin();

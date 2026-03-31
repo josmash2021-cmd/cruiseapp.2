@@ -19,7 +19,7 @@ from utils.security import (
     _check_login_throttle, _record_login_failure, _clear_login_failures,
     _security_audit_log, _sanitize_string, _record_violation,
     _verify_dispatch_key, invalidate_user_cache,
-    JWT_SECRET, JWT_ALGORITHM, DEV_SKIP_AUTH,
+    JWT_SECRET, JWT_ALGORITHM,
 )
 from utils.helpers import utc_now, _user_dict, _haversine
 from services.fcm_service import _send_fcm_push

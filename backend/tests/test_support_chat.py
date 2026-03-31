@@ -291,14 +291,20 @@ class TestStripeRefund:
     """Verify Stripe refund logic exists in approve endpoint."""
 
     def test_stripe_refund_code_present(self):
-        with open(os.path.join(os.path.dirname(__file__), "..", "main.py"), "r", encoding="utf-8") as f:
-            src = f.read()
-        assert "Refund.create" in src
-        assert "stripe_payment_intent_id" in src
-        assert "stripe_refund_ok" in src
+        base = os.path.dirname(__file__)
+        # Refund.create and stripe_refund_ok live in dispatch.py
+        with open(os.path.join(base, "..", "routers", "dispatch.py"), "r", encoding="utf-8") as f:
+            dispatch_src = f.read()
+        # stripe_payment_intent_id lives in trips.py
+        with open(os.path.join(base, "..", "routers", "trips.py"), "r", encoding="utf-8") as f:
+            trips_src = f.read()
+        assert "Refund.create" in dispatch_src or "Refund.create" in trips_src
+        assert "stripe_payment_intent_id" in trips_src
+        assert "stripe_refund_ok" in dispatch_src
 
     def test_push_notification_code_present(self):
-        with open(os.path.join(os.path.dirname(__file__), "..", "main.py"), "r", encoding="utf-8") as f:
+        path = os.path.join(os.path.dirname(__file__), "..", "routers", "dispatch.py")
+        with open(path, "r", encoding="utf-8") as f:
             src = f.read()
         assert "action_approved" in src
         assert "action_rejected" in src

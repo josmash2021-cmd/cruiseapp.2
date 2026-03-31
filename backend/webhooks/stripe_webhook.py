@@ -18,14 +18,15 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 # Lazy Stripe import (mirrors main.py pattern)
 _HAS_STRIPE = False
+_stripe_mod = None  # type: ignore[assignment]
 try:
     import stripe as _stripe_mod
+    _HAS_STRIPE = True  # SDK available regardless of API key configuration
     _stripe_secret = os.getenv("STRIPE_SECRET_KEY", "")
     if _stripe_secret:
         _stripe_mod.api_key = _stripe_secret
-        _HAS_STRIPE = True
 except ImportError:
-    _stripe_mod = None  # type: ignore[assignment]
+    pass
 
 
 def _get_db_session():

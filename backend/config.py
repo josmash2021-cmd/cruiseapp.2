@@ -93,9 +93,9 @@ _HAS_STRIPE = False
 _stripe_mod = None
 try:
     import stripe as _stripe_mod
+    _HAS_STRIPE = True  # SDK available regardless of API key configuration
     if STRIPE_SECRET:
         _stripe_mod.api_key = STRIPE_SECRET
-        _HAS_STRIPE = True
         logging.info("[Stripe] Initialized with secret key")
 except ImportError:
     logging.warning("[Stripe] stripe package not installed")

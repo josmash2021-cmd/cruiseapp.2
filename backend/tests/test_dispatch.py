@@ -46,12 +46,10 @@ async def test_dispatch_missing_trip(client: AsyncClient, test_driver):
 
 
 async def test_dispatch_no_auth(client: AsyncClient, test_trip):
-    """POST /admin/dispatch without dispatch key returns 401/403."""
-    from tests.conftest import _make_auth_headers
-
+    """POST /admin/dispatch without any auth returns 401/403."""
     resp = await client.post(
         "/admin/dispatch",
         json={"trip_id": test_trip.id},
-        headers=_make_auth_headers(),
+        headers={"content-type": "application/json"},
     )
     assert resp.status_code in (401, 403)

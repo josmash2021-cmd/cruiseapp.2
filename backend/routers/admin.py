@@ -289,7 +289,6 @@ async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_d
     if not drivers:
         raise HTTPException(404, "No drivers available")
 
-    import math
     def haversine(lat1, lng1, lat2, lng2):
         R = 6371
         dlat = math.radians(lat2 - lat1)

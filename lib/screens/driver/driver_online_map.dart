@@ -377,15 +377,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
     final pointMgr = _pointAnnotMgr;
     if (pointMgr != null && mounted) {
-      // Pickup pin — person icon (CENTER anchor = pin sits exactly at coordinate)
+      // Pickup pin — person icon (BOTTOM anchor = pin tip sits exactly at coordinate)
       _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
-        image: pickupPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
+        image: pickupPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
       // Dropoff pin — smart icon (house/store/airplane)
       _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
-        image: dropoffPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
+        image: dropoffPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
 
       // Animate pin pop: scale 0.01 → 1.2 → 0.9 → 1.0 over 600ms

@@ -1075,18 +1075,32 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
         const SizedBox(height: 4),
 
-        // ── ROW 2: Price (left-aligned, bigger) + Rating · Tips ──
-        Text(
-          '\$${fare.toStringAsFixed(2)}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 32,
-            fontWeight: FontWeight.bold,
-          ),
+        // ── ROW 2: Price + Tips (same line) ──
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              '\$${fare.toStringAsFixed(2)}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '+ Tips',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 14,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 2),
+        // ── Rating + Total trip time & distance ──
         Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.star_rounded, color: goldAccent, size: 13),
             const SizedBox(width: 3),
@@ -1098,11 +1112,23 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
+            Icon(Icons.access_time_rounded, color: Colors.white.withValues(alpha: 0.4), size: 12),
+            const SizedBox(width: 3),
             Text(
-              '+ Tips',
+              '${etaToPickup + tripEta} min',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Icon(Icons.straighten_rounded, color: Colors.white.withValues(alpha: 0.4), size: 12),
+            const SizedBox(width: 3),
+            Text(
+              '${(distToPickupMi + tripDistMi).toStringAsFixed(1)} mi',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
                 fontSize: 12,
               ),
             ),
@@ -1123,7 +1149,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             children: [
               // Gold ● | ■ indicator column
               Padding(
-                padding: const EdgeInsets.only(top: 3),
+                padding: const EdgeInsets.only(top: 18),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [

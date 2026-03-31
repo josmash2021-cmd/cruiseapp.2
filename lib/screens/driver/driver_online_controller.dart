@@ -442,7 +442,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (me == null) return;
       final bgStatus = me['background_check_status'] as String? ?? 'none';
       final verStatus = me['verification_status'] as String? ?? 'none';
-      if (bgStatus == 'clear' || verStatus == 'approved') {
+      // Allow: clear/approved OR not-yet-configured ('none')
+      if (bgStatus == 'clear' || bgStatus == 'none' ||
+          verStatus == 'approved' || verStatus == 'none') {
         _approvalGatePassed = true;
         return;
       }

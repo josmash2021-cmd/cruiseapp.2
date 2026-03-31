@@ -472,7 +472,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       below: "road-label",
                     );
                     _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                    try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+                    try {
+                      final lid = _pointAnnotMgr!.id;
+                      await ctrl.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'viewport');
+                      await ctrl.style.setStyleLayerProperty(lid, 'icon-anchor', 'bottom');
+                      await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
+                      await ctrl.style.setStyleLayerProperty(lid, 'icon-ignore-placement', true);
+                    } catch (_) {}
                     _updateUserDotAnnotation();
                     setState(() => _mapReady = true);
                   },

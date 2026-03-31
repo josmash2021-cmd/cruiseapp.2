@@ -124,7 +124,13 @@ extension _MapScreenMap on _MapScreenState {
     _pointAnnotMgr = await controller.annotations.createPointAnnotationManager(
       below: null, // No "below" constraint means it renders above everything
     );
-    try { await controller.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+    try {
+      final lid = _pointAnnotMgr!.id;
+      await controller.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'viewport');
+      await controller.style.setStyleLayerProperty(lid, 'icon-anchor', 'bottom');
+      await controller.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
+      await controller.style.setStyleLayerProperty(lid, 'icon-ignore-placement', true);
+    } catch (_) {}
     if (_currentPosition != null) {
       _centerMapOn(_currentPosition!, zoom: _defaultMapZoom);
       await _setPickupAnnotation(_currentPosition!);

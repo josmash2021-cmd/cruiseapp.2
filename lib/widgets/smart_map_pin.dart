@@ -227,9 +227,10 @@ Future<Uint8List> buildGoldenPinBytes({
   painter.paint(canvas, Size(w, h));
 
   final picture = recorder.endRecording();
+  // Use ceil to ensure the pin tip (at bottom) is fully included in the image
   final img = await picture.toImage(
-    (w * scale).toInt(),
-    (h * scale).toInt(),
+    (w * scale).ceil(),
+    (h * scale).ceil(),
   );
   final data = await img.toByteData(format: ui.ImageByteFormat.png);
   if (data == null) return Uint8List(0);

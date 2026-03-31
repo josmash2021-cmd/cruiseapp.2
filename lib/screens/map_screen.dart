@@ -2538,6 +2538,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       geometry: mapbox.Point(coordinates: mapbox.Position(_currentPosition!.longitude, _currentPosition!.latitude)),
       image: bytes,
       iconSize: 0.4,
+      iconAnchor: mapbox.IconAnchor.CENTER,
+      iconOffset: [0, 0],
     ));
   }
 

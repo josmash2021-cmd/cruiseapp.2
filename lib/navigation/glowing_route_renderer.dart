@@ -114,6 +114,8 @@ class GlowingRouteRenderer {
       image: arrowBytes,
       iconRotate: bearing,
       iconSize: 1.5,
+      iconAnchor: mapbox.IconAnchor.CENTER,
+      iconOffset: [0, 0],
     ));
   }
 

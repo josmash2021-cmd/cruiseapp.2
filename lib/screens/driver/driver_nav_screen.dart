@@ -909,6 +909,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         image: bytes,
         iconSize: 1.6,
         iconRotate: bearing,
+        iconAnchor: mapbox.IconAnchor.CENTER,
+        iconOffset: [0, 0],
       ));
     } else {
       _driverAnnot!.geometry   = geom;

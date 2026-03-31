@@ -38,6 +38,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
           image: dotBytes,
           iconSize: _dotPopScale,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+          iconOffset: [0, 0],
         ));
         // Trigger fade+pop on first creation
         if (!_dotPopDone) _animateDotPop();
@@ -64,6 +66,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             image: carBytes,
             iconSize: 1.2,
             iconRotate: _heading,
+            iconAnchor: mapbox.IconAnchor.CENTER,
+            iconOffset: [0, 0],
           ));
           // Car icon rotates relative to map, not camera
           try {

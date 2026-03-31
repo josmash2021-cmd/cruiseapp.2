@@ -214,6 +214,8 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
       image: _carImageBytes,
       iconRotate: _currentBearing,
       iconSize: 1.2,
+      iconAnchor: mapbox.IconAnchor.CENTER,
+      iconOffset: [0, 0],
     );
 
     if (_carAnnot == null) {

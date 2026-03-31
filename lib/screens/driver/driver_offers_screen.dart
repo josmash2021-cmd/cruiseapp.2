@@ -144,6 +144,8 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
       geometry: mapbox.Point(coordinates: mapbox.Position(_driverPos!.longitude, _driverPos!.latitude)),
       image: bytes,
       iconSize: 0.5,
+      iconAnchor: mapbox.IconAnchor.CENTER,
+      iconOffset: [0, 0],
     ));
   }
 

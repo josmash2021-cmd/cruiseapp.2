@@ -127,7 +127,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   Future<void> _onMapCreated(mapbox.MapboxMap controller) async {
     _map = controller;
     _pointAnnotMgr = await controller.annotations.createPointAnnotationManager();
-    try { await controller.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+    try { await controller.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
     _updateDriverAnnotation();
     await MapTheme.applyNavyGold(controller);
   }

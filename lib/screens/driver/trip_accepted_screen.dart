@@ -306,7 +306,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
 
     _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _pointMgr = await ctrl.annotations.createPointAnnotationManager();
-    try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
 
     // Add smart pins immediately (pickup + dropoff)
     _addSmartPins();

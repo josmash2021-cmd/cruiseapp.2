@@ -736,7 +736,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         onMapCreated: (ctrl) async {
           _mapController = ctrl;
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
           setState(() => _mapReady = true);
           // Wait a moment for dot to be ready, then show it
           if (_goldDot.isReady) {

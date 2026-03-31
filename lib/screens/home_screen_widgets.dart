@@ -273,6 +273,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 child: RepaintBoundary(child: _buildHeroCTA()),
               ),
 
+              // ── Scheduled ride indicator (below Where to?) ──
+              if (_nextScheduledRide != null && _activeRide == null) ...[
+                const SizedBox(height: 16),
+                _buildScheduledRideIndicator(context),
+              ],
+
               // ── Hide everything below when a ride is active ──
               if (_activeRide == null) ...[
               const SizedBox(height: 28),
@@ -350,10 +356,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 ],
 
                   const SizedBox(height: 32),
-
-                  // ── Scheduled ride indicator ──
-                  if (_nextScheduledRide != null)
-                    _buildScheduledRideIndicator(context),
 
                   // ── Dock navigation ──
                   _buildDockNav(context, botPad),

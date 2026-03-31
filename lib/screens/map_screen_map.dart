@@ -126,7 +126,7 @@ extension _MapScreenMap on _MapScreenState {
     );
     try {
       final lid = _pointAnnotMgr!.id;
-      await controller.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'map');
+      await controller.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'viewport');
       await controller.style.setStyleLayerProperty(lid, 'icon-anchor', 'bottom');
       await controller.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
       await controller.style.setStyleLayerProperty(lid, 'icon-ignore-placement', true);

@@ -1143,8 +1143,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         try {
           // 'viewport' keeps pins upright when camera tilts; 'bottom' anchors
           // the teardrop tip exactly at the coordinate — no floating.
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'map');
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'map');
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'viewport');
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-allow-overlap', true);
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-ignore-placement', true);
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-anchor', 'bottom');

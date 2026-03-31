@@ -244,11 +244,17 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _routePts = List.of(widget.routePoints!);
     }
 
+    // Compute initial bearing from route so arrow points along route immediately
+    if (_routePts.length >= 2) {
+      _bearing = _bearingBetween(_routePts.first, _routePts[1]);
+      _motion.teleport(_pos, _bearing);
+    }
+
     // Fetch the immutable pickup→dropoff route for later when exiting nav
     _fetchPickupDropoffRoute();
 
-    // Overview mode: don't follow camera yet
-    if (widget.startWithOverview) {
+    // Overview mode for toPickup (always start with top-down overview)
+    if (!widget.startInTripMode) {
       _cameraFollowing = false;
       _isOverview = true;
     }
@@ -503,25 +509,29 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       });
       _navService.startNavigation(route);
       _updateRouteAnnotation();
-      // Only show overview camera if the cinematic hasn't already taken control.
-      // When _cinematicDone is true the cinematic is running or done — let it own the camera.
-      if (widget.startWithOverview && _phase == TripPhase.toPickup && !_cinematicDone) {
+
+      // Compute initial bearing from route so arrow points along route
+      if (_routePts.length >= 2) {
+        _bearing = _bearingBetween(_routePts.first, _routePts[1]);
+        _motion.teleport(_pos, _bearing);
+      }
+
+      // Show overview camera for toPickup (cinematic will take over)
+      if (!widget.startInTripMode && _phase == TripPhase.toPickup && !_cinematicDone) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _animateCameraOverview(_pos, dest);
         });
       }
       // If map is ready but cinematic hasn't fired yet (route loaded after map),
       // trigger it now so it always plays exactly once.
-      if (_mapReady && !_cinematicDone) {
+      if (_mapReady && !_cinematicDone && !widget.startInTripMode) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          if (widget.startWithOverview) {
-            _startCinematicEntry();
-          } else {
-            _cinematicDone = true;
-            _jumpToNavPosition(); // Snap to 45° nav camera immediately
-          }
+          _startCinematicEntry();
         });
+      } else if (_mapReady && !_cinematicDone && widget.startInTripMode) {
+        _cinematicDone = true;
+        _jumpToNavPosition();
       }
     } else if (_routePts.length > 1) {
       // Fallback: use pre-loaded overview polyline
@@ -1063,7 +1073,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     if (!_cameraFollowing) return;
     setState(() => _cameraFollowing = false);
     _reFollowTimer?.cancel();
-    // No auto-recenter — only recenter when Resume is tapped
+    // Auto-recenter after 15 seconds
+    _reFollowTimer = Timer(const Duration(seconds: 15), () {
+      if (mounted && !_cameraFollowing && !_isOverview) _recenter();
+    });
   }
 
   void _recenter() {
@@ -1136,8 +1149,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     _routeDrawTicker = null;
 
     Navigator.of(context).pushReplacement(
-      slideUpFadeRoute(
-        DriverTripAcceptScreen(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => DriverTripAcceptScreen(
           tripId:          widget.tripId,
           riderName:       widget.riderName,
           riderPhotoUrl:   widget.riderPhotoUrl,
@@ -1155,6 +1168,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           riderPhone:      widget.riderPhone,
           arrivedAtPickup: true,
         ),
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 400),
       ),
     );
   }
@@ -1655,12 +1673,21 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               child: _buildSpeedOverlay(top + 120),
             ),
 
-            // ── BOTTOM BAR ────────────────────────────────────────────────
+            // ── BOTTOM BAR / ARRIVED BUTTON ─────────────────────────────
             Positioned(
               bottom: bot + 12,
               left: 12,
               right: 12,
-              child: _buildBottomBar(bot),
+              child: AnimatedCrossFade(
+                firstChild: _buildBottomBar(bot),
+                secondChild: _buildArrivedButton(),
+                crossFadeState: (_nearPickup && _phase == TripPhase.toPickup)
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
+                duration: const Duration(milliseconds: 400),
+                firstCurve: Curves.easeInOut,
+                secondCurve: Curves.easeInOut,
+              ),
             ),
 
             // ── RESUME BUTTON (shown when user pans away) ─────────────
@@ -1713,11 +1740,21 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-rotation-alignment', 'map'); } catch (_) {}
           _updateRouteAnnotation();
           _updateDestPin(widget.startInTripMode ? widget.dropoffLatLng : widget.pickupLatLng);
-          // Show pickup pin throughout the trip
-          _updatePickupPin(widget.pickupLatLng);
+          // Show pickup pin only during toPickup phase
+          if (!widget.startInTripMode) {
+            _updatePickupPin(widget.pickupLatLng);
+          }
           if (widget.startInTripMode) {
-            Future.delayed(const Duration(milliseconds: 600), () {
-              if (mounted) _startRide();
+            // Returning from TripAcceptScreen after Start Ride → direct chase
+            Future.delayed(const Duration(milliseconds: 400), () {
+              if (!mounted) return;
+              _deletePickupPin();
+              // Compute bearing from route to dropoff
+              if (_routePts.length >= 2) {
+                _bearing = _bearingBetween(_routePts.first, _routePts[1]);
+                _motion.teleport(_pos, _bearing);
+              }
+              _jumpToNavPosition();
             });
           } else {
             Future.delayed(const Duration(milliseconds: 600), () {
@@ -2176,6 +2213,44 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // =========================================================================
+  //  ARRIVED BUTTON (shown when near pickup)
+  // =========================================================================
+
+  Widget _buildArrivedButton() {
+    return GestureDetector(
+      onTap: _arrivedAndGoBack,
+      child: Container(
+        height: 68,
+        decoration: BoxDecoration(
+          color: const Color(0xFF2E7D32),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF2E7D32).withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 14,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: Text('Arrived',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+            )),
         ),
       ),
     );

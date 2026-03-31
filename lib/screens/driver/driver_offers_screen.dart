@@ -17,7 +17,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/ride_offer.dart';
 import '../../navigation/offers_controller.dart';
 import '../../navigation/route_service.dart';
-import '../../pages/driver_navigation_page.dart';
+import 'driver_nav_screen.dart';
 import '../../services/analytics_service.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../utils/responsive.dart';
@@ -235,21 +235,23 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     // Navigate to driver navigation
     Navigator.of(context).pushReplacement(
       slideUpFadeRoute(
-        DriverNavigationPage(
-          pickupLatLng: accepted.pickupLatLng,
-          dropoffLatLng: accepted.dropoffLatLng,
-          tripId: accepted.offerId,
-          initialDriverPos: _driverPos!,
-          routePoints: routePts,
+        DriverNavScreen(
+          tripId: int.tryParse(accepted.offerId) ?? 0,
           riderName: accepted.riderName,
           riderPhotoUrl: accepted.riderPhotoUrl,
           riderRating: accepted.riderRating,
-          pickupLabel: accepted.pickupAddress.isNotEmpty
+          pickupLatLng: accepted.pickupLatLng,
+          dropoffLatLng: accepted.dropoffLatLng,
+          pickupAddress: accepted.pickupAddress.isNotEmpty
               ? accepted.pickupAddress
               : offer.pickupAddress,
-          dropoffLabel: accepted.dropoffAddress.isNotEmpty
+          dropoffAddress: accepted.dropoffAddress.isNotEmpty
               ? accepted.dropoffAddress
               : offer.dropoffAddress,
+          fare: offer.fareUsd,
+          vehicleType: offer.vehicleType,
+          driverPos: _driverPos!,
+          routePoints: routePts,
         ),
       ),
     );

@@ -153,21 +153,21 @@ class GoldenPinPainter {
     _drawIcon(canvas, icon, cx, headCY, r);
   }
 
-  /// Tail shape: smooth oval-tipped teardrop from circle bottom.
+  /// Tail shape: needle-like sharp teardrop from circle bottom.
   Path _buildTail(double cx, double headCY, double r, double tipY) {
     const spread = 0.55;
     final rx = cx + r * math.sin(spread);
     final ry = headCY + r * math.cos(spread);
     final lx = cx - r * math.sin(spread);
     final ly = ry;
-    // Wider control points near tip → rounder, oval-shaped bottom
-    final tipW = r * 0.28;
+    // Keep control points very tight near the apex for a clearly pointed tip.
+    final tipW = r * 0.02;
     return Path()
       ..moveTo(cx, tipY)
-      // Right side: tip curves up to right edge of circle (oval bottom)
+      // Right side: sharp apex to right edge of circle.
       ..cubicTo(
-        cx + tipW, tipY - (tipY - ry) * 0.12,
-        rx - r * 0.05, ry + (tipY - ry) * 0.28,
+        cx + tipW, tipY - (tipY - ry) * 0.02,
+        rx - r * 0.01, ry + (tipY - ry) * 0.18,
         rx, ry,
       )
       // Short arc across bottom of circle (connects right to left)
@@ -177,10 +177,10 @@ class GoldenPinPainter {
         clockwise: false,
         largeArc: false,
       )
-      // Left side: left edge of circle curves down to tip (oval bottom)
+      // Left side: left edge of circle returns to a sharp apex.
       ..cubicTo(
-        lx + r * 0.05, ly + (tipY - ly) * 0.28,
-        cx - tipW, tipY - (tipY - ly) * 0.12,
+        lx + r * 0.01, ly + (tipY - ly) * 0.18,
+        cx - tipW, tipY - (tipY - ly) * 0.02,
         cx, tipY,
       )
       ..close();

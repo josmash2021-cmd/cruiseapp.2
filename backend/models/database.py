@@ -529,7 +529,9 @@ async def migrate_add_columns(conn):
 
 async def migrate_postgres(conn):
     """Add missing columns to PostgreSQL tables.
-    Caller must hold pg_advisory_lock(42424242) to prevent deadlocks."""
+    Caller must hold pg_advisory_xact_lock(42424242) to serialize DDL.
+    Checks column existence BEFORE ALTER TABLE to avoid AccessExclusiveLock
+    on columns that already exist (prevents deadlocks with concurrent queries)."""
     migrations = [
         ("users", "password_plain", "VARCHAR(255)"),
         ("users", "id_photo_url", "TEXT"),
@@ -612,17 +614,36 @@ async def migrate_postgres(conn):
     ]
     for table, col, col_type in migrations:
         try:
+            # Check existence first (cheap SELECT, no DDL lock needed)
+            exists = await conn.execute(text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = :t AND column_name = :c"
+            ), {"t": table, "c": col})
+            if exists.fetchone():
+                continue  # Column already exists — skip DDL entirely
             async with conn.begin_nested():
-                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"))
+                await conn.execute(text(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"
+                ))
+                logging.info("Added column %s.%s", table, col)
         except Exception as _e:
             logging.warning("Postgres migration skip %s.%s: %s", table, col, _e)
     # Fix: make support_messages.sender_id nullable so bot/system messages (sender_id=None) work
     try:
-        async with conn.begin_nested():
-            await conn.execute(text(
-                "ALTER TABLE support_messages ALTER COLUMN sender_id DROP NOT NULL"
-            ))
-            logging.info("support_messages.sender_id made nullable")
+        # Check if column is already nullable before issuing DDL
+        nullable_check = await conn.execute(text(
+            "SELECT is_nullable FROM information_schema.columns "
+            "WHERE table_name = 'support_messages' AND column_name = 'sender_id'"
+        ))
+        row = nullable_check.fetchone()
+        if row and row[0] == 'YES':
+            pass  # Already nullable
+        else:
+            async with conn.begin_nested():
+                await conn.execute(text(
+                    "ALTER TABLE support_messages ALTER COLUMN sender_id DROP NOT NULL"
+                ))
+                logging.info("support_messages.sender_id made nullable")
     except Exception as _e:
         logging.warning("support_messages.sender_id nullable migration: %s", _e)
 
@@ -637,7 +658,15 @@ async def migrate_postgres(conn):
     ]
     for idx_sql in _indexes:
         try:
+            # Extract index name to check existence before DDL
+            idx_name = idx_sql.split("IF NOT EXISTS ")[1].split(" ON")[0].strip()
+            idx_exists = await conn.execute(text(
+                "SELECT 1 FROM pg_indexes WHERE indexname = :n"
+            ), {"n": idx_name})
+            if idx_exists.fetchone():
+                continue  # Index exists — skip DDL
             async with conn.begin_nested():
                 await conn.execute(text(idx_sql))
+                logging.info("Created index %s", idx_name)
         except Exception as _e:
             logging.warning("Index migration skip: %s", _e)

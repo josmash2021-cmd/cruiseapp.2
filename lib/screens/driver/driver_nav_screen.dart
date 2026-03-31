@@ -148,7 +148,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   bool   _completing       = false;
   double _slideVal         = 0;
   bool   _slid             = false;
-  bool   _waitingForStart  = false;
+  final bool _waitingForStart  = false;
 
   // ── Dropoff finalize & completion ─────────────────────────────────────────
   bool   _showFinalizeButton   = false;
@@ -707,44 +707,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     });
   }
 
-  /// Called when driver taps "Start Trip" on the overview. Animates from
-  /// top-down to 45° nav view with route fade + redraw.
-  Future<void> _beginNavigation() async {
-    HapticFeedback.mediumImpact();
-    setState(() => _waitingForStart = false);
-
-    final dest = _phase == TripPhase.onTrip
-        ? widget.dropoffLatLng
-        : widget.pickupLatLng;
-    final routeBearing = _bearingBetween(_pos, dest);
-    _bearing = routeBearing;
-    final ahead = _lookaheadPoint(_pos, routeBearing, 120);
-
-    await _deleteRouteAnnotations();
-    if (!mounted) return;
-
-    _map?.flyTo(
-      mapbox.CameraOptions(
-        center: mapbox.Point(
-            coordinates: mapbox.Position(ahead.longitude, ahead.latitude)),
-        zoom: _navZoom,
-        bearing: routeBearing,
-        pitch: _navTilt,
-      ),
-      mapbox.MapAnimationOptions(duration: 2000, startDelay: 0),
-    );
-    await Future.delayed(const Duration(milliseconds: 2200));
-    if (!mounted) return;
-
-    await _drawRouteAnimated();
-    if (!mounted) return;
-
-    setState(() {
-      _cameraFollowing = true;
-      _isOverview = false;
-    });
-  }
-
   Future<void> _zoomToShowRoute() async {
     if (_routePts.isEmpty) return;
     // Update route annotation so it's visible in the overview
@@ -1084,8 +1046,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   void _recenter() {
     if (!mounted) return;
     _reFollowTimer?.cancel();
+    // Keep _cameraFollowing FALSE during flyTo so _onMotionTick's setCamera
+    // doesn't fight the animation. Enable tracking only after flyTo finishes.
     setState(() {
-      _cameraFollowing = true;
+      _cameraFollowing = false;
       _isOverview      = false;
       _hasResumedOnce  = true;
     });
@@ -1100,6 +1064,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       ),
       mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
     );
+    // Re-enable chase camera after flyTo completes
+    Future.delayed(const Duration(milliseconds: 850), () {
+      if (mounted) setState(() => _cameraFollowing = true);
+    });
   }
 
   LatLng _lookaheadPoint(LatLng o, double bearingDeg, double distM) {

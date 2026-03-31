@@ -172,6 +172,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
         type: 'promo',
       );
       final seeded = await LocalDataService.getNotifications();
+      if (!mounted) return;
       setState(() {
         _notifications = seeded;
         _loading = false;

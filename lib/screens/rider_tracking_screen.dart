@@ -226,7 +226,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       '${widget.driverName.split(' ').first} is on the way in a ${widget.vehicleColor} ${widget.vehicleModel}',
     );
     // Save state periodically for resume support
-    Timer.periodic(const Duration(seconds: 5), (_) => _saveRideState());
+    _saveStateTimer = Timer.periodic(const Duration(seconds: 5), (_) => _saveRideState());
   }
 
   @override
@@ -239,6 +239,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _rtdbDriverLocSub?.cancel();
     _tripStatusSub?.cancel();
     _statusPollTimer?.cancel();
+    _saveStateTimer?.cancel();
     _etaPulse.dispose();
     _arrivedDotPulse.dispose();
     _routeFadeTimer?.cancel();
@@ -299,8 +300,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   int _markerAnimStep = 0;
   bool _markAnimatingToTarget = false;
 
+  // Periodic state save timer
+  Timer? _saveStateTimer;
+
   // Smooth camera follow (for real-time tracking after animation)
-  bool _shouldFollowDriver = false;
+  final bool _shouldFollowDriver = false;
   Timer? _cameraFollowTimer;
   bool _useNavCamera = false; // When true: follow driver at 45° pitch
 

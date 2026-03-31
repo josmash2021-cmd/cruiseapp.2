@@ -35,6 +35,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           );
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}
           // Always fly to real GPS — never the Miami default
           try {
             final gps = await Geolocator.getCurrentPosition(

@@ -696,6 +696,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _cameraFollowing = true;
       _isOverview = false;
     });
+
+    // Open native maps with pickup address for turn-by-turn
+    if (_phase == TripPhase.toPickup) {
+      _openNativeMaps(widget.pickupLatLng, widget.pickupAddress);
+    }
   }
 
   /// Jump directly to locked nav position (no animation). Used on re-entry.
@@ -1301,25 +1306,59 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     });
   }
 
-  /// Open Apple Maps (iOS) or Google Maps (Android) with turn-by-turn to [dest].
+  /// Open the driver's preferred map app with turn-by-turn to [dest].
+  /// Tries Google Maps first (most common), falls back to Apple Maps on iOS
+  /// or the default browser handler on Android.
   Future<void> _openNativeMaps(LatLng dest, String label) async {
     final lat = dest.latitude;
     final lng = dest.longitude;
-    final encoded = Uri.encodeComponent(label);
-    Uri url;
+
     if (Platform.isIOS) {
-      url = Uri.parse('https://maps.apple.com/?daddr=$lat,$lng&dirflg=d&t=m');
-    } else {
-      url = Uri.parse(
-        'https://www.google.com/maps/dir/?api=1'
-        '&destination=$lat,$lng'
-        '&destination_place_id='
-        '&travelmode=driving',
+      // Try Google Maps first (comgooglemaps:// scheme)
+      final gMapsUrl = Uri.parse(
+        'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving',
       );
+      if (await canLaunchUrl(gMapsUrl)) {
+        await launchUrl(gMapsUrl, mode: LaunchMode.externalApplication);
+        return;
+      }
+      // Try Waze
+      final wazeUrl = Uri.parse(
+        'waze://?ll=$lat,$lng&navigate=yes',
+      );
+      if (await canLaunchUrl(wazeUrl)) {
+        await launchUrl(wazeUrl, mode: LaunchMode.externalApplication);
+        return;
+      }
+      // Fall back to Apple Maps
+      final appleMapsUrl = Uri.parse(
+        'https://maps.apple.com/?daddr=$lat,$lng&dirflg=d&t=m',
+      );
+      await launchUrl(appleMapsUrl, mode: LaunchMode.externalApplication);
+    } else {
+      // Android: Try Google Maps intent first
+      final gMapsUrl = Uri.parse(
+        'google.navigation:q=$lat,$lng&mode=d',
+      );
+      if (await canLaunchUrl(gMapsUrl)) {
+        await launchUrl(gMapsUrl, mode: LaunchMode.externalApplication);
+        return;
+      }
+      // Try Waze
+      final wazeUrl = Uri.parse(
+        'waze://?ll=$lat,$lng&navigate=yes',
+      );
+      if (await canLaunchUrl(wazeUrl)) {
+        await launchUrl(wazeUrl, mode: LaunchMode.externalApplication);
+        return;
+      }
+      // Fall back to Google Maps web
+      final webUrl = Uri.parse(
+        'https://www.google.com/maps/dir/?api=1'
+        '&destination=$lat,$lng&travelmode=driving',
+      );
+      await launchUrl(webUrl, mode: LaunchMode.externalApplication);
     }
-    try {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } catch (_) {}
   }
 
   Future<void> _completeTrip() async {

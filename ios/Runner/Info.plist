@@ -93,6 +93,7 @@
 		<string>tel</string>
 		<string>telprompt</string>
 		<string>comgooglemaps</string>
+		<string>waze</string>
 		<string>maps</string>
 	</array>
 	<key>UIBackgroundModes</key>

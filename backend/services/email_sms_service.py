@@ -15,10 +15,49 @@ SMTP_FROM = os.getenv("SMTP_FROM", "")
 
 
 def _send_email(to_email: str, subject: str, html_body: str, template_params: dict = None):
-    """Send email via Mailgun API, SendGrid API, Brevo API, or SMTP fallback."""
+    """Send email via EmailJS, Mailgun API, SendGrid API, Brevo API, or SMTP fallback."""
     import urllib.request as _ureq, json as _json, urllib.error as _uerr, urllib.parse as _uparse
 
-    # 1. Mailgun API
+    # 1. EmailJS REST API (server-side)
+    EMAILJS_SERVICE_ID = os.getenv("EMAILJS_SERVICE_ID", "")
+    EMAILJS_TEMPLATE_ID = os.getenv("EMAILJS_TEMPLATE_ID", "")
+    EMAILJS_PUBLIC_KEY = os.getenv("EMAILJS_PUBLIC_KEY", "")
+    EMAILJS_PRIVATE_KEY = os.getenv("EMAILJS_PRIVATE_KEY", "")
+    if EMAILJS_SERVICE_ID and EMAILJS_TEMPLATE_ID and EMAILJS_PUBLIC_KEY and EMAILJS_PRIVATE_KEY:
+        try:
+            # Extract OTP code from html_body if present (6-digit number)
+            import re as _re
+            _otp_match = _re.search(r'\b(\d{6})\b', html_body)
+            _otp_code = _otp_match.group(1) if _otp_match else ""
+            _params = template_params or {}
+            _params.setdefault("to_email", to_email)
+            _params.setdefault("to_name", to_email.split("@")[0])
+            _params.setdefault("subject", subject)
+            _params.setdefault("otp_code", _otp_code)
+            _params.setdefault("verification_code", _otp_code)
+            _params.setdefault("message", html_body)
+            payload = _json.dumps({
+                "service_id": EMAILJS_SERVICE_ID,
+                "template_id": EMAILJS_TEMPLATE_ID,
+                "user_id": EMAILJS_PUBLIC_KEY,
+                "accessToken": EMAILJS_PRIVATE_KEY,
+                "template_params": _params,
+            }).encode()
+            req = _ureq.Request(
+                "https://api.emailjs.com/api/v1.0/email/send",
+                data=payload,
+                headers={"Content-Type": "application/json", "origin": "https://cruiseapp2-production.up.railway.app"},
+                method="POST",
+            )
+            with _ureq.urlopen(req, timeout=10) as resp:
+                logging.info("[EMAIL] EmailJS OK to %s", to_email)
+                return True
+        except _uerr.HTTPError as e:
+            logging.error("[EMAIL] EmailJS HTTP %s: %s", e.code, e.read().decode()[:200])
+        except Exception as e:
+            logging.error("[EMAIL] EmailJS failed: %s", e)
+
+    # 3. Mailgun API
     MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY", "")
     MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN", "")
     if MAILGUN_API_KEY and MAILGUN_DOMAIN:
@@ -45,7 +84,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         except Exception as e:
             logging.error("[EMAIL] Mailgun failed: %s", e)
 
-    # 2. SendGrid API
+    # 4. SendGrid API
     SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
     if SENDGRID_API_KEY:
         try:
@@ -69,7 +108,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         except Exception as e:
             logging.error("[EMAIL] SendGrid failed: %s", e)
 
-    # 3. Brevo (Sendinblue) API
+    # 5. Brevo (Sendinblue) API
     BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
     if BREVO_API_KEY:
         try:
@@ -93,7 +132,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         except Exception as e:
             logging.error("[EMAIL] Brevo failed: %s", e)
 
-    # 4. SMTP fallback
+    # 6. SMTP fallback
     if not SMTP_USER or not SMTP_PASS:
         logging.warning("[EMAIL] No email provider configured for %s", to_email)
         return False

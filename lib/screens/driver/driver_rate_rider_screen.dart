@@ -94,7 +94,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
       try {
         await FirebaseFirestore.instance
             .collection('trips')
-            .doc(widget.tripId.toString())
+            .doc('sql_${widget.tripId}')
             .update({
           'riderRating': _stars,
           'riderRatedAt': FieldValue.serverTimestamp(),

@@ -613,7 +613,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           // Sync driver GPS to Firestore so rider tracking gets real position
           if (_tripId != null) {
             TripFirestoreService.syncDriverLocation(
-              _tripId!.toString(),
+              'sql_$_tripId',
               pos.latitude,
               pos.longitude,
               _smoothedBearing,
@@ -1177,7 +1177,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       try {
         final doc = await FirebaseFirestore.instance
             .collection('trips')
-            .doc(_tripId.toString())
+            .doc('sql_$_tripId')
             .get();
         riderConfirmed = doc.data()?['rider_confirmed_pickup'] == true;
       } catch (_) {}
@@ -1471,7 +1471,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       } catch (_) {}
       // Immediate Firestore sync so rider listener reacts in real time.
       await TripFirestoreService.syncTripCancelled(
-        tripId.toString(),
+        'sql_$tripId',
         cancelledBy: 'driver',
         cancellationReason: 'driver_cancelled',
         reason: 'Driver cancelled',

@@ -276,7 +276,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
               // ── Scheduled ride indicator (below Where to?) ──
               if (_nextScheduledRide != null && _activeRide == null) ...[
                 const SizedBox(height: 16),
-                _buildScheduledRideIndicator(context),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: _buildScheduledRideIndicator(context),
+                ),
               ],
 
               // ── Hide everything below when a ride is active ──
@@ -2443,7 +2446,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
         );
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: _gold.withValues(alpha: 0.10),

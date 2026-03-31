@@ -26,6 +26,7 @@ import '../chat_screen.dart';
 import '../help_screen.dart';
 import 'driver_home_screen.dart';
 import 'driver_online_screen.dart';
+import 'driver_rate_rider_screen.dart';
 import '../../services/api_service.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
@@ -97,6 +98,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   static const _bg     = Color(0xFF0A0A0A);
   static const _card   = Color(0xFF1A1A1A);
   static const _border = Color(0xFF262626);
+
+  // ── Firestore doc ID (matches backend convention) ─────────────────────
+  String get _fsDocId => 'sql_${widget.tripId}';
 
   // ── State ─────────────────────────────────────────────────────────────────
   late final AnimationController _fadeCtrl;
@@ -416,7 +420,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     try {
       await FirebaseFirestore.instance
           .collection('trips')
-          .doc(widget.tripId.toString())
+          .doc(_fsDocId)
           .update({
         'status': 'arrived',
         'arrivedAt': FieldValue.serverTimestamp(),
@@ -432,7 +436,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     try {
       await FirebaseFirestore.instance
           .collection('trips')
-          .doc(widget.tripId.toString())
+          .doc(_fsDocId)
           .update({
         'status': 'in_trip',
         'rideStartedAt': FieldValue.serverTimestamp(),
@@ -453,7 +457,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     try {
       await FirebaseFirestore.instance
           .collection('trips')
-          .doc(widget.tripId.toString())
+          .doc(_fsDocId)
           .update({
         'status': 'completed',
         'completedAt': FieldValue.serverTimestamp(),
@@ -465,18 +469,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     try { await gps.clearTripLocation(); } catch (_) {}
     gps.setActiveTrip(null);
     try {
-      await TripFirestoreService.clearDriverLocation(widget.tripId.toString());
+      await TripFirestoreService.clearDriverLocation(_fsDocId);
     } catch (_) {}
 
     // Show "Viaje Finalizado" overlay
     _finishFadeCtrl.forward();
 
-    // After 3 seconds navigate to DriverOnlineScreen
+    // After 3 seconds navigate to DriverRateRiderScreen
     _finishNavTimer = Timer(const Duration(seconds: 3), () {
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
-          pageBuilder: (_, anim, __) => const DriverOnlineScreen(),
+          pageBuilder: (_, anim, __) => DriverRateRiderScreen(
+            tripId: widget.tripId,
+            riderName: widget.riderName,
+            riderPhotoUrl: widget.riderPhotoUrl,
+            fare: widget.fare,
+          ),
           transitionsBuilder: (_, anim, __, child) => FadeTransition(
             opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOutCubic),
             child: child,
@@ -539,7 +548,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       try {
         final snap = await FirebaseFirestore.instance
             .collection('trips')
-            .doc(widget.tripId.toString())
+            .doc(_fsDocId)
             .get();
         final data = snap.data();
         phone = (data?['rider_phone'] ?? data?['passengerPhone'] ?? '').toString().trim();
@@ -1015,7 +1024,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       final driverId = FirebaseAuth.instance.currentUser?.uid ?? '';
       await FirebaseFirestore.instance
           .collection('trips')
-          .doc(widget.tripId.toString())
+          .doc(_fsDocId)
           .collection('reports')
           .add({
         'type': type,
@@ -1187,9 +1196,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ctrl.annotations.createPointAnnotationManager().then((m) async {
         _annotMgr = m;
         try {
-          // 'viewport' keeps pins upright when camera tilts; 'bottom' anchors
-          // the teardrop tip exactly at the coordinate — no floating.
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'viewport');
+          // 'map' keeps pin tips glued to the map surface — prevents floating
+          // when camera is tilted. 'bottom' anchors the teardrop tip at the coordinate.
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'map');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-allow-overlap', true);
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-ignore-placement', true);
@@ -1606,7 +1615,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         onTap: () {
                           HapticFeedback.lightImpact();
                           Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+                            MaterialPageRoute(builder: (_) => const DriverHomeScreen(returnFromTrip: true)),
                             (route) => false,
                           );
                         },
@@ -2032,8 +2041,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       if (_slideVal >= 0.88) {
                         setState(() => _slid = true);
                         HapticFeedback.heavyImpact();
-                        // Open native maps to pickup immediately
-                        Future.delayed(const Duration(milliseconds: 300), () {
+                        // Gloss re-animate the route polyline then open maps
+                        Future.delayed(const Duration(milliseconds: 300), () async {
+                          if (!mounted) return;
+                          // Re-draw the existing route with gloss animation
+                          if (_routePoints.length >= 2) {
+                            // Remove existing route so re-draw is visible
+                            if (_routeAnnot != null && _polyMgr != null) {
+                              try { await _polyMgr!.delete(_routeAnnot!); } catch (_) {}
+                              _routeAnnot = null;
+                            }
+                            await _animateGoldRoute(
+                              points: _routePoints,
+                              duration: const Duration(milliseconds: 600),
+                            );
+                          }
                           if (!mounted) return;
                           setState(() => _tripStarted = true);
                           _openNativeMaps(widget.pickupLatLng);
@@ -2289,13 +2311,33 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       if (_startRideSlideVal >= 0.88) {
                         setState(() => _startRideSlidDone = true);
                         HapticFeedback.heavyImpact();
-                        // Update status + navigate to dropoff
-                        Future.delayed(const Duration(milliseconds: 300), () {
+                        // Update status + gloss animate dropoff route + navigate
+                        Future.delayed(const Duration(milliseconds: 300), () async {
                           if (!mounted) return;
                           setState(() => _rideStarted = true);
                           _startDropoffProximityDetection();
                           _updateTripInTrip();
-                          _openNativeMaps(widget.dropoffLatLng);
+                          // Fetch and animate driver→dropoff route with gloss
+                          try {
+                            // Remove existing pickup route
+                            if (_routeAnnot != null && _polyMgr != null) {
+                              try { await _polyMgr!.delete(_routeAnnot!); } catch (_) {}
+                              _routeAnnot = null;
+                            }
+                            final driverPos = await Geolocator.getCurrentPosition(
+                              locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+                            ).timeout(const Duration(seconds: 5));
+                            final origin = LatLng(driverPos.latitude, driverPos.longitude);
+                            final dropoffRoute = await _fetchRoutePoints(origin, widget.dropoffLatLng);
+                            if (mounted && dropoffRoute.length >= 2) {
+                              _routePoints = dropoffRoute;
+                              await _animateGoldRoute(
+                                points: dropoffRoute,
+                                duration: const Duration(milliseconds: 800),
+                              );
+                            }
+                          } catch (_) {}
+                          if (mounted) _openNativeMaps(widget.dropoffLatLng);
                         });
                       }
                     },

@@ -15,11 +15,13 @@ class RiderConfirmPickupScreen extends StatefulWidget {
     required this.vehicleDesc,
     required this.firestoreTripId,
     required this.onConfirmed,
+    this.tripId,
   });
 
   final String driverName;
   final String vehicleDesc;
   final String? firestoreTripId;
+  final int? tripId;
 
   /// Called when the rider presses the confirm button.
   final VoidCallback onConfirmed;
@@ -86,7 +88,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     HapticFeedback.heavyImpact();
 
     // Write confirmation to Firestore
-    final fsId = widget.firestoreTripId;
+    final fsId = widget.tripId != null ? 'sql_${widget.tripId}' : widget.firestoreTripId;
     if (fsId != null && fsId.isNotEmpty) {
       try {
         await FirebaseFirestore.instance.collection('trips').doc(fsId).update({

@@ -41,7 +41,12 @@ import '../../utils/name_helper.dart' as nh;
 ///  CRUISE DRIVER HOME — Premium dashboard with map, stats, go-online
 /// ═══════════════════════════════════════════════════════════════
 class DriverHomeScreen extends StatefulWidget {
-  const DriverHomeScreen({super.key});
+  const DriverHomeScreen({super.key, this.returnFromTrip = false});
+
+  /// When true the driver came back from an active-trip screen — keep them
+  /// in the "still online" state so the bottom bar shows "Buscando viajes"
+  /// and the main button reads REANUDAR.
+  final bool returnFromTrip;
 
   @override
   State<DriverHomeScreen> createState() => _DriverHomeScreenState();
@@ -98,6 +103,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ── Online state (driver pressed back but is still connected) ──
   bool _isStillOnline = false;
   Timer? _tripPollTimer;
+  Timer? _statsRefreshTimer;
   int? _driverId;
   Map<String, dynamic>? _activeTripData;
 
@@ -142,6 +148,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
     _fabScale = CurvedAnimation(parent: _fabCtrl, curve: Curves.elasticOut);
 
+    if (widget.returnFromTrip) _isStillOnline = true;
     _goldDot.build(() {
       if (mounted) {
         setState(() {});
@@ -166,6 +173,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _resolveDriverId();
     _refreshActiveTripStatus();
     _registerFcmToken();
+
+    // Periodic stats refresh (every 30s) for real-time chips
+    _statsRefreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _refreshStats(),
+    );
 
     // Entrance animations
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -206,6 +219,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _posStream?.cancel();
     _accountStatusTimer?.cancel();
     _tripPollTimer?.cancel();
+    _statsRefreshTimer?.cancel();
     UserSession.photoNotifier.removeListener(_onPhotoUpdated);
     UserSession.photoUrlNotifier.removeListener(_onPhotoUpdated);
     super.dispose();
@@ -435,6 +449,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     prefs.setString('driver_cached_name', _driverName);
     prefs.setDouble('driver_cached_earnings', _todayEarnings);
     prefs.setInt('driver_cached_trips', _todayTrips);
+  }
+
+  /// Lightweight periodic refresh for the 3 stats chips (no name/photo reload).
+  Future<void> _refreshStats() async {
+    try {
+      final earnings = await ApiService.getDriverEarnings(period: 'today')
+          .catchError((_) => <String, dynamic>{});
+      if (!mounted) return;
+      setState(() {
+        _todayEarnings = (earnings['total'] as num?)?.toDouble() ?? _todayEarnings;
+        _todayTrips    = (earnings['trips_count'] as num?)?.toInt() ?? _todayTrips;
+        _todayHours    = (earnings['online_hours'] as num?)?.toDouble() ?? _todayHours;
+      });
+    } catch (_) {}
   }
 
   // ═══════════════════════════════════════════════════
@@ -1170,13 +1198,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               Expanded(
                 child: Opacity(
                   opacity: panelExtent.clamp(0.0, 1.0),
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
+                  child: SingleChildScrollView(
+                    physics: const NeverScrollableScrollPhysics(),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 20,
                       vertical: 8,
                     ),
-                    children: [
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                       Divider(
                         color: dc.divider,
                         height: 1,
@@ -1242,46 +1272,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                           );
                         },
                       ),
-                      const SizedBox(height: 16),
-                      // Go offline button
-                      if (_isStillOnline && !hasActiveTrip)
-                        GestureDetector(
-                          onTap: () {
-                            HapticFeedback.mediumImpact();
-                            setState(() => _isStillOnline = false);
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: const Color(0xFFEF4444).withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.stop_circle_outlined,
-                                  color: const Color(0xFFEF4444),
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  S.of(context).goOffline,
-                                  style: TextStyle(
-                                    color: const Color(0xFFEF4444),
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
                       SizedBox(height: pad.bottom + 16),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1456,7 +1449,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       }
 
       if (!mounted) return;
-      setState(() => _activeTripData = active);
+      setState(() {
+        _activeTripData = active;
+        if (active != null) _isStillOnline = true;
+      });
     } catch (_) {
       // Keep current UI state if this lookup fails.
     }

@@ -1003,6 +1003,7 @@ extension _RideRequestController on _RideRequestScreenState {
 
       // Pop back to home and show booking confirmation
       Navigator.of(context).pop();
+      HapticFeedback.heavyImpact();
       final isEs = Localizations.localeOf(context).languageCode == 'es';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1044,7 +1045,7 @@ extension _RideRequestController on _RideRequestScreenState {
             borderRadius: BorderRadius.circular(16),
           ),
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          margin: EdgeInsets.fromLTRB(16, MediaQuery.of(context).padding.top + 8, 16, 0),
         ),
       );
     } catch (e) {

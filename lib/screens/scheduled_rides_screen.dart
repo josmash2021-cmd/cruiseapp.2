@@ -486,19 +486,32 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
         _tripDuration = route.durationText;
         _routeLoaded = true;
       });
-      // Fit camera
-      await _fitCamera([pickup, dropoff]);
+      // Fit camera (flat)
+      await _fitCamera([pickup, dropoff], pitch: 0);
       // Place pins
       await _placePins(pickup, dropoff);
       // Animate golden route line
       await _animateRoute(route.points);
+      // Cinematic tilt to 55°
+      if (_mapCtrl != null && mounted) {
+        final curCam = await _mapCtrl!.getCameraState();
+        await _mapCtrl!.flyTo(
+          mapbox.CameraOptions(
+            center: curCam.center,
+            zoom: curCam.zoom,
+            bearing: curCam.bearing,
+            pitch: 55,
+          ),
+          mapbox.MapAnimationOptions(duration: 700),
+        );
+      }
     } catch (_) {
     } finally {
       if (mounted) setState(() => _routeLoading = false);
     }
   }
 
-  Future<void> _fitCamera(List<LatLng> pts) async {
+  Future<void> _fitCamera(List<LatLng> pts, {double pitch = 0}) async {
     if (_mapCtrl == null || pts.length < 2) return;
     final lats = pts.map((p) => p.latitude).toList()..sort();
     final lngs = pts.map((p) => p.longitude).toList()..sort();
@@ -508,7 +521,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
           mapbox.Point(coordinates: mapbox.Position(lngs.first, lats.first)),
           mapbox.Point(coordinates: mapbox.Position(lngs.last, lats.last)),
         ],
-        mapbox.CameraOptions(pitch: 55),
+        mapbox.CameraOptions(pitch: pitch),
         mapbox.MbxEdgeInsets(top: 40, left: 30, bottom: 50, right: 30),
         null,
         null,
@@ -826,7 +839,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                     const SizedBox(width: 8),
                     _infoChip(
                       Icons.attach_money_rounded,
-                      '\$${fare.toStringAsFixed(2)}',
+                      fare.toStringAsFixed(2),
                       c,
                     ),
                   ],

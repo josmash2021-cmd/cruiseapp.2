@@ -175,7 +175,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   final Set<String> _feedbackChips = {};
   String _anonymousFeedback = '';
   bool _connectionLost = false;
-  final int _pollFailCount = 0;
+  int _pollFailCount = 0;
   bool _cancelDialogShown = false; // guard: prevents duplicate cancel dialogs
 
   // ── More-menu dropdown & cancel overlay ──

@@ -16,17 +16,22 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         (data) {
           if (!mounted) return;
           if (data == null) {
-            // Null data = temporary disconnection, do NOT cancel
-            debugPrint('[RiderTracking] Trip data null — keeping last known state');
-            if (!_connectionLost) _setState(() => _connectionLost = true);
+            // Null data = doc not yet created or temporary disconnection
+            _pollFailCount++;
+            debugPrint('[RiderTracking] Trip data null ($_pollFailCount/$_maxPollFailsBeforeBanner)');
+            if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
+              _setState(() => _connectionLost = true);
+            }
             return;
           }
+          _pollFailCount = 0;
           if (_connectionLost) _setState(() => _connectionLost = false);
           _onTripStatusUpdate(data);
         },
         onError: (error) {
           debugPrint('[RiderTracking] Trip status listener error: $error');
-          if (mounted && !_connectionLost) {
+          _pollFailCount++;
+          if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
             _setState(() => _connectionLost = true);
           }
         },
@@ -39,16 +44,21 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           (data) {
             if (!mounted) return;
             if (data == null) {
-              debugPrint('[RiderTracking] Trip data null — keeping last known state');
-              if (!_connectionLost) _setState(() => _connectionLost = true);
+              _pollFailCount++;
+              debugPrint('[RiderTracking] Trip data null ($_pollFailCount/$_maxPollFailsBeforeBanner)');
+              if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
+                _setState(() => _connectionLost = true);
+              }
               return;
             }
+            _pollFailCount = 0;
             if (_connectionLost) _setState(() => _connectionLost = false);
             _onTripStatusUpdate(data);
           },
           onError: (error) {
             debugPrint('[RiderTracking] Trip status listener error: $error');
-            if (mounted && !_connectionLost) {
+            _pollFailCount++;
+            if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
               _setState(() => _connectionLost = true);
             }
           },
@@ -58,6 +68,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     if (tripId != null) {
       debugPrint('[RiderTracking] Watching sql_$tripId for status updates');
+    }
+
+    // Start RTDB driver location listener immediately if driverId is known
+    // (don't wait for Firestore to deliver it — avoids false "connection lost")
+    final did = widget.driverId;
+    if (did != null && did.isNotEmpty && _rtdbDriverId != did) {
+      _startRtdbDriverListener(did);
     }
   }
 
@@ -304,6 +321,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       final lng = (data['lng'] as num?)?.toDouble();
       final bearing = (data['bearing'] as num?)?.toDouble();
       if (lat == null || lng == null) return;
+      _pollFailCount = 0;
       if (_connectionLost) _setState(() => _connectionLost = false);
       _onRealDriverLocation(LatLng(lat, lng), bearing: bearing);
     }, onError: (_) {});

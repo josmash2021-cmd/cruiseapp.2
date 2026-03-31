@@ -318,6 +318,9 @@ async def driver_pending_sse(
     """SSE stream for driver pending offers.
     Delivers new offers in <200ms instead of 5s polling.
     Falls back gracefully — clients can use this OR polling."""
+    # Security: only allow drivers to subscribe to their own stream
+    if user.id != driver_id or user.role != "driver":
+        raise HTTPException(403, "Not authorized to access this driver's offer stream")
     queue = event_bus.subscribe_driver(driver_id)
 
     async def _generate():
@@ -390,10 +393,17 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     # Authorization: ensure the authenticated user IS the driver
     if user.id != driver_id or user.role != "driver":
         raise HTTPException(403, "Not authorized to accept this offer")
-    result = await db.execute(select(DispatchOffer).where(DispatchOffer.id == offer_id))
+    # Use FOR UPDATE to prevent two drivers accepting the same offer simultaneously
+    result = await db.execute(
+        select(DispatchOffer).where(DispatchOffer.id == offer_id).with_for_update()
+    )
     offer = result.scalar_one_or_none()
     if not offer:
         raise HTTPException(404, "Offer not found")
+    if offer.status != "pending":
+        raise HTTPException(409, "Offer already accepted or expired")
+    if offer.driver_id != driver_id:
+        raise HTTPException(403, "This offer is not assigned to you")
     offer.status = "accepted"
     _pending_cache.pop(driver_id, None)  # L3: invalidate cache so next poll is fresh
     _dispatch_status_cache.pop(offer.trip_id, None)  # invalidate status cache on accept

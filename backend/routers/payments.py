@@ -223,6 +223,10 @@ async def paypal_capture_order(body: PayPalCaptureIn, user: User = Depends(_get_
 
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
+# Idempotency: track processed Stripe event IDs to prevent double-processing
+_processed_stripe_events: collections.OrderedDict = collections.OrderedDict()
+_MAX_PROCESSED_EVENTS = 5000
+
 
 @router.post("/payments/stripe/webhook")
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
@@ -241,7 +245,18 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(400, "Invalid signature")
 
     event_type = event["type"]
-    logging.info("[Stripe Webhook] Received event: %s", event_type)
+    event_id = event.get("id", "")
+    logging.info("[Stripe Webhook] Received event: %s (id=%s)", event_type, event_id)
+
+    # Idempotency: skip already-processed events (Stripe retries on timeout)
+    if event_id and event_id in _processed_stripe_events:
+        logging.info("[Stripe Webhook] Skipping duplicate event: %s", event_id)
+        return {"status": "duplicate_skipped"}
+    if event_id:
+        _processed_stripe_events[event_id] = time.time()
+        # Cap size to prevent memory leak
+        while len(_processed_stripe_events) > _MAX_PROCESSED_EVENTS:
+            _processed_stripe_events.popitem(last=False)
 
     if event_type == "payment_intent.succeeded":
         intent = event["data"]["object"]

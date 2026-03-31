@@ -425,6 +425,10 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
                 _send_fcm_push(rider.fcm_token, title="📍 Driver Arrived",
                     body="Your driver has arrived at the pickup point!",
                     data={"type": "driver_arrived", "trip_id": str(trip_id)})
+            elif status == "in_trip":
+                _send_fcm_push(rider.fcm_token, title="🚗 Trip Started",
+                    body="Your trip has started. Enjoy your ride!",
+                    data={"type": "trip_started", "trip_id": str(trip_id)})
             elif status == "completed":
                 # Fix H7: differentiate notification based on actual charge outcome
                 if trip.payment_status == "paid":
@@ -507,6 +511,9 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
+    # IDOR protection: only rider, assigned driver, or admin can cancel
+    if user.id != trip.rider_id and user.id != trip.driver_id and user.role != "admin":
+        raise HTTPException(403, "Not authorized to cancel this trip")
     if trip.status in ("completed", "canceled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
     # Accept optional cancel_reason from body

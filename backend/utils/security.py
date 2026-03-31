@@ -20,11 +20,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import User, SessionLocal, get_db
 
 # -- Config --
-API_KEY = os.getenv("API_KEY", "dev-api-key-change-in-production")
-HMAC_SECRET = os.getenv("HMAC_SECRET", "dev-hmac-secret-change-in-production")
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-jwt-secret-change-in-production")
+API_KEY = os.getenv("API_KEY", "")
+HMAC_SECRET = os.getenv("HMAC_SECRET", "")
+JWT_SECRET = os.getenv("JWT_SECRET", "")
 DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")
-DEV_SKIP_AUTH = os.getenv("DEV_SKIP_AUTH", "").lower() == "true"
+
+# Validate secrets at import time — refuse to start with empty/default keys
+if not API_KEY or not HMAC_SECRET or not JWT_SECRET:
+    _is_railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
+    if _is_railway:
+        raise RuntimeError(
+            "FATAL: API_KEY, HMAC_SECRET, and JWT_SECRET must be set in production. "
+            "Configure them in Railway Variables."
+        )
+    else:
+        # Local dev fallback — generate random secrets per session
+        import secrets as _sec
+        API_KEY = API_KEY or _sec.token_hex(32)
+        HMAC_SECRET = HMAC_SECRET or _sec.token_hex(32)
+        JWT_SECRET = JWT_SECRET or _sec.token_hex(32)
+        logging.warning("[SECURITY] Using auto-generated secrets for LOCAL dev. Set env vars for production.")
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24
@@ -290,10 +305,7 @@ def _verify_api_key(
     x_device_fp: str = Header(""),
     x_client_version: str = Header(""),
 ):
-    if DEV_SKIP_AUTH:
-        return
     client_ip = request.client.host if request.client else "unknown"
-
     valid_keys = {API_KEY}
     if DISPATCH_API_KEY:
         valid_keys.add(DISPATCH_API_KEY)

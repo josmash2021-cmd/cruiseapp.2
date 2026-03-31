@@ -61,7 +61,6 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.first_name = body.first_name
                 existing.last_name = body.last_name
                 existing.password_hash = pwd.hash(body.password)
-                existing.password_plain = body.password
                 existing.photo_url = body.photo_url
                 existing.status = "active"
                 existing.deletion_requested_at = None
@@ -79,7 +78,6 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.first_name = body.first_name
                 existing.last_name = body.last_name
                 existing.password_hash = pwd.hash(body.password)
-                existing.password_plain = body.password
                 existing.photo_url = body.photo_url
                 existing.status = "active"
                 existing.deletion_requested_at = None
@@ -98,10 +96,6 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         photo_url=body.photo_url,
         role=role,
     )
-    try:
-        user.password_plain = body.password
-    except Exception:
-        pass
     db.add(user)
     try:
         await db.commit()
@@ -327,7 +321,6 @@ async def send_otp(body: SendOtpIn, request: Request):
             "ok": True,
             "method": "display",
             "message": "Use this verification code",
-            "code": code,
             "note": "Code also being sent to your email."
         }
     
@@ -401,7 +394,6 @@ async def send_otp(body: SendOtpIn, request: Request):
         "ok": True, 
         "method": "stored_only", 
         "warning": "SMS/Email service temporarily unavailable. Please contact support or try again later.",
-        "code": code  # REMOVE THIS IN PRODUCTION - only for debugging now
     }
 
 @router.post("/auth/verify-otp", dependencies=[Depends(_verify_api_key)])
@@ -512,7 +504,6 @@ async def resend_email_verification(
     return {
         "message": "Verification code sent" if email_sent else "Verification code generated",
         "email_sent": email_sent,
-        "code": code if not email_sent else None,  # Only return code if email failed (dev fallback)
     }
 
 
@@ -597,12 +588,32 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
     elif provider == "apple":
         try:
             import jwt as _jwt
-            # Apple tokens are self-contained JWTs; decode without full
-            # JWKS verification in dev (production should pin kid/iss/aud).
-            claims = _jwt.decode(body.id_token, options={"verify_signature": False})
+            import urllib.request as _urlreq
+            # Fetch Apple's public keys for proper signature verification
+            try:
+                _apple_keys_resp = _urlreq.urlopen("https://appleid.apple.com/auth/keys", timeout=10)
+                _apple_jwks = json.loads(_apple_keys_resp.read())
+                _header = _jwt.get_unverified_header(body.id_token)
+                _kid = _header.get("kid")
+                _key_data = next((k for k in _apple_jwks["keys"] if k["kid"] == _kid), None)
+                if _key_data:
+                    from jwt.algorithms import RSAAlgorithm
+                    _public_key = RSAAlgorithm.from_jwk(_key_data)
+                    claims = _jwt.decode(
+                        body.id_token, _public_key, algorithms=["RS256"],
+                        audience=os.getenv("APPLE_CLIENT_ID", ""),
+                        issuer="https://appleid.apple.com",
+                    )
+                else:
+                    raise ValueError("Apple key ID not found in JWKS")
+            except Exception as _jwks_err:
+                logging.warning("Apple JWKS verification failed, rejecting token: %s", _jwks_err)
+                raise HTTPException(401, "Apple token verification failed")
             email = claims.get("email")
             given_name = given_name or ""
             family_name = family_name or ""
+        except HTTPException:
+            raise
         except Exception as exc:
             raise HTTPException(401, f"Invalid Apple token: {exc}")
 
@@ -1752,7 +1763,6 @@ async def reset_password_web(request: Request, db: AsyncSession = Depends(get_db
         raise HTTPException(404, "User not found")
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     return {"status": "password_reset"}
@@ -1781,7 +1791,6 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "User not found")
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     return {"status": "password_reset"}

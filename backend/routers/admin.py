@@ -556,33 +556,8 @@ async def admin_delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.delete("/admin/users", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_delete_all_users(db: AsyncSession = Depends(get_db)):
-    """Permanently delete ALL users (irreversible). Dispatch owner only."""
-    result = await db.execute(select(User))
-    users = result.scalars().all()
-    count = 0
-    for user in users:
-        docs_result = await db.execute(select(Document).where(Document.user_id == user.id))
-        for doc in docs_result.scalars().all():
-            if doc.file_path:
-                fpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), doc.file_path.lstrip("/"))
-                if os.path.exists(fpath):
-                    os.remove(fpath)
-            await db.delete(doc)
-        if user.photo_url and user.photo_url.startswith("/"):
-            photo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), user.photo_url.lstrip("/"))
-            if os.path.exists(photo_path):
-                os.remove(photo_path)
-        collection = "drivers" if user.role == "driver" else "clients"
-        await db.delete(user)
-        if _HAS_FIRESTORE:
-            try:
-                firestore_sync.delete_user(user.id, collection)
-            except Exception:
-                pass
-        count += 1
-    await db.commit()
-    _security_audit_log("ADMIN_DELETE_ALL_USERS", "admin", f"deleted={count}")
-    return {"deleted": count}
+    """DISABLED — Mass deletion is too dangerous for a single API call."""
+    raise HTTPException(403, "Mass user deletion is disabled. Delete users individually.")
 
 
 @router.get("/admin/users/{user_id}/chats", dependencies=[Depends(_require_dispatch_auth)])
@@ -654,9 +629,9 @@ async def update_surge_zone(zone_name: str = Body(...), center_lat: float = Body
 #  ADMIN DASHBOARD ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
-@router.get("/admin/stats", dependencies=[Depends(_verify_api_key)])
+@router.get("/admin/stats", dependencies=[Depends(_require_dispatch_auth)])
 async def get_admin_stats(db: AsyncSession = Depends(get_db)):
-    """Get real-time statistics for admin dashboard."""
+    """Get real-time statistics for admin dashboard. Requires dispatch auth."""
     try:
         today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         
@@ -732,9 +707,9 @@ async def get_admin_stats(db: AsyncSession = Depends(get_db)):
         logging.error("[Admin] Error getting stats: %s", e)
         raise HTTPException(500, f"Error getting stats: {str(e)}")
 
-@router.get("/admin/drivers/online", dependencies=[Depends(_verify_api_key)])
+@router.get("/admin/drivers/online", dependencies=[Depends(_require_dispatch_auth)])
 async def get_online_drivers(db: AsyncSession = Depends(get_db)):
-    """Get all online drivers with their current location and status."""
+    """Get all online drivers with their current location and status. Requires dispatch auth."""
     try:
         result = await db.execute(
             select(User, Vehicle).outerjoin(
@@ -780,9 +755,9 @@ async def get_online_drivers(db: AsyncSession = Depends(get_db)):
         logging.error("[Admin] Error getting online drivers: %s", e)
         raise HTTPException(500, f"Error getting drivers: {str(e)}")
 
-@router.get("/admin/trips/active", dependencies=[Depends(_verify_api_key)])
+@router.get("/admin/trips/active", dependencies=[Depends(_require_dispatch_auth)])
 async def get_active_trips(db: AsyncSession = Depends(get_db)):
-    """Get all active trips with driver and rider info."""
+    """Get all active trips with driver and rider info. Requires dispatch auth."""
     try:
         result = await db.execute(
             select(Trip, User).join(

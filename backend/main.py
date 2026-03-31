@@ -84,7 +84,7 @@ from utils.security import (
     _audit_chain, _security_audit_log,
     _sanitize_string, _SQL_INJECTION_PATTERN, _XSS_PATTERN,
     _dispatch_sessions,
-    API_KEY, HMAC_SECRET, JWT_SECRET, DISPATCH_API_KEY, DEV_SKIP_AUTH,
+    API_KEY, HMAC_SECRET, JWT_SECRET, DISPATCH_API_KEY,
     JWT_ALGORITHM, JWT_EXPIRE_HOURS, JWT_REFRESH_HOURS,
 )
 from utils.helpers import (
@@ -463,7 +463,7 @@ async def health(x_api_key: str = Header(default="")):
     }
 
     # Private response — full details, requires API key
-    if DEV_SKIP_AUTH or x_api_key == API_KEY:
+    if x_api_key == API_KEY:
         firebase_usable = False
         if _HAS_FIRESTORE:
             try:
@@ -497,8 +497,7 @@ async def health(x_api_key: str = Header(default="")):
 async def security_health(x_api_key: str = Header(default="")):
     """Security Guardian status — detailed threat monitoring info.
     Protected by API key for production safety."""
-    # Allow access if API key matches OR if DEV_SKIP_AUTH is enabled
-    if not DEV_SKIP_AUTH and x_api_key != API_KEY:
+    if x_api_key != API_KEY:
         raise HTTPException(403, "Forbidden")
     
     status = security_guardian.get_status()
@@ -515,8 +514,7 @@ async def security_health(x_api_key: str = Header(default="")):
 async def guardian_health(x_api_key: str = Header(default="")):
     """Guardian Agent status — system health, connections, memory, data integrity.
     Protected by API key for production safety."""
-    # Allow access if API key matches OR if DEV_SKIP_AUTH is enabled
-    if not DEV_SKIP_AUTH and x_api_key != API_KEY:
+    if x_api_key != API_KEY:
         raise HTTPException(403, "Forbidden")
     
     return guardian_agent.get_status()

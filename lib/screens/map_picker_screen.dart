@@ -26,7 +26,7 @@ class MapPickerScreen extends StatefulWidget {
 }
 
 class _MapPickerScreenState extends State<MapPickerScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
   final _places = PlacesService(ApiKeys.webServices);
 
@@ -40,6 +40,13 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   int _geocodeGen = 0; // generation counter to cancel stale requests
   late final AnimationController _settleCtrl;
   late final Animation<double> _settleAnim;
+
+  // Confirm anchor + ripple animation
+  AnimationController? _anchorCtrl;
+  Animation<double>? _anchorAnim;
+  AnimationController? _rippleCtrl;
+  Animation<double>? _rippleAnim;
+  bool _confirming = false;
 
   @override
   void initState() {
@@ -88,6 +95,8 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   void dispose() {
     _debounce?.cancel();
     _settleCtrl.dispose();
+    _anchorCtrl?.dispose();
+    _rippleCtrl?.dispose();
     super.dispose();
   }
 
@@ -152,13 +161,66 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   }
 
   void _confirm() {
-    if (_addressIsPlaceholder || _address.isEmpty) {
+    if (_addressIsPlaceholder || _address.isEmpty || _confirming) {
       return;
     }
-    Navigator.of(context).pop({
-      'address': _address,
-      'lat': _center.latitude,
-      'lng': _center.longitude,
+    setState(() => _confirming = true);
+
+    // 1. Pin anchor drop animation (bounce spring)
+    _anchorCtrl?.dispose();
+    _anchorCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _anchorAnim = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: -18.0)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 25,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: -18.0, end: 4.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 4.0, end: -2.0)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 20,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: -2.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 15,
+      ),
+    ]).animate(_anchorCtrl!);
+    _anchorCtrl!.addListener(() => setState(() {}));
+
+    // 2. Ripple wave starts when pin lands (at ~65% of anchor anim)
+    _rippleCtrl?.dispose();
+    _rippleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _rippleAnim = CurvedAnimation(parent: _rippleCtrl!, curve: Curves.easeOut);
+    _rippleCtrl!.addListener(() => setState(() {}));
+
+    _anchorCtrl!.forward(from: 0);
+
+    // Start ripple when pin impacts (at 65% = ~260ms)
+    Future.delayed(const Duration(milliseconds: 260), () {
+      if (!mounted) return;
+      _rippleCtrl!.forward(from: 0);
+    });
+
+    // 3. Pop result after full animation
+    Future.delayed(const Duration(milliseconds: 1000), () {
+      if (!mounted) return;
+      Navigator.of(context).pop({
+        'address': _address,
+        'lat': _center.latitude,
+        'lng': _center.longitude,
+      });
     });
   }
 
@@ -197,33 +259,28 @@ class _MapPickerScreenState extends State<MapPickerScreen>
           ),
           ),
 
+          // Golden ripple wave — expands from map center when pin anchors
+          if (_confirming && _rippleAnim != null)
+            Center(
+              child: CustomPaint(
+                painter: _RipplePainter(
+                  progress: _rippleAnim!.value,
+                  color: _gold,
+                ),
+                size: Size.square(MediaQuery.of(context).size.shortestSide * 1.5),
+              ),
+            ),
+
           // Center pin — fixed while map moves underneath
-          // Offset = -(widget_height/2) = -(size*1.1/2) = -(56*1.1/2) ≈ -31
-          // so pin tip (at widget bottom) lands exactly at screen/map center.
           Center(
             child: Transform.translate(
-              offset: const Offset(0, -31),
+              offset: Offset(0, -(56 * 1.3 / 2) + (_anchorAnim?.value ?? 0.0)),
               child: ScaleTransition(
                 scale: _settleAnim,
                 child: CircularMapPin(
                   size: 56,
                   icon: widget.isPickup ? CircularPinIcon.person : CircularPinIcon.flag,
                   isPickup: widget.isPickup,
-                ),
-              ),
-            ),
-          ),
-
-          // Shadow dot directly under pin tip (1px below map center for depth)
-          Center(
-            child: Transform.translate(
-              offset: const Offset(0, 1),
-              child: Container(
-                width: 8,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.black38,
-                  borderRadius: BorderRadius.circular(4),
                 ),
               ),
             ),
@@ -383,7 +440,7 @@ class _MapPickerScreenState extends State<MapPickerScreen>
                             ),
                             elevation: 0,
                           ),
-                          onPressed: _loading ? null : _confirm,
+                          onPressed: (_loading || _confirming) ? null : _confirm,
                           child: Text(
                             widget.isPickup
                                 ? s.confirmPickupLocation
@@ -405,4 +462,53 @@ class _MapPickerScreenState extends State<MapPickerScreen>
       ),
     );
   }
+}
+
+/// Paints an expanding shockwave band — makes the map look like a water ripple/onda.
+/// A thick semi-transparent golden band sweeps outward from the center, fading as it grows.
+class _RipplePainter extends CustomPainter {
+  final double progress; // 0.0 → 1.0
+  final Color color;
+
+  _RipplePainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0) return;
+    final center = size.center(Offset.zero);
+    final maxR = size.shortestSide / 2;
+
+    final r = maxR * progress;
+    // Band thickness shrinks as it expands (thick at start, thin at end)
+    final bandWidth = 60.0 * (1.0 - progress * 0.7);
+    final innerR = (r - bandWidth).clamp(0.0, r);
+    // Opacity fades out as band expands
+    final opacity = (1.0 - progress) * 0.30;
+
+    // Radial gradient: transparent center → gold band → transparent edge
+    final paint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.transparent,
+          Colors.transparent,
+          color.withValues(alpha: opacity * 0.3),
+          color.withValues(alpha: opacity),
+          color.withValues(alpha: opacity * 0.6),
+          Colors.transparent,
+        ],
+        stops: [
+          0.0,
+          innerR / (r + 1),
+          (innerR / (r + 1) + 0.01).clamp(0.0, 1.0),
+          ((innerR + bandWidth * 0.4) / (r + 1)).clamp(0.0, 1.0),
+          ((innerR + bandWidth * 0.8) / (r + 1)).clamp(0.0, 1.0),
+          1.0,
+        ],
+      ).createShader(Rect.fromCircle(center: center, radius: r.clamp(1, double.infinity)));
+
+    canvas.drawCircle(center, r, paint);
+  }
+
+  @override
+  bool shouldRepaint(_RipplePainter old) => old.progress != progress;
 }

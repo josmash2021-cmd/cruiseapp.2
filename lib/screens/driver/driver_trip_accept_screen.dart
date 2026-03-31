@@ -376,24 +376,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   Widget _actionBtn(IconData icon, String label, VoidCallback onTap) =>
-      OutlinedButton(
-        onPressed: onTap,
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: Color(0xFFFFD700), width: 1.5),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          foregroundColor: Colors.white,
-          backgroundColor: Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: const Color(0xFFFFD700), size: 16),
-            const SizedBox(width: 6),
-            Text(label,
-              style: const TextStyle(color: Colors.white, fontSize: 13,
-                  fontWeight: FontWeight.w600)),
-          ],
+      GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFFFFD700), width: 1.5),
+          ),
+          child: Icon(icon, color: const Color(0xFFFFD700), size: 18),
         ),
       );
 

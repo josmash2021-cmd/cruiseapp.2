@@ -1141,12 +1141,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ctrl.annotations.createPointAnnotationManager().then((m) async {
         _annotMgr = m;
         try {
-          // 'map' anchors pins flat to map surface — no floating/3D effect.
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'map');
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'map');
+          // 'viewport' keeps pins upright when camera tilts; 'bottom' anchors
+          // the teardrop tip exactly at the coordinate — no floating.
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'viewport');
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-allow-overlap', true);
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-ignore-placement', true);
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-anchor', 'center');
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-anchor', 'bottom');
         } catch (_) {}
       }),
     ];
@@ -1217,23 +1218,30 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         final pins = await Future.wait([
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: pickupPoint),
-            image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
+            image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
           )),
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: dropoffPoint),
-            image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
+            image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
           )),
         ]);
         _pinAnnots.addAll(pins);
       }
       if (_polyMgr != null && _routePoints.length >= 2) {
-        final coords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        _routeAnnot = await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
-          geometry: mapbox.LineString(coordinates: coords),
-          lineColor: const Color(0xFFFFD700).toARGB32(),
-          lineWidth: 5.0,
-          lineJoin: mapbox.LineJoin.ROUND,
-        ));
+        try {
+          final coords = _routePoints
+              .where((p) => p.latitude.isFinite && p.longitude.isFinite)
+              .map((p) => mapbox.Position(p.longitude, p.latitude))
+              .toList();
+          if (coords.length >= 2) {
+            _routeAnnot = await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
+              geometry: mapbox.LineString(coordinates: coords),
+              lineColor: const Color(0xFFFFD700).toARGB32(),
+              lineWidth: 5.0,
+              lineJoin: mapbox.LineJoin.ROUND,
+            ));
+          }
+        } catch (_) {}
       }
       return;
     }
@@ -1262,11 +1270,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       final pins = await Future.wait([
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: pickupPoint),
-          image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
+          image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
         )),
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: dropoffPoint),
-          image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
+          image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
         )),
       ]);
       _pinAnnots.addAll(pins);
@@ -1294,41 +1302,33 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     });
     if (!mounted) return;
 
-    // STEP 3: Animated route draw over 800ms
+    // STEP 3: Animated route draw (use robust ticker-based method)
     if (_polyMgr != null && _routePoints.length >= 2) {
-      const drawMs = 800;
-      final drawSw = Stopwatch()..start();
-      int lastCount = 0;
-      await Future.doWhile(() async {
-        await Future.delayed(const Duration(milliseconds: 16));
-        if (!mounted) return false;
-        final t = (drawSw.elapsedMilliseconds / drawMs).clamp(0.0, 1.0);
-        final eased = Curves.easeInOutSine.transform(t);
-        final count = (eased * _routePoints.length).round().clamp(2, _routePoints.length);
-        if (count != lastCount) {
-          lastCount = count;
-          final subset = _routePoints.sublist(0, count);
-          final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-          final geo = mapbox.LineString(coordinates: coords);
-          if (_routeAnnot == null) {
-            _routeAnnot = await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
-              geometry: geo,
+      try {
+        // Filter out any invalid coordinates before drawing
+        final validPts = _routePoints.where((p) =>
+          p.latitude.isFinite && p.longitude.isFinite &&
+          p.latitude.abs() <= 90 && p.longitude.abs() <= 180
+        ).toList();
+        if (validPts.length >= 2) {
+          await _animateGoldRoute(
+            points: validPts,
+            duration: const Duration(milliseconds: 800),
+          );
+        }
+      } catch (_) {
+        // Fallback: draw full route instantly if animation fails
+        if (_polyMgr != null && _routePoints.length >= 2 && mounted) {
+          try {
+            final coords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+            _routeAnnot ??= await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
+              geometry: mapbox.LineString(coordinates: coords),
               lineColor: const Color(0xFFFFD700).toARGB32(),
               lineWidth: 5.0,
               lineJoin: mapbox.LineJoin.ROUND,
             ));
-          } else {
-            _routeAnnot!.geometry = geo;
-            try { await _polyMgr!.update(_routeAnnot!); } catch (_) {}
-          }
+          } catch (_) {}
         }
-        return t < 1.0;
-      });
-      // Ensure full route is drawn
-      if (_routeAnnot != null && mounted) {
-        final fullCoords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        _routeAnnot!.geometry = mapbox.LineString(coordinates: fullCoords);
-        try { await _polyMgr!.update(_routeAnnot!); } catch (_) {}
       }
     }
     if (!mounted) return;

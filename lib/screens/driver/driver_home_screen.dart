@@ -491,6 +491,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!await _ensureVerified()) return;
     if (!mounted) return;
 
+    // Always refresh active-trip state before deciding where Resume goes.
+    await _refreshActiveTripStatus();
+    if (!mounted) return;
+
     if (_activeTripData != null) {
       await _resumeActiveTrip();
       return;
@@ -568,6 +572,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   void _navigateToOnlineScreen() async {
+    await _refreshActiveTripStatus();
+    if (!mounted) return;
     if (_activeTripData != null) {
       await _resumeActiveTrip();
       return;
@@ -1506,7 +1512,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         DriverTripAcceptScreen(
           tripId: tripId,
           riderName: riderName,
-          riderPhotoUrl: _pickString(trip, ['riderPhotoUrl', 'rider_photo_url', 'passengerPhotoUrl']),
+          riderPhotoUrl: _normalizePhotoUrl(
+            _pickString(trip, ['riderPhotoUrl', 'rider_photo_url', 'passengerPhotoUrl']),
+          ),
           riderRating: _pickDouble(trip, ['riderRating', 'rider_rating']) ?? 4.8,
           pickupLatLng: pickup,
           dropoffLatLng: dropoff,
@@ -1555,6 +1563,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (v != null && v.isNotEmpty) return v;
     }
     return fallback;
+  }
+
+  String _normalizePhotoUrl(String rawUrl) {
+    final raw = rawUrl.trim();
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (raw.startsWith('/')) return '${ApiService.publicBaseUrl}$raw';
+    return '${ApiService.publicBaseUrl}/$raw';
   }
 
   double _haversineKm(LatLng a, LatLng b) {

@@ -457,30 +457,32 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     setState(() => _tripFinished = true);
     HapticFeedback.heavyImpact();
 
-    // Update backend + Firestore
-    try {
-      await ApiService.updateTripStatus(tripId: widget.tripId, status: 'completed');
-    } catch (_) {}
-    try {
-      await FirebaseFirestore.instance
-          .collection('trips')
-          .doc(_fsDocId)
-          .update({
-        'status': 'completed',
-        'completedAt': FieldValue.serverTimestamp(),
-      });
-    } catch (_) {}
+    // Show completion overlay immediately (do not block on network)
+    _finishFadeCtrl.forward(from: 0);
 
-    // Clear GPS trip tracking
-    final gps = GpsService();
-    try { await gps.clearTripLocation(); } catch (_) {}
-    gps.setActiveTrip(null);
-    try {
-      await TripFirestoreService.clearDriverLocation(_fsDocId);
-    } catch (_) {}
+    // Fire-and-forget cleanup/status updates so UI never hangs.
+    unawaited(() async {
+      try {
+        await ApiService.updateTripStatus(tripId: widget.tripId, status: 'completed')
+            .timeout(const Duration(seconds: 6));
+      } catch (_) {}
+      try {
+        await FirebaseFirestore.instance
+            .collection('trips')
+            .doc(_fsDocId)
+            .update({
+          'status': 'completed',
+          'completedAt': FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
 
-    // Show "Viaje Finalizado" overlay
-    _finishFadeCtrl.forward();
+      final gps = GpsService();
+      try { await gps.clearTripLocation(); } catch (_) {}
+      gps.setActiveTrip(null);
+      try {
+        await TripFirestoreService.clearDriverLocation(_fsDocId);
+      } catch (_) {}
+    }());
 
     // After 3 seconds navigate to DriverRateRiderScreen
     _finishNavTimer = Timer(const Duration(seconds: 3), () {
@@ -490,7 +492,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           pageBuilder: (_, anim, __) => DriverRateRiderScreen(
             tripId: widget.tripId,
             riderName: widget.riderName,
-            riderPhotoUrl: widget.riderPhotoUrl,
+            riderPhotoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl) ?? '',
             fare: widget.fare,
           ),
           transitionsBuilder: (_, anim, __, child) => FadeTransition(
@@ -578,9 +580,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return 'by $h:$m $ap';
   }
 
+  String? _normalizedPhotoUrl(String? rawUrl) {
+    final raw = (rawUrl ?? '').trim();
+    if (raw.isEmpty) return null;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (raw.startsWith('/')) return '${ApiService.publicBaseUrl}$raw';
+    return '${ApiService.publicBaseUrl}/$raw';
+  }
+
   Widget _avatar() {
     return VerifiedAvatar(
-      photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
+      photoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl),
       radius: Responsive.w(33),
       fallbackName: widget.riderName,
       isVerified: true,
@@ -1157,11 +1167,16 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   /// Load route: prefer cached widget.routePoints, fallback to OSRM fetch
   Future<List<LatLng>> _loadRoute() async {
-    // Use cached route from offer pre-fetch (instant, no straight-line bug)
-    if (widget.routePoints != null && widget.routePoints!.length >= 2) {
-      return List<LatLng>.from(widget.routePoints!);
+    // Use cached route only when it actually matches pickup->dropoff.
+    if (widget.routePoints != null && widget.routePoints!.length >= 8) {
+      final cached = List<LatLng>.from(widget.routePoints!);
+      final startMatchesPickup = _haversineMeters(cached.first, widget.pickupLatLng) <= 120;
+      final endMatchesDropoff = _haversineMeters(cached.last, widget.dropoffLatLng) <= 120;
+      if (startMatchesPickup && endMatchesDropoff) {
+        return cached;
+      }
     }
-    // Fallback — fetch fresh pickup→dropoff only
+    // Fetch fresh routed geometry for the mini-map details view.
     return _fetchRoutePoints(widget.pickupLatLng, widget.dropoffLatLng);
   }
 
@@ -1281,10 +1296,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: pickupPoint),
             image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
+            iconOffset: const [0.0, 4.0],
           )),
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: dropoffPoint),
             image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
+            iconOffset: const [0.0, 4.0],
           )),
         ]);
         _pinAnnots.addAll(pins);
@@ -1333,10 +1350,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: pickupPoint),
           image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: const [0.0, 4.0],
         )),
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: dropoffPoint),
           image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: const [0.0, 4.0],
         )),
       ]);
       _pinAnnots.addAll(pins);
@@ -1432,24 +1451,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   /// Fetch route points: Google Directions → OSRM → straight line
   Future<List<LatLng>> _fetchRoutePoints(LatLng o, LatLng d) async {
-    // OSRM
-    try {
-      final path = '/route/v1/driving/${o.longitude},${o.latitude};${d.longitude},${d.latitude}';
-      final uri = Uri.https('router.project-osrm.org', path, {
-        'overview': 'full', 'geometries': 'polyline',
-      });
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      if (data['code']?.toString().toUpperCase() == 'OK') {
-        final routes = data['routes'] as List?;
-        if (routes != null && routes.isNotEmpty) {
-          final positions = _decodePoly(routes[0]['geometry'] as String);
-          final pts = positions.map((p) => LatLng(p.lat.toDouble(), p.lng.toDouble())).toList();
-          return pts;
-        }
-      }
-    } catch (_) {}
-    // Mapbox Directions API fallback
+    // Mapbox Directions API (primary)
     try {
       final mbxUrl = Uri.parse(
         'https://api.mapbox.com/directions/v5/mapbox/driving/'
@@ -1469,6 +1471,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 .toList();
             return pts;
           }
+        }
+      }
+    } catch (_) {}
+    // OSRM fallback
+    try {
+      final path = '/route/v1/driving/${o.longitude},${o.latitude};${d.longitude},${d.latitude}';
+      final uri = Uri.https('router.project-osrm.org', path, {
+        'overview': 'full', 'geometries': 'polyline',
+      });
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (data['code']?.toString().toUpperCase() == 'OK') {
+        final routes = data['routes'] as List?;
+        if (routes != null && routes.isNotEmpty) {
+          final positions = _decodePoly(routes[0]['geometry'] as String);
+          final pts = positions.map((p) => LatLng(p.lat.toDouble(), p.lng.toDouble())).toList();
+          if (pts.length >= 2) return pts;
         }
       }
     } catch (_) {}

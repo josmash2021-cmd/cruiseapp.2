@@ -6,6 +6,14 @@ part of 'driver_online_screen.dart';
 
 extension _DriverOnlineController on _DriverOnlineScreenState {
 
+  String _normalizePhotoUrl(dynamic rawUrl) {
+    final raw = (rawUrl ?? '').toString().trim();
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (raw.startsWith('/')) return '${ApiService.publicBaseUrl}$raw';
+    return '${ApiService.publicBaseUrl}/$raw';
+  }
+
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  BOOT
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -938,7 +946,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _tripId = tripId;
     _riderName = name;
     _riderInit = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    _riderPhotoUrl = (r['rider_photo_url'] ?? r['photo_url'] ?? '') as String;
+    _riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
     _riderPhone = (r['rider_phone'] ?? '') as String;
     _pickupAddr = r['pickup_address'] ?? 'Pickup';
     _dropoffAddr = r['dropoff_address'] ?? 'Drop-off';
@@ -976,7 +984,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
 
     if (!mounted) return;
-    final riderPhotoUrl = (r['rider_photo_url'] ?? r['photo_url'] ?? '') as String;
+    final riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
     final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 4.8;
     final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final navFuture = Navigator.of(context).push<String>(

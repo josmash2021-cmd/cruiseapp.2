@@ -1828,6 +1828,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         final pointMgr = await ctrl.annotations
                             .createPointAnnotationManager();
                         try { await ctrl.style.setStyleLayerProperty(pointMgr.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+                        try { await ctrl.style.setStyleLayerProperty(pointMgr.id, 'icon-allow-overlap', true); } catch (_) {}
+                        try { await ctrl.style.setStyleLayerProperty(pointMgr.id, 'icon-ignore-placement', true); } catch (_) {}
+                        try { await ctrl.style.setStyleLayerProperty(pointMgr.id, 'icon-anchor', 'bottom'); } catch (_) {}
                         final pickupBytes =
                             await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 44);
                         await pointMgr.create(mapbox.PointAnnotationOptions(

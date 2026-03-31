@@ -14,6 +14,7 @@ import '../../config/page_transitions.dart';
 import '../../models/lat_lng.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/verified_avatar.dart';
+import '../../services/api_service.dart';
 import 'driver_trip_accept_screen.dart';
 
 /// Full-screen "Viaje Aceptado" confirmation shown after driver accepts a trip.
@@ -307,6 +308,9 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _pointMgr = await ctrl.annotations.createPointAnnotationManager();
     try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}
 
     // Add smart pins immediately (pickup + dropoff)
     _addSmartPins();
@@ -365,7 +369,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
         DriverTripAcceptScreen(
           tripId: widget.tripId,
           riderName: widget.riderName,
-          riderPhotoUrl: widget.riderPhotoUrl ?? '',
+          riderPhotoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl) ?? '',
           riderRating: widget.riderRating,
           pickupLatLng: widget.pickupLatLng,
           dropoffLatLng: widget.dropoffLatLng,
@@ -381,6 +385,14 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
         ),
       ),
     );
+  }
+
+  String? _normalizedPhotoUrl(String? rawUrl) {
+    final raw = (rawUrl ?? '').trim();
+    if (raw.isEmpty) return null;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (raw.startsWith('/')) return '${ApiService.publicBaseUrl}$raw';
+    return '${ApiService.publicBaseUrl}/$raw';
   }
 
   @override
@@ -532,7 +544,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                       VerifiedAvatar(
                         uid: widget.tripId.toString(),
                         fallbackName: widget.riderInitials,
-                        photoUrl: widget.riderPhotoUrl,
+                        photoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl),
                         isVerified: widget.riderVerified,
                         radius: 28,
                       ),

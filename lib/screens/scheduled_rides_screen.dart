@@ -466,6 +466,12 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     try {
       await ctrl.style.setStyleLayerProperty(
           _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+      await ctrl.style.setStyleLayerProperty(
+          _pointAnnotMgr!.id, 'icon-allow-overlap', true);
+      await ctrl.style.setStyleLayerProperty(
+          _pointAnnotMgr!.id, 'icon-ignore-placement', true);
+      await ctrl.style.setStyleLayerProperty(
+          _pointAnnotMgr!.id, 'icon-anchor', 'bottom');
     } catch (_) {}
     _polyAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
     if (_hasCoords && mounted) _loadRouteAndAnimate();

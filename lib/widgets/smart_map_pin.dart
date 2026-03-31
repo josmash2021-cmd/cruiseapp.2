@@ -110,6 +110,41 @@ class GoldenPinPainter {
     final headCY = _headCY;
     final tipY   = _tipY;
 
+    // ── 0. Torch-like glow (head aura + grounded hotspot) ──
+    canvas.drawCircle(
+      Offset(cx, headCY + r * 0.04),
+      r * 1.05,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(cx, headCY + r * 0.04),
+          r * 1.05,
+          [
+            const Color(0x55FFE88A),
+            const Color(0x22D4A520),
+            Colors.transparent,
+          ],
+          const [0.0, 0.55, 1.0],
+        ),
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(cx, tipY - 1.5),
+        width: r * 1.10,
+        height: r * 0.26,
+      ),
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(cx, tipY - 1.5),
+          r * 0.62,
+          [
+            const Color(0x55FFD86A),
+            const Color(0x24C58B1A),
+            Colors.transparent,
+          ],
+          const [0.0, 0.62, 1.0],
+        ),
+    );
+
     // ── 1. Golden tail (cone shape) ──
     final tailPath = _buildTail(cx, headCY, r, tipY);
 

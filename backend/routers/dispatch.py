@@ -361,6 +361,14 @@ async def trip_status_sse(
 ):
     """SSE stream for trip status + driver location.
     Riders get instant updates when driver_en_route, arrived, etc."""
+    # Verify user is the rider or driver of this trip
+    async with SessionLocal() as _db:
+        trip_result = await _db.execute(select(Trip).where(Trip.id == trip_id))
+        trip = trip_result.scalar_one_or_none()
+        if not trip:
+            raise HTTPException(404, "Trip not found")
+        if user.id != trip.rider_id and user.id != trip.driver_id:
+            raise HTTPException(403, "Not authorized to view this trip")
     queue = event_bus.subscribe_trip(trip_id)
 
     async def _generate():

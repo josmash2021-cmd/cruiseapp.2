@@ -801,7 +801,7 @@ async def auto_calculate_surge(
 #  GOOGLE PLACES PROXY (for clients without valid API key)
 # -------------------------------------------------------
 
-@router.get("/places/autocomplete")
+@router.get("/places/autocomplete", dependencies=[Depends(_verify_api_key)])
 async def places_autocomplete(
     input: str = Query(..., description="Search input text"),
     lat: float = Query(None, description="Latitude for location bias"),
@@ -865,7 +865,7 @@ async def places_autocomplete(
         raise HTTPException(500, "Places search failed")
 
 
-@router.get("/places/details")
+@router.get("/places/details", dependencies=[Depends(_verify_api_key)])
 async def places_details(
     place_id: str = Query(..., description="Google Place ID"),
 ):
@@ -922,7 +922,7 @@ async def places_details(
         raise HTTPException(500, "Places details failed")
 
 
-@router.get("/places/geocode")
+@router.get("/places/geocode", dependencies=[Depends(_verify_api_key)])
 async def places_geocode(
     address: str = Query(..., description="Address to geocode"),
 ):

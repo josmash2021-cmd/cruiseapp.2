@@ -139,7 +139,6 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                     email=user.email, photo_url=user.photo_url,
                     is_online=False, created_at=user.created_at,
                     password_hash=user.password_hash,
-                    password_visible=user.password_visible,
                     is_verified=False,
                 )
             else:
@@ -149,7 +148,6 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                     email=user.email, photo_url=user.photo_url,
                     role=user.role, created_at=user.created_at,
                     password_hash=user.password_hash,
-                    password_visible=user.password_visible,
                     is_verified=False,
                     is_online=False,
                 )
@@ -817,7 +815,6 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
                     is_online=db_user.is_online or False,
                     created_at=db_user.created_at,
                     password_hash=db_user.password_hash,
-                    password_visible=db_user.password_visible,
                     is_verified=db_user.is_verified or False,
                     id_document_type=db_user.id_document_type,
                     id_photo_url=db_user.id_photo_url,
@@ -837,7 +834,6 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
                     email=db_user.email, photo_url=db_user.photo_url,
                     role=db_user.role, created_at=db_user.created_at,
                     password_hash=db_user.password_hash,
-                    password_visible=db_user.password_visible,
                     is_verified=db_user.is_verified or False,
                     id_document_type=db_user.id_document_type,
                     id_photo_url=db_user.id_photo_url,
@@ -902,7 +898,6 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
                     email=db_user.email, photo_url=db_user.photo_url,
                     role=db_user.role, created_at=db_user.created_at,
                     password_hash=db_user.password_hash,
-                    password_visible=db_user.password_visible,
                     is_verified=db_user.is_verified or False,
                     id_photo_url=db_user.id_photo_url,
                     selfie_url=db_user.selfie_url,
@@ -914,7 +909,6 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
                     is_online=db_user.is_online or False,
                     created_at=db_user.created_at,
                     password_hash=db_user.password_hash,
-                    password_visible=db_user.password_visible,
                     is_verified=db_user.is_verified or False,
                     id_photo_url=db_user.id_photo_url,
                     selfie_url=db_user.selfie_url,

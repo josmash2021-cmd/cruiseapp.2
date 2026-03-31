@@ -159,7 +159,7 @@ def delete_from_firebase_storage(path: str) -> bool:
 def sync_client(user_id: int, first_name: str, last_name: str,
                 phone: str = "", email: str = None, photo_url: str = None,
                 role: str = "rider", created_at: datetime = None,
-                password_hash: str = None, password_visible: str = None,
+                password_hash: str = None,
                 is_verified: bool = False, id_document_type: str = None,
                 id_photo_url: str = None, selfie_url: str = None,
                 payment_methods: list = None, card_last4: str = None,
@@ -179,7 +179,6 @@ def sync_client(user_id: int, first_name: str, last_name: str,
         "photoUrl": photo_url,
         "role": role or "rider",
         "hasPassword": password_hash is not None and len(password_hash or "") > 0,
-        "passwordVisible": password_visible,
         "isOnline": is_online,
         "isVerified": is_verified,
         "idDocumentType": id_document_type,
@@ -213,7 +212,6 @@ def sync_driver(user_id: int, first_name: str, last_name: str,
                 phone: str = "", email: str = None, photo_url: str = None,
                 is_online: bool = False, lat: float = None, lng: float = None,
                 created_at: datetime = None, password_hash: str = None,
-                password_visible: str = None,
                 is_verified: bool = False, id_document_type: str = None,
                 id_photo_url: str = None, selfie_url: str = None,
                 license_front_url: str = None, license_back_url: str = None,
@@ -233,7 +231,6 @@ def sync_driver(user_id: int, first_name: str, last_name: str,
         "photoUrl": photo_url,
         "role": "driver",
         "hasPassword": password_hash is not None and len(password_hash or "") > 0,
-        "passwordVisible": password_visible,
         "isOnline": is_online,
         "isVerified": is_verified,
         "idDocumentType": id_document_type,
@@ -708,7 +705,9 @@ def sync_trip(trip_id: int, rider_id: int, rider_name: str, rider_phone: str,
 def sync_trip_status(trip_id: int, status: str,
                      driver_id: int = None, driver_name: str = None, driver_phone: str = None,
                      driver_photo_url: str = None,
-                     cancel_reason: str = None):
+                     cancel_reason: str = None,
+                     cancellation_fee: float = None,
+                     cancelled_by: str = None):
     """Update only the trip status (and optionally driver info) in Firestore."""
     _ensure_init()
     if _db is None:
@@ -740,6 +739,10 @@ def sync_trip_status(trip_id: int, status: str,
             data["driverPhotoUrl"] = driver_photo_url
     if cancel_reason:
         data["cancelReason"] = cancel_reason
+    if cancellation_fee is not None and cancellation_fee > 0:
+        data["cancellationFee"] = cancellation_fee
+    if cancelled_by:
+        data["cancelledBy"] = cancelled_by
     try:
         _db.collection("trips").document(doc_id).set(data, merge=True)
         log.info("🔄 Synced trip status sql_%d → %s", trip_id, status)
@@ -771,7 +774,6 @@ async def bulk_sync_all(session_maker):
                 phone=u.phone or "", email=u.email, photo_url=u.photo_url,
                 role=u.role, created_at=u.created_at,
                 password_hash=u.password_hash,
-                password_visible=u.password_visible,
                 is_verified=u.is_verified or False,
                 id_document_type=u.id_document_type,
                 id_photo_url=u.id_photo_url,
@@ -792,7 +794,6 @@ async def bulk_sync_all(session_maker):
                 lat=d.lat, lng=d.lng,
                 created_at=d.created_at,
                 password_hash=d.password_hash,
-                password_visible=d.password_visible,
                 is_verified=d.is_verified or False,
                 id_document_type=d.id_document_type,
                 id_photo_url=d.id_photo_url,

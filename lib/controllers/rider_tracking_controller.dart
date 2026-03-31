@@ -8,10 +8,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   /// Connect to Firestore for trip status and RTDB for live driver movement.
   void _startRealTimeTracking() {
-    final fsId = widget.firestoreTripId;
-    if (fsId != null && fsId.isNotEmpty) {
-      // Watch trip status changes
-      _tripStatusSub = TripFirestoreService.watchTrip(fsId).listen(
+    // Primary: watch the sql_{tripId} doc (written by backend + driver)
+    final tripId = widget.tripId;
+    if (tripId != null) {
+      final sqlDocId = 'sql_$tripId';
+      _tripStatusSub = TripFirestoreService.watchTrip(sqlDocId).listen(
         (data) {
           if (!mounted) return;
           if (data == null) {
@@ -25,23 +26,38 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         },
         onError: (error) {
           debugPrint('[RiderTracking] Trip status listener error: $error');
-          // Stream error = connection issue, show banner and keep retrying
           if (mounted && !_connectionLost) {
             _setState(() => _connectionLost = true);
           }
         },
       );
+    } else {
+      // Fallback: use the original Firestore auto-generated doc
+      final fsId = widget.firestoreTripId;
+      if (fsId != null && fsId.isNotEmpty) {
+        _tripStatusSub = TripFirestoreService.watchTrip(fsId).listen(
+          (data) {
+            if (!mounted) return;
+            if (data == null) {
+              debugPrint('[RiderTracking] Trip data null — keeping last known state');
+              if (!_connectionLost) _setState(() => _connectionLost = true);
+              return;
+            }
+            if (_connectionLost) _setState(() => _connectionLost = false);
+            _onTripStatusUpdate(data);
+          },
+          onError: (error) {
+            debugPrint('[RiderTracking] Trip status listener error: $error');
+            if (mounted && !_connectionLost) {
+              _setState(() => _connectionLost = true);
+            }
+          },
+        );
+      }
     }
 
-    // ✅ QUICK WIN #1: HTTP polling removed - Firestore listener above handles all updates
-    // The Timer.periodic polling was redundant (12 HTTP requests/min per rider)
-    // Firestore snapshots are real-time and more reliable than polling
-    // Keeping _statusPollTimer variable for potential future fallback if needed
-    final tripId = widget.tripId;
     if (tripId != null) {
-      // Removed: _statusPollTimer = Timer.periodic(...)
-      // Benefit: -85% HTTP traffic, +20-30% battery life
-      debugPrint('[QuickWin] Polling disabled - using Firestore listener only');
+      debugPrint('[RiderTracking] Watching sql_$tripId for status updates');
     }
   }
 
@@ -54,22 +70,29 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _startSmoothMarkerAnimation(ll, bearing);
     }
 
-    bool usedRouteProjection = false;
-    
-    // Try to project onto route for smooth animation
+    // Always try to snap GPS onto the route polyline.
+    // Only fall back to raw GPS lerp when we truly have no route.
     if (_segDist.isNotEmpty && _routePts.length >= 2) {
       final projectedM = _projectOntoRoute(ll);
-      final distToStart = _hav(ll, _routePts.first) * 1609.34;
-      
-      // Only use projection if it's reasonable
-      if (projectedM > 0 || distToStart < 100) {
-        _tgtTraveledM = projectedM.clamp(0.0, _segDist.last);
-        usedRouteProjection = true;
+      // Accept projection when close enough to route (< 150m lateral)
+      final snappedPos = _posAtDistUltraSmooth(projectedM.clamp(0.0, _segDist.last)).$1;
+      final lateralM = _hav(ll, snappedPos) * 1609.34;
+      if (lateralM < 150) {
+        // Enforce forward-only: never jump backward (GPS noise can project behind)
+        final clampedM = projectedM.clamp(0.0, _segDist.last);
+        if (clampedM >= _traveledM - 5) {
+          // Allow up to 5m backward tolerance for GPS jitter, otherwise only forward
+          _tgtTraveledM = math.max(clampedM, _traveledM);
+        }
+        _directTargetPos = null; // on route — disable raw fallback
+        _directTargetBearing = null;
+      } else {
+        // Too far from route — use raw GPS lerp as fallback
+        _directTargetPos = ll;
+        _directTargetBearing = bearing;
       }
-    }
-    
-    // Fallback: if projection didn't work, set a lerp target (never teleport _animPos)
-    if (!usedRouteProjection) {
+    } else {
+      // No route available — use raw GPS lerp
       _directTargetPos = ll;
       _directTargetBearing = bearing;
     }
@@ -246,6 +269,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           driverName: widget.driverName,
           vehicleDesc: vehicleDesc,
           firestoreTripId: widget.firestoreTripId,
+          tripId: widget.tripId,
           onConfirmed: () {
             if (mounted) Navigator.of(context).pop();
           },
@@ -506,11 +530,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (!mounted || _segDist.isEmpty) return;
 
     // ── Constant-speed advance — zero jolts ──
-    // Sim advances tgtTraveledM ~0.208 m/frame. For tiny diffs snap directly
-    // (perfect smoothness). For large GPS jumps cap at 1.5 m/frame so the
-    // car catches up steadily instead of lurching forward.
+    // For tiny diffs snap directly (perfect smoothness).
+    // For large GPS jumps cap at 2.5 m/frame so the car catches up
+    // steadily instead of lurching forward.
     final diff = _tgtTraveledM - _traveledM;
-    const maxStep = 1.5; // metres per frame ceiling
+    const maxStep = 2.5; // metres per frame ceiling
     if (diff.abs() <= maxStep) {
       _traveledM = _tgtTraveledM;
     } else {
@@ -519,18 +543,18 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
 
-    // ── Bearing: smooth 5% rotation per frame (only car icon rotates, map stays north-up) ──
+    // ── Bearing: smooth 12% rotation per frame — responsive yet fluid ──
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final newBearing = (_animBearing + db * 0.05) % 360;
+    final newBearing = (_animBearing + db * 0.12) % 360;
 
     _animPos = pos;
     _animBearing = newBearing;
     _driverPos = pos;
     _driverBearing = newBearing;
 
-    // ── Direct-target lerp (GPS fallback when off-route) ──
+    // ── Direct-target lerp (GPS fallback — ONLY when off-route) ──
     final tgt = _directTargetPos;
     if (tgt != null) {
       const lerpFactor = 0.08; // smooth catch-up, never teleport
@@ -542,10 +566,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _driverPos = _animPos;
       final desiredBearing = newBrg != 0 ? newBrg : fallbackBearing;
       if (desiredBearing != null) {
-        double db = desiredBearing - _animBearing;
-        if (db > 180) db -= 360;
-        if (db < -180) db += 360;
-        _animBearing = (_animBearing + db * 0.05) % 360;
+        double dbo = desiredBearing - _animBearing;
+        if (dbo > 180) dbo -= 360;
+        if (dbo < -180) dbo += 360;
+        _animBearing = (_animBearing + dbo * 0.12) % 360;
       }
     }
 

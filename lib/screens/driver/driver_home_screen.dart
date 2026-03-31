@@ -1433,7 +1433,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     try {
       final snap = await FirebaseFirestore.instance
           .collection('trips')
-          .where('status', whereIn: const ['accepted', 'driver_arriving', 'driver_arrived', 'in_progress'])
+          .where('status', whereIn: const [
+            'accepted',
+            'driver_arriving',
+            'arrived',
+            'driver_arrived',
+            'in_trip',
+            'in_progress',
+            'rider_onboard',
+          ])
           .limit(25)
           .get();
 

@@ -1141,12 +1141,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ctrl.annotations.createPointAnnotationManager().then((m) async {
         _annotMgr = m;
         try {
-          // 'viewport' keeps pins upright even when camera is tilted.
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'viewport');
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'viewport');
+          // 'map' anchors pins flat to map surface — no floating/3D effect.
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'map');
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'map');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-allow-overlap', true);
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-ignore-placement', true);
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-anchor', 'bottom');
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-anchor', 'center');
         } catch (_) {}
       }),
     ];
@@ -1217,11 +1217,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         final pins = await Future.wait([
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: pickupPoint),
-            image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
+            image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
           )),
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: dropoffPoint),
-            image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
+            image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
           )),
         ]);
         _pinAnnots.addAll(pins);
@@ -1262,11 +1262,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       final pins = await Future.wait([
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: pickupPoint),
-          image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+          image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
         )),
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: dropoffPoint),
-          image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
+          image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
         )),
       ]);
       _pinAnnots.addAll(pins);
@@ -1971,11 +1971,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       if (_slideVal >= 0.88) {
                         setState(() => _slid = true);
                         HapticFeedback.heavyImpact();
-                        // Fade out slider, then show Continue/Directions
+                        // Open native maps to pickup immediately
                         Future.delayed(const Duration(milliseconds: 300), () {
                           if (!mounted) return;
                           setState(() => _tripStarted = true);
                           _btnFadeCtrl.forward();
+                          _openNativeMaps(widget.pickupLatLng);
                         });
                       }
                     },

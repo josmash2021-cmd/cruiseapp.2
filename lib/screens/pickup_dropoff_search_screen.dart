@@ -290,7 +290,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                 bottom: 16,
               ),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.70),
+                color: const Color(0xFF1A1A1A),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.15),
@@ -340,7 +340,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                             ),
                             Container(
                               width: 1.5,
-                              height: 28,
+                              height: 46,
                               color: c.textTertiary,
                             ),
                             Icon(Icons.square, size: 8, color: c.gold),
@@ -364,6 +364,19 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                                   _editingPickup = true;
                                   _editingDropoff = false;
                                 });
+                                // Show real address in field when tapped
+                                if (_pickupCtrl.text == 'Current location' ||
+                                    _pickupCtrl.text == widget.initialPickupText) {
+                                  if (_pickupDetails != null &&
+                                      _pickupDetails!.address.isNotEmpty &&
+                                      _pickupDetails!.address != 'Current location') {
+                                    _pickupCtrl.text = _pickupDetails!.address;
+                                    _pickupCtrl.selection = TextSelection(
+                                      baseOffset: 0,
+                                      extentOffset: _pickupCtrl.text.length,
+                                    );
+                                  }
+                                }
                               },
                               onChanged: _onTextChanged,
                               onSubmitted: (value) {

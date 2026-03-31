@@ -265,7 +265,8 @@ extension _RideRequestMap on _RideRequestScreenState {
     );
 
     final picture = recorder.endRecording();
-    final img = await picture.toImage(paddedW.ceil(), totalH.ceil());
+    // Use floor to avoid transparent padding below the pin tip
+    final img = await picture.toImage(paddedW.floor().clamp(1, 9999), totalH.floor().clamp(1, 9999));
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
 
     // Anchor: pin tip is now at bottom-center by construction
@@ -583,10 +584,6 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (s.route == null) return;
     _showPinLabels = true;
     final pts = List<LatLng>.from(s.route!.points);
-    // Replace (not add) first/last points with exact pin coords so the line
-    // touches the pin tip without adding any off-road segment.
-    if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
-    if (pts.length > 1 && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
     _buildRouteMarkers();
     // Always replay cinematic — reset state and re-trigger
     _resetCinematic();
@@ -625,10 +622,6 @@ extension _RideRequestMap on _RideRequestScreenState {
     final route = _ctrl.state.route;
     if (route == null || route.points.isEmpty) return;
     final pts = List<LatLng>.from(route.points);
-    final s = _ctrl.state;
-    // Replace (not add) first/last points so line touches pin exactly
-    if (pts.isNotEmpty && s.pickup != null) pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
-    if (pts.length > 1 && s.dropoff != null) pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
     _showPinLabels = true;
     _buildRouteMarkers();
     _resetCinematic();

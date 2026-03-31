@@ -946,7 +946,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
-                    color: selected ? _cardGold : Colors.white,
+                    color: selected ? const Color(0xFFD0D4DC) : const Color(0xFFB0B4BC),
                     letterSpacing: -0.3,
                   ),
                 ),

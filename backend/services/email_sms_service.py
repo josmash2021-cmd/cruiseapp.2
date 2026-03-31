@@ -31,8 +31,11 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
             _otp_code = _otp_match.group(1) if _otp_match else ""
             _params = template_params or {}
             _params.setdefault("to_email", to_email)
+            _params.setdefault("email", to_email)
+            _params.setdefault("name", to_email.split("@")[0])
             _params.setdefault("to_name", to_email.split("@")[0])
             _params.setdefault("subject", subject)
+            _params.setdefault("code", _otp_code)
             _params.setdefault("otp_code", _otp_code)
             _params.setdefault("verification_code", _otp_code)
             _params.setdefault("message", html_body)

@@ -891,9 +891,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 // Description
                 Text(
                   opt.description,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 11,
-                    color: Colors.white.withValues(alpha: 0.45),
+                    color: Color(0xFFE8C547),
                     fontWeight: FontWeight.w400,
                   ),
                 ),
@@ -933,52 +933,59 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               ],
             ),
           ),
-
-          // Price column
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (_ctrl.state.route == null || _ctrl.state.rideOptions.isEmpty)
-                _buildPriceShimmer(width: 54, height: 18)
-              else
+          const SizedBox(width: 60),
+        ],   // Row children
+      ),     // Row
+          // Price + est. fare — top-right corner
+          Positioned(
+            top: 0,
+            right: 0,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (_ctrl.state.route == null || _ctrl.state.rideOptions.isEmpty)
+                  _buildPriceShimmer(width: 54, height: 18)
+                else
+                  Text(
+                    '\$${opt.priceEstimate.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: selected ? const Color(0xFFD0D4DC) : const Color(0xFFB0B4BC),
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                const SizedBox(height: 2),
                 Text(
-                  '\$${opt.priceEstimate.toStringAsFixed(2)}',
+                  'est. fare',
                   style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    color: selected ? const Color(0xFFD0D4DC) : const Color(0xFFB0B4BC),
-                    letterSpacing: -0.3,
-                  ),
-                ),
-              const SizedBox(height: 2),
-              Text(
-                'est. fare',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.white.withValues(alpha: 0.35),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              if (selected) ...[
-                const SizedBox(height: 6),
-                Container(
-                  width: 20,
-                  height: 20,
-                  decoration: const BoxDecoration(
-                    color: _cardGold,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    size: 14,
-                    color: Colors.white,
+                    fontSize: 10,
+                    color: Colors.white.withValues(alpha: 0.35),
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
-            ],
+            ),
           ),
-        ],   // Row children
-      ),     // Row
+          // Checkmark — bottom-right when selected
+          if (selected)
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: const BoxDecoration(
+                  color: _cardGold,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_rounded,
+                  size: 14,
+                  color: Colors.white,
+                ),
+              ),
+            ),
         ],   // Stack children  
       ),     // Stack
     ),       // AnimatedContainer

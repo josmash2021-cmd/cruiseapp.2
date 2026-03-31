@@ -1147,6 +1147,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-allow-overlap', true);
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-ignore-placement', true);
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-anchor', 'bottom');
         } catch (_) {}
       }),
     ];
@@ -1213,11 +1215,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         final pins = await Future.wait([
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: pickupPoint),
-            image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
+            image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
           )),
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: dropoffPoint),
-            image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
+            image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
           )),
         ]);
         _pinAnnots.addAll(pins);
@@ -1258,11 +1260,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       final pins = await Future.wait([
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: pickupPoint),
-          image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
+          image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
         )),
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: dropoffPoint),
-          image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
+          image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
         )),
       ]);
       _pinAnnots.addAll(pins);

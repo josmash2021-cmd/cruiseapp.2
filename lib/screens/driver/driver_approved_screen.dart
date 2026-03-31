@@ -3,10 +3,10 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../config/page_transitions.dart';
-import 'driver_home_screen.dart';
+import 'driver_profile_photo_screen.dart';
 
 /// Premium cinematic "You're Approved!" screen.
-/// Shows for ~3.2 s then auto-navigates to [DriverHomeScreen].
+/// Shows for ~3.2 s then auto-navigates to [DriverProfilePhotoScreen].
 class DriverApprovedScreen extends StatefulWidget {
   const DriverApprovedScreen({super.key});
 
@@ -87,7 +87,7 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
       PageRouteBuilder<void>(
         transitionDuration: const Duration(milliseconds: 280),
         reverseTransitionDuration: const Duration(milliseconds: 220),
-        pageBuilder: (_, __, ___) => const DriverHomeScreen(),
+        pageBuilder: (_, __, ___) => const DriverProfilePhotoScreen(),
         transitionsBuilder: (_, anim, __, child) {
           return FadeTransition(
             opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),

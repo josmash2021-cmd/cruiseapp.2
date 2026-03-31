@@ -28,7 +28,6 @@ import 'driver_trip_accept_screen.dart';
 import 'driver_inbox_screen.dart';
 import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
-import 'driver_profile_photo_screen.dart';
 import '../../l10n/app_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
@@ -465,18 +464,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (_activeTripData != null) {
       await _resumeActiveTrip();
       return;
-    }
-
-    // Require profile photo before going online
-    if (_photoUrl == null || _photoUrl!.isEmpty) {
-      final result = await Navigator.of(context).push<String?>(
-        slideFromRightRoute(const DriverProfilePhotoScreen(returnOnly: true)),
-      );
-      if (result != null && mounted) {
-        setState(() => _photoUrl = result);
-      } else {
-        return; // user cancelled — don't go online
-      }
     }
 
     HapticFeedback.heavyImpact();

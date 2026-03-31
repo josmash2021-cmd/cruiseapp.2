@@ -12,6 +12,7 @@ import '../../services/user_session.dart';
 import '../welcome_screen.dart';
 import 'driver_approved_screen.dart';
 import 'driver_home_screen.dart';
+import 'driver_profile_photo_screen.dart';
 import 'driver_signup_screen.dart';
 import '../../l10n/app_localizations.dart';
 
@@ -342,7 +343,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   Future<void> _enterApp() async {
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      slideFromRightRoute(const DriverHomeScreen()),
+      slideFromRightRoute(const DriverProfilePhotoScreen()),
       (_) => false,
     );
   }

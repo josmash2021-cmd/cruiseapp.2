@@ -127,6 +127,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   double _slideVal = 0;
   bool   _slid     = false;
 
+  // ── Mini map animation already played flag ──
+  bool _miniMapAnimDone = false;
+
   // ── Trip distance pickup→dropoff ─────────────────────────────────────────
   double get _tripKm {
     const r = 6371.0;
@@ -1004,62 +1007,152 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
     // Compute a small auto-bearing based on route direction for a pleasant angle.
     final rBearing = _routeBearing(_routePoints);
-    // Offset by ~15° for a cinematic slight rotation.
     final prettBearing = (rBearing + 15.0) % 360;
 
-    final cam = await ctrl.cameraForCoordinateBounds(
+    // ── If returning (animation already played), show final state instantly ──
+    if (_miniMapAnimDone || widget.arrivedAtPickup) {
+      _miniMapAnimDone = true;
+      final cam = await ctrl.cameraForCoordinateBounds(
+        bounds,
+        mapbox.MbxEdgeInsets(top: 24, left: 24, bottom: 34, right: 24),
+        prettBearing,
+        55,
+        null, null,
+      );
+      if (!mounted) return;
+      final targetZoom = ((cam.zoom ?? 13) + 0.3).clamp(11.5, 15.5);
+      ctrl.setCamera(mapbox.CameraOptions(
+        center: cam.center, zoom: targetZoom, bearing: prettBearing, pitch: 55.0,
+      ));
+      // Place pins + route instantly
+      final pickupPoint = mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
+      final dropoffPoint = mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
+      _pinAnnots.clear();
+      if (_annotMgr != null) {
+        final pins = await Future.wait([
+          _annotMgr!.create(mapbox.PointAnnotationOptions(
+            geometry: mapbox.Point(coordinates: pickupPoint),
+            image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
+          )),
+          _annotMgr!.create(mapbox.PointAnnotationOptions(
+            geometry: mapbox.Point(coordinates: dropoffPoint),
+            image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.CENTER,
+          )),
+        ]);
+        _pinAnnots.addAll(pins);
+      }
+      if (_polyMgr != null && _routePoints.length >= 2) {
+        final coords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        _routeAnnot = await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
+          geometry: mapbox.LineString(coordinates: coords),
+          lineColor: const Color(0xFFFFD700).toARGB32(),
+          lineWidth: 5.0,
+          lineJoin: mapbox.LineJoin.ROUND,
+        ));
+      }
+      return;
+    }
+
+    // ── First visit: animated sequence ──
+
+    // STEP 1: Fit bounds at pitch 0 (top-down) so everything is visible flat
+    final camFlat = await ctrl.cameraForCoordinateBounds(
       bounds,
-      mapbox.MbxEdgeInsets(top: 20, left: 20, bottom: 30, right: 20),
+      mapbox.MbxEdgeInsets(top: 24, left: 24, bottom: 34, right: 24),
       prettBearing,
-      55, // pitch = 55 so bounds calc accounts for final tilt
+      0, // pitch 0 for flat fit
       null, null,
     );
     if (!mounted) return;
-
-    // Start top-down (pitch 0), then animate to 55° after a brief pause.
-    final targetZoom = ((cam.zoom ?? 13) + 0.5).clamp(12.0, 15.5);
+    final targetZoom = ((camFlat.zoom ?? 13) + 0.3).clamp(11.5, 15.5);
     ctrl.setCamera(mapbox.CameraOptions(
-      center: cam.center,
-      zoom: targetZoom,
-      bearing: prettBearing,
-      pitch: 0.0,
+      center: camFlat.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
     ));
 
-    // Place pins at exact coordinates immediately at full size.
-    // BOTTOM anchor so the teardrop tip points exactly at the coordinate.
+    // STEP 2: Pins pop in (scale 0 → 1.0 with spring)
     final pickupPoint = mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
     final dropoffPoint = mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
-
     _pinAnnots.clear();
     if (_annotMgr != null) {
       final pins = await Future.wait([
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: pickupPoint),
-          image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
+          image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
         )),
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: dropoffPoint),
-          image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
+          image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.CENTER,
         )),
       ]);
       _pinAnnots.addAll(pins);
     }
-
-    // Draw route instantly (no animation — fast load).
-    if (_polyMgr != null && _routePoints.length >= 2) {
-      final coords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-      _routeAnnot = await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: coords),
-        lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 5.0,
-        lineJoin: mapbox.LineJoin.ROUND,
-      ));
-    }
-
-    // Start tilt animation after a brief pause for the top-down preview.
-    Future.delayed(const Duration(milliseconds: 400), () {
-      if (mounted) _tiltCtrl.forward();
+    // Animate pins: 0.01 → 1.15 → 1.0 over 400ms
+    const pinMs = 400;
+    final pinSw = Stopwatch()..start();
+    await Future.doWhile(() async {
+      await Future.delayed(const Duration(milliseconds: 16));
+      if (!mounted) return false;
+      final t = (pinSw.elapsedMilliseconds / pinMs).clamp(0.0, 1.0);
+      double scale;
+      if (t < 0.6) {
+        scale = Curves.easeOutCubic.transform(t / 0.6) * 1.15;
+      } else if (t < 0.85) {
+        scale = 1.15 - 0.15 * Curves.easeInOut.transform((t - 0.6) / 0.25);
+      } else {
+        scale = 1.0;
+      }
+      for (final pin in _pinAnnots) {
+        pin.iconSize = scale;
+        try { await _annotMgr?.update(pin); } catch (_) {}
+      }
+      return t < 1.0;
     });
+    if (!mounted) return;
+
+    // STEP 3: Animated route draw over 800ms
+    if (_polyMgr != null && _routePoints.length >= 2) {
+      const drawMs = 800;
+      final drawSw = Stopwatch()..start();
+      int lastCount = 0;
+      await Future.doWhile(() async {
+        await Future.delayed(const Duration(milliseconds: 16));
+        if (!mounted) return false;
+        final t = (drawSw.elapsedMilliseconds / drawMs).clamp(0.0, 1.0);
+        final eased = Curves.easeInOutSine.transform(t);
+        final count = (eased * _routePoints.length).round().clamp(2, _routePoints.length);
+        if (count != lastCount) {
+          lastCount = count;
+          final subset = _routePoints.sublist(0, count);
+          final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+          final geo = mapbox.LineString(coordinates: coords);
+          if (_routeAnnot == null) {
+            _routeAnnot = await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
+              geometry: geo,
+              lineColor: const Color(0xFFFFD700).toARGB32(),
+              lineWidth: 5.0,
+              lineJoin: mapbox.LineJoin.ROUND,
+            ));
+          } else {
+            _routeAnnot!.geometry = geo;
+            try { await _polyMgr!.update(_routeAnnot!); } catch (_) {}
+          }
+        }
+        return t < 1.0;
+      });
+      // Ensure full route is drawn
+      if (_routeAnnot != null && mounted) {
+        final fullCoords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        _routeAnnot!.geometry = mapbox.LineString(coordinates: fullCoords);
+        try { await _polyMgr!.update(_routeAnnot!); } catch (_) {}
+      }
+    }
+    if (!mounted) return;
+
+    // STEP 4: Camera tilt 0° → 55° (last animation)
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (mounted) _tiltCtrl.forward();
+
+    _miniMapAnimDone = true;
   }
 
   void _updatePinScale() {

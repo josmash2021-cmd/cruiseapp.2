@@ -322,7 +322,12 @@ class _UberCloneAppState extends State<UberCloneApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      ApiService.goOffline();
+      // Only mark riders offline on pause — drivers control their
+      // online state via the explicit toggle; pausing the app briefly
+      // (phone lock, switching apps) must NOT set is_online=false.
+      UserSession.getMode().then((mode) {
+        if (mode != 'driver') ApiService.goOffline();
+      });
       KeepAliveService.instance.stop();
     } else if (state == AppLifecycleState.resumed) {
       // getMe marks user as online on the backend

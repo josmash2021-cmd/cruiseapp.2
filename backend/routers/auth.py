@@ -686,8 +686,9 @@ async def refresh_token(request: Request, authorization: str = Header(None), db:
 
 @router.get("/auth/me", dependencies=[Depends(_verify_api_key)])
 async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    # Mark rider as online when they call /auth/me (heartbeat)
-    if user.role != "driver" and not user.is_online:
+    # Mark user as online when they call /auth/me (heartbeat)
+    # Drivers AND riders: calling /auth/me means the app is open and active
+    if not user.is_online:
         try:
             await db.execute(
                 User.__table__.update().where(User.__table__.c.id == user.id).values(is_online=True)

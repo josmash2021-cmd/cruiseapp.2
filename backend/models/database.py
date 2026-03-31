@@ -611,15 +611,17 @@ async def migrate_postgres(conn):
     ]
     for table, col, col_type in migrations:
         try:
-            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"))
+            async with conn.begin_nested():
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"))
         except Exception as _e:
             logging.warning("Postgres migration skip %s.%s: %s", table, col, _e)
     # Fix: make support_messages.sender_id nullable so bot/system messages (sender_id=None) work
     try:
-        await conn.execute(text(
-            "ALTER TABLE support_messages ALTER COLUMN sender_id DROP NOT NULL"
-        ))
-        logging.info("support_messages.sender_id made nullable")
+        async with conn.begin_nested():
+            await conn.execute(text(
+                "ALTER TABLE support_messages ALTER COLUMN sender_id DROP NOT NULL"
+            ))
+            logging.info("support_messages.sender_id made nullable")
     except Exception as _e:
         logging.warning("support_messages.sender_id nullable migration: %s", _e)
 
@@ -634,6 +636,7 @@ async def migrate_postgres(conn):
     ]
     for idx_sql in _indexes:
         try:
-            await conn.execute(text(idx_sql))
+            async with conn.begin_nested():
+                await conn.execute(text(idx_sql))
         except Exception as _e:
             logging.warning("Index migration skip: %s", _e)

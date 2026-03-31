@@ -147,6 +147,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _pickupAddr = widget.pickupAddress;
     _dropoffAddr = widget.dropoffAddress;
     _resolveGenericAddresses();
+
+    // If returning from nav (trip already started), skip slide-to-confirm
+    if (widget.arrivedAtPickup) {
+      _tripStarted = true;
+      _slid = true;
+    }
+
     _fadeCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
@@ -184,6 +191,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _btnFadeCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 350),
+      value: widget.arrivedAtPickup ? 1.0 : 0.0,
     );
     _btnFadeAnim = CurvedAnimation(parent: _btnFadeCtrl, curve: Curves.easeOut);
   }

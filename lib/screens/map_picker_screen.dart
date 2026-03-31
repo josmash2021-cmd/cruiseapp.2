@@ -259,19 +259,29 @@ class _MapPickerScreenState extends State<MapPickerScreen>
           ),
           ),
 
-          // Golden ripple wave — expands from map center when pin anchors
+          // Golden ripple wave — expands from pin tip (screen center) when pin anchors
           if (_confirming && _rippleAnim != null)
-            Center(
-              child: CustomPaint(
-                painter: _RipplePainter(
-                  progress: _rippleAnim!.value,
-                  color: _gold,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _rippleAnim!,
+                  builder: (_, __) {
+                    final pinTipY = MediaQuery.of(context).size.height / 2;
+                    final pinTipX = MediaQuery.of(context).size.width / 2;
+                    return CustomPaint(
+                      painter: _RipplePainter(
+                        progress: _rippleAnim!.value,
+                        color: _gold,
+                        center: Offset(pinTipX, pinTipY),
+                      ),
+                      size: MediaQuery.of(context).size,
+                    );
+                  },
                 ),
-                size: Size.square(MediaQuery.of(context).size.shortestSide * 1.5),
               ),
             ),
 
-          // Center pin — fixed while map moves underneath
+          // Center pin — tip sits at exact screen center (map coordinate)
           Center(
             child: Transform.translate(
               offset: Offset(0, -(56 * 1.3 / 2) + (_anchorAnim?.value ?? 0.0)),
@@ -464,49 +474,50 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   }
 }
 
-/// Paints an expanding shockwave band — makes the map look like a water ripple/onda.
-/// A thick semi-transparent golden band sweeps outward from the center, fading as it grows.
+/// Paints a focused shockwave ring expanding from a point (the pin tip).
+/// Starts small and tight, then sweeps outward with a golden band that fades out.
 class _RipplePainter extends CustomPainter {
   final double progress; // 0.0 → 1.0
   final Color color;
+  final Offset? center;
 
-  _RipplePainter({required this.progress, required this.color});
+  _RipplePainter({required this.progress, required this.color, this.center});
 
   @override
   void paint(Canvas canvas, Size size) {
     if (progress <= 0) return;
-    final center = size.center(Offset.zero);
-    final maxR = size.shortestSide / 2;
+    final c = center ?? size.center(Offset.zero);
+    final maxR = size.longestSide * 0.6;
 
     final r = maxR * progress;
-    // Band thickness shrinks as it expands (thick at start, thin at end)
-    final bandWidth = 60.0 * (1.0 - progress * 0.7);
+    // Band starts thick and narrows as it expands
+    final bandWidth = 40.0 * (1.0 - progress * 0.6);
     final innerR = (r - bandWidth).clamp(0.0, r);
-    // Opacity fades out as band expands
-    final opacity = (1.0 - progress) * 0.30;
+    // Opacity fades as ring expands
+    final opacity = (1.0 - progress) * 0.45;
 
-    // Radial gradient: transparent center → gold band → transparent edge
     final paint = Paint()
       ..shader = RadialGradient(
+        center: Alignment.center,
         colors: [
           Colors.transparent,
           Colors.transparent,
-          color.withValues(alpha: opacity * 0.3),
+          color.withValues(alpha: opacity * 0.2),
           color.withValues(alpha: opacity),
-          color.withValues(alpha: opacity * 0.6),
+          color.withValues(alpha: opacity * 0.5),
           Colors.transparent,
         ],
         stops: [
           0.0,
-          innerR / (r + 1),
-          (innerR / (r + 1) + 0.01).clamp(0.0, 1.0),
+          (innerR / (r + 1)).clamp(0.0, 1.0),
+          ((innerR / (r + 1)) + 0.01).clamp(0.0, 1.0),
           ((innerR + bandWidth * 0.4) / (r + 1)).clamp(0.0, 1.0),
           ((innerR + bandWidth * 0.8) / (r + 1)).clamp(0.0, 1.0),
           1.0,
         ],
-      ).createShader(Rect.fromCircle(center: center, radius: r.clamp(1, double.infinity)));
+      ).createShader(Rect.fromCircle(center: c, radius: r.clamp(1, double.infinity)));
 
-    canvas.drawCircle(center, r, paint);
+    canvas.drawCircle(c, r, paint);
   }
 
   @override

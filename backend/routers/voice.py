@@ -5,13 +5,25 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, B
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from config import TWILIO_PHONE_NUMBER
+from config import TWILIO_PHONE_NUMBER, TWILIO_AUTH_TOKEN
 
 router = APIRouter()
 
 # ═══════════════════════════════════════════════════════
 #  TWILIO AI VOICE CALL ENDPOINTS
 # ═══════════════════════════════════════════════════════
+
+def _validate_twilio_sig(url: str, form_data: dict, signature: str) -> None:
+    """Validate Twilio webhook signature. Skipped if TWILIO_AUTH_TOKEN not configured."""
+    if not TWILIO_AUTH_TOKEN:
+        return  # Dev/test mode – skip validation
+    try:
+        from twilio.request_validator import RequestValidator
+        validator = RequestValidator(TWILIO_AUTH_TOKEN)
+        if not validator.validate(url, form_data, signature):
+            raise HTTPException(403, "Invalid Twilio webhook signature")
+    except ImportError:
+        pass  # twilio package not installed – skip
 
 # In-memory voice session store: call_sid -> {agent_name, phase, category, msg_count, lang}
 _voice_sessions: dict = {}
@@ -434,6 +446,7 @@ async def voice_incoming(request: Request):
     form = await request.form()
     call_sid = form.get("CallSid", "unknown")
 
+    _validate_twilio_sig(str(request.url), dict(form), request.headers.get("X-Twilio-Signature", ""))
     # Pre-create session
     _voice_sessions[call_sid] = {"phase": "lang_select", "msg_count": 0}
 
@@ -471,6 +484,7 @@ async def voice_language(request: Request):
     call_sid = form.get("CallSid", "unknown")
     digits = form.get("Digits", "1")
 
+    _validate_twilio_sig(str(request.url), dict(form), request.headers.get("X-Twilio-Signature", ""))
     lang = "en" if digits == "2" else "es"
     cfg = _VOICE_CONFIG[lang]
 
@@ -501,6 +515,7 @@ async def voice_gather(request: Request):
     form = await request.form()
     call_sid = form.get("CallSid", "unknown")
     speech_result = form.get("SpeechResult", "")
+    _validate_twilio_sig(str(request.url), dict(form), request.headers.get("X-Twilio-Signature", ""))
 
     session = _voice_sessions.get(call_sid, {})
     lang = session.get("lang", "es")

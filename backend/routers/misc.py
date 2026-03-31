@@ -103,7 +103,7 @@ async def mark_all_notifications_read(user: User = Depends(_get_current_user), d
 
 # -- Tunnel URL discovery -------------------------------
 
-@router.get("/tunnel-url")
+@router.get("/tunnel-url", dependencies=[Depends(_verify_api_key)])
 async def tunnel_url():
     """Return the current Cloudflare Tunnel public URL (if available)."""
     if os.path.isfile(_TUNNEL_URL_FILE):
@@ -113,11 +113,9 @@ async def tunnel_url():
     return {"tunnel_url": None}
 
 
-@router.get("/uploads/documents/{filename}")
-async def serve_document(filename: str):
-    """Serve an uploaded document file (verification photos).
-    Public like /photos � filenames include user-id + timestamp so they
-    are effectively unguessable.  Real access control is at upload time."""
+@router.get("/uploads/documents/{filename}", dependencies=[Depends(_verify_api_key)])
+async def serve_document(filename: str, user: User = Depends(_get_current_user)):
+    """Serve an uploaded KYC document file. Requires valid API key + user auth."""
     # Prevent path traversal
     safe_name = os.path.basename(filename)
     if safe_name != filename or ".." in filename:

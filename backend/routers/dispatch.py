@@ -45,7 +45,7 @@ async def dispatch_owner_login(request: Request, credentials: OwnerLogin):
             raise HTTPException(403, "Access denied from this IP address")
     
     # LAYER 2: Owner credentials verification
-    if not OWNER_EMAIL or (not OWNER_PASSWORD_HASH and not OWNER_PASSWORD):
+    if not OWNER_EMAIL or not OWNER_PASSWORD_HASH:
         _security_audit_log("dispatch_not_configured", client_ip, "owner credentials missing")
         raise HTTPException(503, "Dispatch authentication not configured")
     
@@ -53,12 +53,8 @@ async def dispatch_owner_login(request: Request, credentials: OwnerLogin):
         _security_audit_log("dispatch_wrong_email", client_ip, f"tried={credentials.email}")
         raise HTTPException(401, "Invalid credentials")
     
-    # Verify password: try bcrypt hash first, fall back to plain comparison
-    password_ok = False
-    if OWNER_PASSWORD_HASH:
-        password_ok = pwd.verify(credentials.password, OWNER_PASSWORD_HASH)
-    elif OWNER_PASSWORD:
-        password_ok = (credentials.password == OWNER_PASSWORD)
+    # Verify password with bcrypt (plaintext fallback removed for security)
+    password_ok = pwd.verify(credentials.password, OWNER_PASSWORD_HASH)
     if not password_ok:
         _security_audit_log("dispatch_wrong_password", client_ip, f"email={credentials.email}")
         raise HTTPException(401, "Invalid credentials")
@@ -139,11 +135,9 @@ async def dispatch_interface(
         return FileResponse(filepath, media_type="text/html")
     raise HTTPException(404, "Dispatch interface not found")
 
-@router.post("/admin/sync-verifications")
-async def sync_verifications_to_firestore(x_api_key: str = Header(default=""), db: AsyncSession = Depends(get_db)):
-    """Re-sync all pending verifications from PostgreSQL to Firestore."""
-    if x_api_key != API_KEY:
-        raise HTTPException(403, "Forbidden")
+@router.post("/admin/sync-verifications", dependencies=[Depends(_require_dispatch_auth)])
+async def sync_verifications_to_firestore(db: AsyncSession = Depends(get_db)):
+    """Re-sync all pending verifications from PostgreSQL to Firestore. Requires dispatch owner auth."""
     if not _HAS_FIRESTORE:
         return {"ok": False, "message": "Firestore not available"}
     result = await db.execute(select(User).where(User.verification_status.in_(["pending", "rejected"])))
@@ -169,11 +163,9 @@ async def sync_verifications_to_firestore(x_api_key: str = Header(default=""), d
     return {"ok": True, "synced": len(synced), "details": synced}
 
 
-@router.post("/admin/backfill-approved")
-async def backfill_approved_drivers(x_api_key: str = Header(default=""), db: AsyncSession = Depends(get_db)):
-    """Backfill Firestore for ALL approved/rejected drivers whose Firestore docs may be missing."""
-    if x_api_key != API_KEY:
-        raise HTTPException(403, "Forbidden")
+@router.post("/admin/backfill-approved", dependencies=[Depends(_require_dispatch_auth)])
+async def backfill_approved_drivers(db: AsyncSession = Depends(get_db)):
+    """Backfill Firestore for ALL approved/rejected drivers whose Firestore docs may be missing. Requires dispatch owner auth."""
     if not _HAS_FIRESTORE:
         return {"ok": False, "message": "Firestore not available"}
     result = await db.execute(

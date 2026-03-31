@@ -561,6 +561,12 @@ async def pay_ride_with_wallet(trip_id: int, amount: float, user: User = Depends
     if amount <= 0:
         raise HTTPException(400, "Amount must be positive")
     
+    # Ownership check: verify the trip belongs to the authenticated user
+    trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = trip_result.scalar_one_or_none()
+    if not trip or trip.rider_id != user.id:
+        raise HTTPException(403, "Not authorized to pay for this trip")
+
     wallet = await _get_or_create_wallet(user.id, db)
     
     if wallet.balance < amount:

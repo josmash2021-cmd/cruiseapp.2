@@ -25,6 +25,11 @@ import '../chat_screen.dart';
 import '../help_screen.dart';
 import 'driver_home_screen.dart';
 import 'driver_nav_screen.dart';
+import 'driver_online_screen.dart';
+import '../../services/api_service.dart';
+import '../../services/gps_service.dart';
+import '../../services/trip_firestore_service.dart';
+import '../../navigation/nav_state_machine.dart';
 import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
 
@@ -143,6 +148,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   double _rideSlideVal = 0;
   bool _rideSlidDone = false;
 
+  // ── Dropoff proximity + trip finish ──
+  bool _nearDropoff = false;
+  StreamSubscription<Position>? _dropoffGpsSub;
+  static const _dropoffRadiusMeters = 100.0;
+  double _finishSlideVal = 0;
+  bool _finishSlidDone = false;
+  bool _tripFinished = false;
+  Timer? _finishNavTimer;
+  late final AnimationController _finishFadeCtrl;
+  late final Animation<double> _finishFadeAnim;
+
   // ── Trip distance pickup→dropoff ─────────────────────────────────────────
   double get _tripKm {
     const r = 6371.0;
@@ -222,16 +238,28 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     // Start GPS proximity detection for pickup (only if not already picked up)
     if (!widget.rideStarted) _startPickupProximityDetection();
+    // Start dropoff proximity detection if ride already started
+    if (widget.rideStarted) _startDropoffProximityDetection();
+
+    // Finish overlay fade controller
+    _finishFadeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _finishFadeAnim = CurvedAnimation(parent: _finishFadeCtrl, curve: Curves.easeInOut);
   }
 
   @override
   void dispose() {
     _gpsSub?.cancel();
+    _dropoffGpsSub?.cancel();
+    _finishNavTimer?.cancel();
     _fadeCtrl.dispose();
     _slideCtrl.dispose();
     _tiltCtrl.dispose();
     _pinPopCtrl.dispose();
     _btnFadeCtrl.dispose();
+    _finishFadeCtrl.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routePoints = [];
@@ -360,6 +388,78 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         ),
       ),
     );
+  }
+
+  // ── GPS proximity detection for DROPOFF ─────────────────────────────────
+  void _startDropoffProximityDetection() {
+    // Check current driver position first
+    _checkDropoffProximity(widget.driverPos);
+    _dropoffGpsSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((pos) {
+      if (!mounted || _nearDropoff) return;
+      _checkDropoffProximity(LatLng(pos.latitude, pos.longitude));
+    });
+  }
+
+  void _checkDropoffProximity(LatLng driverPos) {
+    final distM = _haversineMeters(driverPos, widget.dropoffLatLng);
+    if (distM <= _dropoffRadiusMeters && !_nearDropoff) {
+      setState(() => _nearDropoff = true);
+      HapticFeedback.heavyImpact();
+      _dropoffGpsSub?.cancel();
+    }
+  }
+
+  // ── Complete trip (API + Firestore + navigate to online) ────────────────
+  Future<void> _finishTrip() async {
+    if (_tripFinished) return;
+    setState(() => _tripFinished = true);
+    HapticFeedback.heavyImpact();
+
+    // Update backend + Firestore
+    try {
+      await ApiService.updateTripStatus(tripId: widget.tripId, status: 'completed');
+    } catch (_) {}
+    try {
+      await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.tripId.toString())
+          .update({
+        'status': 'completed',
+        'completedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+
+    // Clear GPS trip tracking
+    final gps = GpsService();
+    try { await gps.clearTripLocation(); } catch (_) {}
+    gps.setActiveTrip(null);
+    try {
+      await TripFirestoreService.clearDriverLocation(widget.tripId.toString());
+    } catch (_) {}
+
+    // Show "Viaje Finalizado" overlay
+    _finishFadeCtrl.forward();
+
+    // After 3 seconds navigate to DriverOnlineScreen
+    _finishNavTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        PageRouteBuilder(
+          pageBuilder: (_, anim, __) => const DriverOnlineScreen(),
+          transitionsBuilder: (_, anim, __, child) => FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOutCubic),
+            child: child,
+          ),
+          transitionDuration: const Duration(milliseconds: 600),
+        ),
+        (route) => false,
+      );
+    });
   }
 
   // ── Navigation ────────────────────────────────────────────────────────────
@@ -1434,7 +1534,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     return Scaffold(
       backgroundColor: _bg,
-      body: SlideTransition(
+      body: Stack(
+        children: [
+          SlideTransition(
         position: _slideAnim,
         child: FadeTransition(
           opacity: _fadeAnim,
@@ -1708,17 +1810,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
             const Spacer(),
 
-            // ── Bottom buttons: 3 phases ─────────────────────────────────
+            // ── Bottom buttons: 4 phases ─────────────────────────────────
             // Phase 1: Slide "Start Trip" (before arriving at pickup)
-            // Phase 2: Continue/Directions for pickup + Slide "Start Ride" (arrived at pickup, not yet started ride)
-            // Phase 3: Continue/Directions for dropoff (ride started)
+            // Phase 2: Continue/Directions for pickup + Slide "Start Ride" (arrived at pickup)
+            // Phase 3: Continue/Directions for dropoff → Slide "Finalizar Viaje" (near dropoff)
+            // Phase 4: Trip finished overlay (handled outside this Column)
+            if (!_tripFinished)
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), bot + 18),
               child: _rideStarted
-                  // Phase 3: Ride started → Continue/Directions for dropoff
+                  // Phase 3: Ride started → dropoff buttons or finish slider
                   ? FadeTransition(
                       opacity: _btnFadeAnim,
-                      child: _buildContinueDirectionsDropoff(),
+                      child: _nearDropoff
+                          ? _buildSlideFinishTrip()
+                          : _buildContinueDirectionsDropoff(),
                     )
                   : _tripStarted
                       // Phase 2: Arrived at pickup → show Continue/Directions + slide Start Ride
@@ -1745,6 +1851,61 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           ],
         ),
       ),
+      ),
+
+      // ── Phase 4: "Viaje Finalizado" full-screen overlay ───────────────
+      if (_tripFinished)
+        Positioned.fill(
+          child: FadeTransition(
+          opacity: _finishFadeAnim,
+          child: Container(
+            color: Colors.black.withValues(alpha: 0.85),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 80, height: 80,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _gold.withValues(alpha: 0.15),
+                      border: Border.all(color: _gold, width: 2.5),
+                    ),
+                    child: const Icon(Icons.check_rounded,
+                        color: _gold, size: 44),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text('Viaje Finalizado',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text('\$${widget.fare.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: _gold,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(widget.riderName,
+                    style: TextStyle(
+                      color: Colors.grey[400],
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        ),
+      ],
       ),
     );
   }
@@ -1994,6 +2155,107 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       ),
                       child: Icon(
                         _rideSlidDone ? Icons.check_rounded : Icons.chevron_right_rounded,
+                        color: Colors.black,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Slide-to-confirm "Finalizar Viaje" (near dropoff) ───────────────────
+  Widget _buildSlideFinishTrip() {
+    const height = 62.0;
+    const thumbW = 62.0;
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF111318),
+        borderRadius: BorderRadius.circular(height / 2),
+        border: Border.all(color: _gold.withValues(alpha: 0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          final trackW = constraints.maxWidth;
+          final maxDrag = trackW - thumbW - 4;
+          return SizedBox(
+            height: height,
+            child: Stack(
+              children: [
+                // Fill
+                Positioned(
+                  left: 0, top: 0, bottom: 0,
+                  width: (_finishSlideVal * maxDrag + thumbW).clamp(thumbW.toDouble(), trackW),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          _gold.withValues(alpha: 0.45),
+                          _gold.withValues(alpha: 0.10),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(height / 2),
+                    ),
+                  ),
+                ),
+                // Label
+                Center(
+                  child: AnimatedOpacity(
+                    opacity: 1.0 - _finishSlideVal,
+                    duration: const Duration(milliseconds: 100),
+                    child: const Text('Finalizar Viaje  →',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                // Thumb
+                Positioned(
+                  left: 2 + _finishSlideVal * maxDrag,
+                  top: 3, bottom: 3,
+                  child: GestureDetector(
+                    onHorizontalDragUpdate: (d) {
+                      if (_finishSlidDone) return;
+                      setState(() {
+                        _finishSlideVal = (_finishSlideVal + d.delta.dx / maxDrag)
+                            .clamp(0.0, 1.0);
+                      });
+                      if (_finishSlideVal >= 0.88) {
+                        setState(() => _finishSlidDone = true);
+                        _finishTrip();
+                      }
+                    },
+                    onHorizontalDragEnd: (_) {
+                      if (!_finishSlidDone) setState(() => _finishSlideVal = 0);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 80),
+                      width: thumbW - 4,
+                      decoration: BoxDecoration(
+                        color: _finishSlidDone ? _gold.withValues(alpha: 0.8) : _gold,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: 0.5),
+                            blurRadius: 12,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        _finishSlidDone ? Icons.check_rounded : Icons.chevron_right_rounded,
                         color: Colors.black,
                         size: 28,
                       ),

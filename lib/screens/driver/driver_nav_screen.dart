@@ -1641,20 +1641,25 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             Positioned.fill(child: _buildMap()),
 
             // ── TOP HEADER ───────────────────────────────────────────────
-            Positioned(top: 0, left: 0, right: 0, child: _buildNavHeader(top)),
+            Positioned(
+              top: top + 8,
+              left: 12,
+              right: 12,
+              child: _buildNavHeader(top),
+            ),
 
             // ── SPEED OVERLAY (left side, below header) ──────────────────
             Positioned(
               left: 16,
-              top: top + 110,
-              child: _buildSpeedOverlay(top + 110),
+              top: top + 120,
+              child: _buildSpeedOverlay(top + 120),
             ),
 
             // ── BOTTOM BAR ────────────────────────────────────────────────
             Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
+              bottom: bot + 12,
+              left: 12,
+              right: 12,
               child: _buildBottomBar(bot),
             ),
 
@@ -1751,11 +1756,22 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       child: Material(
         color: Colors.transparent,
         child: Container(
-          color: bg,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
           child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(height: topPad),
+            const SizedBox(height: 12),
             // Main row
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -2081,77 +2097,85 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     final distStr = '${dist.toStringAsFixed(2)} mi';
 
     return Container(
-      color: _bottomBg,
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: math.max(72.0, Responsive.h(72)),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(width: Responsive.w(12)),
-              // Rider avatar — opens trip options
-              GestureDetector(
-                onTap: _showTripOptions,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: Responsive.w(4)),
-                  child: _riderAvatar(size: Responsive.w(36)),
-                ),
-              ),
-              // Centered ETA / distance / arrival
-              Expanded(
-                child: Center(
-                  child: eta <= 2
-                          ? Text(
-                              'Arriving soon',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              softWrap: false,
-                              style: TextStyle(
-                                color: _etaGreen,
-                                fontSize: Responsive.sp(16),
-                                fontWeight: FontWeight.w800,
-                              ))
-                          : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text('$eta min',
-                                  style: TextStyle(
-                                    color: _etaGreen,
-                                    fontSize: Responsive.sp(22),
-                                    fontWeight: FontWeight.w900,
-                                    height: 1.0,
-                                  )),
-                                const SizedBox(height: 2),
-                                Text('$distStr · $arrStr',
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.5),
-                                    fontSize: Responsive.sp(12),
-                                    fontWeight: FontWeight.w500,
-                                  )),
-                              ],
-                            ),
-                ),
-              ),
-              // Exit button
-              GestureDetector(
-                onTap: _exitNav,
-                child: Container(
-                  margin: const EdgeInsets.only(right: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1E2E),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text('Exit',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700)),
-                ),
-              ),
-            ],
+      decoration: BoxDecoration(
+        color: _bottomBg,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 14,
+            offset: const Offset(0, -2),
           ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        height: math.max(68.0, Responsive.h(68)),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(width: Responsive.w(12)),
+            // Rider avatar — opens trip options
+            GestureDetector(
+              onTap: _showTripOptions,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: Responsive.w(4)),
+                child: _riderAvatar(size: Responsive.w(40)),
+              ),
+            ),
+            // Centered ETA / distance / arrival
+            Expanded(
+              child: Center(
+                child: eta <= 2
+                        ? Text(
+                            'Arriving soon',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: false,
+                            style: TextStyle(
+                              color: _etaGreen,
+                              fontSize: Responsive.sp(16),
+                              fontWeight: FontWeight.w800,
+                            ))
+                        : Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text('$eta min',
+                                style: TextStyle(
+                                  color: _etaGreen,
+                                  fontSize: Responsive.sp(22),
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.0,
+                                )),
+                              const SizedBox(height: 2),
+                              Text('$distStr · $arrStr',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  fontSize: Responsive.sp(12),
+                                  fontWeight: FontWeight.w500,
+                                )),
+                            ],
+                          ),
+              ),
+            ),
+            // Exit button
+            GestureDetector(
+              onTap: _exitNav,
+              child: Container(
+                margin: const EdgeInsets.only(right: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1E2E),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text('Exit',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2308,10 +2332,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     if (stepLimit == null) {
       // No speed data — show only current speed, hide limit sign
       return Container(
-        width: 44, height: 44,
+        width: 56, height: 56,
         decoration: BoxDecoration(
           color: const Color(0xFF1A1E2E),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.4),
@@ -2324,11 +2348,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             children: [
               Text('$speed',
                 style: const TextStyle(
-                  color: Colors.white, fontSize: 16,
+                  color: Colors.white, fontSize: 20,
                   fontWeight: FontWeight.w900, height: 1.0)),
               const Text('mph',
                 style: TextStyle(
-                  color: Colors.white70, fontSize: 8,
+                  color: Colors.white70, fontSize: 9,
                   fontWeight: FontWeight.w600, height: 1.2)),
             ],
           ),
@@ -2344,20 +2368,20 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       children: [
         // Speed limit sign
         Container(
-          width: 44, height: 52,
+          width: 56, height: 62,
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Colors.red, width: 3),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Text('MAX',
-                style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900,
+                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900,
                     color: Colors.black, height: 1.0)),
               Text('$limit',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900,
+                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900,
                     color: Colors.black, height: 1.1)),
             ],
           ),
@@ -2365,10 +2389,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         const SizedBox(height: 8),
         // Current speed
         Container(
-          width: 44, height: 44,
+          width: 56, height: 56,
           decoration: BoxDecoration(
             color: isOver ? _speedRed : const Color(0xFF1A1E2E),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.4),
@@ -2381,11 +2405,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               children: [
                 Text('$speed',
                   style: const TextStyle(
-                    color: Colors.white, fontSize: 16,
+                    color: Colors.white, fontSize: 20,
                     fontWeight: FontWeight.w900, height: 1.0)),
                 const Text('mph',
                   style: TextStyle(
-                    color: Colors.white70, fontSize: 8,
+                    color: Colors.white70, fontSize: 9,
                     fontWeight: FontWeight.w600, height: 1.2)),
               ],
             ),

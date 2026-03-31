@@ -583,7 +583,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     final s = _ctrl.state;
     if (s.route == null) return;
     _showPinLabels = true;
-    final pts = List<LatLng>.from(s.route!.points);
+    final pts = _capRouteEndpoints(List<LatLng>.from(s.route!.points));
     _buildRouteMarkers();
     // Always replay cinematic — reset state and re-trigger
     _resetCinematic();
@@ -615,13 +615,28 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
   }
 
+  /// Ensure route polyline starts exactly at pickup pin and ends exactly at dropoff pin.
+  /// Mapbox Directions returns road-snapped coordinates that may differ from the
+  /// raw geocoded pin positions, causing a visible gap between pin and route.
+  List<LatLng> _capRouteEndpoints(List<LatLng> pts) {
+    if (pts.length < 2) return pts;
+    final s = _ctrl.state;
+    if (s.pickup != null) {
+      pts[0] = LatLng(s.pickup!.lat, s.pickup!.lng);
+    }
+    if (s.dropoff != null) {
+      pts[pts.length - 1] = LatLng(s.dropoff!.lat, s.dropoff!.lng);
+    }
+    return pts;
+  }
+
   /// Replay cinematic if route data is available (used by searching phase).
   /// Only triggers if cinematic hasn't already played.
   void _replayCinematicIfRouteAvailable() {
     if (_cinematicDone) return;
     final route = _ctrl.state.route;
     if (route == null || route.points.isEmpty) return;
-    final pts = List<LatLng>.from(route.points);
+    final pts = _capRouteEndpoints(List<LatLng>.from(route.points));
     _showPinLabels = true;
     _buildRouteMarkers();
     _resetCinematic();

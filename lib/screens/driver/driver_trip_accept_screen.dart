@@ -1169,6 +1169,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     if (_routePoints.length < 2) return;
 
+    // Cap route endpoints to exact pin positions so polyline meets the pins
+    _routePoints[0] = widget.pickupLatLng;
+    _routePoints[_routePoints.length - 1] = widget.dropoffLatLng;
+
     // Include driver position + pickup + dropoff + route in bounds so everything is visible.
     final allPoints = [
       widget.driverPos,

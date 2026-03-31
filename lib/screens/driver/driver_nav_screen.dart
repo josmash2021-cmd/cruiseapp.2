@@ -503,8 +503,14 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     final route = await RouteService.fetchNavRoute(origin: _pos, destination: dest);
     if (!mounted) return;
     if (route != null) {
+      final pts = List.of(route.overviewPolyline);
+      // Cap endpoints: start at driver pos, end at exact destination pin
+      if (pts.length >= 2) {
+        pts[0] = _pos;
+        pts[pts.length - 1] = dest;
+      }
       setState(() {
-        _routePts        = List.of(route.overviewPolyline);
+        _routePts        = pts;
         _lastSegIdx      = 0;
         _distRemainingMi = route.totalDistanceMiles;
         _etaMinutes      = route.totalDurationMinutes;

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -24,7 +25,6 @@ import '../../models/lat_lng.dart';
 import '../chat_screen.dart';
 import '../help_screen.dart';
 import 'driver_home_screen.dart';
-import 'driver_nav_screen.dart';
 import 'driver_online_screen.dart';
 import '../../services/api_service.dart';
 import '../../services/gps_service.dart';
@@ -367,27 +367,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Navigate to dropoff (ride started) ─────────────────────────────────
   void _goNavigateDropoff({bool overview = false}) {
     HapticFeedback.mediumImpact();
-    Navigator.of(context).pushReplacement(
-      slideUpFadeRoute(
-        DriverNavScreen(
-          tripId:          widget.tripId,
-          riderName:       widget.riderName,
-          riderPhotoUrl:   widget.riderPhotoUrl,
-          riderRating:     widget.riderRating,
-          pickupLatLng:    widget.pickupLatLng,
-          dropoffLatLng:   widget.dropoffLatLng,
-          pickupAddress:   _pickupAddr,
-          dropoffAddress:  _dropoffAddr,
-          fare:            widget.fare,
-          vehicleType:     widget.vehicleType,
-          driverPos:       widget.driverPos,
-          routePoints:     widget.routePoints,
-          riderPhone:      widget.riderPhone,
-          startWithOverview: overview,
-          startInTripMode: true,
-        ),
-      ),
-    );
+    _openNativeMaps(widget.dropoffLatLng);
   }
 
   // ── GPS proximity detection for DROPOFF ─────────────────────────────────
@@ -465,27 +445,45 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Navigation ────────────────────────────────────────────────────────────
   void _goNavigate({bool overview = false}) {
     HapticFeedback.mediumImpact();
-    Navigator.of(context).pushReplacement(
-      slideUpFadeRoute(
-        DriverNavScreen(
-          tripId:          widget.tripId,
-          riderName:       widget.riderName,
-          riderPhotoUrl:   widget.riderPhotoUrl,
-          riderRating:     widget.riderRating,
-          pickupLatLng:    widget.pickupLatLng,
-          dropoffLatLng:   widget.dropoffLatLng,
-          pickupAddress:   _pickupAddr,
-          dropoffAddress:  _dropoffAddr,
-          fare:            widget.fare,
-          vehicleType:     widget.vehicleType,
-          driverPos:       widget.driverPos,
-          routePoints:     widget.routePoints,
-          riderPhone:      widget.riderPhone,
-          startWithOverview: overview,
-          startInTripMode: widget.arrivedAtPickup,
-        ),
-      ),
-    );
+    _openNativeMaps(widget.pickupLatLng);
+  }
+
+  Future<void> _openNativeMaps(LatLng dest) async {
+    final lat = dest.latitude;
+    final lng = dest.longitude;
+    if (Platform.isIOS) {
+      final gMapsUrl = Uri.parse(
+        'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving',
+      );
+      if (await canLaunchUrl(gMapsUrl)) {
+        await launchUrl(gMapsUrl, mode: LaunchMode.externalApplication);
+        return;
+      }
+      final wazeUrl = Uri.parse('waze://?ll=$lat,$lng&navigate=yes');
+      if (await canLaunchUrl(wazeUrl)) {
+        await launchUrl(wazeUrl, mode: LaunchMode.externalApplication);
+        return;
+      }
+      await launchUrl(
+        Uri.parse('https://maps.apple.com/?daddr=$lat,$lng&dirflg=d&t=m'),
+        mode: LaunchMode.externalApplication,
+      );
+    } else {
+      final gMapsUrl = Uri.parse('google.navigation:q=$lat,$lng&mode=d');
+      if (await canLaunchUrl(gMapsUrl)) {
+        await launchUrl(gMapsUrl, mode: LaunchMode.externalApplication);
+        return;
+      }
+      final wazeUrl = Uri.parse('waze://?ll=$lat,$lng&navigate=yes');
+      if (await canLaunchUrl(wazeUrl)) {
+        await launchUrl(wazeUrl, mode: LaunchMode.externalApplication);
+        return;
+      }
+      await launchUrl(
+        Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving'),
+        mode: LaunchMode.externalApplication,
+      );
+    }
   }
 
   // ── Phone / Message ───────────────────────────────────────────────────────

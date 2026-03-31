@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -17,7 +18,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/ride_offer.dart';
 import '../../navigation/offers_controller.dart';
 import '../../navigation/route_service.dart';
-import 'driver_nav_screen.dart';
+import 'driver_trip_accept_screen.dart';
 import '../../services/analytics_service.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../utils/responsive.dart';
@@ -232,10 +233,24 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
 
     if (!mounted) return;
 
-    // Navigate to driver navigation
+    // Compute distance & ETA from route (fallback to straight-line estimate)
+    double distKm = 5.0;
+    int eta = 10;
+    if (routePts != null && routePts.isNotEmpty) {
+      // RouteService already fetched a NavRoute – re-fetch is cheap but we
+      // can estimate from polyline length instead. Use a quick haversine sum.
+      double totalM = 0;
+      for (int i = 1; i < routePts.length; i++) {
+        totalM += _haversineMeters(routePts[i - 1], routePts[i]);
+      }
+      distKm = totalM / 1000;
+      eta = (distKm / 0.5).ceil().clamp(1, 120); // ~30 km/h city avg
+    }
+
+    // Navigate to trip-accept screen
     Navigator.of(context).pushReplacement(
       slideUpFadeRoute(
-        DriverNavScreen(
+        DriverTripAcceptScreen(
           tripId: int.tryParse(accepted.offerId) ?? 0,
           riderName: accepted.riderName,
           riderPhotoUrl: accepted.riderPhotoUrl,
@@ -251,10 +266,24 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
           fare: offer.fareUsd,
           vehicleType: offer.vehicleType,
           driverPos: _driverPos!,
+          distToPickupKm: distKm,
+          etaMinutes: eta,
           routePoints: routePts,
         ),
       ),
     );
+  }
+
+  static double _haversineMeters(LatLng a, LatLng b) {
+    const R = 6371000.0;
+    final dLat = (b.latitude - a.latitude) * math.pi / 180;
+    final dLon = (b.longitude - a.longitude) * math.pi / 180;
+    final lat1 = a.latitude * math.pi / 180;
+    final lat2 = b.latitude * math.pi / 180;
+    final h = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1) * math.cos(lat2) *
+        math.sin(dLon / 2) * math.sin(dLon / 2);
+    return R * 2 * math.atan2(math.sqrt(h), math.sqrt(1 - h));
   }
 
   void _onReject(RideOffer offer) {

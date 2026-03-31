@@ -97,6 +97,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final _mapKey = GlobalKey();
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PointAnnotationManager? _pinAnnotMgr;   // teardrop pins (icon-anchor: bottom)
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
   // Active annotations
   mapbox.PointAnnotation? _carAnnot;

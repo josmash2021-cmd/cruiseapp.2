@@ -191,7 +191,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   Future<void> _setPickupAnnotation() async {
-    final pointMgr = _pointAnnotMgr;
+    final pointMgr = _pinAnnotMgr;
     if (pointMgr == null) return;
     await _clearPickupDropoffAnnotations();
     final bytes = await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32);
@@ -204,7 +204,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   Future<void> _setDropoffAnnotation() async {
-    final pointMgr = _pointAnnotMgr;
+    final pointMgr = _pinAnnotMgr;
     if (pointMgr == null) return;
     await _clearPickupDropoffAnnotations();
     final bytes = await renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32);
@@ -217,7 +217,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   Future<void> _setPickupDropoffAnnotations() async {
-    final pointMgr = _pointAnnotMgr;
+    final pointMgr = _pinAnnotMgr;
     if (pointMgr == null) return;
     await _clearPickupDropoffAnnotations();
     final pickupBytes  = await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32);
@@ -237,7 +237,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   Future<void> _clearPickupDropoffAnnotations() async {
-    final pointMgr = _pointAnnotMgr;
+    final pointMgr = _pinAnnotMgr;
     if (pointMgr == null) return;
     for (final annot in [_pickupAnnot, _dropoffAnnot, _prevDriverAnnot, _prevPickupAnnot, _prevDropoffAnnot]) {
       if (annot != null) try { await pointMgr.delete(annot); } catch (_) {}
@@ -379,7 +379,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       dropoffPinImg ??= pinResults[1];
     }
 
-    final pointMgr = _pointAnnotMgr;
+    final pointMgr = _pinAnnotMgr;
     if (pointMgr != null && mounted) {
       // Pickup pin — person icon (BOTTOM anchor = pin tip sits exactly at coordinate)
       _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
@@ -428,7 +428,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
   /// Animate all preview pins from tiny → overshoot → settle (spring feel)
   Future<void> _animatePinPop() async {
-    final pointMgr = _pointAnnotMgr;
+    final pointMgr = _pinAnnotMgr;
     if (pointMgr == null) return;
     const totalMs = 600;
     final stopwatch = Stopwatch()..start();

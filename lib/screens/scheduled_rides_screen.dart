@@ -490,8 +490,14 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
       await _fitCamera([pickup, dropoff], pitch: 0);
       // Place pins
       await _placePins(pickup, dropoff);
+      // Cap route endpoints to exact pin coordinates
+      final cappedPts = List<LatLng>.from(route.points);
+      if (cappedPts.length >= 2) {
+        cappedPts[0] = pickup;
+        cappedPts[cappedPts.length - 1] = dropoff;
+      }
       // Animate golden route line
-      await _animateRoute(route.points);
+      await _animateRoute(cappedPts);
       // Cinematic tilt to 55°
       if (_mapCtrl != null && mounted) {
         final curCam = await _mapCtrl!.getCameraState();

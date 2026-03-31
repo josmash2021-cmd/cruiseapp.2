@@ -413,7 +413,13 @@ extension _MapScreenController on _MapScreenState {
     if (!mounted) return false;
 
     if (route != null) {
-      _activeRoutePoints = route.points;
+      // Cap route endpoints to exact pin coordinates
+      final cappedPts = List<LatLng>.from(route.points);
+      if (cappedPts.length >= 2) {
+        cappedPts[0] = origin;
+        cappedPts[cappedPts.length - 1] = destination;
+      }
+      _activeRoutePoints = cappedPts;
       _setState(() {
         _tripMiles = _formatMiles(route.distanceMeters);
         _tripDuration = route.durationText;
@@ -427,7 +433,7 @@ extension _MapScreenController on _MapScreenState {
         _clearRouteAnnotation();
       });
 
-      await _startCinematicRouteReveal(route.points, animationTicket);
+      await _startCinematicRouteReveal(cappedPts, animationTicket);
     } else {
       _activeRoutePoints = [];
       DistanceEstimate? estimate;

@@ -269,6 +269,12 @@ extension _HomeScreenController on _HomeScreenState {
     _rideRouteDrawn = true;
     _routeLatLngs = ride.routePoints.map((p) => LatLng(p[0], p[1])).toList();
 
+    // Cap route endpoints to exact pin coordinates
+    if (_routeLatLngs.length >= 2) {
+      _routeLatLngs[0] = LatLng(ride.pickupLat, ride.pickupLng);
+      _routeLatLngs[_routeLatLngs.length - 1] = LatLng(ride.dropoffLat, ride.dropoffLng);
+    }
+
     try {
       // Create polyline annotation manager
       _miniMapPolyMgr ??= await ctrl.annotations.createPolylineAnnotationManager();

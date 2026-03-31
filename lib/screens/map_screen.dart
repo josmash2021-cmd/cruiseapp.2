@@ -2321,10 +2321,15 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       if (!mounted) return;
 
       if (driverToPickup.isNotEmpty) {
+        // Cap endpoint to exact pickup pin coordinate
+        driverToPickup[driverToPickup.length - 1] = pickupPos;
         _driverRoutePoints = driverToPickup;
         await _setRouteAnnotation(driverToPickup);
       }
       if (pickupToDropoff.isNotEmpty) {
+        // Cap endpoints to exact pickup/dropoff pin coordinates
+        pickupToDropoff[0] = pickupPos;
+        pickupToDropoff[pickupToDropoff.length - 1] = dropoffPos;
         await _setRouteAnnotation(pickupToDropoff);
       }
       // Fit bounds to show driver + pickup + dropoff
@@ -2338,6 +2343,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       if (!mounted) return;
 
       if (driverToDropoff.isNotEmpty) {
+        // Cap endpoint to exact dropoff pin coordinate
+        driverToDropoff[driverToDropoff.length - 1] = dropoffPos;
         _driverRoutePoints = driverToDropoff;
         await _setRouteAnnotation(driverToDropoff);
       }
@@ -2548,13 +2555,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     );
     if (!mounted || ticket != _routeAnimationTicket) return;
     if (route != null) {
-      _activeRoutePoints = route.points;
+      // Cap route endpoints to exact pin coordinates
+      final cappedPts = List<LatLng>.from(route.points);
+      if (cappedPts.length >= 2) {
+        cappedPts[0] = origin;
+        cappedPts[cappedPts.length - 1] = destination;
+      }
+      _activeRoutePoints = cappedPts;
       setState(() {
         _tripMiles = _formatMiles(route.distanceMeters);
         _tripDuration = route.durationText;
         _updateRidePricingFromDuration(_tripDuration);
       });
-      await _setRouteAnnotation(route.points);
+      await _setRouteAnnotation(cappedPts);
     }
   }
 

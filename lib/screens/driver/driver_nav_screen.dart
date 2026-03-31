@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -1290,11 +1291,35 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         extra: {'tripStartedAt': FieldValue.serverTimestamp()});
     _showToast('Trip started — navigate to dropoff');
 
+    // Open native maps (Apple Maps on iOS, Google Maps on Android) with dropoff
+    _openNativeMaps(widget.dropoffLatLng, widget.dropoffAddress);
+
     _startRideSwitching = false;
     setState(() {
       _cameraFollowing = true;
       _isOverview      = false;
     });
+  }
+
+  /// Open Apple Maps (iOS) or Google Maps (Android) with turn-by-turn to [dest].
+  Future<void> _openNativeMaps(LatLng dest, String label) async {
+    final lat = dest.latitude;
+    final lng = dest.longitude;
+    final encoded = Uri.encodeComponent(label);
+    Uri url;
+    if (Platform.isIOS) {
+      url = Uri.parse('https://maps.apple.com/?daddr=$lat,$lng&dirflg=d&t=m');
+    } else {
+      url = Uri.parse(
+        'https://www.google.com/maps/dir/?api=1'
+        '&destination=$lat,$lng'
+        '&destination_place_id='
+        '&travelmode=driving',
+      );
+    }
+    try {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (_) {}
   }
 
   Future<void> _completeTrip() async {

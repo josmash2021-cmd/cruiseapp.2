@@ -1821,7 +1821,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), bot + 18),
               child: _rideStarted
-                  // Phase 3: Ride started → dropoff buttons or finish slider
+                  // Phase 3: Ride started → dropoff Continue/Directions or finish slider
                   ? FadeTransition(
                       opacity: _btnFadeAnim,
                       child: _nearDropoff
@@ -1829,21 +1829,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           : _buildContinueDirectionsDropoff(),
                     )
                   : _tripStarted
-                      // Phase 2: Arrived at pickup → show Continue/Directions + slide Start Ride
+                      // Phase 2: Arrived at pickup → only slide Start Ride
                       ? FadeTransition(
                           opacity: _btnFadeAnim,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _buildContinueDirections(),
-                              if (_nearPickup && !_rideSlidDone) ...[
-                                const SizedBox(height: 12),
-                                _buildSlideStartRide(),
-                              ],
-                            ],
-                          ),
+                          child: _buildSlideStartRide(),
                         )
-                      // Phase 1: Slide Start Trip
+                      // Phase 1: Slide Start Trip (driving to pickup)
                       : AnimatedOpacity(
                           opacity: _slid ? 0.0 : 1.0,
                           duration: const Duration(milliseconds: 300),

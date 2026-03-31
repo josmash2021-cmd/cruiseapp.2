@@ -234,6 +234,34 @@ class PlacesService {
     return null;
   }
 
+  /// Reverse geocode returning full details (address + precise coordinates).
+  Future<PlaceDetails?> reverseGeocodeDetailed({
+    required double lat,
+    required double lng,
+  }) async {
+    try {
+      final res = await http.get(Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
+        'latlng': '$lat,$lng',
+        'key': apiKey,
+      })).timeout(const Duration(seconds: 5));
+      final data = jsonDecode(res.body);
+      if (data['status'] == 'OK') {
+        final results = data['results'] as List?;
+        if (results != null && results.isNotEmpty) {
+          final first = results.first;
+          final addr = first['formatted_address']?.toString();
+          final loc = first['geometry']?['location'];
+          final pLat = (loc?['lat'] as num?)?.toDouble();
+          final pLng = (loc?['lng'] as num?)?.toDouble();
+          if (addr != null && addr.isNotEmpty && pLat != null && pLng != null) {
+            return PlaceDetails(address: addr, lat: pLat, lng: pLng);
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   // ─── Autocomplete (text → list of suggestions) ────────────────────
   //
   // Google Places Autocomplete — full worldwide coverage:

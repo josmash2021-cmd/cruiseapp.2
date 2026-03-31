@@ -105,9 +105,12 @@ class _MapPickerScreenState extends State<MapPickerScreen>
     _debounce = Timer(const Duration(milliseconds: 500), _onCameraIdle);
   }
 
+  bool _snapping = false; // guard: prevents snap→geocode→snap loop
+
   Future<void> _onCameraIdle() async {
     _debounce?.cancel();
     if (!mounted) return;
+    if (_snapping) return; // don't re-geocode during a snap fly
     final gen = ++_geocodeGen;
     final snap = LatLng(_center.latitude, _center.longitude);
     // Only show loading if we don't already have an address
@@ -117,30 +120,50 @@ class _MapPickerScreenState extends State<MapPickerScreen>
         _geocodeFailed = false;
       });
     }
-    String? addr;
+    PlaceDetails? details;
     for (int attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) await Future.delayed(const Duration(milliseconds: 800));
       if (!mounted || gen != _geocodeGen) return; // stale
       try {
-        addr = await _places.reverseGeocode(
+        details = await _places.reverseGeocodeDetailed(
           lat: snap.latitude,
           lng: snap.longitude,
         );
-        if (addr != null && addr.isNotEmpty) break;
+        if (details != null) break;
       } catch (_) {}
     }
     if (!mounted || gen != _geocodeGen) return; // stale
-    setState(() {
-      if (addr != null && addr.isNotEmpty) {
-        _address = addr;
+    if (details != null) {
+      setState(() {
+        _address = details!.address;
         _addressIsPlaceholder = false;
         _geocodeFailed = false;
-      } else {
+        _loading = false;
+      });
+      // Snap map to exact address coordinates if they differ noticeably
+      final dLat = (details.lat - snap.latitude).abs();
+      final dLng = (details.lng - snap.longitude).abs();
+      if ((dLat > 0.00005 || dLng > 0.00005) && _mapCtrl != null) {
+        _snapping = true;
+        _center = LatLng(details.lat, details.lng);
+        await _mapCtrl!.flyTo(
+          mapbox.CameraOptions(
+            center: mapbox.Point(
+              coordinates: mapbox.Position(details.lng, details.lat),
+            ),
+          ),
+          mapbox.MapAnimationOptions(duration: 400),
+        );
+        await Future.delayed(const Duration(milliseconds: 500));
+        _snapping = false;
+      }
+    } else {
+      setState(() {
         _addressIsPlaceholder = true;
         _geocodeFailed = true;
-      }
-      _loading = false;
-    });
+        _loading = false;
+      });
+    }
   }
 
   void _onMapIdle(mapbox.MapIdleEventData event) {

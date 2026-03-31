@@ -1046,31 +1046,6 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                 ),
               ),
             ),
-          // ── Address labels on map ──
-          if (_routeLoaded) ...[
-            Positioned(
-              top: 10,
-              left: 10,
-              right: 60,
-              child: _mapAddressLabel(
-                widget.trip['pickup_address'] as String? ?? '',
-                _gold,
-                true,
-              ),
-            ),
-            Positioned(
-              bottom: 10,
-              left: 10,
-              right: 60,
-              child: _mapAddressLabel(
-                widget.trip['dropoff_address'] as String? ?? '',
-                widget.trip['is_airport'] == true
-                    ? const Color(0xFF4285F4)
-                    : Colors.white,
-                false,
-              ),
-            ),
-          ],
         ],
       ),
     );

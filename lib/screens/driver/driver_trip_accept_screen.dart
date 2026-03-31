@@ -65,6 +65,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
     this.dropoffInstructions = '',
     this.arrivedAtPickup = false,
     this.rideStarted = false,
+    this.tripAlreadyStarted = false,
   });
 
   final int tripId;
@@ -86,6 +87,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
   final String dropoffInstructions;
   final bool arrivedAtPickup;
   final bool rideStarted;
+  final bool tripAlreadyStarted;
 
   @override
   State<DriverTripAcceptScreen> createState() => _DriverTripAcceptScreenState();
@@ -206,6 +208,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       _arrivedSlidDone = true;
       _rideStarted = true;
       _startRideSlidDone = true;
+    }
+    // Resume at Continue/Directions (trip accepted, en route to pickup)
+    if (widget.tripAlreadyStarted && !widget.arrivedAtPickup && !widget.rideStarted) {
+      _tripStarted = true;
+      _slid = true;
     }
 
     _fadeCtrl = AnimationController(

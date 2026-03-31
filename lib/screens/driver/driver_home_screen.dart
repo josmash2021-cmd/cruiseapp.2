@@ -1485,6 +1485,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final distKm = _haversineKm(driverPos, pickup);
     final etaMinutes = ((distKm * 1000) / 17.88 / 60).ceil().clamp(1, 99);
 
+    // Determine trip phase from Firestore status so the screen resumes
+    // at the correct phase instead of resetting to "Slide Start Trip".
+    final status = _pickString(trip, ['status'], fallback: 'accepted');
+    final arrivedAtPickup = (status == 'arrived' || status == 'driver_arrived');
+    final rideStarted = (status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard');
+
     await Navigator.of(context).push(
       slideFromRightRoute(
         DriverTripAcceptScreen(
@@ -1504,6 +1510,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           riderPhone: riderPhone,
           pickupInstructions: _pickString(trip, ['pickupInstructions', 'pickup_instructions']),
           dropoffInstructions: _pickString(trip, ['dropoffInstructions', 'dropoff_instructions']),
+          arrivedAtPickup: arrivedAtPickup,
+          rideStarted: rideStarted,
+          tripAlreadyStarted: true,
         ),
       ),
     );

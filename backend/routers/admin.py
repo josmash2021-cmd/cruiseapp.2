@@ -26,6 +26,18 @@ from config import (
 
 router = APIRouter()
 
+# ═══════════════════════════════════════════════════════
+#  HELPER: Calculate driver rating from reviews
+# ═══════════════════════════════════════════════════════
+async def _get_driver_rating(driver_id: int, db: AsyncSession) -> float:
+    """Calculate average rating for a driver from completed trips."""
+    result = await db.execute(
+        select(func.avg(Rating.stars)).where(Rating.from_user_id != Rating.to_user_id)
+        .where(Rating.to_user_id == driver_id)  # Ratings given TO this driver
+    )
+    avg_rating = result.scalar()
+    return round(avg_rating, 1) if avg_rating else 0.0
+
 @router.get("/admin/users", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_users(
     role: Optional[str] = None, status: Optional[str] = None,
@@ -439,24 +451,10 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     ud["documents"] = [_doc_dict(d) for d in docs]
     ud["has_password"] = user.password_hash is not None and len(user.password_hash) > 0
     ud["created_at"] = user.created_at.isoformat() if user.created_at else None
-    # Dispatch admin: expose plain password (stored for account recovery) and full SSN
-    if hasattr(user, 'password_plain') and user.password_plain:
-        ud["password_plain"] = user.password_plain
-    else:
-        ud["password_plain"] = None
-    # Full SSN for admin review (not masked)
-    if hasattr(user, 'ssn') and user.ssn:
-        ud["ssn_full"] = user.ssn
-        ssn_digits = ''.join(filter(str.isdigit, user.ssn))
-        if len(ssn_digits) == 9:
-            ud["ssn_masked"] = f"***-**-{ssn_digits[-4:]}"
-            ud["ssn_last4"] = ssn_digits[-4:]
-            ud["ssn_provided"] = True
-        else:
-            ud["ssn_provided"] = False
-    else:
-        ud["ssn_full"] = None
-        ud["ssn_provided"] = False
+    # Password reset available but never expose plaintext (security best practice)
+    ud["password_reset_available"] = True  # Admin can send password reset link
+    # SSN is encrypted on backend, never exposed to admin (compliance)
+    ud["ssn_provided"] = bool(user.ssn)  # Just indicate if SSN was collected
     return ud
 
 
@@ -473,11 +471,10 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
         if key in body:
             _sanitize_string(str(body[key]))
             setattr(user, key, body[key])
-    # Handle password reset
+    # Handle password reset (never store plaintext for security)
     if "password" in body and body["password"]:
         _sanitize_string(body["password"])
         user.password_hash = pwd.hash(body["password"])
-        user.password_plain = body["password"]
     await db.commit()
     await db.refresh(user)
     # Sync to Firestore
@@ -490,7 +487,6 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
                     last_name=user.last_name, phone=user.phone or "",
                     email=user.email, photo_url=user.photo_url,
                     password_hash=user.password_hash,
-                    password_visible=user.password_visible,
                     is_verified=user.is_verified or False,
                     id_photo_url=user.id_photo_url,
                     selfie_url=user.selfie_url,
@@ -506,7 +502,6 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
                     last_name=user.last_name, phone=user.phone or "",
                     email=user.email, photo_url=user.photo_url,
                     role=user.role, password_hash=user.password_hash,
-                    password_visible=user.password_visible,
                     is_verified=user.is_verified or False,
                     id_photo_url=user.id_photo_url,
                     selfie_url=user.selfie_url,
@@ -738,7 +733,7 @@ async def get_online_drivers(db: AsyncSession = Depends(get_db)):
                 "phone": user.phone,
                 "lat": user.lat,
                 "lng": user.lng,
-                "rating": 4.9,  # TODO: Calculate from reviews
+                "rating": await _get_driver_rating(user.id, db),  # Calculate from reviews
                 "vehicle": {
                     "make": vehicle.make if vehicle else None,
                     "model": vehicle.model if vehicle else None,

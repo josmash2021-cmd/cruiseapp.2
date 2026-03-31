@@ -40,6 +40,9 @@ class UserSession {
   /// Public access to the current user's UID for photo cache keying.
   static String get currentUid => _cachedUid;
 
+  /// Deep link to process (fare-split, referral, promo code)
+  static Uri? currentDeepLink;
+
   // ── Save / Read local cache ─────────────────────────
 
   /// Save user data locally (cache after API call).

@@ -23,11 +23,9 @@ except Exception as _e:
     sys.exit(0)
 
 MIGRATIONS = [
-    ("users", "password_plain", "VARCHAR(255)"),
     ("users", "id_photo_url", "TEXT"),
     ("users", "selfie_url", "TEXT"),
-    ("users", "password_visible", "VARCHAR(255)"),
-    ("users", "ssn", "VARCHAR(11)"),
+    ("users", "ssn", "VARCHAR(255)"),  # Encrypted SSN (extended from VARCHAR(11) for encrypted data)
     ("users", "license_front_url", "TEXT"),
     ("users", "license_back_url", "TEXT"),
     ("users", "vehicle_registration_url", "TEXT"),

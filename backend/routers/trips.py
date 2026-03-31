@@ -533,25 +533,53 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     trip.cancel_reason = reason
     trip.cancellation_fee = cancellation_fee
     trip.updated_at = datetime.utcnow()
+    
+    # ─── REFUND LOGIC ───
+    # If rider was charged, issue refund (full or less cancellation fee)
+    if trip.payment_status == "paid" and trip.payment_intent_id:
+        try:
+            from services.stripe_helpers import stripe
+            # Attempt refund through Stripe API
+            refund_amount_cents = int((trip.fare - cancellation_fee) * 100)
+            refund = stripe.Refund.create(
+                charge=trip.payment_intent_id[:15],  # Use first 15 chars as charge ID
+                amount=refund_amount_cents if refund_amount_cents > 0 else None,
+                reason="requested_by_customer" if user.id == trip.rider_id else "requested_by_customer"
+            )
+            trip.payment_status = "refunded"
+            logging.info("[Refund] Trip %d refunded %.2f (fee: %.2f)", trip_id, trip.fare - cancellation_fee, cancellation_fee)
+        except Exception as e:
+            logging.warning("[Refund] Failed to refund trip %d: %s — marking for manual refund", trip_id, e)
+            trip.payment_status = "pending_refund"  # Manual refund needed
+    
     await db.commit()
     await db.refresh(trip)
     if _HAS_FIRESTORE:
         try:
-            firestore_sync.sync_trip_status(trip_id=trip.id, status="canceled", cancel_reason=reason)
+            cancelled_by = "driver" if user.id == trip.driver_id else "rider"
+            firestore_sync.sync_trip_status(
+                trip_id=trip.id, status="canceled",
+                cancel_reason=reason,
+                cancellation_fee=cancellation_fee,
+                cancelled_by=cancelled_by,
+                payment_status=trip.payment_status,
+            )
         except Exception as e:
             logging.error("Firestore sync on cancel_trip failed: %s", e)
 
     # ── n8n webhook trigger ──
+    _cancelled_by = "driver" if user.id == trip.driver_id else "rider"
     asyncio.ensure_future(_n8n_fire("trip-cancelled", {
         "trip_id": trip.id, "rider_id": trip.rider_id, "driver_id": trip.driver_id,
-        "cancel_reason": reason or "", "cancelled_by": "rider",
+        "cancel_reason": reason or "", "cancelled_by": _cancelled_by,
         "cancellation_fee": cancellation_fee,
+        "payment_status": trip.payment_status,
         "previous_status": trip.status,
         "pickup_address": trip.pickup_address or "",
         "dropoff_address": trip.dropoff_address or "",
     }))
 
-    return {**_trip_dict_for_user(trip, user), "cancellation_fee": cancellation_fee}
+    return {**_trip_dict_for_user(trip, user), "cancellation_fee": cancellation_fee, "payment_status": trip.payment_status}
 
 # ═══════════════════════════════════════════════════════
 #  LIVE TRIP SHARING  ENDPOINTS
@@ -872,7 +900,11 @@ async def request_fare_split(
     await db.commit()
     await db.refresh(fare_split)
     
-    # TODO: Send SMS invite to invitee_phone
+    # Send SMS invite to invitee_phone using Twilio
+    from services.email_sms_service import _send_sms
+    trip_link = f"cruiseapp://trips/{trip_id}/split/{fare_split.id}"  # Deep link
+    sms_message = f"Your friend is sharing a ride for ${split_amount:.2f}. Accept here: {trip_link}"
+    _send_sms(invitee_phone, sms_message)  # Fire-and-forget SMS
     
     return {
         "id": fare_split.id,

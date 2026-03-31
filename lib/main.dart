@@ -432,11 +432,22 @@ class _UberCloneAppState extends State<UberCloneApp>
 
 /// Route generator for smooth transitions
 Widget _getPageForRoute(RouteSettings settings) {
-  // Add your route cases here
-  switch (settings.name) {
-    default:
-      return const SplashScreen();
+  // Deep link handling: store deep link data in UserSession for later processing
+  // Format examples:
+  // - cruiseapp://trips/{trip_id}/split/{split_id} (fare-split accept)
+  // - cruiseapp://promo?code=SUMMER20 (promo code)
+  // - cruiseapp://referral?ref={code} (referral)
+  if (settings.name != null && settings.name!.isNotEmpty) {
+    try {
+      final uri = Uri.parse(settings.name ?? '');
+      // Store deep link for splash screen to process
+      UserSession.currentDeepLink = uri;
+    } catch (e) {
+      debugPrint('[DeepLink] Parse error: $e');
+    }
   }
+  // Always go through splash - it will check and process deep links
+  return const SplashScreen();
 }
 
 /// Color blind simulation filter matrices.

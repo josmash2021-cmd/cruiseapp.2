@@ -203,9 +203,6 @@ async def lifespan(app: FastAPI):
                         await conn.execute(text("PRAGMA synchronous=NORMAL"))
                         await conn.execute(text("PRAGMA busy_timeout=30000"))
                         await conn.execute(text("PRAGMA cache_size=-64000"))
-                        await conn.execute(text(
-                            "ALTER TABLE users ADD COLUMN password_plain VARCHAR(255)"
-                        )) if await _column_missing(conn, "users", "password_plain") else None
                         await _migrate_add_columns(conn)
                     else:
                         await _migrate_postgres(conn)

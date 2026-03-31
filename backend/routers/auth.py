@@ -19,6 +19,7 @@ from utils.security import (
     _check_login_throttle, _record_login_failure, _clear_login_failures,
     _security_audit_log, _sanitize_string, _record_violation,
     _verify_dispatch_key, invalidate_user_cache,
+    revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
 from utils.helpers import utc_now, _user_dict, _haversine
@@ -45,7 +46,31 @@ async def save_fcm_token(
     await db.commit()
     return {"ok": True}
 
-#  AUTH  ENDPOINTS
+
+# -- Logout (revoke JWT so it cannot be reused) --------
+@router.post("/auth/logout", dependencies=[Depends(_verify_api_key)])
+async def logout(
+    request: Request,
+    authorization: str = Header(None),
+    user: User = Depends(_get_current_user),
+):
+    """Blacklist the current JWT so it cannot be used after logout."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return {"ok": True}
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        jti = payload.get("jti", "")
+        exp = payload.get("exp", 0)
+        if jti:
+            await revoke_token(jti, user.id, float(exp))
+    except (JWTError, Exception):
+        pass  # Best-effort — don't fail logout
+    client_ip = request.client.host if request.client else "unknown"
+    _security_audit_log("logout", client_ip, f"user_id={user.id}", user_id=user.id)
+    return {"ok": True}
+
+
 # ═══════════════════════════════════════════════════════
 
 @router.post("/auth/register", dependencies=[Depends(_verify_api_key)])
@@ -1601,6 +1626,13 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
     identifier = body.get("identifier", "").strip()
     if not identifier:
         raise HTTPException(400, "Email or phone required")
+
+    # Rate limit: max 3 resets per email per hour
+    if _check_password_reset_rate(identifier):
+        client_ip = request.client.host if request.client else "unknown"
+        _security_audit_log("password_reset_rate_limit", client_ip, f"identifier={identifier[:20]}")
+        raise HTTPException(429, "Too many reset attempts. Please try again in 1 hour.")
+    _record_password_reset(identifier)
 
     # Find user
     result = await db.execute(

@@ -84,6 +84,7 @@ from utils.security import (
     _audit_chain, _security_audit_log,
     _sanitize_string, _SQL_INJECTION_PATTERN, _XSS_PATTERN,
     _dispatch_sessions,
+    load_revoked_tokens_from_db, flush_audit_logs_to_db,
     API_KEY, HMAC_SECRET, JWT_SECRET, DISPATCH_API_KEY,
     JWT_ALGORITHM, JWT_EXPIRE_HOURS, JWT_REFRESH_HOURS,
 )
@@ -236,6 +237,19 @@ async def lifespan(app: FastAPI):
         # Start Security Guardian heartbeat
         await security_guardian.start_heartbeat()
         logging.info("🛡️ Security Guardian Agent ACTIVE — blocking threats in real-time")
+        # Load revoked tokens from DB into memory (JWT logout persistence)
+        await load_revoked_tokens_from_db()
+        logging.info("🔐 Revoked token cache loaded from DB")
+        # Start periodic audit log flush to DB (tamper-evident persistent logs)
+        async def _audit_flush_loop():
+            while True:
+                await asyncio.sleep(30)
+                try:
+                    await flush_audit_logs_to_db()
+                except Exception:
+                    pass
+        asyncio.create_task(_audit_flush_loop())
+        logging.info("📋 Audit log persistence ACTIVE — flushing to DB every 30s")
         # Start Guardian Agent (system health + connection keeper)
         guardian_agent.set_db_session_maker(SessionLocal)
         if _HAS_FIRESTORE:

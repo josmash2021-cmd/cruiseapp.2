@@ -594,8 +594,342 @@ class RequestGuardian:
         }
 
 
+
+
 # ══════════════════════════════════════════════════════════════════════════════
-# 6. MASTER GUARDIAN — Orchestrates all guardians
+# NEW MONITORING AGENTS (7–11)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class PaymentMonitor:
+    """Monitor Stripe payment intents stuck in 'authorized'/'requires_capture'.
+    Stripe allows 7 days max — we capture or cancel before they expire."""
+
+    INTERVAL = 3600  # check every hour
+    MAX_AGE_DAYS = 6  # flag intents older than 6 days
+
+    def __init__(self):
+        self._db_session_maker = None
+        self._cancelled = 0
+        self._checked = 0
+
+    def set_db_session_maker(self, sm):
+        self._db_session_maker = sm
+
+    async def monitor(self):
+        await asyncio.sleep(60)  # wait for server startup
+        while True:
+            try:
+                await self._check_stuck_payment_intents()
+            except Exception as e:
+                logger.error("[PaymentMonitor] Error: %s", e)
+            await asyncio.sleep(self.INTERVAL)
+
+    async def _check_stuck_payment_intents(self):
+        if not self._db_session_maker:
+            return
+        try:
+            import stripe
+            from sqlalchemy import select, text as sql_text
+            from models.database import Trip
+        except ImportError:
+            return
+
+        cutoff_iso = datetime.now(timezone.utc).replace(tzinfo=None)
+        cutoff_iso = cutoff_iso.replace(hour=0, minute=0, second=0)
+        from datetime import timedelta
+        cutoff = cutoff_iso - timedelta(days=self.MAX_AGE_DAYS)
+
+        async with self._db_session_maker() as db:
+            result = await db.execute(
+                select(Trip).where(
+                    Trip.payment_status == "authorized",
+                    Trip.stripe_payment_intent_id.isnot(None),
+                    Trip.created_at < cutoff,
+                )
+            )
+            trips = result.scalars().all()
+            self._checked += len(trips)
+            for trip in trips:
+                try:
+                    pi = stripe.PaymentIntent.retrieve(trip.stripe_payment_intent_id)
+                    if pi.status == "requires_capture":
+                        # Cancel it — trip is too old to capture
+                        stripe.PaymentIntent.cancel(trip.stripe_payment_intent_id)
+                        trip.payment_status = "cancelled"
+                        self._cancelled += 1
+                        logger.warning(
+                            "[PaymentMonitor] Cancelled stale PaymentIntent %s (trip %d, age >%dd)",
+                            trip.stripe_payment_intent_id, trip.id, self.MAX_AGE_DAYS
+                        )
+                except Exception as e:
+                    logger.warning("[PaymentMonitor] Stripe error for trip %d: %s", trip.id, e)
+            if trips:
+                await db.commit()
+
+    def get_stats(self) -> dict:
+        return {"checked": self._checked, "cancelled": self._cancelled}
+
+
+class TripAnomalyDetector:
+    """Detect trips stuck in 'in_progress' for more than 2 hours.
+    These are likely abandoned — auto-flag for admin review."""
+
+    INTERVAL = 900  # check every 15 minutes
+    MAX_TRIP_HOURS = 2
+
+    def __init__(self):
+        self._db_session_maker = None
+        self._flagged = 0
+
+    def set_db_session_maker(self, sm):
+        self._db_session_maker = sm
+
+    async def detect(self):
+        await asyncio.sleep(120)  # wait for startup
+        while True:
+            try:
+                await self._find_stuck_trips()
+            except Exception as e:
+                logger.error("[TripAnomalyDetector] Error: %s", e)
+            await asyncio.sleep(self.INTERVAL)
+
+    async def _find_stuck_trips(self):
+        if not self._db_session_maker:
+            return
+        from datetime import timedelta
+        from sqlalchemy import select
+        try:
+            from models.database import Trip
+        except ImportError:
+            return
+
+        cutoff = datetime.utcnow() - timedelta(hours=self.MAX_TRIP_HOURS)
+        async with self._db_session_maker() as db:
+            result = await db.execute(
+                select(Trip).where(
+                    Trip.status == "in_progress",
+                    Trip.started_at < cutoff,
+                )
+            )
+            stuck = result.scalars().all()
+            for trip in stuck:
+                age_h = (datetime.utcnow() - trip.started_at).total_seconds() / 3600
+                logger.warning(
+                    "[TripAnomalyDetector] Trip %d stuck in_progress for %.1fh — flagging as anomaly",
+                    trip.id, age_h
+                )
+                trip.status = "anomaly"
+                self._flagged += 1
+            if stuck:
+                await db.commit()
+
+    def get_stats(self) -> dict:
+        return {"flagged": self._flagged}
+
+
+class DriverLocationStaleDetector:
+    """Detect drivers whose GPS location hasn't updated in 5+ minutes.
+    These drivers are likely disconnected — mark them as offline."""
+
+    INTERVAL = 120   # check every 2 minutes
+    STALE_SECS = 300  # 5 minutes = stale
+
+    def __init__(self):
+        self._db_session_maker = None
+        self._marked_offline = 0
+
+    def set_db_session_maker(self, sm):
+        self._db_session_maker = sm
+
+    async def detect(self):
+        await asyncio.sleep(180)  # wait for server startup
+        while True:
+            try:
+                await self._mark_disconnected_drivers()
+            except Exception as e:
+                logger.error("[DriverLocationStaleDetector] Error: %s", e)
+            await asyncio.sleep(self.INTERVAL)
+
+    async def _mark_disconnected_drivers(self):
+        try:
+            from routers.drivers import _driver_locations
+        except ImportError:
+            return
+        if not self._db_session_maker:
+            return
+
+        now = time.time()
+        stale_ids = [
+            did for did, loc in list(_driver_locations.items())
+            if loc.get("is_online") and (now - loc.get("ts", 0)) > self.STALE_SECS
+        ]
+        if not stale_ids:
+            return
+
+        from sqlalchemy import select
+        from models.database import User
+        async with self._db_session_maker() as db:
+            for did in stale_ids:
+                result = await db.execute(select(User).where(User.id == did))
+                user = result.scalar_one_or_none()
+                if user and user.is_online:
+                    user.is_online = False
+                    _driver_locations[did]["is_online"] = False
+                    self._marked_offline += 1
+                    logger.info(
+                        "[DriverLocationStaleDetector] Driver %d marked offline — GPS stale for >%ds",
+                        did, self.STALE_SECS
+                    )
+            await db.commit()
+
+    def get_stats(self) -> dict:
+        return {"marked_offline": self._marked_offline}
+
+
+class DBHealthMonitor:
+    """Continuously monitor DB query latency and long-running queries.
+    Logs warnings for latency > 500ms. Kills queries running > 60s on PostgreSQL."""
+
+    INTERVAL = 300   # check every 5 minutes
+    SLOW_MS = 500    # warn if latency > 500ms
+    KILL_SECS = 60   # kill queries running > 60s
+
+    def __init__(self):
+        self._db_session_maker = None
+        self._slow_queries = 0
+        self._total_checks = 0
+        self._last_latency_ms = 0.0
+
+    def set_db_session_maker(self, sm):
+        self._db_session_maker = sm
+
+    async def monitor(self):
+        await asyncio.sleep(90)  # wait for startup
+        while True:
+            try:
+                await self._check_db_health()
+            except Exception as e:
+                logger.error("[DBHealthMonitor] Error: %s", e)
+            await asyncio.sleep(self.INTERVAL)
+
+    async def _check_db_health(self):
+        if not self._db_session_maker:
+            return
+        from sqlalchemy import text as sql_text
+        self._total_checks += 1
+        async with self._db_session_maker() as db:
+            t0 = time.monotonic()
+            await db.execute(sql_text("SELECT 1"))
+            latency_ms = (time.monotonic() - t0) * 1000
+            self._last_latency_ms = latency_ms
+            if latency_ms > self.SLOW_MS:
+                self._slow_queries += 1
+                logger.warning(
+                    "[DBHealthMonitor] Slow DB ping: %.0fms (threshold: %dms)",
+                    latency_ms, self.SLOW_MS
+                )
+            else:
+                logger.debug("[DBHealthMonitor] DB ping %.0fms", latency_ms)
+
+            # Check for long-running queries on PostgreSQL
+            try:
+                result = await db.execute(sql_text(
+                    "SELECT pid, state, query_start, query "
+                    "FROM pg_stat_activity "
+                    "WHERE state = 'active' "
+                    "AND query_start < NOW() - INTERVAL '60 seconds' "
+                    "AND query NOT ILIKE '%pg_stat_activity%'"
+                ))
+                long_queries = result.fetchall()
+                for row in long_queries:
+                    logger.warning(
+                        "[DBHealthMonitor] Long-running query pid=%s (started %s): %s",
+                        row[0], row[2], str(row[3])[:120]
+                    )
+                    # Terminate the query to prevent DB lock buildup
+                    try:
+                        await db.execute(sql_text(f"SELECT pg_terminate_backend({row[0]})"))
+                        logger.warning("[DBHealthMonitor] Terminated long query pid=%s", row[0])
+                    except Exception:
+                        pass
+            except Exception:
+                pass  # SQLite doesn't have pg_stat_activity — ignore
+
+    def get_stats(self) -> dict:
+        return {
+            "total_checks": self._total_checks,
+            "slow_queries_detected": self._slow_queries,
+            "last_latency_ms": round(self._last_latency_ms, 1),
+        }
+
+
+class DispatchTimeoutAgent:
+    """Monitor dispatch offers that have been pending too long without a driver accepting.
+    After 5 minutes, expire the offer and notify the rider that no drivers are available."""
+
+    INTERVAL = 60     # check every minute
+    TIMEOUT_SECS = 300  # 5 minutes = timeout
+
+    def __init__(self):
+        self._db_session_maker = None
+        self._timed_out = 0
+
+    def set_db_session_maker(self, sm):
+        self._db_session_maker = sm
+
+    async def monitor(self):
+        await asyncio.sleep(90)
+        while True:
+            try:
+                await self._expire_pending_offers()
+            except Exception as e:
+                logger.error("[DispatchTimeoutAgent] Error: %s", e)
+            await asyncio.sleep(self.INTERVAL)
+
+    async def _expire_pending_offers(self):
+        if not self._db_session_maker:
+            return
+        from datetime import timedelta
+        from sqlalchemy import select, update
+        try:
+            from models.database import DispatchOffer, Trip
+        except ImportError:
+            return
+
+        cutoff = datetime.utcnow() - timedelta(seconds=self.TIMEOUT_SECS)
+        async with self._db_session_maker() as db:
+            result = await db.execute(
+                select(DispatchOffer).where(
+                    DispatchOffer.status == "pending",
+                    DispatchOffer.created_at < cutoff,
+                )
+            )
+            stale_offers = result.scalars().all()
+            for offer in stale_offers:
+                offer.status = "expired"
+                self._timed_out += 1
+                logger.info(
+                    "[DispatchTimeoutAgent] Offer %d expired (trip %d) — no driver accepted in %ds",
+                    offer.id, offer.trip_id, self.TIMEOUT_SECS
+                )
+                # Notify the rider via SSE if possible
+                try:
+                    from services.event_bus import event_bus
+                    await event_bus.push_event(f"rider_{offer.trip_id}", {
+                        "type": "dispatch_timeout",
+                        "message": "No drivers available right now. Please try again.",
+                    })
+                except Exception:
+                    pass
+            if stale_offers:
+                await db.commit()
+
+    def get_stats(self) -> dict:
+        return {"timed_out": self._timed_out}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 12. MASTER GUARDIAN — Orchestrates all guardians
 # ══════════════════════════════════════════════════════════════════════════════
 
 class MasterGuardian:
@@ -607,12 +941,19 @@ class MasterGuardian:
         self.data_guardian = DataGuardian()
         self.config_guardian = ConfigGuardian()
         self.request_guardian = RequestGuardian()
-        
+
+        # New monitoring agents
+        self.payment_monitor = PaymentMonitor()
+        self.trip_anomaly_detector = TripAnomalyDetector()
+        self.driver_location_detector = DriverLocationStaleDetector()
+        self.db_health_monitor = DBHealthMonitor()
+        self.dispatch_timeout_agent = DispatchTimeoutAgent()
+
         self._start_time = time.time()
         self._tasks: List[asyncio.Task] = []
         self._running = False
         self._heartbeat_interval = 300  # 5 minutes
-        
+
         # Set up emergency callback
         self.request_guardian.set_emergency_callback(self._emergency_system_check)
 
@@ -620,6 +961,11 @@ class MasterGuardian:
         """Configure database session maker for all guardians"""
         self.connection_keeper.set_db_session_maker(session_maker)
         self.data_guardian.set_db_session_maker(session_maker)
+        self.payment_monitor.set_db_session_maker(session_maker)
+        self.trip_anomaly_detector.set_db_session_maker(session_maker)
+        self.driver_location_detector.set_db_session_maker(session_maker)
+        self.db_health_monitor.set_db_session_maker(session_maker)
+        self.dispatch_timeout_agent.set_db_session_maker(session_maker)
 
     def set_firestore_db(self, firestore_db):
         """Configure Firestore database for guardians"""
@@ -652,6 +998,12 @@ class MasterGuardian:
             asyncio.create_task(self.data_guardian.guard_data(), name="data_guard"),
             asyncio.create_task(self.config_guardian.guard_config(), name="config_guard"),
             asyncio.create_task(self._heartbeat(), name="heartbeat"),
+            # New monitoring agents
+            asyncio.create_task(self.payment_monitor.monitor(), name="payment_monitor"),
+            asyncio.create_task(self.trip_anomaly_detector.detect(), name="trip_anomaly"),
+            asyncio.create_task(self.driver_location_detector.detect(), name="driver_stale"),
+            asyncio.create_task(self.db_health_monitor.monitor(), name="db_health"),
+            asyncio.create_task(self.dispatch_timeout_agent.monitor(), name="dispatch_timeout"),
         ]
 
         # If any guardian task crashes, log it but don't bring down the server
@@ -689,6 +1041,11 @@ class MasterGuardian:
             "data_guard": self.data_guardian.guard_data,
             "config_guard": self.config_guardian.guard_config,
             "heartbeat": self._heartbeat,
+            "payment_monitor": self.payment_monitor.monitor,
+            "trip_anomaly": self.trip_anomaly_detector.detect,
+            "driver_stale": self.driver_location_detector.detect,
+            "db_health": self.db_health_monitor.monitor,
+            "dispatch_timeout": self.dispatch_timeout_agent.monitor,
         }
         
         if task_name in task_map:
@@ -785,6 +1142,11 @@ class MasterGuardian:
             "data": self.data_guardian.get_stats(),
             "config": self.config_guardian.get_stats(),
             "requests": self.request_guardian.get_stats(),
+            "payment_monitor": self.payment_monitor.get_stats(),
+            "trip_anomaly_detector": self.trip_anomaly_detector.get_stats(),
+            "driver_location_detector": self.driver_location_detector.get_stats(),
+            "db_health_monitor": self.db_health_monitor.get_stats(),
+            "dispatch_timeout_agent": self.dispatch_timeout_agent.get_stats(),
         }
 
 

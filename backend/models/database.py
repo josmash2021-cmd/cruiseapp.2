@@ -435,6 +435,29 @@ class ServiceArea(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class RevokedToken(Base):
+    """JWT tokens explicitly revoked on logout — survives restarts."""
+    __tablename__ = "revoked_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    jti = Column(String(64), unique=True, nullable=False, index=True)  # JWT ID
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    revoked_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)  # match JWT exp — for cleanup
+
+
+class AuditLog(Base):
+    """Persistent tamper-evident security audit log — survives restarts."""
+    __tablename__ = "audit_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    ts = Column(DateTime, default=datetime.utcnow, index=True)
+    event = Column(String(100), nullable=False, index=True)
+    ip = Column(String(50), nullable=False)
+    user_id = Column(Integer, nullable=True, index=True)
+    details = Column(Text, nullable=True)
+    prev_hash = Column(String(64), nullable=True)   # hash chain link
+    entry_hash = Column(String(64), nullable=False)  # SHA-256 of this entry
+
+
 # ═══════════════════════════════════════════════════════
 #  Migration helpers
 # ═══════════════════════════════════════════════════════

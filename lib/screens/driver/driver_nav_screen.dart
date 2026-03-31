@@ -561,7 +561,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       if (extra != null) data.addAll(extra);
       await FirebaseFirestore.instance
           .collection('trips')
-          .doc(widget.tripId.toString())
+          .doc('sql_${widget.tripId}')
           .update(data);
     } catch (_) {}
   }
@@ -1228,7 +1228,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     try {
       final doc = await FirebaseFirestore.instance
           .collection('trips')
-          .doc(widget.tripId.toString())
+          .doc('sql_${widget.tripId}')
           .get();
       riderConfirmed = doc.data()?['rider_confirmed_pickup'] == true;
     } catch (_) {}

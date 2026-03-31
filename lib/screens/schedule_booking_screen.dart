@@ -1159,7 +1159,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                         ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                         ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
                         _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                        try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+                        try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
                         _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
                           below: 'road-label',
                         );

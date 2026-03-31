@@ -474,8 +474,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                     try {
                       final lid = _pointAnnotMgr!.id;
-                      await ctrl.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'viewport');
-                      await ctrl.style.setStyleLayerProperty(lid, 'icon-rotation-alignment', 'viewport');
+                      await ctrl.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'map');
+                      await ctrl.style.setStyleLayerProperty(lid, 'icon-rotation-alignment', 'map');
                       await ctrl.style.setStyleLayerProperty(lid, 'icon-anchor', 'bottom');
                       await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
                       await ctrl.style.setStyleLayerProperty(lid, 'icon-ignore-placement', true);

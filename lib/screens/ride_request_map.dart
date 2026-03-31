@@ -915,14 +915,14 @@ extension _RideRequestMap on _RideRequestScreenState {
       _pickupAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
         image: _goldPinIcon!,
-        iconSize: 0.65,
+        iconSize: 0.85,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
       ));
       _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
         image: _goldPinIcon!,
-        iconSize: 0.65,
+        iconSize: 0.85,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
       ));
@@ -978,7 +978,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (mgr == null) return;
 
     // During cinematic, pins start tiny and use pin-ONLY bitmaps (labels animate in later)
-    final scale = (!_cinematicDone || (_pinPopCtrl?.isAnimating ?? false)) ? 0.01 : 0.65;
+    final scale = (!_cinematicDone || (_pinPopCtrl?.isAnimating ?? false)) ? 0.01 : 0.85;
     final useLabels = _labelsRevealed;
 
     // Pickup marker

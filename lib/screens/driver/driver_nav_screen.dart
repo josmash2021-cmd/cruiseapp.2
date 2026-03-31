@@ -1540,35 +1540,32 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     final cx  = w / 2;
     final cy  = h / 2;
 
-    // ── 3D elliptical ground shadow ──
-    // Outer soft ellipse (large, very transparent)
+    // ── 3D elliptical ground shadow (centred below circle) ──
     c.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 10), width: 72, height: 20),
+      Rect.fromCenter(center: Offset(cx, cy + 12), width: 72, height: 20),
       Paint()
         ..color = Colors.black.withValues(alpha: 0.30)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
     );
-    // Mid ellipse (tighter, slightly darker)
     c.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 8), width: 52, height: 14),
+      Rect.fromCenter(center: Offset(cx, cy + 10), width: 52, height: 14),
       Paint()
         ..color = Colors.black.withValues(alpha: 0.22)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
-    // Inner core ellipse (smallest, darkest center)
     c.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 6), width: 30, height: 8),
+      Rect.fromCenter(center: Offset(cx, cy + 8), width: 30, height: 8),
       Paint()
         ..color = Colors.black.withValues(alpha: 0.15)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
     );
 
-    // ── White circle body ──
-    c.drawCircle(Offset(cx, cy - 2), 22, Paint()..color = Colors.white);
+    // ── White circle body (exactly centred) ──
+    c.drawCircle(Offset(cx, cy), 22, Paint()..color = Colors.white);
 
     // ── Gold ring border ──
     c.drawCircle(
-      Offset(cx, cy - 2), 22,
+      Offset(cx, cy), 22,
       Paint()
         ..color = const Color(0xFFD4A843).withValues(alpha: 0.50)
         ..style = PaintingStyle.stroke
@@ -1577,10 +1574,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
     // ── Gold directional chevron (points UP – rotated with iconRotate) ──
     final chevron = Path()
-      ..moveTo(cx,      cy - 15)
-      ..lineTo(cx + 8,  cy + 3)
-      ..lineTo(cx,      cy - 1)
-      ..lineTo(cx - 8,  cy + 3)
+      ..moveTo(cx,      cy - 13)
+      ..lineTo(cx + 8,  cy + 5)
+      ..lineTo(cx,      cy + 1)
+      ..lineTo(cx - 8,  cy + 5)
       ..close();
     c.drawPath(chevron, Paint()..color = const Color(0xFFD4A843));
 

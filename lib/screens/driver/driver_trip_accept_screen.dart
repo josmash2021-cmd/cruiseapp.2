@@ -143,10 +143,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   StreamSubscription<Position>? _gpsSub;
   static const _pickupRadiusMeters = 100.0;
 
-  // ── Ride started (passenger picked up) ──
+  // ── Arrived at pickup confirmation (driver slid "Arrived") ──
+  bool _arrivedConfirmed = false;
+  double _arrivedSlideVal = 0;
+  bool _arrivedSlidDone = false;
+
+  // ── Ride started (passenger picked up → second "Start Trip") ──
   bool _rideStarted = false;
-  double _rideSlideVal = 0;
-  bool _rideSlidDone = false;
+  double _startRideSlideVal = 0;
+  bool _startRideSlidDone = false;
 
   // ── Dropoff proximity + trip finish ──
   bool _nearDropoff = false;
@@ -185,14 +190,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       _tripStarted = true;
       _slid = true;
       _nearPickup = true;
+      _arrivedConfirmed = true;
+      _arrivedSlidDone = true;
     }
     // If ride already started (returning from dropoff nav), skip both sliders
     if (widget.rideStarted) {
       _tripStarted = true;
       _slid = true;
       _nearPickup = true;
+      _arrivedConfirmed = true;
+      _arrivedSlidDone = true;
       _rideStarted = true;
-      _rideSlidDone = true;
+      _startRideSlidDone = true;
     }
 
     _fadeCtrl = AnimationController(
@@ -392,6 +401,43 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       HapticFeedback.heavyImpact();
       _dropoffGpsSub?.cancel();
     }
+  }
+
+  // ── Confirm arrival at pickup (Arrived slider) ──────────────────────────
+  Future<void> _confirmArrival() async {
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() => _arrivedConfirmed = true);
+    });
+    // Notify rider + update backend status to 'arrived'
+    try {
+      await ApiService.updateTripStatus(tripId: widget.tripId, status: 'arrived');
+    } catch (_) {}
+    try {
+      await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.tripId.toString())
+          .update({
+        'status': 'arrived',
+        'arrivedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+
+  // ── Update trip status to in_trip when second Start Trip is slid ────────
+  Future<void> _updateTripInTrip() async {
+    try {
+      await ApiService.updateTripStatus(tripId: widget.tripId, status: 'in_trip');
+    } catch (_) {}
+    try {
+      await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.tripId.toString())
+          .update({
+        'status': 'in_trip',
+        'rideStartedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
   }
 
   // ── Complete trip (API + Firestore + navigate to online) ────────────────
@@ -1814,34 +1860,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
             const Spacer(),
 
-            // ── Bottom buttons: 4 phases ─────────────────────────────────
-            // Phase 1: Slide "Start Trip" (before arriving at pickup)
-            // Phase 2: Continue/Directions for pickup + Slide "Start Ride" (arrived at pickup)
-            // Phase 3: Continue/Directions for dropoff → Slide "Finalizar Viaje" (near dropoff)
-            // Phase 4: Trip finished overlay (handled outside this Column)
+            // ── Bottom buttons: 6 phases ─────────────────────────────────
+            // Phase 1: Slide "Start Trip" (driving to pickup)
+            // Phase 2: Continue/Directions (pickup nav)
+            // Phase 3: Slide "Arrived" (near pickup, GPS detected)
+            // Phase 4: Slide "Start Trip" #2 (confirmed arrival → go to dropoff)
+            // Phase 5: Continue/Directions (dropoff nav)
+            // Phase 6: Slide "Finalizar Viaje" (near dropoff, GPS detected)
             if (!_tripFinished)
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), bot + 18),
-              child: _rideStarted
-                  // Phase 3: Ride started → dropoff Continue/Directions or finish slider
-                  ? FadeTransition(
-                      opacity: _btnFadeAnim,
-                      child: _nearDropoff
-                          ? _buildSlideFinishTrip()
-                          : _buildContinueDirectionsDropoff(),
-                    )
-                  : _tripStarted
-                      // Phase 2: Arrived at pickup → only slide Start Ride
-                      ? FadeTransition(
-                          opacity: _btnFadeAnim,
-                          child: _buildSlideStartRide(),
-                        )
-                      // Phase 1: Slide Start Trip (driving to pickup)
-                      : AnimatedOpacity(
-                          opacity: _slid ? 0.0 : 1.0,
-                          duration: const Duration(milliseconds: 300),
-                          child: _buildSlideStartTrip(),
-                        ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                child: _buildCurrentPhaseWidget(),
+              ),
             ),
           ],
         ),
@@ -1905,11 +1939,38 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
+  // ── Phase router: returns the correct widget for the current state ────
+  Widget _buildCurrentPhaseWidget() {
+    // Phase 6: Near dropoff → Finalizar Viaje
+    if (_rideStarted && _nearDropoff) {
+      return _buildSlideFinishTrip();
+    }
+    // Phase 5: Ride started, not near dropoff → Continue/Directions (dropoff)
+    if (_rideStarted && !_nearDropoff) {
+      return _buildContinueDirectionsDropoff();
+    }
+    // Phase 4: Arrived confirmed, ride not started → second Start Trip
+    if (_arrivedConfirmed && !_rideStarted) {
+      return _buildSlideStartRide();
+    }
+    // Phase 3: Near pickup, not confirmed → Arrived slider
+    if (_tripStarted && _nearPickup && !_arrivedConfirmed) {
+      return _buildSlideArrived();
+    }
+    // Phase 2: Trip started, not near pickup → Continue/Directions (pickup)
+    if (_tripStarted && !_nearPickup) {
+      return _buildContinueDirections();
+    }
+    // Phase 1: Slide Start Trip
+    return _buildSlideStartTrip();
+  }
+
   // ── Slide-to-confirm "Start Trip" widget ────────────────────────────────
   Widget _buildSlideStartTrip() {
     const height = 62.0;
     const thumbW = 62.0;
     return Container(
+      key: const ValueKey('slide_start_trip'),
       decoration: BoxDecoration(
         color: const Color(0xFF111318),
         borderRadius: BorderRadius.circular(height / 2),
@@ -1975,7 +2036,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         Future.delayed(const Duration(milliseconds: 300), () {
                           if (!mounted) return;
                           setState(() => _tripStarted = true);
-                          _btnFadeCtrl.forward();
                           _openNativeMaps(widget.pickupLatLng);
                         });
                       }
@@ -2016,6 +2076,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Continue / Directions buttons (shown after slide) ───────────────────
   Widget _buildContinueDirections() {
     return Column(
+      key: const ValueKey('continue_directions_pickup'),
       mainAxisSize: MainAxisSize.min,
       children: [
         // Continue button — gold filled
@@ -2058,11 +2119,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
-  // ── Slide-to-confirm "Start Ride" (pickup → dropoff) ────────────────────
-  Widget _buildSlideStartRide() {
+  // ── Slide-to-confirm "Arrived" (at pickup) ──────────────────────────────
+  Widget _buildSlideArrived() {
     const height = 62.0;
     const thumbW = 62.0;
     return Container(
+      key: const ValueKey('slide_arrived'),
       decoration: BoxDecoration(
         color: const Color(0xFF111318),
         borderRadius: BorderRadius.circular(height / 2),
@@ -2086,7 +2148,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 // Fill
                 Positioned(
                   left: 0, top: 0, bottom: 0,
-                  width: (_rideSlideVal * maxDrag + thumbW).clamp(thumbW.toDouble(), trackW),
+                  width: (_arrivedSlideVal * maxDrag + thumbW).clamp(thumbW.toDouble(), trackW),
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -2102,9 +2164,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 // Label
                 Center(
                   child: AnimatedOpacity(
-                    opacity: 1.0 - _rideSlideVal,
+                    opacity: 1.0 - _arrivedSlideVal,
                     duration: const Duration(milliseconds: 100),
-                    child: const Text('Start Ride  →',
+                    child: const Text('Arrived  →',
                       style: TextStyle(
                         color: Colors.white70,
                         fontSize: 16, fontWeight: FontWeight.w700)),
@@ -2112,34 +2174,29 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 ),
                 // Thumb
                 Positioned(
-                  left: 2 + _rideSlideVal * maxDrag,
+                  left: 2 + _arrivedSlideVal * maxDrag,
                   top: 3, bottom: 3,
                   child: GestureDetector(
                     onHorizontalDragUpdate: (d) {
-                      if (_rideSlidDone) return;
+                      if (_arrivedSlidDone) return;
                       setState(() {
-                        _rideSlideVal = (_rideSlideVal + d.delta.dx / maxDrag)
+                        _arrivedSlideVal = (_arrivedSlideVal + d.delta.dx / maxDrag)
                             .clamp(0.0, 1.0);
                       });
-                      if (_rideSlideVal >= 0.88) {
-                        setState(() => _rideSlidDone = true);
+                      if (_arrivedSlideVal >= 0.88) {
+                        setState(() => _arrivedSlidDone = true);
                         HapticFeedback.heavyImpact();
-                        // Navigate to dropoff
-                        Future.delayed(const Duration(milliseconds: 300), () {
-                          if (!mounted) return;
-                          setState(() => _rideStarted = true);
-                          _goNavigateDropoff();
-                        });
+                        _confirmArrival();
                       }
                     },
                     onHorizontalDragEnd: (_) {
-                      if (!_rideSlidDone) setState(() => _rideSlideVal = 0);
+                      if (!_arrivedSlidDone) setState(() => _arrivedSlideVal = 0);
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 80),
                       width: thumbW - 4,
                       decoration: BoxDecoration(
-                        color: _rideSlidDone ? _gold.withValues(alpha: 0.8) : _gold,
+                        color: _arrivedSlidDone ? _gold.withValues(alpha: 0.8) : _gold,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
@@ -2150,7 +2207,117 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         ],
                       ),
                       child: Icon(
-                        _rideSlidDone ? Icons.check_rounded : Icons.chevron_right_rounded,
+                        _arrivedSlidDone ? Icons.check_rounded : Icons.chevron_right_rounded,
+                        color: Colors.black,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Slide-to-confirm "Start Trip" #2 (pickup confirmed → go to dropoff) ─
+  Widget _buildSlideStartRide() {
+    const height = 62.0;
+    const thumbW = 62.0;
+    return Container(
+      key: const ValueKey('slide_start_ride'),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111318),
+        borderRadius: BorderRadius.circular(height / 2),
+        border: Border.all(color: _gold.withValues(alpha: 0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          final trackW = constraints.maxWidth;
+          final maxDrag = trackW - thumbW - 4;
+          return SizedBox(
+            height: height,
+            child: Stack(
+              children: [
+                // Fill
+                Positioned(
+                  left: 0, top: 0, bottom: 0,
+                  width: (_startRideSlideVal * maxDrag + thumbW).clamp(thumbW.toDouble(), trackW),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          _gold.withValues(alpha: 0.45),
+                          _gold.withValues(alpha: 0.10),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(height / 2),
+                    ),
+                  ),
+                ),
+                // Label
+                Center(
+                  child: AnimatedOpacity(
+                    opacity: 1.0 - _startRideSlideVal,
+                    duration: const Duration(milliseconds: 100),
+                    child: const Text('Start Trip  →',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                // Thumb
+                Positioned(
+                  left: 2 + _startRideSlideVal * maxDrag,
+                  top: 3, bottom: 3,
+                  child: GestureDetector(
+                    onHorizontalDragUpdate: (d) {
+                      if (_startRideSlidDone) return;
+                      setState(() {
+                        _startRideSlideVal = (_startRideSlideVal + d.delta.dx / maxDrag)
+                            .clamp(0.0, 1.0);
+                      });
+                      if (_startRideSlideVal >= 0.88) {
+                        setState(() => _startRideSlidDone = true);
+                        HapticFeedback.heavyImpact();
+                        // Update status + navigate to dropoff
+                        Future.delayed(const Duration(milliseconds: 300), () {
+                          if (!mounted) return;
+                          setState(() => _rideStarted = true);
+                          _startDropoffProximityDetection();
+                          _updateTripInTrip();
+                          _openNativeMaps(widget.dropoffLatLng);
+                        });
+                      }
+                    },
+                    onHorizontalDragEnd: (_) {
+                      if (!_startRideSlidDone) setState(() => _startRideSlideVal = 0);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 80),
+                      width: thumbW - 4,
+                      decoration: BoxDecoration(
+                        color: _startRideSlidDone ? _gold.withValues(alpha: 0.8) : _gold,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: 0.5),
+                            blurRadius: 12,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        _startRideSlidDone ? Icons.check_rounded : Icons.chevron_right_rounded,
                         color: Colors.black,
                         size: 28,
                       ),
@@ -2170,6 +2337,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     const height = 62.0;
     const thumbW = 62.0;
     return Container(
+      key: const ValueKey('slide_finish_trip'),
       decoration: BoxDecoration(
         color: const Color(0xFF111318),
         borderRadius: BorderRadius.circular(height / 2),
@@ -2269,6 +2437,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Continue / Directions for DROPOFF (after ride started) ──────────────
   Widget _buildContinueDirectionsDropoff() {
     return Column(
+      key: const ValueKey('continue_directions_dropoff'),
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(

@@ -1,3 +1,5 @@
+import 'privacy_policy_screen.dart';
+import 'terms_of_service_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
@@ -135,14 +137,22 @@ class _AboutScreenState extends State<AboutScreen> {
                 c,
                 Icons.description_outlined,
                 S.of(context).termsOfService,
-                onTap: () => _openUrl('https://cruiseride.com/terms'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const TermsOfServiceScreen(),
+                  ),
+                ),
               ),
               const SizedBox(height: 10),
               _infoItem(
                 c,
                 Icons.privacy_tip_outlined,
                 S.of(context).privacyPolicy,
-                onTap: () => _openUrl('https://cruiseride.com/privacy'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const PrivacyPolicyScreen(),
+                  ),
+                ),
               ),
               const SizedBox(height: 10),
               _infoItem(

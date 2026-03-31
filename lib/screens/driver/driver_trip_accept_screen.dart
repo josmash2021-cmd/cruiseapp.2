@@ -8,6 +8,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:firebase_auth/firebase_auth.dart';
@@ -57,6 +58,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
     this.pickupInstructions = '',
     this.dropoffInstructions = '',
     this.arrivedAtPickup = false,
+    this.rideStarted = false,
   });
 
   final int tripId;
@@ -77,6 +79,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
   final String pickupInstructions;
   final String dropoffInstructions;
   final bool arrivedAtPickup;
+  final bool rideStarted;
 
   @override
   State<DriverTripAcceptScreen> createState() => _DriverTripAcceptScreenState();
@@ -130,6 +133,16 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Mini map animation already played flag ──
   bool _miniMapAnimDone = false;
 
+  // ── Arrived at pickup detection ──
+  bool _nearPickup = false;
+  StreamSubscription<Position>? _gpsSub;
+  static const _pickupRadiusMeters = 100.0;
+
+  // ── Ride started (passenger picked up) ──
+  bool _rideStarted = false;
+  double _rideSlideVal = 0;
+  bool _rideSlidDone = false;
+
   // ── Trip distance pickup→dropoff ─────────────────────────────────────────
   double get _tripKm {
     const r = 6371.0;
@@ -155,6 +168,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (widget.arrivedAtPickup) {
       _tripStarted = true;
       _slid = true;
+      _nearPickup = true;
+    }
+    // If ride already started (returning from dropoff nav), skip both sliders
+    if (widget.rideStarted) {
+      _tripStarted = true;
+      _slid = true;
+      _nearPickup = true;
+      _rideStarted = true;
+      _rideSlidDone = true;
     }
 
     _fadeCtrl = AnimationController(
@@ -194,13 +216,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _btnFadeCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 350),
-      value: widget.arrivedAtPickup ? 1.0 : 0.0,
+      value: (widget.arrivedAtPickup || widget.rideStarted) ? 1.0 : 0.0,
     );
     _btnFadeAnim = CurvedAnimation(parent: _btnFadeCtrl, curve: Curves.easeOut);
+
+    // Start GPS proximity detection for pickup (only if not already picked up)
+    if (!widget.rideStarted) _startPickupProximityDetection();
   }
 
   @override
   void dispose() {
+    _gpsSub?.cancel();
     _fadeCtrl.dispose();
     _slideCtrl.dispose();
     _tiltCtrl.dispose();
@@ -272,6 +298,68 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       }
     }
     if (mounted) setState(() => _resolvingAddresses = false);
+  }
+
+  // ── GPS proximity detection for pickup ──────────────────────────────────
+  void _startPickupProximityDetection() {
+    // Check initial position
+    _checkPickupProximity(widget.driverPos);
+    // Listen to GPS updates
+    _gpsSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((pos) {
+      if (!mounted || _nearPickup) return;
+      _checkPickupProximity(LatLng(pos.latitude, pos.longitude));
+    });
+  }
+
+  void _checkPickupProximity(LatLng driverPos) {
+    final distM = _haversineMeters(driverPos, widget.pickupLatLng);
+    if (distM <= _pickupRadiusMeters && !_nearPickup) {
+      setState(() => _nearPickup = true);
+      HapticFeedback.heavyImpact();
+      _gpsSub?.cancel(); // Stop listening once arrived
+    }
+  }
+
+  double _haversineMeters(LatLng a, LatLng b) {
+    const r = 6371000.0; // Earth radius in meters
+    final dLat = (b.latitude  - a.latitude)  * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final s = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(a.latitude * math.pi / 180) *
+        math.cos(b.latitude * math.pi / 180) *
+        math.sin(dLng / 2) * math.sin(dLng / 2);
+    return r * 2 * math.atan2(math.sqrt(s), math.sqrt(1 - s));
+  }
+
+  // ── Navigate to dropoff (ride started) ─────────────────────────────────
+  void _goNavigateDropoff({bool overview = false}) {
+    HapticFeedback.mediumImpact();
+    Navigator.of(context).pushReplacement(
+      slideUpFadeRoute(
+        DriverNavScreen(
+          tripId:          widget.tripId,
+          riderName:       widget.riderName,
+          riderPhotoUrl:   widget.riderPhotoUrl,
+          riderRating:     widget.riderRating,
+          pickupLatLng:    widget.pickupLatLng,
+          dropoffLatLng:   widget.dropoffLatLng,
+          pickupAddress:   _pickupAddr,
+          dropoffAddress:  _dropoffAddr,
+          fare:            widget.fare,
+          vehicleType:     widget.vehicleType,
+          driverPos:       widget.driverPos,
+          routePoints:     widget.routePoints,
+          riderPhone:      widget.riderPhone,
+          startWithOverview: overview,
+          startInTripMode: true,
+        ),
+      ),
+    );
   }
 
   // ── Navigation ────────────────────────────────────────────────────────────
@@ -1620,19 +1708,39 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
             const Spacer(),
 
-            // ── Slide to start / Continue+Directions ─────────────────────
+            // ── Bottom buttons: 3 phases ─────────────────────────────────
+            // Phase 1: Slide "Start Trip" (before arriving at pickup)
+            // Phase 2: Continue/Directions for pickup + Slide "Start Ride" (arrived at pickup, not yet started ride)
+            // Phase 3: Continue/Directions for dropoff (ride started)
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), bot + 18),
-              child: _tripStarted
+              child: _rideStarted
+                  // Phase 3: Ride started → Continue/Directions for dropoff
                   ? FadeTransition(
                       opacity: _btnFadeAnim,
-                      child: _buildContinueDirections(),
+                      child: _buildContinueDirectionsDropoff(),
                     )
-                  : AnimatedOpacity(
-                      opacity: _slid ? 0.0 : 1.0,
-                      duration: const Duration(milliseconds: 300),
-                      child: _buildSlideStartTrip(),
-                    ),
+                  : _tripStarted
+                      // Phase 2: Arrived at pickup → show Continue/Directions + slide Start Ride
+                      ? FadeTransition(
+                          opacity: _btnFadeAnim,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildContinueDirections(),
+                              if (_nearPickup && !_rideSlidDone) ...[
+                                const SizedBox(height: 12),
+                                _buildSlideStartRide(),
+                              ],
+                            ],
+                          ),
+                        )
+                      // Phase 1: Slide Start Trip
+                      : AnimatedOpacity(
+                          opacity: _slid ? 0.0 : 1.0,
+                          duration: const Duration(milliseconds: 300),
+                          child: _buildSlideStartTrip(),
+                        ),
             ),
           ],
         ),
@@ -1778,6 +1886,156 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           height: 56,
           child: OutlinedButton(
             onPressed: () => _goNavigate(overview: true),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.white24, width: 1.5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Directions',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Slide-to-confirm "Start Ride" (pickup → dropoff) ────────────────────
+  Widget _buildSlideStartRide() {
+    const height = 62.0;
+    const thumbW = 62.0;
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF111318),
+        borderRadius: BorderRadius.circular(height / 2),
+        border: Border.all(color: _gold.withValues(alpha: 0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          final trackW = constraints.maxWidth;
+          final maxDrag = trackW - thumbW - 4;
+          return SizedBox(
+            height: height,
+            child: Stack(
+              children: [
+                // Fill
+                Positioned(
+                  left: 0, top: 0, bottom: 0,
+                  width: (_rideSlideVal * maxDrag + thumbW).clamp(thumbW.toDouble(), trackW),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          _gold.withValues(alpha: 0.45),
+                          _gold.withValues(alpha: 0.10),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(height / 2),
+                    ),
+                  ),
+                ),
+                // Label
+                Center(
+                  child: AnimatedOpacity(
+                    opacity: 1.0 - _rideSlideVal,
+                    duration: const Duration(milliseconds: 100),
+                    child: const Text('Start Ride  →',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                // Thumb
+                Positioned(
+                  left: 2 + _rideSlideVal * maxDrag,
+                  top: 3, bottom: 3,
+                  child: GestureDetector(
+                    onHorizontalDragUpdate: (d) {
+                      if (_rideSlidDone) return;
+                      setState(() {
+                        _rideSlideVal = (_rideSlideVal + d.delta.dx / maxDrag)
+                            .clamp(0.0, 1.0);
+                      });
+                      if (_rideSlideVal >= 0.88) {
+                        setState(() => _rideSlidDone = true);
+                        HapticFeedback.heavyImpact();
+                        // Navigate to dropoff
+                        Future.delayed(const Duration(milliseconds: 300), () {
+                          if (!mounted) return;
+                          setState(() => _rideStarted = true);
+                          _goNavigateDropoff();
+                        });
+                      }
+                    },
+                    onHorizontalDragEnd: (_) {
+                      if (!_rideSlidDone) setState(() => _rideSlideVal = 0);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 80),
+                      width: thumbW - 4,
+                      decoration: BoxDecoration(
+                        color: _rideSlidDone ? _gold.withValues(alpha: 0.8) : _gold,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: 0.5),
+                            blurRadius: 12,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        _rideSlidDone ? Icons.check_rounded : Icons.chevron_right_rounded,
+                        color: Colors.black,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Continue / Directions for DROPOFF (after ride started) ──────────────
+  Widget _buildContinueDirectionsDropoff() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: ElevatedButton(
+            onPressed: () => _goNavigateDropoff(overview: false),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _gold,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              elevation: 0,
+            ),
+            child: const Text('Continue',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: OutlinedButton(
+            onPressed: () => _goNavigateDropoff(overview: true),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Colors.white24, width: 1.5),
               shape: RoundedRectangleBorder(

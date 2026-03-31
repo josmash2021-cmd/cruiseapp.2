@@ -1435,7 +1435,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           etaMinutes:      _etaMinutes,
           routePoints:     _pickupDropoffRoute,
           riderPhone:      widget.riderPhone,
-          arrivedAtPickup: _phase == TripPhase.arrivedPickup,
+          arrivedAtPickup: _phase == TripPhase.arrivedPickup || _phase == TripPhase.onTrip,
+          rideStarted:     _phase == TripPhase.onTrip,
         ),
       ),
     );

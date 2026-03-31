@@ -1042,14 +1042,16 @@ extension _RideRequestMap on _RideRequestScreenState {
     final screenH = MediaQuery.of(context).size.height;
     final botPad = MediaQuery.of(context).padding.bottom;
     final phase = _ctrl.state.phase;
-    // Bottom padding must account for full panel height + safe area + margin
+    // The map is full-screen but the bottom panel covers ~55-65%.
+    // We need enough bottom padding so the route fits in the visible
+    // map area ABOVE the panel, but not so much it over-compresses.
     final double bottomPad;
     if (phase == RiderPhase.requesting || phase == RiderPhase.searchingDriver) {
-      bottomPad = 180 + botPad + 20;
+      bottomPad = 160 + botPad;
     } else {
-      // Route preview sheet: 45% of screen (clamped 320-420) + safe area + margin
-      final sheetH = (screenH * 0.45).clamp(320.0, 420.0) + botPad;
-      bottomPad = sheetH + 20;
+      // Panel covers roughly bottom 55% of screen; visible map area is top ~45%.
+      // Use a moderate padding so camera zooms out to show full route clearly.
+      bottomPad = (screenH * 0.52).clamp(280.0, 380.0) + botPad;
     }
     _mapCtrl!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
@@ -1058,7 +1060,7 @@ extension _RideRequestMap on _RideRequestScreenState {
         pitch: preserveCamera ? 55.0 : null,
         bearing: preserveCamera ? _randomBearing : null,
       ),
-      mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60),
+      mapbox.MbxEdgeInsets(top: 60, left: 40, bottom: bottomPad, right: 40),
       null, null,
     ).then((cam) {
       _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));

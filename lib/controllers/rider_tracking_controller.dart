@@ -468,6 +468,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _distanceMiles = remainingM / 1609.34;
     _etaMinutes = (_distanceMiles / 0.5).ceil().clamp(1, 99);
 
+    if (!mounted) return;
     _setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _fitAllPoints();

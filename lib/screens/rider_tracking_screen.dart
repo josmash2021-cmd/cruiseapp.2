@@ -178,6 +178,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   final int _pollFailCount = 0;
   bool _cancelDialogShown = false; // guard: prevents duplicate cancel dialogs
 
+  // ── More-menu dropdown & cancel overlay ──
+  bool _showMoreMenu = false;
+  int _cancelOverlayPhase = 0; // 0=hidden, 1=cancelling(spinner), 2=done(checkmark)
+
   // ── Mutable driver photo URL (updated from Firestore) ──
   String? _driverPhotoUrl;
 
@@ -378,6 +382,19 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   right: 24,
                   child: _buildConnectionLostBanner(),
                 ),
+              // MORE menu overlay (tap-away dismisses)
+              if (_showMoreMenu) ...[  
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _showMoreMenu = false),
+                    behavior: HitTestBehavior.opaque,
+                    child: const ColoredBox(color: Colors.transparent),
+                  ),
+                ),
+                _buildMoreMenuOverlay(topPad),
+              ],
+              // CANCEL overlay (blur + spinner / checkmark)
+              if (_cancelOverlayPhase > 0) _buildCancelOverlay(),
             ],
           ),
         ),

@@ -184,6 +184,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   String? _savedCardLast4;
   String? _savedCardBrand;
   bool _isProcessingPayment = false;
+  bool _rideFlowLocked = false;
   bool _showPaymentDeclinedBanner = false;
   String? _heldPaymentIntentId;
 

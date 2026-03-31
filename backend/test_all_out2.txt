@@ -1,0 +1,1578 @@
+﻿...........FFFFF.F...F.F.FFFFF..........................FF....           [100%]
+================================== FAILURES ===================================
+____________________ test_checkr_webhook_invalid_signature ____________________
+backend\tests\test_checkr_webhooks.py:36: in test_checkr_webhook_invalid_signature
+    assert resp.status_code == 401
+E   assert 500 == 401
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+---------------------------- Captured stderr call -----------------------------
+ERROR:root:[CRASH] Unhandled error from 127.0.0.1 on /webhooks/checkr: name 'hmac' is not defined
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\drivers.py", line 905, in checkr_webhook
+    expected = hmac.new(
+               ^^^^
+NameError: name 'hmac' is not defined
+
+------------------------------ Captured log call ------------------------------
+ERROR    root:main.py:447 [CRASH] Unhandled error from 127.0.0.1 on /webhooks/checkr: name 'hmac' is not defined
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\drivers.py", line 905, in checkr_webhook
+    expected = hmac.new(
+               ^^^^
+NameError: name 'hmac' is not defined
+_________________ test_checkr_webhook_report_completed_clear __________________
+backend\tests\test_checkr_webhooks.py:69: in test_checkr_webhook_report_completed_clear
+    assert resp.status_code == 200
+E   assert 500 == 200
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+---------------------------- Captured stderr call -----------------------------
+ERROR:root:[CRASH] Unhandled error from 127.0.0.1 on /webhooks/checkr: name 'hmac' is not defined
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\drivers.py", line 905, in checkr_webhook
+    expected = hmac.new(
+               ^^^^
+NameError: name 'hmac' is not defined
+
+------------------------------ Captured log call ------------------------------
+ERROR    root:main.py:447 [CRASH] Unhandled error from 127.0.0.1 on /webhooks/checkr: name 'hmac' is not defined
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\drivers.py", line 905, in checkr_webhook
+    expected = hmac.new(
+               ^^^^
+NameError: name 'hmac' is not defined
+________________ test_checkr_webhook_report_completed_consider ________________
+backend\tests\test_checkr_webhooks.py:109: in test_checkr_webhook_report_completed_consider
+    assert resp.status_code == 200
+E   assert 500 == 200
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+---------------------------- Captured stderr call -----------------------------
+ERROR:root:[CRASH] Unhandled error from 127.0.0.1 on /webhooks/checkr: name 'hmac' is not defined
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\drivers.py", line 905, in checkr_webhook
+    expected = hmac.new(
+               ^^^^
+NameError: name 'hmac' is not defined
+
+------------------------------ Captured log call ------------------------------
+ERROR    root:main.py:447 [CRASH] Unhandled error from 127.0.0.1 on /webhooks/checkr: name 'hmac' is not defined
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\drivers.py", line 905, in checkr_webhook
+    expected = hmac.new(
+               ^^^^
+NameError: name 'hmac' is not defined
+__________________ test_checkr_webhook_invitation_completed ___________________
+backend\tests\test_checkr_webhooks.py:143: in test_checkr_webhook_invitation_completed
+    assert resp.status_code == 200
+E   assert 500 == 200
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+---------------------------- Captured stderr call -----------------------------
+ERROR:root:[CRASH] Unhandled error from 127.0.0.1 on /webhooks/checkr: name 'hmac' is not defined
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\drivers.py", line 905, in checkr_webhook
+    expected = hmac.new(
+               ^^^^
+NameError: name 'hmac' is not defined
+
+------------------------------ Captured log call ------------------------------
+ERROR    root:main.py:447 [CRASH] Unhandled error from 127.0.0.1 on /webhooks/checkr: name 'hmac' is not defined
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\drivers.py", line 905, in checkr_webhook
+    expected = hmac.new(
+               ^^^^
+NameError: name 'hmac' is not defined
+________________________ test_dispatch_assigns_driver _________________________
+backend\tests\test_dispatch.py:25: in test_dispatch_assigns_driver
+    assert resp.status_code in (200, 404, 422)
+E   assert 500 in (200, 404, 422)
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+---------------------------- Captured stderr call -----------------------------
+ERROR:root:[CRASH] Unhandled error from 127.0.0.1 on /admin/dispatch: cannot access local variable 'math' where it is not associated with a value
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\admin.py", line 279, in admin_dispatch_trip
+    _lng_delta = _search_radius / (111.0 * max(math.cos(math.radians(trip.pickup_lat)), 0.01))
+                                               ^^^^
+UnboundLocalError: cannot access local variable 'math' where it is not associated with a value
+
+------------------------------ Captured log call ------------------------------
+ERROR    root:main.py:447 [CRASH] Unhandled error from 127.0.0.1 on /admin/dispatch: cannot access local variable 'math' where it is not associated with a value
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\admin.py", line 279, in admin_dispatch_trip
+    _lng_delta = _search_radius / (111.0 * max(math.cos(math.radians(trip.pickup_lat)), 0.01))
+                                               ^^^^
+UnboundLocalError: cannot access local variable 'math' where it is not associated with a value
+____________________________ test_dispatch_no_auth ____________________________
+backend\tests\test_dispatch.py:57: in test_dispatch_no_auth
+    assert resp.status_code in (401, 403)
+E   assert 500 in (401, 403)
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+---------------------------- Captured stderr call -----------------------------
+ERROR:root:[CRASH] Unhandled error from 127.0.0.1 on /admin/dispatch: cannot access local variable 'math' where it is not associated with a value
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\admin.py", line 279, in admin_dispatch_trip
+    _lng_delta = _search_radius / (111.0 * max(math.cos(math.radians(trip.pickup_lat)), 0.01))
+                                               ^^^^
+UnboundLocalError: cannot access local variable 'math' where it is not associated with a value
+
+------------------------------ Captured log call ------------------------------
+ERROR    root:main.py:447 [CRASH] Unhandled error from 127.0.0.1 on /admin/dispatch: cannot access local variable 'math' where it is not associated with a value
+Traceback (most recent call last):
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\anyio\streams\memory.py", line 132, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 435, in crash_protection_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 422, in ip_blacklist_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 415, in request_size_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 398, in rate_limit_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 189, in __call__
+    with collapse_excgroups():
+  File "C:\Program Files\Python311\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\main.py", line 337, in security_headers_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 165, in call_next
+    raise app_exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 24, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\gzip.py", line 44, in __call__
+    await self.app(scope, receive, self.send_with_gzip)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\middleware\exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\starlette\routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\AppData\Roaming\Python\Python311\site-packages\fastapi\routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Puma\cruiseapp.2\backend\tests\..\routers\admin.py", line 279, in admin_dispatch_trip
+    _lng_delta = _search_radius / (111.0 * max(math.cos(math.radians(trip.pickup_lat)), 0.01))
+                                               ^^^^
+UnboundLocalError: cannot access local variable 'math' where it is not associated with a value
+_________________________ test_create_payment_intent __________________________
+backend\tests\test_payments.py:23: in test_create_payment_intent
+    with patch("main.stripe") as mock_stripe:
+C:\Program Files\Python311\Lib\unittest\mock.py:1446: in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+C:\Program Files\Python311\Lib\unittest\mock.py:1419: in get_original
+    raise AttributeError(
+E   AttributeError: <module 'main' from 'C:\\Users\\Puma\\cruiseapp.2\\backend\\tests\\..\\main.py'> does not have the attribute 'stripe'
+______________________________ test_refund_trip _______________________________
+backend\tests\test_payments.py:64: in test_refund_trip
+    with patch("main.stripe") as mock_stripe:
+C:\Program Files\Python311\Lib\unittest\mock.py:1446: in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+C:\Program Files\Python311\Lib\unittest\mock.py:1419: in get_original
+    raise AttributeError(
+E   AttributeError: <module 'main' from 'C:\\Users\\Puma\\cruiseapp.2\\backend\\tests\\..\\main.py'> does not have the attribute 'stripe'
+___________________________ test_invalid_signature ____________________________
+backend\tests\test_stripe_webhooks.py:36: in test_invalid_signature
+    assert resp.status_code == 400
+E   assert 500 == 400
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+---------------------------- Captured stderr call -----------------------------
+ERROR:root:[StripeWH] Stripe SDK not available
+------------------------------ Captured log call ------------------------------
+ERROR    root:stripe_webhook.py:272 [StripeWH] Stripe SDK not available
+________________________ test_payment_intent_succeeded ________________________
+backend\tests\test_stripe_webhooks.py:69: in test_payment_intent_succeeded
+    assert resp.status_code == 200
+E   assert 500 == 200
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+---------------------------- Captured stderr call -----------------------------
+ERROR:root:[StripeWH] Stripe SDK not available
+------------------------------ Captured log call ------------------------------
+ERROR    root:stripe_webhook.py:272 [StripeWH] Stripe SDK not available
+_________________________ test_payment_intent_failed __________________________
+backend\tests\test_stripe_webhooks.py:120: in test_payment_intent_failed
+    assert resp.status_code == 200
+E   assert 500 == 200
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+---------------------------- Captured stderr call -----------------------------
+ERROR:root:[StripeWH] Stripe SDK not available
+------------------------------ Captured log call ------------------------------
+ERROR    root:stripe_webhook.py:272 [StripeWH] Stripe SDK not available
+____________________________ test_charge_refunded _____________________________
+backend\tests\test_stripe_webhooks.py:163: in test_charge_refunded
+    assert resp.status_code == 200
+E   assert 500 == 200
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+---------------------------- Captured stderr call -----------------------------
+ERROR:root:[StripeWH] Stripe SDK not available
+------------------------------ Captured log call ------------------------------
+ERROR    root:stripe_webhook.py:272 [StripeWH] Stripe SDK not available
+_______________________ test_unknown_event_returns_200 ________________________
+backend\tests\test_stripe_webhooks.py:200: in test_unknown_event_returns_200
+    assert resp.status_code == 200
+E   assert 500 == 200
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+---------------------------- Captured stderr call -----------------------------
+ERROR:root:[StripeWH] Stripe SDK not available
+------------------------------ Captured log call ------------------------------
+ERROR    root:stripe_webhook.py:272 [StripeWH] Stripe SDK not available
+______________ TestStripeRefund.test_stripe_refund_code_present _______________
+backend\tests\test_support_chat.py:296: in test_stripe_refund_code_present
+    assert "Refund.create" in src
+E   assert 'Refund.create' in '"""Cruise Ride \ufffd FastAPI Backend\\nComplete implementation matching the Flutter client\\'s ApiService endpoints.\\nHarde...        access_log=True,\\n        timeout_keep_alive=75,\\n        limit_concurrency=1000,\\n        workers=1,\\n    )\\n'
+____________ TestStripeRefund.test_push_notification_code_present _____________
+backend\tests\test_support_chat.py:303: in test_push_notification_code_present
+    assert "action_approved" in src
+E   assert 'action_approved' in '"""Cruise Ride \ufffd FastAPI Backend\\nComplete implementation matching the Flutter client\\'s ApiService endpoints.\\nHarde...        access_log=True,\\n        timeout_keep_alive=75,\\n        limit_concurrency=1000,\\n        workers=1,\\n    )\\n'
+=========================== short test summary info ===========================
+FAILED backend/tests/test_checkr_webhooks.py::test_checkr_webhook_invalid_signature
+FAILED backend/tests/test_checkr_webhooks.py::test_checkr_webhook_report_completed_clear
+FAILED backend/tests/test_checkr_webhooks.py::test_checkr_webhook_report_completed_consider
+FAILED backend/tests/test_checkr_webhooks.py::test_checkr_webhook_invitation_completed
+FAILED backend/tests/test_dispatch.py::test_dispatch_assigns_driver - assert ...
+FAILED backend/tests/test_dispatch.py::test_dispatch_no_auth - assert 500 in ...
+FAILED backend/tests/test_payments.py::test_create_payment_intent - Attribute...
+FAILED backend/tests/test_payments.py::test_refund_trip - AttributeError: <mo...
+FAILED backend/tests/test_stripe_webhooks.py::test_invalid_signature - assert...
+FAILED backend/tests/test_stripe_webhooks.py::test_payment_intent_succeeded
+FAILED backend/tests/test_stripe_webhooks.py::test_payment_intent_failed - as...
+FAILED backend/tests/test_stripe_webhooks.py::test_charge_refunded - assert 5...
+FAILED backend/tests/test_stripe_webhooks.py::test_unknown_event_returns_200
+FAILED backend/tests/test_support_chat.py::TestStripeRefund::test_stripe_refund_code_present
+FAILED backend/tests/test_support_chat.py::TestStripeRefund::test_push_notification_code_present
+15 failed, 47 passed in 10.79s

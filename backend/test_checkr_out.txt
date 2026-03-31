@@ -1,0 +1,16 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.0.2, pluggy-1.6.0 -- C:\Program Files\Python311\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\Puma\cruiseapp.2
+plugins: anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 6 items
+
+backend/tests/test_checkr_service.py::test_create_candidate_success PASSED [ 16%]
+backend/tests/test_checkr_service.py::test_create_candidate_failure PASSED [ 33%]
+backend/tests/test_checkr_service.py::test_create_invitation_success PASSED [ 50%]
+backend/tests/test_checkr_service.py::test_create_invitation_custom_package PASSED [ 66%]
+backend/tests/test_checkr_service.py::test_get_report_success PASSED     [ 83%]
+backend/tests/test_checkr_service.py::test_get_report_not_found PASSED   [100%]
+
+============================== 6 passed in 0.37s ==============================

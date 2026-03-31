@@ -104,13 +104,15 @@ extension _HomeScreenController on _HomeScreenState {
     
     // Cancel existing subscription
     _driverLocationSub?.cancel();
+    _tripDocSub?.cancel();
+    _trackedDriverId = null;
     
     // Listen to driver location from Firestore (ride document has driver_id)
     final tripId = _activeRide!.firestoreTripId;
     if (tripId == null) return;
 
     // Get driver ID from trip data first, then subscribe to their location
-    FirebaseFirestore.instance
+    _tripDocSub = FirebaseFirestore.instance
         .collection('trips')
         .doc(tripId)
         .snapshots()
@@ -119,6 +121,8 @@ extension _HomeScreenController on _HomeScreenState {
       
       final driverId = tripSnap.data()?['driver_id']?.toString();
       if (driverId == null) return;
+      if (_trackedDriverId == driverId && _driverLocationSub != null) return;
+      _trackedDriverId = driverId;
 
       // Subscribe to this driver's location in RTDB
       _driverLocationSub?.cancel();

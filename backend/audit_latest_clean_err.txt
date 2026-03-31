@@ -1,0 +1,2 @@
+WARNING:root:[BANNED] IP auto-banned: 201.202.192.66 (violations: 20)
+WARNING:root:[SECURITY] Credential stuffing BANNED: 100.200.111.1

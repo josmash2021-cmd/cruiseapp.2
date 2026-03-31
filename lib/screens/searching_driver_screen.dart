@@ -52,6 +52,8 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
 
   // ── declined state ──
   bool _paymentDeclined = false;
+  Timer? _paymentStartTimer;
+  Timer? _declinedPopTimer;
 
   // ── particles (20 total) ──
   late final List<_Particle> _particles;
@@ -131,7 +133,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) => _handleDeclined());
     } else if (widget.paymentCallback != null) {
       // Card / sandbox: fire payment during the loading animation
-      Future.delayed(const Duration(milliseconds: 800), () async {
+      _paymentStartTimer = Timer(const Duration(milliseconds: 800), () async {
         if (!mounted) return;
         try {
           final ok = await widget.paymentCallback!();
@@ -151,6 +153,8 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
 
   @override
   void dispose() {
+    _paymentStartTimer?.cancel();
+    _declinedPopTimer?.cancel();
     _radarCtrl.dispose();
     _glowCtrl.dispose();
     _particleCtrl.dispose();
@@ -172,7 +176,8 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     _progressCtrl.stop();
     _radarCtrl.stop();
     _glowCtrl.stop();
-    Future.delayed(const Duration(milliseconds: 2000), () {
+    _declinedPopTimer?.cancel();
+    _declinedPopTimer = Timer(const Duration(milliseconds: 2000), () {
       if (!mounted) return;
       widget.onPaymentDeclined?.call();
       Navigator.of(context).pop();

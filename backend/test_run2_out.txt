@@ -1,0 +1,12 @@
+.................F............................................           [100%]
+================================== FAILURES ===================================
+E   assert 200 in (401, 403)
+     +  where 200 = <Response [200 OK]>.status_code
+---------------------------- Captured stderr call -----------------------------
+WARNING:firestore_sync:\u26a0\ufe0f  No Firebase credentials found \u2014 Firestore sync disabled
+------------------------------ Captured log call ------------------------------
+WARNING  firestore_sync:firestore_sync.py:77 \u26a0\ufe0f  No Firebase credentials found \u2014 Firestore sync disabled
+C:\Users\Puma\cruiseapp.2\backend\tests\test_dispatch.py:57: assert 200 in (401, 403)
+=========================== short test summary info ===========================
+FAILED backend/tests/test_dispatch.py::test_dispatch_no_auth - assert 200 in ...
+1 failed, 61 passed in 11.42s

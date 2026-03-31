@@ -179,6 +179,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   mapbox.PointAnnotation? _driverMarkerAnnot;
   mapbox.PolylineAnnotation? _tripRouteAnnot;
   StreamSubscription<DatabaseEvent>? _driverLocationSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _tripDocSub;
   Ticker? _driverTicker;
   LatLng? _driverAnimFrom;
   LatLng? _driverAnimTo;
@@ -186,6 +187,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   Duration _driverAnimStart = Duration.zero;
   bool _driverAnimNeedsRestart = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _tripStatusSub;
+  String? _trackedDriverId;
 
   DateTime? _tripStartTime;
 
@@ -378,16 +380,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _imminentRideTimer?.cancel();
     } else if (state == AppLifecycleState.resumed) {
       _checkDriversOnline();
+      _driverCheckTimer?.cancel();
       _driverCheckTimer = Timer.periodic(
         const Duration(seconds: 120),
         (_) => _checkDriversOnline(),
       );
       _checkAccountStatus();
+      _accountStatusTimer?.cancel();
       _accountStatusTimer = Timer.periodic(
         const Duration(seconds: 300),
         (_) => _checkAccountStatus(),
       );
       _updateImminentRide();
+      _imminentRideTimer?.cancel();
       _imminentRideTimer = Timer.periodic(
         const Duration(seconds: 60),
         (_) => _updateImminentRide(),
@@ -416,6 +421,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _locationSub?.cancel();
     _zonesSub?.cancel();
     _driverLocationSub?.cancel();
+    _tripDocSub?.cancel();
     _tripStatusSub?.cancel();
     super.dispose();
   }

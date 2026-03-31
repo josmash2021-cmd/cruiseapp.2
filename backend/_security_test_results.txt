@@ -1,0 +1,125 @@
+=== IMPORT CHECK ===
+dispatch router: OK
+misc router: OK
+firestore_sync: OK
+
+=== PYTEST ===
+..............................................................           [100%]
+62 passed in 11.00s
+
+Return code: 0
+
+=== AUDIT ===
+
+============================================================
+CRUISEAPP SECURITY AUDIT v2
+============================================================
+
+[1] SQL INJECTION
+  PASS  OR bypass
+  PASS  DROP TABLE
+  PASS  UNION SELECT
+  PASS  Time-based
+  PASS  DELETE all
+  PASS  xp_cmdshell
+  PASS  OR 1=1
+  PASS  Normal name (no FP)
+  PASS  Email (no FP)
+  PASS  Address (no FP)
+
+[2] XSS
+  PASS  <script>
+  PASS  javascript:
+  PASS  img onload
+  PASS  JAVASCRIPT: cap
+  PASS  onclick=
+
+[3] PATH TRAVERSAL
+  PASS  ../ unix
+  PASS  ..\windows
+  PASS  %2e%2e
+  PASS  ..%2F mixed
+  PASS  %252e double-enc
+  PASS  legit path (no FP)
+
+[4] SSRF PREVENTION
+  PASS  localhost
+  PASS  127.0.0.1
+  PASS  192.168.x
+  PASS  10.0.0.x
+  PASS  file://
+  PASS  gopher://
+  PASS  169.254 metadata
+  PASS  172.16.x.x
+  PASS  Stripe (no FP)
+  PASS  Google (no FP)
+
+[5] COMMAND INJECTION
+  PASS  ; rm -rf
+  PASS  | cat
+  PASS  $(...)
+  PASS  eval
+  PASS  /etc/
+
+[6] MALICIOUS UA DETECTION
+  PASS  sqlmap
+  PASS  nikto
+  PASS  nuclei
+  PASS  gobuster
+  PASS  wfuzz
+  PASS  iPhone (no FP)
+  PASS  Flutter (no FP)
+  PASS  Chrome (no FP)
+  PASS  requests 2.31 (no FP)
+
+[7] BRUTE FORCE PROTECTION
+  PASS  Not blocked at 0
+  PASS  Not blocked at 4
+  PASS  Blocked at 5
+  PASS  Unblocked on clear
+
+[8] NONCE REPLAY
+  PASS  First use OK
+  PASS  Replay blocked
+  PASS  New nonce OK
+
+[9] JWT REVOCATION
+  PASS  Not revoked before
+  PASS  Revoked after add
+  PASS  Expired JTI not flagged
+  PASS  Token has jti
+  PASS  Token type=access
+
+[10] PASSWORD RESET RATE LIMIT
+  PASS  Not limited at start
+  PASS  Limited after 3
+
+[11] IP AUTO-BAN
+  PASS  Not banned at 19
+  PASS  Banned at 20
+
+[12] CREDENTIAL STUFFING DIRECT BAN
+  PASS  Banned after 10 unique accounts
+
+[13] AUDIT LOG HASH CHAIN
+  PASS  Log grows
+  PASS  Chain linked
+  PASS  Hash 64 chars
+
+[14] _sanitize_string() BLOCKS ATTACKS
+  PASS  Blocks SQLi
+  PASS  Blocks XSS
+  PASS  Blocks PathTraversal
+  PASS  Allows legit: John Doe
+  PASS  Allows legit: user@example.com
+  PASS  Allows legit: Miami FL
+  PASS  Allows legit: 8005551234
+
+============================================================
+PASSED: 72   FAILED: 0
+ALL CHECKS PASSED - Server is hardened.
+============================================================
+WARNING:root:[BANNED] IP auto-banned: 201.202.140.8 (violations: 20)
+WARNING:root:[SECURITY] Credential stuffing BANNED: 100.200.144.1
+
+Return code: 0

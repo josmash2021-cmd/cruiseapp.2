@@ -698,105 +698,120 @@ extension _RideRequestController on _RideRequestScreenState {
     RideOption? option,
     void Function(void Function()) setSheetState,
   ) async {
+    if (_rideFlowLocked || _isProcessingPayment) return;
+    _rideFlowLocked = true;
     setSheetState(() => _isProcessingPayment = true);
     _setState(() => _isProcessingPayment = true);
 
     try {
-      final success = await _confirmNativePayment(option);
-      if (!mounted) return;
-      if (!success) {
+      try {
+        final success = await _confirmNativePayment(option);
+        if (!mounted) return;
+        if (!success) {
+          setSheetState(() => _isProcessingPayment = false);
+          _setState(() => _isProcessingPayment = false);
+          return; // User cancelled — stay on sheet
+        }
+      } catch (e) {
+        if (!mounted) return;
         setSheetState(() => _isProcessingPayment = false);
         _setState(() => _isProcessingPayment = false);
-        return; // User cancelled — stay on sheet
+        debugPrint('Payment error: $e');
+        Navigator.of(context).pop(); // close payment modal
+        _setState(() => _showPaymentDeclinedBanner = true);
+        return;
       }
-    } catch (e) {
+
       if (!mounted) return;
       setSheetState(() => _isProcessingPayment = false);
       _setState(() => _isProcessingPayment = false);
-      debugPrint('Payment error: $e');
-      Navigator.of(context).pop(); // close payment modal
-      _setState(() => _showPaymentDeclinedBanner = true);
-      return;
-    }
+      Navigator.of(context).pop();
+      if (widget.applyPromo) await LocalDataService.setPromoUsed();
+      AnalyticsService.instance.logRideRequested(
+        option?.name ?? 'unknown',
+        option?.priceEstimate ?? 0,
+      );
 
-    if (!mounted) return;
-    setSheetState(() => _isProcessingPayment = false);
-    _setState(() => _isProcessingPayment = false);
-    Navigator.of(context).pop();
-    if (widget.applyPromo) await LocalDataService.setPromoUsed();
-    AnalyticsService.instance.logRideRequested(option?.name ?? 'unknown', option?.priceEstimate ?? 0);
-
-    if (_ctrl.state.scheduledAt != null) {
-      await _createScheduledTrip();
-      return;
+      if (_ctrl.state.scheduledAt != null) {
+        await _createScheduledTrip();
+        return;
+      }
+      _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
+      _ctrl.requestRide();
+    } finally {
+      _rideFlowLocked = false;
     }
-    _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
-    _ctrl.requestRide();
   }
 
   /// Processes payment directly from the route preview sheet.
   Future<void> _startRideDirectly(AppColors c, RideOption? option) async {
     if (option == null) return;
-    final nav = Navigator.of(context);
+    if (_rideFlowLocked || _isProcessingPayment) return;
+    _rideFlowLocked = true;
 
-    // Native pay (Apple/Google Pay/PayPal): OS sheet must appear first.
-    // Card / sandbox: payment runs inside the searching screen animation.
-    final bool isNativePay = !AppConfig.sandboxPayments &&
-        (_selectedPaymentMethod == 'apple_pay' ||
-            _selectedPaymentMethod == 'google_pay' ||
-            _selectedPaymentMethod == 'paypal');
+    try {
+      final nav = Navigator.of(context);
 
-    bool nativePayFailed = false;
-    if (isNativePay) {
-      _setState(() => _isProcessingPayment = true);
-      try {
-        final ok = await _confirmNativePayment(option);
-        if (!mounted) return;
-        if (!ok) {
-          _setState(() => _isProcessingPayment = false);
-          return; // user dismissed OS sheet — stay on screen
+      // Native pay (Apple/Google Pay/PayPal): OS sheet must appear first.
+      // Card / sandbox: payment runs inside the searching screen animation.
+      final bool isNativePay = !AppConfig.sandboxPayments &&
+          (_selectedPaymentMethod == 'apple_pay' ||
+              _selectedPaymentMethod == 'google_pay' ||
+              _selectedPaymentMethod == 'paypal');
+
+      bool nativePayFailed = false;
+      if (isNativePay) {
+        _setState(() => _isProcessingPayment = true);
+        try {
+          final ok = await _confirmNativePayment(option);
+          if (!mounted) return;
+          if (!ok) {
+            _setState(() => _isProcessingPayment = false);
+            return; // user dismissed OS sheet — stay on screen
+          }
+        } catch (e) {
+          if (!mounted) return;
+          debugPrint('Native payment error: $e');
+          nativePayFailed = true;
         }
-      } catch (e) {
-        if (!mounted) return;
-        debugPrint('Native payment error: $e');
-        nativePayFailed = true;
+        _setState(() => _isProcessingPayment = false);
       }
-      _setState(() => _isProcessingPayment = false);
+
+      if (!mounted) return;
+      if (widget.applyPromo) await LocalDataService.setPromoUsed();
+      AnalyticsService.instance.logRideRequested(option.name, option.priceEstimate);
+
+      if (_ctrl.state.scheduledAt != null) {
+        await _createScheduledTrip();
+        return;
+      }
+
+      bool paymentDeclinedFlag = false;
+
+      final cancelled = await nav.push<bool>(
+        searchingDriverRoute(
+          onCancel: _cancelSearching,
+          paymentCallback: isNativePay ? null : () => _confirmNativePayment(option),
+          initiallyDeclined: nativePayFailed,
+          onPaymentDeclined: () => paymentDeclinedFlag = true,
+        ),
+      );
+
+      if (cancelled == true) {
+        if (mounted) Navigator.of(context).pop();
+        return;
+      }
+      if (nativePayFailed || paymentDeclinedFlag) {
+        if (mounted) _setState(() => _showPaymentDeclinedBanner = true);
+        return;
+      }
+      if (!mounted) return;
+
+      _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
+      _ctrl.requestRide();
+    } finally {
+      _rideFlowLocked = false;
     }
-
-    if (!mounted) return;
-    if (widget.applyPromo) await LocalDataService.setPromoUsed();
-    AnalyticsService.instance
-        .logRideRequested(option.name, option.priceEstimate);
-
-    if (_ctrl.state.scheduledAt != null) {
-      await _createScheduledTrip();
-      return;
-    }
-
-    bool paymentDeclinedFlag = false;
-
-    final cancelled = await nav.push<bool>(
-      searchingDriverRoute(
-        onCancel: _cancelSearching,
-        paymentCallback: isNativePay ? null : () => _confirmNativePayment(option),
-        initiallyDeclined: nativePayFailed,
-        onPaymentDeclined: () => paymentDeclinedFlag = true,
-      ),
-    );
-
-    if (cancelled == true) {
-      if (mounted) Navigator.of(context).pop();
-      return;
-    }
-    if (nativePayFailed || paymentDeclinedFlag) {
-      if (mounted) _setState(() => _showPaymentDeclinedBanner = true);
-      return;
-    }
-    if (!mounted) return;
-
-    _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
-    _ctrl.requestRide();
   }
 
   /// Triggers the native payment confirmation for the selected payment method.

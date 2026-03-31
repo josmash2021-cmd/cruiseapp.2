@@ -312,52 +312,115 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   }
 
   Widget _buildMoreMenuButton() {
-    return PopupMenuButton<String>(
-      padding: EdgeInsets.zero,
-      color: const Color(0xFF1a1a2e),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Color(0xFFc8a951), width: 1),
-      ),
-      onSelected: (value) {
-        if (value == 'cancel') {
-          _showCancelConfirmDialog();
-        } else if (value == 'support') {
-          _openSupportChat();
-        }
-      },
-      itemBuilder: (_) => [
-        PopupMenuItem<String>(
-          value: 'cancel',
-          child: Row(
-            children: const [
-              Icon(Icons.cancel_outlined, color: Color(0xFFef4444), size: 20),
-              SizedBox(width: 12),
-              Text('Cancelar viaje',
-                style: TextStyle(color: Color(0xFFef4444), fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'support',
-          child: Row(
-            children: const [
-              Icon(Icons.headset_mic_outlined, color: Color(0xFFc8a951), size: 20),
-              SizedBox(width: 12),
-              Text('Contactar soporte',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ),
-      ],
+    return GestureDetector(
+      onTap: () => _setState(() => _showMoreMenu = !_showMoreMenu),
       child: Container(
         width: Responsive.w(40), height: Responsive.w(40),
         decoration: BoxDecoration(
-          color: const Color(0xFF262626),
+          color: _showMoreMenu ? const Color(0xFF333333) : const Color(0xFF262626),
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(color: _showMoreMenu ? const Color(0xFFD4AF37).withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.08)),
         ),
-        child: Icon(Icons.more_horiz_rounded, color: Colors.white60, size: Responsive.sp(18)),
+        child: Icon(Icons.more_horiz_rounded, color: _showMoreMenu ? const Color(0xFFD4AF37) : Colors.white60, size: Responsive.sp(18)),
+      ),
+    );
+  }
+
+  /// Elegant dropdown menu positioned below the driver card
+  Widget _buildMoreMenuOverlay(double topPad) {
+    final top = topPad + 10 + _topCardHeight + 8;
+    final showCancel = _phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived;
+    return Positioned(
+      top: top,
+      right: 16,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) => Transform.translate(
+          offset: Offset(0, -8 * (1 - value)),
+          child: Opacity(opacity: value, child: child),
+        ),
+        child: Container(
+          width: 220,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFD4AF37).withValues(alpha: 0.2)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (showCancel) ...[
+                _buildMenuItem(
+                  icon: Icons.cancel_outlined,
+                  label: 'Cancelar viaje',
+                  color: const Color(0xFFEF4444),
+                  onTap: () {
+                    _setState(() => _showMoreMenu = false);
+                    _showCancelConfirmDialog();
+                  },
+                ),
+                Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+              ],
+              _buildMenuItem(
+                icon: Icons.headset_mic_outlined,
+                label: 'Contactar soporte',
+                color: const Color(0xFFD4AF37),
+                onTap: () {
+                  _setState(() => _showMoreMenu = false);
+                  _openSupportChat();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuItem({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 32, height: 32,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color == const Color(0xFFD4AF37) ? Colors.white : color,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -365,60 +428,72 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   void _showCancelConfirmDialog() {
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFFc8a951), width: 1),
-        ),
-        title: const Text(
-          '¿Cancelar viaje?',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
-        ),
-        content: const Text(
-          'Si cancelas ahora puede aplicar '
-          'una tarifa de cancelación.',
-          style: TextStyle(color: Colors.grey, fontSize: 14),
-          textAlign: TextAlign.center,
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('No, continuar',
-              style: TextStyle(color: Color(0xFFc8a951))),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFef4444),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () async {
-              Navigator.pop(context);
-              LocalDataService.clearActiveRide();
-              if (widget.tripId != null) {
-                try {
-                  await ApiService.cancelTrip(widget.tripId!);
-                } catch (_) {}
-              }
-              if (!mounted) return;
-              Navigator.of(context).pushAndRemoveUntil(
-                PageRouteBuilder(
-                  pageBuilder: (_, __, ___) => const HomeScreen(),
-                  transitionsBuilder: (_, a, __, child) =>
-                      FadeTransition(opacity: a, child: child),
-                  transitionDuration: const Duration(milliseconds: 400),
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56, height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
                 ),
-                (_) => false,
-              );
-            },
-            child: const Text('Sí, cancelar',
-              style: TextStyle(color: Colors.white)),
+                child: const Icon(Icons.cancel_outlined, color: Color(0xFFEF4444), size: 28),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '¿Cancelar viaje?',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Si cancelas ahora puede aplicar una tarifa de cancelación.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity, height: 48,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFEF4444),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _startCancelFlow();
+                  },
+                  child: const Text('Sí, cancelar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity, height: 48,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(
+                    'No, continuar',
+                    style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

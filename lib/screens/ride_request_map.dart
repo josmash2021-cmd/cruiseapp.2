@@ -639,17 +639,17 @@ extension _RideRequestMap on _RideRequestScreenState {
 
     // 1. Fit camera to full route (flat, no tilt yet)
     _fitRoute(pts);
-    await Future.delayed(const Duration(milliseconds: 700));
+    await Future.delayed(const Duration(milliseconds: 350));
     if (!mounted) return;
 
-    // 2. Tilt 0° → 30° + bearing 0° → random, simultaneously (1200ms)
+    // 2. Tilt 0° → 55° + bearing 0° → random, simultaneously (800ms)
     _tiltCtrl?.dispose();
-    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
-    _tiltAnim = Tween<double>(begin: 0.0, end: 30.0).animate(
+    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
       CurvedAnimation(parent: _tiltCtrl!, curve: Curves.easeInOutCubic),
     );
     _bearingCtrl?.dispose();
-    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
     _bearingAnim = Tween<double>(begin: 0.0, end: _randomBearing).animate(
       CurvedAnimation(parent: _bearingCtrl!, curve: Curves.easeInOutCubic),
     );
@@ -657,23 +657,26 @@ extension _RideRequestMap on _RideRequestScreenState {
     _tiltCtrl!.forward(from: 0);
     _bearingCtrl!.forward(from: 0);
 
-    // 3. Pin pop at 500ms into tilt
-    await Future.delayed(const Duration(milliseconds: 500));
+    // 3. Pin pop at 250ms into tilt
+    await Future.delayed(const Duration(milliseconds: 250));
     if (!mounted) return;
     _startPinPop();
 
-    // 3b. Label bubbles unroll 400ms after pin pop starts
-    await Future.delayed(const Duration(milliseconds: 400));
+    // 3b. Label bubbles unroll 200ms after pin pop starts
+    await Future.delayed(const Duration(milliseconds: 200));
     if (!mounted) return;
     _unrollLabels();
 
-    // 4. Gold route draws at 200ms after labels start
-    await Future.delayed(const Duration(milliseconds: 300));
+    // 4. Gold route draws at 100ms after labels start
+    await Future.delayed(const Duration(milliseconds: 100));
     if (!mounted) return;
-    await _animateGoldRoute(pts, const Duration(milliseconds: 1000));
+    await _animateGoldRoute(pts, const Duration(milliseconds: 600));
     if (!mounted) return;
 
-    // Camera stays tilted — no reset to flat
+    // 5. Refit route with panel padding so full route is visible above panel
+    _fitRoute(pts, preserveCamera: true);
+
+    // Camera stays tilted at 55° — no reset to flat
     _cinematicDone = true;
   }
 
@@ -1129,7 +1132,8 @@ extension _RideRequestMap on _RideRequestScreenState {
         mapbox.Point(coordinates: mapbox.Position(bounds.northeast.longitude, bounds.northeast.latitude)),
       ];
       final screenH = MediaQuery.of(context).size.height;
-      final bottomPad = screenH * 0.52;
+      final botSafe = MediaQuery.of(context).padding.bottom;
+      final bottomPad = (screenH * 0.45).clamp(280.0, 420.0) + botSafe + 20;
       final cam = await _mapCtrl?.cameraForCoordinatesPadding(
         coords, mapbox.CameraOptions(),
         mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60), null, null,

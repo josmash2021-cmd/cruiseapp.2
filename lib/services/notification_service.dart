@@ -104,7 +104,7 @@ class NotificationService {
 
     // Driver sound preferences (from Sounds & Voice settings)
     if (type == 'ride' && !(prefs.getBool('sound_trips') ?? true)) return;
-    if (type == 'chat' && !(prefs.getBool('sound_messages') ?? true)) return;
+    if ((type == 'chat' || type == 'chat_message') && !(prefs.getBool('sound_messages') ?? true)) return;
 
     final driverVolume = prefs.getDouble('sound_volume') ?? 0.8;
     final soundsEnabled =

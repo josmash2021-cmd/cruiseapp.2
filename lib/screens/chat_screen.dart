@@ -26,6 +26,10 @@ class ChatScreen extends StatefulWidget {
     this.currentRole,
   });
 
+  /// The trip ID of the currently active chat screen (if any).
+  /// Used to suppress push notifications while the user is in this chat.
+  static int? activeTripId;
+
   final String recipientName;
   final String? recipientPhone;
   final bool isSupport;
@@ -69,10 +73,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ── Auto-scroll tracking ──
   int _lastMsgCount = 0;
+  bool _hadFirstConnect = false;
 
   @override
   void initState() {
     super.initState();
+    ChatScreen.activeTripId = widget.tripId;
     _initChat();
   }
 
@@ -134,6 +140,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    ChatScreen.activeTripId = null;
     _pollTimer?.cancel();
     _typingTimer?.cancel();
     _rtdbConnectionSub?.cancel();
@@ -156,6 +163,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final val = event.snapshot.value;
       final connected = val == true;
       if (!mounted) return;
+      if (connected) _hadFirstConnect = true;
       setState(() => _rtdbConnected = connected);
     });
   }
@@ -163,6 +171,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Color _connectionDotColor() {
     if (!_useRtdb) return const Color(0xFF4CAF50);
     if (_rtdbConnected == true) return const Color(0xFF4CAF50);
+    // Show amber "connecting" until first successful connect
+    if (!_hadFirstConnect) return const Color(0xFFF59E0B);
     if (_rtdbConnected == false) return const Color(0xFFEF4444);
     return const Color(0xFFF59E0B);
   }
@@ -170,6 +180,8 @@ class _ChatScreenState extends State<ChatScreen> {
   String _connectionLabel(S s) {
     if (!_useRtdb) return s.online;
     if (_rtdbConnected == true) return s.activeNow;
+    // Show "Connecting..." until first successful connect
+    if (!_hadFirstConnect) return 'Connecting...';
     if (_rtdbConnected == false) return s.connectionLost;
     return 'Connecting...';
   }

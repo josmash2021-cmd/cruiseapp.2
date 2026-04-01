@@ -29,6 +29,7 @@ import 'services/map_cache_service.dart';
 import 'services/network_service.dart';
 import 'services/keep_alive_service.dart';
 import 'services/analytics_service.dart';
+import 'screens/chat_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
@@ -223,6 +224,16 @@ Future<void> heavyInit() async {
             final title = message.notification?.title ?? 'Cruise';
             final body = message.notification?.body ?? '';
             final type = message.data['type'] as String? ?? 'general';
+
+            // Suppress chat notification if user is already in that chat
+            if (type == 'chat_message') {
+              final tripId = int.tryParse(message.data['trip_id']?.toString() ?? '');
+              if (tripId != null && ChatScreen.activeTripId == tripId) {
+                debugPrint('[FCM] suppressed chat notification — user is in chat');
+                return;
+              }
+            }
+
             NotificationService.show(
               id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
               title: title,

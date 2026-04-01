@@ -522,44 +522,50 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         }
                       },
                       behavior: HitTestBehavior.opaque,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF111111),
-                          border: Border(
-                            top: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.06),
+                      child: ClipRect(
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0A0A0A).withValues(alpha: 0.55),
+                              border: Border(
+                                top: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        child: SafeArea(
-                          top: false,
-                          child: SizedBox(
-                            height: 62,
-                            child: Row(
-                              children: [
-                                const SizedBox(width: 16),
-                                Icon(
-                                  Icons.tune_rounded,
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  size: 22,
+                            child: SafeArea(
+                              top: false,
+                              child: SizedBox(
+                                height: 62,
+                                child: Row(
+                                  children: [
+                                    const SizedBox(width: 16),
+                                    Icon(
+                                      Icons.tune_rounded,
+                                      color: Colors.white.withValues(alpha: 0.55),
+                                      size: 22,
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      S.of(context).findingTrips,
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(alpha: 0.6),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Icon(
+                                      Icons.format_list_bulleted_rounded,
+                                      color: Colors.white.withValues(alpha: 0.55),
+                                      size: 22,
+                                    ),
+                                    const SizedBox(width: 16),
+                                  ],
                                 ),
-                                const Spacer(),
-                                Text(
-                                  S.of(context).findingTrips,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.5),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Icon(
-                                  Icons.format_list_bulleted_rounded,
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  size: 22,
-                                ),
-                                const SizedBox(width: 16),
-                              ],
+                              ),
                             ),
                           ),
                         ),

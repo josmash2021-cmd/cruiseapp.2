@@ -434,7 +434,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         'status': 'arrived',
         'arrivedAt': FieldValue.serverTimestamp(),
       });
-    } catch (_) {}
+      debugPrint('[Driver] Firestore arrived write OK → $_fsDocId');
+    } catch (e) {
+      debugPrint('[Driver] Firestore arrived write FAILED: $e');
+    }
   }
 
   // ── Update trip status to in_trip when second Start Trip is slid ────────
@@ -450,7 +453,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         'status': 'in_trip',
         'rideStartedAt': FieldValue.serverTimestamp(),
       });
-    } catch (_) {}
+      debugPrint('[Driver] Firestore in_trip write OK → $_fsDocId');
+    } catch (e) {
+      debugPrint('[Driver] Firestore in_trip write FAILED: $e');
+    }
   }
 
   // ── Complete trip (API + Firestore + navigate to online) ────────────────
@@ -476,7 +482,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           'status': 'completed',
           'completedAt': FieldValue.serverTimestamp(),
         });
-      } catch (_) {}
+        debugPrint('[Driver] Firestore completed write OK → $_fsDocId');
+      } catch (e) {
+        debugPrint('[Driver] Firestore completed write FAILED: $e');
+      }
 
       final gps = GpsService();
       try { await gps.clearTripLocation(); } catch (_) {}

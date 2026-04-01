@@ -688,7 +688,7 @@ def sync_trip(trip_id: int, rider_id: int, rider_name: str, rider_phone: str,
         "sqliteId": trip_id,
     }
     if driver_id:
-        data["driverId"] = f"sql_{driver_id}"
+        data["driverId"] = str(driver_id)
         data["driverName"] = driver_name or ""
         data["driverPhone"] = driver_phone or ""
     if rider_photo_url:
@@ -730,7 +730,7 @@ def sync_trip_status(trip_id: int, status: str,
     if ts_field:
         data[ts_field] = now
     if driver_id:
-        data["driverId"] = f"sql_{driver_id}"
+        data["driverId"] = str(driver_id)
         if driver_name:
             data["driverName"] = driver_name
         if driver_phone:

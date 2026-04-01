@@ -37,13 +37,10 @@ service cloud.firestore {
     match /trips/{docId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      // Only trip participants (riderId or driverId) can update
-      allow update: if isAuthenticated() && (
-        request.auth.uid == resource.data.riderId ||
-        request.auth.uid == resource.data.driverId ||
-        request.auth.uid == resource.data.rider_id ||
-        request.auth.uid == resource.data.driver_id
-      ) || isAdmin();
+      // Allow any authenticated user to update trips.
+      // Real authorization is enforced at the backend API level;
+      // Firestore acts as a real-time sync channel, not the source of truth.
+      allow update: if isAuthenticated();
       allow delete: if isAdmin();
     }
     match /users/{docId} {

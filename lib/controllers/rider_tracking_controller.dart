@@ -218,8 +218,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Process trip status changes from Firestore.
   void _onTripStatusUpdate(Map<String, dynamic> data) {
     // Start RTDB listener if we have a driverId
-    final did = data['driverId']?.toString();
-    if (did != null && did.isNotEmpty && _rtdbDriverId != did) {
+    var did = data['driverId']?.toString() ?? data['driver_id']?.toString() ?? '';
+    // Strip legacy "sql_" prefix so RTDB path matches driver_locations/{intId}
+    if (did.startsWith('sql_')) did = did.substring(4);
+    if (did.isNotEmpty && _rtdbDriverId != did) {
       _startRtdbDriverListener(did);
     }
 
@@ -242,6 +244,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
 
     final status = data['status']?.toString() ?? '';
+    debugPrint('[RiderTracking] Firestore status update: "$status" (phase=$_phase, driverId=$did)');
     if ((status == 'arrived' || status == 'driver_arrived') && _phase == _TrackPhase.arriving) {
       _setState(() => _phase = _TrackPhase.arrived);
       // FIX 2: Start the pulsing dot animation and handle arrival visuals
@@ -330,7 +333,26 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         .onValue
         .listen((event) {
       if (!mounted || _phase == _TrackPhase.completed) return;
-      if (event.snapshot.value == null) return;
+      if (event.snapshot.value == null) {
+        // Driver location cleared — trip may be completed or cancelled
+        debugPrint('[RiderTracking] RTDB driver location null — checking trip status');
+        _checkTripStatusFallback();
+        // Retry after 5s in case Firestore write is delayed
+        Future.delayed(const Duration(seconds: 5), () {
+          if (mounted && _phase != _TrackPhase.completed) {
+            _checkTripStatusFallback();
+          }
+        });
+        return;
+      }
+      // Reset stale timer on every location update
+      _staleDriverTimer?.cancel();
+      _staleDriverTimer = Timer(const Duration(seconds: 20), () {
+        if (mounted && _phase != _TrackPhase.completed) {
+          debugPrint('[RiderTracking] Stale driver location — checking trip status');
+          _checkTripStatusFallback();
+        }
+      });
       // Throttle: max 2 updates/sec to avoid excessive rebuilds
       final now = DateTime.now();
       if (lastRtdbUpdate != null &&
@@ -406,6 +428,40 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         transitionDuration: const Duration(milliseconds: 500),
       ),
     );
+  }
+
+  /// Safety fallback: one-shot Firestore read to check if trip ended.
+  /// Called when RTDB location goes null or becomes stale.
+  Future<void> _checkTripStatusFallback() async {
+    if (!mounted || _phase == _TrackPhase.completed || _completionCheckInFlight) return;
+    _completionCheckInFlight = true;
+    try {
+      final tripId = widget.tripId;
+      String? docId;
+      if (tripId != null) {
+        docId = 'sql_$tripId';
+      } else if (widget.firestoreTripId != null && widget.firestoreTripId!.isNotEmpty) {
+        docId = widget.firestoreTripId;
+      }
+      if (docId == null) return;
+      final doc = await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(docId)
+          .get();
+      if (!mounted || !doc.exists) return;
+      final data = doc.data();
+      if (data == null) return;
+      final status = data['status']?.toString() ?? '';
+      if (status == 'completed' || status == 'cancelled' || status == 'canceled' ||
+          status == 'in_trip' || status == 'in_progress' || status == 'arrived') {
+        debugPrint('[RiderTracking] Fallback found status=$status — processing');
+        _onTripStatusUpdate(data);
+      }
+    } catch (e) {
+      debugPrint('[RiderTracking] Fallback status check error: $e');
+    } finally {
+      _completionCheckInFlight = false;
+    }
   }
 
   void _sendDriverGreeting() {

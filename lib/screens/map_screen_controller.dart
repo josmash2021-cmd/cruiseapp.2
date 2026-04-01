@@ -834,7 +834,7 @@ extension _MapScreenController on _MapScreenState {
                 _tripStatus == 'in_trip';
             if (isTimeoutCancel && wasActive) {
               debugPrint('[MapScreen] Ignoring timeout cancel for active trip (status was $_tripStatus)');
-              continue;
+              return;
             }
             timer.cancel();
             _rideLifecycleTimer?.cancel();

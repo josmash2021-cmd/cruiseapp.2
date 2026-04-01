@@ -329,7 +329,6 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   /// Elegant dropdown menu positioned below the driver card
   Widget _buildMoreMenuOverlay(double topPad) {
     final top = topPad + 10 + _topCardHeight + 8;
-    final showCancel = _phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived;
     return Positioned(
       top: top,
       right: 16,
@@ -358,18 +357,6 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (showCancel) ...[
-                _buildMenuItem(
-                  icon: Icons.cancel_outlined,
-                  label: 'Cancelar viaje',
-                  color: const Color(0xFFEF4444),
-                  onTap: () {
-                    _setState(() => _showMoreMenu = false);
-                    _showCancelConfirmDialog();
-                  },
-                ),
-                Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
-              ],
               _buildMenuItem(
                 icon: Icons.headset_mic_outlined,
                 label: 'Contactar soporte',

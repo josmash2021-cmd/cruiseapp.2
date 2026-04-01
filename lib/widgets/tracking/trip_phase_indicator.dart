@@ -26,7 +26,7 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
       case _TrackPhase.nearDestination:
         return s.arrivingAtDestination;
       case _TrackPhase.completed:
-        return s.onWayToDestination;
+        return s.tripCompletedTitle;
     }
   }
 
@@ -48,7 +48,7 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
       case _TrackPhase.nearDestination:
         return s.arrivingAtDestinationCard;
       case _TrackPhase.completed:
-        return s.onWayToDestinationCard;
+        return s.tripCompletedTitle;
     }
   }
 
@@ -68,7 +68,7 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
       case _TrackPhase.nearDestination:
         return const Color(0xFFFFD700); // Golden — llegando
       case _TrackPhase.completed:
-        return const Color(0xFFFFD700);
+        return const Color(0xFF4CAF50);  // Green — trip completed
     }
   }
 
@@ -85,7 +85,7 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
       case _TrackPhase.nearDestination:
         return s.arrivingAtDestination;
       case _TrackPhase.completed:
-        return s.onWayToDestination;
+        return s.tripCompletedTitle;
     }
   }
 

@@ -263,7 +263,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _arrivedDotPulse.stop();
       // Save trip chat to inbox before navigating away
       _saveChatToInbox();
-      _goToRating();
+      // Let the rider see the "Trip completed" state briefly before rating
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) _goToRating();
+      });
     } else if (status == 'cancelled' || status == 'canceled') {
       final cancelledBy = data['cancelledBy']?.toString() ?? '';
       if (cancelledBy.isNotEmpty && cancelledBy != 'driver') return;

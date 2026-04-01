@@ -123,6 +123,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Resolved addresses (replace generic placeholders) ──
   late String _pickupAddr;
   late String _dropoffAddr;
+  String? _riderPhotoUrl;
   bool _resolvingAddresses = false;
 
   // ── Tilt animation ──
@@ -191,7 +192,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     super.initState();
     _pickupAddr = widget.pickupAddress;
     _dropoffAddr = widget.dropoffAddress;
+    _riderPhotoUrl = _normalizedPhotoUrl(widget.riderPhotoUrl);
     _resolveGenericAddresses();
+    _resolveRiderPhotoFromTrip();
 
     // If returning from nav (trip already started), skip slide-to-confirm
     if (widget.arrivedAtPickup) {
@@ -269,6 +272,28 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       duration: const Duration(milliseconds: 600),
     );
     _finishFadeAnim = CurvedAnimation(parent: _finishFadeCtrl, curve: Curves.easeInOut);
+  }
+
+  Future<void> _resolveRiderPhotoFromTrip() async {
+    if (_riderPhotoUrl != null && _riderPhotoUrl!.isNotEmpty) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(_fsDocId)
+          .get();
+      final data = snap.data();
+      if (data == null || !mounted) return;
+      final recovered = _normalizedPhotoUrl(
+        data['riderPhotoUrl']?.toString() ??
+            data['rider_photo_url']?.toString() ??
+            data['passengerPhotoUrl']?.toString() ??
+            data['passenger_photo_url']?.toString() ??
+            data['photo_url']?.toString() ??
+            data['profile_photo_url']?.toString(),
+      );
+      if (recovered == null || recovered.isEmpty) return;
+      setState(() => _riderPhotoUrl = recovered);
+    } catch (_) {}
   }
 
   @override
@@ -601,7 +626,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   Widget _avatar() {
     return VerifiedAvatar(
-      photoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl),
+      photoUrl: _riderPhotoUrl,
       radius: Responsive.w(33),
       fallbackName: widget.riderName,
       uid: widget.riderId?.toString(),
@@ -655,11 +680,25 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           decoration: BoxDecoration(
             color: Colors.transparent,
             shape: BoxShape.circle,
-            border: Border.all(color: const Color(0xFFFFD700), width: 1.5),
+            border: Border.all(color: Colors.white, width: 1.5),
           ),
           child: Icon(icon, color: const Color(0xFFFFD700), size: 18),
         ),
       );
+
+  void _copyAddress(String label, String address) {
+    final value = address.trim();
+    if (value.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label copied'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(milliseconds: 1300),
+      ),
+    );
+  }
 
   Widget _infoRow(
     IconData icon,
@@ -1231,9 +1270,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ctrl.annotations.createPointAnnotationManager().then((m) async {
         _annotMgr = m;
         try {
-          // 'map' keeps pin tips glued to the map surface — prevents floating
-          // when camera is tilted. 'bottom' anchors the teardrop tip at the coordinate.
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'map');
+          // Keep pins upright in mini-map while preserving bottom tip anchor.
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-allow-overlap', true);
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-ignore-placement', true);
@@ -1308,12 +1346,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         final pins = await Future.wait([
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: pickupPoint),
-            image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
+            image: pickupPinBytes, iconSize: 0.86, iconAnchor: mapbox.IconAnchor.BOTTOM,
             iconOffset: const [0.0, 0.0],
           )),
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: dropoffPoint),
-            image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
+            image: dropoffPinBytes, iconSize: 0.86, iconAnchor: mapbox.IconAnchor.BOTTOM,
             iconOffset: const [0.0, 0.0],
           )),
         ]);
@@ -1382,11 +1420,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       final t = (pinSw.elapsedMilliseconds / pinMs).clamp(0.0, 1.0);
       double scale;
       if (t < 0.6) {
-        scale = Curves.easeOutCubic.transform(t / 0.6) * 1.15;
+        scale = Curves.easeOutCubic.transform(t / 0.6) * 0.98;
       } else if (t < 0.85) {
-        scale = 1.15 - 0.15 * Curves.easeInOut.transform((t - 0.6) / 0.25);
+        scale = 0.98 - 0.12 * Curves.easeInOut.transform((t - 0.6) / 0.25);
       } else {
-        scale = 1.0;
+        scale = 0.86;
       }
       for (final pin in _pinAnnots) {
         pin.iconSize = scale;
@@ -1874,6 +1912,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
               child: GestureDetector(
                 onTap: () => _showNavigationSheet(isPickup: true),
+                onLongPress: () => _copyAddress('Pickup address', _pickupAddr),
                 child: _infoRow(
                   Icons.location_on_rounded,
                   _gold.withValues(alpha: 0.15),
@@ -1898,6 +1937,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
               child: GestureDetector(
                 onTap: () => _showNavigationSheet(isPickup: false),
+                onLongPress: () => _copyAddress('Dropoff address', _dropoffAddr),
                 child: _infoRow(
                   Icons.flag_rounded,
                   _gold.withValues(alpha: 0.15),

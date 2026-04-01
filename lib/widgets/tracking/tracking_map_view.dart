@@ -1378,6 +1378,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   void _flyToDriverAt45() {
     if (_map == null) return;
     final bearing = _animBearing;
+    final mq = MediaQuery.of(context).padding;
+    final topInset = mq.top + 10 + _topCardHeight + 32;
+    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 32;
     _map!.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
@@ -1387,6 +1390,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         zoom: 16.5,
         bearing: bearing,
         pitch: 45.0,
+        padding: mapbox.MbxEdgeInsets(
+          top: topInset,
+          bottom: bottomInset,
+          left: 40,
+          right: 40,
+        ),
       ),
       mapbox.MapAnimationOptions(duration: 1500),
     );

@@ -366,6 +366,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
     } else if (isInTripStatus &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
+      // Reset traveled distance for the new trip leg and recalculate ETA
+      _traveledM = 0;
+      _tgtTraveledM = 0;
+      if (_segDist.isNotEmpty) {
+        final totalRouteM = _segDist.last;
+        _distanceMiles = totalRouteM / 1609.34;
+        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      }
       _setState(() {
         _phase = _TrackPhase.onTrip;
         _tripJustStarted = true;
@@ -948,11 +956,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   /// Smooth camera follow for driver position
   void _followDriver(LatLng position, double bearing) {
-    if (_useNavCamera) {
-      _flyToDriverAt45();
-    } else {
-      _fitRouteBounds();
-    }
+    // Always show full route overview so route stays centered between panels
+    _fitRouteBounds();
   }
 
   void _navigateToHome() {

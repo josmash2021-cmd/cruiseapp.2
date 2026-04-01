@@ -2044,48 +2044,98 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         Positioned.fill(
           child: FadeTransition(
           opacity: _finishFadeAnim,
-          child: Container(
-            color: Colors.black.withValues(alpha: 0.85),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 80, height: 80,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _gold.withValues(alpha: 0.15),
-                      border: Border.all(color: _gold, width: 2.5),
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.55),
+                    Colors.black.withValues(alpha: 0.75),
+                    Colors.black.withValues(alpha: 0.60),
+                  ],
+                  stops: const [0.0, 0.5, 1.0],
+                ),
+              ),
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    const Spacer(flex: 3),
+                    // ── Glowing check icon ──
+                    Container(
+                      width: 100, height: 100,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            _gold.withValues(alpha: 0.25),
+                            _gold.withValues(alpha: 0.05),
+                            Colors.transparent,
+                          ],
+                          stops: const [0.0, 0.6, 1.0],
+                          radius: 1.2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: 0.30),
+                            blurRadius: 40,
+                            spreadRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: Container(
+                        margin: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _gold.withValues(alpha: 0.12),
+                          border: Border.all(color: _gold, width: 2.5),
+                        ),
+                        child: const Icon(Icons.check_rounded,
+                            color: _gold, size: 48),
+                      ),
                     ),
-                    child: const Icon(Icons.check_rounded,
-                        color: _gold, size: 44),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text('Viaje Finalizado',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.5,
+                    const SizedBox(height: 28),
+                    // ── Title ──
+                    const Text('Viaje Finalizado',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 30,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text('\$${widget.fare.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      color: _gold,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
+                    const SizedBox(height: 16),
+                    // ── Fare pill ──
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _gold.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(color: _gold.withValues(alpha: 0.35), width: 1),
+                      ),
+                      child: Text('\$${widget.fare.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          color: _gold,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.0,
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(widget.riderName,
-                    style: TextStyle(
-                      color: Colors.grey[400],
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
+                    const SizedBox(height: 14),
+                    // ── Rider name ──
+                    Text(widget.riderName,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                ],
+                    const Spacer(flex: 4),
+                  ],
+                ),
               ),
             ),
           ),

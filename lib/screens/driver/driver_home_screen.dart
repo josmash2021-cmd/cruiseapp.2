@@ -270,7 +270,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         geometry: point,
         image: bytes,
         iconSize: 1.0,
-        iconAnchor: mapbox.IconAnchor.CENTER,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
       ));
     } else {

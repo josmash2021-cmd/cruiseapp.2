@@ -51,6 +51,27 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     return m > 0 ? m : 1.0;
   }
 
+  double _toDouble(dynamic v, {double fallback = 0.0}) {
+    if (v is num) {
+      final d = v.toDouble();
+      return d.isFinite ? d : fallback;
+    }
+    final p = double.tryParse(v?.toString() ?? '');
+    if (p == null || !p.isFinite) return fallback;
+    return p;
+  }
+
+  int _toInt(dynamic v, {int fallback = 0}) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? fallback;
+  }
+
+  String _toStr(dynamic v, {String fallback = ''}) {
+    final s = v?.toString().trim() ?? '';
+    return s.isEmpty ? fallback : s;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -104,25 +125,36 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 
   void _applyEarningsData(Map<String, dynamic> data) {
     setState(() {
-      _total = (data['total'] as num?)?.toDouble() ?? 0.0;
-      _tripsCount = (data['trips_count'] as num?)?.toInt() ?? 0;
-      _onlineHours = (data['online_hours'] as num?)?.toDouble() ?? 0.0;
-      _tipsTotal = (data['tips_total'] as num?)?.toDouble() ?? 0.0;
-      _dailyEarnings =
-          (data['daily_earnings'] as List<dynamic>?)
-              ?.map((e) => (e as num).toDouble())
-              .toList() ??
-          [0, 0, 0, 0, 0, 0, 0];
-      _dayLabels =
-          (data['day_labels'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      _transactions =
-          (data['transactions'] as List<dynamic>?)
-              ?.map((e) => Map<String, dynamic>.from(e as Map))
-              .toList() ??
-          [];
+      _total = _toDouble(data['total']);
+      _tripsCount = _toInt(data['trips_count']);
+      _onlineHours = _toDouble(data['online_hours']);
+      _tipsTotal = _toDouble(data['tips_total']);
+
+      final rawDaily = data['daily_earnings'];
+      _dailyEarnings = rawDaily is List
+        ? rawDaily.map((e) => _toDouble(e)).toList()
+        : [0, 0, 0, 0, 0, 0, 0];
+      if (_dailyEarnings.isEmpty) {
+      _dailyEarnings = [0, 0, 0, 0, 0, 0, 0];
+      }
+
+      final rawLabels = data['day_labels'];
+      _dayLabels = rawLabels is List
+        ? rawLabels.map((e) => _toStr(e, fallback: '-')).toList()
+        : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+      final rawTx = data['transactions'];
+      _transactions = rawTx is List
+        ? rawTx
+          .whereType<Map>()
+          .map((e) => <String, dynamic>{
+            'type': _toStr(e['type'], fallback: 'trip'),
+            'desc': _toStr(e['desc'], fallback: 'Trip'),
+            'time': _toStr(e['time'], fallback: 'Now'),
+            'amount': _toDouble(e['amount']),
+            })
+          .toList()
+        : [];
       _loading = false;
     });
   }
@@ -672,9 +704,14 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   }
 
   Widget _transactionTile(Map<String, dynamic> t) {
+    final type = _toStr(t['type'], fallback: 'trip');
+    final desc = _toStr(t['desc'], fallback: 'Trip');
+    final time = _toStr(t['time'], fallback: 'Now');
+    final amount = _toDouble(t['amount']);
+
     IconData icon;
     Color iconColor;
-    switch (t['type']) {
+    switch (type) {
       case 'bonus':
         icon = Icons.bolt_rounded;
         iconColor = const Color(0xFFF5D990);
@@ -712,7 +749,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  t['desc'] as String,
+                  desc,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
@@ -723,7 +760,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  t['time'] as String,
+                  time,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.35),
                     fontSize: 12,
@@ -733,7 +770,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
             ),
           ),
           Text(
-            '+\$${(t['amount'] as num).toStringAsFixed(2)}',
+            '+\$${amount.toStringAsFixed(2)}',
             style: const TextStyle(
               color: Color(0xFFE8C547),
               fontSize: 16,

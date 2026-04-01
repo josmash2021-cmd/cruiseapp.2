@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, text
+from sqlalchemy import select, func, and_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, Vehicle, Document, DispatchOffer,
@@ -672,59 +672,64 @@ async def withdraw_from_wallet(body: WalletWithdrawIn, user: User = Depends(_get
     if not payout_method:
         raise HTTPException(404, "Payout method not found")
     
-    # Deduct from wallet
+    if payout_method.method_type != "dwolla_bank" or not payout_method.dwolla_funding_source_id:
+        raise HTTPException(400, "Unsupported payout method. Add a valid bank account first.")
+
+    # Dwolla RTP transfer (instantaneous to bank account)
+    transfer_id = None
+    dwolla_error = None
+    try:
+        from dwollasdk import DwollaClient
+        dwolla_key = os.getenv("DWOLLA_APP_KEY")
+        dwolla_secret = os.getenv("DWOLLA_APP_SECRET")
+        dwolla_source = os.getenv("DWOLLA_CRUISE_FUNDING_SOURCE")
+
+        if not (dwolla_key and dwolla_secret):
+            raise HTTPException(500, "Dwolla credentials not configured")
+        if not dwolla_source:
+            raise HTTPException(500, "Dwolla app funding source not configured (DWOLLA_CRUISE_FUNDING_SOURCE)")
+
+        client = DwollaClient(dwolla_key, dwolla_secret, os.getenv("DWOLLA_ENV", "production"))
+
+        transfer_body = {
+            "_links": {
+                "source": {"href": dwolla_source},
+                "destination": {"href": payout_method.dwolla_funding_source_id}
+            },
+            "amount": {
+                "currency": "USD",
+                "value": str(round(body.amount, 2))
+            },
+            "processingChannel": {"name": "realTimePayments"}
+        }
+
+        transfer_response = client.post("transfers", transfer_body)
+        transfer_id = transfer_response.get("_links", {}).get("self", {}).get("href", "").split("/")[-1]
+        if not transfer_id:
+            raise HTTPException(502, "Dwolla transfer created without transfer id")
+        logging.info("[Withdrawal] Dwolla RTP transfer %s created for rider %s — $%.2f (INSTANT)", transfer_id, user.id, body.amount)
+    except HTTPException:
+        raise
+    except Exception as _de:
+        dwolla_error = str(_de)[:200]
+        logging.error("[Withdrawal] Dwolla RTP error: %s", dwolla_error)
+        raise HTTPException(502, f"Dwolla transfer failed: {dwolla_error}")
+
+    # Deduct from wallet only after transfer creation succeeds
     wallet.balance -= body.amount
     wallet.updated_at = datetime.utcnow()
-    
-    # Create transaction record
+
     txn = WalletTransaction(
         wallet_id=wallet.id,
-        amount=-body.amount,  # Negative for cashout
+        amount=-body.amount,
         type="withdrawal",
-        reference_id=str(body.payout_method_id),
+        reference_id=transfer_id,
         description=f"Withdrawal to {payout_method.display_name}"
     )
     db.add(txn)
     await db.commit()
     await db.refresh(wallet)
     await db.refresh(txn)
-    
-    # Dwolla RTP transfer (instantaneous to bank account)
-    transfer_id = None
-    dwolla_error = None
-    if payout_method.method_type == "dwolla_bank" and payout_method.dwolla_funding_source_id:
-        try:
-            from dwollasdk import DwollaClient
-            dwolla_key = os.getenv("DWOLLA_APP_KEY")
-            dwolla_secret = os.getenv("DWOLLA_APP_SECRET")
-            dwolla_source = os.getenv("DWOLLA_CRUISE_FUNDING_SOURCE")
-            
-            if not (dwolla_key and dwolla_secret):
-                dwolla_error = "Dwolla credentials not configured"
-            elif not dwolla_source:
-                dwolla_error = "Dwolla app funding source not configured (DWOLLA_CRUISE_FUNDING_SOURCE)"
-            else:
-                client = DwollaClient(dwolla_key, dwolla_secret, os.getenv("DWOLLA_ENV", "sandbox"))
-                
-                # Create Dwolla transfer with RTP (Real-Time Payments) for instant settlement
-                transfer_body = {
-                    "_links": {
-                        "source": {"href": dwolla_source},
-                        "destination": {"href": payout_method.dwolla_funding_source_id}
-                    },
-                    "amount": {
-                        "currency": "USD",
-                        "value": str(round(body.amount, 2))
-                    },
-                    "processingChannel": {"name": "realTimePayments"}  # Enable RTP for instant transfer
-                }
-                
-                transfer_response = client.post("transfers", transfer_body)
-                transfer_id = transfer_response.get("_links", {}).get("self", {}).get("href", "").split("/")[-1]
-                logging.info("[Withdrawal] Dwolla RTP transfer %s created for rider %s — $%.2f (INSTANT)", transfer_id, user.id, body.amount)
-        except Exception as _de:
-            dwolla_error = str(_de)[:200]
-            logging.error("[Withdrawal] Dwolla RTP error: %s", dwolla_error)
     
     return {
         "status": "success",
@@ -786,7 +791,7 @@ async def add_bank_account(body: RiderPaymentMethodIn, user: User = Depends(_get
         if not (dwolla_key and dwolla_secret):
             raise HTTPException(500, "Dwolla not configured in environment")
         
-        client = DwollaClient(dwolla_key, dwolla_secret, os.getenv("DWOLLA_ENV", "sandbox"))
+        client = DwollaClient(dwolla_key, dwolla_secret, os.getenv("DWOLLA_ENV", "production"))
         
         # Get or create Dwolla customer (using user email as identifier)
         # In production, you should have created a Dwolla customer when user signed up
@@ -841,7 +846,7 @@ async def add_bank_account(body: RiderPaymentMethodIn, user: User = Depends(_get
             pm.is_default = True
             # Unset others as default
             await db.execute(
-                select(RiderPaymentMethod)
+                update(RiderPaymentMethod)
                 .where(RiderPaymentMethod.user_id == user.id, RiderPaymentMethod.id != pm.id)
                 .values(is_default=False)
             )

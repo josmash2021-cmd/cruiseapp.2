@@ -175,7 +175,7 @@ async def _schedule_weekly_payouts():
     """Background loop: sleep until next Tuesday 02:00 UTC, run payouts, repeat."""
     while True:
         target = _next_tuesday_2am()
-        wait_secs = (target - datetime.utcnow()).total_seconds()
+        wait_secs = (target - datetime.now(timezone.utc)).total_seconds()
         logging.info(
             "[AutoPayout] Next run scheduled at %s (in %.0f s)",
             target.isoformat(), wait_secs,
@@ -463,14 +463,14 @@ async def health(x_api_key: str = Header(default="")):
     except Exception as e:
         db_status = f"error: {str(e)[:80]}"
 
-    uptime_s = int((datetime.utcnow() - _SERVER_START_TIME).total_seconds())
+    uptime_s = int((datetime.now(timezone.utc) - _SERVER_START_TIME).total_seconds())
     overall = "ok" if db_status == "ok" else "degraded"
 
     # Public response — minimal info
     public_response = {
         "status": overall,
         "version": "2.0",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
     # Private response — full details, requires API key
@@ -498,7 +498,7 @@ async def health(x_api_key: str = Header(default="")):
             "guardian": guardian_agent.get_status(),
             "backup": _backup_status(),
             "sse": event_bus.get_stats(),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     return public_response
@@ -556,7 +556,7 @@ async def _scheduled_ride_dispatcher():
         try:
             await asyncio.sleep(60)  # Check every minute
             async with SessionLocal() as db:
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 # Find scheduled rides due in the next 10 minutes
                 window = now + timedelta(minutes=10)
                 result = await db.execute(
@@ -644,7 +644,7 @@ async def _connection_watchdog():
                 try:
                     import firestore_sync as _fs
                     _fs._db.collection("_ping").document("watchdog").set(
-                        {"ts": datetime.utcnow().isoformat()}, merge=True
+                        {"ts": datetime.now(timezone.utc).isoformat()}, merge=True
                     )
                     _watchdog_stats["firebase_failures"] = 0
                 except Exception as _e:

@@ -19,7 +19,7 @@ import time
 import asyncio
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional, Callable
 
 from fastapi import Request
@@ -690,7 +690,7 @@ class TripAnomalyDetector:
         except ImportError:
             return
 
-        cutoff = datetime.utcnow() - timedelta(hours=self.MAX_TRIP_HOURS)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=self.MAX_TRIP_HOURS)
         async with self._db_session_maker() as db:
             result = await db.execute(
                 select(Trip).where(
@@ -700,7 +700,7 @@ class TripAnomalyDetector:
             )
             stuck = result.scalars().all()
             for trip in stuck:
-                age_h = (datetime.utcnow() - trip.created_at).total_seconds() / 3600
+                age_h = (datetime.now(timezone.utc) - trip.created_at).total_seconds() / 3600
                 logger.warning(
                     "[TripAnomalyDetector] Trip %d stuck in_progress for %.1fh — flagging as anomaly",
                     trip.id, age_h

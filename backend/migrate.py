@@ -94,6 +94,39 @@ MIGRATIONS = [
 ]
 
 
+# Columns that need to be converted from TIMESTAMP WITHOUT TIME ZONE to WITH TIME ZONE.
+# ALTER COLUMN TYPE is idempotent-safe (no-op if already timestamptz).
+TZ_UPGRADES = [
+    ("users", "created_at"),
+    ("users", "verified_at"),
+    ("users", "deletion_requested_at"),
+    ("users", "terms_accepted_at"),
+    ("users", "privacy_accepted_at"),
+    ("users", "email_verified_at"),
+    ("users", "background_check_completed_at"),
+    ("trips", "created_at"),
+    ("trips", "updated_at"),
+    ("trips", "scheduled_at"),
+    ("dispatch_offers", "created_at"),
+    ("fare_splits", "created_at"),
+    ("consent_logs", "created_at"),
+    ("support_chats", "created_at"),
+    ("support_chats", "updated_at"),
+    ("support_messages", "created_at"),
+    ("ratings", "created_at"),
+    ("vehicles", "created_at"),
+    ("documents", "created_at"),
+    ("documents", "updated_at"),
+    ("cashouts", "created_at"),
+    ("wallets", "updated_at"),
+    ("wallets", "created_at"),
+    ("wallet_transactions", "created_at"),
+    ("action_requests", "created_at"),
+    ("driver_incentives", "created_at"),
+    ("referrals", "created_at"),
+    ("audit_log", "ts"),
+]
+
 async def run():
     async with engine.begin() as conn:
         for table, col, col_type in MIGRATIONS:
@@ -104,6 +137,15 @@ async def run():
                 log.info("  ok: %s.%s", table, col)
             except Exception as e:
                 log.warning("  skip: %s.%s - %s", table, col, e)
+        # Upgrade timestamp columns to timezone-aware
+        for table, col in TZ_UPGRADES:
+            try:
+                await conn.execute(
+                    text(f"ALTER TABLE {table} ALTER COLUMN {col} TYPE TIMESTAMP WITH TIME ZONE USING {col} AT TIME ZONE 'UTC'")
+                )
+                log.info("  tz-ok: %s.%s", table, col)
+            except Exception as e:
+                log.warning("  tz-skip: %s.%s - %s", table, col, e)
     log.info("Migrations done.")
 
 

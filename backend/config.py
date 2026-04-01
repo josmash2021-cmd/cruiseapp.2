@@ -1,6 +1,6 @@
 """Cruise Backend — Shared configuration, env vars, and state."""
 import os, logging, time
-from datetime import datetime
+from datetime import datetime, timezone
 
 # ── Owner / Dispatch ──
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "")
@@ -45,7 +45,7 @@ EMAILJS_PRIVATE_KEY = os.getenv("EMAILJS_PRIVATE_KEY", "")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
 # ── Monitoring ──
-_SERVER_START_TIME = datetime.utcnow()
+_SERVER_START_TIME = datetime.now(timezone.utc)
 _watchdog_stats = {
     "db_failures": 0, "db_reconnects": 0,
     "firebase_failures": 0, "firebase_reconnects": 0,

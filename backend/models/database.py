@@ -81,10 +81,10 @@ class User(Base):
     vehicle_registration_url = Column(Text, nullable=True)
     insurance_url = Column(Text, nullable=True)
     video_url = Column(Text, nullable=True)
-    verified_at = Column(DateTime, nullable=True)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
     ssn = Column(String(255), nullable=True)  # Encrypted SSN (never plaintext)
     status = Column(String(20), default="active")
-    deletion_requested_at = Column(DateTime, nullable=True)
+    deletion_requested_at = Column(DateTime(timezone=True), nullable=True)
     email_changes_count = Column(Integer, default=0)
     phone_changes_count = Column(Integer, default=0)
     stripe_connect_id = Column(String(100), nullable=True)
@@ -93,7 +93,7 @@ class User(Base):
     referred_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     total_earnings = Column(Float, default=0.0)
     pending_balance = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     app_version = Column(String(30), nullable=True)
     device_model = Column(String(100), nullable=True)
     os_version = Column(String(50), nullable=True)
@@ -101,15 +101,15 @@ class User(Base):
     privacy_location = Column(Boolean, default=True)
     privacy_analytics = Column(Boolean, default=True)
     privacy_ads = Column(Boolean, default=False)
-    terms_accepted_at = Column(DateTime, nullable=True)
-    privacy_accepted_at = Column(DateTime, nullable=True)
+    terms_accepted_at = Column(DateTime(timezone=True), nullable=True)
+    privacy_accepted_at = Column(DateTime(timezone=True), nullable=True)
     auth_provider = Column(String(20), default="password")
     email_verified = Column(Boolean, default=False)
-    email_verified_at = Column(DateTime, nullable=True)
+    email_verified_at = Column(DateTime(timezone=True), nullable=True)
     checkr_candidate_id = Column(String(100), nullable=True)
     checkr_report_id = Column(String(100), nullable=True)
     background_check_status = Column(String(20), default="none")
-    background_check_completed_at = Column(DateTime, nullable=True)
+    background_check_completed_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class ConsentLog(Base):
@@ -121,7 +121,7 @@ class ConsentLog(Base):
     version = Column(String(20), nullable=True)
     ip_address = Column(String(50), nullable=True)
     user_agent = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class Trip(Base):
@@ -138,7 +138,7 @@ class Trip(Base):
     fare = Column(Float, nullable=True)
     vehicle_type = Column(String(30), nullable=True)
     status = Column(String(30), default="requested", index=True)
-    scheduled_at = Column(DateTime, nullable=True)
+    scheduled_at = Column(DateTime(timezone=True), nullable=True)
     is_airport = Column(Boolean, default=False)
     airport_code = Column(String(10), nullable=True)
     terminal = Column(String(50), nullable=True)
@@ -163,14 +163,14 @@ class Trip(Base):
     per_mile_rate = Column(Float, nullable=True)
     per_minute_rate = Column(Float, nullable=True)
     share_token = Column(String(64), nullable=True, unique=True, index=True)
-    share_expires_at = Column(DateTime, nullable=True)
+    share_expires_at = Column(DateTime(timezone=True), nullable=True)
     waypoints = Column(Text, nullable=True)
     pet_friendly = Column(Boolean, default=False)
     ac_guaranteed = Column(Boolean, default=False)
     silent_ride = Column(Boolean, default=False)
     wheelchair_accessible = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class FareSplit(Base):
@@ -182,8 +182,8 @@ class FareSplit(Base):
     invitee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     amount = Column(Float, nullable=False)
     status = Column(String(20), default="pending")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    responded_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    responded_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class DispatchOffer(Base):
@@ -192,7 +192,7 @@ class DispatchOffer(Base):
     trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False, index=True)
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     status = Column(String(20), default="pending", index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class PayoutMethod(Base):
@@ -218,7 +218,7 @@ class RiderPaymentMethod(Base):
     account_type = Column(String(20), nullable=True)  # 'checking' or 'savings'
     bank_name = Column(String(255), nullable=True)
     is_default = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class Wallet(Base):
@@ -227,8 +227,8 @@ class Wallet(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
     balance = Column(Float, default=0.0)
     currency = Column(String(3), default="USD")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class WalletTransaction(Base):
@@ -239,7 +239,7 @@ class WalletTransaction(Base):
     type = Column(String(20), nullable=False)
     reference_id = Column(String(100), nullable=True)
     description = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class Cashout(Base):
@@ -248,7 +248,7 @@ class Cashout(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     amount = Column(Float, nullable=False)
     status = Column(String(20), default="pending")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class Vehicle(Base):
@@ -263,8 +263,8 @@ class Vehicle(Base):
     vin = Column(String(50), nullable=True)
     vehicle_type = Column(String(30), default="comfort")
     inspection_valid = Column(Boolean, default=False)
-    inspection_expiry = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    inspection_expiry = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class Document(Base):
@@ -275,10 +275,10 @@ class Document(Base):
     status = Column(String(20), default="pending")
     file_path = Column(Text, nullable=True)
     doc_number = Column(String(100), nullable=True)
-    expiry_date = Column(DateTime, nullable=True)
+    expiry_date = Column(DateTime(timezone=True), nullable=True)
     rejection_reason = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class Rating(Base):
@@ -290,7 +290,7 @@ class Rating(Base):
     stars = Column(Integer, nullable=False)
     comment = Column(Text, nullable=True)
     tip_amount = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class ChatMessage(Base):
@@ -301,7 +301,7 @@ class ChatMessage(Base):
     receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     message = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class SupportChat(Base):
@@ -314,11 +314,11 @@ class SupportChat(Base):
     bot_phase = Column(String(30), default="welcome")
     needs_escalation = Column(Boolean, default=False)
     supervisor_connected = Column(Boolean, default=False)
-    last_user_message_at = Column(DateTime, nullable=True)
+    last_user_message_at = Column(DateTime(timezone=True), nullable=True)
     locale = Column(String(5), default="en")
     ai_disabled = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class SupportMessage(Base):
@@ -329,7 +329,7 @@ class SupportMessage(Base):
     sender_role = Column(String(20), nullable=False)
     message = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class ActionRequest(Base):
@@ -343,10 +343,10 @@ class ActionRequest(Base):
     action_type = Column(String(50), nullable=False)
     details = Column(Text, nullable=True)
     status = Column(String(30), default="pending_admin")
-    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
     reviewed_by = Column(String(200), nullable=True)
     admin_note = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class Notification(Base):
@@ -358,7 +358,7 @@ class Notification(Base):
     notif_type = Column(String(50), default="general")
     is_read = Column(Boolean, default=False)
     data = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class PromoCode(Base):
@@ -369,8 +369,8 @@ class PromoCode(Base):
     max_uses = Column(Integer, default=100)
     current_uses = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
-    expires_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class PasswordResetToken(Base):
@@ -379,7 +379,7 @@ class PasswordResetToken(Base):
     code = Column(String(10), unique=True, nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     expires_at = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class Referral(Base):
@@ -391,8 +391,8 @@ class Referral(Base):
     status = Column(String(20), default="pending")
     referrer_bonus = Column(Float, default=10.0)
     referee_bonus = Column(Float, default=10.0)
-    completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class FavoriteLocation(Base):
@@ -404,7 +404,7 @@ class FavoriteLocation(Base):
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
     icon = Column(String(20), default="home")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class DriverIncentive(Base):
@@ -418,9 +418,9 @@ class DriverIncentive(Base):
     current_trips = Column(Integer, default=0)
     bonus_amount = Column(Float, nullable=False)
     status = Column(String(20), default="active")
-    expires_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class SurgeZone(Base):
@@ -434,8 +434,8 @@ class SurgeZone(Base):
     active_riders = Column(Integer, default=0)
     active_drivers = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class ServiceArea(Base):
@@ -446,7 +446,7 @@ class ServiceArea(Base):
     center_lng = Column(Float, nullable=False)
     radius_km = Column(Float, default=50.0)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class RevokedToken(Base):
@@ -455,15 +455,15 @@ class RevokedToken(Base):
     id = Column(Integer, primary_key=True, index=True)
     jti = Column(String(64), unique=True, nullable=False, index=True)  # JWT ID
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    revoked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    expires_at = Column(DateTime, nullable=False)  # match JWT exp — for cleanup
+    revoked_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime(timezone=True), nullable=False)  # match JWT exp — for cleanup
 
 
 class AuditLog(Base):
     """Persistent tamper-evident security audit log — survives restarts."""
     __tablename__ = "audit_logs"
     id = Column(Integer, primary_key=True, index=True)
-    ts = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    ts = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
     event = Column(String(100), nullable=False, index=True)
     ip = Column(String(50), nullable=False)
     user_id = Column(Integer, nullable=True, index=True)

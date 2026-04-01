@@ -56,16 +56,34 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _startClock();
     _startPolling();
     _startPosStream();
-    _loadWeeklyEarnings();
+    _loadAllEarnings();
   }
 
-  Future<void> _loadWeeklyEarnings() async {
+  Future<void> _loadAllEarnings() async {
     try {
-      final data = await ApiService.getDriverEarnings(period: 'week');
+      // Load weekly earnings
+      final weekData = await ApiService.getDriverEarnings(period: 'week');
       if (mounted) {
         _setState(() {
-          _weeklyEarnings = (data['total'] as num?)?.toDouble() ?? 0;
+          _weeklyEarnings = (weekData['total'] as num?)?.toDouble() ?? 0;
         });
+      }
+      // Load today's earnings (accumulated from all completed trips today)
+      final todayData = await ApiService.getDriverEarnings(period: 'today');
+      if (mounted) {
+        final todayTotal = (todayData['total'] as num?)?.toDouble() ?? 0;
+        // Only set if we haven't already earned more in this session
+        if (todayTotal > _earnings) {
+          _setState(() => _earnings = todayTotal);
+        }
+        // Last trip fare from the latest transaction
+        final txns = todayData['transactions'] as List<dynamic>?;
+        if (txns != null && txns.isNotEmpty) {
+          final lastFare = (txns.first['fare'] as num?)?.toDouble() ?? 0;
+          if (_lastTripEarnings == 0 && lastFare > 0) {
+            _setState(() => _lastTripEarnings = lastFare);
+          }
+        }
       }
     } catch (_) {}
   }
@@ -1363,6 +1381,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _clearAllAnnotations();
     if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     _startPolling();
+    // Refresh earnings from API so weekly total stays in sync
+    _loadAllEarnings();
   }
 
   void _goOffline() {

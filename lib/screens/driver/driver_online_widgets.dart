@@ -106,7 +106,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       S.of(context).lastTripLabel.toUpperCase(),
     ];
 
-    Widget pillPage(double amount, String label, {required bool animateAmount}) {
+    Widget pillPage(double amount, String label) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: BackdropFilter(
@@ -121,30 +121,20 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                animateAmount
-                    ? TweenAnimationBuilder<double>(
-                        duration: const Duration(milliseconds: 700),
-                        curve: Curves.easeOutCubic,
-                        tween: Tween<double>(begin: 0, end: amount),
-                        builder: (_, val, __) => Text(
-                          '\$${val.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            color: pillText,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      )
-                    : Text(
-                        '\$${amount.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          color: pillText,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
+                TweenAnimationBuilder<double>(
+                  duration: const Duration(milliseconds: 900),
+                  curve: Curves.easeOutCubic,
+                  tween: Tween<double>(begin: 0, end: amount),
+                  builder: (_, val, __) => Text(
+                    '\$${val.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      color: pillText,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 1),
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -205,7 +195,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             child: pillPage(
               amounts[_earningsPage],
               labels[_earningsPage],
-              animateAmount: _earningsPage == 1,
             ),
           ),
         ),
@@ -522,50 +511,44 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         }
                       },
                       behavior: HitTestBehavior.opaque,
-                      child: ClipRect(
-                        child: BackdropFilter(
-                          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0A0A0A).withValues(alpha: 0.55),
-                              border: Border(
-                                top: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.08),
-                                ),
-                              ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF111111),
+                          border: Border(
+                            top: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.06),
                             ),
-                            child: SafeArea(
-                              top: false,
-                              child: SizedBox(
-                                height: 62,
-                                child: Row(
-                                  children: [
-                                    const SizedBox(width: 16),
-                                    Icon(
-                                      Icons.tune_rounded,
-                                      color: Colors.white.withValues(alpha: 0.55),
-                                      size: 22,
-                                    ),
-                                    const Spacer(),
-                                    Text(
-                                      S.of(context).findingTrips,
-                                      style: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.6),
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: 0.3,
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    Icon(
-                                      Icons.format_list_bulleted_rounded,
-                                      color: Colors.white.withValues(alpha: 0.55),
-                                      size: 22,
-                                    ),
-                                    const SizedBox(width: 16),
-                                  ],
+                          ),
+                        ),
+                        child: SafeArea(
+                          top: false,
+                          child: SizedBox(
+                            height: 62,
+                            child: Row(
+                              children: [
+                                const SizedBox(width: 16),
+                                Icon(
+                                  Icons.tune_rounded,
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  size: 22,
                                 ),
-                              ),
+                                const Spacer(),
+                                Text(
+                                  S.of(context).findingTrips,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.5),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Icon(
+                                  Icons.format_list_bulleted_rounded,
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  size: 22,
+                                ),
+                                const SizedBox(width: 16),
+                              ],
                             ),
                           ),
                         ),

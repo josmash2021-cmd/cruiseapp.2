@@ -186,7 +186,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
         : s.selectedOption;
     final screenH = MediaQuery.of(context).size.height;
-    final sheetH = (screenH * 0.65).clamp(380.0, 620.0) + bottomPad;
+    // Keep the ride options panel compact so map route remains visible.
+    final sheetH = (screenH * 0.35).clamp(250.0, 420.0) + bottomPad;
 
     return Positioned(
       left: 0,

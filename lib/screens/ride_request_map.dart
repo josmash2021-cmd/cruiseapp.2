@@ -662,7 +662,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     _startCinematicSequence(pts);
   }
 
-  /// Cinematic map animation: fit → tilt 30° + random bearing → pin pop → gold route draw → glow
+  /// Cinematic map animation: fit → pin pop → camera tilt/bearing → gold route draw
   Future<void> _startCinematicSequence(List<LatLng> pts) async {
     if (!mounted || _mapCtrl == null) return;
 
@@ -673,41 +673,44 @@ extension _RideRequestMap on _RideRequestScreenState {
 
     // 1. Fit camera to full route (flat, no tilt yet)
     _fitRoute(pts);
-    await Future.delayed(const Duration(milliseconds: 350));
+    await Future.delayed(const Duration(milliseconds: 420));
     if (!mounted) return;
 
-    // 2. Tilt 0° → 55° + bearing 0° → random, simultaneously (800ms)
+    // 2. Pin pop first so markers establish visual focus
+    _startPinPop();
+    await Future.delayed(const Duration(milliseconds: 560));
+    if (!mounted) return;
+
+    // 3. Tilt 0° → 55° + bearing 0° → random, simultaneously (slightly slower)
     _tiltCtrl?.dispose();
-    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1050));
     _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
       CurvedAnimation(parent: _tiltCtrl!, curve: Curves.easeInOutCubic),
     );
     _bearingCtrl?.dispose();
-    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1050));
     _bearingAnim = Tween<double>(begin: 0.0, end: _randomBearing).animate(
       CurvedAnimation(parent: _bearingCtrl!, curve: Curves.easeInOutCubic),
     );
     _tiltAnim!.addListener(_applyMapCamera);
-    _tiltCtrl!.forward(from: 0);
-    _bearingCtrl!.forward(from: 0);
-
-    // 3. Pin pop at 250ms into tilt
-    await Future.delayed(const Duration(milliseconds: 250));
+    await Future.wait([
+      _tiltCtrl!.forward(from: 0),
+      _bearingCtrl!.forward(from: 0),
+    ]);
     if (!mounted) return;
-    _startPinPop();
 
-    // 3b. Label bubbles unroll 200ms after pin pop starts
-    await Future.delayed(const Duration(milliseconds: 200));
+    // 4. Label bubbles unroll after camera settles
+    await Future.delayed(const Duration(milliseconds: 120));
     if (!mounted) return;
     _unrollLabels();
 
-    // 4. Gold route draws at 100ms after labels start
-    await Future.delayed(const Duration(milliseconds: 100));
+    // 5. Gold route draws last, with a slightly slower stroke animation
+    await Future.delayed(const Duration(milliseconds: 180));
     if (!mounted) return;
-    await _animateGoldRoute(pts, const Duration(milliseconds: 600));
+    await _animateGoldRoute(pts, const Duration(milliseconds: 850));
     if (!mounted) return;
 
-    // 5. Refit route with panel padding so full route is visible above panel
+    // 6. Refit route with panel padding so full route is visible above panel
     _fitRoute(pts, preserveCamera: true);
 
     // Camera stays tilted at 55° — no reset to flat
@@ -1042,16 +1045,13 @@ extension _RideRequestMap on _RideRequestScreenState {
     final screenH = MediaQuery.of(context).size.height;
     final botPad = MediaQuery.of(context).padding.bottom;
     final phase = _ctrl.state.phase;
-    // The map is full-screen but the bottom panel covers ~55-65%.
-    // We need enough bottom padding so the route fits in the visible
-    // map area ABOVE the panel, but not so much it over-compresses.
+    // The map is full-screen and the route sheet covers about 35%.
+    // Keep route framed in the visible map area above that sheet.
     final double bottomPad;
     if (phase == RiderPhase.requesting || phase == RiderPhase.searchingDriver) {
       bottomPad = 160 + botPad;
     } else {
-      // Panel covers roughly bottom 55% of screen; visible map area is top ~45%.
-      // Use a moderate padding so camera zooms out to show full route clearly.
-      bottomPad = (screenH * 0.52).clamp(280.0, 380.0) + botPad;
+      bottomPad = (screenH * 0.35).clamp(190.0, 320.0) + botPad + 20;
     }
     _mapCtrl!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
@@ -1169,7 +1169,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       ];
       final screenH = MediaQuery.of(context).size.height;
       final botSafe = MediaQuery.of(context).padding.bottom;
-      final bottomPad = (screenH * 0.45).clamp(280.0, 420.0) + botSafe + 20;
+      final bottomPad = (screenH * 0.35).clamp(190.0, 320.0) + botSafe + 20;
       final cam = await _mapCtrl?.cameraForCoordinatesPadding(
         coords, mapbox.CameraOptions(),
         mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60), null, null,

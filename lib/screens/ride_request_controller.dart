@@ -372,8 +372,37 @@ extension _RideRequestController on _RideRequestScreenState {
             );
           });
         } else {
-          // No cancel reason from dispatch - just reset silently
-          _ctrl.reset();
+          // Fallback: show a generic cancellation message instead of silently resetting
+          final fallbackReason = S.of(context).tripCancelled;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange, size: 28),
+                    SizedBox(width: 10),
+                    Text(S.of(context).tripCancelled),
+                  ],
+                ),
+                content: Text(fallbackReason, style: const TextStyle(fontSize: 15)),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _ctrl.reset();
+                    },
+                    child: Text(S.of(context).okBtn),
+                  ),
+                ],
+              ),
+            );
+          });
         }
         break;
       default:

@@ -274,6 +274,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _markerAnimTimer?.cancel();
     _cameraFollowTimer?.cancel();
     _tripStartedTimer?.cancel();
+    _staleDriverTimer?.cancel();
     // Clean up map annotations so route/pins don't persist
     _cleanupMapAnnotations();
     super.dispose();
@@ -335,6 +336,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   final bool _shouldFollowDriver = false;
   Timer? _cameraFollowTimer;
   bool _useNavCamera = false; // When true: follow driver at 45° pitch
+
+  // Safety net: detect stale driver location (trip may have ended)
+  Timer? _staleDriverTimer;
+  bool _completionCheckInFlight = false;
 
   @override
   Widget build(BuildContext context) {

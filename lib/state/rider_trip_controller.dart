@@ -572,7 +572,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
       if (userId == null) {
-        _state = _state.copyWith(phase: RiderPhase.cancelled);
+        _state = _state.copyWith(
+          phase: RiderPhase.cancelled,
+          cancelReason: 'No se pudo verificar tu sesión. Intenta de nuevo.',
+        );
         notifyListeners();
         return;
       }
@@ -609,7 +612,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
       final tripId = result['trip_id'] as int?;
       if (tripId == null) {
-        _state = _state.copyWith(phase: RiderPhase.cancelled);
+        _state = _state.copyWith(
+          phase: RiderPhase.cancelled,
+          cancelReason: 'No se pudo crear el viaje. Intenta de nuevo.',
+        );
         notifyListeners();
         return;
       }
@@ -625,7 +631,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       pollingStarted = true; // guard: keep _isRequesting=true while polling
     } catch (e) {
       debugPrint('❌ dispatchRideRequest failed: $e');
-      _state = _state.copyWith(phase: RiderPhase.cancelled);
+      _state = _state.copyWith(
+        phase: RiderPhase.cancelled,
+        cancelReason: 'Error de conexión. Verifica tu red e intenta de nuevo.',
+      );
       notifyListeners();
     } finally {
       // Reset only if polling never started — polling callbacks own the flag
@@ -680,7 +689,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
             phase: RiderPhase.cancelled,
             cancelReason: status == 'no_drivers'
                 ? 'No hay drivers disponibles cerca de tu zona en estos momentos'
-                : null,
+                : status == 'expired'
+                    ? 'La solicitud expiró. Intenta de nuevo.'
+                    : 'Tu viaje fue cancelado.',
           );
           notifyListeners();
           unawaited(CacheService.clearActiveTrip());

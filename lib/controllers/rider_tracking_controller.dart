@@ -177,8 +177,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Update phase and distances
     if (_phase == _TrackPhase.arriving) {
       final dist = _hav(ll, widget.pickupLatLng);
-      _distanceMiles = dist;
-      _etaMinutes = (dist / 0.5).ceil().clamp(1, 99);
+      // Use remaining route distance (road) when available, fallback to haversine
+      if (_segDist.isNotEmpty && _traveledM >= 0) {
+        final remainM = (_segDist.last - _traveledM).clamp(0.0, _segDist.last);
+        _distanceMiles = remainM / 1609.34;
+      } else {
+        _distanceMiles = dist;
+      }
+      // 0.4 mi/min ≈ 24 mph average urban speed
+      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
       if (dist < 0.05 && _phase == _TrackPhase.arriving) {
         _setState(() {
           _phase = _TrackPhase.arrived;
@@ -198,8 +205,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
     } else if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination) {
       final dist = _hav(ll, widget.dropoffLatLng);
-      _distanceMiles = dist;
-      _etaMinutes = (dist / 0.5).ceil().clamp(1, 99);
+      // Use remaining route distance (road) when available, fallback to haversine
+      if (_segDist.isNotEmpty && _traveledM >= 0) {
+        final remainM = (_segDist.last - _traveledM).clamp(0.0, _segDist.last);
+        _distanceMiles = remainM / 1609.34;
+      } else {
+        _distanceMiles = dist;
+      }
+      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
       // Transition to nearDestination when ETA <= 2 min
       if (_etaMinutes <= 2 && _phase == _TrackPhase.onTrip) {
         _setState(() => _phase = _TrackPhase.nearDestination);
@@ -702,7 +715,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Calculate remaining distance
     double remainingM = _segDist.isNotEmpty ? _segDist.last - _traveledM : 0;
     _distanceMiles = remainingM / 1609.34;
-    _etaMinutes = (_distanceMiles / 0.5).ceil().clamp(1, 99);
+    _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
 
     if (!mounted) return;
     _setState(() {});

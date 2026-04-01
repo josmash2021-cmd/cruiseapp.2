@@ -189,7 +189,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                         decoration: BoxDecoration(
                           color: const Color(0xFF262626),
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                          border: Border.all(color: const Color(0xFFD4AF37).withValues(alpha: 0.35)),
                         ),
                         child: Text(
                           S.of(context).typeMessage,
@@ -253,7 +253,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
         decoration: BoxDecoration(
           color: const Color(0xFF262626),
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(color: const Color(0xFFD4AF37).withValues(alpha: 0.35)),
         ),
         child: Icon(icon, color: Colors.white60, size: Responsive.sp(18)),
       ),
@@ -319,7 +319,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
         decoration: BoxDecoration(
           color: _showMoreMenu ? const Color(0xFF333333) : const Color(0xFF262626),
           shape: BoxShape.circle,
-          border: Border.all(color: _showMoreMenu ? const Color(0xFFD4AF37).withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(color: _showMoreMenu ? const Color(0xFFD4AF37).withValues(alpha: 0.5) : const Color(0xFFD4AF37).withValues(alpha: 0.35)),
         ),
         child: Icon(Icons.more_horiz_rounded, color: _showMoreMenu ? const Color(0xFFD4AF37) : Colors.white60, size: Responsive.sp(18)),
       ),

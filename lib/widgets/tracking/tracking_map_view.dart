@@ -578,7 +578,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       maxLng = math.max(maxLng, p.longitude);
     }
     
-    // Padding = safe area + card offset + card height + breathing room
+    // Padding = safe area + card offset + card height + generous breathing room
     // Top card: positioned at topPad + 10, height = topHeight
     // Bottom card: positioned at bottomPad + 16, height = bottomHeight
     _map?.cameraForCoordinatesPadding(
@@ -586,10 +586,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
       mapbox.CameraOptions(bearing: 0, pitch: 0),
       mapbox.MbxEdgeInsets(
-        top: topPad + 10 + topHeight + 16,
-        bottom: bottomPad + 16 + bottomHeight + 16,
-        left: 32,
-        right: 32,
+        top: topPad + 10 + topHeight + 32,
+        bottom: bottomPad + 16 + bottomHeight + 32,
+        left: 40,
+        right: 40,
       ),
       null, null,
     ).then((cam) {
@@ -1344,8 +1344,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
     );
     final mq = MediaQuery.of(context).padding;
-    final topInset = mq.top + 10 + _topCardHeight + 16;
-    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 16;
+    final topInset = mq.top + 10 + _topCardHeight + 32;
+    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 32;
     try {
       final cam = await _map!.cameraForCoordinatesPadding(
         [point],

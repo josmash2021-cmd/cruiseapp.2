@@ -33,7 +33,8 @@ class RiderRatingScreen extends StatefulWidget {
 
 class _RiderRatingScreenState extends State<RiderRatingScreen>
     with SingleTickerProviderStateMixin {
-  static const _gold = Color(0xFFD4A843);
+  static const _gold = Color(0xFFD4AF37);
+  static const _bg = Color(0xFF0d0d1a);
 
   int _ratingStars = 5;
   double _tipAmount = 0;
@@ -171,7 +172,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0A0A0F),
+        backgroundColor: _bg,
         body: Stack(
           children: [
             // ── Blurred dark map background ──
@@ -182,9 +183,9 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Color(0xFF0D1117),
-                      Color(0xFF0A0A0F),
-                      Color(0xFF0A0A0F),
+                      Color(0xFF111122),
+                      Color(0xFF0d0d1a),
+                      Color(0xFF0d0d1a),
                     ],
                     stops: [0.0, 0.35, 1.0],
                   ),
@@ -286,13 +287,13 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                             ),
                             decoration: BoxDecoration(
                               color: sel
-                                  ? _gold.withValues(alpha: 0.15)
-                                  : Colors.white.withValues(alpha: 0.05),
+                                  ? _gold.withValues(alpha: 0.12)
+                                  : const Color(0xFF1A1A2E),
                               borderRadius: BorderRadius.circular(22),
                               border: Border.all(
                                 color: sel
                                     ? _gold
-                                    : Colors.white.withValues(alpha: 0.12),
+                                    : _gold.withValues(alpha: 0.15),
                                 width: sel ? 1.5 : 1,
                               ),
                             ),
@@ -303,7 +304,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                                 fontWeight: FontWeight.w600,
                                 color: sel
                                     ? _gold
-                                    : Colors.white.withValues(alpha: 0.7),
+                                    : Colors.white.withValues(alpha: 0.6),
                               ),
                             ),
                           ),
@@ -345,7 +346,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                         gradient: LinearGradient(
                           colors: [
                             Colors.transparent,
-                            Colors.white.withValues(alpha: 0.08),
+                            _gold.withValues(alpha: 0.15),
                             Colors.transparent,
                           ],
                         ),
@@ -415,15 +416,23 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                                 height: 68,
                                 decoration: BoxDecoration(
                                   color: sel
-                                      ? _gold.withValues(alpha: 0.12)
-                                      : Colors.white.withValues(alpha: 0.04),
+                                      ? _gold.withValues(alpha: 0.10)
+                                      : const Color(0xFF1A1A2E),
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
                                     color: sel
                                         ? _gold
-                                        : Colors.white.withValues(alpha: 0.12),
+                                        : _gold.withValues(alpha: 0.15),
                                     width: sel ? 2 : 1,
                                   ),
+                                  boxShadow: sel
+                                      ? [
+                                          BoxShadow(
+                                            color: _gold.withValues(alpha: 0.15),
+                                            blurRadius: 8,
+                                          ),
+                                        ]
+                                      : null,
                                 ),
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -505,7 +514,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                                 color: Colors.white.withValues(alpha: 0.3),
                               ),
                               filled: true,
-                              fillColor: Colors.white.withValues(alpha: 0.06),
+                              fillColor: const Color(0xFF1A1A2E),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
                                 borderSide: const BorderSide(color: _gold),
@@ -548,13 +557,20 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                               vertical: 16,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.04),
+                              color: const Color(0xFF1A1A2E),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
                                 color: _saveDriver
-                                    ? _gold.withValues(alpha: 0.6)
-                                    : Colors.white.withValues(alpha: 0.08),
+                                    ? _gold.withValues(alpha: 0.5)
+                                    : _gold.withValues(alpha: 0.12),
                               ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
                             ),
                             child: Row(
                               children: [
@@ -569,7 +585,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                                     border: Border.all(
                                       color: _saveDriver
                                           ? _gold
-                                          : Colors.white.withValues(alpha: 0.25),
+                                          : _gold.withValues(alpha: 0.3),
                                       width: 2,
                                     ),
                                   ),
@@ -612,37 +628,51 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                     const SizedBox(height: 28),
 
                     // ── Send button ──
-                    SizedBox(
+                    Container(
                       width: double.infinity,
                       height: 56,
-                      child: ElevatedButton(
-                        onPressed: _submitting ? null : _submit,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _gold,
-                          foregroundColor: Colors.black,
-                          disabledBackgroundColor:
-                              _gold.withValues(alpha: 0.5),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(28),
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFFE8C547),
+                            Color(0xFFD4AF37),
+                            Color(0xFFC49B30),
+                          ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: 0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _submitting ? null : _submit,
+                          borderRadius: BorderRadius.circular(28),
+                          child: Center(
+                            child: _submitting
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.black54,
+                                    ),
+                                  )
+                                : Text(
+                                    s.send,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.black,
+                                    ),
+                                  ),
                           ),
                         ),
-                        child: _submitting
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.black54,
-                                ),
-                              )
-                            : Text(
-                                s.send,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
                       ),
                     ),
                     const SizedBox(height: 16),

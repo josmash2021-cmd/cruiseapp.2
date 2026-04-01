@@ -89,8 +89,26 @@ void _drawLuxuryPin(
   const arcEnd   = 2.5761455262; // pi * 0.82
   const arcSweep = arcEnd - arcStart;
 
-  // ── 1. White fade glow behind icon ──
-  final glowR = r * 0.60;
+  // ── 1a. Outer golden luminous halo (fade) ──
+  final outerGlowR = r * 1.20;
+  canvas.drawCircle(
+    Offset(cx, iconCY),
+    outerGlowR,
+    Paint()
+      ..shader = ui.Gradient.radial(
+        Offset(cx, iconCY),
+        outerGlowR,
+        [
+          const Color(0xFFE8C547).withValues(alpha: 0.22),
+          const Color(0xFFE8C547).withValues(alpha: 0.06),
+          Colors.transparent,
+        ],
+        [0.0, 0.50, 1.0],
+      ),
+  );
+
+  // ── 1b. White center glow (luminous fade) ──
+  final glowR = r * 0.80;
   canvas.drawCircle(
     Offset(cx, iconCY),
     glowR,
@@ -99,11 +117,12 @@ void _drawLuxuryPin(
         Offset(cx, iconCY),
         glowR,
         [
-          Colors.white.withValues(alpha: 0.50),
-          Colors.white.withValues(alpha: 0.15),
+          Colors.white.withValues(alpha: 0.60),
+          Colors.white.withValues(alpha: 0.18),
+          Colors.white.withValues(alpha: 0.04),
           Colors.transparent,
         ],
-        [0.0, 0.45, 1.0],
+        [0.0, 0.30, 0.65, 1.0],
       ),
   );
 
@@ -120,11 +139,11 @@ void _drawLuxuryPin(
   final startY = cupCY + r * math.sin(arcStart);
 
   outerPath.quadraticBezierTo(
-    endX + r * 0.06, tipY - (tipY - endY) * 0.25,
+    endX + r * 0.08, tipY - (tipY - endY) * 0.38,
     cx, tipY,
   );
   outerPath.quadraticBezierTo(
-    startX - r * 0.06, tipY - (tipY - startY) * 0.25,
+    startX - r * 0.08, tipY - (tipY - startY) * 0.38,
     startX, startY,
   );
   outerPath.close();

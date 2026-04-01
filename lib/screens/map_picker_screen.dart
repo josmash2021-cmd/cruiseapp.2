@@ -283,11 +283,11 @@ class _MapPickerScreenState extends State<MapPickerScreen>
           // Center pin — tip sits at exact screen center (map coordinate)
           Center(
             child: Transform.translate(
-              offset: Offset(0, -(56 * 1.3 / 2) + (_anchorAnim?.value ?? 0.0)),
+              offset: Offset(0, -(46 * 1.0 / 2) + (_anchorAnim?.value ?? 0.0)),
               child: ScaleTransition(
                 scale: _settleAnim,
                 child: CircularMapPin(
-                  size: 56,
+                  size: 46,
                   icon: widget.isPickup ? CircularPinIcon.person : CircularPinIcon.flag,
                   isPickup: widget.isPickup,
                 ),

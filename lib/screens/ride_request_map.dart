@@ -96,7 +96,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     final showEta = etaText != null && etaText.isNotEmpty;
 
     // ── Pin dimensions ──
-    const pinSize = 158.0;
+    const pinSize = 130.0;
 
     // ── Measure label text ──
     final textPainter = TextPainter(
@@ -144,7 +144,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     // ── Pin display dimensions (GoldenPinPainter: height = width × 1.30) ──
     // The 2× image must be scaled to its logical size before drawing.
     const double pinDisplayW = pinSize;
-    const double pinDisplayH = pinSize * 1.30; // includes full tail down to the tip
+    const double pinDisplayH = pinSize * 0.92; // includes full tail down to the tip
 
     // ── Unpadded layout ──
     final rawW = pinDisplayW + pinLabelGap + labelW;

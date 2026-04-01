@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 class CruiseMapPin extends StatefulWidget {
   final double size; // pin width; height is derived proportionally
   final IconData icon; // avatar icon inside pin circle
-  const CruiseMapPin({super.key, this.size = 56, this.icon = Icons.person});
+  const CruiseMapPin({super.key, this.size = 44, this.icon = Icons.person});
 
   @override
   State<CruiseMapPin> createState() => _CruiseMapPinState();
@@ -40,7 +40,7 @@ class _CruiseMapPinState extends State<CruiseMapPin>
   Widget build(BuildContext context) {
     final s = widget.size;
     final pinW = s;
-    final pinH = s * (68 / 72);
+    final pinH = s * (54 / 72);
     final avatarSize = s * (48 / 72);
     final avatarMarginTop = s * 0.16;
     final iconSize = s * (32 / 72); // larger icon
@@ -125,15 +125,33 @@ class _PinPainter extends CustomPainter {
     final r = w * 0.30;
     final cupCY = w * 0.34;
     final thick = r * 0.28;
-    final tipY = h - w * 0.01;
+    final tipY = h - w * 0.04;
     final iconCY = cupCY;
 
     const arcStart = 0.5654866776; // pi * 0.18
     const arcEnd   = 2.5761455262; // pi * 0.82
     const arcSweep = arcEnd - arcStart;
 
-    // ── 1. White fade glow behind icon ──
-    final glowR = r * 0.60;
+    // ── 1a. Outer golden luminous halo (fade) ──
+    final outerGlowR = r * 1.20;
+    canvas.drawCircle(
+      Offset(cx, iconCY),
+      outerGlowR,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(cx, iconCY),
+          outerGlowR,
+          [
+            const Color(0xFFE8C547).withValues(alpha: 0.22),
+            const Color(0xFFE8C547).withValues(alpha: 0.06),
+            Colors.transparent,
+          ],
+          [0.0, 0.50, 1.0],
+        ),
+    );
+
+    // ── 1b. White center glow (luminous fade) ──
+    final glowR = r * 0.80;
     canvas.drawCircle(
       Offset(cx, iconCY),
       glowR,
@@ -142,11 +160,12 @@ class _PinPainter extends CustomPainter {
           Offset(cx, iconCY),
           glowR,
           [
-            Colors.white.withValues(alpha: 0.50),
-            Colors.white.withValues(alpha: 0.15),
+            Colors.white.withValues(alpha: 0.60),
+            Colors.white.withValues(alpha: 0.18),
+            Colors.white.withValues(alpha: 0.04),
             Colors.transparent,
           ],
-          [0.0, 0.45, 1.0],
+          [0.0, 0.30, 0.65, 1.0],
         ),
     );
 
@@ -163,11 +182,11 @@ class _PinPainter extends CustomPainter {
     final startY = cupCY + r * math.sin(arcStart);
 
     outerPath.quadraticBezierTo(
-      endX + r * 0.06, tipY - (tipY - endY) * 0.25,
+      endX + r * 0.08, tipY - (tipY - endY) * 0.38,
       cx, tipY,
     );
     outerPath.quadraticBezierTo(
-      startX - r * 0.06, tipY - (tipY - startY) * 0.25,
+      startX - r * 0.08, tipY - (tipY - startY) * 0.38,
       startX, startY,
     );
     outerPath.close();

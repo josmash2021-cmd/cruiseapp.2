@@ -26,20 +26,54 @@ class GoldPinRenderer {
     bool withHouse = false,
   }) async {
     final recorder = ui.PictureRecorder();
-    const double w = 120;
-    const double h = 132;
+    const double w = 100;
+    const double h = 108;
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
 
     const cx = w / 2;
-    const bulbR = 42.0;
-    const bulbCy = 50.0;
-    const tipY = h - 6.0;
+    const bulbR = 36.0;
+    const bulbCy = 42.0;
+    const tipY = h - 8.0;
 
-    // 1. Tail (teardrop)
+    // 0. Outer golden luminous halo (fade)
+    canvas.drawCircle(
+      const Offset(cx, bulbCy),
+      bulbR * 1.35,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          const Offset(cx, bulbCy),
+          bulbR * 1.35,
+          [
+            const Color(0xFFE8C547).withValues(alpha: 0.20),
+            const Color(0xFFE8C547).withValues(alpha: 0.05),
+            Colors.transparent,
+          ],
+          [0.0, 0.50, 1.0],
+        ),
+    );
+
+    // 0b. White center luminous glow (fade)
+    canvas.drawCircle(
+      const Offset(cx, bulbCy),
+      bulbR * 0.70,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          const Offset(cx, bulbCy),
+          bulbR * 0.70,
+          [
+            Colors.white.withValues(alpha: 0.55),
+            Colors.white.withValues(alpha: 0.15),
+            Colors.transparent,
+          ],
+          [0.0, 0.45, 1.0],
+        ),
+    );
+
+    // 1. Tail (shorter, smoother teardrop)
     final tail = Path()
-      ..moveTo(cx - 18, bulbCy + bulbR * 0.55)
-      ..quadraticBezierTo(cx - 6, tipY - 10, cx, tipY)
-      ..quadraticBezierTo(cx + 6, tipY - 10, cx + 18, bulbCy + bulbR * 0.55)
+      ..moveTo(cx - 14, bulbCy + bulbR * 0.55)
+      ..quadraticBezierTo(cx - 5, tipY - 12, cx, tipY)
+      ..quadraticBezierTo(cx + 5, tipY - 12, cx + 14, bulbCy + bulbR * 0.55)
       ..close();
     canvas.drawPath(tail, Paint()..color = _gold);
 
@@ -59,8 +93,8 @@ class GoldPinRenderer {
       bulbR,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
-        ..color = Colors.white.withValues(alpha: 0.40),
+        ..strokeWidth = 2.0
+        ..color = Colors.white.withValues(alpha: 0.35),
     );
 
     // 7. Transparent hole in bulb center

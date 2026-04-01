@@ -118,12 +118,12 @@ class CircularMapPin extends StatelessWidget {
       ),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return SizedBox(width: size, height: size * 1.3);
+          return SizedBox(width: size, height: size * 1.0);
         }
         return Image.memory(
           snapshot.data!,
           width: size,
-          height: size * 1.3,
+          height: size * 1.0,
           fit: BoxFit.contain,
         );
       },

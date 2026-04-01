@@ -323,7 +323,7 @@ extension _HomeScreenController on _HomeScreenState {
           await ctrl.annotations.createPointAnnotationManager();
       final pinBytes = await buildGoldenPinBytes(
         icon: Icons.location_on_rounded,
-        size: 64,
+        size: 52,
       );
       _dropoffPinAnnot = await pinMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(

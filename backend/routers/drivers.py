@@ -80,6 +80,7 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     user.lat = body.lat
     user.lng = body.lng
     user.is_online = body.is_online
+    user.last_active_at = utc_now()
     await db.commit()
 
     # Invalidate nearby cache cells near this driver's new position

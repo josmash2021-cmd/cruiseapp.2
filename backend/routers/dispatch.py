@@ -220,10 +220,19 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         except Exception as e:
             logging.error("Firestore sync on dispatch_request failed: %s", e)
 
-    # Find nearby online drivers
+    # Find nearby online drivers with fresh heartbeat to avoid assigning offers
+    # to stale "ghost" drivers left online after app/network crashes.
+    active_cutoff = utc_now() - timedelta(minutes=2)
     result = await db.execute(
         select(User).where(
-            and_(User.role == "driver", User.is_online == True, User.lat.isnot(None))
+            and_(
+                User.role == "driver",
+                User.is_online == True,
+                User.lat.isnot(None),
+                User.lng.isnot(None),
+                User.last_active_at.isnot(None),
+                User.last_active_at >= active_cutoff,
+            )
         )
     )
     drivers = result.scalars().all()
@@ -541,9 +550,18 @@ async def reject_offer(
             select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == trip.id)
         )
         rejected_ids = {r[0] for r in rejected_ids_result.all()}
+        active_cutoff = utc_now() - timedelta(minutes=2)
         drivers_result = await db.execute(
             select(User).where(
-                and_(User.role == "driver", User.is_online == True, User.lat.isnot(None), ~User.id.in_(rejected_ids))
+                and_(
+                    User.role == "driver",
+                    User.is_online == True,
+                    User.lat.isnot(None),
+                    User.lng.isnot(None),
+                    User.last_active_at.isnot(None),
+                    User.last_active_at >= active_cutoff,
+                    ~User.id.in_(rejected_ids),
+                )
             )
         )
         drivers = drivers_result.scalars().all()

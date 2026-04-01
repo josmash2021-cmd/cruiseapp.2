@@ -5,11 +5,8 @@ import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/user_profile_photo.dart';
-import '../../config/page_transitions.dart';
-import '../privacy_screen.dart';
-import '../splash_screen.dart';
 
-/// Driver Manage Account page — edit photo, email, phone, delete account.
+/// Driver Manage Account page — edit photo, email, phone.
 class DriverManageAccountScreen extends StatefulWidget {
   const DriverManageAccountScreen({super.key});
 
@@ -54,6 +51,13 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
       setState(() {
         _user = user;
         _photoUrl = user?['photo_url'] as String?;
+        // Always recover local photo path so avatar never disappears
+        final savedPath = UserSession.photoNotifier.value;
+        if (savedPath.isNotEmpty) _localPhotoPath = savedPath;
+        if ((_photoUrl == null || _photoUrl!.isEmpty) &&
+            UserSession.photoUrlNotifier.value.isNotEmpty) {
+          _photoUrl = UserSession.photoUrlNotifier.value;
+        }
         _emailCtrl.text = user?['email'] as String? ?? '';
         _phoneCtrl.text = user?['phone'] as String? ?? '';
         _emailChanges = (user?['email_changes_count'] as int?) ?? 0;
@@ -146,58 +150,7 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
     }
   }
 
-  Future<void> _deleteAccount() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          S.of(context).deleteAccountTitle,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        content: Text(
-          S.of(context).deleteAccountMsg,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              S.of(context).cancelDeletion,
-              style: TextStyle(color: Colors.white54),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              S.of(context).sureButton,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
 
-    setState(() => _saving = true);
-    try {
-      await ApiService.deleteAccount();
-      await UserSession.logout();
-      if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const SplashScreen()),
-        (_) => false,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      _snack(S.of(context).errorOccurred);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -281,6 +234,7 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
                           radius: 54,
                           fallbackName: fullName,
                           uid: UserSession.currentUid,
+                          role: 'driver',
                         ),
                         Positioned(
                           bottom: 0,
@@ -382,34 +336,7 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
                   ],
                 ),
 
-                const SizedBox(height: 40),
 
-                // ── Delete account ──
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: OutlinedButton.icon(
-                    onPressed: _saving ? null : _deleteAccount,
-                    icon: const Icon(Icons.delete_forever_rounded, size: 20),
-                    label: Text(
-                      S.of(context).deleteAccountTitle,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.redAccent,
-                      side: const BorderSide(
-                        color: Colors.redAccent,
-                        width: 1.2,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),

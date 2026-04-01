@@ -100,13 +100,18 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       _earnings,
       _lastTripEarnings,
     ];
+    final prevAmounts = [
+      _prevWeeklyEarnings,
+      _prevEarnings,
+      _prevLastTripEarnings,
+    ];
     final labels = [
       S.of(context).thisWeek.toUpperCase(),
       S.of(context).today.toUpperCase(),
       S.of(context).lastTripLabel.toUpperCase(),
     ];
 
-    Widget pillPage(double amount, String label) {
+    Widget pillPage(double amount, double prevAmount, String label) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: BackdropFilter(
@@ -122,9 +127,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TweenAnimationBuilder<double>(
+                  key: ValueKey<double>(amount),
                   duration: const Duration(milliseconds: 900),
                   curve: Curves.easeOutCubic,
-                  tween: Tween<double>(begin: 0, end: amount),
+                  tween: Tween<double>(begin: prevAmount, end: amount),
                   builder: (_, val, __) => Text(
                     '\$${val.toStringAsFixed(2)}',
                     style: TextStyle(
@@ -194,6 +200,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             key: ValueKey<int>(_earningsPage),
             child: pillPage(
               amounts[_earningsPage],
+              prevAmounts[_earningsPage],
               labels[_earningsPage],
             ),
           ),

@@ -44,6 +44,7 @@ import 'driver_inbox_screen.dart';
 import 'driver_home_screen.dart';
 import '../../services/map_launcher_service.dart';
 import '../../services/preload_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'driver_trip_accept_screen.dart';
 import 'trip_accepted_screen.dart';
 
@@ -295,6 +296,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   int _earningsPage = 1; // 0=weekly, 1=today, 2=last trip
   double _currentSpeedMph = 0.0;
 
+  // -- Earnings refresh timer --
+  Timer? _earningsRefreshTimer;
+  // Track previous amounts for smooth TweenAnimationBuilder transitions
+  double _prevEarnings = 0;
+  double _prevWeeklyEarnings = 0;
+  double _prevLastTripEarnings = 0;
+
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  LIFECYCLE
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -366,10 +374,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _offerSseSub?.cancel();
       _sseActive = false;
       _clock?.cancel();
+      _earningsRefreshTimer?.cancel();
       _goldDot.dispose();
     } else if (state == AppLifecycleState.resumed) {
       _startPolling();
       _startClock();
+      _startEarningsRefresh();
     }
   }
 
@@ -390,6 +400,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _posStream?.cancel();
     _gpsService.stopTracking();
     _reFollowTimer?.cancel();
+    _earningsRefreshTimer?.cancel();
     _panelAnimCtrl?.dispose();
     _offerPageCtrl.dispose();
     _routePulseCtrl?.dispose();

@@ -561,6 +561,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
     SharedPreferences.getInstance().then((p) => p.setBool('driver_was_online', stillOnline));
+    _refreshStats();
     if (stillOnline) {
       _startTripPolling();
     } else {
@@ -644,6 +645,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
     SharedPreferences.getInstance().then((p) => p.setBool('driver_was_online', stillOnline));
+    _refreshStats();
     if (stillOnline) {
       _startTripPolling();
     } else {

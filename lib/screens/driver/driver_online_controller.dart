@@ -57,16 +57,68 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _startPolling();
     _startPosStream();
     _loadAllEarnings();
+    _startEarningsRefresh();
+  }
+
+  /// Start a periodic timer to refresh earnings every 45 seconds.
+  void _startEarningsRefresh() {
+    _earningsRefreshTimer?.cancel();
+    _earningsRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      _loadAllEarnings();
+    });
+  }
+
+  /// Save current earnings snapshot to SharedPreferences for instant load next time.
+  Future<void> _cacheEarnings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Use same key as driver_home_screen for shared cache
+      prefs.setDouble('driver_cached_earnings', _earnings);
+      prefs.setDouble('driver_online_weekly', _weeklyEarnings);
+      prefs.setDouble('driver_online_last_trip', _lastTripEarnings);
+    } catch (_) {}
   }
 
   Future<void> _loadAllEarnings() async {
+    // ── Instant: load from SharedPreferences cache first ──
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Use same key as driver_home_screen for shared cache
+      final cachedToday = prefs.getDouble('driver_cached_earnings');
+      final cachedWeekly = prefs.getDouble('driver_online_weekly');
+      final cachedLastTrip = prefs.getDouble('driver_online_last_trip');
+      if (mounted && _earnings == 0 && cachedToday != null && cachedToday > 0) {
+        _setState(() {
+          _prevEarnings = _earnings;
+          _earnings = cachedToday;
+        });
+      }
+      if (mounted && _weeklyEarnings == 0 && cachedWeekly != null && cachedWeekly > 0) {
+        _setState(() {
+          _prevWeeklyEarnings = _weeklyEarnings;
+          _weeklyEarnings = cachedWeekly;
+        });
+      }
+      if (mounted && _lastTripEarnings == 0 && cachedLastTrip != null && cachedLastTrip > 0) {
+        _setState(() {
+          _prevLastTripEarnings = _lastTripEarnings;
+          _lastTripEarnings = cachedLastTrip;
+        });
+      }
+    } catch (_) {}
+
+    // ── Background: fetch fresh data from API ──
     try {
       // Load weekly earnings
       final weekData = await ApiService.getDriverEarnings(period: 'week');
       if (mounted) {
-        _setState(() {
-          _weeklyEarnings = (weekData['total'] as num?)?.toDouble() ?? 0;
-        });
+        final weekTotal = (weekData['total'] as num?)?.toDouble() ?? 0;
+        if (weekTotal != _weeklyEarnings) {
+          _setState(() {
+            _prevWeeklyEarnings = _weeklyEarnings;
+            _weeklyEarnings = weekTotal;
+          });
+        }
       }
       // Load today's earnings (accumulated from all completed trips today)
       final todayData = await ApiService.getDriverEarnings(period: 'today');
@@ -74,17 +126,25 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         final todayTotal = (todayData['total'] as num?)?.toDouble() ?? 0;
         // Only set if we haven't already earned more in this session
         if (todayTotal > _earnings) {
-          _setState(() => _earnings = todayTotal);
+          _setState(() {
+            _prevEarnings = _earnings;
+            _earnings = todayTotal;
+          });
         }
         // Last trip fare from the latest transaction
         final txns = todayData['transactions'] as List<dynamic>?;
         if (txns != null && txns.isNotEmpty) {
           final lastFare = (txns.first['fare'] as num?)?.toDouble() ?? 0;
           if (_lastTripEarnings == 0 && lastFare > 0) {
-            _setState(() => _lastTripEarnings = lastFare);
+            _setState(() {
+              _prevLastTripEarnings = _lastTripEarnings;
+              _lastTripEarnings = lastFare;
+            });
           }
         }
       }
+      // Save fresh data to cache
+      _cacheEarnings();
     } catch (_) {}
   }
 
@@ -1052,11 +1112,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // Show the earnings / completed overlay (mirrors _complete())
       _setState(() {
         _trips++;
+        _prevEarnings = _earnings;
         _earnings += _fare;
+        _prevLastTripEarnings = _lastTripEarnings;
         _lastTripEarnings = _fare;
         _phase = _Phase.completed;
         _stars = 5;
       });
+      _cacheEarnings();
       _doneCtrl.forward(from: 0);
     } else {
       // Cancelled or back-pressed — return to searching
@@ -1353,11 +1416,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (!mounted) return;
     _setState(() {
       _trips++;
+      _prevEarnings = _earnings;
       _earnings += _fare;
+      _prevLastTripEarnings = _lastTripEarnings;
       _lastTripEarnings = _fare;
       _phase = _Phase.completed;
       _stars = 5;
     });
+    _cacheEarnings();
     _doneCtrl.forward(from: 0);
   }
 

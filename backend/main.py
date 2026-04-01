@@ -103,7 +103,7 @@ from config import (
 
 def _next_tuesday_2am() -> datetime:
     """Return the next Tuesday at 02:00 UTC (or today if it's Tuesday and before 2 AM)."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     days_ahead = (1 - now.weekday()) % 7  # 1 = Tuesday
     if days_ahead == 0 and now.hour >= 2:
         days_ahead = 7

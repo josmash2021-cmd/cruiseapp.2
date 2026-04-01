@@ -351,7 +351,14 @@ async def get_next_payout_date(user: User = Depends(_get_current_user), db: Asyn
     result = await db.execute(select(User).where(User.id == user.id))
     drv = result.scalar_one_or_none()
     pending = round(float(drv.pending_balance or 0.0), 2) if drv else 0.0
-    next_date = _next_tuesday_2am()
+    # Calculate next Tuesday 02:00 UTC
+    now = utc_now()
+    days_ahead = (1 - now.weekday()) % 7  # 1 = Tuesday
+    if days_ahead == 0 and now.hour >= 2:
+        days_ahead = 7
+    next_date = (now + timedelta(days=days_ahead)).replace(
+        hour=2, minute=0, second=0, microsecond=0
+    )
     return {
         "next_payout_date": next_date.isoformat(),
         "pending_balance": pending,

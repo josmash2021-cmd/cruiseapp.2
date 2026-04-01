@@ -381,11 +381,46 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         if (mounted) _goToRating();
       });
     } else if (isCancelledStatus) {
-      final cancelledBy = data['cancelledBy']?.toString() ?? '';
-      if (cancelledBy.isNotEmpty && cancelledBy != 'driver') return;
+      final cancelledBy =
+          (data['cancelledBy'] ??
+                  data['canceledBy'] ??
+                  data['cancelled_by'] ??
+                  data['canceled_by'] ??
+                  '')
+              .toString()
+              .trim()
+              .toLowerCase();
+      final cancellationReason =
+          (data['cancellationReason'] ??
+                  data['cancellation_reason'] ??
+                  data['cancelReason'] ??
+                  data['cancel_reason'] ??
+                  '')
+              .toString()
+              .trim()
+              .toLowerCase();
+
+      final cancelledByDriver =
+          cancelledBy == 'driver' || cancellationReason.contains('driver');
+      final cancelledByRider =
+          cancelledBy == 'rider' ||
+          cancelledBy == 'passenger' ||
+          cancellationReason.contains('rider') ||
+          cancellationReason.contains('passenger') ||
+          cancellationReason.contains('user_cancelled');
+
+      if (cancelledByRider) {
+        // Rider already initiated the cancellation flow elsewhere.
+        return;
+      }
+
       if (!_cancelDialogShown) {
         _cancelDialogShown = true;
-        _showDriverCancelledDialog();
+        _showDriverCancelledDialog(
+          message: cancelledByDriver
+              ? null
+              : S.of(context).tripCancelledByOperator,
+        );
       }
     }
   }

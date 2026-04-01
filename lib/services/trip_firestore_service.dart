@@ -78,6 +78,8 @@ class TripFirestoreService {
   static Future<void> cancelTrip(String tripId) async {
     await _trips.doc(tripId).update({
       'status': 'cancelled',
+      'cancelledBy': 'rider',
+      'cancellationReason': 'rider_cancelled',
       'cancelReason': 'Cancelled by passenger',
       'cancelledAt': FieldValue.serverTimestamp(),
     });

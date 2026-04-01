@@ -246,7 +246,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
   }
 
   /// Shows a clear overlay when the driver (or backend) cancels the trip.
-  void _showDriverCancelledDialog() {
+  void _showDriverCancelledDialog({String? message}) {
     if (!mounted) return;
     _statusPollTimer?.cancel();
     _driverLocSub?.cancel();
@@ -280,7 +280,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
               ),
               const SizedBox(height: 8),
               Text(
-                S.of(context).driverCancelledMessage,
+                message ?? S.of(context).driverCancelledMessage,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
               ),

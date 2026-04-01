@@ -872,6 +872,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         return;
       }
     }
+    // Heartbeat: keep last_active_at fresh so dispatch doesn't skip us.
+    // Fires every poll cycle even if the driver is stationary (GPS silent).
+    if (_driverId != null && _pos != null) {
+      ApiService.updateDriverLocation(
+        driverId: _driverId!,
+        lat: _pos!.latitude,
+        lng: _pos!.longitude,
+      ).catchError((_) => <String, dynamic>{});
+    }
     try {
       final offers = await ApiService.getDriverPendingOffers(_driverId!);
       if (!mounted || _phase != _Phase.searching) return;

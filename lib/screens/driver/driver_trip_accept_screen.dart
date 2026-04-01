@@ -1980,9 +1980,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (_rideStarted && _nearDropoff) {
       return _buildSlideFinishTrip();
     }
-    // Phase 5: Ride started, not near dropoff → Continue/Directions (dropoff)
+    // Phase 5: Ride started, not near dropoff → Finalizar bloqueado
     if (_rideStarted && !_nearDropoff) {
-      return _buildContinueDirectionsDropoff();
+      return _buildSlideFinishTripLocked();
     }
     // Phase 4: Arrived confirmed, ride not started → second Start Trip
     if (_arrivedConfirmed && !_rideStarted) {
@@ -1992,9 +1992,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (_tripStarted && _nearPickup && !_arrivedConfirmed) {
       return _buildSlideArrived();
     }
-    // Phase 2: Trip started, not near pickup → Continue/Directions (pickup)
-    if (_tripStarted && !_nearPickup) {
-      return _buildContinueDirections();
+    // Phase 2: Trip started, not near pickup → Arrived bloqueado
+    if (_tripStarted && !_nearPickup && !_arrivedConfirmed) {
+      return _buildSlideArrivedLocked();
     }
     // Phase 1: Slide Start Trip
     return _buildSlideStartTrip();
@@ -2270,6 +2270,26 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
+  Widget _buildSlideArrivedLocked() {
+    return Column(
+      key: const ValueKey('slide_arrived_locked'),
+      mainAxisSize: MainAxisSize.min,
+      children: const [
+        _LockedSlideButton(label: 'Arrived'),
+        SizedBox(height: 10),
+        Text(
+          'El boton se activa cuando ya estes en la direccion de pickup',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white54,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
   // ── Slide-to-confirm "Start Trip" #2 (pickup confirmed → go to dropoff) ─
   Widget _buildSlideStartRide() {
     const height = 62.0;
@@ -2502,6 +2522,26 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
+  Widget _buildSlideFinishTripLocked() {
+    return Column(
+      key: const ValueKey('slide_finish_trip_locked'),
+      mainAxisSize: MainAxisSize.min,
+      children: const [
+        _LockedSlideButton(label: 'Finalizar Viaje'),
+        SizedBox(height: 10),
+        Text(
+          'El boton se activa cuando ya estes en la direccion de destino',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white54,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
   // ── Continue / Directions for DROPOFF (after ride started) ──────────────
   Widget _buildContinueDirectionsDropoff() {
     return Column(
@@ -2554,4 +2594,90 @@ class _SheetItem {
   final String     sub;
   final VoidCallback onTap;
   const _SheetItem(this.icon, this.label, this.sub, this.onTap);
+}
+
+class _LockedSlideButton extends StatelessWidget {
+  const _LockedSlideButton({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    const gold = Color(0xFFD4A843);
+    const height = 62.0;
+    const thumbW = 62.0;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF111318),
+        borderRadius: BorderRadius.circular(height / 2),
+        border: Border.all(color: gold.withValues(alpha: 0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        height: height,
+        child: Stack(
+          children: [
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: thumbW,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      gold.withValues(alpha: 0.45),
+                      gold.withValues(alpha: 0.10),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(height / 2),
+                ),
+              ),
+            ),
+            Center(
+              child: Text(
+                '$label  →',
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 2,
+              top: 3,
+              bottom: 3,
+              child: Container(
+                width: thumbW - 4,
+                decoration: BoxDecoration(
+                  color: gold.withValues(alpha: 0.75),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: gold.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.lock_rounded,
+                  color: Colors.black,
+                  size: 24,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

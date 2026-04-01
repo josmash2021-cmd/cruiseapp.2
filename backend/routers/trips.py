@@ -47,27 +47,27 @@ def _trip_dict_for_user(trip: Trip, user: User) -> dict:
         return _driver_visible_trip_dict(trip)
     return _trip_dict(trip)
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  TRIP  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/trips", dependencies=[Depends(_verify_api_key)])
 async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     data = body.model_dump()
     # SECURITY: Force rider_id to be the authenticated user (prevent spoofing)
     data["rider_id"] = user.id
-    # Parse scheduled_at string → datetime (naive UTC, no tzinfo)
+    # Parse scheduled_at string â†’ datetime (naive UTC, no tzinfo)
     raw_sa = data.get("scheduled_at")
     if raw_sa:
         if isinstance(raw_sa, str):
             try:
                 parsed = datetime.fromisoformat(raw_sa.replace("Z", "+00:00"))
-                # Strip timezone info → naive UTC (matches TIMESTAMP WITHOUT TIME ZONE column)
+                # Strip timezone info â†’ naive UTC (matches TIMESTAMP WITHOUT TIME ZONE column)
                 data["scheduled_at"] = parsed.replace(tzinfo=None)
             except ValueError:
                 data["scheduled_at"] = None
         elif hasattr(raw_sa, 'tzinfo') and raw_sa.tzinfo is not None:
-            # Already a datetime but timezone-aware → make naive
+            # Already a datetime but timezone-aware â†’ make naive
             data["scheduled_at"] = raw_sa.replace(tzinfo=None)
         # If it's already a datetime, keep it
         if data.get("scheduled_at") is not None:
@@ -181,7 +181,7 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
                 intent = _stripe_mod.PaymentIntent.capture(trip.stripe_payment_intent_id)
                 trip.payment_status = "paid" if intent.status == "succeeded" else "failed"
                 await db.commit()
-                logging.info("[Capture] Trip %s hold captured — status: %s", trip.id, intent.status)
+                logging.info("[Capture] Trip %s hold captured â€” status: %s", trip.id, intent.status)
                 return {"status": intent.status, "payment_intent_id": intent.id, "amount": intent.amount}
             elif existing.status == "succeeded":
                 trip.payment_status = "paid"
@@ -191,7 +191,7 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
             logging.error("[Capture] Failed for trip %s: %s", trip.id, e)
             # Fall through to create new charge
 
-    # No existing hold — charge the saved card directly
+    # No existing hold â€” charge the saved card directly
     # Find rider's default Stripe card
     pm_r = await db.execute(
         select(RiderPaymentMethod).where(
@@ -208,7 +208,7 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
         await db.commit()
         return {"status": "no_card", "payment_intent_id": None}
 
-    amount_cents = max(int((trip.fare or 0) * 100), 50)  # Stripe min = 50¢
+    amount_cents = max(int((trip.fare or 0) * 100), 50)  # Stripe min = 50Â¢
     try:
         intent = _stripe_mod.PaymentIntent.create(
             amount=amount_cents,
@@ -222,7 +222,7 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
         trip.payment_status = "paid" if intent.status == "succeeded" else "failed"
         trip.stripe_payment_intent_id = intent.id
         await db.commit()
-        logging.info("[Charge] Trip %s charged %s¢ — status: %s", trip.id, amount_cents, intent.status)
+        logging.info("[Charge] Trip %s charged %sÂ¢ â€” status: %s", trip.id, amount_cents, intent.status)
         return {"status": intent.status, "payment_intent_id": intent.id, "amount": amount_cents}
     except _stripe_mod.error.StripeError as e:
         trip.payment_status = "failed"
@@ -291,7 +291,7 @@ async def refund_trip_endpoint(
         trip.refund_reason = reason
         trip.payment_status = "refunded"
         await db.commit()
-        logging.info("[Refund] Trip %s refunded $%.2f — reason: %s", trip.id, refunded_dollars, reason)
+        logging.info("[Refund] Trip %s refunded $%.2f â€” reason: %s", trip.id, refunded_dollars, reason)
         return {"status": "refunded", "refund_amount": refunded_dollars, "refund_id": refund.id}
     except _stripe_mod.error.StripeError as e:
         logging.error("[Refund] Stripe error for trip %s: %s", trip.id, e)
@@ -333,7 +333,7 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
         )
         pm = pm_result.scalar_one_or_none()
         if pm:
-            payment_method_display = pm.display_name  # e.g. "Visa •••• 4242"
+            payment_method_display = pm.display_name  # e.g. "Visa â€¢â€¢â€¢â€¢ 4242"
     # Generate receipt number
     receipt_number = f"CR-{trip.id:08d}"
     return {
@@ -372,7 +372,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     if not trip:
         raise HTTPException(404, "Trip not found")
     trip.status = status
-    trip.updated_at = datetime.utcnow()
+    trip.updated_at = datetime.now(timezone.utc)
     # Auto-calculate earnings split (60% platform / 40% driver)
     if status == "completed" and trip.fare and trip.fare > 0 and trip.driver_id:
         platform_rate = PLATFORM_COMMISSION_RATE
@@ -387,7 +387,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     await db.commit()
     await db.refresh(trip)
 
-    # ── SSE instant push to riders watching this trip (sub-second) ──
+    # â”€â”€ SSE instant push to riders watching this trip (sub-second) â”€â”€
     asyncio.create_task(event_bus.push_trip_update(trip.id, {
         "status": status,
         "trip_id": trip.id,
@@ -412,42 +412,42 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         except Exception as e:
             logging.error("[AutoCharge] Failed for trip %s: %s", trip_id, e)
 
-    # ── FCM push notifications ──
+    # â”€â”€ FCM push notifications â”€â”€
     try:
         rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_res.scalar_one_or_none()
         if rider and rider.fcm_token:
             if status == "driver_en_route":
-                _send_fcm_push(rider.fcm_token, title="🚗 Driver On The Way",
+                _send_fcm_push(rider.fcm_token, title="ðŸš— Driver On The Way",
                     body="Your driver is heading to your pickup location.",
                     data={"type": "driver_en_route", "trip_id": str(trip_id)})
             elif status == "arrived":
-                _send_fcm_push(rider.fcm_token, title="📍 Driver Arrived",
+                _send_fcm_push(rider.fcm_token, title="ðŸ“ Driver Arrived",
                     body="Your driver has arrived at the pickup point!",
                     data={"type": "driver_arrived", "trip_id": str(trip_id)})
             elif status == "in_trip":
-                _send_fcm_push(rider.fcm_token, title="🚗 Trip Started",
+                _send_fcm_push(rider.fcm_token, title="ðŸš— Trip Started",
                     body="Your trip has started. Enjoy your ride!",
                     data={"type": "trip_started", "trip_id": str(trip_id)})
             elif status == "completed":
                 # Fix H7: differentiate notification based on actual charge outcome
                 if trip.payment_status == "paid":
                     fare_str = f"${trip.fare:.2f}" if trip.fare else ""
-                    _send_fcm_push(rider.fcm_token, title="✅ Trip Completed",
+                    _send_fcm_push(rider.fcm_token, title="âœ… Trip Completed",
                         body=f"Your trip is complete. {fare_str} charged to your card.",
                         data={"type": "trip_completed", "trip_id": str(trip_id)})
                 else:
-                    _send_fcm_push(rider.fcm_token, title="⚠️ Payment Failed",
+                    _send_fcm_push(rider.fcm_token, title="âš ï¸ Payment Failed",
                         body="Your trip is complete but we couldn't charge your card. Please update your payment method.",
                         data={"type": "payment_failed", "trip_id": str(trip_id)})
             elif status == "canceled":
-                _send_fcm_push(rider.fcm_token, title="⚠️ Trip Canceled",
+                _send_fcm_push(rider.fcm_token, title="âš ï¸ Trip Canceled",
                     body="Your trip has been canceled.",
                     data={"type": "trip_canceled", "trip_id": str(trip_id)})
     except Exception as _fcm_err:
         logging.warning("[FCM] Rider push failed: %s", _fcm_err)
 
-    # ── n8n webhook triggers ──
+    # â”€â”€ n8n webhook triggers â”€â”€
     if status == "completed":
         asyncio.ensure_future(_n8n_fire("trip-completed", {
             "trip_id": trip.id, "rider_id": trip.rider_id, "driver_id": trip.driver_id,
@@ -473,9 +473,9 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
 
     return _trip_dict_for_user(trip, user)
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  SCHEDULED / AIRPORT TRIPS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/trips/scheduled/rider/{rider_id}", dependencies=[Depends(_verify_api_key)])
 async def get_rider_scheduled_trips(rider_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -526,15 +526,15 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # Apply $5 cancellation fee if driver was already en route and rider waited > 2 min
     cancellation_fee = 0.0
     if trip.status in ("driver_en_route", "arrived"):
-        minutes_elapsed = (datetime.utcnow() - trip.updated_at).total_seconds() / 60 if trip.updated_at else 0
+        minutes_elapsed = (datetime.now(timezone.utc) - trip.updated_at).total_seconds() / 60 if trip.updated_at else 0
         if minutes_elapsed > 2:
             cancellation_fee = 5.0
     trip.status = "canceled"
     trip.cancel_reason = reason
     trip.cancellation_fee = cancellation_fee
-    trip.updated_at = datetime.utcnow()
+    trip.updated_at = datetime.now(timezone.utc)
     
-    # ─── REFUND LOGIC ───
+    # â”€â”€â”€ REFUND LOGIC â”€â”€â”€
     # If rider was charged, issue refund (full or less cancellation fee)
     if trip.payment_status == "paid" and trip.payment_intent_id:
         try:
@@ -549,7 +549,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
             trip.payment_status = "refunded"
             logging.info("[Refund] Trip %d refunded %.2f (fee: %.2f)", trip_id, trip.fare - cancellation_fee, cancellation_fee)
         except Exception as e:
-            logging.warning("[Refund] Failed to refund trip %d: %s — marking for manual refund", trip_id, e)
+            logging.warning("[Refund] Failed to refund trip %d: %s â€” marking for manual refund", trip_id, e)
             trip.payment_status = "pending_refund"  # Manual refund needed
     
     await db.commit()
@@ -567,7 +567,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         except Exception as e:
             logging.error("Firestore sync on cancel_trip failed: %s", e)
 
-    # ── n8n webhook trigger ──
+    # â”€â”€ n8n webhook trigger â”€â”€
     _cancelled_by = "driver" if user.id == trip.driver_id else "rider"
     asyncio.ensure_future(_n8n_fire("trip-cancelled", {
         "trip_id": trip.id, "rider_id": trip.rider_id, "driver_id": trip.driver_id,
@@ -581,9 +581,9 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
 
     return {**_trip_dict_for_user(trip, user), "cancellation_fee": cancellation_fee, "payment_status": trip.payment_status}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  LIVE TRIP SHARING  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/trips/{trip_id}/share", dependencies=[Depends(_verify_api_key)])
 async def share_trip(
@@ -602,7 +602,7 @@ async def share_trip(
         raise HTTPException(400, "Cannot share a completed or canceled trip")
 
     # Reuse existing token if still valid
-    if trip.share_token and trip.share_expires_at and trip.share_expires_at > datetime.utcnow():
+    if trip.share_token and trip.share_expires_at and trip.share_expires_at > datetime.now(timezone.utc):
         return {
             "share_token": trip.share_token,
             "share_url": f"/track/{trip.share_token}",
@@ -612,7 +612,7 @@ async def share_trip(
     # Generate new token
     token = secrets.token_urlsafe(32)
     trip.share_token = token
-    trip.share_expires_at = datetime.utcnow() + timedelta(hours=24)
+    trip.share_expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
     await db.commit()
     await db.refresh(trip)
 
@@ -632,7 +632,7 @@ async def get_shared_trip(token: str, db: AsyncSession = Depends(get_db)):
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Shared trip not found")
-    if trip.share_expires_at and trip.share_expires_at < datetime.utcnow():
+    if trip.share_expires_at and trip.share_expires_at < datetime.now(timezone.utc):
         raise HTTPException(410, "Share link has expired")
 
     # Return limited trip info (no personal data)
@@ -659,7 +659,7 @@ async def get_shared_trip_location(token: str, db: AsyncSession = Depends(get_db
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Shared trip not found")
-    if trip.share_expires_at and trip.share_expires_at < datetime.utcnow():
+    if trip.share_expires_at and trip.share_expires_at < datetime.now(timezone.utc):
         raise HTTPException(410, "Share link has expired")
 
     if not trip.driver_id:
@@ -691,9 +691,9 @@ async def serve_shared_trip_page(token: str):
     return FileResponse(html_path, media_type="text/html")
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  RATING  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/trips/{trip_id}/rate", dependencies=[Depends(_verify_api_key)])
 async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -710,7 +710,7 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
     # Determine who we're rating
     to_user_id = trip.driver_id if user.id == trip.rider_id else trip.rider_id
     if not to_user_id:
-        raise HTTPException(400, "Cannot rate � no counterpart on this trip")
+        raise HTTPException(400, "Cannot rate ï¿½ no counterpart on this trip")
 
     # Prevent duplicate ratings
     existing = await db.execute(
@@ -763,9 +763,9 @@ async def get_user_ratings(user_id: int, user: User = Depends(_get_current_user)
         ],
     }
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  CHAT  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/trips/{trip_id}/chat", dependencies=[Depends(_verify_api_key)])
 async def send_chat_message(trip_id: int, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -795,7 +795,7 @@ async def send_chat_message(trip_id: int, request: Request, user: User = Depends
     await db.commit()
     await db.refresh(msg)
 
-    # ── FCM push notification to the other participant ──
+    # â”€â”€ FCM push notification to the other participant â”€â”€
     try:
         receiver_result = await db.execute(select(User).where(User.id == receiver_id))
         receiver_user = receiver_result.scalar_one_or_none()
@@ -804,7 +804,7 @@ async def send_chat_message(trip_id: int, request: Request, user: User = Depends
             sender_role = "driver" if user.id == trip.driver_id else "rider"
             _send_fcm_push(
                 receiver_user.fcm_token,
-                title=f"💬 {sender_name}",
+                title=f"ðŸ’¬ {sender_name}",
                 body=msg_text[:200],
                 data={"type": "chat_message", "trip_id": str(trip_id), "sender_role": sender_role},
             )
@@ -840,13 +840,13 @@ async def get_chat_messages(trip_id: int, user: User = Depends(_get_current_user
         for m in messages
     ]
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  TIPPING
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/trips/{trip_id}/tip", dependencies=[Depends(_verify_api_key)])
 async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Add tip to a completed trip — credited directly to driver's balance."""
+    """Add tip to a completed trip â€” credited directly to driver's balance."""
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:
@@ -868,9 +868,9 @@ async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), use
     return {"status": "ok", "tip_amount": tip_amount}
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  FARE SPLIT ENDPOINTS (Feature 15.1 Skeleton)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/trips/{trip_id}/split", dependencies=[Depends(_verify_api_key)])
 async def request_fare_split(
@@ -880,7 +880,7 @@ async def request_fare_split(
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Request to split fare with another rider (skeleton — invite only)."""
+    """Request to split fare with another rider (skeleton â€” invite only)."""
     # Get trip
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
@@ -953,7 +953,7 @@ async def respond_to_fare_split(
         raise HTTPException(400, f"Fare split already {fare_split.status}")
     
     fare_split.status = "accepted" if accept else "declined"
-    fare_split.responded_at = datetime.utcnow()
+    fare_split.responded_at = datetime.now(timezone.utc)
     fare_split.invitee_id = user.id
     
     await db.commit()
@@ -989,9 +989,9 @@ async def get_fare_splits(
     ]
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  MULTI-STOP WAYPOINTS ENDPOINTS (Feature 15.1 Skeleton)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/trips/{trip_id}/waypoints", dependencies=[Depends(_verify_api_key)])
 async def add_waypoint(
@@ -1052,9 +1052,9 @@ async def remove_waypoint(
     return {"removed": removed, "waypoints": waypoints}
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  VEHICLE PREFERENCES (Feature 15.1 Skeleton)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.patch("/trips/{trip_id}/preferences", dependencies=[Depends(_verify_api_key)])
 async def update_trip_preferences(
@@ -1097,9 +1097,9 @@ async def update_trip_preferences(
 
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  WAIT TIME
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/trips/{trip_id}/wait-time/start", dependencies=[Depends(_verify_api_key)])
 async def start_wait_time(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -1110,13 +1110,13 @@ async def start_wait_time(trip_id: int, user: User = Depends(_get_current_user),
         raise HTTPException(403, "Not authorized")
     if trip.status != "arrived":
         raise HTTPException(400, "Can only start wait time when arrived at pickup")
-    trip.notes = (trip.notes or "") + f"\nWait started: {datetime.utcnow().isoformat()}"
+    trip.notes = (trip.notes or "") + f"\nWait started: {datetime.now(timezone.utc).isoformat()}"
     await db.commit()
     return {"status": "wait_time_started"}
 
 @router.post("/trips/{trip_id}/wait-time/end", dependencies=[Depends(_verify_api_key)])
 async def end_wait_time(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """End wait time clock — first 2 min free, then $0.50/min."""
+    """End wait time clock â€” first 2 min free, then $0.50/min."""
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip or trip.driver_id != user.id:
@@ -1125,7 +1125,7 @@ async def end_wait_time(trip_id: int, user: User = Depends(_get_current_user), d
         return {"wait_time_minutes": 0, "wait_time_charge": 0.0}
     wait_start_str = trip.notes.split("Wait started: ")[1].split("\n")[0]
     wait_start = datetime.fromisoformat(wait_start_str)
-    wait_minutes = int((datetime.utcnow() - wait_start).total_seconds() / 60)
+    wait_minutes = int((datetime.now(timezone.utc) - wait_start).total_seconds() / 60)
     wait_charge = round(max(0, wait_minutes - 2) * 0.50, 2)
     trip.wait_time_minutes = wait_minutes
     trip.wait_time_charge = wait_charge

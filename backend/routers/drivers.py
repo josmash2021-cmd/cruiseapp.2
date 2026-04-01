@@ -57,9 +57,9 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
     data["driver_base_earnings"] = base
     return data
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  DRIVER  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 # In-memory driver location store for ultra-fast reads (bypasses DB for location)
 _driver_locations: dict = {}  # driver_id -> {"lat": float, "lng": float, "is_online": bool, "ts": float}
@@ -76,7 +76,7 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         "is_online": body.is_online, "ts": time.monotonic(),
     }
 
-    # Update DB (lightweight — no SELECT needed, use the authenticated user object)
+    # Update DB (lightweight â€” no SELECT needed, use the authenticated user object)
     user.lat = body.lat
     user.lng = body.lng
     user.is_online = body.is_online
@@ -122,7 +122,7 @@ async def get_nearby_drivers(
     if _cached and (_now - _cached[0]) < _NEARBY_CACHE_TTL:
         return _cached[1]
 
-    # Bounding box pre-filter in SQL (~0.009° per km at equator)
+    # Bounding box pre-filter in SQL (~0.009Â° per km at equator)
     _lat_delta = radius_km / 111.0
     _lng_delta = radius_km / (111.0 * max(math.cos(math.radians(lat)), 0.01))
 
@@ -164,9 +164,9 @@ async def get_driver_trips(driver_id: int, user: User = Depends(_get_current_use
     result = await db.execute(select(Trip).where(Trip.driver_id == driver_id).order_by(Trip.created_at.desc()).limit(100))
     return [_driver_visible_trip_dict(t) for t in result.scalars().all()]
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  EARNINGS  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/drivers/earnings", dependencies=[Depends(_verify_api_key)])
 async def get_driver_earnings(period: str = Query("week"), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -228,7 +228,7 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
         "transactions": transactions,
     }
 
-# ── Stripe Connect onboarding ──────────────────────────────────────────
+# â”€â”€ Stripe Connect onboarding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @router.post("/drivers/stripe-connect", dependencies=[Depends(_verify_api_key)])
 async def create_stripe_connect_link(
     user: User = Depends(_get_current_user),
@@ -302,7 +302,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     await db.commit()
     await db.refresh(cashout)
 
-    # ── Stripe Connect Transfer (real payout to driver's bank) ──
+    # â”€â”€ Stripe Connect Transfer (real payout to driver's bank) â”€â”€
     transfer_id = None
     stripe_error = None
     if user.stripe_connect_id and STRIPE_SECRET:
@@ -315,7 +315,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
                 amount=amount_cents,
                 currency="usd",
                 destination=user.stripe_connect_id,
-                description=f"Cruise driver payout — cashout #{cashout.id}",
+                description=f"Cruise driver payout â€” cashout #{cashout.id}",
                 metadata={"cashout_id": str(cashout.id), "driver_id": str(user.id)},
             )
             transfer_id = transfer["id"]
@@ -327,7 +327,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
                 drv.pending_balance = round(max(0.0, (drv.pending_balance or 0.0) - body.amount), 2)
             await db.commit()
             await db.refresh(cashout)
-            logging.info("[Cashout] Stripe Transfer %s created for driver %s — $%.2f", transfer_id, user.id, body.amount)
+            logging.info("[Cashout] Stripe Transfer %s created for driver %s â€” $%.2f", transfer_id, user.id, body.amount)
         except Exception as _se:
             stripe_error = str(_se)[:200]
             logging.error("[Cashout] Stripe Transfer failed for driver %s: %s", user.id, _se)
@@ -388,9 +388,9 @@ async def delete_payout_method(payout_id: int, user: User = Depends(_get_current
     await db.commit()
     return {"status": "deleted"}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  PLAID  (stub)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/plaid/create-link-token", dependencies=[Depends(_verify_api_key)])
 async def create_plaid_link_token(user: User = Depends(_get_current_user)):
@@ -402,15 +402,15 @@ async def exchange_plaid_token(request: Request, user: User = Depends(_get_curre
     institution = body.get("institution_name", "Bank")
     mask = body.get("account_mask", "")
     subtype = body.get("account_subtype", "checking")
-    display = f"{institution} {subtype.capitalize()} {'••••' + mask if mask else ''}".strip()
+    display = f"{institution} {subtype.capitalize()} {'â€¢â€¢â€¢â€¢' + mask if mask else ''}".strip()
     pm = RiderPaymentMethod(user_id=user.id, method_type="bank_account", display_name=display)
     db.add(pm)
     await db.commit()
     return {"status": "ok", "account_id": body.get("account_id", "acct_stub")}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  RIDER PAYMENT METHODS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/riders/payment-methods", dependencies=[Depends(_verify_api_key)])
 async def get_rider_payment_methods(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -464,9 +464,9 @@ async def set_default_rider_payment_method(pm_id: int, user: User = Depends(_get
     await db.commit()
     return {"status": "ok"}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  WALLET ENDPOINTS (Feature 12.1)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async def _get_or_create_wallet(user_id: int, db: AsyncSession) -> Wallet:
     """Get existing wallet or create a new one for the user."""
@@ -537,7 +537,7 @@ async def top_up_wallet(body: WalletTopUpIn, user: User = Depends(_get_current_u
     # For now, we directly credit the wallet (simulated success)
     
     wallet.balance += body.amount
-    wallet.updated_at = datetime.utcnow()
+    wallet.updated_at = datetime.now(timezone.utc)
     
     # Record transaction
     txn = WalletTransaction(
@@ -581,7 +581,7 @@ async def pay_ride_with_wallet(trip_id: int, amount: float, user: User = Depends
         raise HTTPException(400, f"Insufficient balance. Available: ${wallet.balance:.2f}")
     
     wallet.balance -= amount
-    wallet.updated_at = datetime.utcnow()
+    wallet.updated_at = datetime.now(timezone.utc)
     
     # Record transaction
     txn = WalletTransaction(
@@ -610,7 +610,7 @@ async def refund_to_wallet(trip_id: int, amount: float, reason: str = "Ride refu
     wallet = await _get_or_create_wallet(user.id, db)
     
     wallet.balance += amount
-    wallet.updated_at = datetime.utcnow()
+    wallet.updated_at = datetime.now(timezone.utc)
     
     # Record transaction
     txn = WalletTransaction(
@@ -630,13 +630,13 @@ async def refund_to_wallet(trip_id: int, amount: float, reason: str = "Ride refu
         "amount_refunded": amount
     }
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  DISPATCH  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/drivers/{driver_id}/stats", dependencies=[Depends(_verify_api_key)])
 async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Compute real acceptance rate, on-time rate, etc. — 2 queries instead of 5."""
+    """Compute real acceptance rate, on-time rate, etc. â€” 2 queries instead of 5."""
     from sqlalchemy import case as sql_case, literal_column
 
     # Single query: all offer counts via CASE
@@ -687,9 +687,9 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
     }
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  VEHICLE  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/drivers/vehicle", dependencies=[Depends(_verify_api_key)])
 async def get_vehicle(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -724,9 +724,9 @@ async def create_or_update_vehicle(request: Request, user: User = Depends(_get_c
     await db.refresh(v)
     return {"vehicle": _vehicle_dict(v)}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  DOCUMENT  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/drivers/documents", dependencies=[Depends(_verify_api_key)])
 async def get_documents(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -774,7 +774,7 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
             f.write(decoded)
         file_path = f"/uploads/documents/{fname}"
 
-    # Check if doc of this type already exists � update it
+    # Check if doc of this type already exists ï¿½ update it
     result = await db.execute(
         select(Document).where(and_(Document.user_id == user.id, Document.doc_type == doc_type))
     )
@@ -786,7 +786,7 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
         if body.get("expiry_date"):
             existing.expiry_date = datetime.fromisoformat(body["expiry_date"])
         existing.rejection_reason = None
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = datetime.now(timezone.utc)
         doc = existing
     else:
         doc = Document(
@@ -802,9 +802,9 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     await db.refresh(doc)
     return _doc_dict(doc)
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  CHECKR  BACKGROUND  CHECK  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/drivers/{driver_id}/background-check", dependencies=[Depends(_verify_api_key)])
 async def initiate_background_check(
@@ -946,7 +946,7 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         report_id = data.get("id")
         status = data.get("status", "")  # clear, consider
         driver.checkr_report_id = report_id
-        driver.background_check_completed_at = datetime.utcnow()
+        driver.background_check_completed_at = datetime.now(timezone.utc)
         if status == "clear":
             driver.background_check_status = "clear"
             driver.verification_status = "approved"
@@ -971,15 +971,15 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             driver.verification_status = "approved"
         elif status == "consider":
             driver.background_check_status = "consider"
-        driver.background_check_completed_at = datetime.utcnow()
+        driver.background_check_completed_at = datetime.now(timezone.utc)
         await db.commit()
         logging.info(f"Checkr report.upgraded: driver={driver.id} status={status}")
 
     return {"ok": True}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  STRIPE CONNECT - Driver Payouts
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/drivers/stripe-connect/onboard", dependencies=[Depends(_verify_api_key)])
 async def stripe_connect_onboard(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -1038,9 +1038,9 @@ async def driver_payout_transfer(user: User = Depends(_get_current_user), db: As
     await db.commit()
     return {"amount": payout_amount, "transfer_id": transfer.id, "status": "paid", "estimated_arrival": "2-3 business days"}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  DRIVER INCENTIVES & QUESTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/drivers/incentives", dependencies=[Depends(_verify_api_key)])
 async def get_driver_incentives(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -1074,7 +1074,7 @@ async def get_driver_demand_heatmap(
     db: AsyncSession = Depends(get_db),
 ):
     """Get demand heatmap for drivers showing high-demand pickup areas nearby."""
-    since = datetime.utcnow() - timedelta(minutes=30)
+    since = datetime.now(timezone.utc) - timedelta(minutes=30)
     result = await db.execute(
         select(Trip.pickup_lat, Trip.pickup_lng, func.count(Trip.id).label("cnt"))
         .where(Trip.status.in_(["requested", "driver_en_route"]), Trip.created_at >= since)
@@ -1096,9 +1096,9 @@ async def get_driver_demand_heatmap(
 
     return {"demand_points": points, "surge_zones": surge_zones}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  BACKGROUND CHECK (CHECKR INTEGRATION)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 CHECKR_API_KEY = os.getenv("CHECKR_API_KEY", "")
 CHECKR_BASE_URL = os.getenv("CHECKR_BASE_URL", "https://api.checkr.com/v1")
@@ -1204,7 +1204,7 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 user.verification_status = ver_status
                 if ver_status == "approved":
                     user.is_verified = True
-                    user.verified_at = datetime.utcnow()
+                    user.verified_at = datetime.now(timezone.utc)
                 elif ver_status == "rejected":
                     user.verification_reason = f"Background check: {result}"
                 await db.commit()

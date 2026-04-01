@@ -65,18 +65,18 @@ async def logout(
         if jti:
             await revoke_token(jti, user.id, float(exp))
     except (JWTError, Exception):
-        pass  # Best-effort — don't fail logout
+        pass  # Best-effort â€” don't fail logout
     client_ip = request.client.host if request.client else "unknown"
     _security_audit_log("logout", client_ip, f"user_id={user.id}", user_id=user.id)
     return {"ok": True}
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/auth/register", dependencies=[Depends(_verify_api_key)])
 async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     role = body.role if body.role in ("rider", "driver") else "rider"
-    # Check duplicates per role � allow same email/phone for different roles (driver vs rider)
+    # Check duplicates per role ï¿½ allow same email/phone for different roles (driver vs rider)
     if body.email:
         exists = await db.execute(select(User).where(User.email == body.email, User.role == role))
         existing = exists.scalar_one_or_none()
@@ -246,7 +246,7 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     if st == "deactivated":
         raise HTTPException(403, "Account deactivated")
 
-    # Successful login � clear failures
+    # Successful login ï¿½ clear failures
     _clear_login_failures(client_ip)
 
     login_token = _create_login_token(user.id)
@@ -287,10 +287,10 @@ async def send_otp(body: SendOtpIn, request: Request):
     for k in expired:
         del _otp_store[k]
     
-    # ── ALWAYS log code for development/troubleshooting ──
+    # â”€â”€ ALWAYS log code for development/troubleshooting â”€â”€
     logging.info("[OTP] Generated code for %s: %s (expires in %d seconds)", otp_key, code, _OTP_TTL)
     
-    # ── Try Email if email is provided ──
+    # â”€â”€ Try Email if email is provided â”€â”€
     if email:
         html_body = (
             f"<div style='font-family:sans-serif;max-width:400px;margin:auto;padding:24px'>"
@@ -304,7 +304,7 @@ async def send_otp(body: SendOtpIn, request: Request):
         )
 
         async def _try_send_email_bg():
-            """Try all email providers in background — does not block response."""
+            """Try all email providers in background â€” does not block response."""
             import urllib.parse as _up
             # Twilio Verify email channel
             twilio_ok = (TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and
@@ -336,7 +336,7 @@ async def send_otp(body: SendOtpIn, request: Request):
             except Exception as e:
                 logging.warning("[OTP-BG] All email providers failed for %s: %s", email, e)
 
-        # Fire-and-forget email sending — respond immediately to avoid client timeout
+        # Fire-and-forget email sending â€” respond immediately to avoid client timeout
         asyncio.create_task(_try_send_email_bg())
 
         # Always return the code so user can verify even if email is delayed/fails
@@ -347,7 +347,7 @@ async def send_otp(body: SendOtpIn, request: Request):
             "note": "Code also being sent to your email."
         }
     
-    # ── Try Twilio SMS if configured and phone provided ──
+    # â”€â”€ Try Twilio SMS if configured and phone provided â”€â”€
     if phone:
         twilio_configured = (
             TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and 
@@ -410,7 +410,7 @@ async def send_otp(body: SendOtpIn, request: Request):
         else:
             logging.warning("[OTP] Twilio not properly configured, skipping SMS")
     
-    # ── Final Fallback: Return code directly (for development/testing) ──
+    # â”€â”€ Final Fallback: Return code directly (for development/testing) â”€â”€
     logging.info("[OTP] CODE FOR %s: %s (check backend logs)", otp_key, code)
     
     return {
@@ -433,7 +433,7 @@ async def verify_otp(body: VerifyOtpIn):
     twilio_verify_ok = (TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and
                         TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA"))
 
-    # ── 1. Twilio Verify API (phone SMS or email channel) ──
+    # â”€â”€ 1. Twilio Verify API (phone SMS or email channel) â”€â”€
     if twilio_verify_ok:
         to = phone if phone else email
         # Only call Twilio Verify if we sent via Twilio (sentinel flag or it's a phone)
@@ -463,7 +463,7 @@ async def verify_otp(body: VerifyOtpIn):
             except Exception as e:
                 logging.warning("[OTP] Twilio Verify check error: %s", e)
 
-    # ── 2. Local OTP store (for codes sent directly) ──
+    # â”€â”€ 2. Local OTP store (for codes sent directly) â”€â”€
     entry = _otp_store.get(otp_key)
     if entry and entry["code"] == code and entry["expires"] > time.time():
         _otp_store.pop(otp_key, None)
@@ -549,7 +549,7 @@ async def verify_email(
     if entry and entry["code"] == code and entry["expires"] > time.time():
         _otp_store.pop(otp_key, None)
         user.email_verified = True
-        user.email_verified_at = datetime.utcnow()
+        user.email_verified_at = datetime.now(timezone.utc)
         await db.commit()
         return {"verified": True, "message": "Email verified successfully"}
 
@@ -580,20 +580,20 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
 async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
     """Authenticate via Google or Apple OAuth ID token.
 
-    • Verifies the ID token with the provider.
-    • Creates a new user if one does not exist, or logs in the existing user.
-    • Skips password / OTP — social tokens are the credential.
+    â€¢ Verifies the ID token with the provider.
+    â€¢ Creates a new user if one does not exist, or logs in the existing user.
+    â€¢ Skips password / OTP â€” social tokens are the credential.
     """
     provider = body.provider.lower()
     if provider not in ("google", "apple"):
-        raise HTTPException(400, "Unsupported provider — use 'google' or 'apple'")
+        raise HTTPException(400, "Unsupported provider â€” use 'google' or 'apple'")
 
     email: Optional[str] = None
     given_name: Optional[str] = body.first_name
     family_name: Optional[str] = body.last_name
     photo: Optional[str] = body.photo_url
 
-    # ── Verify token with provider ──────────────────────
+    # â”€â”€ Verify token with provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if provider == "google":
         try:
             from google.oauth2 import id_token as google_id_token
@@ -645,7 +645,7 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
 
     role = body.role if body.role in ("rider", "driver") else "rider"
 
-    # ── Find or create user ─────────────────────────────
+    # â”€â”€ Find or create user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     result = await db.execute(
         select(User).where(User.email == email, User.role == role)
     )
@@ -764,7 +764,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    # Only allow safe fields — NEVER role, is_verified, verification_status
+    # Only allow safe fields â€” NEVER role, is_verified, verification_status
     _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type")
     # Device tracking fields (always allowed)
     _DEVICE_FIELDS = ("app_version", "device_model", "os_version")
@@ -779,13 +779,13 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
         if (db_user.phone_changes_count or 0) >= 3:
             raise HTTPException(400, "Maximum phone changes reached (3)")
         db_user.phone_changes_count = (db_user.phone_changes_count or 0) + 1
-    # Block name changes — first_name and last_name cannot be changed
+    # Block name changes â€” first_name and last_name cannot be changed
     updates.pop("first_name", None)
     updates.pop("last_name", None)
     for key in _SAFE_SELF_UPDATE_FIELDS:
         if key in updates:
             val = updates[key]
-            # Never allow photo_url to be set to None or empty — use /auth/photo-url to set it
+            # Never allow photo_url to be set to None or empty â€” use /auth/photo-url to set it
             if key == "photo_url" and (not val or not isinstance(val, str) or not val.startswith("http")):
                 continue
             setattr(db_user, key, val)
@@ -870,7 +870,7 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
     # Limit decoded size to 3MB
     if len(photo_bytes) > 3 * 1024 * 1024:
         raise HTTPException(413, "Photo too large (max 3MB)")
-    # Validate image magic bytes � only allow JPEG and PNG
+    # Validate image magic bytes ï¿½ only allow JPEG and PNG
     if photo_bytes[:2] == b'\xff\xd8':
         ext = "jpg"
     elif photo_bytes[:8] == b'\x89PNG\r\n\x1a\n':
@@ -943,9 +943,9 @@ async def save_photo_url(request: Request, user: User = Depends(_get_current_use
     return {"photo_url": photo_url}
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  FIREBASE STORAGE PHOTO UPLOAD (Feature 13.1)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/users/me/photo", dependencies=[Depends(_verify_api_key)])
 async def upload_photo_to_firebase(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -973,7 +973,7 @@ async def upload_photo_to_firebase(request: Request, user: User = Depends(_get_c
     if len(photo_bytes) > 3 * 1024 * 1024:
         raise HTTPException(413, "Photo too large (max 3MB)")
     
-    # Validate image magic bytes — only allow JPEG and PNG
+    # Validate image magic bytes â€” only allow JPEG and PNG
     if photo_bytes[:2] == b'\xff\xd8':
         ext = "jpg"
         content_type = "image/jpeg"
@@ -1023,7 +1023,7 @@ async def upload_photo_to_firebase(request: Request, user: User = Depends(_get_c
 @router.get("/photos/{filename}")
 async def serve_photo(filename: str):
     """Serve uploaded profile photos. Public endpoint (no auth)."""
-    # Sanitize filename � prevent path traversal
+    # Sanitize filename ï¿½ prevent path traversal
     safe_name = os.path.basename(filename)
     if safe_name != filename or ".." in filename:
         raise HTTPException(400, "Invalid filename")
@@ -1035,13 +1035,13 @@ async def serve_photo(filename: str):
 
 @router.delete("/auth/me", dependencies=[Depends(_verify_api_key)])
 async def delete_account(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Request account deletion � marks as pending_deletion, scheduled for 1 week."""
+    """Request account deletion ï¿½ marks as pending_deletion, scheduled for 1 week."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
     db_user.status = "pending_deletion"
-    db_user.deletion_requested_at = datetime.utcnow()
+    db_user.deletion_requested_at = datetime.now(timezone.utc)
     await db.commit()
     # Notify dispatch app about the deletion request via Firestore
     if _HAS_FIRESTORE:
@@ -1055,12 +1055,12 @@ async def delete_account(user: User = Depends(_get_current_user), db: AsyncSessi
             )
         except Exception as e:
             logging.error("Dispatch deletion notification failed: %s", e)
-    return {"detail": "Account deletion requested", "deletion_date": (datetime.utcnow() + timedelta(days=7)).isoformat()}
+    return {"detail": "Account deletion requested", "deletion_date": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()}
 
 
 @router.get("/auth/export-data", dependencies=[Depends(_verify_api_key)])
 async def export_user_data(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """GDPR/CCPA data export — returns all personal data for the user."""
+    """GDPR/CCPA data export â€” returns all personal data for the user."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:
@@ -1144,7 +1144,7 @@ async def export_user_data(user: User = Depends(_get_current_user), db: AsyncSes
         pass
     
     return {
-        "exported_at": datetime.utcnow().isoformat(),
+        "exported_at": datetime.now(timezone.utc).isoformat(),
         "profile": profile,
         "trips": trips_data,
         "ratings": ratings_data,
@@ -1182,7 +1182,7 @@ async def record_consent(
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if db_user:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if consent_type == "terms":
             db_user.terms_accepted_at = now if action == "accepted" else None
         elif consent_type == "privacy":
@@ -1195,7 +1195,7 @@ async def record_consent(
             db_user.privacy_ads = action == "accepted"
     
     await db.commit()
-    return {"detail": f"Consent '{consent_type}' {action}", "logged_at": datetime.utcnow().isoformat()}
+    return {"detail": f"Consent '{consent_type}' {action}", "logged_at": datetime.now(timezone.utc).isoformat()}
 
 
 @router.post("/auth/verify-request", dependencies=[Depends(_verify_api_key)])
@@ -1229,7 +1229,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         logging.error("[Verify] DB error saving verification for user %s: %s", user.id, e)
         raise HTTPException(500, f"Error saving verification: {str(e)}")
 
-    # Save verification photos if provided (non-fatal — disk may be unavailable on Railway)
+    # Save verification photos if provided (non-fatal â€” disk may be unavailable on Railway)
     saved_urls = {}
     try:
         docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "documents")
@@ -1378,7 +1378,7 @@ async def verification_status(user: User = Depends(_get_current_user), db: Async
                 if fs_status["status"] == "approved":
                     db_user.is_verified = True
                     if not db_user.verified_at:
-                        db_user.verified_at = datetime.utcnow()
+                        db_user.verified_at = datetime.now(timezone.utc)
                 await db.commit()
                 await db.refresh(db_user)
         except Exception as e:
@@ -1399,7 +1399,7 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
     if not db_user:
         raise HTTPException(404, "User not found")
 
-    # Always check Firestore — dispatch writes directly there even if backend call fails
+    # Always check Firestore â€” dispatch writes directly there even if backend call fails
     if _HAS_FIRESTORE and db_user.verification_status not in ("approved",):
         try:
             fs_status = firestore_sync.get_verification_status(db_user.id)
@@ -1410,7 +1410,7 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
                 if fs_status["status"] == "approved":
                     db_user.is_verified = True
                     if not db_user.verified_at:
-                        db_user.verified_at = datetime.utcnow()
+                        db_user.verified_at = datetime.now(timezone.utc)
                 await db.commit()
         except Exception as e:
             logging.warning("Firestore driver approval sync failed: %s", e)
@@ -1432,7 +1432,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
     db_user = result.scalar_one_or_none()
     if not db_user:
-        logging.warning("[DISPATCH-APPROVE] Driver %d not found in DB — trying without role filter", user_id)
+        logging.warning("[DISPATCH-APPROVE] Driver %d not found in DB â€” trying without role filter", user_id)
         # Fallback: try without role filter (role may not be set yet for new accounts)
         result2 = await db.execute(select(User).where(User.id == user_id))
         db_user = result2.scalar_one_or_none()
@@ -1442,7 +1442,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
         db_user.role = "driver"
     db_user.verification_status = "approved"
     db_user.is_verified = True
-    db_user.verified_at = datetime.utcnow()
+    db_user.verified_at = datetime.now(timezone.utc)
     await db.commit()
     logging.info("[DISPATCH-APPROVE] SQLite updated for user %d: status=approved, is_verified=True", user_id)
     # Atomic batch write to ALL 3 Firestore collections
@@ -1453,7 +1453,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
         except Exception as e:
             logging.warning("[DISPATCH-APPROVE] Firestore approve sync failed: %s", e)
     else:
-        logging.warning("[DISPATCH-APPROVE] _HAS_FIRESTORE=False — Firestore sync skipped")
+        logging.warning("[DISPATCH-APPROVE] _HAS_FIRESTORE=False â€” Firestore sync skipped")
     return {"ok": True, "message": f"Driver {user_id} approved", "status": "approved", "approval_status": "approved"}
 
 
@@ -1482,7 +1482,7 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
 
 
 _account_status_cache: dict = {}  # user_id -> (status_str, monotonic_ts)
-_ACCOUNT_STATUS_CACHE_TTL = 15.0  # seconds — Firestore check at most every 15s
+_ACCOUNT_STATUS_CACHE_TTL = 15.0  # seconds â€” Firestore check at most every 15s
 
 @router.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])
 async def account_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -1512,9 +1512,9 @@ async def account_status(user: User = Depends(_get_current_user), db: AsyncSessi
     _account_status_cache[user.id] = (current_status, _now)
     return {"status": current_status}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  REFERRAL ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/auth/referral-code", dependencies=[Depends(_verify_api_key)])
 async def get_referral_code(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -1570,7 +1570,7 @@ async def apply_referral_code(body: ApplyReferralIn, user: User = Depends(_get_c
         status="completed",
         referrer_bonus=10.0,
         referee_bonus=10.0,
-        completed_at=datetime.utcnow(),
+        completed_at=datetime.now(timezone.utc),
     )
     db_user.referred_by = referrer.id
     db.add(referral)
@@ -1581,7 +1581,7 @@ async def apply_referral_code(body: ApplyReferralIn, user: User = Depends(_get_c
     if referrer.fcm_token:
         _send_fcm_push(
             referrer.fcm_token,
-            title="🎉 Referral Bonus!",
+            title="ðŸŽ‰ Referral Bonus!",
             body=f"{db_user.first_name} joined using your code. $10 added to your earnings!",
             data={"type": "referral_bonus", "amount": "10.0"},
         )
@@ -1610,9 +1610,9 @@ async def get_my_referrals(user: User = Depends(_get_current_user), db: AsyncSes
     total_bonus = sum(r["bonus"] for r in out if r["status"] == "completed")
     return {"referrals": out, "total_bonus": round(total_bonus, 2)}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  FORGOT PASSWORD
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/auth/forgot-password", dependencies=[Depends(_verify_api_key)])
 async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
@@ -1679,7 +1679,7 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
       </p>
     </div>
     """
-    _send_email(user.email, "Cruise � Reset Your Password", html)
+    _send_email(user.email, "Cruise ï¿½ Reset Your Password", html)
 
     return {"status": "reset_sent", "method": "email"}
 
@@ -1691,7 +1691,7 @@ async def reset_page(token: str = Query(...)):
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Reset Password � Cruise</title>
+<title>Reset Password ï¿½ Cruise</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}}
@@ -1755,7 +1755,7 @@ async function doReset(e){{
       btn.disabled=false;btn.textContent='Reset Password';
     }}
   }}catch(ex){{
-    msg.textContent='Network error � please try again';msg.className='msg err';
+    msg.textContent='Network error ï¿½ please try again';msg.className='msg err';
     btn.disabled=false;btn.textContent='Reset Password';
   }}
   return false

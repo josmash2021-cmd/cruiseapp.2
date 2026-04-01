@@ -26,9 +26,9 @@ from config import (
 
 router = APIRouter()
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  HELPER: Calculate driver rating from reviews
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async def _get_driver_rating(driver_id: int, db: AsyncSession) -> float:
     """Calculate average rating for a driver from completed trips."""
     result = await db.execute(
@@ -198,12 +198,12 @@ async def admin_delete_trip(trip_id: int, db: AsyncSession = Depends(get_db)):
 @router.get("/admin/stats", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_dashboard_stats(db: AsyncSession = Depends(get_db)):
     """Dashboard statistics for the dispatch panel. Uses SQL aggregates for speed."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    # ── All trip stats in ONE query using conditional aggregates ──
+    # â”€â”€ All trip stats in ONE query using conditional aggregates â”€â”€
     trip_stats_q = await db.execute(
         select(
             # Today
@@ -225,7 +225,7 @@ async def admin_dashboard_stats(db: AsyncSession = Depends(get_db)):
     )
     ts = trip_stats_q.one()
 
-    # ── User counts in ONE query ──
+    # â”€â”€ User counts in ONE query â”€â”€
     user_stats_q = await db.execute(
         select(
             func.count().label("total_users"),
@@ -273,7 +273,7 @@ async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_d
     if not trip:
         raise HTTPException(404, "Trip not found")
 
-    # Find nearest online driver — bounding box pre-filter in SQL
+    # Find nearest online driver â€” bounding box pre-filter in SQL
     _search_radius = 30  # km
     _lat_delta = _search_radius / 111.0
     _lng_delta = _search_radius / (111.0 * max(math.cos(math.radians(trip.pickup_lat)), 0.01))
@@ -342,9 +342,9 @@ async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_d
     }
 
 
-# ═══════════════════════════════════════════════════════════
-#  ADMIN � Verification Review
-# ═══════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#  ADMIN ï¿½ Verification Review
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/admin/verifications", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_verifications(
@@ -399,7 +399,7 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
     if action == "approve":
         user.verification_status = "approved"
         user.is_verified = True
-        user.verified_at = datetime.utcnow()
+        user.verified_at = datetime.now(timezone.utc)
         user.verification_reason = None
     else:
         user.verification_status = "rejected"
@@ -430,9 +430,9 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
     }
 
 
-# ═══════════════════════════════════════════════════════════
-#  ADMIN � User Detail, Edit, Delete, Documents, Photos
-# ═══════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#  ADMIN ï¿½ User Detail, Edit, Delete, Documents, Photos
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/admin/users/{user_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
@@ -550,7 +550,7 @@ async def admin_delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.delete("/admin/users", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_delete_all_users(db: AsyncSession = Depends(get_db)):
-    """DISABLED — Mass deletion is too dangerous for a single API call."""
+    """DISABLED â€” Mass deletion is too dangerous for a single API call."""
     raise HTTPException(403, "Mass user deletion is disabled. Delete users individually.")
 
 
@@ -611,7 +611,7 @@ async def update_surge_zone(zone_name: str = Body(...), center_lat: float = Body
         zone.center_lat = center_lat
         zone.center_lng = center_lng
         zone.radius_km = radius_km
-        zone.updated_at = datetime.utcnow()
+        zone.updated_at = datetime.now(timezone.utc)
     else:
         zone = SurgeZone(zone_name=zone_name, center_lat=center_lat, center_lng=center_lng, surge_multiplier=surge_multiplier, radius_km=radius_km)
         db.add(zone)
@@ -619,15 +619,15 @@ async def update_surge_zone(zone_name: str = Body(...), center_lat: float = Body
     return {"status": "ok", "zone": zone_name, "multiplier": surge_multiplier}
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  ADMIN DASHBOARD ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/admin/stats", dependencies=[Depends(_require_dispatch_auth)])
 async def get_admin_stats(db: AsyncSession = Depends(get_db)):
     """Get real-time statistics for admin dashboard. Requires dispatch auth."""
     try:
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         
         # Total trips today
         trips_result = await db.execute(
@@ -815,7 +815,7 @@ async def get_heatmap_data(
 ):
     """Get heatmap data for pickup locations."""
     try:
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
         
         result = await db.execute(
             select(Trip.pickup_lat, Trip.pickup_lng, func.count(Trip.id))
@@ -928,9 +928,9 @@ async def message_driver(
         logging.error("[Admin] Error messaging driver: %s", e)
         raise HTTPException(500, f"Error sending message: {str(e)}")
 
-# ═══════════════════════════════════════════════════════
-#  ADMIN — INCENTIVE CREATION
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#  ADMIN â€” INCENTIVE CREATION
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/admin/incentives/create", dependencies=[Depends(_require_dispatch_auth)])
 async def create_driver_incentive(
@@ -943,7 +943,7 @@ async def create_driver_incentive(
         driver_id=driver_id, incentive_type=incentive_type, title=title,
         description=f"Complete {target_trips} trips to earn ${bonus_amount:.2f}",
         target_trips=target_trips, bonus_amount=bonus_amount,
-        expires_at=datetime.utcnow() + timedelta(hours=expires_hours)
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=expires_hours)
     )
     db.add(incentive)
     await db.commit()

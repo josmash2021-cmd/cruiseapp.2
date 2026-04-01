@@ -32,9 +32,9 @@ from support_cache import find_cached_response, add_natural_variation, claude_he
 
 router = APIRouter()
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  AI SUPPORT AGENT ENGINE
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 import random as _rng
 
@@ -558,10 +558,10 @@ _GENERAL_CHAT_RESPONSES = {
 }
 
 
-# ═══════════════════════════════════════════════════════
-#  CLAUDE AI SUPPORT – intelligent agent responses
-#  4-layer fallback: Claude → Cache → Keywords → Handoff
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#  CLAUDE AI SUPPORT â€“ intelligent agent responses
+#  4-layer fallback: Claude â†’ Cache â†’ Keywords â†’ Handoff
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 # Action request reminder tasks: {request_id: asyncio.Task}
 _action_reminder_tasks: dict[int, asyncio.Task[None]] = {}
@@ -585,9 +585,9 @@ WHAT YOU CAN HELP WITH:
 - Payment issues, Ride problems, Account issues, Safety concerns, App issues, Fare disputes, Rating issues
 
 WHAT YOU CANNOT DO (must go through admin):
-- Cannot process refunds directly → use ||REQUEST:request-refund:...|| marker
-- Cannot apply promo credits → use ||REQUEST:apply-promo:...|| marker
-- Cannot cancel trips → use ||REQUEST:cancel-trip:...|| marker
+- Cannot process refunds directly â†’ use ||REQUEST:request-refund:...|| marker
+- Cannot apply promo credits â†’ use ||REQUEST:apply-promo:...|| marker
+- Cannot cancel trips â†’ use ||REQUEST:cancel-trip:...|| marker
 - Cannot access other users' personal info
 """
 
@@ -604,20 +604,20 @@ WHAT YOU CAN HELP WITH:
 - Earnings questions, Payout issues, Document issues, Trip issues, Vehicle issues, Account issues, Rating questions
 
 WHAT YOU CANNOT DO (must go through admin):
-- Cannot adjust completed trip fares → use ||REQUEST:request-refund:...|| marker
+- Cannot adjust completed trip fares â†’ use ||REQUEST:request-refund:...|| marker
 - Cannot process instant payouts
-- Cannot approve documents → use ||REQUEST:extend-deadline:...|| marker
+- Cannot approve documents â†’ use ||REQUEST:extend-deadline:...|| marker
 """
 
     knowledge = driver_knowledge if user_type == "driver" else rider_knowledge
     ctx_json = json.dumps(ctx, default=str, ensure_ascii=False)
 
     action_rules = """
-ACTION SYSTEM — CRITICAL:
+ACTION SYSTEM â€” CRITICAL:
 You can REQUEST actions but CANNOT execute them directly. All actions go through admin approval.
 
 When the user asks for an action:
-1. First CONFIRM with the user: "¿Desea que solicite un reembolso de $X?" / "Would you like me to request a refund of $X?"
+1. First CONFIRM with the user: "Â¿Desea que solicite un reembolso de $X?" / "Would you like me to request a refund of $X?"
 2. If user confirms, include the action marker at the END of your response (after your message text).
 3. Tell user the request was submitted for review.
 
@@ -631,12 +631,12 @@ ACTION MARKERS (place at very end of response, on its own line):
 ||REQUEST:safety-report:TRIP_ID:DESCRIPTION||
 
 EXAMPLES:
-- User says "quiero un reembolso por $15.50 del viaje de ayer" and confirms → include:
+- User says "quiero un reembolso por $15.50 del viaje de ayer" and confirms â†’ include:
   ||REQUEST:request-refund:latest:15.50:Cobro duplicado reportado por cliente||
-- User says "can you give me a $5 credit?" and confirms → include:
-  ||REQUEST:apply-promo:5:Cortesía por inconveniente||
-- User says "cancela mi viaje" and confirms → include:
-  ||REQUEST:cancel-trip:active:Cliente solicita cancelación||
+- User says "can you give me a $5 credit?" and confirms â†’ include:
+  ||REQUEST:apply-promo:5:CortesÃ­a por inconveniente||
+- User says "cancela mi viaje" and confirms â†’ include:
+  ||REQUEST:cancel-trip:active:Cliente solicita cancelaciÃ³n||
 
 IMPORTANT: Only include the marker AFTER user explicitly confirms. Never include marker on first mention.
 If user hasn't confirmed yet, ask for confirmation first WITHOUT any marker.
@@ -644,21 +644,21 @@ Use "latest" for trip_id if referring to most recent trip, "active" for current 
 """
 
     return f"""You are {agent_name}, a customer support representative at Cruise rideshare app.
-You are a real person — never reveal you are AI or automated.
+You are a real person â€” never reveal you are AI or automated.
 
 CRITICAL RULES:
 - Language: {lang_label}
 - Your name is {agent_name} (first name only).
 - Keep responses to 2-4 sentences max.
-- In Spanish: use formal "usted" form. Say "permítame", "su cuenta", "le ayudo", "con gusto". NEVER use "tú".
+- In Spanish: use formal "usted" form. Say "permÃ­tame", "su cuenta", "le ayudo", "con gusto". NEVER use "tÃº".
 - In English: polite and professional.
 - NEVER use slang, emojis, bullet points, numbered lists.
 - Be natural but formal. NEVER sound robotic.
 - Sometimes split your answer into 2-3 short messages (marked with ||SPLIT|| between them). Do this ~30% of the time for longer answers.
 - Show genuine empathy. Ask permission. Confirm understanding.
 - Always try to RESOLVE the issue fully.
-- If you need time: "Permítame un momento para revisar esto..."
-- Reference previous conversation naturally: "Como le mencioné...", "Regarding what we discussed..."
+- If you need time: "PermÃ­tame un momento para revisar esto..."
+- Reference previous conversation naturally: "Como le mencionÃ©...", "Regarding what we discussed..."
 - Never repeat information already given. Never ask questions already answered.
 
 USER TYPE: {user_type} ({'DRIVER' if user_type == 'driver' else 'RIDER/passenger'})
@@ -669,7 +669,7 @@ USER CONTEXT: {ctx_json}
 {action_rules}
 
 ESCALATION (only after 3+ exchanges where user is still unsatisfied):
-{"Le pido una disculpa, este caso necesita revisión del equipo especializado. Ya le paso su caso." if is_es else "I apologize, this case needs review from our specialized team. I'm forwarding your case now."}
+{"Le pido una disculpa, este caso necesita revisiÃ³n del equipo especializado. Ya le paso su caso." if is_es else "I apologize, this case needs review from our specialized team. I'm forwarding your case now."}
 
 EMERGENCY (if user mentions danger, accident, or emergency):
 {"Si se encuentra en peligro inmediato, por favor llame al 911 primero." if is_es else "If you are in immediate danger, please call 911 first."}
@@ -698,7 +698,7 @@ async def _call_claude_api(system_prompt: str, messages: list[dict], user_msg: s
 
     # Circuit breaker check
     if claude_health.should_skip_claude():
-        logging.info("Claude circuit breaker active — skipping API call")
+        logging.info("Claude circuit breaker active â€” skipping API call")
         return None
 
     conv = messages + [{"role": "user", "content": user_msg}]
@@ -758,7 +758,7 @@ def _parse_action_markers(response: str) -> tuple[str, list[dict[str, Any]]]:
         actions.append(action)
 
     if not actions:
-        # Fallback: partial/malformed markers — handle missing pipes, spaces, etc.
+        # Fallback: partial/malformed markers â€” handle missing pipes, spaces, etc.
         pattern_partial = r'\|{1,2}\s*REQUEST\s*:\s*([\w-]+)\s*:\s*(.*?)(?:\|{1,2}|$)'
         for match in re.finditer(pattern_partial, response):
             action_type = match.group(1).strip()
@@ -865,8 +865,8 @@ async def _create_action_request(
                 "request_id": ar.id,
                 "chat_id": chat.id,
                 "user_name": user_name,
-                "remind_at_15m": (datetime.utcnow() + timedelta(minutes=15)).isoformat(),
-                "remind_at_60m": (datetime.utcnow() + timedelta(minutes=60)).isoformat(),
+                "remind_at_15m": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
+                "remind_at_60m": (datetime.now(timezone.utc) + timedelta(minutes=60)).isoformat(),
                 "status": "pending",
                 "created_at": SERVER_TIMESTAMP,
             })
@@ -890,7 +890,7 @@ async def _action_request_reminder(request_id: int, chat_id: int, user_name: str
                 try:
                     firestore_sync.sync_dispatch_notification(
                         chat_id, user_name, "action_reminder",
-                        f"⏰ Recordatorio: solicitud #{request_id} de {user_name} pendiente de revisión (15 min)"
+                        f"â° Recordatorio: solicitud #{request_id} de {user_name} pendiente de revisiÃ³n (15 min)"
                     )
                 except Exception:
                     pass
@@ -901,7 +901,7 @@ async def _action_request_reminder(request_id: int, chat_id: int, user_name: str
                 lang = getattr(chat, "locale", "en") or "en"
                 agent = chat.agent_name or "Agente"
                 if lang.startswith("es"):
-                    msg = "Su solicitud está siendo revisada por un supervisor. Le notificaremos por correo electrónico cuando sea procesada. Normalmente toma menos de 1 hora."
+                    msg = "Su solicitud estÃ¡ siendo revisada por un supervisor. Le notificaremos por correo electrÃ³nico cuando sea procesada. Normalmente toma menos de 1 hora."
                 else:
                     msg = "Your request is being reviewed by a supervisor. We'll notify you by email when it's processed. It typically takes less than 1 hour."
                 bot_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=msg)
@@ -925,7 +925,7 @@ async def _action_request_reminder(request_id: int, chat_id: int, user_name: str
                 try:
                     firestore_sync.sync_dispatch_notification(
                         chat_id, user_name, "action_expired",
-                        f"🚨 Solicitud #{request_id} de {user_name} sin respuesta por 1 hora — escalada"
+                        f"ðŸš¨ Solicitud #{request_id} de {user_name} sin respuesta por 1 hora â€” escalada"
                     )
                 except Exception:
                     pass
@@ -967,13 +967,13 @@ async def _rehydrate_pending_reminders():
 async def _generate_ai_response(
     chat, user_msg: str, user_name: str, agent_name: str, db: AsyncSession
 ) -> tuple[str | None, list[dict]]:
-    """4-layer AI response: Claude (+ retry) → Cache → Keywords → Handoff.
+    """4-layer AI response: Claude (+ retry) â†’ Cache â†’ Keywords â†’ Handoff.
     Returns (response_text, action_list). response_text is None only if everything fails.
     """
     lang = getattr(chat, "locale", "en") or "en"
     actions: list[dict] = []
 
-    # ── Layer 1: Claude API (primary) + 1 retry ──
+    # â”€â”€ Layer 1: Claude API (primary) + 1 retry â”€â”€
     if _HAS_CLAUDE and not claude_health.should_skip_claude():
         ctx = await _get_user_context(chat.user_id, db, lang)
         user_type = "rider"
@@ -987,7 +987,7 @@ async def _generate_ai_response(
             # Auto-learn: cache good Claude responses for future use
             maybe_cache_response(user_msg, clean_msg, "general", lang)
             return clean_msg, actions
-        # ── Retry once with shorter timeout before falling to cache ──
+        # â”€â”€ Retry once with shorter timeout before falling to cache â”€â”€
         await asyncio.sleep(1.0)
         claude_resp = await _call_claude_api(system_prompt, history, user_msg)
         if claude_resp:
@@ -995,25 +995,25 @@ async def _generate_ai_response(
             maybe_cache_response(user_msg, clean_msg, "general", lang)
             return clean_msg, actions
 
-    # ── Layer 2: Cached responses (instant) ──
+    # â”€â”€ Layer 2: Cached responses (instant) â”€â”€
     cached = find_cached_response(user_msg, lang)
     if cached:
         varied = add_natural_variation(cached, agent_name, user_name, lang)
         return varied, []
 
-    # ── Layer 3: Smart keyword responses (existing system) ──
+    # â”€â”€ Layer 3: Smart keyword responses (existing system) â”€â”€
     fallback = _generate_human_chat(user_msg, user_name, agent_name, lang)
     if fallback:
         return fallback, []
 
-    # ── Layer 4: Graceful handoff ──
+    # â”€â”€ Layer 4: Graceful handoff â”€â”€
     if _HAS_CLAUDE:
         # One retry after 10 seconds
         if lang.startswith("es"):
-            stall = "Permítame un momento, estoy verificando la información con mi equipo..."
+            stall = "PermÃ­tame un momento, estoy verificando la informaciÃ³n con mi equipo..."
         else:
             stall = "Give me a moment, I'm checking the information with my team..."
-        # Don't retry here — just return stall message.
+        # Don't retry here â€” just return stall message.
         # The next user message will trigger another Claude attempt.
         return stall, []
 
@@ -1204,7 +1204,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
     elif phase == "agent_active":
         agent = chat.agent_name or "Agente"
 
-        # Variable reading pause — feels like agent is reading the message
+        # Variable reading pause â€” feels like agent is reading the message
         msg_len = len(user_msg)
         if msg_len < 30:
             read_delay = _rng.uniform(2.0, 4.0)    # short message
@@ -1275,7 +1275,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                 except Exception:
                     pass
 
-        # 3) Cancel trip intent — ask for confirmation first
+        # 3) Cancel trip intent â€” ask for confirmation first
         elif _has_cancel_intent(user_msg):
             chat.bot_phase = "awaiting_cancel_confirm"
             if lang.startswith("es"):
@@ -1290,7 +1290,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             close = _rng.choice(closing).format(name=user_name)
             replies.append({"role": "bot", "message": close, "sender_name": agent})
 
-        # 5) AI-powered response (4-layer fallback: Claude → Cache → Keywords → Handoff)
+        # 5) AI-powered response (4-layer fallback: Claude â†’ Cache â†’ Keywords â†’ Handoff)
         else:
             resp, actions = await _generate_ai_response(chat, user_msg, user_name, agent, db)
 
@@ -1314,7 +1314,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                     try:
                         firestore_sync.sync_dispatch_notification(
                             chat.id, user_name, "safety_report",
-                            f"🚨 SEGURIDAD: {user_name} reportó un problema de seguridad"
+                            f"ðŸš¨ SEGURIDAD: {user_name} reportÃ³ un problema de seguridad"
                         )
                         firestore_sync.sync_support_chat(
                             chat.id, chat.user_id, user_name, "",
@@ -1335,7 +1335,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                     try:
                         firestore_sync.sync_dispatch_notification(
                             chat.id, user_name, "refund_request",
-                            f"💰 {user_name} solicitó reembolso via chat de soporte"
+                            f"ðŸ’° {user_name} solicitÃ³ reembolso via chat de soporte"
                         )
                     except Exception:
                         pass
@@ -1352,7 +1352,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                     try:
                         firestore_sync.sync_dispatch_notification(
                             chat.id, user_name, "driver_report",
-                            f"⚠️ {user_name} reportó un conductor via chat"
+                            f"âš ï¸ {user_name} reportÃ³ un conductor via chat"
                         )
                     except Exception:
                         pass
@@ -1378,9 +1378,9 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
     return replies
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  SUPPORT CHAT ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _inactivity_tasks: dict[int, "asyncio.Task"] = {}
 
@@ -1435,7 +1435,7 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                     db.add(bot_msg)
                     await db.flush()
                     await db.refresh(bot_msg)
-                    chat.updated_at = datetime.utcnow()
+                    chat.updated_at = datetime.now(timezone.utc)
                     await db.commit()
                     if _HAS_FIRESTORE:
                         try:
@@ -1450,11 +1450,11 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
 
 async def _check_chat_inactivity(chat_id: int):
     """Background task: proactive follow-up sequence.
-    2 min → first follow-up, 4 min → second follow-up, 5 min → closing warning, 5:30 → close chat.
+    2 min â†’ first follow-up, 4 min â†’ second follow-up, 5 min â†’ closing warning, 5:30 â†’ close chat.
     Respects user typing state from Firestore to avoid interrupting.
     """
     try:
-        # ── First follow-up at 2 minutes ──
+        # â”€â”€ First follow-up at 2 minutes â”€â”€
         await asyncio.sleep(120)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
@@ -1462,9 +1462,9 @@ async def _check_chat_inactivity(chat_id: int):
             if not chat or chat.status != "open":
                 return
             if chat.last_user_message_at:
-                elapsed = (datetime.utcnow() - chat.last_user_message_at).total_seconds()
+                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
                 if elapsed < 110:
-                    return  # User was active recently — reset
+                    return  # User was active recently â€” reset
             # Check Firestore typing status
             if _HAS_FIRESTORE:
                 try:
@@ -1484,9 +1484,9 @@ async def _check_chat_inactivity(chat_id: int):
             except Exception:
                 pass
             proactive_msgs_es = [
-                f"¿Hay algo más en que pueda ayudarle, {_u_name}?",
-                f"¿Necesita ayuda con algo más?",
-                f"Quedo a su disposición si necesita algo adicional.",
+                f"Â¿Hay algo mÃ¡s en que pueda ayudarle, {_u_name}?",
+                f"Â¿Necesita ayuda con algo mÃ¡s?",
+                f"Quedo a su disposiciÃ³n si necesita algo adicional.",
             ]
             proactive_msgs_en = [
                 f"Is there anything else I can help you with, {_u_name if _u_name != 'estimado usuario' else 'there'}?",
@@ -1496,7 +1496,7 @@ async def _check_chat_inactivity(chat_id: int):
             proactive_text = _rng.choice(proactive_msgs_es if lang.startswith("es") else proactive_msgs_en)
             proactive_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=proactive_text)
             db.add(proactive_msg)
-            chat.updated_at = datetime.utcnow()
+            chat.updated_at = datetime.now(timezone.utc)
             await db.commit()
             await db.refresh(proactive_msg)
             if _HAS_FIRESTORE:
@@ -1505,7 +1505,7 @@ async def _check_chat_inactivity(chat_id: int):
                 except Exception:
                     pass
 
-        # ── Second follow-up at 4 minutes (2 min after first) ──
+        # â”€â”€ Second follow-up at 4 minutes (2 min after first) â”€â”€
         await asyncio.sleep(120)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
@@ -1513,7 +1513,7 @@ async def _check_chat_inactivity(chat_id: int):
             if not chat or chat.status != "open":
                 return
             if chat.last_user_message_at:
-                elapsed = (datetime.utcnow() - chat.last_user_message_at).total_seconds()
+                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
                 if elapsed < 110:
                     return  # User responded
             # Check typing
@@ -1526,10 +1526,10 @@ async def _check_chat_inactivity(chat_id: int):
                     pass
             agent = chat.agent_name or "Agente"
             lang = getattr(chat, "locale", "en") or "en"
-            still_text = "¿Aún sigue en línea conmigo?" if lang.startswith("es") else "Are you still there with me?"
+            still_text = "Â¿AÃºn sigue en lÃ­nea conmigo?" if lang.startswith("es") else "Are you still there with me?"
             still_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=still_text)
             db.add(still_msg)
-            chat.updated_at = datetime.utcnow()
+            chat.updated_at = datetime.now(timezone.utc)
             await db.commit()
             await db.refresh(still_msg)
             if _HAS_FIRESTORE:
@@ -1538,7 +1538,7 @@ async def _check_chat_inactivity(chat_id: int):
                 except Exception:
                     pass
 
-        # ── Closing warning at 5 minutes (1 min after second) ──
+        # â”€â”€ Closing warning at 5 minutes (1 min after second) â”€â”€
         await asyncio.sleep(60)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
@@ -1546,17 +1546,17 @@ async def _check_chat_inactivity(chat_id: int):
             if not chat or chat.status != "open":
                 return
             if chat.last_user_message_at:
-                elapsed = (datetime.utcnow() - chat.last_user_message_at).total_seconds()
+                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
                 if elapsed < 55:
                     return  # User responded
             agent = chat.agent_name or "Agente"
             lang = getattr(chat, "locale", "en") or "en"
-            close_warn_es = "Por motivos de inactividad, cerraré este chat en 30 segundos. Si necesita más ayuda, envíe un mensaje."
+            close_warn_es = "Por motivos de inactividad, cerrarÃ© este chat en 30 segundos. Si necesita mÃ¡s ayuda, envÃ­e un mensaje."
             close_warn_en = "Due to inactivity, I'll be closing this chat in 30 seconds. If you still need help, please send a message."
             close_text = close_warn_es if lang.startswith("es") else close_warn_en
             close_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=close_text)
             db.add(close_msg)
-            chat.updated_at = datetime.utcnow()
+            chat.updated_at = datetime.now(timezone.utc)
             await db.commit()
             await db.refresh(close_msg)
             if _HAS_FIRESTORE:
@@ -1565,7 +1565,7 @@ async def _check_chat_inactivity(chat_id: int):
                 except Exception:
                     pass
 
-        # ── Close chat at 5:30 (30 seconds after warning) ──
+        # â”€â”€ Close chat at 5:30 (30 seconds after warning) â”€â”€
         await asyncio.sleep(30)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
@@ -1573,11 +1573,11 @@ async def _check_chat_inactivity(chat_id: int):
             if not chat or chat.status != "open":
                 return
             if chat.last_user_message_at:
-                elapsed = (datetime.utcnow() - chat.last_user_message_at).total_seconds()
+                elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
                 if elapsed < 25:
                     return  # User responded just in time
             chat.status = "closed"
-            chat.updated_at = datetime.utcnow()
+            chat.updated_at = datetime.now(timezone.utc)
             await db.commit()
             if _HAS_FIRESTORE:
                 try:
@@ -1821,8 +1821,8 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
 
     msg = SupportMessage(chat_id=chat_id, sender_id=user.id, sender_role=user.role or "rider", message=msg_text)
     db.add(msg)
-    chat.updated_at = datetime.utcnow()
-    chat.last_user_message_at = datetime.utcnow()
+    chat.updated_at = datetime.now(timezone.utc)
+    chat.last_user_message_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(msg)
 
@@ -1891,7 +1891,7 @@ async def set_typing_status(chat_id: int, request: Request, user: User = Depends
     if _HAS_FIRESTORE:
         try:
             firestore_sync._fs_db.collection("support_chats").document(str(chat_id)).set(
-                {"user_typing": typing, "typing_updated_at": datetime.utcnow().isoformat()},
+                {"user_typing": typing, "typing_updated_at": datetime.now(timezone.utc).isoformat()},
                 merge=True,
             )
         except Exception:
@@ -1917,7 +1917,7 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
 
     msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="dispatch", message=msg_text)
     db.add(msg)
-    chat.updated_at = datetime.utcnow()
+    chat.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(msg)
 
@@ -1941,7 +1941,7 @@ async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Chat not found")
     chat.supervisor_connected = True
     chat.bot_phase = "dispatch_takeover"
-    chat.updated_at = datetime.utcnow()
+    chat.updated_at = datetime.now(timezone.utc)
     # Cancel any inactivity task
     old_task = _inactivity_tasks.pop(chat_id, None)
     if old_task and not old_task.done():
@@ -1967,7 +1967,7 @@ async def close_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):
     if not chat:
         raise HTTPException(404, "Chat not found")
     chat.status = "closed"
-    chat.updated_at = datetime.utcnow()
+    chat.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
     if _HAS_FIRESTORE:
@@ -1993,7 +1993,7 @@ async def close_support_chat_user(chat_id: int, user: User = Depends(_get_curren
     if chat.user_id != user.id:
         raise HTTPException(403, "Not your chat")
     chat.status = "closed"
-    chat.updated_at = datetime.utcnow()
+    chat.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
     # Cancel any pending inactivity task
@@ -2013,9 +2013,9 @@ async def close_support_chat_user(chat_id: int, user: User = Depends(_get_curren
     return {"status": "closed"}
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  ACTION REQUEST ENDPOINTS (DISPATCH)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/support/action-requests", dependencies=[Depends(_require_dispatch_auth)])
 async def list_action_requests(status: str = "pending_admin", db: AsyncSession = Depends(get_db)):
@@ -2064,7 +2064,7 @@ async def approve_action_request(request_id: int, request: Request, db: AsyncSes
         raise HTTPException(400, f"Request is already {ar.status}")
 
     ar.status = "approved"
-    ar.reviewed_at = datetime.utcnow()
+    ar.reviewed_at = datetime.now(timezone.utc)
     ar.reviewed_by = "dispatch"
     if admin_note:
         ar.admin_note = admin_note
@@ -2126,7 +2126,7 @@ async def reject_action_request(request_id: int, request: Request, db: AsyncSess
         raise HTTPException(400, f"Request is already {ar.status}")
 
     ar.status = "rejected"
-    ar.reviewed_at = datetime.utcnow()
+    ar.reviewed_at = datetime.now(timezone.utc)
     ar.reviewed_by = "dispatch"
     if admin_note:
         ar.admin_note = admin_note
@@ -2155,7 +2155,7 @@ async def reject_action_request(request_id: int, request: Request, db: AsyncSess
         bot_msg = SupportMessage(chat_id=ar.chat_id, sender_id=None, sender_role="bot", message=msg_text)
         db.add(bot_msg)
         chat.needs_escalation = True
-        chat.updated_at = datetime.utcnow()
+        chat.updated_at = datetime.now(timezone.utc)
         await db.commit()
         await db.refresh(bot_msg)
 

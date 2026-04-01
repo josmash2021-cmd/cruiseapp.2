@@ -1,4 +1,4 @@
-"""Cruise App — Security utilities: JWT, password hashing, auth dependencies, audit logging."""
+"""Cruise App â€” Security utilities: JWT, password hashing, auth dependencies, audit logging."""
 
 import os
 import re
@@ -27,7 +27,7 @@ HMAC_SECRET = os.getenv("HMAC_SECRET", "")
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")
 
-# Validate secrets at import time — refuse to start with empty/default keys
+# Validate secrets at import time â€” refuse to start with empty/default keys
 if not API_KEY or not HMAC_SECRET or not JWT_SECRET:
     _is_railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
     if _is_railway:
@@ -47,9 +47,9 @@ JWT_EXPIRE_HOURS = 24
 JWT_REFRESH_HOURS = 168
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Password hashing
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class _Pwd:
     @staticmethod
@@ -68,16 +68,16 @@ class _Pwd:
 pwd = _Pwd()
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Brute force protection
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _login_attempts: dict[str, list] = {}
 _LOGIN_MAX_ATTEMPTS = 5
 _LOGIN_LOCKOUT_SECONDS = 300
 
-# Credential stuffing detection — many accounts tried from same IP
-_ip_unique_accounts: dict[str, set] = {}  # IP → set of emails tried
+# Credential stuffing detection â€” many accounts tried from same IP
+_ip_unique_accounts: dict[str, set] = {}  # IP â†’ set of emails tried
 _CREDENTIAL_STUFFING_THRESHOLD = 10  # 10+ different accounts = stuffing attempt
 
 
@@ -101,7 +101,7 @@ def _record_login_failure(client_ip: str, email: str = ""):
     if email:
         _ip_unique_accounts.setdefault(client_ip, set()).add(email.lower())
         if len(_ip_unique_accounts[client_ip]) >= _CREDENTIAL_STUFFING_THRESHOLD:
-            # Directly blacklist — don't wait for 20 violations
+            # Directly blacklist â€” don't wait for 20 violations
             _ip_blacklist.add(client_ip)
             _security_audit_log("credential_stuffing", client_ip, f"accounts_tried={len(_ip_unique_accounts[client_ip])}")
             logging.warning("[SECURITY] Credential stuffing BANNED: %s", client_ip)
@@ -112,9 +112,9 @@ def _clear_login_failures(client_ip: str):
     _ip_unique_accounts.pop(client_ip, None)
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  IP blacklist
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _ip_blacklist: set[str] = set()
 _ip_violations: dict[str, int] = {}
@@ -128,9 +128,9 @@ def _record_violation(client_ip: str):
         logging.warning("[BANNED] IP auto-banned: %s (violations: %d)", client_ip, _ip_violations[client_ip])
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Nonce replay protection
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _used_nonces: collections.OrderedDict[str, float] = collections.OrderedDict()
 _NONCE_TTL = 600
@@ -149,17 +149,17 @@ def _check_nonce_replay(nonce: str) -> bool:
     return False
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  JWT revocation (logout invalidation)
 #  In-memory fast cache + DB persistent store
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-# In-memory revoked JTI set (fast path — survives until restart)
+# In-memory revoked JTI set (fast path â€” survives until restart)
 _revoked_jtis: collections.OrderedDict[str, float] = collections.OrderedDict()
 _MAX_REVOKED_CACHE = 100_000
 
 # Password reset rate limiting per email
-_password_reset_attempts: dict[str, list] = {}  # email → [timestamps]
+_password_reset_attempts: dict[str, list] = {}  # email â†’ [timestamps]
 _PASSWORD_RESET_MAX = 3   # max 3 resets per window
 _PASSWORD_RESET_WINDOW = 3600  # 1 hour window
 
@@ -202,7 +202,7 @@ async def load_revoked_tokens_from_db():
     """On startup: load all non-expired revoked tokens from DB into memory."""
     try:
         async with SessionLocal() as db:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             result = await db.execute(
                 select(RevokedToken).where(RevokedToken.expires_at > now)
             )
@@ -232,9 +232,9 @@ def _record_password_reset(email: str):
     _password_reset_attempts.setdefault(email.lower(), []).append(now)
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Security audit logging (hash-chain + DB persistence)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _audit_chain: list[dict] = []
 _audit_last_hash = ""
@@ -278,7 +278,7 @@ async def flush_audit_logs_to_db():
     _audit_db_queue.clear()
     try:
         async with SessionLocal() as db:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             for entry in batch:
                 db.add(AuditLog(
                     ts=now,
@@ -296,9 +296,9 @@ async def flush_audit_logs_to_db():
         _audit_db_queue.extend(batch[:50])
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Advanced attack pattern detection
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 # Suspicious user-agent patterns (scanners, exploit tools)
 _MALICIOUS_UA_PATTERN = re.compile(
@@ -319,7 +319,7 @@ _CMD_INJECTION_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# SSRF prevention — block internal/private IP ranges in URL params
+# SSRF prevention â€” block internal/private IP ranges in URL params
 _SSRF_INTERNAL_PATTERN = re.compile(
     r"(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.0\.0\.0|::1|"
     r"169\.254\.|file://|gopher://|dict://|ftp://|ldap://)",
@@ -371,9 +371,9 @@ def _check_ssrf(url: str) -> bool:
     return bool(_SSRF_INTERNAL_PATTERN.search(url))
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  JWT token creation
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def _create_token(user_id: int, device_fp: str = "", role: str = "", status: str = "active") -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
@@ -409,12 +409,12 @@ def _create_login_token(user_id: int) -> str:
     return jwt.encode({"sub": str(user_id), "type": "login", "exp": expire}, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Auth dependencies (with in-memory user cache for hot paths)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _user_cache: dict = {}  # user_id -> (User, timestamp)
-_USER_CACHE_TTL = 30.0  # seconds — refresh from DB every 30s
+_USER_CACHE_TTL = 30.0  # seconds â€” refresh from DB every 30s
 _MAX_USER_CACHE = 2000  # cap entries to prevent memory leak
 
 def invalidate_user_cache(user_id: int):
@@ -573,7 +573,7 @@ def _verify_api_key(
     raise HTTPException(401, "Invalid signature")
 
 
-# dispatch_sessions is shared with main.py — set by main module
+# dispatch_sessions is shared with main.py â€” set by main module
 _dispatch_sessions: set[str] = set()
 
 
@@ -638,7 +638,7 @@ HMAC_SECRET = os.getenv("HMAC_SECRET", "")
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")
 
-# Validate secrets at import time — refuse to start with empty/default keys
+# Validate secrets at import time â€” refuse to start with empty/default keys
 if not API_KEY or not HMAC_SECRET or not JWT_SECRET:
     _is_railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
     if _is_railway:
@@ -647,7 +647,7 @@ if not API_KEY or not HMAC_SECRET or not JWT_SECRET:
             "Configure them in Railway Variables."
         )
     else:
-        # Local dev fallback — generate random secrets per session
+        # Local dev fallback â€” generate random secrets per session
         import secrets as _sec
         API_KEY = API_KEY or _sec.token_hex(32)
         HMAC_SECRET = HMAC_SECRET or _sec.token_hex(32)
@@ -659,6 +659,6 @@ JWT_EXPIRE_HOURS = 24
 JWT_REFRESH_HOURS = 168
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Password hashing
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

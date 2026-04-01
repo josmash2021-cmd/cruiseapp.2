@@ -1,5 +1,5 @@
 """
-Cruise Backend — Automatic PostgreSQL Backup System
+Cruise Backend â€” Automatic PostgreSQL Backup System
 Runs a pg_dump every 6 hours and keeps the last 7 backups locally.
 Also logs backup status so the Guardian can monitor it.
 """
@@ -9,7 +9,7 @@ import logging
 import subprocess
 import gzip
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from db_url import resolve_database_url
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 BACKUP_DIR = Path(os.path.dirname(os.path.abspath(__file__))) / "backups"
 BACKUP_INTERVAL_HOURS = 6       # Run every 6 hours
-MAX_BACKUPS = 28                # Keep 7 days × 4 backups/day
+MAX_BACKUPS = 28                # Keep 7 days Ã— 4 backups/day
 
 _last_backup_time: datetime | None = None
 _last_backup_status: str = "never_run"
@@ -56,7 +56,7 @@ def run_backup() -> bool:
     pg_url = _get_pg_url()
     if not pg_url:
         _last_backup_status = "skipped_no_database_url"
-        logger.warning("[Backup] DATABASE_URL not set — skipping backup")
+        logger.warning("[Backup] DATABASE_URL not set â€” skipping backup")
         return False
 
     # Only backup PostgreSQL (not SQLite)
@@ -66,14 +66,14 @@ def run_backup() -> bool:
 
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     backup_file = BACKUP_DIR / f"cruise_backup_{timestamp}.sql.gz"
 
     try:
         env = os.environ.copy()
         env.update(_pg_url_to_env(pg_url))
 
-        # pg_dump → gzip compression
+        # pg_dump â†’ gzip compression
         proc = subprocess.run(
             ["pg_dump", "--no-password", "--format=plain", "--no-acl", "--no-owner"],
             env=env,
@@ -92,20 +92,20 @@ def run_backup() -> bool:
             f.write(proc.stdout)
 
         size_kb = round(backup_file.stat().st_size / 1024, 1)
-        _last_backup_time = datetime.utcnow()
+        _last_backup_time = datetime.now(timezone.utc)
         _last_backup_status = "ok"
         _last_backup_file = backup_file.name
         _last_backup_size_kb = size_kb
-        logger.info("[Backup] ✅ Backup saved: %s (%.1f KB)", backup_file.name, size_kb)
+        logger.info("[Backup] âœ… Backup saved: %s (%.1f KB)", backup_file.name, size_kb)
 
-        # Rotate old backups — keep only MAX_BACKUPS
+        # Rotate old backups â€” keep only MAX_BACKUPS
         _rotate_backups()
         return True
 
     except FileNotFoundError:
         # pg_dump not installed in container
         _last_backup_status = "pg_dump_not_installed"
-        logger.warning("[Backup] pg_dump binary not found — install postgresql-client in Dockerfile")
+        logger.warning("[Backup] pg_dump binary not found â€” install postgresql-client in Dockerfile")
         return False
     except subprocess.TimeoutExpired:
         _last_backup_status = "timeout"

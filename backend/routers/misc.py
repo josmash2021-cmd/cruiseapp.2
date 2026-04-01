@@ -24,9 +24,9 @@ from config import (
 
 router = APIRouter()
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  PROMO CODE  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/promo/validate", dependencies=[Depends(_verify_api_key)])
 async def validate_promo_code(body: dict = Body(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -37,7 +37,7 @@ async def validate_promo_code(body: dict = Body(...), user: User = Depends(_get_
     promo = result.scalar_one_or_none()
     if not promo or not promo.is_active:
         raise HTTPException(404, "Invalid promo code")
-    if promo.expires_at and promo.expires_at < datetime.utcnow():
+    if promo.expires_at and promo.expires_at < datetime.now(timezone.utc):
         raise HTTPException(410, "Promo code has expired")
     if promo.current_uses >= promo.max_uses:
         raise HTTPException(410, "Promo code has reached its usage limit")
@@ -63,9 +63,9 @@ async def create_promo_code(body: dict = Body(...), user: User = Depends(_get_cu
     await db.commit()
     return {"code": promo.code, "discount_percent": promo.discount_percent}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  NOTIFICATION  ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/notifications", dependencies=[Depends(_verify_api_key)])
 async def get_notifications(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -129,9 +129,9 @@ async def serve_document(filename: str, user: User = Depends(_get_current_user))
     return FileResponse(fpath, media_type=media)
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  SURGE PRICING
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/surge/current", dependencies=[Depends(_verify_api_key)])
 async def get_current_surge(lat: float = Query(...), lng: float = Query(...), db: AsyncSession = Depends(get_db)):
@@ -147,7 +147,7 @@ async def get_current_surge(lat: float = Query(...), lng: float = Query(...), db
 
     # 2) If no manual surge, auto-calculate from demand/supply
     if best_multiplier <= 1.0:
-        cutoff = datetime.utcnow() - timedelta(minutes=10)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
         rider_r = await db.execute(
             select(func.count(Trip.id)).where(
                 Trip.status.in_(["requested", "driver_en_route"]),
@@ -170,9 +170,9 @@ async def get_current_surge(lat: float = Query(...), lng: float = Query(...), db
     return {"surge_multiplier": best_multiplier, "is_surge": best_multiplier > 1.0, "message": f"{best_multiplier}x" if best_multiplier > 1.0 else "No surge"}
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  ROUTING PREVIEW WITH REAL DISTANCE (Feature 14.1)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/routing/preview", dependencies=[Depends(_verify_api_key)])
 async def routing_preview(
@@ -269,7 +269,7 @@ async def routing_preview(
     surge_extra = round(subtotal * (surge_mult - 1.0), 2) if surge_mult > 1.0 else 0.0
     total = max(round(subtotal + surge_extra, 2), r["min_fare"])
     
-    # Calculate range (±15%)
+    # Calculate range (Â±15%)
     low = round(total * 0.85, 2)
     high = round(total * 1.15, 2)
     
@@ -334,7 +334,7 @@ async def estimate_fare(
     surge_extra = round(subtotal * (surge_mult - 1.0), 2) if surge_mult > 1.0 else 0.0
     total = max(round(subtotal + surge_extra, 2), r["min_fare"])
     
-    # Calculate range (±15%)
+    # Calculate range (Â±15%)
     low = round(total * 0.85, 2)
     high = round(total * 1.15, 2)
     
@@ -397,9 +397,9 @@ async def get_vehicle_preference_options():
     }
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  REFERRAL SYSTEM
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/referral/code", dependencies=[Depends(_verify_api_key)])
 async def get_referral_code(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -430,9 +430,9 @@ async def apply_referral_code(referral_code: str = Body(...), user: User = Depen
     await db.commit()
     return {"status": "ok", "message": "Referral code applied! Complete your first trip to unlock $10 credit."}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  FAVORITE LOCATIONS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/favorites", dependencies=[Depends(_verify_api_key)])
 async def get_favorite_locations(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -492,9 +492,9 @@ async def delete_favorite_location(favorite_id: int, user: User = Depends(_get_c
     await db.commit()
     return {"status": "deleted"}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  GEOFENCING & SERVICE AREA VALIDATION
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/service-area/check", dependencies=[Depends(_verify_api_key)])
 async def check_service_area(lat: float = Query(...), lng: float = Query(...), db: AsyncSession = Depends(get_db)):
@@ -507,9 +507,9 @@ async def check_service_area(lat: float = Query(...), lng: float = Query(...), d
             return {"in_service_area": True, "area_name": area.area_name, "message": "Location is within service area"}
     return {"in_service_area": False, "message": "Sorry, we don't service this area yet", "nearest_area": areas[0].area_name if areas else None}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  NAVIGATION INSTRUCTIONS (Google Directions API)
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/navigation/instructions", dependencies=[Depends(_verify_api_key)])
 async def get_navigation_instructions(
@@ -659,7 +659,7 @@ async def complete_referral(referral_id: int, db: AsyncSession = Depends(get_db)
     if not referral or referral.status != "pending":
         return {"status": "already_processed"}
     referral.status = "rewarded"
-    referral.completed_at = datetime.utcnow()
+    referral.completed_at = datetime.now(timezone.utc)
     ref_result = await db.execute(select(User).where(User.id == referral.referrer_id))
     referrer = ref_result.scalar_one_or_none()
     if referrer:
@@ -667,9 +667,9 @@ async def complete_referral(referral_id: int, db: AsyncSession = Depends(get_db)
     await db.commit()
     return {"status": "rewarded", "referrer_bonus": referral.referrer_bonus, "referee_bonus": referral.referee_bonus}
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  SOS / EMERGENCY ALERTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/safety/sos-alert", dependencies=[Depends(_verify_api_key)])
 async def send_sos_alert(
@@ -684,7 +684,7 @@ async def send_sos_alert(
     user_name = f"{user.first_name} {user.last_name}"
     maps_link = f"https://maps.google.com/?q={lat},{lng}"
     message = (
-        f"🚨 EMERGENCY ALERT from {user_name} via Cruise.\n"
+        f"ðŸš¨ EMERGENCY ALERT from {user_name} via Cruise.\n"
         f"Location: {maps_link}\n"
     )
     if trip_id:
@@ -724,14 +724,14 @@ async def send_sos_alert(
         else:
             errors.append(f"{phone}: Twilio not configured")
 
-    logging.warning("[SOS] Alert from user %s (%s) at %.4f,%.4f — sent %d/%d SMS",
+    logging.warning("[SOS] Alert from user %s (%s) at %.4f,%.4f â€” sent %d/%d SMS",
                     user.id, user_name, lat, lng, sent_count, len(contact_phones))
     return {"status": "sent", "sent_count": sent_count, "total_contacts": len(contact_phones), "errors": errors}
 
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  AUTO SURGE CALCULATION
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post("/surge/auto-calculate", dependencies=[Depends(_verify_api_key)])
 async def auto_calculate_surge(
@@ -744,7 +744,7 @@ async def auto_calculate_surge(
     Surge formula: riders_requesting / (available_drivers + 1).
     1.0x if ratio <= 1, up to 3.0x cap."""
     # Count active riders with recent trip requests (last 10 min)
-    cutoff = datetime.utcnow() - timedelta(minutes=10)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
     rider_r = await db.execute(
         select(func.count(Trip.id)).where(
             Trip.status.in_(["requested", "driver_en_route"]),
@@ -778,11 +778,11 @@ async def auto_calculate_surge(
     if ratio <= 1.0:
         multiplier = 1.0
     elif ratio <= 2.0:
-        multiplier = round(1.0 + (ratio - 1.0) * 0.5, 2)  # 1.0x–1.5x
+        multiplier = round(1.0 + (ratio - 1.0) * 0.5, 2)  # 1.0xâ€“1.5x
     elif ratio <= 3.0:
-        multiplier = round(1.5 + (ratio - 2.0) * 0.5, 2)  # 1.5x–2.0x
+        multiplier = round(1.5 + (ratio - 2.0) * 0.5, 2)  # 1.5xâ€“2.0x
     else:
-        multiplier = min(round(2.0 + (ratio - 3.0) * 0.25, 2), 3.0)  # 2.0x–3.0x cap
+        multiplier = min(round(2.0 + (ratio - 3.0) * 0.25, 2), 3.0)  # 2.0xâ€“3.0x cap
 
     return {
         "surge_multiplier": multiplier,

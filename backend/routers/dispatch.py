@@ -60,7 +60,7 @@ async def dispatch_owner_login(request: Request, credentials: OwnerLogin):
         raise HTTPException(401, "Invalid credentials")
     
     # LAYER 3: Create owner JWT with restricted claims
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     token = jwt.encode(
         {
             "sub": "owner",
@@ -189,7 +189,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     data = body.model_dump()
     # SECURITY: Force rider_id to be the authenticated user
     data["rider_id"] = user.id
-    # Parse scheduled_at string → datetime
+    # Parse scheduled_at string â†’ datetime
     if data.get("scheduled_at") and isinstance(data["scheduled_at"], str):
         try:
             data["scheduled_at"] = datetime.fromisoformat(data["scheduled_at"].replace("Z", "+00:00"))
@@ -238,7 +238,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     drivers = result.scalars().all()
     drivers_sorted = sorted(drivers, key=lambda d: _haversine(trip.pickup_lat, trip.pickup_lng, d.lat or 0, d.lng or 0))
 
-    # ── Debug logging: always log dispatch result for Railway visibility ──
+    # â”€â”€ Debug logging: always log dispatch result for Railway visibility â”€â”€
     if drivers_sorted:
         logging.info(
             "[Dispatch] Trip %d: found %d eligible drivers. Assigning to driver %d (%.2f km away). cutoff=%s",
@@ -266,7 +266,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         db.add(offer)
         await db.commit()
         await db.refresh(offer)
-        # ── SSE instant push to driver (sub-second delivery) ──
+        # â”€â”€ SSE instant push to driver (sub-second delivery) â”€â”€
         _pending_cache.pop(assigned.id, None)  # Invalidate cache so SSE and poll both get fresh data
         estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
         asyncio.create_task(event_bus.push_driver_offer(assigned.id, [{
@@ -280,13 +280,13 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             "fare": estimated_driver_fare,
             "driver_earnings": estimated_driver_fare,
         }]))
-        # ── FCM push to assigned driver ──
+        # â”€â”€ FCM push to assigned driver â”€â”€
         if assigned.fcm_token:
             rider_name = f"{user.first_name} {user.last_name}"
             _send_fcm_push(
                 assigned.fcm_token,
-                title="🚗 New Ride Offer",
-                body=f"{rider_name} — {(trip.pickup_address or '')[:50]}",
+                title="ðŸš— New Ride Offer",
+                body=f"{rider_name} â€” {(trip.pickup_address or '')[:50]}",
                 data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
             )
         return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": offer.id, "dispatched_to": assigned.id}
@@ -301,7 +301,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     if _cached and (_now - _cached[0]) < _PENDING_CACHE_TTL:
         return _cached[1]
 
-    # Single JOIN query — fetch offers + trips + riders in ONE roundtrip (fixes N+1)
+    # Single JOIN query â€” fetch offers + trips + riders in ONE roundtrip (fixes N+1)
     result = await db.execute(
         select(DispatchOffer, Trip, User)
         .join(Trip, DispatchOffer.trip_id == Trip.id)
@@ -329,7 +329,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     return offers
 
 
-# ── SSE stream: real-time driver offers (sub-second delivery) ──
+# â”€â”€ SSE stream: real-time driver offers (sub-second delivery) â”€â”€
 
 @router.get("/dispatch/driver/pending/stream")
 async def driver_pending_sse(
@@ -339,7 +339,7 @@ async def driver_pending_sse(
 ):
     """SSE stream for driver pending offers.
     Delivers new offers in <200ms instead of 5s polling.
-    Falls back gracefully — clients can use this OR polling."""
+    Falls back gracefully â€” clients can use this OR polling."""
     # Security: only allow drivers to subscribe to their own stream
     if user.id != driver_id or user.role != "driver":
         raise HTTPException(403, "Not authorized to access this driver's offer stream")
@@ -373,7 +373,7 @@ async def driver_pending_sse(
     )
 
 
-# ── SSE stream: real-time trip updates (for riders) ──
+# â”€â”€ SSE stream: real-time trip updates (for riders) â”€â”€
 
 @router.get("/dispatch/trip/{trip_id}/stream")
 async def trip_status_sse(
@@ -463,7 +463,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                 logging.error("Firestore sync on accept_offer failed: %s", e)
         asyncio.create_task(_sync_firestore_accept())
 
-    # ── SSE instant push to rider watching this trip (with FULL driver info) ──
+    # â”€â”€ SSE instant push to rider watching this trip (with FULL driver info) â”€â”€
     if trip:
         async def _push_sse_with_driver():
             try:
@@ -491,7 +491,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                 logging.error("SSE push with driver info failed: %s", e)
         asyncio.create_task(_push_sse_with_driver())
 
-    # ── Push + SMS notification to rider when driver accepts ──
+    # â”€â”€ Push + SMS notification to rider when driver accepts â”€â”€
     if trip:
         try:
             rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
@@ -504,12 +504,12 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
             if rider and rider.fcm_token:
                 _send_fcm_push(
                     rider.fcm_token,
-                    title="Driver Found! 🚗",
+                    title="Driver Found! ðŸš—",
                     body=f"{driver_display} is on the way to pick you up.",
                     data={"type": "driver_assigned", "trip_id": str(trip.id), "driver_id": str(driver_id)},
                 )
 
-            # SMS via Twilio (non-blocking — don't slow down accept response)
+            # SMS via Twilio (non-blocking â€” don't slow down accept response)
             if rider and rider.phone and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER:
                 def _send_sms():
                     try:
@@ -593,7 +593,7 @@ async def reject_offer(
             db.add(new_offer)
             await db.commit()
             await db.refresh(new_offer)
-            # ── SSE instant push to next driver ──
+            # â”€â”€ SSE instant push to next driver â”€â”€
             _pending_cache.pop(next_driver.id, None)
             estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
             # Fetch rider info for the push payload
@@ -613,18 +613,18 @@ async def reject_offer(
                 "fare": estimated_driver_fare,
                 "driver_earnings": estimated_driver_fare,
             }]))
-            # ── FCM push to next driver ──
+            # â”€â”€ FCM push to next driver â”€â”€
             if next_driver.fcm_token:
                 _send_fcm_push(
                     next_driver.fcm_token,
-                    title="🚗 New Ride Offer",
-                    body=f"{rider_name} — {(trip.pickup_address or '')[:50]}",
+                    title="ðŸš— New Ride Offer",
+                    body=f"{rider_name} â€” {(trip.pickup_address or '')[:50]}",
                     data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(new_offer.id)},
                 )
 
     return {"status": "rejected", "reason_stored": reason is not None}
 
-# ── In-memory cache for accepted dispatch status ──
+# â”€â”€ In-memory cache for accepted dispatch status â”€â”€
 _dispatch_status_cache: dict = {}  # trip_id -> (data, timestamp)
 _DISPATCH_STATUS_CACHE_TTL = 3.0  # seconds
 
@@ -680,11 +680,11 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
     _dispatch_status_cache[trip_id] = (response, _now)
     return response
 
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  ADMIN / DISPATCH ENDPOINTS
-# ═══════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-# ── Action Request Management ──
+# â”€â”€ Action Request Management â”€â”€
 
 @router.get("/api/dispatch/action-requests", dependencies=[Depends(_require_dispatch_auth)])
 async def list_action_requests(
@@ -719,7 +719,7 @@ async def approve_action_request(
     reviewed_by: str = Body("admin", embed=True),
     db: AsyncSession = Depends(get_db),
 ):
-    """Approve an action request — execute the action and notify user."""
+    """Approve an action request â€” execute the action and notify user."""
     result = await db.execute(select(ActionRequest).where(ActionRequest.id == request_id))
     ar = result.scalar_one_or_none()
     if not ar:
@@ -728,7 +728,7 @@ async def approve_action_request(
         raise HTTPException(400, f"Request already {ar.status}")
 
     ar.status = "approved"
-    ar.reviewed_at = datetime.utcnow()
+    ar.reviewed_at = datetime.now(timezone.utc)
     ar.reviewed_by = reviewed_by
     ar.admin_note = admin_note or ""
     details = json.loads(ar.details) if ar.details else {}
@@ -789,16 +789,16 @@ async def approve_action_request(
 
     elif ar.action_type == "apply-promo":
         amount = details.get("amount", 5)
-        action_result_msg = f"Crédito promocional de ${amount:.2f} aprobado."
+        action_result_msg = f"CrÃ©dito promocional de ${amount:.2f} aprobado."
 
     elif ar.action_type == "cancel-trip":
-        action_result_msg = "Cancelación de viaje aprobada."
+        action_result_msg = "CancelaciÃ³n de viaje aprobada."
 
     elif ar.action_type == "safety-report":
         action_result_msg = "Reporte de seguridad registrado y escalado."
 
     else:
-        action_result_msg = f"Acción '{ar.action_type}' aprobada."
+        action_result_msg = f"AcciÃ³n '{ar.action_type}' aprobada."
 
     # Send confirmation to user in chat
     chat_r = await db.execute(select(SupportChat).where(SupportChat.id == ar.chat_id))
@@ -807,7 +807,7 @@ async def approve_action_request(
         lang = getattr(chat, "locale", "en") or "en"
         agent = chat.agent_name or "Agente"
         if lang.startswith("es"):
-            user_msg = f"Su solicitud ha sido aprobada y procesada. {action_result_msg} ¿Hay algo más en que pueda ayudarle?"
+            user_msg = f"Su solicitud ha sido aprobada y procesada. {action_result_msg} Â¿Hay algo mÃ¡s en que pueda ayudarle?"
         else:
             user_msg = f"Your request has been approved and processed. {action_result_msg} Is there anything else I can help you with?"
         bot_msg = SupportMessage(chat_id=ar.chat_id, sender_id=0, sender_role="bot", message=user_msg)
@@ -842,7 +842,7 @@ async def approve_action_request(
         if _push_user and getattr(_push_user, "fcm_token", None):
             _send_fcm_push(
                 _push_user.fcm_token,
-                title="✅ Solicitud aprobada" if (getattr(chat, "locale", "en") or "en").startswith("es") else "✅ Request Approved",
+                title="âœ… Solicitud aprobada" if (getattr(chat, "locale", "en") or "en").startswith("es") else "âœ… Request Approved",
                 body=action_result_msg[:200],
                 data={"type": "action_approved", "request_id": str(request_id), "chat_id": str(ar.chat_id)},
             )
@@ -859,7 +859,7 @@ async def reject_action_request(
     reviewed_by: str = Body("admin", embed=True),
     db: AsyncSession = Depends(get_db),
 ):
-    """Reject an action request — admin takes over the chat."""
+    """Reject an action request â€” admin takes over the chat."""
     result = await db.execute(select(ActionRequest).where(ActionRequest.id == request_id))
     ar = result.scalar_one_or_none()
     if not ar:
@@ -868,7 +868,7 @@ async def reject_action_request(
         raise HTTPException(400, f"Request already {ar.status}")
 
     ar.status = "rejected"
-    ar.reviewed_at = datetime.utcnow()
+    ar.reviewed_at = datetime.now(timezone.utc)
     ar.reviewed_by = reviewed_by
     ar.admin_note = admin_note or ""
 
@@ -921,8 +921,8 @@ async def reject_action_request(
             _lang = getattr(chat, "locale", "en") or "en" if chat else "en"
             _send_fcm_push(
                 _push_user.fcm_token,
-                title="👤 Supervisor conectado" if _lang.startswith("es") else "👤 Supervisor Connected",
-                body="Un supervisor revisará su caso personalmente." if _lang.startswith("es") else "A supervisor will review your case personally.",
+                title="ðŸ‘¤ Supervisor conectado" if _lang.startswith("es") else "ðŸ‘¤ Supervisor Connected",
+                body="Un supervisor revisarÃ¡ su caso personalmente." if _lang.startswith("es") else "A supervisor will review your case personally.",
                 data={"type": "action_rejected", "request_id": str(request_id), "chat_id": str(ar.chat_id)},
             )
     except Exception:

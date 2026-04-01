@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pin Design v2 — Media Luna Copa</title>
+<style>
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #fff;
+  }
+  h2 { color: #D4A800; margin-bottom: 4px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 30px; text-align: center; line-height: 1.5; }
+  .row {
+    display: flex;
+    gap: 50px;
+    align-items: flex-end;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .pin-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .label {
+    color: #aaa;
+    font-size: 12px;
+    margin-top: 10px;
+    text-align: center;
+  }
+  .section-title {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 20px 0 16px;
+    padding: 6px 16px;
+    background: rgba(212, 168, 0, 0.15);
+    border-radius: 20px;
+    border: 1px solid rgba(212, 168, 0, 0.3);
+  }
+  .desc {
+    color: #ccc;
+    font-size: 13px;
+    max-width: 500px;
+    text-align: center;
+    line-height: 1.6;
+    margin-bottom: 30px;
+  }
+</style>
+</head>
+<body>
+
+<h2>Pin v2 — Media Luna Copa</h2>
+<p class="subtitle">
+  Sin cabeza circular. Solo cola en forma de media luna / copa acostada.<br>
+  Icono flota adentro con glow blanco fade. Punta normal abajo.
+</p>
+
+<p class="desc">
+  Forma: ⌣ (media luna acostada abierta arriba) → se estrecha → punta ▽<br>
+  El icono queda dentro de la copa con luz blanca difusa detrás.
+</p>
+
+<div class="section-title">TAMAÑOS</div>
+<div class="row">
+  <div class="pin-container">
+    <canvas id="s1" width="60" height="80"></canvas>
+    <div class="label">Pequeño</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="s2" width="80" height="100"></canvas>
+    <div class="label">Mediano</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="s3" width="100" height="130"></canvas>
+    <div class="label">Grande</div>
+  </div>
+</div>
+
+<div class="section-title">CON ICONOS</div>
+<div class="row">
+  <div class="pin-container">
+    <canvas id="i1" width="80" height="100"></canvas>
+    <div class="label">Pickup</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="i2" width="80" height="100"></canvas>
+    <div class="label">Dropoff</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="i3" width="80" height="100"></canvas>
+    <div class="label">Driver</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="i4" width="80" height="100"></canvas>
+    <div class="label">User</div>
+  </div>
+</div>
+
+<div class="section-title">ANTES vs AHORA vs PROPUESTA v2</div>
+<div class="row">
+  <div class="pin-container">
+    <canvas id="old" width="80" height="100"></canvas>
+    <div class="label">Actual (escudo)</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="v1" width="80" height="100"></canvas>
+    <div class="label">v1 (arco+hueco)</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="v2" width="80" height="100"></canvas>
+    <div class="label">v2 PROPUESTA</div>
+  </div>
+</div>
+
+<div class="section-title">SOBRE MAPA OSCURO (simulación)</div>
+<div style="position:relative; width:400px; height:250px; background: linear-gradient(135deg, #0d1b2a 0%, #1b2838 50%, #0d1b2a 100%); border-radius: 16px; margin-bottom: 40px; overflow: hidden;">
+  <!-- Fake map lines -->
+  <svg style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0.15">
+    <line x1="50" y1="0" x2="350" y2="250" stroke="#4a6" stroke-width="1"/>
+    <line x1="0" y1="80" x2="400" y2="120" stroke="#4a6" stroke-width="1"/>
+    <line x1="100" y1="0" x2="200" y2="250" stroke="#4a6" stroke-width="0.5"/>
+    <line x1="0" y1="180" x2="400" y2="160" stroke="#4a6" stroke-width="0.5"/>
+    <rect x="120" y="60" width="60" height="40" fill="#234" rx="2"/>
+    <rect x="250" y="140" width="80" height="30" fill="#234" rx="2"/>
+  </svg>
+  <canvas id="map1" width="80" height="100" style="position:absolute; left:80px; top:60px;"></canvas>
+  <canvas id="map2" width="80" height="100" style="position:absolute; left:250px; top:100px;"></canvas>
+  <canvas id="map3" width="60" height="80" style="position:absolute; left:170px; top:130px;"></canvas>
+</div>
+
+<script>
+const GOLD_L = '#F5DC7A';
+const GOLD   = '#D4A800';
+const GOLD_D = '#B08800';
+
+/**
+ * Draw Pin v2: Media luna copa (sin cabeza) + punta
+ * 
+ * Shape concept:
+ *   ╭─────╮     ← open crescent/cup rim  
+ *   │  ●  │     ← icon with white glow inside the cup
+ *   ╰╲   ╱╯     ← cup walls narrow
+ *     ╲ ╱       ← tail
+ *      V        ← point/tip
+ */
+function drawPinV2(canvas, iconFn, scale) {
+  scale = scale || 1;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  
+  const cx = W / 2;
+  
+  // Dimensions
+  const cupW = 22 * scale;       // half-width of the cup at the top
+  const cupH = 20 * scale;       // height of the cup portion
+  const tailH = 24 * scale;      // height from cup bottom to tip
+  const topY = 8 * scale;        // top of the cup
+  const cupBottomY = topY + cupH;
+  const tipY = cupBottomY + tailH;
+  
+  // Icon center sits in the middle of the cup
+  const iconCY = topY + cupH * 0.45;
+
+  // ── White glow behind icon (radial fade) ──
+  const glowR = cupW * 0.75;
+  const glow = ctx.createRadialGradient(cx, iconCY, 0, cx, iconCY, glowR);
+  glow.addColorStop(0, 'rgba(255,255,255,0.45)');
+  glow.addColorStop(0.5, 'rgba(255,255,255,0.12)');
+  glow.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, iconCY, glowR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ── Gold crescent/cup shape ──
+  ctx.save();
+  ctx.shadowColor = 'rgba(212, 168, 0, 0.4)';
+  ctx.shadowBlur = 8 * scale;
+  
+  const grad = ctx.createLinearGradient(cx, topY, cx, tipY);
+  grad.addColorStop(0, GOLD_L);
+  grad.addColorStop(0.4, GOLD);
+  grad.addColorStop(1, GOLD_D);
+  ctx.fillStyle = grad;
+  
+  ctx.beginPath();
+  
+  // Start at the top-left rim of the cup
+  // The cup is a U-shape (half-moon lying on its back / crescent open on top)
+  
+  // Left rim top
+  const rimThick = 5 * scale;  // thickness of the gold crescent walls
+  
+  // Outer path: left top → curve down (cup exterior) → narrow to tip → back up right
+  ctx.moveTo(cx - cupW, topY);
+  
+  // Left outer wall going down
+  ctx.quadraticCurveTo(
+    cx - cupW - 2 * scale, cupBottomY,        // control: slightly outward bulge
+    cx - cupW * 0.35, cupBottomY + 2 * scale   // end: near center-bottom of cup
+  );
+  
+  // Left side of tail going to tip
+  ctx.quadraticCurveTo(
+    cx - 2 * scale, tipY - tailH * 0.3,
+    cx, tipY
+  );
+  
+  // Right side of tail going back up
+  ctx.quadraticCurveTo(
+    cx + 2 * scale, tipY - tailH * 0.3,
+    cx + cupW * 0.35, cupBottomY + 2 * scale
+  );
+  
+  // Right outer wall going up
+  ctx.quadraticCurveTo(
+    cx + cupW + 2 * scale, cupBottomY,
+    cx + cupW, topY
+  );
+  
+  // Close the top: go inward along the right rim
+  ctx.lineTo(cx + cupW - rimThick, topY);
+  
+  // Inner right wall going down (cup interior)
+  ctx.quadraticCurveTo(
+    cx + cupW - rimThick, cupBottomY - rimThick * 1.5,
+    cx + cupW * 0.2, cupBottomY - rimThick * 0.5
+  );
+  
+  // Inner path meeting at narrow point (don't go all the way to tip — just the cup interior)
+  ctx.quadraticCurveTo(
+    cx, cupBottomY + 2 * scale,
+    cx - cupW * 0.2, cupBottomY - rimThick * 0.5
+  );
+  
+  // Inner left wall going up
+  ctx.quadraticCurveTo(
+    cx - cupW + rimThick, cupBottomY - rimThick * 1.5,
+    cx - cupW + rimThick, topY
+  );
+  
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  
+  // ── Subtle highlight on left rim ──
+  ctx.save();
+  ctx.globalAlpha = 0.3;
+  ctx.beginPath();
+  ctx.moveTo(cx - cupW + 1, topY + 2 * scale);
+  ctx.quadraticCurveTo(
+    cx - cupW, topY + cupH * 0.5,
+    cx - cupW * 0.6, cupBottomY - 2 * scale
+  );
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.2 * scale;
+  ctx.stroke();
+  ctx.restore();
+  
+  // ── Icon ──
+  if (iconFn) {
+    iconFn(ctx, cx, iconCY, cupW * 0.45, scale);
+  }
+}
+
+// ── Simpler v2b: cleaner crescent approach ──
+function drawPinV2b(canvas, iconFn, scale) {
+  scale = scale || 1;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  
+  const cx = W / 2;
+  
+  // Key measurements
+  const r = 16 * scale;          // radius of the cup arc
+  const cupCY = 18 * scale;      // center Y of the arc
+  const tailLen = 26 * scale;    // from arc bottom to tip
+  
+  const arcStart = Math.PI * 0.18;   // slight opening at top (not full semicircle)
+  const arcEnd = Math.PI - arcStart;
+  
+  const tipY = cupCY + r * Math.sin(arcEnd) + tailLen;
+  const iconCY = cupCY;
+  
+  // ── White glow behind icon ──
+  const glowR = r * 0.7;
+  const glow = ctx.createRadialGradient(cx, iconCY, 0, cx, iconCY, glowR);
+  glow.addColorStop(0, 'rgba(255,255,255,0.5)');
+  glow.addColorStop(0.45, 'rgba(255,255,255,0.15)');
+  glow.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, iconCY, glowR, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // ── Gold shape ──
+  ctx.save();
+  ctx.shadowColor = 'rgba(212, 168, 0, 0.45)';
+  ctx.shadowBlur = 10 * scale;
+  
+  const grad = ctx.createLinearGradient(cx, cupCY - r, cx, tipY);
+  grad.addColorStop(0, GOLD_L);
+  grad.addColorStop(0.45, GOLD);
+  grad.addColorStop(1, GOLD_D);
+  ctx.fillStyle = grad;
+  
+  const thick = 4.5 * scale; // wall thickness
+  
+  ctx.beginPath();
+  
+  // Outer arc: from top-left going clockwise to top-right (bottom half of circle = cup)
+  ctx.arc(cx, cupCY, r, arcStart, arcEnd, false);
+  
+  // From right end of arc, curve down to tip
+  const rx = cx + r * Math.cos(arcEnd);   // will be left of center since arcEnd > PI/2
+  // Actually arcEnd = PI - 0.18, so cos is negative → left side
+  // Let me recalculate: arc goes from arcStart (small angle, top-right) to arcEnd (PI-small, top-left)
+  // Wait — canvas arc: 0 = right, PI/2 = down, PI = left
+  // arcStart = 0.18*PI ≈ 32°, arcEnd = 0.82*PI ≈ 148°
+  // So arc sweeps from upper-right to upper-left, going CLOCKWISE through the bottom
+  // That gives us the cup shape!
+  
+  const endX = cx + r * Math.cos(arcEnd);
+  const endY = cupCY + r * Math.sin(arcEnd);
+  
+  // Tail: left side going to tip
+  ctx.quadraticCurveTo(
+    endX + 1.5 * scale, tipY - tailLen * 0.25,
+    cx, tipY
+  );
+  
+  // Tail: right side going back up
+  const startX = cx + r * Math.cos(arcStart);
+  const startY = cupCY + r * Math.sin(arcStart);
+  
+  ctx.quadraticCurveTo(
+    startX - 1.5 * scale, tipY - tailLen * 0.25,
+    startX, startY
+  );
+  
+  ctx.closePath();
+  
+  // Cut out the inside to make it a crescent
+  // Inner arc (slightly smaller, same center)
+  ctx.moveTo(cx + (r - thick) * Math.cos(arcStart + 0.08), cupCY + (r - thick) * Math.sin(arcStart + 0.08));
+  ctx.arc(cx, cupCY, r - thick, arcStart + 0.08, arcEnd - 0.08, false);
+  
+  // Close inner bottom with a curve
+  const iEndX = cx + (r - thick) * Math.cos(arcEnd - 0.08);
+  const iEndY = cupCY + (r - thick) * Math.sin(arcEnd - 0.08);
+  const iStartX = cx + (r - thick) * Math.cos(arcStart + 0.08);
+  const iStartY = cupCY + (r - thick) * Math.sin(arcStart + 0.08);
+  
+  ctx.quadraticCurveTo(cx, iEndY + 4 * scale, iStartX, iStartY);
+  
+  ctx.closePath();
+  
+  // Use even-odd fill to cut out the inner arc
+  ctx.fill('evenodd');
+  ctx.restore();
+  
+  // ── Highlight ──
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.beginPath();
+  ctx.arc(cx, cupCY, r - 1, arcStart + 0.1, arcStart + (arcEnd - arcStart) * 0.35, false);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.3 * scale;
+  ctx.stroke();
+  ctx.restore();
+  
+  // ── Icon ──
+  if (iconFn) {
+    iconFn(ctx, cx, iconCY, r * 0.38, scale);
+  }
+}
+
+// ── Old pin (current) for comparison ──
+function drawOldPin(canvas, scale) {
+  scale = scale || 1;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  const cx = W / 2;
+  const r = 16 * scale;
+  const arcCY = 20 * scale;
+  const tipY = arcCY + r + 22 * scale;
+  
+  ctx.save();
+  ctx.shadowColor = 'rgba(212,168,0,0.35)';
+  ctx.shadowBlur = 10;
+  const g = ctx.createLinearGradient(cx, arcCY - r, cx, tipY);
+  g.addColorStop(0, GOLD_L); g.addColorStop(0.5, GOLD); g.addColorStop(1, GOLD_D);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, arcCY, r, Math.PI, 2*Math.PI, false);
+  ctx.quadraticCurveTo(cx + r, tipY - 8, cx, tipY);
+  ctx.quadraticCurveTo(cx - r, tipY - 8, cx - r, arcCY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  
+  ctx.beginPath();
+  ctx.arc(cx, arcCY - 1, 8 * scale, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, arcCY - 1, 3 * scale, 0, Math.PI*2);
+  ctx.fillStyle = GOLD;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, tipY - 2, 2 * scale, 0, Math.PI*2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+}
+
+// ── Icon functions ──
+function iconDot(ctx, cx, cy, r, s) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.7, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.25, 0, Math.PI*2);
+  ctx.fillStyle = GOLD;
+  ctx.fill();
+}
+
+function iconPickup(ctx, cx, cy, r, s) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.7, 0, Math.PI*2);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.8 * s;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.2, 0, Math.PI*2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+}
+
+function iconFlag(ctx, cx, cy, r, s) {
+  ctx.fillStyle = '#fff';
+  const pw = 1.2 * s;
+  ctx.fillRect(cx - r * 0.4, cy - r * 0.6, pw, r * 1.2);
+  ctx.beginPath();
+  ctx.moveTo(cx - r*0.4 + pw, cy - r*0.6);
+  ctx.lineTo(cx + r*0.5, cy - r*0.25);
+  ctx.lineTo(cx - r*0.4 + pw, cy + r*0.1);
+  ctx.fill();
+}
+
+function iconCar(ctx, cx, cy, r, s) {
+  ctx.fillStyle = '#fff';
+  const w = r * 0.8, h = r * 0.4;
+  ctx.beginPath();
+  ctx.roundRect(cx-w, cy-h*0.3, w*2, h, 2*s);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(cx-w*0.45, cy-h*1.1, w*0.9, h*0.8, 1.5*s);
+  ctx.fill();
+}
+
+function iconUser(ctx, cx, cy, r, s) {
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx, cy - r*0.3, r*0.28, 0, Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, cy + r*0.35, r*0.45, Math.PI, 2*Math.PI);
+  ctx.fill();
+}
+
+// ── Render all ──
+
+// Sizes
+drawPinV2b(document.getElementById('s1'), iconDot, 0.7);
+drawPinV2b(document.getElementById('s2'), iconDot, 0.9);
+drawPinV2b(document.getElementById('s3'), iconDot, 1.15);
+
+// With icons
+drawPinV2b(document.getElementById('i1'), iconPickup, 0.9);
+drawPinV2b(document.getElementById('i2'), iconFlag, 0.9);
+drawPinV2b(document.getElementById('i3'), iconCar, 0.9);
+drawPinV2b(document.getElementById('i4'), iconUser, 0.9);
+
+// Comparison
+drawOldPin(document.getElementById('old'), 0.9);
+drawPinV2(document.getElementById('v1'), iconDot, 0.9);
+drawPinV2b(document.getElementById('v2'), iconDot, 0.9);
+
+// On map
+drawPinV2b(document.getElementById('map1'), iconPickup, 0.85);
+drawPinV2b(document.getElementById('map2'), iconFlag, 0.85);
+drawPinV2b(document.getElementById('map3'), iconDot, 0.65);
+
+</script>
+</body>
+</html>

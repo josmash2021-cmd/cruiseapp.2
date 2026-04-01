@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pin v3 — Media Luna Abajo + Ícono Arriba</title>
+<style>
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #fff;
+  }
+  h2 { color: #D4A800; margin-bottom: 4px; }
+  .sub { color: #888; font-size: 13px; margin-bottom: 30px; text-align: center; line-height: 1.6; }
+  .row { display: flex; gap: 50px; align-items: flex-end; margin-bottom: 40px; flex-wrap: wrap; justify-content: center; }
+  .pin-box { display: flex; flex-direction: column; align-items: center; }
+  .label { color: #aaa; font-size: 12px; margin-top: 10px; text-align: center; }
+  .tag {
+    color: #fff; font-size: 14px; font-weight: 600;
+    margin: 20px 0 16px; padding: 6px 16px;
+    background: rgba(212,168,0,0.15); border-radius: 20px;
+    border: 1px solid rgba(212,168,0,0.3);
+  }
+</style>
+</head>
+<body>
+
+<h2>Pin v3 — Ícono Arriba + Media Luna Abajo</h2>
+<p class="sub">
+  Arriba: solo el ícono con glow blanco fade (sin dorado)<br>
+  Abajo: media luna dorada donde las paredes se estrechan → punta
+</p>
+
+<div class="tag">TAMAÑOS</div>
+<div class="row">
+  <div class="pin-box"><canvas id="s1" width="60" height="90"></canvas><div class="label">Pequeño</div></div>
+  <div class="pin-box"><canvas id="s2" width="80" height="110"></canvas><div class="label">Mediano</div></div>
+  <div class="pin-box"><canvas id="s3" width="100" height="140"></canvas><div class="label">Grande</div></div>
+</div>
+
+<div class="tag">CON ÍCONOS</div>
+<div class="row">
+  <div class="pin-box"><canvas id="i1" width="80" height="110"></canvas><div class="label">Pickup</div></div>
+  <div class="pin-box"><canvas id="i2" width="80" height="110"></canvas><div class="label">Dropoff</div></div>
+  <div class="pin-box"><canvas id="i3" width="80" height="110"></canvas><div class="label">Driver</div></div>
+  <div class="pin-box"><canvas id="i4" width="80" height="110"></canvas><div class="label">User</div></div>
+</div>
+
+<div class="tag">ACTUAL vs PROPUESTA v3</div>
+<div class="row">
+  <div class="pin-box"><canvas id="old" width="80" height="110"></canvas><div class="label">Actual</div></div>
+  <div class="pin-box"><canvas id="nw" width="80" height="110"></canvas><div class="label">v3 Propuesta</div></div>
+</div>
+
+<div class="tag">SOBRE MAPA OSCURO</div>
+<div style="position:relative;width:420px;height:270px;background:linear-gradient(135deg,#0d1b2a,#1b2838 50%,#0d1b2a);border-radius:16px;margin-bottom:40px;overflow:hidden;">
+  <svg style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0.12">
+    <line x1="40" y1="0" x2="380" y2="270" stroke="#4a6" stroke-width="1"/>
+    <line x1="0" y1="90" x2="420" y2="110" stroke="#4a6" stroke-width="1"/>
+    <line x1="120" y1="0" x2="210" y2="270" stroke="#4a6" stroke-width=".5"/>
+    <line x1="0" y1="200" x2="420" y2="170" stroke="#4a6" stroke-width=".5"/>
+    <rect x="110" y="55" width="65" height="40" fill="#234" rx="2"/>
+    <rect x="260" y="150" width="80" height="35" fill="#234" rx="2"/>
+  </svg>
+  <canvas id="m1" width="80" height="110" style="position:absolute;left:70px;top:40px;"></canvas>
+  <canvas id="m2" width="80" height="110" style="position:absolute;left:260px;top:80px;"></canvas>
+  <canvas id="m3" width="60" height="90" style="position:absolute;left:180px;top:120px;"></canvas>
+</div>
+
+<script>
+const GL='#F5DC7A', GD='#D4A800', GK='#B08800';
+
+/*
+ *  PIN v3 SHAPE:
+ *  
+ *     ● ←── icon with white radial glow (NO gold here)
+ *    ╭─╮
+ *   ╭╯ ╰╮ ←── gold crescent / half-moon (open top, cups under icon)
+ *    ╲ ╱
+ *     V  ←── pointed tip with white dot
+ */
+function drawPin(cv, iconFn, sc) {
+  sc = sc || 1;
+  const c = cv.getContext('2d'), W = cv.width, H = cv.height;
+  c.clearRect(0,0,W,H);
+  const cx = W/2;
+
+  // === Layout ===
+  const iconR   = 8 * sc;        // icon area radius
+  const iconCY  = 14 * sc;       // icon center Y (near top)
+  const crestW  = 18 * sc;       // half-width of crescent at widest
+  const crestTY = iconCY + iconR + 2*sc;  // top of crescent (just below icon)
+  const crestH  = 14 * sc;       // height of the crescent arc
+  const crestCY = crestTY + crestH*0.3;   // center of crescent arc
+  const tailH   = 20 * sc;       // tail from crescent bottom to tip
+  const tipY    = crestTY + crestH + tailH;
+
+  // ── 1. White fade glow behind icon ──
+  const gr = c.createRadialGradient(cx, iconCY, 0, cx, iconCY, iconR*1.6);
+  gr.addColorStop(0, 'rgba(255,255,255,0.55)');
+  gr.addColorStop(0.4,'rgba(255,255,255,0.18)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = gr;
+  c.beginPath(); c.arc(cx, iconCY, iconR*1.6, 0, Math.PI*2); c.fill();
+
+  // ── 2. Gold crescent (half-moon open at top) + tail to tip ──
+  c.save();
+  c.shadowColor = 'rgba(212,168,0,0.4)';
+  c.shadowBlur = 8*sc;
+
+  const gd = c.createLinearGradient(cx, crestTY, cx, tipY);
+  gd.addColorStop(0, GL);
+  gd.addColorStop(0.4, GD);
+  gd.addColorStop(1, GK);
+  c.fillStyle = gd;
+
+  const thick = 4.5 * sc;  // crescent wall thickness
+
+  // Outer shape: crescent arc (like a U open at top) flowing into a pointed tail
+  c.beginPath();
+
+  // Top-left of crescent
+  c.moveTo(cx - crestW, crestTY);
+
+  // Left outer wall curving down (cup shape)
+  c.quadraticCurveTo(
+    cx - crestW - 1*sc, crestTY + crestH*0.9,
+    cx - crestW*0.38, crestTY + crestH
+  );
+
+  // Left tail going down to tip
+  c.quadraticCurveTo(
+    cx - 5*sc, tipY - tailH*0.2,
+    cx, tipY
+  );
+
+  // Right tail going back up from tip
+  c.quadraticCurveTo(
+    cx + 5*sc, tipY - tailH*0.2,
+    cx + crestW*0.38, crestTY + crestH
+  );
+
+  // Right outer wall curving up
+  c.quadraticCurveTo(
+    cx + crestW + 1*sc, crestTY + crestH*0.9,
+    cx + crestW, crestTY
+  );
+
+  // ── Top rim: go inward to inner wall ──
+  c.lineTo(cx + crestW - thick, crestTY);
+
+  // Inner right wall going down
+  c.quadraticCurveTo(
+    cx + crestW - thick, crestTY + crestH*0.7,
+    cx + crestW*0.15, crestTY + crestH - thick*0.6
+  );
+
+  // Inner bottom curve connecting left side
+  c.quadraticCurveTo(
+    cx, crestTY + crestH - thick*0.2,
+    cx - crestW*0.15, crestTY + crestH - thick*0.6
+  );
+
+  // Inner left wall going up
+  c.quadraticCurveTo(
+    cx - crestW + thick, crestTY + crestH*0.7,
+    cx - crestW + thick, crestTY
+  );
+
+  c.closePath();
+  c.fill();
+  c.restore();
+
+  // ── 3. White dot at tip ──
+  c.beginPath(); c.arc(cx, tipY-1.5*sc, 2*sc, 0, Math.PI*2);
+  c.fillStyle='#fff'; c.fill();
+
+  // ── 4. Subtle highlight on left crescent wall ──
+  c.save(); c.globalAlpha=0.25;
+  c.beginPath();
+  c.moveTo(cx-crestW+1, crestTY+2*sc);
+  c.quadraticCurveTo(cx-crestW, crestTY+crestH*0.5, cx-crestW*0.55, crestTY+crestH-2*sc);
+  c.strokeStyle='#fff'; c.lineWidth=1.2*sc; c.stroke();
+  c.restore();
+
+  // ── 5. Icon ──
+  if(iconFn) iconFn(c, cx, iconCY, iconR*0.55, sc);
+}
+
+// ── Old pin for comparison ──
+function drawOld(cv) {
+  const c=cv.getContext('2d'), W=cv.width, H=cv.height;
+  c.clearRect(0,0,W,H);
+  const cx=W/2, r=16, cy=22, ty=cy+r+24;
+  c.save(); c.shadowColor='rgba(212,168,0,.35)'; c.shadowBlur=10;
+  const g=c.createLinearGradient(cx,cy-r,cx,ty);
+  g.addColorStop(0,GL); g.addColorStop(.5,GD); g.addColorStop(1,GK);
+  c.fillStyle=g; c.beginPath();
+  c.arc(cx,cy,r,Math.PI,2*Math.PI,false);
+  c.quadraticCurveTo(cx+r,ty-8,cx,ty);
+  c.quadraticCurveTo(cx-r,ty-8,cx-r,cy);
+  c.closePath(); c.fill(); c.restore();
+  c.beginPath(); c.arc(cx,cy-1,8,0,Math.PI*2);
+  c.fillStyle='rgba(255,255,255,.9)'; c.fill();
+  c.beginPath(); c.arc(cx,cy-1,3,0,Math.PI*2);
+  c.fillStyle=GD; c.fill();
+  c.beginPath(); c.arc(cx,ty-2,2.5,0,Math.PI*2);
+  c.fillStyle='#fff'; c.fill();
+}
+
+// ── Icons ──
+function iDot(c,cx,cy,r,s){
+  c.beginPath();c.arc(cx,cy,r*.7,0,Math.PI*2);c.fillStyle='rgba(255,255,255,.85)';c.fill();
+  c.beginPath();c.arc(cx,cy,r*.25,0,Math.PI*2);c.fillStyle=GD;c.fill();
+}
+function iPickup(c,cx,cy,r,s){
+  c.beginPath();c.arc(cx,cy,r*.75,0,Math.PI*2);c.strokeStyle='#fff';c.lineWidth=1.8*s;c.stroke();
+  c.beginPath();c.arc(cx,cy,r*.22,0,Math.PI*2);c.fillStyle='#fff';c.fill();
+}
+function iFlag(c,cx,cy,r,s){
+  c.fillStyle='#fff';
+  c.fillRect(cx-r*.4,cy-r*.7,1.3*s,r*1.4);
+  c.beginPath();c.moveTo(cx-r*.4+1.3*s,cy-r*.7);
+  c.lineTo(cx+r*.55,cy-r*.3);c.lineTo(cx-r*.4+1.3*s,cy+r*.1);c.fill();
+}
+function iCar(c,cx,cy,r,s){
+  c.fillStyle='#fff';
+  c.beginPath();c.roundRect(cx-r*.9,cy-r*.25,r*1.8,r*.5,2*s);c.fill();
+  c.beginPath();c.roundRect(cx-r*.5,cy-r*.85,r,r*.65,1.5*s);c.fill();
+  c.fillStyle='#333';
+  c.beginPath();c.arc(cx-r*.55,cy+r*.3,2*s,0,Math.PI*2);c.fill();
+  c.beginPath();c.arc(cx+r*.55,cy+r*.3,2*s,0,Math.PI*2);c.fill();
+}
+function iUser(c,cx,cy,r,s){
+  c.fillStyle='#fff';
+  c.beginPath();c.arc(cx,cy-r*.35,r*.3,0,Math.PI*2);c.fill();
+  c.beginPath();c.arc(cx,cy+r*.25,r*.45,Math.PI,2*Math.PI);c.fill();
+}
+
+// ── Render ──
+drawPin(document.getElementById('s1'), iDot, 0.7);
+drawPin(document.getElementById('s2'), iDot, 0.9);
+drawPin(document.getElementById('s3'), iDot, 1.15);
+
+drawPin(document.getElementById('i1'), iPickup, 0.9);
+drawPin(document.getElementById('i2'), iFlag, 0.9);
+drawPin(document.getElementById('i3'), iCar, 0.9);
+drawPin(document.getElementById('i4'), iUser, 0.9);
+
+drawOld(document.getElementById('old'));
+drawPin(document.getElementById('nw'), iDot, 0.9);
+
+drawPin(document.getElementById('m1'), iPickup, 0.85);
+drawPin(document.getElementById('m2'), iFlag, 0.85);
+drawPin(document.getElementById('m3'), iDot, 0.65);
+</script>
+</body>
+</html>

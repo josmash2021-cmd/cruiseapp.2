@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pin Design Preview</title>
+<style>
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #fff;
+  }
+  h2 { color: #D4A800; margin-bottom: 8px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 40px; }
+  .row {
+    display: flex;
+    gap: 60px;
+    align-items: flex-end;
+    margin-bottom: 50px;
+  }
+  .pin-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .label {
+    color: #aaa;
+    font-size: 12px;
+    margin-top: 12px;
+    text-align: center;
+  }
+  .size-label {
+    color: #D4A800;
+    font-size: 11px;
+    margin-top: 4px;
+  }
+  canvas { display: block; }
+  .section-title {
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    margin: 30px 0 20px;
+    padding: 8px 20px;
+    background: rgba(212, 168, 0, 0.15);
+    border-radius: 20px;
+    border: 1px solid rgba(212, 168, 0, 0.3);
+  }
+</style>
+</head>
+<body>
+
+<h2>Pin Redesign Preview</h2>
+<p class="subtitle">Arco/media luna arriba (dorado) + centro transparente para el ícono + punta abajo</p>
+
+<div class="section-title">PROPUESTA — Arco + Punta (ícono transparente)</div>
+
+<div class="row">
+  <div class="pin-container">
+    <canvas id="pin-small" width="80" height="100"></canvas>
+    <div class="label">Small Pin</div>
+    <div class="size-label">~30px en app</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="pin-medium" width="100" height="130"></canvas>
+    <div class="label">Medium Pin</div>
+    <div class="size-label">~40px en app</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="pin-large" width="130" height="160"></canvas>
+    <div class="label">Large Pin (referencia)</div>
+    <div class="size-label">~50px en app</div>
+  </div>
+</div>
+
+<div class="section-title">CON ÍCONOS DE EJEMPLO</div>
+
+<div class="row">
+  <div class="pin-container">
+    <canvas id="pin-pickup" width="100" height="130"></canvas>
+    <div class="label">Pickup 📍</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="pin-dropoff" width="100" height="130"></canvas>
+    <div class="label">Dropoff 🏁</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="pin-car" width="100" height="130"></canvas>
+    <div class="label">Driver 🚗</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="pin-user" width="100" height="130"></canvas>
+    <div class="label">User Location</div>
+  </div>
+</div>
+
+<div class="section-title">COMPARACIÓN: ACTUAL vs PROPUESTA</div>
+
+<div class="row">
+  <div class="pin-container">
+    <canvas id="pin-old" width="100" height="130"></canvas>
+    <div class="label">Actual (sólido)</div>
+  </div>
+  <div class="pin-container">
+    <canvas id="pin-new" width="100" height="130"></canvas>
+    <div class="label">Propuesta (arco)</div>
+  </div>
+</div>
+
+<script>
+const GOLD = '#D4A800';
+const GOLD_LIGHT = '#F0D060';
+const GOLD_DARK = '#B8920A';
+
+function drawNewPin(canvas, iconDraw, scale = 1) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  
+  const cx = W / 2;
+  // Pin dimensions
+  const pinW = 52 * scale;
+  const pinH = 70 * scale;
+  const topY = (H - pinH) / 2 - 5 * scale;
+  
+  // Arc/crescent parameters
+  const arcRadius = pinW / 2;
+  const arcCenterY = topY + arcRadius;
+  const arcThickness = 10 * scale; // thickness of the gold crescent
+  
+  // Point parameters  
+  const pointY = topY + pinH;
+  const pointWidth = 10 * scale;
+  
+  // ── Glow effect ──
+  ctx.save();
+  ctx.shadowColor = 'rgba(212, 168, 0, 0.35)';
+  ctx.shadowBlur = 12 * scale;
+  
+  // ── Draw the pin shape: crescent arc on top + tapered point at bottom ──
+  const grad = ctx.createLinearGradient(cx, topY, cx, pointY);
+  grad.addColorStop(0, GOLD_LIGHT);
+  grad.addColorStop(0.5, GOLD);
+  grad.addColorStop(1, GOLD_DARK);
+  ctx.fillStyle = grad;
+  
+  ctx.beginPath();
+  
+  // Start from left side of the arc
+  // Outer arc (top of crescent) — goes from ~210° to ~330° (open at top)
+  const openAngle = Math.PI * 0.28; // how open the top is (bigger = more open)
+  const startAngle = Math.PI + openAngle; // left arm start
+  const endAngle = 2 * Math.PI - openAngle; // right arm end
+  
+  // Outer arc
+  ctx.arc(cx, arcCenterY, arcRadius, startAngle, endAngle, false);
+  
+  // Right side going down to point
+  const rightArcX = cx + arcRadius * Math.cos(endAngle);
+  const rightArcY = arcCenterY + arcRadius * Math.sin(endAngle);
+  
+  // Curve down to the point
+  ctx.quadraticCurveTo(
+    cx + pointWidth * 1.2, pointY - pinH * 0.15,
+    cx, pointY
+  );
+  
+  // Curve from point back up to left side
+  const leftArcX = cx + arcRadius * Math.cos(startAngle);
+  const leftArcY = arcCenterY + arcRadius * Math.sin(startAngle);
+  
+  ctx.quadraticCurveTo(
+    cx - pointWidth * 1.2, pointY - pinH * 0.15,
+    leftArcX, leftArcY
+  );
+  
+  ctx.closePath();
+  ctx.fill();
+  
+  // ── Cut out the inner circle to make the crescent (transparent center) ──
+  ctx.globalCompositeOperation = 'destination-out';
+  const innerRadius = arcRadius - arcThickness;
+  ctx.beginPath();
+  ctx.arc(cx, arcCenterY, innerRadius, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Also cut out a bit at the top to keep the opening clean
+  ctx.beginPath();
+  ctx.arc(cx, arcCenterY, arcRadius + 2, startAngle + 0.02, startAngle - 0.3, true); // tiny cleanup
+  ctx.restore();
+  
+  // Reset composite
+  ctx.globalCompositeOperation = 'source-over';
+  
+  // ── White dot at the very tip ──
+  ctx.beginPath();
+  ctx.arc(cx, pointY - 2 * scale, 2.5 * scale, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+  
+  // ── Subtle highlight on the arc ──
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  ctx.beginPath();
+  ctx.arc(cx, arcCenterY, arcRadius - 1, startAngle, startAngle + (endAngle - startAngle) * 0.4, false);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5 * scale;
+  ctx.stroke();
+  ctx.restore();
+  
+  // ── Draw icon in the transparent center ──
+  if (iconDraw) {
+    iconDraw(ctx, cx, arcCenterY, innerRadius * 0.6, scale);
+  }
+}
+
+function drawOldPin(canvas) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  
+  const cx = W / 2;
+  const pinW = 52;
+  const pinH = 70;
+  const topY = (H - pinH) / 2 - 5;
+  const pointY = topY + pinH;
+  const arcRadius = pinW / 2;
+  const arcCenterY = topY + arcRadius;
+  
+  ctx.save();
+  ctx.shadowColor = 'rgba(212, 168, 0, 0.35)';
+  ctx.shadowBlur = 12;
+  
+  const grad = ctx.createLinearGradient(cx, topY, cx, pointY);
+  grad.addColorStop(0, GOLD_LIGHT);
+  grad.addColorStop(0.5, GOLD);
+  grad.addColorStop(1, GOLD_DARK);
+  ctx.fillStyle = grad;
+  
+  // Old solid shield shape
+  ctx.beginPath();
+  ctx.arc(cx, arcCenterY, arcRadius, Math.PI, 2 * Math.PI, false);
+  ctx.quadraticCurveTo(cx + arcRadius, pointY - 10, cx, pointY);
+  ctx.quadraticCurveTo(cx - arcRadius, pointY - 10, cx - arcRadius, arcCenterY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  
+  // White circle for icon
+  ctx.beginPath();
+  ctx.arc(cx, arcCenterY - 2, 12, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fill();
+  
+  // Dot
+  ctx.beginPath();
+  ctx.arc(cx, arcCenterY - 2, 4, 0, Math.PI * 2);
+  ctx.fillStyle = GOLD;
+  ctx.fill();
+  
+  ctx.beginPath();
+  ctx.arc(cx, pointY - 2, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+}
+
+// ── Icon drawing functions ──
+function drawDotIcon(ctx, cx, cy, r, scale) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.2, 0, Math.PI * 2);
+  ctx.fillStyle = GOLD;
+  ctx.fill();
+}
+
+function drawPickupIcon(ctx, cx, cy, r, scale) {
+  // Circle with inner ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2 * scale;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.2, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+}
+
+function drawDropoffIcon(ctx, cx, cy, r, scale) {
+  // Small flag
+  const flagW = r * 0.6;
+  const flagH = r * 0.8;
+  ctx.fillStyle = '#fff';
+  // Pole
+  ctx.fillRect(cx - flagW/2, cy - flagH/2, 1.5 * scale, flagH);
+  // Flag
+  ctx.beginPath();
+  ctx.moveTo(cx - flagW/2 + 1.5 * scale, cy - flagH/2);
+  ctx.lineTo(cx + flagW/2, cy - flagH/4);
+  ctx.lineTo(cx - flagW/2 + 1.5 * scale, cy);
+  ctx.fill();
+}
+
+function drawCarIcon(ctx, cx, cy, r, scale) {
+  // Simple car shape
+  const w = r * 0.9;
+  const h = r * 0.5;
+  ctx.fillStyle = '#fff';
+  // Body
+  ctx.beginPath();
+  ctx.roundRect(cx - w, cy - h/2, w * 2, h, 3 * scale);
+  ctx.fill();
+  // Roof
+  ctx.beginPath();
+  ctx.roundRect(cx - w * 0.5, cy - h, w, h * 0.7, 2 * scale);
+  ctx.fill();
+  // Wheels
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.arc(cx - w * 0.55, cy + h/2, 2.5 * scale, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + w * 0.55, cy + h/2, 2.5 * scale, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawUserIcon(ctx, cx, cy, r, scale) {
+  // Person silhouette
+  ctx.fillStyle = '#fff';
+  // Head
+  ctx.beginPath();
+  ctx.arc(cx, cy - r * 0.3, r * 0.25, 0, Math.PI * 2);
+  ctx.fill();
+  // Body
+  ctx.beginPath();
+  ctx.arc(cx, cy + r * 0.2, r * 0.4, Math.PI, 2 * Math.PI);
+  ctx.fill();
+}
+
+// ── Render all pins ──
+drawNewPin(document.getElementById('pin-small'), drawDotIcon, 0.65);
+drawNewPin(document.getElementById('pin-medium'), drawDotIcon, 0.85);
+drawNewPin(document.getElementById('pin-large'), drawDotIcon, 1.0);
+
+drawNewPin(document.getElementById('pin-pickup'), drawPickupIcon, 0.85);
+drawNewPin(document.getElementById('pin-dropoff'), drawDropoffIcon, 0.85);
+drawNewPin(document.getElementById('pin-car'), drawCarIcon, 0.85);
+drawNewPin(document.getElementById('pin-user'), drawUserIcon, 0.85);
+
+drawOldPin(document.getElementById('pin-old'));
+drawNewPin(document.getElementById('pin-new'), drawDotIcon, 0.85);
+</script>
+
+</body>
+</html>

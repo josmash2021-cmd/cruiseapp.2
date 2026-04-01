@@ -1300,12 +1300,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: pickupPoint),
             image: pickupPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
-            iconOffset: const [0.0, 4.0],
+            iconOffset: const [0.0, 0.0],
           )),
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: dropoffPoint),
             image: dropoffPinBytes, iconSize: 1.0, iconAnchor: mapbox.IconAnchor.BOTTOM,
-            iconOffset: const [0.0, 4.0],
+            iconOffset: const [0.0, 0.0],
           )),
         ]);
         _pinAnnots.addAll(pins);
@@ -1354,12 +1354,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: pickupPoint),
           image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: const [0.0, 4.0],
+          iconOffset: const [0.0, 0.0],
         )),
         _annotMgr!.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: dropoffPoint),
           image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: const [0.0, 4.0],
+          iconOffset: const [0.0, 0.0],
         )),
       ]);
       _pinAnnots.addAll(pins);

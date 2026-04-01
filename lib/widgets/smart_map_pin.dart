@@ -251,7 +251,7 @@ Future<Uint8List> buildGoldenPinBytes({
   double scale = 2.0,
   bool isPickup = true,
 }) async {
-  final key = '${icon.codePoint}_${size}_$isPickup';
+  final key = '${icon.codePoint}_${size}_${scale}_$isPickup';
   if (_goldenPinCache.containsKey(key)) return _goldenPinCache[key]!;
 
   final painter = GoldenPinPainter(icon: icon, size: size, isPickup: isPickup);
@@ -259,11 +259,15 @@ Future<Uint8List> buildGoldenPinBytes({
   final h = painter._height;
 
   final recorder = ui.PictureRecorder();
-  final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w, h));
+  // Canvas must match the scaled output size so the content fills every pixel.
+  // Without scale(), toImage(w*scale, h*scale) creates a larger image but the
+  // drawing stays at [0..w, 0..h] — pin tip (at y=h) lands at image center,
+  // not the bottom, causing iconAnchor:BOTTOM to float above the coordinate.
+  final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w * scale, h * scale));
+  canvas.scale(scale, scale); // scale drawing coords → fill the output image
   painter.paint(canvas, Size(w, h));
 
   final picture = recorder.endRecording();
-  // Use ceil to ensure the pin tip (at bottom) is fully included in the image
   final img = await picture.toImage(
     (w * scale).ceil(),
     (h * scale).ceil(),

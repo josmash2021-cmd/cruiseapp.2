@@ -1619,6 +1619,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
+  void _returnToDriverHome() {
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const DriverHomeScreen(returnFromTrip: true),
+      ),
+      (route) => false,
+    );
+  }
+
   // ── BUILD ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -1630,7 +1641,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       statusBarIconBrightness:  Brightness.light,
     ));
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _returnToDriverHome();
+      },
+      child: Scaffold(
       backgroundColor: _bg,
       body: Stack(
         children: [
@@ -1651,13 +1668,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   Row(
                     children: [
                       GestureDetector(
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(builder: (_) => const DriverHomeScreen(returnFromTrip: true)),
-                            (route) => false,
-                          );
-                        },
+                        onTap: _returnToDriverHome,
                         child: Container(
                           width: Responsive.w(36), height: Responsive.w(36),
                           decoration: BoxDecoration(
@@ -1984,7 +1995,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         ),
       ],
       ),
-    );
+    ));
   }
 
   // ── Phase router: returns the correct widget for the current state ────

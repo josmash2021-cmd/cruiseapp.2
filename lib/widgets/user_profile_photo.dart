@@ -69,14 +69,33 @@ class UserProfilePhoto extends StatefulWidget {
 class _UserProfilePhotoState extends State<UserProfilePhoto> {
   String? _recoveredPhotoUrl;
   bool _recoveryAttempted = false;
+  String? _failedPrimaryUrl;
 
   @override
   void initState() {
     super.initState();
-    // If uid + role provided and no explicit photoUrl, attempt recovery chain
-    if (widget.uid != null && widget.role != null &&
-        (widget.photoUrl == null || widget.photoUrl!.isEmpty)) {
+    // If uid + role are provided, always warm up recovery chain as backup.
+    if (widget.uid != null && widget.role != null) {
       _attemptPhotoRecovery();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant UserProfilePhoto oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldUrl = oldWidget.photoUrl?.trim() ?? '';
+    final newUrl = widget.photoUrl?.trim() ?? '';
+    final uidChanged = oldWidget.uid != widget.uid;
+    final roleChanged = oldWidget.role != widget.role;
+    if (oldUrl != newUrl) {
+      _failedPrimaryUrl = null;
+    }
+    if (uidChanged || roleChanged) {
+      _recoveryAttempted = false;
+      _recoveredPhotoUrl = null;
+      if (widget.uid != null && widget.role != null) {
+        _attemptPhotoRecovery();
+      }
     }
   }
 
@@ -117,12 +136,16 @@ class _UserProfilePhotoState extends State<UserProfilePhoto> {
   }
 
   Widget _buildContent() {
-    // 1. Explicit photoUrl takes priority
-    final urlToUse = (widget.photoUrl != null && widget.photoUrl!.isNotEmpty)
-        ? widget.photoUrl
-        : _recoveredPhotoUrl;
+    // 1) Primary remote URL from payload
+    // 2) Recovered URL chain if primary fails/missing
+    final primaryUrl = (widget.photoUrl ?? '').trim();
+    final recoveredUrl = (_recoveredPhotoUrl ?? '').trim();
+    final primaryFailed = _failedPrimaryUrl != null && _failedPrimaryUrl == primaryUrl;
+    final urlToUse = primaryFailed && recoveredUrl.isNotEmpty
+        ? recoveredUrl
+        : (primaryUrl.isNotEmpty ? primaryUrl : recoveredUrl);
 
-    if (urlToUse != null && urlToUse.isNotEmpty && urlToUse.startsWith('http')) {
+    if (urlToUse.isNotEmpty && urlToUse.startsWith('http')) {
       return CachedNetworkImage(
         imageUrl: urlToUse,
         cacheKey: widget.uid != null ? 'photo_${widget.uid}' : null,
@@ -131,7 +154,28 @@ class _UserProfilePhotoState extends State<UserProfilePhoto> {
         fit: BoxFit.cover,
         cacheManager: UserProfilePhoto._cacheManager,
         placeholder: (_, __) => _localOrInitials(),
-        errorWidget: (_, __, ___) => _localOrInitials(),
+        errorWidget: (_, __, ___) {
+          if (primaryUrl.isNotEmpty && _failedPrimaryUrl != primaryUrl) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              setState(() => _failedPrimaryUrl = primaryUrl);
+              _attemptPhotoRecovery();
+            });
+          }
+          if (recoveredUrl.isNotEmpty && recoveredUrl != urlToUse) {
+            return CachedNetworkImage(
+              imageUrl: recoveredUrl,
+              cacheKey: widget.uid != null ? 'photo_${widget.uid}_recovered' : null,
+              width: widget.radius * 2,
+              height: widget.radius * 2,
+              fit: BoxFit.cover,
+              cacheManager: UserProfilePhoto._cacheManager,
+              placeholder: (_, __) => _localOrInitials(),
+              errorWidget: (_, __, ___) => _localOrInitials(),
+            );
+          }
+          return _localOrInitials();
+        },
       );
     }
 

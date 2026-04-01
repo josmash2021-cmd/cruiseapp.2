@@ -1,0 +1,47 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "git-commit-push-avatar-fix",
+			"type": "shell",
+			"command": "git add lib/models/ride_offer.dart lib/screens/rider_tracking_screen.dart lib/controllers/rider_tracking_controller.dart lib/widgets/tracking/eta_display.dart lib/screens/driver/driver_home_screen.dart; git commit -m \"fix(profile-photos): restore rider/driver avatars in trip and tracking flows\"; git push origin main",
+			"isBackground": false
+		},
+		{
+			"label": "verify-and-push-cruiseapp2",
+			"type": "shell",
+			"command": "git remote -v; git status -sb; git push origin main; git log --oneline -1",
+			"isBackground": false
+		},
+		{
+			"label": "commit-push-photo-fixes-cruiseapp2",
+			"type": "shell",
+			"command": "git add lib/controllers/rider_tracking_controller.dart lib/models/ride_offer.dart lib/screens/driver/driver_home_screen.dart lib/screens/rider_tracking_screen.dart lib/widgets/tracking/eta_display.dart; git commit -m 'fix(profile-photos): restore rider and driver avatars in trip and tracking flows'; git push origin main; git status -sb; git log --oneline -1",
+			"isBackground": false
+		},
+		{
+			"label": "verify-photo-fix-state",
+			"type": "shell",
+			"command": "git status -sb; git log --oneline -1; git show --name-only --oneline -1",
+			"isBackground": false
+		},
+		{
+			"label": "git-status-push-photos",
+			"type": "shell",
+			"command": "git log --oneline -3; git status -sb",
+			"isBackground": false
+		},
+		{
+			"label": "git-commit-push-photos",
+			"type": "shell",
+			"command": "cd \"c:\\Users\\Puma\\cruiseapp.2\" && git add lib/models/ride_offer.dart lib/screens/driver/driver_trip_accept_screen.dart lib/screens/driver/driver_offers_screen.dart lib/screens/driver/driver_home_screen.dart && git commit -m \"fix(photos): enable recovery chain for rider photo on driver screen\" && git push origin main && git log --oneline -3",
+			"isBackground": false
+		},
+		{
+			"label": "git-commit-photos2",
+			"type": "shell",
+			"command": "Set-Location 'c:\\Users\\Puma\\cruiseapp.2'; git add lib/models/ride_offer.dart lib/screens/driver/driver_trip_accept_screen.dart lib/screens/driver/driver_offers_screen.dart lib/screens/driver/driver_home_screen.dart; git commit -m 'fix(photos): enable recovery chain for rider photo on driver screen'; git push origin main; git log --oneline -3",
+			"isBackground": false
+		}
+	]
+}

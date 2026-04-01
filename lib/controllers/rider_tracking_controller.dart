@@ -120,7 +120,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _distanceMiles = dist;
       _etaMinutes = (dist / 0.5).ceil().clamp(1, 99);
       if (dist < 0.05 && _phase == _TrackPhase.arriving) {
-        _setState(() => _phase = _TrackPhase.arrived);
+        _setState(() {
+          _phase = _TrackPhase.arrived;
+          _etaMinutes = 0;
+          _distanceMiles = 0;
+        });
         _arrivedDotPulse.repeat(reverse: true);
         _handleDriverArrived();
         _showRiderConfirmPickup();
@@ -225,28 +229,55 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _startRtdbDriverListener(did);
     }
 
-    // Update driver photo URL from Firestore if we don't have one yet
-    if ((_driverPhotoUrl == null || _driverPhotoUrl!.isEmpty)) {
-      final driverObj = data['driver'];
-      final driverMap = driverObj is Map ? driverObj : null;
-      final fsPhoto = _normalizeRemotePhotoUrl(
-        data['driverPhotoUrl']?.toString() ??
-            data['driver_photo_url']?.toString() ??
-            data['photo_url']?.toString() ??
-            data['profile_photo_url']?.toString() ??
-            driverMap?['photo_url']?.toString() ??
-            driverMap?['photoUrl']?.toString() ??
-            driverMap?['profile_photo_url']?.toString(),
-      );
-      if (fsPhoto != null && fsPhoto.isNotEmpty) {
-        _setState(() => _driverPhotoUrl = fsPhoto);
-      }
+    // Update driver photo URL with robust recovery chain fields from Firestore.
+    final driverObj = data['driver'];
+    final driverMap = driverObj is Map ? driverObj : null;
+    final fsPhoto = _normalizeRemotePhotoUrl(
+      data['driverPhotoUrl']?.toString() ??
+          data['driver_photo_url']?.toString() ??
+          data['photo_url']?.toString() ??
+          data['profile_photo_url']?.toString() ??
+          data['driverProfilePhoto']?.toString() ??
+          data['driver_profile_photo']?.toString() ??
+          driverMap?['photo_url']?.toString() ??
+          driverMap?['photoUrl']?.toString() ??
+          driverMap?['profile_photo_url']?.toString() ??
+          driverMap?['profilePhotoUrl']?.toString(),
+    );
+    if (fsPhoto != null && fsPhoto.isNotEmpty && fsPhoto != _driverPhotoUrl) {
+      _setState(() => _driverPhotoUrl = fsPhoto);
     }
 
-    final status = data['status']?.toString() ?? '';
-    debugPrint('[RiderTracking] Firestore status update: "$status" (phase=$_phase, driverId=$did)');
-    if ((status == 'arrived' || status == 'driver_arrived') && _phase == _TrackPhase.arriving) {
-      _setState(() => _phase = _TrackPhase.arrived);
+    final rawStatus = data['status']?.toString() ?? '';
+    final status = rawStatus.trim().toLowerCase();
+    final hasArrivedTs = data['driverArrivedAt'] != null || data['driver_arrived_at'] != null;
+    final hasStartedTs = data['startedAt'] != null || data['started_at'] != null;
+    final hasCompletedTs = data['completedAt'] != null || data['completed_at'] != null;
+    final hasCancelledTs = data['cancelledAt'] != null || data['cancelled_at'] != null;
+
+    final isArrivedStatus =
+        status == 'arrived' ||
+        status == 'driver_arrived' ||
+        status == 'arrived_pickup' ||
+        status == 'arrived_at_pickup' ||
+        hasArrivedTs;
+    final isInTripStatus =
+        status == 'in_trip' ||
+        status == 'in_progress' ||
+        status == 'rider_onboard' ||
+        status == 'trip_started' ||
+        hasStartedTs;
+    final isCompletedStatus = status == 'completed' || hasCompletedTs;
+    final isCancelledStatus =
+        status == 'cancelled' || status == 'canceled' || hasCancelledTs;
+
+    debugPrint('[RiderTracking] Firestore status update: "$rawStatus" normalized="$status" (phase=$_phase, driverId=$did)');
+    if (isArrivedStatus && _phase == _TrackPhase.arriving) {
+      _setState(() {
+        _phase = _TrackPhase.arrived;
+        _etaMinutes = 0;
+        _distanceMiles = 0;
+      });
       // FIX 2: Start the pulsing dot animation and handle arrival visuals
       _arrivedDotPulse.repeat(reverse: true);
       // Fade route polyline and zoom camera to driver location
@@ -259,7 +290,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           '${widget.driverName.split(' ').first} is waiting at the pickup spot in a ${widget.vehicleColor} ${widget.vehicleModel}.',
         );
       }
-    } else if ((status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard') &&
+    } else if (isInTripStatus &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       _setState(() {
         _phase = _TrackPhase.onTrip;
@@ -272,14 +303,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _arrivedDotPulse.stop();
       _popOutPickupPin();
       _startStartRideAnimation();
-    } else if ((status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard') &&
+    } else if (isInTripStatus &&
         _phase == _TrackPhase.nearDestination) {
       // Already near destination — don't reset to onTrip
       _arrivedDotPulse.stop(); // Stop pulsing dot animation
       _popOutPickupPin();
       // FIX 3 & 4: Start the route animation and camera phases when starting ride
       _startStartRideAnimation();
-    } else if (status == 'completed' && _phase != _TrackPhase.completed) {
+    } else if (isCompletedStatus && _phase != _TrackPhase.completed) {
       LocalDataService.clearActiveRide();
       _setState(() => _phase = _TrackPhase.completed);
       _arrivedDotPulse.stop();
@@ -289,7 +320,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) _goToRating();
       });
-    } else if (status == 'cancelled' || status == 'canceled') {
+    } else if (isCancelledStatus) {
       final cancelledBy = data['cancelledBy']?.toString() ?? '';
       if (cancelledBy.isNotEmpty && cancelledBy != 'driver') return;
       if (!_cancelDialogShown) {
@@ -356,7 +387,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // Throttle: max 2 updates/sec to avoid excessive rebuilds
       final now = DateTime.now();
       if (lastRtdbUpdate != null &&
-          now.difference(lastRtdbUpdate!).inMilliseconds < 500) {
+          now.difference(lastRtdbUpdate!).inMilliseconds < 250) {
         return;
       }
       lastRtdbUpdate = now;
@@ -631,7 +662,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // For large GPS jumps cap at 2.5 m/frame so the car catches up
     // steadily instead of lurching forward.
     final diff = _tgtTraveledM - _traveledM;
-    const maxStep = 2.5; // metres per frame ceiling
+    // Adaptive cap keeps updates fluid without teleports on large RTDB jumps.
+    final maxStep = (diff.abs() * 0.10).clamp(0.08, 0.55).toDouble();
     if (diff.abs() <= maxStep) {
       _traveledM = _tgtTraveledM;
     } else {

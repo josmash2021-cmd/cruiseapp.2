@@ -520,6 +520,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!await _ensureVerified()) return;
     if (!mounted) return;
 
+    if (_driverId == null) {
+      await _resolveDriverId();
+    }
+
     // Always refresh active-trip state before deciding where Resume goes.
     await _refreshActiveTripStatus();
     if (!mounted) return;
@@ -602,6 +606,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   void _navigateToOnlineScreen() async {
+    if (_driverId == null) {
+      await _resolveDriverId();
+    }
+
     await _refreshActiveTripStatus();
     if (!mounted) return;
     if (_activeTripData != null) {

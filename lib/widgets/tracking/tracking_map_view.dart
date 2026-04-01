@@ -1324,16 +1324,46 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       }
     });
 
-    // STEP 2: Keep showing full route overview (no zoom in)
+    // STEP 2: Center map on driver in the visible area between top and bottom cards.
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_map == null || !mounted) return;
-      _fitRouteBounds();
+      _centerDriverOnArrival();
     });
 
     // Remove approach line if it exists
     if (_approachAnnot != null && _polylineAnnotMgr != null) {
       try { await _polylineAnnotMgr!.delete(_approachAnnot!); } catch (_) {}
       _approachAnnot = null;
+    }
+  }
+
+  Future<void> _centerDriverOnArrival() async {
+    if (_map == null) return;
+    final point = mapbox.Point(
+      coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
+    );
+    final mq = MediaQuery.of(context).padding;
+    final topInset = mq.top + 10 + _topCardHeight + 16;
+    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 16;
+    try {
+      final cam = await _map!.cameraForCoordinatesPadding(
+        [point],
+        mapbox.CameraOptions(zoom: 16.4, bearing: 0, pitch: 0),
+        mapbox.MbxEdgeInsets(
+          top: topInset,
+          bottom: bottomInset,
+          left: 28,
+          right: 28,
+        ),
+        null,
+        null,
+      );
+      await _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 650));
+    } catch (_) {
+      await _map!.flyTo(
+        mapbox.CameraOptions(center: point, zoom: 16.4, bearing: 0, pitch: 0),
+        mapbox.MapAnimationOptions(duration: 650),
+      );
     }
   }
 

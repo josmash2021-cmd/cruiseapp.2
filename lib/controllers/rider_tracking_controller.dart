@@ -244,8 +244,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _markerAnimStep = 0;
     _markAnimatingToTarget = true;
     
-    const steps = 30;
-    const duration = Duration(milliseconds: 1000);
+    const steps = 45;
+    const duration = Duration(milliseconds: 1200);
     final stepDuration = duration ~/ steps;
     
     _markerAnimTimer = Timer.periodic(stepDuration, (timer) {
@@ -794,26 +794,26 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   void _interpolate() {
     if (!mounted || _segDist.isEmpty) return;
 
-    // ── Constant-speed advance — zero jolts ──
-    // For tiny diffs snap directly (perfect smoothness).
-    // For large GPS jumps cap at 2.5 m/frame so the car catches up
-    // steadily instead of lurching forward.
+    // ── Smooth exponential advance — buttery motion ──
+    // Use exponential decay so the car accelerates toward the target
+    // and decelerates as it approaches — no jolts, no teleports.
     final diff = _tgtTraveledM - _traveledM;
-    // Adaptive cap keeps updates fluid without teleports on large RTDB jumps.
-    final maxStep = (diff.abs() * 0.10).clamp(0.08, 0.55).toDouble();
-    if (diff.abs() <= maxStep) {
+    // Exponential catch-up: 15% of remaining distance per frame.
+    // Capped to prevent teleporting on large GPS jumps (>50m).
+    final step = (diff * 0.15).clamp(-1.2, 1.2);
+    if (diff.abs() < 0.05) {
       _traveledM = _tgtTraveledM;
     } else {
-      _traveledM += diff.sign * maxStep;
+      _traveledM += step;
     }
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
 
-    // ── Bearing: smooth 12% rotation per frame — responsive yet fluid ──
+    // ── Bearing: smooth 18% rotation per frame — responsive yet fluid ──
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final newBearing = (_animBearing + db * 0.12) % 360;
+    final newBearing = (_animBearing + db * 0.18) % 360;
 
     _animPos = pos;
     _animBearing = newBearing;
@@ -823,7 +823,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // ── Direct-target lerp (GPS fallback — ONLY when off-route) ──
     final tgt = _directTargetPos;
     if (tgt != null) {
-      const lerpFactor = 0.08; // smooth catch-up, never teleport
+      const lerpFactor = 0.12; // smooth catch-up, never teleport
       final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * lerpFactor;
       final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * lerpFactor;
       final fallbackBearing = _directTargetBearing;
@@ -835,7 +835,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         double dbo = desiredBearing - _animBearing;
         if (dbo > 180) dbo -= 360;
         if (dbo < -180) dbo += 360;
-        _animBearing = (_animBearing + dbo * 0.12) % 360;
+        _animBearing = (_animBearing + dbo * 0.18) % 360;
       }
     }
 

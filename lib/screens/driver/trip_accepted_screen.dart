@@ -159,12 +159,17 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
   /// Pre-fetch route points: use cached, or fetch from OSRM/Mapbox.
   Future<void> _prefetchRoute() async {
     if (widget.routePoints != null && widget.routePoints!.length >= 2) {
-      _routePoints = widget.routePoints!;
-      return;
+      _routePoints = List.of(widget.routePoints!);
+    } else {
+      setState(() => _routeFetching = true);
+      _routePoints = await _fetchRoutePoints(widget.driverPos, widget.pickupLatLng);
+      if (mounted) setState(() => _routeFetching = false);
     }
-    setState(() => _routeFetching = true);
-    _routePoints = await _fetchRoutePoints(widget.driverPos, widget.pickupLatLng);
-    if (mounted) setState(() => _routeFetching = false);
+    // Cap route endpoints to exact pin coordinates so polyline meets the pins
+    if (_routePoints.length >= 2) {
+      _routePoints[0] = widget.driverPos;
+      _routePoints[_routePoints.length - 1] = widget.pickupLatLng;
+    }
   }
 
   /// Fetch route via OSRM → Mapbox → straight line fallback.

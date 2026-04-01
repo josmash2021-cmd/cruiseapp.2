@@ -245,6 +245,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     // If caller already pre-fetched a route, use it; else fetch now
     if (widget.routePoints != null && widget.routePoints!.length > 1) {
       _routePts = List.of(widget.routePoints!);
+      // Cap route endpoints to exact pin coordinates so polyline meets the pins
+      final dest = widget.startInTripMode ? widget.dropoffLatLng : widget.pickupLatLng;
+      _routePts[_routePts.length - 1] = dest;
     }
 
     // Compute initial bearing from route so arrow points along route immediately

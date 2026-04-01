@@ -369,6 +369,12 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
   /// Cinematic route reveal: fit → tilt 55° + bearing → 4-layer gold draw → glow
   Future<void> _startCinematicRoute(List<LatLng> routePoints) async {
+    // Cap route endpoints to exact pin coordinates so polyline meets the pins
+    if (routePoints.length >= 2 && _pickupLatLng != null && _dropoffLatLng != null) {
+      routePoints = List.of(routePoints);
+      routePoints[0] = _pickupLatLng!;
+      routePoints[routePoints.length - 1] = _dropoffLatLng!;
+    }
     // Place markers first
     await _updateMapAnnotations(routePoints);
     if (!mounted || routePoints.length < 2) return;

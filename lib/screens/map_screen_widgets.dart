@@ -2844,8 +2844,11 @@ extension _MapScreenWidgets on _MapScreenState {
               child: Row(
                 children: [
                   VerifiedAvatar(
+                    photoUrl: _driverPhotoUrl.isNotEmpty ? _driverPhotoUrl : null,
                     radius: Responsive.w(22),
                     fallbackName: _driverName,
+                    uid: _currentDriverId?.toString(),
+                    role: 'driver',
                     isVerified: true,
                   ),
                   SizedBox(width: Responsive.w(12)),

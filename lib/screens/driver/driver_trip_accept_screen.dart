@@ -559,6 +559,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             tripId: widget.tripId,
             riderName: widget.riderName,
             riderPhotoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl) ?? '',
+            riderId: widget.riderId,
             fare: widget.fare,
           ),
           transitionsBuilder: (_, anim, __, child) => FadeTransition(

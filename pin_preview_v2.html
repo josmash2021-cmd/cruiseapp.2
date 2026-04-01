@@ -213,13 +213,13 @@ function drawPinV2(canvas, iconFn, scale) {
   
   // Left side of tail going to tip
   ctx.quadraticCurveTo(
-    cx - 2 * scale, tipY - tailH * 0.3,
+    cx - 4 * scale, tipY - tailH * 0.3,
     cx, tipY
   );
   
   // Right side of tail going back up
   ctx.quadraticCurveTo(
-    cx + 2 * scale, tipY - tailH * 0.3,
+    cx + 4 * scale, tipY - tailH * 0.3,
     cx + cupW * 0.35, cupBottomY + 2 * scale
   );
   
@@ -253,6 +253,12 @@ function drawPinV2(canvas, iconFn, scale) {
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+  
+  // ── White dot at tip ──
+  ctx.beginPath();
+  ctx.arc(cx, tipY - 1 * scale, 2 * scale, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
   
   // ── Subtle highlight on left rim ──
   ctx.save();
@@ -338,7 +344,7 @@ function drawPinV2b(canvas, iconFn, scale) {
   
   // Tail: left side going to tip
   ctx.quadraticCurveTo(
-    endX + 1.5 * scale, tipY - tailLen * 0.25,
+    endX + 3 * scale, tipY - tailLen * 0.25,
     cx, tipY
   );
   
@@ -347,7 +353,7 @@ function drawPinV2b(canvas, iconFn, scale) {
   const startY = cupCY + r * Math.sin(arcStart);
   
   ctx.quadraticCurveTo(
-    startX - 1.5 * scale, tipY - tailLen * 0.25,
+    startX - 3 * scale, tipY - tailLen * 0.25,
     startX, startY
   );
   
@@ -371,6 +377,12 @@ function drawPinV2b(canvas, iconFn, scale) {
   // Use even-odd fill to cut out the inner arc
   ctx.fill('evenodd');
   ctx.restore();
+  
+  // ── White dot at tip ──
+  ctx.beginPath();
+  ctx.arc(cx, tipY - 1.5 * scale, 2 * scale, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
   
   // ── Highlight ──
   ctx.save();

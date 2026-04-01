@@ -576,6 +576,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           fare: widget.price,
           driverPhotoUrl: _driverPhotoUrl ?? widget.driverPhotoUrl,
           driverUid: widget.driverId,
+          dropoffLat: widget.dropoffLatLng.latitude,
+          dropoffLng: widget.dropoffLatLng.longitude,
         ),
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),

@@ -202,6 +202,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
       radius: 22,
       fallbackName: '$_firstName $_lastName',
       uid: UserSession.currentUid,
+      role: 'rider',
       isVerified: _isVerified,
     );
   }

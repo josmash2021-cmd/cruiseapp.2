@@ -47,6 +47,7 @@ class DriverNavScreen extends StatefulWidget {
     required this.riderName,
     this.riderPhotoUrl = '',
     this.riderRating = 4.8,
+    this.riderId,
     required this.pickupLatLng,
     required this.dropoffLatLng,
     required this.pickupAddress,
@@ -64,6 +65,7 @@ class DriverNavScreen extends StatefulWidget {
   final String riderName;
   final String riderPhotoUrl;
   final double riderRating;
+  final int? riderId;
   final LatLng pickupLatLng;
   final LatLng dropoffLatLng;
   final String pickupAddress;
@@ -1391,6 +1393,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             tripId: widget.tripId,
             riderName: widget.riderName,
             riderPhotoUrl: widget.riderPhotoUrl,
+            riderId: widget.riderId,
             fare: widget.fare,
           ),
           transitionsBuilder: (_, anim, __, child) => FadeTransition(
@@ -2553,6 +2556,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
       radius: size / 2,
       fallbackName: widget.riderName,
+      uid: widget.riderId?.toString(),
+      role: 'rider',
       isVerified: true,
     );
   }

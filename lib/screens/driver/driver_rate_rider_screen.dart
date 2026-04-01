@@ -20,12 +20,14 @@ class DriverRateRiderScreen extends StatefulWidget {
     required this.tripId,
     required this.riderName,
     this.riderPhotoUrl = '',
+    this.riderId,
     this.fare = 0,
   });
 
   final int tripId;
   final String riderName;
   final String riderPhotoUrl;
+  final int? riderId;
   final double fare;
 
   @override
@@ -207,6 +209,8 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
       photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
       radius: Responsive.w(44),
       fallbackName: widget.riderName,
+      uid: widget.riderId?.toString(),
+      role: 'rider',
       isVerified: true,
     );
   }

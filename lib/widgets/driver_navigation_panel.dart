@@ -43,6 +43,7 @@ class DriverNavigationPanel extends StatefulWidget {
     required this.onStartExternalNav,
     this.riderName = '' ,
     this.riderPhotoUrl = '',
+    this.riderId,
     this.pickupLabel = '',
     this.dropoffLabel = '',
     this.destinationLat,
@@ -60,6 +61,7 @@ class DriverNavigationPanel extends StatefulWidget {
   final VoidCallback onStartExternalNav;
   final String riderName;
   final String riderPhotoUrl;
+  final int? riderId;
   final String pickupLabel;
   final String dropoffLabel;
   final double? destinationLat;
@@ -404,6 +406,8 @@ class _DriverNavigationPanelState extends State<DriverNavigationPanel> {
             photoUrl: widget.riderPhotoUrl.isNotEmpty ? widget.riderPhotoUrl : null,
             radius: 22,
             fallbackName: widget.riderName,
+            uid: widget.riderId?.toString(),
+            role: 'rider',
             isVerified: true,
           ),
           const SizedBox(width: 12),

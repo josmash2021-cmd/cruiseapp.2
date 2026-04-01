@@ -40,6 +40,7 @@ class TripAcceptedScreen extends StatefulWidget {
     this.riderVerified = false,
     this.riderPhone = '',
     this.routePoints,
+    this.riderId,
   });
 
   final int tripId;
@@ -48,6 +49,7 @@ class TripAcceptedScreen extends StatefulWidget {
   final String? riderPhotoUrl;
   final bool riderVerified;
   final double riderRating;
+  final int? riderId;
   final String pickupAddress;
   final LatLng pickupLatLng;
   final LatLng dropoffLatLng;
@@ -376,6 +378,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
           riderName: widget.riderName,
           riderPhotoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl) ?? '',
           riderRating: widget.riderRating,
+          riderId: widget.riderId,
           pickupLatLng: widget.pickupLatLng,
           dropoffLatLng: widget.dropoffLatLng,
           pickupAddress: widget.pickupAddress,
@@ -547,7 +550,8 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                     children: [
                       // Rider avatar
                       VerifiedAvatar(
-                        uid: widget.tripId.toString(),
+                        uid: widget.riderId?.toString(),
+                        role: 'rider',
                         fallbackName: widget.riderInitials,
                         photoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl),
                         isVerified: widget.riderVerified,

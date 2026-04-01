@@ -1,7 +1,10 @@
 ﻿import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
+import '../config/mapbox_config.dart';
+import '../config/map_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/analytics_service.dart';
@@ -19,6 +22,8 @@ class RiderRatingScreen extends StatefulWidget {
     this.fare = 0,
     this.driverPhotoUrl,
     this.driverUid,
+    this.dropoffLat,
+    this.dropoffLng,
   });
 
   final String driverName;
@@ -26,6 +31,8 @@ class RiderRatingScreen extends StatefulWidget {
   final double fare;
   final String? driverPhotoUrl;
   final String? driverUid;
+  final double? dropoffLat;
+  final double? dropoffLng;
 
   @override
   State<RiderRatingScreen> createState() => _RiderRatingScreenState();
@@ -175,19 +182,54 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
         backgroundColor: _bg,
         body: Stack(
           children: [
-            // ── Blurred dark map background ──
+            // ── Blurred dark Mapbox map background ──
+            if (widget.dropoffLat != null && widget.dropoffLng != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: mapbox.MapWidget(
+                    styleUri: MapboxConfig.styleDark,
+                    cameraOptions: mapbox.CameraOptions(
+                      center: mapbox.Point(
+                        coordinates: mapbox.Position(
+                          widget.dropoffLng!,
+                          widget.dropoffLat!,
+                        ),
+                      ),
+                      zoom: 13.5,
+                      pitch: 0,
+                    ),
+                    onMapCreated: (ctrl) async {
+                      await MapTheme.applyNavyGold(ctrl);
+                      // Disable all gestures — purely decorative
+                      await ctrl.gestures.updateSettings(
+                        mapbox.GesturesSettings(
+                          scrollEnabled: false,
+                          rotateEnabled: false,
+                          pitchEnabled: false,
+                          doubleTapToZoomInEnabled: false,
+                          doubleTouchToZoomOutEnabled: false,
+                          quickZoomEnabled: false,
+                          pinchToZoomEnabled: false,
+                        ),
+                      );
+                      // Hide compass + logo
+                      await ctrl.compass.updateSettings(
+                        mapbox.CompassSettings(enabled: false),
+                      );
+                      await ctrl.scaleBar.updateSettings(
+                        mapbox.ScaleBarSettings(enabled: false),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            // ── Blur + dark overlay on top of map ──
             Positioned.fill(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFF111122),
-                      Color(0xFF0d0d1a),
-                      Color(0xFF0d0d1a),
-                    ],
-                    stops: [0.0, 0.35, 1.0],
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    color: const Color(0xFF0d0d1a).withValues(alpha: 0.65),
                   ),
                 ),
               ),

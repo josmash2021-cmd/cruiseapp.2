@@ -896,6 +896,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   radius: Responsive.w(18),
                   fallbackName: _driverName,
                   uid: UserSession.currentUid,
+                  role: 'driver',
                   isVerified: _isVerified,
                 ),
                 SizedBox(width: Responsive.w(10)),

@@ -306,6 +306,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       photoUrl: widget.photoUrl,
                       radius: 15,
                       fallbackName: null,
+                      uid: _driverId?.toString(),
+                      role: 'driver',
                       isVerified: false,
                     ),
                     const Spacer(),
@@ -3459,6 +3461,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       photoUrl: _riderPhotoUrl.isNotEmpty ? _riderPhotoUrl : null,
       radius: s / 2,
       fallbackName: _riderName,
+      uid: _riderId.isNotEmpty ? _riderId : null,
+      role: 'rider',
       isVerified: false,
     );
     if (!showBadge) return circle;

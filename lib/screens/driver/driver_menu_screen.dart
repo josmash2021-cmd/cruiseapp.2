@@ -453,6 +453,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                 radius: Responsive.w(30),
                 fallbackName: _driverName,
                 uid: UserSession.currentUid,
+                role: 'driver',
                 isVerified: _isVerified,
             ),
             SizedBox(width: Responsive.w(14)),

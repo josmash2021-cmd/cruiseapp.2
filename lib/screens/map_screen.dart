@@ -247,6 +247,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   String _driverName = 'Searching...';
   String _driverCar = '';
   String _driverPlate = '';
+  String _driverPhotoUrl = '';
   double _driverRating = 4.9;
   String _driverEta = '...';
   String _driverPhone = '';
@@ -1850,6 +1851,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       _driverName = 'Searching...';
       _driverCar = '';
       _driverPlate = '';
+      _driverPhotoUrl = '';
       _driverEta = '...';
       _rideProgress = 0;
       // driver annotation cleared via manager
@@ -2169,6 +2171,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               _driverCar = dispatch['vehicle_type']?.toString() ?? '';
               _driverPlate = dispatch['driver_plate']?.toString() ?? '';
               _driverPhone = dispatch['driver_phone']?.toString() ?? '';
+              _driverPhotoUrl = dispatch['driver_photo_url']?.toString() ?? '';
               _driverRating =
                   (dispatch['driver_rating'] as num?)?.toDouble() ?? 4.9;
               // Calculate real initial ETA from driver distance

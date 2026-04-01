@@ -193,6 +193,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   String _riderInit = '';
   String _riderPhotoUrl = '';
   String _riderPhone = '';
+  String _riderId = '';
   String _pickupAddr = '';
   String _dropoffAddr = '';
   double _fare = 0;

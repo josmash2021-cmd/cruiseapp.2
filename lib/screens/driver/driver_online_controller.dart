@@ -975,6 +975,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _riderInit = name.isNotEmpty ? name[0].toUpperCase() : '?';
     _riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
     _riderPhone = (r['rider_phone'] ?? '') as String;
+    _riderId = (r['rider_id'] ?? '').toString();
     _pickupAddr = r['pickup_address'] ?? 'Pickup';
     _dropoffAddr = r['dropoff_address'] ?? 'Drop-off';
     _fare = (r['fare'] as num?)?.toDouble() ?? 0;
@@ -1022,6 +1023,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           riderInitials:  riderInit,
           riderPhotoUrl:  riderPhotoUrl.isNotEmpty ? riderPhotoUrl : null,
           riderRating:    riderRating,
+          riderId:        int.tryParse(_riderId),
           pickupLatLng:   _pickupLL,
           dropoffLatLng:  _dropoffLL,
           pickupAddress:  _pickupAddr,

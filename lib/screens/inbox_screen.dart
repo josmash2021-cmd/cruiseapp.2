@@ -7,6 +7,7 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
+import '../widgets/verified_avatar.dart';
 
 class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
@@ -582,22 +583,12 @@ class _MessagesTabState extends State<_MessagesTab> {
             child: Row(
               children: [
                 // Driver avatar
-                CircleAvatar(
+                VerifiedAvatar(
+                  photoUrl: driverPhoto.isNotEmpty ? driverPhoto : null,
                   radius: 22,
-                  backgroundColor: _gold.withValues(alpha: 0.15),
-                  backgroundImage: driverPhoto.isNotEmpty
-                      ? NetworkImage(driverPhoto) as ImageProvider
-                      : null,
-                  child: driverPhoto.isEmpty
-                      ? Text(
-                          driverName.isNotEmpty ? driverName[0].toUpperCase() : 'D',
-                          style: const TextStyle(
-                            color: _gold,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 18,
-                          ),
-                        )
-                      : null,
+                  fallbackName: driverName,
+                  role: 'driver',
+                  isVerified: false,
                 ),
                 const SizedBox(width: 12),
                 Expanded(

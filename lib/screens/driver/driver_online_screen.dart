@@ -41,6 +41,7 @@ import 'driver_earnings_screen.dart';
 import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_inbox_screen.dart';
+import 'driver_home_screen.dart';
 import '../../services/map_launcher_service.dart';
 import '../../services/preload_service.dart';
 import 'driver_trip_accept_screen.dart';

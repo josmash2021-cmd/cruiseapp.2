@@ -1385,12 +1385,23 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
     HapticFeedback.mediumImpact();
     _goOfflineBackend();
-    Navigator.of(context).pop<Map<String, dynamic>>({
+    final result = {
       'earnings': _earnings,
       'trips': _trips,
       'hours': _online.inMinutes / 60.0,
       'stillOnline': false,
-    });
+    };
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop<Map<String, dynamic>>(result);
+      return;
+    }
+    // Some flows open DriverOnlineScreen as root (pushAndRemoveUntil).
+    // In that case, popping causes a black screen. Always route to Home.
+    nav.pushAndRemoveUntil(
+      smoothFadeRoute(const DriverHomeScreen(returnFromTrip: false)),
+      (_) => false,
+    );
   }
   
   void _pauseAvailability() {

@@ -2098,16 +2098,16 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           child: FadeTransition(
           opacity: _finishFadeAnim,
           child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
             child: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: 0.55),
-                    Colors.black.withValues(alpha: 0.75),
-                    Colors.black.withValues(alpha: 0.60),
+                    Colors.black.withValues(alpha: 0.82),
+                    Colors.black.withValues(alpha: 0.90),
+                    Colors.black.withValues(alpha: 0.85),
                   ],
                   stops: const [0.0, 0.5, 1.0],
                 ),
@@ -2118,23 +2118,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     const Spacer(flex: 3),
                     // ── Glowing check icon ──
                     Container(
-                      width: 100, height: 100,
+                      width: 110, height: 110,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: RadialGradient(
                           colors: [
-                            _gold.withValues(alpha: 0.25),
-                            _gold.withValues(alpha: 0.05),
+                            _gold.withValues(alpha: 0.30),
+                            _gold.withValues(alpha: 0.08),
                             Colors.transparent,
                           ],
                           stops: const [0.0, 0.6, 1.0],
-                          radius: 1.2,
+                          radius: 1.4,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: _gold.withValues(alpha: 0.30),
-                            blurRadius: 40,
-                            spreadRadius: 8,
+                            color: _gold.withValues(alpha: 0.35),
+                            blurRadius: 50,
+                            spreadRadius: 12,
                           ),
                         ],
                       ),
@@ -2146,42 +2146,49 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           border: Border.all(color: _gold, width: 2.5),
                         ),
                         child: const Icon(Icons.check_rounded,
-                            color: _gold, size: 48),
+                            color: _gold, size: 52),
                       ),
                     ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 32),
                     // ── Title ──
                     const Text('Viaje Finalizado',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 30,
+                        fontSize: 32,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     // ── Fare pill ──
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                       decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.15),
+                        color: _gold.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(30),
-                        border: Border.all(color: _gold.withValues(alpha: 0.35), width: 1),
+                        border: Border.all(color: _gold.withValues(alpha: 0.40), width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: 0.15),
+                            blurRadius: 24,
+                            spreadRadius: 2,
+                          ),
+                        ],
                       ),
                       child: Text('\$${widget.fare.toStringAsFixed(2)}',
                         style: const TextStyle(
                           color: _gold,
-                          fontSize: 28,
+                          fontSize: 32,
                           fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
+                          letterSpacing: 1.2,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 18),
                     // ── Rider name ──
                     Text(widget.riderName,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.55),
+                        color: Colors.white.withValues(alpha: 0.50),
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),

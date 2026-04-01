@@ -187,6 +187,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   late final AnimationController _finishFadeCtrl;
   late final Animation<double> _finishFadeAnim;
 
+  // ── Shimmer sweep animation for slide buttons ──
+  late final AnimationController _shimmerCtrl;
+  late final Animation<double> _shimmerAnim;
+
   // ── Trip distance pickup→dropoff ─────────────────────────────────────────
   double get _tripKm {
     const r = 6371.0;
@@ -286,6 +290,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       duration: const Duration(milliseconds: 600),
     );
     _finishFadeAnim = CurvedAnimation(parent: _finishFadeCtrl, curve: Curves.easeInOut);
+
+    // Shimmer sweep for slide buttons (repeating left→right light)
+    _shimmerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat();
+    _shimmerAnim = Tween<double>(begin: -1.0, end: 2.0).animate(
+      CurvedAnimation(parent: _shimmerCtrl, curve: Curves.easeInOut),
+    );
   }
 
   Future<void> _resolveRiderPhotoFromTrip() async {
@@ -323,6 +336,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _pinPopCtrl.dispose();
     _btnFadeCtrl.dispose();
     _finishFadeCtrl.dispose();
+    _shimmerCtrl.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routePoints = [];
@@ -624,11 +638,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   String _timeLabel() {
-    final now = DateTime.now();
-    int h = now.hour % 12;
+    // Compute arrival ETA based on phase:
+    // Before ride started → ETA to pickup (widget.etaMinutes)
+    // After ride started  → ETA to dropoff (_tripEta)
+    final etaMins = _rideStarted ? _tripEta : widget.etaMinutes;
+    final arrival = DateTime.now().add(Duration(minutes: etaMins));
+    int h = arrival.hour % 12;
     if (h == 0) h = 12;
-    final m   = now.minute.toString().padLeft(2, '0');
-    final ap  = now.hour >= 12 ? 'PM' : 'AM';
+    final m  = arrival.minute.toString().padLeft(2, '0');
+    final ap = arrival.hour >= 12 ? 'PM' : 'AM';
     return 'by $h:$m $ap';
   }
 
@@ -2211,6 +2229,44 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return _buildSlideStartTrip();
   }
 
+  /// Shimmer sweep overlay for slide buttons — a gold-light that moves
+  /// left→right hinting the user to slide.
+  Widget _buildShimmerOverlay(double height) {
+    return AnimatedBuilder(
+      animation: _shimmerAnim,
+      builder: (context, _) {
+        return Positioned.fill(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(height / 2),
+            child: IgnorePointer(
+              child: ShaderMask(
+                shaderCallback: (bounds) {
+                  return LinearGradient(
+                    begin: Alignment(_shimmerAnim.value - 1.0, 0),
+                    end: Alignment(_shimmerAnim.value, 0),
+                    colors: [
+                      Colors.transparent,
+                      _gold.withValues(alpha: 0.18),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.5, 1.0],
+                  ).createShader(bounds);
+                },
+                blendMode: BlendMode.srcATop,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(height / 2),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   // ── Slide-to-confirm "Start Trip" widget ────────────────────────────────
   Widget _buildSlideStartTrip() {
     const height = 62.0;
@@ -2253,12 +2309,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     ),
                   ),
                 ),
+                // Shimmer sweep hint
+                _buildShimmerOverlay(height),
                 // Label
                 Center(
                   child: AnimatedOpacity(
                     opacity: 1.0 - _slideVal,
                     duration: const Duration(milliseconds: 100),
-                    child: const Text('Start Trip  →',
+                    child: const Text('Start Trip',
                       style: TextStyle(
                         color: Colors.white70,
                         fontSize: 16, fontWeight: FontWeight.w700)),
@@ -2420,12 +2478,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     ),
                   ),
                 ),
+                // Shimmer sweep hint
+                _buildShimmerOverlay(height),
                 // Label
                 Center(
                   child: AnimatedOpacity(
                     opacity: 1.0 - _arrivedSlideVal,
                     duration: const Duration(milliseconds: 100),
-                    child: const Text('Arrived  →',
+                    child: const Text('Arrived',
                       style: TextStyle(
                         color: Colors.white70,
                         fontSize: 16, fontWeight: FontWeight.w700)),
@@ -2543,12 +2603,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     ),
                   ),
                 ),
+                // Shimmer sweep hint
+                _buildShimmerOverlay(height),
                 // Label
                 Center(
                   child: AnimatedOpacity(
                     opacity: 1.0 - _startRideSlideVal,
                     duration: const Duration(milliseconds: 100),
-                    child: const Text('Start Trip  →',
+                    child: const Text('Start Trip',
                       style: TextStyle(
                         color: Colors.white70,
                         fontSize: 16, fontWeight: FontWeight.w700)),
@@ -2673,12 +2735,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     ),
                   ),
                 ),
+                // Shimmer sweep hint
+                _buildShimmerOverlay(height),
                 // Label
                 Center(
                   child: AnimatedOpacity(
                     opacity: 1.0 - _finishSlideVal,
                     duration: const Duration(milliseconds: 100),
-                    child: const Text('Finalizar Viaje  →',
+                    child: const Text('Finalizar Viaje',
                       style: TextStyle(
                         color: Colors.white70,
                         fontSize: 16, fontWeight: FontWeight.w700)),
@@ -2854,7 +2918,7 @@ class _LockedSlideButton extends StatelessWidget {
             ),
             Center(
               child: Text(
-                '$label  →',
+                label,
                 style: const TextStyle(
                   color: Colors.white54,
                   fontSize: 16,

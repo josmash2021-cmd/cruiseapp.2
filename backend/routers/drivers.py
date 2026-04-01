@@ -623,6 +623,129 @@ async def refund_to_wallet(trip_id: int, amount: float, reason: str = "Ride refu
     }
 
 # ═══════════════════════════════════════════════════════
+#  WALLET WITHDRAWAL (CASHOUT FOR RIDERS)
+# ═══════════════════════════════════════════════════════
+
+@router.get("/wallet/payout-methods", dependencies=[Depends(_verify_api_key)])
+async def get_wallet_payout_methods(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get rider's payout methods for cashout."""
+    result = await db.execute(
+        select(RiderPaymentMethod).where(RiderPaymentMethod.user_id == user.id).order_by(RiderPaymentMethod.created_at)
+    )
+    methods = result.scalars().all()
+    return [
+        {
+            "id": m.id,
+            "method_type": m.method_type,  # stripe_card, bank_account, paypal
+            "display_name": m.display_name,
+            "is_default": m.is_default,
+            "created_at": m.created_at.isoformat() if m.created_at else None
+        }
+        for m in methods
+    ]
+
+@router.post("/wallet/withdraw", dependencies=[Depends(_verify_api_key)])
+async def withdraw_from_wallet(body: WalletWithdrawIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Request cashout from wallet to payout method."""
+    if body.amount <= 0:
+        raise HTTPException(400, "Withdrawal amount must be positive")
+    if body.amount < 5.0:
+        raise HTTPException(400, "Minimum withdrawal is $5.00")
+    if body.amount > 5000:
+        raise HTTPException(400, "Maximum withdrawal is $5000.00")
+    
+    # Get wallet
+    wallet = await _get_or_create_wallet(user.id, db)
+    
+    # Check balance
+    if wallet.balance < body.amount:
+        raise HTTPException(400, f"Insufficient balance. Available: ${wallet.balance:.2f}")
+    
+    # Verify payout method exists and belongs to user
+    pm_result = await db.execute(
+        select(RiderPaymentMethod).where(
+            RiderPaymentMethod.id == body.payout_method_id,
+            RiderPaymentMethod.user_id == user.id
+        )
+    )
+    payout_method = pm_result.scalar_one_or_none()
+    if not payout_method:
+        raise HTTPException(404, "Payout method not found")
+    
+    # Deduct from wallet
+    wallet.balance -= body.amount
+    wallet.updated_at = datetime.utcnow()
+    
+    # Create transaction record
+    txn = WalletTransaction(
+        wallet_id=wallet.id,
+        amount=-body.amount,  # Negative for cashout
+        type="withdrawal",
+        reference_id=str(body.payout_method_id),
+        description=f"Withdrawal to {payout_method.display_name}"
+    )
+    db.add(txn)
+    await db.commit()
+    await db.refresh(wallet)
+    await db.refresh(txn)
+    
+    # Stripe transfer to payment method
+    transfer_id = None
+    stripe_error = None
+    if STRIPE_SECRET and payout_method.method_type == "stripe_card":
+        try:
+            import stripe as _s
+            _s.api_key = STRIPE_SECRET
+            # Amount in cents
+            amount_cents = max(int(body.amount * 100), 50)
+            transfer = _s.Payout.create(
+                amount=amount_cents,
+                currency="usd",
+                method="instant",  # instant payout if available
+                description=f"Cruise rider cashout — wallet withdrawal #{txn.id}",
+                metadata={"withdrawal_id": str(txn.id), "rider_id": str(user.id)}
+            )
+            transfer_id = transfer["id"]
+            logging.info("[Withdrawal] Stripe payout %s created for rider %s — $%.2f", transfer_id, user.id, body.amount)
+        except Exception as _se:
+            stripe_error = str(_se)[:200]
+            logging.error("[Withdrawal] Stripe error: %s", stripe_error)
+    
+    return {
+        "status": "success",
+        "withdrawal_id": txn.id,
+        "amount": body.amount,
+        "new_balance": wallet.balance,
+        "payout_method": payout_method.display_name,
+        "transfer_id": transfer_id,
+        "stripe_error": stripe_error,
+        "created_at": txn.created_at.isoformat() if txn.created_at else None
+    }
+
+@router.get("/wallet/withdrawals", dependencies=[Depends(_verify_api_key)])
+async def get_withdrawal_history(limit: int = 50, offset: int = 0, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get withdrawal history for rider."""
+    wallet = await _get_or_create_wallet(user.id, db)
+    result = await db.execute(
+        select(WalletTransaction)
+        .where(WalletTransaction.wallet_id == wallet.id, WalletTransaction.type == "withdrawal")
+        .order_by(WalletTransaction.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    txns = result.scalars().all()
+    return [
+        {
+            "id": t.id,
+            "amount": abs(t.amount),
+            "type": t.type,
+            "description": t.description,
+            "created_at": t.created_at.isoformat() if t.created_at else None
+        }
+        for t in txns
+    ]
+
+# ═══════════════════════════════════════════════════════
 #  DISPATCH  ENDPOINTS
 # ═══════════════════════════════════════════════════════
 

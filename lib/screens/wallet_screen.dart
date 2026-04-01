@@ -108,6 +108,45 @@ class _WalletScreenState extends State<WalletScreen> {
     }
   }
 
+  void _showCashOutDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => _CashOutSheet(
+        availableBalance: _balance,
+        onCashOut: (amount, payoutMethodId) async {
+          Navigator.pop(ctx);
+          await _performCashOut(amount, payoutMethodId);
+        },
+      ),
+    );
+  }
+
+  Future<void> _performCashOut(double amount, int payoutMethodId) async {
+    HapticFeedback.mediumImpact();
+    _showSnack('Processing withdrawal of \$${amount.toStringAsFixed(2)}...');
+    try {
+      final result = await ApiService.withdrawFromWallet(
+        amount: amount,
+        payoutMethodId: payoutMethodId,
+      );
+      if (!mounted) return;
+      final status = result['status'] as String? ?? '';
+      if (status != 'success') {
+        _showSnack('Withdrawal failed. Please try again.');
+        return;
+      }
+
+      _showSnack('Successfully withdrawn \$${amount.toStringAsFixed(2)}!');
+      AnalyticsService.instance.logEvent('wallet_cashout', parameters: {'amount': amount});
+      // Refresh balance + transactions from backend
+      await _loadWalletData();
+    } catch (e) {
+      _showSnack('Withdrawal failed. Please try again.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
@@ -313,24 +352,41 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Widget _buildQuickActions(AppColors c) {
-    return Row(
+    return Column(
       children: [
-        Expanded(child: _actionButton(
-          icon: Icons.add_rounded,
-          label: 'Top Up',
-          color: _gold,
-          onTap: _showTopUpDialog,
-        )),
-        const SizedBox(width: 12),
-        Expanded(child: _actionButton(
-          icon: Icons.credit_card_rounded,
-          label: 'Payment Methods',
-          color: c.textSecondary,
-          onTap: () => Navigator.push(
-            context,
-            slideFromRightRoute(const PaymentAccountsScreen()),
-          ),
-        )),
+        Row(
+          children: [
+            Expanded(child: _actionButton(
+              icon: Icons.add_rounded,
+              label: 'Top Up',
+              color: _gold,
+              onTap: _showTopUpDialog,
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: _actionButton(
+              icon: Icons.credit_card_rounded,
+              label: 'Payment Methods',
+              color: c.textSecondary,
+              onTap: () => Navigator.push(
+                context,
+                slideFromRightRoute(const PaymentAccountsScreen()),
+              ),
+            )),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _actionButton(
+              icon: Icons.send_rounded,
+              label: 'Cash Out',
+              color: const Color(0xFF4CAF50),
+              onTap: _showCashOutDialog,
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: Container()),  // Spacer for alignment
+          ],
+        ),
       ],
     );
   }
@@ -676,6 +732,279 @@ class _TopUpSheetState extends State<_TopUpSheet> {
             fontSize: 15,
             fontWeight: FontWeight.w700,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet for cash-out (withdrawal) amount selection.
+class _CashOutSheet extends StatefulWidget {
+  final double availableBalance;
+  final Function(double, int) onCashOut;
+
+  const _CashOutSheet({
+    required this.availableBalance,
+    required this.onCashOut,
+  });
+
+  @override
+  State<_CashOutSheet> createState() => _CashOutSheetState();
+}
+
+class _CashOutSheetState extends State<_CashOutSheet> {
+  static const _gold = Color(0xFFE8C547);
+  static const _presetAmounts = [25.0, 50.0, 100.0, 250.0];
+  static const _minWithdrawal = 5.0;
+
+  late double _selectedAmount;
+  final _customController = TextEditingController();
+  bool _isCustom = false;
+  List<Map<String, dynamic>> _payoutMethods = [];
+  int? _selectedMethodId;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedAmount = _presetAmounts.first;
+    _loadPayoutMethods();
+  }
+
+  Future<void> _loadPayoutMethods() async {
+    try {
+      final methods = await ApiService.getWalletPayoutMethods();
+      if (mounted) {
+        setState(() {
+          _payoutMethods = methods;
+          _selectedMethodId = methods.isNotEmpty ? methods.first['id'] as int : null;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load payout methods')),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _customController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(28),
+          topRight: Radius.circular(28),
+        ),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: _loading
+              ? const Center(child: CircularProgressIndicator(color: _gold))
+              : _payoutMethods.isEmpty
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 20),
+                        Icon(Icons.credit_card_rounded, size: 48, color: Colors.white.withValues(alpha: 0.3)),
+                        const SizedBox(height: 16),
+                        Text('No payout methods', style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: c.border,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                            child: const Text('Add Payment Method', style: TextStyle(color: Colors.white)),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Withdraw from Wallet', style: TextStyle(
+                          color: c.textPrimary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        )),
+                        const SizedBox(height: 20),
+                        // Payout method selector
+                        Text('Payout Method', style: TextStyle(
+                          color: c.textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        )),
+                        const SizedBox(height: 8),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: c.cardBg,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: c.border),
+                          ),
+                          child: DropdownButton<int>(
+                            value: _selectedMethodId,
+                            isExpanded: true,
+                            underline: const SizedBox.shrink(),
+                            dropdownColor: c.surface,
+                            items: _payoutMethods.map((method) {
+                              final id = method['id'] as int;
+                              final name = method['display_name'] as String? ?? 'Unknown';
+                              return DropdownMenuItem(
+                                value: id,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Text(name, style: const TextStyle(color: Colors.white)),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) setState(() => _selectedMethodId = val);
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        // Preset amounts
+                        Text('Amount', style: TextStyle(
+                          color: c.textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        )),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 8,
+                          children: _presetAmounts.map((amt) {
+                            final isSelected = !_isCustom && (_selectedAmount - amt).abs() < 0.01;
+                            return GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedAmount = amt;
+                                  _isCustom = false;
+                                  _customController.clear();
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? _gold.withValues(alpha: 0.2) : c.cardBg,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isSelected ? _gold : c.border,
+                                    width: isSelected ? 2 : 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  '\$${amt.toStringAsFixed(0)}',
+                                  style: TextStyle(
+                                    color: isSelected ? _gold : Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 16),
+                        // Custom amount
+                        TextField(
+                          controller: _customController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: 'Custom amount',
+                            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+                            prefixText: '\$ ',
+                            prefixStyle: const TextStyle(color: _gold, fontWeight: FontWeight.w700),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: c.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: _gold),
+                            ),
+                          ),
+                          onChanged: (val) {
+                            final amt = double.tryParse(val);
+                            if (amt != null && amt > 0) {
+                              setState(() {
+                                _selectedAmount = amt;
+                                _isCustom = true;
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        // Info message
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: _gold.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: _gold.withValues(alpha: 0.2)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.info_rounded, color: _gold, size: 18),
+                              const SizedBox(width: 10),
+                              Expanded(child: Text(
+                                'Minimum: \$${_minWithdrawal.toStringAsFixed(2)} • Processing: 1-2 business days',
+                                style: TextStyle(color: _gold.withValues(alpha: 0.8), fontSize: 12),
+                              )),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        // Confirm button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed: _selectedAmount >= _minWithdrawal && _selectedMethodId != null
+                                ? () {
+                                    HapticFeedback.mediumImpact();
+                                    widget.onCashOut(_selectedAmount, _selectedMethodId!);
+                                  }
+                                : null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _gold,
+                              disabledBackgroundColor: _gold.withValues(alpha: 0.5),
+                              foregroundColor: Colors.black,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: Text(
+                              'Withdraw \$${_selectedAmount.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
         ),
       ),
     );

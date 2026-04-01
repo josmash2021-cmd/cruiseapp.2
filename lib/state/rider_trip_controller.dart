@@ -648,18 +648,16 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _tripSseSub?.cancel();
     _sseConnected = false;
 
-    // Fix 1: hard client-side timeout — 4 minutes max searching
-    _timeoutTimer = Timer(const Duration(minutes: 4), () {
+    // Safety-net timeout — 10 minutes max searching (backend handles expiry at 5 min)
+    _timeoutTimer = Timer(const Duration(minutes: 10), () {
       _pollTimer?.cancel();
       _tripSseSub?.cancel();
       _isRequesting = false;
       if (_state.phase == RiderPhase.searchingDriver ||
           _state.phase == RiderPhase.requesting) {
-        // Attempt to cancel on backend too
-        ApiService.cancelTrip(tripId).catchError((_) => <String, dynamic>{});
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: 'No se encontró un driver disponible. Por favor intenta de nuevo.',
+          cancelReason: 'No hay drivers disponibles cerca de tu zona en estos momentos. Intenta de nuevo.',
         );
         notifyListeners();
         // Clear trip cache

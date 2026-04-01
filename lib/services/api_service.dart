@@ -1899,10 +1899,14 @@ class ApiService {
             }
           }
 
-          if (eventType == 'trip_update' && data != null) {
+          if ((eventType == 'trip_update' || eventType == 'dispatch_timeout') && data != null) {
             try {
               final parsed = jsonDecode(data);
               if (parsed is Map<String, dynamic>) {
+                // Normalize dispatch_timeout to a status the listener understands
+                if (eventType == 'dispatch_timeout' && !parsed.containsKey('status')) {
+                  parsed['status'] = 'no_drivers';
+                }
                 yield parsed;
               }
             } catch (_) {}

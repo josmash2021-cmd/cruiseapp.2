@@ -902,8 +902,8 @@ class DispatchTimeoutAgent:
                 # Notify the rider via SSE if possible
                 try:
                     from services.event_bus import event_bus
-                    await event_bus.push_event(f"rider_{offer.trip_id}", {
-                        "type": "dispatch_timeout",
+                    await event_bus.push_trip_update(offer.trip_id, {
+                        "status": "no_drivers",
                         "message": "No drivers available right now. Please try again.",
                     })
                 except Exception:

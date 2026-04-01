@@ -240,6 +240,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // Fade route polyline and zoom camera to driver location
       _handleDriverArrived();
       _showRiderConfirmPickup();
+      if (!_arrivedNotifSent) {
+        _arrivedNotifSent = true;
+        _sendRideNotification(
+          'Your driver has arrived',
+          '${widget.driverName.split(' ').first} is waiting at the pickup spot in a ${widget.vehicleColor} ${widget.vehicleModel}.',
+        );
+      }
     } else if ((status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard') &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       _setState(() {

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 /// Cruise-branded map pin: golden crescent cup with icon floating above.
@@ -40,7 +42,7 @@ class _CruiseMapPinState extends State<CruiseMapPin>
     final pinW = s;
     final pinH = s * (78 / 72);
     final avatarSize = s * (48 / 72);
-    final avatarMarginTop = s * (8 / 72);
+    final avatarMarginTop = s * 0.16;
     final iconSize = s * (32 / 72); // larger icon
 
     return SizedBox(
@@ -118,60 +120,110 @@ class _PinPainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
     final cx = w / 2;
-    final r = w * 0.42;
-    final headCY = r + w * 0.08;
-    final iconCY = headCY - r * 0.10;
+
+    // V2 crescent cup measurements
+    final r = w * 0.34;
+    final cupCY = w * 0.38;
+    final thick = r * 0.28;
+    final tipY = h - w * 0.01;
+    final iconCY = cupCY;
+
+    const arcStart = 0.5654866776; // pi * 0.18
+    const arcEnd   = 2.5761455262; // pi * 0.82
+    const arcSweep = arcEnd - arcStart;
 
     // ── 1. White fade glow behind icon ──
+    final glowR = r * 0.60;
     canvas.drawCircle(
       Offset(cx, iconCY),
-      r * 0.85,
+      glowR,
       Paint()
-        ..shader = RadialGradient(
-          colors: [
-            Colors.white.withValues(alpha: 0.30),
-            Colors.white.withValues(alpha: 0.07),
+        ..shader = ui.Gradient.radial(
+          Offset(cx, iconCY),
+          glowR,
+          [
+            Colors.white.withValues(alpha: 0.50),
+            Colors.white.withValues(alpha: 0.15),
             Colors.transparent,
           ],
-          stops: const [0.0, 0.50, 1.0],
-        ).createShader(
-          Rect.fromCircle(center: Offset(cx, iconCY), radius: r * 0.85),
+          [0.0, 0.45, 1.0],
         ),
     );
 
-    // ── 2. Golden crescent cup ──
-    final openY = headCY + r * 0.15;
-    final halfW = r * 0.88;
-    final cupPath = Path()
-      ..moveTo(cx - halfW, openY)
-      ..cubicTo(
-        cx - halfW * 1.12, openY + (h - openY) * 0.52,
-        cx - r * 0.10, h - (h - openY) * 0.10,
-        cx, h,
-      )
-      ..cubicTo(
-        cx + r * 0.10, h - (h - openY) * 0.10,
-        cx + halfW * 1.12, openY + (h - openY) * 0.52,
-        cx + halfW, openY,
-      )
-      ..quadraticBezierTo(
-        cx, openY - r * 0.30,
-        cx - halfW, openY,
+    // ── 2. Gold crescent cup + sharp tail ──
+    final outerPath = Path()
+      ..arcTo(
+        Rect.fromCircle(center: Offset(cx, cupCY), radius: r),
+        arcStart, arcSweep, true,
       );
 
+    final endX = cx + r * math.cos(arcEnd);
+    final endY = cupCY + r * math.sin(arcEnd);
+    final startX = cx + r * math.cos(arcStart);
+    final startY = cupCY + r * math.sin(arcStart);
+
+    outerPath.quadraticBezierTo(
+      endX + r * 0.06, tipY - (tipY - endY) * 0.25,
+      cx, tipY,
+    );
+    outerPath.quadraticBezierTo(
+      startX - r * 0.06, tipY - (tipY - startY) * 0.25,
+      startX, startY,
+    );
+    outerPath.close();
+
+    // Crescent with inner cutout (even-odd)
+    final crescent = Path()..addPath(outerPath, Offset.zero);
+    final innerR = r - thick;
+    final iArcStart = arcStart + 0.08;
+    final iArcEnd = arcEnd - 0.08;
+    crescent.moveTo(
+      cx + innerR * math.cos(iArcStart),
+      cupCY + innerR * math.sin(iArcStart),
+    );
+    crescent.arcTo(
+      Rect.fromCircle(center: Offset(cx, cupCY), radius: innerR),
+      iArcStart, iArcEnd - iArcStart, false,
+    );
+    final iStartX = cx + innerR * math.cos(iArcStart);
+    final iStartY = cupCY + innerR * math.sin(iArcStart);
+    final iEndY = cupCY + innerR * math.sin(iArcEnd);
+    crescent.quadraticBezierTo(cx, iEndY + thick * 0.9, iStartX, iStartY);
+    crescent.close();
+    crescent.fillType = PathFillType.evenOdd;
+
+    // Shadow glow
     canvas.drawPath(
-      cupPath,
+      outerPath,
       Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: const [
-            Color(0xFFFFF8DC),
-            Color(0xFFE8C547),
-            Color(0xFFB8860B),
-          ],
-          stops: const [0.0, 0.45, 1.0],
-        ).createShader(Rect.fromLTWH(0, openY, w, h - openY)),
+        ..color = const Color(0x73D4A800)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+
+    // Gold gradient fill
+    canvas.drawPath(
+      crescent,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, cupCY - r),
+          Offset(cx, tipY),
+          [const Color(0xFFF5DC7A), const Color(0xFFD4A800), const Color(0xFFB08800)],
+          [0.0, 0.45, 1.0],
+        ),
+    );
+
+    // ── 3. Subtle highlight on upper rim ──
+    final hlPath = Path()
+      ..arcTo(
+        Rect.fromCircle(center: Offset(cx, cupCY), radius: r - 1),
+        arcStart + 0.1, arcSweep * 0.35, true,
+      );
+    canvas.drawPath(
+      hlPath,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = r * 0.07
+        ..color = Colors.white.withValues(alpha: 0.28),
     );
   }
 

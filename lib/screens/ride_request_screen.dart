@@ -118,6 +118,15 @@ const List<String> _searchStatusMessages = [
     'Confirming your ride…',
   ];
 
+/// Camera angle presets synced with each status message.
+/// Each entry: (pitch°, bearing°)
+const List<(double, double)> _searchCameraAngles = [
+  (55.0, 12.0),   // Looking for your driver — subtle right
+  (45.0, -30.0),  // Connecting — wider left turn
+  (60.0, 25.0),   // Almost there — tighter, right
+  (50.0, -10.0),  // Confirming — settling back center-left
+];
+
 class _RideRequestScreenState extends State<RideRequestScreen>
     with TickerProviderStateMixin {
   void _setState(VoidCallback fn) { setState(fn); }
@@ -166,6 +175,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Timer? _searchStatusTimer;
   int _searchElapsedSec = 0;
   Timer? _searchElapsedTimer;
+
+  // ── Search camera cycling (synced with status text) ──
+  AnimationController? _searchCamCtrl;
+  Animation<double>? _searchPitchAnim;
+  Animation<double>? _searchBearingAnim;
 
   // ── Bottom sheet ──
   late AnimationController _sheetCtrl;

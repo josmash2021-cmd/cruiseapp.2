@@ -725,6 +725,44 @@ extension _RideRequestMap on _RideRequestScreenState {
     ));
   }
 
+  /// Smoothly transition the map camera to the angle preset matching [idx].
+  /// Called every 10 s in sync with the status-message text cycle.
+  void _animateSearchCameraToAngle(int idx) {
+    if (_mapCtrl == null || !mounted) return;
+    final angleIdx = idx % _searchCameraAngles.length;
+    final (targetPitch, targetBearing) = _searchCameraAngles[angleIdx];
+
+    // Determine current camera values (fallback to initial cinematic pose)
+    final prevPitch = _searchPitchAnim?.value ?? _tiltAnim?.value ?? 55.0;
+    final prevBearing = _searchBearingAnim?.value ?? _bearingAnim?.value ?? _randomBearing;
+
+    // Dispose previous cycling controller
+    _searchCamCtrl?.removeListener(_applySearchCamera);
+    _searchCamCtrl?.dispose();
+
+    // 1.8 s ease-in-out for a buttery-smooth, cinematic transition
+    _searchCamCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _searchPitchAnim = Tween<double>(begin: prevPitch, end: targetPitch).animate(
+      CurvedAnimation(parent: _searchCamCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _searchBearingAnim = Tween<double>(begin: prevBearing, end: targetBearing).animate(
+      CurvedAnimation(parent: _searchCamCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _searchCamCtrl!.addListener(_applySearchCamera);
+    _searchCamCtrl!.forward();
+  }
+
+  void _applySearchCamera() {
+    if (_mapCtrl == null || !mounted) return;
+    _mapCtrl!.setCamera(mapbox.CameraOptions(
+      pitch: _searchPitchAnim?.value,
+      bearing: _searchBearingAnim?.value,
+    ));
+  }
+
   void _startPinPop() {
     _pinPopCtrl?.dispose();
     _pinPopCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));

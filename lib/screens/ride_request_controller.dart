@@ -261,9 +261,10 @@ extension _RideRequestController on _RideRequestScreenState {
           _searchStatusIdx = 0;
           _searchElapsedSec = 0;
           _searchStatusTimer?.cancel();
-          _searchStatusTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+          _searchStatusTimer = Timer.periodic(const Duration(seconds: 10), (_) {
             if (mounted) {
               _setState(() => _searchStatusIdx++);
+              _animateSearchCameraToAngle(_searchStatusIdx);
             }
           });
           _searchElapsedTimer?.cancel();
@@ -1435,6 +1436,8 @@ extension _RideRequestController on _RideRequestScreenState {
     _searchStatusTimer = null;
     _searchElapsedTimer?.cancel();
     _searchElapsedTimer = null;
+    _searchCamCtrl?.dispose();
+    _searchCamCtrl = null;
     _searchingShowMap = false;
     _searchingSplash = false;
     _driverFoundVisible = false;

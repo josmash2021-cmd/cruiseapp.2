@@ -58,7 +58,7 @@ class ConnectionKeeper:
         self._firestore_healthy = True
         self._last_db_ping = time.time()
         self._last_firestore_ping = time.time()
-        self._ping_interval = 30  # ping every 30 seconds
+        self._ping_interval = 120  # ping every 2 minutes (was 30s — too aggressive)
         self._db_session_maker = db_session_maker
         self._firestore_db = firestore_db
         self._db_reconnect_count = 0
@@ -74,8 +74,9 @@ class ConnectionKeeper:
         self._firestore_db = firestore_db
 
     async def keep_db_alive(self):
-        """Continuously ping the database to keep the connection warm"""
+        """Lightweight DB keepalive — only pings if DBHealthMonitor hasn't pinged recently."""
         while True:
+            await asyncio.sleep(self._ping_interval)
             try:
                 if self._db_session_maker:
                     start = time.time()
@@ -88,24 +89,10 @@ class ConnectionKeeper:
                     self._db_healthy = True
                     self._last_db_ping = time.time()
 
-                    if latency > 2000:
-                        # Suppress slow-ping warnings during startup warmup (first 90s)
-                        uptime = time.time() - self._start_time
-                        if uptime > 90:
-                            logger.warning(
-                                f"⚠️ DB ping slow: {latency:.0f}ms — connection may need refresh"
-                            )
-                        else:
-                            logger.info(
-                                f"DB ping {latency:.0f}ms during warmup ({uptime:.0f}s uptime) — normal"
-                            )
-
             except Exception as e:
                 logger.error(f"❌ DB ping failed: {e}")
                 self._db_healthy = False
                 self._db_reconnect_count += 1
-
-            await asyncio.sleep(self._ping_interval)
 
     async def keep_firestore_alive(self):
         """Keep Firestore connection warm with periodic pings"""
@@ -791,7 +778,7 @@ class DBHealthMonitor:
     Logs warnings for latency > 500ms. Kills queries running > 60s on PostgreSQL."""
 
     INTERVAL = 300   # check every 5 minutes
-    SLOW_MS = 500    # warn if latency > 500ms
+    SLOW_MS = 2000   # warn if latency > 2s (Railway PG typically ~100-500ms)
     KILL_SECS = 60   # kill queries running > 60s
 
     def __init__(self):

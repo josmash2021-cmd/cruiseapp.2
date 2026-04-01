@@ -15,14 +15,24 @@ from db_url import resolve_database_url
 DATABASE_URL = resolve_database_url(default="sqlite+aiosqlite:///./cruise.db", async_driver=True)
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
+_logger = logging.getLogger(__name__)
+
+# Log which DB host we're connecting to (mask password)
+_safe_url = DATABASE_URL
+if "@" in _safe_url:
+    _pre, _post = _safe_url.split("@", 1)
+    _scheme_user = _pre.rsplit(":", 1)[0] if ":" in _pre.rsplit("//", 1)[-1] else _pre
+    _safe_url = f"{_scheme_user}:***@{_post}"
+_logger.info("DB target: %s", _safe_url)
+
 _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {"timeout": 30, "check_same_thread": False}
 else:
-    _engine_kwargs["pool_size"] = 50
-    _engine_kwargs["max_overflow"] = 80
+    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs["max_overflow"] = 20
     _engine_kwargs["pool_pre_ping"] = True
-    _engine_kwargs["pool_recycle"] = 300
+    _engine_kwargs["pool_recycle"] = 1800
     _engine_kwargs["pool_timeout"] = 10
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)

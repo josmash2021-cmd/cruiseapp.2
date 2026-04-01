@@ -326,7 +326,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     final hasArrivedTs = data['driverArrivedAt'] != null || data['driver_arrived_at'] != null;
     final hasStartedTs = data['startedAt'] != null || data['started_at'] != null;
     final hasCompletedTs = data['completedAt'] != null || data['completed_at'] != null;
-    final hasCancelledTs = data['cancelledAt'] != null || data['cancelled_at'] != null;
 
     final isArrivedStatus =
         status == 'arrived' ||
@@ -341,8 +340,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         status == 'trip_started' ||
         hasStartedTs;
     final isCompletedStatus = status == 'completed' || hasCompletedTs;
+    // Only trust the explicit status field for cancellation — never stale
+    // timestamps alone, which can persist from previous Firestore merges.
     final isCancelledStatus =
-        status == 'cancelled' || status == 'canceled' || hasCancelledTs;
+        status == 'cancelled' || status == 'canceled';
 
     debugPrint('[RiderTracking] Firestore status update: "$rawStatus" normalized="$status" (phase=$_phase, driverId=$did)');
     if (isArrivedStatus && _phase == _TrackPhase.arriving) {
@@ -394,6 +395,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         if (mounted) _goToRating();
       });
     } else if (isCancelledStatus) {
+      // Guard: if thet trip is already in an active phase (driver accepted,
+      // arriving, arrived, in trip) ignore a stale "cancelled" status that
+      // can appear from Firestore merge artefacts or race conditions.
+      if (_phase == _TrackPhase.arriving ||
+          _phase == _TrackPhase.arrived ||
+          _phase == _TrackPhase.onTrip ||
+          _phase == _TrackPhase.nearDestination) {
+        debugPrint('[RiderTracking] Ignoring cancelled status while in active phase $_phase');
+        return;
+      }
+
       final cancelledBy =
           (data['cancelledBy'] ??
                   data['canceledBy'] ??

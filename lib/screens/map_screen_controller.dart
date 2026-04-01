@@ -817,8 +817,8 @@ extension _MapScreenController on _MapScreenState {
             // Draw/update route from driver â†’ pickup
             await _updateDriverRoute(status);
           } else if (status == 'canceled' || status == 'cancelled') {
-            timer.cancel();
-            _rideLifecycleTimer?.cancel();
+            // Guard: if driver is already en-route/arrived/in-trip and the DB
+            // shows cancelled with timeout reason, ignore — stale guardian data.
             final reason =
                 (trip['cancel_reason'] ??
                         trip['cancellation_reason'] ??
@@ -826,6 +826,18 @@ extension _MapScreenController on _MapScreenState {
                         '')
                     .toString()
                     .toLowerCase();
+            final isTimeoutCancel =
+                reason.contains('timeout') || reason.contains('no_driver');
+            final wasActive = _tripStatus == 'driver_en_route' ||
+                _tripStatus == 'driver_assigned' ||
+                _tripStatus == 'arrived' ||
+                _tripStatus == 'in_trip';
+            if (isTimeoutCancel && wasActive) {
+              debugPrint('[MapScreen] Ignoring timeout cancel for active trip (status was $_tripStatus)');
+              continue;
+            }
+            timer.cancel();
+            _rideLifecycleTimer?.cancel();
             final isNoDrivers =
                 reason.contains('no_driver') ||
                 reason.contains('no driver') ||

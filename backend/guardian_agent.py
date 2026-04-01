@@ -319,11 +319,16 @@ class DataGuardian:
                 await session.commit()
 
                 # Check for stuck requested trips (no update for 30+ minutes)
+                # Exclude trips that have pending dispatch offers (still being matched)
                 result = await session.execute(text("""
-                    SELECT id, status, created_at
-                    FROM trips
-                    WHERE status = 'requested'
-                    AND created_at < NOW() - INTERVAL '30 minutes'
+                    SELECT t.id, t.status, t.created_at
+                    FROM trips t
+                    WHERE t.status = 'requested'
+                    AND t.created_at < NOW() - INTERVAL '30 minutes'
+                    AND NOT EXISTS (
+                        SELECT 1 FROM dispatch_offers d
+                        WHERE d.trip_id = t.id AND d.status = 'pending'
+                    )
                 """))
                 stuck = result.fetchall()
                 
@@ -338,6 +343,18 @@ class DataGuardian:
                         WHERE id = :trip_id
                     """), {"trip_id": trip_id})
                     self._trips_fixed += 1
+                    # Sync cancellation to Firestore so the rider app picks it up
+                    try:
+                        from config import _HAS_FIRESTORE, firestore_sync
+                        if _HAS_FIRESTORE:
+                            firestore_sync.sync_trip_status(
+                                trip_id=trip_id,
+                                status="cancelled",
+                                cancel_reason="timeout_no_driver",
+                                cancelled_by="system",
+                            )
+                    except Exception as fs_err:
+                        logger.error(f"Firestore sync for stuck trip {trip_id} failed: {fs_err}")
 
                 await session.commit()
                 self._trips_checked += len(orphaned) + len(stuck)

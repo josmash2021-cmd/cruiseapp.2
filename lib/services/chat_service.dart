@@ -57,6 +57,7 @@ class ChatService {
     return _db
         .ref('chats/$rideId/messages')
         .orderByChild('timestamp')
+        .limitToLast(200)
         .onValue
         .map((event) {
       if (event.snapshot.value == null) return <ChatMessage>[];

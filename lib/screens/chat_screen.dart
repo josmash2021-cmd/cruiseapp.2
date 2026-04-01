@@ -61,6 +61,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ── Typing ──
   Timer? _typingTimer;
+  String? _recipientPhone;
 
   // ── Auto-scroll tracking ──
   int _lastMsgCount = 0;
@@ -72,6 +73,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _initChat() async {
+    _recipientPhone = widget.recipientPhone?.trim();
+
     // Resolve user ID
     if (widget.currentUserId != null) {
       _myUserId = widget.currentUserId!;
@@ -86,6 +89,9 @@ class _ChatScreenState extends State<ChatScreen> {
       _useRtdb = true;
       // Mark existing messages as read when opening
       _chat.markAsRead(rideId: _rideId, readerRole: _myRole);
+      if ((_recipientPhone ?? '').isEmpty) {
+        unawaited(_resolveRecipientPhone());
+      }
     } else if (widget.isSupport) {
       _useRtdb = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -100,6 +106,25 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     if (mounted) setState(() {});
+  }
+
+  Future<void> _resolveRecipientPhone() async {
+    final tripId = widget.tripId;
+    if (tripId == null) return;
+    try {
+      final status = await ApiService.getDispatchStatus(tripId);
+      final trip = (status['trip'] is Map)
+          ? Map<String, dynamic>.from((status['trip'] as Map).cast<String, dynamic>())
+          : <String, dynamic>{};
+      final isDriver = _myRole == 'driver';
+      final resolved = (isDriver
+              ? (trip['rider_phone'] ?? trip['passengerPhone'] ?? trip['passenger_phone'])
+              : (trip['driver_phone'] ?? trip['driverPhone']))
+          ?.toString()
+          .trim();
+      if (!mounted || resolved == null || resolved.isEmpty) return;
+      setState(() => _recipientPhone = resolved);
+    } catch (_) {}
   }
 
   @override
@@ -186,12 +211,24 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _callRecipient() async {
     HapticFeedback.mediumImpact();
-    final phone = widget.recipientPhone;
-    if (phone != null && phone.isNotEmpty) {
-      final uri = Uri(scheme: 'tel', path: phone);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      }
+    if ((_recipientPhone ?? '').isEmpty) {
+      await _resolveRecipientPhone();
+    }
+    final phone = (_recipientPhone ?? '').replaceAll(RegExp(r'[^0-9+]'), '');
+    if (phone.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.of(context).driverContacted),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1200),
+        ),
+      );
+      return;
+    }
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -319,7 +356,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
           ),
-          if (!widget.isSupport && widget.recipientPhone != null)
+          if (!widget.isSupport)
             IconButton(
               onPressed: _callRecipient,
               icon: Icon(Icons.phone_rounded, color: _gold, size: 22),
@@ -335,10 +372,22 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildRtdbMessages(S s) {
     return StreamBuilder<List<ChatMessage>>(
       stream: _chat.messagesStream(_rideId),
+      initialData: const <ChatMessage>[],
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: _gold),
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                S.of(context).connectionIssueRetrying,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           );
         }
 

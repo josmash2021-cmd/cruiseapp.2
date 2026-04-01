@@ -78,13 +78,22 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       final methods = await ApiService.getRiderPaymentMethods();
       if (!mounted) return;
       setState(() {
-        _serverMethods = methods;
+        _serverMethods = methods
+            .where((m) => _isAllowedMethodType(m['method_type'] as String? ?? ''))
+            .toList();
         _loadingServer = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingServer = false);
     }
+  }
+
+  bool _isAllowedMethodType(String methodType) {
+    if (methodType == 'stripe_card' || methodType == 'paypal') return true;
+    if (Platform.isIOS) return methodType == 'apple_pay';
+    if (Platform.isAndroid) return methodType == 'google_pay';
+    return false;
   }
 
   Future<void> _deleteServerMethod(int id) async {

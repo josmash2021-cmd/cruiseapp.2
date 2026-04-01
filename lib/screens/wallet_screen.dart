@@ -1,15 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
-import '../services/analytics_service.dart';
 import 'payment_accounts_screen.dart';
-import 'add_bank_account_sheet.dart';
 
-/// WalletScreen - Shows balance, transactions, and top-up functionality.
+/// WalletScreen - Rider payment methods configured for trip payments.
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
 
@@ -21,43 +19,45 @@ class _WalletScreenState extends State<WalletScreen> {
   static const _gold = Color(0xFFE8C547);
 
   bool _loading = true;
-  double _balance = 0.0;
-  String _currency = 'USD';
-  List<Map<String, dynamic>> _transactions = [];
+  List<Map<String, dynamic>> _methods = [];
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _loadWalletData();
+    _loadMethods();
   }
 
-  Future<void> _loadWalletData() async {
+  Future<void> _loadMethods() async {
     if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final result = await ApiService.getWalletTransactions();
+      final methods = await ApiService.getRiderPaymentMethods();
       if (!mounted) return;
-      final txns = (result['transactions'] as List? ?? []);
       setState(() {
-        _balance = (result['balance'] as num?)?.toDouble() ?? 0.0;
-        _currency = result['currency'] as String? ?? 'USD';
-        _transactions = txns
-            .map((t) => Map<String, dynamic>.from(t as Map))
+        _methods = methods
+            .where((m) => _isAllowedMethodType(m['method_type'] as String? ?? ''))
             .toList();
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
-      debugPrint('[Wallet] load error: $e');
+      debugPrint('[Wallet] methods load error: $e');
       setState(() {
-        _error = 'Failed to load wallet';
+        _error = 'Failed to load payment methods';
         _loading = false;
       });
     }
+  }
+
+  bool _isAllowedMethodType(String methodType) {
+    if (methodType == 'stripe_card' || methodType == 'paypal') return true;
+    if (Platform.isIOS) return methodType == 'apple_pay';
+    if (Platform.isAndroid) return methodType == 'google_pay';
+    return false;
   }
 
   void _showSnack(String msg) {
@@ -71,99 +71,69 @@ class _WalletScreenState extends State<WalletScreen> {
       ));
   }
 
-  void _showTopUpDialog() {
-    double amount = 20.0;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => _TopUpSheet(
-        initialAmount: amount,
-        onTopUp: (selectedAmount) async {
-          Navigator.pop(ctx);
-          await _performTopUp(selectedAmount);
-        },
-      ),
+  Future<void> _openPaymentAccounts() async {
+    await Navigator.push(
+      context,
+      slideFromRightRoute(const PaymentAccountsScreen()),
     );
+    if (!mounted) return;
+    await _loadMethods();
   }
 
-  Future<void> _performTopUp(double amount) async {
-    HapticFeedback.mediumImpact();
-    _showSnack('Adding \$${amount.toStringAsFixed(2)} to wallet...');
-    try {
-      // Process payment via existing Stripe backend
-      final result = await ApiService.topUpWallet(amount: amount);
-      if (!mounted) return;
-      final status = result['status'] as String? ?? '';
-      if (status != 'success') {
-        _showSnack('Top-up failed. Please try again.');
-        return;
-      }
+  String _methodLabel(Map<String, dynamic> m) {
+    final display = (m['display_name'] as String?)?.trim() ?? '';
+    if (display.isNotEmpty) return display;
+    return _methodTypeLabel(m['method_type'] as String? ?? '');
+  }
 
-      _showSnack('Successfully added \$${amount.toStringAsFixed(2)}!');
-      AnalyticsService.instance.logEvent('wallet_top_up', parameters: {'amount': amount});
-      // Refresh balance + transactions from backend
-      await _loadWalletData();
-    } catch (e) {
-      _showSnack('Top-up failed. Please try again.');
+  String _methodTypeLabel(String methodType) {
+    switch (methodType) {
+      case 'stripe_card':
+        return 'Card';
+      case 'paypal':
+        return 'PayPal';
+      case 'google_pay':
+        return 'Google Pay';
+      case 'apple_pay':
+        return 'Apple Pay';
+      case 'bank_account':
+        return 'Bank account';
+      default:
+        return 'Payment method';
     }
   }
 
-  void _showCashOutDialog() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => _CashOutSheet(
-        availableBalance: _balance,
-        onCashOut: (amount, payoutMethodId) async {
-          Navigator.pop(ctx);
-          await _performCashOut(amount, payoutMethodId);
-        },
-        onAddPaymentMethod: _showAddBankAccountDialog,
-      ),
-    );
+  IconData _methodIcon(String methodType) {
+    switch (methodType) {
+      case 'stripe_card':
+        return Icons.credit_card_rounded;
+      case 'paypal':
+        return Icons.account_balance_wallet_rounded;
+      case 'google_pay':
+        return Icons.g_mobiledata_rounded;
+      case 'apple_pay':
+        return Icons.apple;
+      case 'bank_account':
+        return Icons.account_balance_rounded;
+      default:
+        return Icons.payment_rounded;
+    }
   }
 
-  void _showAddBankAccountDialog() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => AddBankAccountSheet(
-        onAdded: () async {
-          Navigator.pop(ctx);
-          _showSnack('Bank account added successfully!');
-          // Optionally trigger cashout flow
-          Future.delayed(const Duration(milliseconds: 300), () {
-            _showCashOutDialog();
-          });
-        },
-      ),
-    );
-  }
-
-  Future<void> _performCashOut(double amount, int payoutMethodId) async {
-    HapticFeedback.mediumImpact();
-    _showSnack('Processing withdrawal of \$${amount.toStringAsFixed(2)}...');
-    try {
-      final result = await ApiService.withdrawFromWallet(
-        amount: amount,
-        payoutMethodId: payoutMethodId,
-      );
-      if (!mounted) return;
-      final status = result['status'] as String? ?? '';
-      if (status != 'success') {
-        _showSnack('Withdrawal failed. Please try again.');
-        return;
-      }
-
-      _showSnack('✓ Cash out successful! Money will arrive in seconds.');
-      AnalyticsService.instance.logEvent('wallet_cashout', parameters: {'amount': amount});
-      // Refresh balance + transactions from backend
-      await _loadWalletData();
-    } catch (e) {
-      _showSnack('Withdrawal failed. Please try again.');
+  Color _methodColor(String methodType) {
+    switch (methodType) {
+      case 'stripe_card':
+        return const Color(0xFF2196F3);
+      case 'paypal':
+        return const Color(0xFF003087);
+      case 'google_pay':
+        return const Color(0xFF4285F4);
+      case 'apple_pay':
+        return Colors.white;
+      case 'bank_account':
+        return const Color(0xFF4CAF50);
+      default:
+        return const Color(0xFF9CA3AF);
     }
   }
 
@@ -200,7 +170,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   ),
                   const Spacer(),
                   GestureDetector(
-                    onTap: _loadWalletData,
+                    onTap: _loadMethods,
                     child: Icon(Icons.refresh_rounded, color: c.textPrimary, size: 22),
                   ),
                 ],
@@ -229,7 +199,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   ? const Center(child: CircularProgressIndicator(color: _gold))
                   : _error != null
                       ? _buildError()
-                      : _buildContent(c),
+                      : _buildContent(c, loc),
             ),
           ],
         ),
@@ -266,7 +236,7 @@ class _WalletScreenState extends State<WalletScreen> {
           Text(_error!, style: const TextStyle(color: Colors.white70)),
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed: _loadWalletData,
+            onPressed: _loadMethods,
             style: ElevatedButton.styleFrom(backgroundColor: _gold),
             child: const Text('Retry', style: TextStyle(color: Colors.black)),
           ),
@@ -275,193 +245,43 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  Widget _buildContent(AppColors c) {
+  Widget _buildContent(AppColors c, S loc) {
     return RefreshIndicator(
-      onRefresh: () async => _loadWalletData(),
+      onRefresh: () async => _loadMethods(),
       color: _gold,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          _buildBalanceCard(c),
-          const SizedBox(height: 24),
-          _buildQuickActions(c),
-          const SizedBox(height: 28),
-          _buildTransactionsHeader(c),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  loc.paymentMethods,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _openPaymentAccounts,
+                icon: const Icon(Icons.edit_rounded, size: 16),
+                label: const Text('Manage'),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
-          if (_transactions.isEmpty)
-            _buildEmptyTransactions(c)
+          if (_methods.isEmpty)
+            _buildEmptyMethods(c)
           else
-            ..._transactions.map((txn) => _buildTransactionItem(txn, c)),
+            ..._methods.map((m) => _buildMethodItem(m, c)),
         ],
       ),
     );
   }
 
-  Widget _buildBalanceCard(AppColors c) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF2A2D35), Color(0xFF1A1C22)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _gold.withValues(alpha: 0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: _gold.withValues(alpha: 0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Cruise Cash', style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              )),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _gold.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(_currency, style: const TextStyle(
-                  color: _gold,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                )),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('\$', style: TextStyle(
-                color: _gold,
-                fontSize: 28,
-                fontWeight: FontWeight.w600,
-              )),
-              Text(
-                _balance.toStringAsFixed(2),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 48,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text('Available Balance', style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.5),
-            fontSize: 13,
-          )),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickActions(AppColors c) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(child: _actionButton(
-              icon: Icons.add_rounded,
-              label: 'Top Up',
-              color: _gold,
-              onTap: _showTopUpDialog,
-            )),
-            const SizedBox(width: 12),
-            Expanded(child: _actionButton(
-              icon: Icons.credit_card_rounded,
-              label: 'Payment Methods',
-              color: c.textSecondary,
-              onTap: () => Navigator.push(
-                context,
-                slideFromRightRoute(const PaymentAccountsScreen()),
-              ),
-            )),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: _actionButton(
-              icon: Icons.send_rounded,
-              label: 'Cash Out',
-              color: const Color(0xFF4CAF50),
-              onTap: _showCashOutDialog,
-            )),
-            const SizedBox(width: 12),
-            Expanded(child: Container()),  // Spacer for alignment
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _actionButton({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap();
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 26),
-            const SizedBox(height: 8),
-            Text(label, style: TextStyle(
-              color: color,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            )),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTransactionsHeader(AppColors c) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text('Recent Activity', style: TextStyle(
-          color: c.textPrimary,
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-        )),
-        Text('${_transactions.length} transactions', style: TextStyle(
-          color: c.textTertiary,
-          fontSize: 12,
-        )),
-      ],
-    );
-  }
-
-  Widget _buildEmptyTransactions(AppColors c) {
+  Widget _buildEmptyMethods(AppColors c) {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
@@ -471,49 +291,49 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
       child: Column(
         children: [
-          Icon(Icons.receipt_long_rounded, size: 40, color: c.textTertiary),
+          Icon(Icons.credit_card_off_rounded, size: 40, color: c.textTertiary),
           const SizedBox(height: 12),
-          Text('No transactions yet', style: TextStyle(
+          Text('No payment methods configured', style: TextStyle(
             color: c.textSecondary,
             fontSize: 14,
           )),
           const SizedBox(height: 4),
-          Text('Top up your wallet to get started', style: TextStyle(
+          Text('Add at least one method to pay for rides', style: TextStyle(
             color: c.textTertiary,
             fontSize: 12,
           )),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: _openPaymentAccounts,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Add payment method'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _gold,
+              foregroundColor: Colors.black,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTransactionItem(Map<String, dynamic> txn, AppColors c) {
-    final rawAmount = (txn['amount'] as num?)?.toDouble() ?? 0.0;
-    final type = txn['type'] as String? ?? 'unknown';
-    final desc = txn['description'] as String? ?? type;
-    final status = txn['status'] as String? ?? 'completed';
-
-    final isCredit = type == 'topup' || type == 'refund' || type == 'promo';
-    final displayAmount = rawAmount.abs();
-    final icon = _getTransactionIcon(type);
-    final color = isCredit ? Colors.green : Colors.red;
-
-    String formattedDate = '';
-    // Backend returns 'created_at' (snake_case)
-    final createdAt = txn['created_at'] ?? txn['createdAt'];
-    if (createdAt is String && createdAt.isNotEmpty) {
-      try {
-        formattedDate = DateFormat('MMM d, h:mm a').format(DateTime.parse(createdAt).toLocal());
-      } catch (_) {}
-    }
+  Widget _buildMethodItem(Map<String, dynamic> method, AppColors c) {
+    final methodType = method['method_type'] as String? ?? '';
+    final isDefault = method['is_default'] == true;
+    final icon = _methodIcon(methodType);
+    final iconColor = _methodColor(methodType);
+    final label = _methodLabel(method);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: c.surface,
+        color: isDefault ? _gold.withValues(alpha: 0.08) : c.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: c.border),
+        border: Border.all(
+          color: isDefault ? _gold.withValues(alpha: 0.40) : c.border,
+          width: isDefault ? 1.5 : 1,
+        ),
       ),
       child: Row(
         children: [
@@ -521,516 +341,45 @@ class _WalletScreenState extends State<WalletScreen> {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
+              color: iconColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 20),
+            child: Icon(icon, color: iconColor, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(desc, style: TextStyle(
+                Text(label, style: TextStyle(
                   color: c.textPrimary,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 )),
-                if (formattedDate.isNotEmpty)
-                  Text(formattedDate, style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 11,
-                  )),
+                Text(
+                  _methodTypeLabel(methodType),
+                  style: TextStyle(color: c.textTertiary, fontSize: 11),
+                ),
               ],
             ),
           ),
-          Text(
-            '${isCredit ? '+' : '-'}\$${displayAmount.toStringAsFixed(2)}',
-            style: TextStyle(
-              color: color,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  IconData _getTransactionIcon(String type) {
-    switch (type) {
-      case 'topup':
-      case 'top-up':
-        return Icons.add_circle_outline_rounded;
-      case 'payment':
-      case 'ride-payment':
-        return Icons.local_taxi_rounded;
-      case 'refund':
-        return Icons.replay_rounded;
-      case 'promo':
-        return Icons.card_giftcard_rounded;
-      case 'withdrawal':
-        return Icons.arrow_downward_rounded;
-      default:
-        return Icons.swap_horiz_rounded;
-    }
-  }
-}
-
-/// Bottom sheet for top-up amount selection.
-class _TopUpSheet extends StatefulWidget {
-  final double initialAmount;
-  final Function(double) onTopUp;
-
-  const _TopUpSheet({
-    required this.initialAmount,
-    required this.onTopUp,
-  });
-
-  @override
-  State<_TopUpSheet> createState() => _TopUpSheetState();
-}
-
-class _TopUpSheetState extends State<_TopUpSheet> {
-  static const _gold = Color(0xFFE8C547);
-  static const _presetAmounts = [10.0, 20.0, 50.0, 100.0];
-
-  late double _selectedAmount;
-  final _customController = TextEditingController();
-  bool _isCustom = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedAmount = widget.initialAmount;
-  }
-
-  @override
-  void dispose() {
-    _customController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1A1C22),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Text('Add Cruise Cash', style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          )),
-          const SizedBox(height: 8),
-          Text('Choose an amount to add to your wallet', style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.5),
-            fontSize: 13,
-          )),
-          const SizedBox(height: 24),
-          // Preset amounts
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: _presetAmounts.map((amt) => _amountChip(amt)).toList(),
-          ),
-          const SizedBox(height: 16),
-          // Custom amount toggle
-          GestureDetector(
-            onTap: () => setState(() => _isCustom = !_isCustom),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  _isCustom ? Icons.check_circle_rounded : Icons.circle_outlined,
-                  color: _isCustom ? _gold : Colors.white30,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text('Custom amount', style: TextStyle(
-                  color: _isCustom ? _gold : Colors.white54,
-                  fontSize: 14,
-                )),
-              ],
-            ),
-          ),
-          if (_isCustom) ...[
-            const SizedBox(height: 16),
-            TextField(
-              controller: _customController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              style: const TextStyle(color: Colors.white, fontSize: 18),
-              decoration: InputDecoration(
-                hintText: 'Enter amount',
-                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-                prefixText: '\$ ',
-                prefixStyle: const TextStyle(color: _gold, fontSize: 18),
-                filled: true,
-                fillColor: const Color(0xFF23262F),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          if (isDefault)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _gold.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(8),
               ),
-              onChanged: (val) {
-                final parsed = double.tryParse(val);
-                if (parsed != null && parsed > 0) {
-                  setState(() => _selectedAmount = parsed);
-                }
-              },
-            ),
-          ],
-          const SizedBox(height: 28),
-          // Confirm button
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              onPressed: () {
-                HapticFeedback.mediumImpact();
-                widget.onTopUp(_selectedAmount);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              child: Text(
-                'Add \$${_selectedAmount.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  fontSize: 16,
+              child: const Text(
+                'Default',
+                style: TextStyle(
+                  color: _gold,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-          ),
-          SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 16),
         ],
-      ),
-    );
-  }
-
-  Widget _amountChip(double amount) {
-    final isSelected = !_isCustom && _selectedAmount == amount;
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        setState(() {
-          _selectedAmount = amount;
-          _isCustom = false;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? _gold : const Color(0xFF23262F),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected ? _gold : Colors.white.withValues(alpha: 0.1),
-          ),
-        ),
-        child: Text(
-          '\$${amount.toInt()}',
-          style: TextStyle(
-            color: isSelected ? Colors.black : Colors.white70,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Bottom sheet for cash-out (withdrawal) amount selection.
-class _CashOutSheet extends StatefulWidget {
-  final double availableBalance;
-  final Function(double, int) onCashOut;
-  final VoidCallback? onAddPaymentMethod;
-
-  const _CashOutSheet({
-    required this.availableBalance,
-    required this.onCashOut,
-    this.onAddPaymentMethod,
-  });
-
-  @override
-  State<_CashOutSheet> createState() => _CashOutSheetState();
-}
-
-class _CashOutSheetState extends State<_CashOutSheet> {
-  static const _gold = Color(0xFFE8C547);
-  static const _presetAmounts = [25.0, 50.0, 100.0, 250.0];
-  static const _minWithdrawal = 5.0;
-
-  late double _selectedAmount;
-  final _customController = TextEditingController();
-  bool _isCustom = false;
-  List<Map<String, dynamic>> _payoutMethods = [];
-  int? _selectedMethodId;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedAmount = _presetAmounts.first;
-    _loadPayoutMethods();
-  }
-
-  Future<void> _loadPayoutMethods() async {
-    try {
-      final methods = await ApiService.getWalletPayoutMethods();
-      if (mounted) {
-        setState(() {
-          _payoutMethods = methods;
-          _selectedMethodId = methods.isNotEmpty ? methods.first['id'] as int : null;
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load payout methods')),
-        );
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _customController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(28),
-          topRight: Radius.circular(28),
-        ),
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: _loading
-              ? const Center(child: CircularProgressIndicator(color: _gold))
-              : _payoutMethods.isEmpty
-                  ? Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(height: 20),
-                        Icon(Icons.credit_card_rounded, size: 48, color: Colors.white.withValues(alpha: 0.3)),
-                        const SizedBox(height: 16),
-                        Text('No payout methods', style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              widget.onAddPaymentMethod?.call();
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: c.border,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            ),
-                            child: const Text('Add Bank Account', style: TextStyle(color: Colors.white)),
-                          ),
-                        ),
-                      ],
-                    )
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Withdraw from Wallet', style: TextStyle(
-                          color: c.textPrimary,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                        )),
-                        const SizedBox(height: 20),
-                        // Payout method selector
-                        Text('Payout Method', style: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        )),
-                        const SizedBox(height: 8),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: c.cardBg,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: c.border),
-                          ),
-                          child: DropdownButton<int>(
-                            value: _selectedMethodId,
-                            isExpanded: true,
-                            underline: const SizedBox.shrink(),
-                            dropdownColor: c.surface,
-                            items: _payoutMethods.map((method) {
-                              final id = method['id'] as int;
-                              final name = method['display_name'] as String? ?? 'Unknown';
-                              return DropdownMenuItem(
-                                value: id,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Text(name, style: const TextStyle(color: Colors.white)),
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) setState(() => _selectedMethodId = val);
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        // Preset amounts
-                        Text('Amount', style: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        )),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 8,
-                          children: _presetAmounts.map((amt) {
-                            final isSelected = !_isCustom && (_selectedAmount - amt).abs() < 0.01;
-                            return GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _selectedAmount = amt;
-                                  _isCustom = false;
-                                  _customController.clear();
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: isSelected ? _gold.withValues(alpha: 0.2) : c.cardBg,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: isSelected ? _gold : c.border,
-                                    width: isSelected ? 2 : 1,
-                                  ),
-                                ),
-                                child: Text(
-                                  '\$${amt.toStringAsFixed(0)}',
-                                  style: TextStyle(
-                                    color: isSelected ? _gold : Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 16),
-                        // Custom amount
-                        TextField(
-                          controller: _customController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          style: const TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            hintText: 'Custom amount',
-                            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-                            prefixText: '\$ ',
-                            prefixStyle: const TextStyle(color: _gold, fontWeight: FontWeight.w700),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: c.border),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: _gold),
-                            ),
-                          ),
-                          onChanged: (val) {
-                            final amt = double.tryParse(val);
-                            if (amt != null && amt > 0) {
-                              setState(() {
-                                _selectedAmount = amt;
-                                _isCustom = true;
-                              });
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        // Info message
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _gold.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: _gold.withValues(alpha: 0.2)),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.info_rounded, color: _gold, size: 18),
-                              const SizedBox(width: 10),
-                              Expanded(child: Text(
-                                'Minimum: \$${_minWithdrawal.toStringAsFixed(2)} • Processing: 1-2 business days',
-                                style: TextStyle(color: _gold.withValues(alpha: 0.8), fontSize: 12),
-                              )),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        // Confirm button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: ElevatedButton(
-                            onPressed: _selectedAmount >= _minWithdrawal && _selectedMethodId != null
-                                ? () {
-                                    HapticFeedback.mediumImpact();
-                                    widget.onCashOut(_selectedAmount, _selectedMethodId!);
-                                  }
-                                : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _gold,
-                              disabledBackgroundColor: _gold.withValues(alpha: 0.5),
-                              foregroundColor: Colors.black,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            child: Text(
-                              'Withdraw \$${_selectedAmount.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                    ),
-        ),
       ),
     );
   }

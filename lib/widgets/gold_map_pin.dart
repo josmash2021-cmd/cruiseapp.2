@@ -189,7 +189,7 @@ void _drawLuxuryPin(
 
 /// Draws the icon inside the pin head with generous size.
 void _drawPinIcon(Canvas canvas, GoldPinIcon icon, double cx, double cy, double r) {
-  final iconSize = r * 1.25; // large so icons are clearly visible
+  final iconSize = r * 1.45; // large so icons are clearly visible
   final paint = Paint()..color = Colors.white..isAntiAlias = true;
   final shadowPaint = Paint()
     ..color = Colors.black.withValues(alpha: 0.20)
@@ -268,13 +268,13 @@ Future<Uint8List> renderGoldPinBytes({
   final key = '${effectiveIcon.name}_$isPickup';
   if (_pinCache.containsKey(key)) return _pinCache[key]!;
 
-  const double w = 80;
-  const double h = 68;    // match tipY so pin tip is at exact canvas bottom
+  const double w = 70;
+  const double h = 56;    // match tipY so pin tip is at exact canvas bottom
   const double cx = w / 2;
-  const double r = 26.0;
-  const double headCY = r + 6;
-  const double tipY = 68.0;
-  const double shadowY = 68.0;
+  const double r = 22.0;
+  const double headCY = r + 5;
+  const double tipY = 56.0;
+  const double shadowY = 56.0;
 
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));

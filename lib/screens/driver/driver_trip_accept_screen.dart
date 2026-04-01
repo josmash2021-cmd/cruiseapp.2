@@ -1343,13 +1343,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       _miniMapAnimDone = true;
       final cam = await ctrl.cameraForCoordinateBounds(
         bounds,
-        mapbox.MbxEdgeInsets(top: 24, left: 24, bottom: 34, right: 24),
+        mapbox.MbxEdgeInsets(top: 40, left: 36, bottom: 48, right: 36),
         prettBearing,
         55,
         null, null,
       );
       if (!mounted) return;
-      final targetZoom = ((cam.zoom ?? 13) + 0.3).clamp(11.5, 15.5);
+      final targetZoom = ((cam.zoom ?? 13) + 0.3).clamp(10.0, 15.5);
       ctrl.setCamera(mapbox.CameraOptions(
         center: cam.center, zoom: targetZoom, bearing: prettBearing, pitch: 55.0,
       ));
@@ -1396,13 +1396,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // STEP 1: Fit bounds at pitch 0 (top-down) so everything is visible flat
     final camFlat = await ctrl.cameraForCoordinateBounds(
       bounds,
-      mapbox.MbxEdgeInsets(top: 24, left: 24, bottom: 34, right: 24),
+      mapbox.MbxEdgeInsets(top: 40, left: 36, bottom: 48, right: 36),
       prettBearing,
       0, // pitch 0 for flat fit
       null, null,
     );
     if (!mounted) return;
-    final targetZoom = ((camFlat.zoom ?? 13) + 0.3).clamp(11.5, 15.5);
+    final targetZoom = ((camFlat.zoom ?? 13) + 0.3).clamp(10.0, 15.5);
     ctrl.setCamera(mapbox.CameraOptions(
       center: camFlat.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
     ));

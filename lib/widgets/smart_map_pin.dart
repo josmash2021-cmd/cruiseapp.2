@@ -93,7 +93,7 @@ class GoldenPinPainter {
   final bool isPickup;
 
   double get _width  => size;
-  double get _height => size * 1.30;
+  double get _height => size * 1.12;
 
   // ── Gold palette ──
   static const _goldLight = Color(0xFFF5DC7A);
@@ -105,8 +105,8 @@ class GoldenPinPainter {
     final cx = w / 2;
 
     // V2 crescent cup measurements
-    final r = w * 0.34;
-    final cupCY = w * 0.38;
+    final r = w * 0.30;
+    final cupCY = w * 0.34;
     final thick = r * 0.28;
     final tipY = _height - w * 0.01;
     final iconCY = cupCY;
@@ -216,7 +216,7 @@ class GoldenPinPainter {
   }
 
   void _drawIcon(Canvas canvas, IconData iconData, double cx, double cy, double r) {
-    final iconSize = r * 1.05;
+    final iconSize = r * 1.35;
     final tp = TextPainter(
       text: TextSpan(
         text: String.fromCharCode(iconData.codePoint),

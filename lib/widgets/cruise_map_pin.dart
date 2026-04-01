@@ -40,7 +40,7 @@ class _CruiseMapPinState extends State<CruiseMapPin>
   Widget build(BuildContext context) {
     final s = widget.size;
     final pinW = s;
-    final pinH = s * (78 / 72);
+    final pinH = s * (68 / 72);
     final avatarSize = s * (48 / 72);
     final avatarMarginTop = s * 0.16;
     final iconSize = s * (32 / 72); // larger icon
@@ -122,8 +122,8 @@ class _PinPainter extends CustomPainter {
     final cx = w / 2;
 
     // V2 crescent cup measurements
-    final r = w * 0.34;
-    final cupCY = w * 0.38;
+    final r = w * 0.30;
+    final cupCY = w * 0.34;
     final thick = r * 0.28;
     final tipY = h - w * 0.01;
     final iconCY = cupCY;

@@ -2940,20 +2940,32 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   //  ONLINE PANEL (draggable with GO OFFLINE)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _showOnlinePanel() {
-    final screenH = MediaQuery.of(context).size.height;
-    final botPad = MediaQuery.of(context).padding.bottom;
-    final minFrac = ((86 + botPad) / screenH).clamp(0.10, 0.20);
-    final isOpen = _panelSheetCtrl.isAttached &&
-        _panelSheetCtrl.size > (minFrac + 0.05);
-    _panelSheetCtrl.animateTo(
-      isOpen ? minFrac : 0.85,
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
-    );
-    _setState(() => _panelOpen = !isOpen);
+    _animatePanelTo(_panelOpen ? 0.0 : 1.0);
   }
 
-  Widget _draggablePanel(
+  void _animatePanelTo(double target) {
+    final from = _panelFrac;
+    final dist = (target - from).abs();
+    // Speed proportional to distance — minimum 180ms, max 400ms
+    final ms = (180 + dist * 220).round().clamp(180, 400);
+    _panelAnimCtrl?.dispose();
+    _panelAnimCtrl = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: ms),
+    );
+    _panelAnim = Tween<double>(begin: from, end: target).animate(
+      CurvedAnimation(parent: _panelAnimCtrl!, curve: Curves.easeOutCubic),
+    );
+    _panelAnim!.addListener(() {
+      _setState(() => _panelFrac = _panelAnim!.value);
+    });
+    _panelAnimCtrl!.forward().then((_) {
+      if (!mounted) return;
+      _setState(() => _panelOpen = target > 0.5);
+    });
+  }
+
+  Widget _floatingPanel(
     bool isDark,
     Color surface,
     Color textMuted,
@@ -2963,7 +2975,25 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   ) {
     final screenH = MediaQuery.of(context).size.height;
     final botPad = MediaQuery.of(context).padding.bottom;
-    final minFrac = ((86 + botPad) / screenH).clamp(0.10, 0.20);
+    final t = _panelFrac.clamp(0.0, 1.0);
+
+    // Collapsed pill height + expanded max height
+    const collapsedH = 60.0;
+    final expandedH = screenH * 0.55;
+    final currentH = collapsedH + (expandedH - collapsedH) * t;
+
+    // Margins: collapsed = 16 horizontal + 20 bottom; expanded = 0
+    final hMargin = 16.0 * (1.0 - t);
+    final bMargin = (20.0 + botPad) * (1.0 - t);
+
+    // Border radius: collapsed = 20 all; expanded = 24 top only
+    final radius = BorderRadius.only(
+      topLeft: const Radius.circular(24),
+      topRight: const Radius.circular(24),
+      bottomLeft: Radius.circular(20.0 * (1.0 - t)),
+      bottomRight: Radius.circular(20.0 * (1.0 - t)),
+    );
+
     final panelItemText = isDark
         ? Colors.white.withValues(alpha: 0.7)
         : Colors.black.withValues(alpha: 0.6);
@@ -2974,21 +3004,37 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.12);
 
-    return DraggableScrollableSheet(
-      controller: _panelSheetCtrl,
-      initialChildSize: minFrac,
-      minChildSize: minFrac,
-      maxChildSize: 0.85,
-      snap: true,
-      snapSizes: [minFrac, 0.55, 0.85],
-      builder: (ctx, scrollCtrl) {
-        return Container(
+    return Positioned(
+      bottom: bMargin,
+      left: hMargin,
+      right: hMargin,
+      height: currentH,
+      child: GestureDetector(
+        onVerticalDragUpdate: (d) {
+          // Finger controls: dragging up increases frac, down decreases
+          final delta = -d.delta.dy / (expandedH - collapsedH);
+          _setState(() {
+            _panelFrac = (_panelFrac + delta).clamp(0.0, 1.0);
+          });
+        },
+        onVerticalDragEnd: (d) {
+          // Velocity-aware snap: fast flick snaps immediately
+          final velocity = d.primaryVelocity ?? 0;
+          double target;
+          if (velocity < -300) {
+            target = 1.0; // fast swipe up → open
+          } else if (velocity > 300) {
+            target = 0.0; // fast swipe down → close
+          } else {
+            target = _panelFrac > 0.35 ? 1.0 : 0.0; // finger position snap
+          }
+          _animatePanelTo(target);
+        },
+        child: Container(
           decoration: BoxDecoration(
             color: surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(
-              top: BorderSide(color: _gold.withValues(alpha: 0.08)),
-            ),
+            borderRadius: radius,
+            border: Border.all(color: _gold.withValues(alpha: 0.08 + 0.04 * (1 - t))),
             boxShadow: [
               BoxShadow(
                 color: shadowC,
@@ -2997,10 +3043,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               ),
             ],
           ),
-          child: ListView(
-            controller: scrollCtrl,
-            padding: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: Column(
             children: [
+              // Progress bar
               ListenableBuilder(
                 listenable: _searchPulseVal,
                 builder: (_, __) => SizedBox(
@@ -3015,19 +3061,21 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               _handle(isDark),
+              // Arrow icon: up when collapsed, down when expanded
               Icon(
-                Icons.keyboard_arrow_up_rounded,
+                t > 0.5 ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_up_rounded,
                 color: textMuted.withValues(alpha: 0.5),
-                size: 18,
+                size: 16,
               ),
+              // Header row
               SizedBox(
-                height: 40,
+                height: 28,
                 child: Row(
                   children: [
                     const SizedBox(width: 16),
-                    Icon(Icons.tune_rounded, color: textMuted, size: 22),
+                    Icon(Icons.tune_rounded, color: textMuted, size: 20),
                     const Spacer(),
                     Text(
                       S.of(context).findingTrips,
@@ -3041,116 +3089,129 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     Icon(
                       Icons.format_list_bulleted_rounded,
                       color: textMuted,
-                      size: 22,
+                      size: 20,
                     ),
                     const SizedBox(width: 16),
                   ],
                 ),
               ),
-
-              const SizedBox(height: 12),
-              Divider(height: 1, color: borderC),
-              const SizedBox(height: 12),
-              const SizedBox(height: 16),
-              Divider(height: 1, color: borderC),
-              const SizedBox(height: 16),
-              Center(
-                child: Text(
-                  S.of(context).recommendedForYou,
-                  style: TextStyle(
-                    color: textPrimary,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              _panelItem(
-                Icons.bar_chart_rounded,
-                S.of(context).seeEarningsTrends,
-                panelItemIcon,
-                panelItemText,
-                panelItemChevron,
-                () {
-                  Navigator.push(
-                    context,
-                    slideFromRightRoute(const DriverEarningsScreen()),
-                  );
-                },
-              ),
-              _panelItem(
-                Icons.star_outline_rounded,
-                S.of(context).seeUpcomingPromotions,
-                panelItemIcon,
-                panelItemText,
-                panelItemChevron,
-                () {
-                  Navigator.push(
-                    context,
-                    slideFromRightRoute(const DriverPromosScreen()),
-                  );
-                },
-              ),
-              _panelItem(
-                Icons.access_time_rounded,
-                S.of(context).seeDrivingTime,
-                panelItemIcon,
-                panelItemText,
-                panelItemChevron,
-                () {
-                  Navigator.push(
-                    context,
-                    slideFromRightRoute(const DriverAnalyticsScreen()),
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              // GO OFFLINE button
-              Center(
-                child: GestureDetector(
-                  onTap: _goOffline,
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 62,
-                        height: 62,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(
-                            0xFFCC3333,
-                          ).withValues(alpha: 0.15),
-                          border: Border.all(
-                            color: const Color(
-                              0xFFCC3333,
-                            ).withValues(alpha: 0.3),
-                            width: 2,
+              // Expanded content fades in
+              if (t > 0.05)
+                Expanded(
+                  child: Opacity(
+                    opacity: t.clamp(0.0, 1.0),
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      physics: t > 0.8
+                          ? const ClampingScrollPhysics()
+                          : const NeverScrollableScrollPhysics(),
+                      children: [
+                        const SizedBox(height: 12),
+                        Divider(height: 1, color: borderC),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: Text(
+                            S.of(context).recommendedForYou,
+                            style: TextStyle(
+                              color: textPrimary,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
-                        child: const Icon(
-                          Icons.pan_tool_rounded,
-                          color: Color(0xFFCC3333),
-                          size: 26,
+                        const SizedBox(height: 16),
+                        _panelItem(
+                          Icons.bar_chart_rounded,
+                          S.of(context).seeEarningsTrends,
+                          panelItemIcon,
+                          panelItemText,
+                          panelItemChevron,
+                          () {
+                            Navigator.push(
+                              context,
+                              slideFromRightRoute(const DriverEarningsScreen()),
+                            );
+                          },
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        S.of(context).goOffline.toUpperCase(),
-                        style: const TextStyle(
-                          color: Color(0xFFCC3333),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                        _panelItem(
+                          Icons.star_outline_rounded,
+                          S.of(context).seeUpcomingPromotions,
+                          panelItemIcon,
+                          panelItemText,
+                          panelItemChevron,
+                          () {
+                            Navigator.push(
+                              context,
+                              slideFromRightRoute(const DriverPromosScreen()),
+                            );
+                          },
                         ),
-                      ),
-                    ],
+                        _panelItem(
+                          Icons.access_time_rounded,
+                          S.of(context).seeDrivingTime,
+                          panelItemIcon,
+                          panelItemText,
+                          panelItemChevron,
+                          () {
+                            Navigator.push(
+                              context,
+                              slideFromRightRoute(const DriverAnalyticsScreen()),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 20),
+                        // GO OFFLINE button
+                        Center(
+                          child: GestureDetector(
+                            onTap: _goOffline,
+                            child: Column(
+                              children: [
+                                Container(
+                                  width: 62,
+                                  height: 62,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: const Color(
+                                      0xFFCC3333,
+                                    ).withValues(alpha: 0.15),
+                                    border: Border.all(
+                                      color: const Color(
+                                        0xFFCC3333,
+                                      ).withValues(alpha: 0.3),
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.pan_tool_rounded,
+                                    color: Color(0xFFCC3333),
+                                    size: 26,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  S.of(context).goOffline.toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Color(0xFFCC3333),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        SizedBox(height: botPad),
+                      ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(height: MediaQuery.of(context).padding.bottom),
+                )
+              else
+                const Spacer(),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 

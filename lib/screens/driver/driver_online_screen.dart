@@ -273,7 +273,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // â”€â”€ Draggable panel â”€â”€
   bool _panelOpen = false;
-  final _panelSheetCtrl = DraggableScrollableController();
+  double _panelFrac = 0.0; // 0 = collapsed pill, 1 = fully expanded
+  AnimationController? _panelAnimCtrl;
+  Animation<double>? _panelAnim;
 
   // ── Finding trips bar visibility ──
   bool _hideFindingBar = false;
@@ -387,7 +389,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _posStream?.cancel();
     _gpsService.stopTracking();
     _reFollowTimer?.cancel();
-    _panelSheetCtrl.dispose();
+    _panelAnimCtrl?.dispose();
     _offerPageCtrl.dispose();
     _routePulseCtrl?.dispose();
     _pulseCtrl?.dispose();
@@ -885,13 +887,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     duration: const Duration(milliseconds: 300),
                     child: IgnorePointer(
                       ignoring: _pendingOffers.isNotEmpty,
-                      child: _draggablePanel(
-                        isDark,
-                        surface,
-                        textMuted,
-                        borderC,
-                        textPrimary,
-                        shadowC,
+                      child: Stack(
+                        children: [
+                          _floatingPanel(
+                            isDark,
+                            surface,
+                            textMuted,
+                            borderC,
+                            textPrimary,
+                            shadowC,
+                          ),
+                        ],
                       ),
                     ),
                   ),

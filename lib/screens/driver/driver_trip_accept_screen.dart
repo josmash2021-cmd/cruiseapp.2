@@ -1368,9 +1368,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     if (_routePoints.length < 2) return;
 
-    // Cap route endpoints to exact pin positions so polyline meets the pins
-    _routePoints[0] = widget.pickupLatLng;
-    _routePoints[_routePoints.length - 1] = widget.dropoffLatLng;
+    // Do NOT force raw pin coordinates — Mapbox Directions API already
+    // snaps start/end to the nearest road. Replacing them with the user's
+    // raw coordinates creates off-road straight-line segments.
 
     // Include driver position + pickup + dropoff + route in bounds so everything is visible.
     final allPoints = [
@@ -1657,14 +1657,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         }
       }
     } catch (_) {}
-    // Straight line fallback
-    return List.generate(21, (i) {
-      final t = i / 20;
-      return LatLng(
-        o.latitude  + (d.latitude  - o.latitude)  * t,
-        o.longitude + (d.longitude - o.longitude) * t,
-      );
-    });
+    // Last resort: just 2 endpoints (map will draw a straight line,
+    // but at least it won't create fake waypoints through buildings)
+    return [o, d];
   }
 
   /// Smooth 60fps 4-layer gold gloss route draw using Ticker + easeInOutSine

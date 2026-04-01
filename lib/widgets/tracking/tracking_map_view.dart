@@ -505,9 +505,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (tripRoute.isEmpty) {
       tripRoute = [widget.pickupLatLng, widget.dropoffLatLng];
     }
-    // Force endpoints to exact pin coordinates
-    tripRoute[0] = widget.pickupLatLng;
-    tripRoute[tripRoute.length - 1] = widget.dropoffLatLng;
+    // Do NOT force raw pin coordinates — Mapbox Directions API already
+    // snaps start/end to the nearest road. Replacing them with the user's
+    // raw tap coordinates creates off-road straight-line segments.
 
     // 2) Set up route — driver position comes from Firestore in real time
     _pickupIdx = 0;

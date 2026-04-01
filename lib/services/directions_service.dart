@@ -497,8 +497,8 @@ class DirectionsService {
 
     if (valid.length < 3) return valid;
 
-    // Step 2: remove outlier points that jump far from both neighbors
-    // (likely coordinate glitches that cause route to go off-road)
+    // Step 2: remove extreme outlier points (>5km from both neighbors)
+    // Only filter truly broken coordinates, not legitimate highway waypoints
     final cleaned = <LatLng>[valid.first];
     for (int i = 1; i < valid.length - 1; i++) {
       final prev = valid[i - 1];
@@ -507,9 +507,9 @@ class DirectionsService {
       final dPrev = _haversineMeters(prev, curr);
       final dNext = _haversineMeters(curr, next);
       final dDirect = _haversineMeters(prev, next);
-      // If point is >500m from both neighbors AND removing it shortens the path
-      // significantly, it's likely an outlier
-      if (dPrev > 500 && dNext > 500 && dDirect < (dPrev + dNext) * 0.3) {
+      // Only filter if point is >5km from both neighbors AND removing it
+      // shortens the path by >70% — a clear coordinate glitch
+      if (dPrev > 5000 && dNext > 5000 && dDirect < (dPrev + dNext) * 0.15) {
         debugPrint('[Route] Filtered outlier point: $curr (dPrev=${dPrev.toInt()}m dNext=${dNext.toInt()}m)');
         continue;
       }
@@ -656,15 +656,9 @@ class DirectionsService {
     final estimatedSeconds = ((distanceMeters / 13.4) * 1.2).toInt();
     final durationText = _durationTextFromSeconds(estimatedSeconds);
     
-    // Create a simple straight line with 10 interpolated points for smooth animation
-    final points = <LatLng>[];
-    const segments = 10;
-    for (var i = 0; i <= segments; i++) {
-      final t = i / segments;
-      final lat = origin.latitude + (destination.latitude - origin.latitude) * t;
-      final lng = origin.longitude + (destination.longitude - origin.longitude) * t;
-      points.add(LatLng(lat, lng));
-    }
+    // Just 2 endpoints — the UI will draw a straight line between them.
+    // This is only a temporary placeholder until the real route loads.
+    final points = <LatLng>[origin, destination];
     
     debugPrint('[Route] Generated estimated route: $distanceText, $durationText (${points.length} points)');
     

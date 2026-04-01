@@ -619,33 +619,9 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// Mapbox Directions returns road-snapped coordinates that may differ from the
   /// raw geocoded pin positions, causing a visible gap between pin and route.
   List<LatLng> _capRouteEndpoints(List<LatLng> pts) {
-    if (pts.length < 2) return pts;
-    final s = _ctrl.state;
-    // Prepend/append exact pin positions so the polyline connects to
-    // the pin without replacing road-snapped coordinates (avoids the
-    // line jumping off-road when geocode differs from road snap).
-    if (s.pickup != null) {
-      final pin = LatLng(s.pickup!.lat, s.pickup!.lng);
-      final first = pts.first;
-      final dLat = (pin.latitude - first.latitude).abs();
-      final dLng = (pin.longitude - first.longitude).abs();
-      if (dLat > 0.00005 || dLng > 0.00005) {
-        pts.insert(0, pin);
-      } else {
-        pts[0] = pin;
-      }
-    }
-    if (s.dropoff != null) {
-      final pin = LatLng(s.dropoff!.lat, s.dropoff!.lng);
-      final last = pts.last;
-      final dLat = (pin.latitude - last.latitude).abs();
-      final dLng = (pin.longitude - last.longitude).abs();
-      if (dLat > 0.00005 || dLng > 0.00005) {
-        pts.add(pin);
-      } else {
-        pts[pts.length - 1] = pin;
-      }
-    }
+    // Return road-snapped route as-is from Mapbox Directions API.
+    // Do NOT prepend/append raw pin coords — they may be off the road
+    // and create visible straight-line segments.
     return pts;
   }
 

@@ -438,9 +438,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
   }
 
+  /// Whether the confirm-pickup overlay is currently pushed.
+  bool _confirmPickupShown = false;
+
   /// Show the rider confirmation pickup overlay when driver has arrived.
   void _showRiderConfirmPickup() {
-    if (!mounted) return;
+    if (!mounted || _confirmPickupShown) return;
+    _confirmPickupShown = true;
     final vehicleDesc =
         '${widget.vehicleColor} ${widget.vehicleMake} ${widget.vehicleModel}'.trim();
     Navigator.of(context).push(
@@ -452,6 +456,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           firestoreTripId: widget.firestoreTripId,
           tripId: widget.tripId,
           onConfirmed: () {
+            _confirmPickupShown = false;
             if (mounted) Navigator.of(context).pop();
           },
         ),

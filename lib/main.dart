@@ -16,6 +16,7 @@ import 'config/app_theme.dart';
 import 'config/theme_notifier.dart';
 import 'state/accessibility_notifier.dart';
 import 'screens/splash_screen.dart';
+import 'screens/driver/driver_online_screen.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
 import 'services/security_service.dart';
@@ -40,6 +41,26 @@ final accessibilityNotifier = AccessibilityNotifier();
 
 /// M2: Global navigator key for imperative navigation (auto-logout on 401).
 final _navigatorKey = GlobalKey<NavigatorState>();
+
+/// Navigate to DriverOnlineScreen when driver taps a "new_offer" FCM notification.
+void _handleDriverRideOffer(RemoteMessage message) {
+  if ((message.data['type'] as String? ?? '') != 'new_offer') return;
+  UserSession.getMode().then((mode) {
+    if (mode != 'driver') return;
+    final nav = _navigatorKey.currentState;
+    if (nav == null) return;
+    nav.push(PageRouteBuilder(
+      opaque: false,
+      pageBuilder: (_, __, ___) => const DriverOnlineScreen(),
+      transitionDuration: const Duration(milliseconds: 280),
+      reverseTransitionDuration: const Duration(milliseconds: 220),
+      transitionsBuilder: (_, anim, __, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+        child: child,
+      ),
+    ));
+  });
+}
 
 void main() async {
   // Catch all unhandled async Dart errors
@@ -210,6 +231,14 @@ Future<void> heavyInit() async {
               message: body,
               type: type,
             );
+          });
+          // Handle notification tap when app is backgrounded
+          FirebaseMessaging.onMessageOpenedApp.listen(_handleDriverRideOffer);
+          // Handle notification tap when app was fully terminated
+          FirebaseMessaging.instance.getInitialMessage().then((msg) {
+            if (msg != null) {
+              Future.delayed(const Duration(seconds: 4), () => _handleDriverRideOffer(msg));
+            }
           });
         } catch (e) {
           debugPrint('[FCM] init error: $e');

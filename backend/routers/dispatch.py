@@ -255,8 +255,8 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             rider_name = f"{user.first_name} {user.last_name}"
             _send_fcm_push(
                 assigned.fcm_token,
-                title="🚗 New Ride Request",
-                body=f"{rider_name} • {(trip.pickup_address or '')[:50]}",
+                title="🚗 New Ride Offer",
+                body=f"{rider_name} — {(trip.pickup_address or '')[:50]}",
                 data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
             )
         return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": offer.id, "dispatched_to": assigned.id}
@@ -578,8 +578,8 @@ async def reject_offer(
             if next_driver.fcm_token:
                 _send_fcm_push(
                     next_driver.fcm_token,
-                    title="🚗 New Ride Request",
-                    body=f"{rider_name} • {(trip.pickup_address or '')[:50]}",
+                    title="🚗 New Ride Offer",
+                    body=f"{rider_name} — {(trip.pickup_address or '')[:50]}",
                     data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(new_offer.id)},
                 )
 

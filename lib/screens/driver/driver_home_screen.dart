@@ -53,7 +53,7 @@ class DriverHomeScreen extends StatefulWidget {
 }
 
 class _DriverHomeScreenState extends State<DriverHomeScreen>
-    with TickerProviderStateMixin, VelocityAwarePanelMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver, VelocityAwarePanelMixin {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
   // ignore: unused_field
@@ -174,6 +174,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _refreshActiveTripStatus();
     _registerFcmToken();
 
+    // Observe lifecycle — restart polling when app returns from background
+    WidgetsBinding.instance.addObserver(this);
+
+    // Restore online state persisted from last session
+    SharedPreferences.getInstance().then((prefs) {
+      if (!mounted) return;
+      final wasOnline = prefs.getBool('driver_was_online') ?? false;
+      if (wasOnline && !_isStillOnline) {
+        setState(() => _isStillOnline = true);
+        _startTripPolling();
+      }
+    });
+
     // Periodic stats refresh (every 30s) for real-time chips
     _statsRefreshTimer = Timer.periodic(
       const Duration(seconds: 30),
@@ -222,7 +235,23 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _statsRefreshTimer?.cancel();
     UserSession.photoNotifier.removeListener(_onPhotoUpdated);
     UserSession.photoUrlNotifier.removeListener(_onPhotoUpdated);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _isStillOnline && mounted) {
+      // App returned from background — refresh trip status then restart polling
+      _refreshActiveTripStatus().then((_) {
+        if (!mounted) return;
+        if (_activeTripData != null) {
+          // Active trip exists — the REANUDAR button will handle navigation
+          return;
+        }
+        _startTripPolling();
+      });
+    }
   }
 
   Future<void> _updateMyLocAnnotation() async {
@@ -519,6 +548,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!mounted) return;
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
+    SharedPreferences.getInstance().then((p) => p.setBool('driver_was_online', stillOnline));
     if (stillOnline) {
       _startTripPolling();
     } else {
@@ -597,6 +627,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!mounted) return;
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
+    SharedPreferences.getInstance().then((p) => p.setBool('driver_was_online', stillOnline));
     if (stillOnline) {
       _startTripPolling();
     } else {

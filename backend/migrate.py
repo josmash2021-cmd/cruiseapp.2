@@ -124,7 +124,6 @@ TZ_UPGRADES = [
     ("action_requests", "created_at"),
     ("driver_incentives", "created_at"),
     ("referrals", "created_at"),
-    ("audit_log", "ts"),
 ]
 
 async def run():

@@ -16,6 +16,7 @@ class RideOffer {
   final double riderRating;
   final DateTime? createdAt;
   final int offerTimeoutSeconds;
+  final int? riderId;
 
   const RideOffer({
     required this.offerId,
@@ -32,6 +33,7 @@ class RideOffer {
     this.riderRating = 5.0,
     this.createdAt,
     this.offerTimeoutSeconds = 20,
+    this.riderId,
   });
 
   /// Seconds remaining before this offer expires (0 if already expired).
@@ -79,6 +81,8 @@ class RideOffer {
           ? DateTime.tryParse(json['created_at'].toString())
           : null,
       offerTimeoutSeconds: (json['offer_timeout_seconds'] as num?)?.toInt() ?? 20,
+      riderId: (json['rider_id'] as num?)?.toInt() ??
+               (json['riderId'] as num?)?.toInt(),
     );
   }
 }

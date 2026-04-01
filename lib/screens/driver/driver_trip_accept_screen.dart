@@ -66,11 +66,13 @@ class DriverTripAcceptScreen extends StatefulWidget {
     this.arrivedAtPickup = false,
     this.rideStarted = false,
     this.tripAlreadyStarted = false,
+    this.riderId,
   });
 
   final int tripId;
   final String riderName;
   final String riderPhotoUrl;
+  final int? riderId;
   final double riderRating;
   final LatLng pickupLatLng;
   final LatLng dropoffLatLng;
@@ -593,6 +595,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       photoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl),
       radius: Responsive.w(33),
       fallbackName: widget.riderName,
+      uid: widget.riderId?.toString(),
+      role: 'rider',
       isVerified: true,
     );
   }

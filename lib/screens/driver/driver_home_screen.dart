@@ -1545,6 +1545,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final arrivedAtPickup = (status == 'arrived' || status == 'driver_arrived');
     final rideStarted = (status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard');
 
+    // Extract rider SQL integer ID from passengerId ("sql_123" → 123)
+    final passengerIdRaw = _pickString(trip, ['passengerId', 'passenger_id']);
+    final resumeRiderId = int.tryParse(passengerIdRaw.replaceFirst('sql_', ''));
+
     await Navigator.of(context).push(
       slideFromRightRoute(
         DriverTripAcceptScreen(
@@ -1554,6 +1558,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             _pickString(trip, ['riderPhotoUrl', 'rider_photo_url', 'passengerPhotoUrl', 'passenger_photo_url']),
           ),
           riderRating: _pickDouble(trip, ['riderRating', 'rider_rating']) ?? 4.8,
+          riderId: resumeRiderId,
           pickupLatLng: pickup,
           dropoffLatLng: dropoff,
           pickupAddress: pickupAddress,

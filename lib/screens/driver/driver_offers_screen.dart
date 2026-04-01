@@ -257,6 +257,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
           riderName: accepted.riderName,
           riderPhotoUrl: accepted.riderPhotoUrl,
           riderRating: accepted.riderRating,
+          riderId: offer.riderId,
           pickupLatLng: accepted.pickupLatLng,
           dropoffLatLng: accepted.dropoffLatLng,
           pickupAddress: accepted.pickupAddress.isNotEmpty

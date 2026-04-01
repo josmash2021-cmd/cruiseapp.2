@@ -1,8 +1,6 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 
-/// Cruise-branded map pin: golden teardrop shape with a person avatar at top.
-/// The gradient runs from dark navy at the top to gold at the tip.
+/// Cruise-branded map pin: golden crescent cup with icon floating above.
 /// Bounces gently while shown. Used as the fixed center overlay on the map picker.
 class CruiseMapPin extends StatefulWidget {
   final double size; // pin width; height is derived proportionally
@@ -85,24 +83,14 @@ class _CruiseMapPinState extends State<CruiseMapPin>
               child: Stack(
                 alignment: Alignment.topCenter,
                 children: [
-                  // Luxury gold teardrop
+                  // Crescent cup shape
                   CustomPaint(
                     size: Size(pinW, pinH),
                     painter: _PinPainter(),
                   ),
-                  // Icon circle (glass overlay)
-                  Container(
-                    width: avatarSize,
-                    height: avatarSize,
-                    margin: EdgeInsets.only(top: avatarMarginTop),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.18),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.50),
-                        width: 1.5,
-                      ),
-                    ),
+                  // Icon (no circle border — floats above crescent)
+                  Padding(
+                    padding: EdgeInsets.only(top: avatarMarginTop),
                     child: Icon(
                       widget.icon,
                       color: Colors.white,
@@ -130,67 +118,60 @@ class _PinPainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
     final cx = w / 2;
-    final r = w / 2;
+    final r = w * 0.42;
+    final headCY = r + w * 0.08;
+    final iconCY = headCY - r * 0.10;
 
-    // Teardrop path
-    final path = Path()
-      ..moveTo(cx, h)
-      ..quadraticBezierTo(0, r + (h - r) * 0.35, 0, r)
-      ..arcTo(Rect.fromLTWH(0, 0, w, w), pi, -pi, false)
-      ..quadraticBezierTo(w, r + (h - r) * 0.35, cx, h)
-      ..close();
-
-    // ── 1. Drop shadow behind pin ──
-    canvas.drawPath(
-      path.shift(const Offset(0, 4)),
+    // ── 1. White fade glow behind icon ──
+    canvas.drawCircle(
+      Offset(cx, iconCY),
+      r * 0.85,
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.22)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+        ..shader = RadialGradient(
+          colors: [
+            Colors.white.withValues(alpha: 0.30),
+            Colors.white.withValues(alpha: 0.07),
+            Colors.transparent,
+          ],
+          stops: const [0.0, 0.50, 1.0],
+        ).createShader(
+          Rect.fromCircle(center: Offset(cx, iconCY), radius: r * 0.85),
+        ),
     );
 
-    // ── 2. Luxury gold gradient fill ──
+    // ── 2. Golden crescent cup ──
+    final openY = headCY + r * 0.15;
+    final halfW = r * 0.88;
+    final cupPath = Path()
+      ..moveTo(cx - halfW, openY)
+      ..cubicTo(
+        cx - halfW * 1.12, openY + (h - openY) * 0.52,
+        cx - r * 0.10, h - (h - openY) * 0.10,
+        cx, h,
+      )
+      ..cubicTo(
+        cx + r * 0.10, h - (h - openY) * 0.10,
+        cx + halfW * 1.12, openY + (h - openY) * 0.52,
+        cx + halfW, openY,
+      )
+      ..quadraticBezierTo(
+        cx, openY - r * 0.30,
+        cx - halfW, openY,
+      );
+
     canvas.drawPath(
-      path,
+      cupPath,
       Paint()
         ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: const [
-            Color(0xFFFFF8DC), // goldLight
-            Color(0xFFE8C547), // goldMid
-            Color(0xFFB8860B), // goldDeep
+            Color(0xFFFFF8DC),
+            Color(0xFFE8C547),
+            Color(0xFFB8860B),
           ],
           stops: const [0.0, 0.45, 1.0],
-        ).createShader(Rect.fromLTWH(0, 0, w, h)),
-    );
-
-    // ── 3. Glass sheen — white oval highlight top-left ──
-    canvas.save();
-    canvas.clipPath(path);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(cx - r * 0.25, r * 0.55),
-        width: r * 0.85,
-        height: r * 0.55,
-      ),
-      Paint()
-        ..color = const Color(0x66FFFFFF)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-    );
-    canvas.drawCircle(
-      Offset(cx - r * 0.30, r * 0.38),
-      r * 0.13,
-      Paint()..color = Colors.white.withValues(alpha: 0.85),
-    );
-    canvas.restore();
-
-    // ── 4. Thin bright border ──
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..color = Colors.white.withValues(alpha: 0.35),
+        ).createShader(Rect.fromLTWH(0, openY, w, h - openY)),
     );
   }
 

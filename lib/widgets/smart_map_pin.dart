@@ -109,116 +109,65 @@ class GoldenPinPainter {
     final r      = _r;
     final headCY = _headCY;
     final tipY   = _tipY;
+    final iconCY = headCY - r * 0.10;
 
-    // ── 0. Torch-like glow (head aura + grounded hotspot) ──
+    // ── 1. White fade glow behind icon ──
     canvas.drawCircle(
-      Offset(cx, headCY + r * 0.04),
-      r * 1.05,
+      Offset(cx, iconCY),
+      r * 0.85,
       Paint()
         ..shader = ui.Gradient.radial(
-          Offset(cx, headCY + r * 0.04),
-          r * 1.05,
+          Offset(cx, iconCY),
+          r * 0.85,
           [
-            const Color(0x55FFE88A),
-            const Color(0x22D4A520),
+            Colors.white.withValues(alpha: 0.30),
+            Colors.white.withValues(alpha: 0.07),
             Colors.transparent,
           ],
-          const [0.0, 0.55, 1.0],
-        ),
-    );
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(cx, tipY - 1.5),
-        width: r * 1.10,
-        height: r * 0.26,
-      ),
-      Paint()
-        ..shader = ui.Gradient.radial(
-          Offset(cx, tipY - 1.5),
-          r * 0.62,
-          [
-            const Color(0x55FFD86A),
-            const Color(0x24C58B1A),
-            Colors.transparent,
-          ],
-          const [0.0, 0.62, 1.0],
-        ),
-    );
-
-    // ── 1. Golden tail (cone shape) ──
-    final tailPath = _buildTail(cx, headCY, r, tipY);
-
-    // Gold gradient fill
-    canvas.drawPath(
-      tailPath,
-      Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(cx, headCY + r * 0.2),
-          Offset(cx, tipY),
-          [_goldLight, _goldMid, _goldDeep],
           [0.0, 0.50, 1.0],
         ),
     );
 
-    // ── 2. Full golden ring around circle ──
-    final arcRect = Rect.fromCircle(center: Offset(cx, headCY), radius: r);
-    canvas.drawArc(
-      arcRect,
-      0,
-      math.pi * 2,     // full 360°
-      false,
+    // ── 2. Golden crescent cup (open top, V-point bottom) ──
+    final cupPath = _buildCrescent(cx, headCY, r, tipY);
+    canvas.drawPath(
+      cupPath,
       Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.6
-        ..strokeCap = StrokeCap.round
-        ..shader = ui.Gradient.sweep(
-          Offset(cx, headCY),
-          [
-            const Color(0xAAFFE4A0),
-            const Color(0xFFD4AF37),
-            const Color(0xFFA07810),
-            const Color(0xFFD4AF37),
-            const Color(0xAAFFE4A0),
-          ],
-          [0.0, 0.25, 0.5, 0.75, 1.0],
+        ..shader = ui.Gradient.linear(
+          Offset(cx, headCY + r * 0.15),
+          Offset(cx, tipY),
+          [_goldLight, _goldMid, _goldDeep],
+          [0.0, 0.45, 1.0],
         ),
     );
 
     // ── 3. White icon ──
-    _drawIcon(canvas, icon, cx, headCY, r);
+    _drawIcon(canvas, icon, cx, iconCY, r);
   }
 
-  /// Tail shape: needle-like sharp teardrop from circle bottom.
-  Path _buildTail(double cx, double headCY, double r, double tipY) {
-    const spread = 0.55;
-    final rx = cx + r * math.sin(spread);
-    final ry = headCY + r * math.cos(spread);
-    final lx = cx - r * math.sin(spread);
-    final ly = ry;
-    // Keep control points very tight near the apex for a clearly pointed tip.
-    final tipW = r * 0.02;
+  /// Crescent cup shape: open at top, golden V tapering to point at bottom.
+  Path _buildCrescent(double cx, double headCY, double r, double tipY) {
+    final openY = headCY + r * 0.15;
+    final halfW = r * 0.88;
     return Path()
-      ..moveTo(cx, tipY)
-      // Right side: sharp apex to right edge of circle.
+      ..moveTo(cx - halfW, openY)
+      // Left outer curve → V tip
       ..cubicTo(
-        cx + tipW, tipY - (tipY - ry) * 0.02,
-        rx - r * 0.01, ry + (tipY - ry) * 0.18,
-        rx, ry,
-      )
-      // Short arc across bottom of circle (connects right to left)
-      ..arcToPoint(
-        Offset(lx, ly),
-        radius: Radius.circular(r),
-        clockwise: false,
-        largeArc: false,
-      )
-      // Left side: left edge of circle returns to a sharp apex.
-      ..cubicTo(
-        lx + r * 0.01, ly + (tipY - ly) * 0.18,
-        cx - tipW, tipY - (tipY - ly) * 0.02,
+        cx - halfW * 1.12, openY + (tipY - openY) * 0.52,
+        cx - r * 0.10, tipY - (tipY - openY) * 0.10,
         cx, tipY,
       )
-      ..close();
+      // V tip → right opening
+      ..cubicTo(
+        cx + r * 0.10, tipY - (tipY - openY) * 0.10,
+        cx + halfW * 1.12, openY + (tipY - openY) * 0.52,
+        cx + halfW, openY,
+      )
+      // Concave inner curve (bowl top) back to start
+      ..quadraticBezierTo(
+        cx, openY - r * 0.30,
+        cx - halfW, openY,
+      );
   }
 
   void _drawIcon(Canvas canvas, IconData iconData, double cx, double cy, double r) {

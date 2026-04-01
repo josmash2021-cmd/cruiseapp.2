@@ -81,59 +81,62 @@ void _drawLuxuryPin(
   required GoldPinIcon icon,
   bool isPickup = true,
 }) {
-  final colorLight  = _colorLight;
-  final colorMid    = _colorMid;
-  final colorDeep   = _colorDeep;
-  // ── 1. Build teardrop path ──
-  final tearPath = _buildTeardrop(cx, headCY, r, tipY);
+  final iconCY = headCY - r * 0.10;
 
-  // ── 2. Gradient fill ──
-  canvas.drawPath(
-    tearPath,
+  // ── 1. White fade glow behind icon ──
+  canvas.drawCircle(
+    Offset(cx, iconCY),
+    r * 0.85,
     Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(cx - r * 0.5, headCY - r),
-        Offset(cx + r * 0.5, tipY),
-        [colorLight, colorMid, colorDeep],
-        [0.0, 0.45, 1.0],
+      ..shader = ui.Gradient.radial(
+        Offset(cx, iconCY),
+        r * 0.85,
+        [
+          Colors.white.withValues(alpha: 0.30),
+          Colors.white.withValues(alpha: 0.07),
+          Colors.transparent,
+        ],
+        [0.0, 0.50, 1.0],
       ),
   );
 
-  // ── 3. Thin bright-gold outer border ──
+  // ── 2. Golden crescent cup ──
+  final cupPath = _buildCrescent(cx, headCY, r, tipY);
   canvas.drawPath(
-    tearPath,
+    cupPath,
     Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = Colors.white.withValues(alpha: 0.35),
-  );
-
-  // ── 7. Transparent hole for icon ──
-  canvas.drawCircle(
-    Offset(cx, headCY),
-    r * 0.58,
-    Paint()..blendMode = BlendMode.clear,
+      ..shader = ui.Gradient.linear(
+        Offset(cx, headCY + r * 0.15),
+        Offset(cx, tipY),
+        [_colorLight, _colorMid, _colorDeep],
+        [0.0, 0.45, 1.0],
+      ),
   );
 }
 
-/// Clean teardrop: full arc for head + smooth cubic taper to tip.
-Path _buildTeardrop(double cx, double headCY, double r, double tipY) {
-  const taper = 0.45; // narrower spread so tail doesn't overlap circle
-  final rx = cx + r * math.sin(taper);
-  final ry = headCY + r * math.cos(taper);
-  final lx = cx - r * math.sin(taper);
-
+/// Crescent cup shape: open at top, golden V tapering to point at bottom.
+Path _buildCrescent(double cx, double headCY, double r, double tipY) {
+  final openY = headCY + r * 0.15;
+  final halfW = r * 0.88;
   return Path()
-    ..moveTo(cx, tipY)
-    ..cubicTo(cx + r * 0.14, tipY - (tipY - ry) * 0.38,
-              rx + r * 0.08, ry + (tipY - ry) * 0.20,
-              rx, ry)
-    ..arcToPoint(Offset(lx, ry),
-        radius: Radius.circular(r), clockwise: false, largeArc: true)
-    ..cubicTo(lx - r * 0.08, ry + (tipY - ry) * 0.20,
-              cx - r * 0.14, tipY - (tipY - ry) * 0.38,
-              cx, tipY)
-    ..close();
+    ..moveTo(cx - halfW, openY)
+    // Left outer curve → V tip
+    ..cubicTo(
+      cx - halfW * 1.12, openY + (tipY - openY) * 0.52,
+      cx - r * 0.10, tipY - (tipY - openY) * 0.10,
+      cx, tipY,
+    )
+    // V tip → right opening
+    ..cubicTo(
+      cx + r * 0.10, tipY - (tipY - openY) * 0.10,
+      cx + halfW * 1.12, openY + (tipY - openY) * 0.52,
+      cx + halfW, openY,
+    )
+    // Concave inner curve (bowl top) back to start
+    ..quadraticBezierTo(
+      cx, openY - r * 0.30,
+      cx - halfW, openY,
+    );
 }
 
 /// Draws the icon inside the pin head with generous size.

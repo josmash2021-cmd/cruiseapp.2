@@ -61,6 +61,15 @@ MIGRATIONS = [
     ("support_chats", "needs_escalation", "BOOLEAN DEFAULT FALSE"),
     ("support_chats", "last_user_message_at", "TIMESTAMP WITH TIME ZONE"),
     ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT FALSE"),
+    # Rider payment methods: keep production schema aligned with ORM model.
+    ("rider_payment_methods", "stripe_pm_id", "VARCHAR(100)"),
+    ("rider_payment_methods", "dwolla_funding_source_id", "VARCHAR(100)"),
+    ("rider_payment_methods", "account_number_encrypted", "VARCHAR(255)"),
+    ("rider_payment_methods", "routing_number_encrypted", "VARCHAR(255)"),
+    ("rider_payment_methods", "account_type", "VARCHAR(20)"),
+    ("rider_payment_methods", "bank_name", "VARCHAR(255)"),
+    ("rider_payment_methods", "is_default", "BOOLEAN DEFAULT FALSE"),
+    ("rider_payment_methods", "created_at", "TIMESTAMP WITH TIME ZONE"),
 ]
 
 

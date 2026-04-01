@@ -147,6 +147,19 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Mini map animation already played flag ──
   bool _miniMapAnimDone = false;
 
+  // ── Camera angle cycling (every 10s, smooth bearing+pitch) ──
+  static const _cameraAngles = <(double, double)>[
+    (55.0, 12.0),
+    (45.0, -30.0),
+    (60.0, 25.0),
+    (50.0, -10.0),
+  ];
+  Timer? _camCycleTimer;
+  int _camCycleIdx = 0;
+  AnimationController? _camCycleCtrl;
+  Animation<double>? _camPitchAnim;
+  Animation<double>? _camBearingAnim;
+
   // ── Arrived at pickup detection ──
   bool _nearPickup = false;
   StreamSubscription<Position>? _gpsSub;
@@ -301,6 +314,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _gpsSub?.cancel();
     _dropoffGpsSub?.cancel();
     _finishNavTimer?.cancel();
+    _camCycleTimer?.cancel();
+    _camCycleCtrl?.dispose();
     _fadeCtrl.dispose();
     _slideCtrl.dispose();
     _tiltCtrl.dispose();
@@ -680,9 +695,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           decoration: BoxDecoration(
             color: Colors.transparent,
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 1.5),
+            border: Border.all(color: _gold, width: 1.5),
           ),
-          child: Icon(icon, color: const Color(0xFFFFD700), size: 18),
+          child: Icon(icon, color: _gold, size: 18),
         ),
       );
 
@@ -1470,6 +1485,49 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (mounted) _tiltCtrl.forward();
 
     _miniMapAnimDone = true;
+    _startCameraCycle();
+  }
+
+  void _startCameraCycle() {
+    _camCycleTimer?.cancel();
+    _camCycleIdx = 0;
+    _camCycleTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _camCycleIdx++;
+      _animateCameraToAngle(_camCycleIdx);
+    });
+  }
+
+  void _animateCameraToAngle(int idx) {
+    if (_map == null || !mounted) return;
+    final ai = idx % _cameraAngles.length;
+    final (targetPitch, targetBearing) = _cameraAngles[ai];
+
+    final prevPitch = _camPitchAnim?.value ?? _tiltAnim.value;
+    final prevBearing = _camBearingAnim?.value ?? 0.0;
+
+    _camCycleCtrl?.removeListener(_applyCamCycle);
+    _camCycleCtrl?.dispose();
+
+    _camCycleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _camPitchAnim = Tween<double>(begin: prevPitch, end: targetPitch).animate(
+      CurvedAnimation(parent: _camCycleCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _camBearingAnim = Tween<double>(begin: prevBearing, end: targetBearing).animate(
+      CurvedAnimation(parent: _camCycleCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _camCycleCtrl!.addListener(_applyCamCycle);
+    _camCycleCtrl!.forward();
+  }
+
+  void _applyCamCycle() {
+    if (_map == null || !mounted) return;
+    _map!.setCamera(mapbox.CameraOptions(
+      pitch: _camPitchAnim?.value,
+      bearing: _camBearingAnim?.value,
+    ));
   }
 
   void _updatePinScale() {

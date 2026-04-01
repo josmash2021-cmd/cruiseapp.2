@@ -438,9 +438,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
   }
 
-  /// Whether the confirm-pickup overlay is currently pushed.
-  bool _confirmPickupShown = false;
-
   /// Show the rider confirmation pickup overlay when driver has arrived.
   void _showRiderConfirmPickup() {
     if (!mounted || _confirmPickupShown) return;

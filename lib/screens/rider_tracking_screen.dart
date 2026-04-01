@@ -191,6 +191,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _connectionLost = false;
   int _pollFailCount = 0;
   bool _cancelDialogShown = false; // guard: prevents duplicate cancel dialogs
+  bool _confirmPickupShown = false; // guard: prevents double-push of confirm pickup
 
   // ── More-menu dropdown & cancel overlay ──
   bool _showMoreMenu = false;

@@ -43,9 +43,15 @@ class RideOffer {
   }
 
   factory RideOffer.fromJson(Map<String, dynamic> json) {
+    final riderObj = json['rider'];
+    final riderMap = riderObj is Map ? riderObj : null;
     return RideOffer(
       offerId: json['offer_id']?.toString() ?? json['id']?.toString() ?? '',
-      riderName: json['rider_name']?.toString() ?? 'Rider',
+      riderName: json['rider_name']?.toString() ??
+          json['riderName']?.toString() ??
+          riderMap?['name']?.toString() ??
+          riderMap?['rider_name']?.toString() ??
+          'Rider',
       pickupAddress: json['pickup_address']?.toString() ?? '',
       dropoffAddress: json['dropoff_address']?.toString() ?? '',
       pickupLatLng: LatLng(
@@ -61,7 +67,13 @@ class RideOffer {
           (json['distance_to_pickup_km'] as num?)?.toDouble() ?? 0,
       estimatedMinutes: (json['estimated_minutes'] as num?)?.toInt() ?? 0,
       vehicleType: json['vehicle_type']?.toString() ?? 'Fusion',
-      riderPhotoUrl: json['rider_photo_url']?.toString() ?? '',
+        riderPhotoUrl: json['rider_photo_url']?.toString() ??
+          json['riderPhotoUrl']?.toString() ??
+          json['passenger_photo_url']?.toString() ??
+          json['passengerPhotoUrl']?.toString() ??
+          riderMap?['photo_url']?.toString() ??
+          riderMap?['photoUrl']?.toString() ??
+          '',
       riderRating: (json['rider_rating'] as num?)?.toDouble() ?? 5.0,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString())

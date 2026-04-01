@@ -110,6 +110,20 @@ const double _kCarScale = 0.06;
 const double _entranceDuration = 800.0;
 const int _maxPollFailsBeforeBanner = 3;
 
+String? _normalizeRemotePhotoUrl(String? rawUrl) {
+  var raw = (rawUrl ?? '').trim();
+  if (raw.isEmpty) return null;
+  if (raw == 'null' || raw == 'None' || raw == 'undefined') return null;
+  if ((raw.startsWith('"') && raw.endsWith('"')) ||
+      (raw.startsWith("'") && raw.endsWith("'"))) {
+    raw = raw.substring(1, raw.length - 1).trim();
+  }
+  if (raw.isEmpty) return null;
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  if (raw.startsWith('/')) return '${ApiService.publicBaseUrl}$raw';
+  return '${ApiService.publicBaseUrl}/$raw';
+}
+
 class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     with TickerProviderStateMixin {
   void _setState(VoidCallback fn) { setState(fn); }
@@ -216,7 +230,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   @override
   void initState() {
     super.initState();
-    _driverPhotoUrl = widget.driverPhotoUrl;
+    _driverPhotoUrl = _normalizeRemotePhotoUrl(widget.driverPhotoUrl);
     _etaPulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),

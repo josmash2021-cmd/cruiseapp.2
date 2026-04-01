@@ -225,9 +225,18 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     // Update driver photo URL from Firestore if we don't have one yet
     if ((_driverPhotoUrl == null || _driverPhotoUrl!.isEmpty)) {
-      final fsPhoto = data['driverPhotoUrl']?.toString() ??
-          data['driver_photo_url']?.toString();
-      if (fsPhoto != null && fsPhoto.isNotEmpty && fsPhoto.startsWith('http')) {
+      final driverObj = data['driver'];
+      final driverMap = driverObj is Map ? driverObj : null;
+      final fsPhoto = _normalizeRemotePhotoUrl(
+        data['driverPhotoUrl']?.toString() ??
+            data['driver_photo_url']?.toString() ??
+            data['photo_url']?.toString() ??
+            data['profile_photo_url']?.toString() ??
+            driverMap?['photo_url']?.toString() ??
+            driverMap?['photoUrl']?.toString() ??
+            driverMap?['profile_photo_url']?.toString(),
+      );
+      if (fsPhoto != null && fsPhoto.isNotEmpty) {
         _setState(() => _driverPhotoUrl = fsPhoto);
       }
     }
@@ -368,7 +377,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         'tripId': rideId,
         'driverId': _rtdbDriverId ?? '',
         'driverName': widget.driverName,
-        'driverPhotoUrl': widget.driverPhotoUrl ?? '',
+        'driverPhotoUrl': _driverPhotoUrl ?? widget.driverPhotoUrl ?? '',
         'lastMessage': msgs.last['text'] ?? '',
         'messageCount': msgs.length,
         'createdAt': FieldValue.serverTimestamp(),
@@ -390,7 +399,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           driverName: widget.driverName,
           tripId: widget.tripId,
           fare: widget.price,
-          driverPhotoUrl: widget.driverPhotoUrl,
+          driverPhotoUrl: _driverPhotoUrl ?? widget.driverPhotoUrl,
         ),
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),

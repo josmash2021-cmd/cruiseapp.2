@@ -233,7 +233,7 @@ extension _RiderTrackingEtaDisplay on _RiderTrackingScreenState {
                   ),
                   // Driver avatar
                   VerifiedAvatar(
-                    photoUrl: widget.driverPhotoUrl,
+                    photoUrl: _driverPhotoUrl ?? widget.driverPhotoUrl,
                     radius: 22,
                     fallbackName: widget.driverName,
                     uid: widget.driverId,

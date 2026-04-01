@@ -1551,7 +1551,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           tripId: tripId,
           riderName: riderName,
           riderPhotoUrl: _normalizePhotoUrl(
-            _pickString(trip, ['riderPhotoUrl', 'rider_photo_url', 'passengerPhotoUrl']),
+            _pickString(trip, ['riderPhotoUrl', 'rider_photo_url', 'passengerPhotoUrl', 'passenger_photo_url']),
           ),
           riderRating: _pickDouble(trip, ['riderRating', 'rider_rating']) ?? 4.8,
           pickupLatLng: pickup,

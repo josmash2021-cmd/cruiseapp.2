@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/chat_message.dart';
 import '../services/api_service.dart';
@@ -62,6 +63,8 @@ class _ChatScreenState extends State<ChatScreen> {
   // ── Typing ──
   Timer? _typingTimer;
   String? _recipientPhone;
+  bool? _rtdbConnected;
+  StreamSubscription<DatabaseEvent>? _rtdbConnectionSub;
 
   // ── Auto-scroll tracking ──
   int _lastMsgCount = 0;
@@ -87,6 +90,7 @@ class _ChatScreenState extends State<ChatScreen> {
     // Decide mode: RTDB for trip chats, polling for support
     if (!widget.isSupport && widget.tripId != null) {
       _useRtdb = true;
+      _startConnectionListener();
       // Mark existing messages as read when opening
       _chat.markAsRead(rideId: _rideId, readerRole: _myRole);
       if ((_recipientPhone ?? '').isEmpty) {
@@ -131,6 +135,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _pollTimer?.cancel();
     _typingTimer?.cancel();
+    _rtdbConnectionSub?.cancel();
     // Stop typing indicator when leaving
     if (_useRtdb) {
       _chat.setTyping(rideId: _rideId, role: _myRole, isTyping: false);
@@ -139,6 +144,33 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _startConnectionListener() {
+    _rtdbConnectionSub?.cancel();
+    _rtdbConnectionSub = FirebaseDatabase.instance
+        .ref('.info/connected')
+        .onValue
+        .listen((event) {
+      final val = event.snapshot.value;
+      final connected = val == true;
+      if (!mounted) return;
+      setState(() => _rtdbConnected = connected);
+    });
+  }
+
+  Color _connectionDotColor() {
+    if (!_useRtdb) return const Color(0xFF4CAF50);
+    if (_rtdbConnected == true) return const Color(0xFF4CAF50);
+    if (_rtdbConnected == false) return const Color(0xFFEF4444);
+    return const Color(0xFFF59E0B);
+  }
+
+  String _connectionLabel(S s) {
+    if (!_useRtdb) return s.online;
+    if (_rtdbConnected == true) return s.activeNow;
+    if (_rtdbConnected == false) return s.connectionLost;
+    return 'Connecting...';
   }
 
   // ── Send ────────────────────────────────────────────────────────────────
@@ -338,14 +370,14 @@ class _ChatScreenState extends State<ChatScreen> {
                     Container(
                       width: Responsive.w(6),
                       height: Responsive.w(6),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF4CAF50),
+                      decoration: BoxDecoration(
+                        color: _connectionDotColor(),
                         shape: BoxShape.circle,
                       ),
                     ),
                     SizedBox(width: Responsive.w(4)),
                     Text(
-                      widget.isSupport ? s.online : s.activeNow,
+                      _connectionLabel(s),
                       style: TextStyle(
                         fontSize: Responsive.sp(11),
                         color: Colors.white.withValues(alpha: 0.45),

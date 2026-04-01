@@ -534,7 +534,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         child: SafeArea(
                           top: false,
                           child: SizedBox(
-                            height: 52,
+                            height: 62,
                             child: Row(
                               children: [
                                 const SizedBox(width: 16),
@@ -2984,7 +2984,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
     // Margins: collapsed = 16 horizontal + 20 bottom; expanded = 0
     final hMargin = 16.0 * (1.0 - t);
-    final bMargin = (20.0 + botPad) * (1.0 - t);
+    final bMargin = (32.0 + botPad) * (1.0 - t);
 
     // Border radius: collapsed = 20 all; expanded = 24 top only
     final radius = BorderRadius.only(

@@ -119,8 +119,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       final dist = _hav(ll, widget.pickupLatLng);
       _distanceMiles = dist;
       _etaMinutes = (dist / 0.5).ceil().clamp(1, 99);
-      if (dist < 0.05) {
+      if (dist < 0.05 && _phase == _TrackPhase.arriving) {
         _setState(() => _phase = _TrackPhase.arrived);
+        _arrivedDotPulse.repeat(reverse: true);
+        _handleDriverArrived();
+        _showRiderConfirmPickup();
         if (!_arrivedNotifSent) {
           _arrivedNotifSent = true;
           _sendRideNotification(

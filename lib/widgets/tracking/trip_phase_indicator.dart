@@ -105,8 +105,11 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
       content = _buildSingleLineContent(dotColor, true);
     } else if (_phase == _TrackPhase.onTrip && _tripJustStarted) {
       content = _buildSingleLineContent(dotColor, false);
+    } else if (_phase == _TrackPhase.completed) {
+      // Trip finished — single centered text, no ETA badge
+      content = _buildSingleLineContent(dotColor, false);
     } else {
-      // onTrip (steady) or nearDestination or completed — show dropoff ETA
+      // onTrip (steady) or nearDestination — show dropoff ETA
       content = _buildOnTripContent(dotColor);
     }
 

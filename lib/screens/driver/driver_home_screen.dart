@@ -87,7 +87,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   late Animation<double> _fabScale;
 
   // ── Bottom panel ──
-  static const double _panelCollapsedH = 62.0;
+  static const double _panelCollapsedH = 76.0;
   static const double _panelExpandedH = 380.0; // Increased for full content
   bool _dragging = false;
 
@@ -1178,7 +1178,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               endPanelDrag(d.primaryVelocity ?? 0);
             },
             child: Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 4),
+              padding: const EdgeInsets.only(top: 10, bottom: 6),
               child: Container(
                 width: 36,
                 height: 4,
@@ -1202,7 +1202,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 endPanelDrag(d.primaryVelocity ?? 0);
               },
               child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               child: Row(
                 children: [
                   // Status text
@@ -1224,7 +1224,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             : S.of(context).youreOffline,
                         style: TextStyle(
                           color: dc.text.withValues(alpha: 0.7),
-                          fontSize: 15,
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
                       ),

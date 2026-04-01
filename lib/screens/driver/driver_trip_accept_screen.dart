@@ -2239,9 +2239,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           child: ClipRRect(
             borderRadius: BorderRadius.circular(height / 2),
             child: IgnorePointer(
-              child: ShaderMask(
-                shaderCallback: (bounds) {
-                  return LinearGradient(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
                     begin: Alignment(_shimmerAnim.value - 1.0, 0),
                     end: Alignment(_shimmerAnim.value, 0),
                     colors: [
@@ -2250,14 +2250,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       Colors.transparent,
                     ],
                     stops: const [0.0, 0.5, 1.0],
-                  ).createShader(bounds);
-                },
-                blendMode: BlendMode.srcATop,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(height / 2),
                   ),
+                  borderRadius: BorderRadius.circular(height / 2),
                 ),
               ),
             ),

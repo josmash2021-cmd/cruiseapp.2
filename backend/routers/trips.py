@@ -795,6 +795,22 @@ async def send_chat_message(trip_id: int, request: Request, user: User = Depends
     await db.commit()
     await db.refresh(msg)
 
+    # ── FCM push notification to the other participant ──
+    try:
+        receiver_result = await db.execute(select(User).where(User.id == receiver_id))
+        receiver_user = receiver_result.scalar_one_or_none()
+        if receiver_user and receiver_user.fcm_token:
+            sender_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Someone"
+            sender_role = "driver" if user.id == trip.driver_id else "rider"
+            _send_fcm_push(
+                receiver_user.fcm_token,
+                title=f"💬 {sender_name}",
+                body=msg_text[:200],
+                data={"type": "chat_message", "trip_id": str(trip_id), "sender_role": sender_role},
+            )
+    except Exception:
+        pass  # Never let notification failure block chat
+
     return {
         "id": msg.id, "trip_id": msg.trip_id, "sender_id": msg.sender_id,
         "receiver_id": msg.receiver_id, "message": msg.message,

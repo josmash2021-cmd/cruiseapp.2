@@ -305,7 +305,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   ),
               // Status bar — swipe on parent opens panel
               SizedBox(
-                height: 44,
+                height: 50,
                 child: Row(
                   children: [
                     const SizedBox(width: 16),
@@ -322,7 +322,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       S.of(context).findingTrips,
                       style: TextStyle(
                         color: textMuted,
-                        fontSize: 14,
+                        fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -336,6 +336,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   ],
                 ),
               ),
+              const SizedBox(height: 6),
             ],
           ),
         ),

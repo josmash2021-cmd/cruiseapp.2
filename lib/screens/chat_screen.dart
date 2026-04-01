@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -181,12 +182,19 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.clear();
 
     if (_useRtdb) {
-      _chat.sendMessage(
-        rideId: _rideId,
-        senderId: _myUserId,
-        senderRole: _myRole,
-        text: text,
-      );
+      try {
+        await _chat.sendMessage(
+          rideId: _rideId,
+          senderId: _myUserId,
+          senderRole: _myRole,
+          text: text,
+        );
+      } catch (e) {
+        debugPrint('[Chat] RTDB send failed: $e');
+        if (mounted) {
+          ErrorService.show(context, 'Message failed to send. Check your connection.');
+        }
+      }
       if (widget.tripId != null) {
         unawaited(
           ApiService.sendChatMessage(tripId: widget.tripId!, message: text)

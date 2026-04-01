@@ -23,6 +23,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '56054738352',
     projectId: 'cruise-af9f1',
     authDomain: 'cruise-af9f1.firebaseapp.com',
+    databaseURL: 'https://cruise-af9f1-default-rtdb.firebaseio.com',
     storageBucket: 'cruise-af9f1.firebasestorage.app',
     measurementId: 'G-E9KRTB7VPR',
   );
@@ -32,6 +33,7 @@ class DefaultFirebaseOptions {
     appId: '1:56054738352:android:1868f64d184d1e63c1ba75',
     messagingSenderId: '56054738352',
     projectId: 'cruise-af9f1',
+    databaseURL: 'https://cruise-af9f1-default-rtdb.firebaseio.com',
     storageBucket: 'cruise-af9f1.firebasestorage.app',
   );
 
@@ -40,6 +42,7 @@ class DefaultFirebaseOptions {
     appId: '1:56054738352:ios:7678cdaaa6ddc913c1ba75',
     messagingSenderId: '56054738352',
     projectId: 'cruise-af9f1',
+    databaseURL: 'https://cruise-af9f1-default-rtdb.firebaseio.com',
     storageBucket: 'cruise-af9f1.firebasestorage.app',
     iosBundleId: 'com.cruiseinride.app',
   );

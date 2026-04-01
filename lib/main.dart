@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'config/smooth_transitions.dart';
@@ -148,6 +149,8 @@ Future<void> _initFirebase() async {
       persistenceEnabled: true,
       cacheSizeBytes: firestore.Settings.CACHE_SIZE_UNLIMITED,
     );
+    // Enable RTDB disk persistence so messages survive restarts & work offline
+    FirebaseDatabase.instance.setPersistenceEnabled(true);
   } catch (e) {
     debugPrint('[Firebase] early init error: $e');
   }

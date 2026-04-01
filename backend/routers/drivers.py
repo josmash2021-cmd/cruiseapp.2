@@ -820,8 +820,8 @@ async def initiate_background_check(
 
     body = await request.json()
     email = driver.email
-    first_name = body.get("first_name", driver.name or "")
-    last_name = body.get("last_name", "")
+    first_name = body.get("first_name", driver.first_name or "")
+    last_name = body.get("last_name", driver.last_name or "")
     dob = body.get("dob")  # YYYY-MM-DD
     ssn_last4 = body.get("ssn_last4")
     license_number = body.get("license_number")

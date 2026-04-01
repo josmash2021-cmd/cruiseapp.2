@@ -451,7 +451,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     if status == "completed":
         asyncio.ensure_future(_n8n_fire("trip-completed", {
             "trip_id": trip.id, "rider_id": trip.rider_id, "driver_id": trip.driver_id,
-            "rider_name": rider.name if rider else "",
+            "rider_name": f"{rider.first_name} {rider.last_name}" if rider else "",
             "rider_email": rider.email if rider else "",
             "driver_name": getattr(trip, "driver_name", ""),
             "pickup_address": trip.pickup_address or "",
@@ -465,7 +465,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         if trip.payment_status == "failed":
             asyncio.ensure_future(_n8n_fire("payment-failed", {
                 "trip_id": trip.id, "rider_id": trip.rider_id,
-                "rider_name": rider.name if rider else "",
+                "rider_name": f"{rider.first_name} {rider.last_name}" if rider else "",
                 "fare": float(trip.fare or 0),
                 "error_code": "charge_failed",
                 "error_message": "Auto-charge after trip completion failed",

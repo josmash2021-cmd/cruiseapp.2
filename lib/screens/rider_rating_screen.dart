@@ -1,4 +1,5 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'dart:ui' as ui;
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config/page_transitions.dart';
@@ -8,7 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../widgets/verified_avatar.dart';
 import 'home_screen.dart';
 
-/// Full-screen post-ride rating page.
+/// Full-screen post-ride rating page with frosted-glass map background.
 /// Tip percentages are calculated from the actual ride fare.
 class RiderRatingScreen extends StatefulWidget {
   const RiderRatingScreen({
@@ -17,12 +18,14 @@ class RiderRatingScreen extends StatefulWidget {
     this.tripId,
     this.fare = 0,
     this.driverPhotoUrl,
+    this.driverUid,
   });
 
   final String driverName;
   final int? tripId;
   final double fare;
   final String? driverPhotoUrl;
+  final String? driverUid;
 
   @override
   State<RiderRatingScreen> createState() => _RiderRatingScreenState();
@@ -168,236 +171,436 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: const Color(0xFF121212),
-        body: FadeTransition(
-          opacity: _fadeAnim,
-          child: SafeArea(
-            child: ListView(
-              physics: const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              children: [
-                const SizedBox(height: 20),
-
-                // ── Stars ──
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(5, (i) {
-                    return GestureDetector(
-                      onTap: () => setState(() => _ratingStars = i + 1),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        child: Icon(
-                          i < _ratingStars
-                              ? Icons.star_rounded
-                              : Icons.star_outline_rounded,
-                          size: 52,
-                          color: i < _ratingStars
-                              ? _gold
-                              : Colors.white.withValues(alpha: 0.2),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-                const SizedBox(height: 10),
-
-                // ── Star label ──
-                Center(
-                  child: Text(
-                    _starLabel(s),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: _gold,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                // ── "What went well?" ──
-                Center(
-                  child: Text(
-                    s.whatWentWell,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white.withValues(alpha: 0.85),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                // ── Feedback chips ──
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: chipOptions.map((label) {
-                    final sel = _feedbackChips.contains(label);
-                    return GestureDetector(
-                      onTap: () => setState(() {
-                        sel
-                            ? _feedbackChips.remove(label)
-                            : _feedbackChips.add(label);
-                      }),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: sel
-                              ? _gold.withValues(alpha: 0.2)
-                              : Colors.white.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(22),
-                          border: Border.all(
-                            color: sel
-                                ? _gold
-                                : Colors.white.withValues(alpha: 0.15),
-                            width: sel ? 1.5 : 1,
-                          ),
-                        ),
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: sel
-                                ? _gold
-                                : Colors.white.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 18),
-
-                // ── Leave anonymous feedback ──
-                GestureDetector(
-                  onTap: _showFeedbackDialog,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        s.leaveAnonymousFeedback,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white.withValues(alpha: 0.5),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Icon(
-                        Icons.edit_note_rounded,
-                        size: 18,
-                        color: Colors.white.withValues(alpha: 0.4),
-                      ),
+        backgroundColor: const Color(0xFF0A0A0F),
+        body: Stack(
+          children: [
+            // ── Blurred dark map background ──
+            Positioned.fill(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFF0D1117),
+                      Color(0xFF0A0A0F),
+                      Color(0xFF0A0A0F),
                     ],
+                    stops: [0.0, 0.35, 1.0],
                   ),
                 ),
-
-                const SizedBox(height: 24),
-                Divider(
-                    height: 1,
-                    color: Colors.white.withValues(alpha: 0.1)),
-                const SizedBox(height: 24),
-
-                // ── Tip section header ──
-                Row(
+              ),
+            ),
+            // ── Content ──
+            FadeTransition(
+              opacity: _fadeAnim,
+              child: SafeArea(
+                child: ListView(
+                  physics: const BouncingScrollPhysics(
+                    parent: AlwaysScrollableScrollPhysics(),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: 16),
+
+                    // ── Stars ──
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(5, (i) {
+                        final filled = i < _ratingStars;
+                        return GestureDetector(
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            setState(() => _ratingStars = i + 1);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: AnimatedScale(
+                              scale: filled ? 1.0 : 0.85,
+                              duration: const Duration(milliseconds: 200),
+                              child: Icon(
+                                filled ? Icons.star_rounded : Icons.star_outline_rounded,
+                                size: 48,
+                                color: filled
+                                    ? _gold
+                                    : Colors.white.withValues(alpha: 0.15),
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // ── Star label ──
+                    Center(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: Text(
+                          _starLabel(s),
+                          key: ValueKey(_ratingStars),
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: _gold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── "What went well?" ──
+                    Center(
+                      child: Text(
+                        s.whatWentWell,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // ── Feedback chips ──
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: chipOptions.map((label) {
+                        final sel = _feedbackChips.contains(label);
+                        return GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() {
+                              sel
+                                  ? _feedbackChips.remove(label)
+                                  : _feedbackChips.add(label);
+                            });
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: sel
+                                  ? _gold.withValues(alpha: 0.15)
+                                  : Colors.white.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(
+                                color: sel
+                                    ? _gold
+                                    : Colors.white.withValues(alpha: 0.12),
+                                width: sel ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: sel
+                                    ? _gold
+                                    : Colors.white.withValues(alpha: 0.7),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ── Leave anonymous feedback ──
+                    GestureDetector(
+                      onTap: _showFeedbackDialog,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            s.tipFor(_firstName),
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            s.tipGoesToDriver,
+                            s.leaveAnonymousFeedback,
                             style: TextStyle(
                               fontSize: 13,
-                              color: Colors.white.withValues(alpha: 0.5),
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white.withValues(alpha: 0.45),
                             ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.edit_note_rounded,
+                            size: 18,
+                            color: Colors.white.withValues(alpha: 0.35),
                           ),
                         ],
                       ),
                     ),
-                    // Driver avatar
-                    VerifiedAvatar(
-                      radius: 24,
-                      fallbackName: widget.driverName,
-                      photoUrl: widget.driverPhotoUrl,
-                      isVerified: true,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
 
-                // ── Percentage tip buttons (calculated from fare) ──
-                Row(
-                  children: tipPercents.map((pct) {
-                    final amt =
-                        double.parse((fare * pct / 100).toStringAsFixed(2));
-                    final sel = _tipAmount == amt && !_customTip;
-                    return Expanded(
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          right: pct != tipPercents.last ? 10 : 0,
+                    const SizedBox(height: 22),
+
+                    // ── Glass divider ──
+                    Container(
+                      height: 1,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.transparent,
+                            Colors.white.withValues(alpha: 0.08),
+                            Colors.transparent,
+                          ],
                         ),
-                        child: GestureDetector(
-                          onTap: () => setState(() {
-                            _customTip = false;
-                            _tipAmount = sel ? 0 : amt;
-                          }),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            height: 66,
-                            decoration: BoxDecoration(
-                              color: sel
-                                  ? _gold.withValues(alpha: 0.15)
-                                  : Colors.white.withValues(alpha: 0.06),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: sel
-                                    ? _gold
-                                    : Colors.white.withValues(alpha: 0.15),
-                                width: sel ? 2 : 1,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+
+                    // ── Tip section ──
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                s.tipFor(_firstName),
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
                               ),
+                              const SizedBox(height: 2),
+                              Text(
+                                s.tipGoesToDriver,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.white.withValues(alpha: 0.45),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        VerifiedAvatar(
+                          radius: 24,
+                          fallbackName: widget.driverName,
+                          photoUrl: widget.driverPhotoUrl,
+                          uid: widget.driverUid,
+                          role: 'driver',
+                          isVerified: true,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+
+                    // ── Percentage tip buttons ──
+                    Row(
+                      children: tipPercents.map((pct) {
+                        final amt =
+                            double.parse((fare * pct / 100).toStringAsFixed(2));
+                        final sel = _tipAmount == amt && !_customTip;
+                        return Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              right: pct != tipPercents.last ? 10 : 0,
                             ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  '$pct%',
-                                  style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w800,
+                            child: GestureDetector(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                setState(() {
+                                  _customTip = false;
+                                  _tipAmount = sel ? 0 : amt;
+                                });
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                height: 68,
+                                decoration: BoxDecoration(
+                                  color: sel
+                                      ? _gold.withValues(alpha: 0.12)
+                                      : Colors.white.withValues(alpha: 0.04),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
                                     color: sel
                                         ? _gold
-                                        : Colors.white
-                                            .withValues(alpha: 0.8),
+                                        : Colors.white.withValues(alpha: 0.12),
+                                    width: sel ? 2 : 1,
                                   ),
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '\$${amt.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    color: sel
-                                        ? _gold.withValues(alpha: 0.8)
-                                        : Colors.white
-                                            .withValues(alpha: 0.45),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      '$pct%',
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w800,
+                                        color: sel
+                                            ? _gold
+                                            : Colors.white.withValues(alpha: 0.8),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '\$${amt.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color: sel
+                                            ? _gold.withValues(alpha: 0.8)
+                                            : Colors.white.withValues(alpha: 0.4),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Custom tip link
+                    Center(
+                      child: GestureDetector(
+                        onTap: () => setState(() {
+                          _customTip = !_customTip;
+                          if (!_customTip) _tipAmount = 0;
+                        }),
+                        child: Text(
+                          _customTip ? s.cancelCustomTip : s.enterCustomAmount,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: _gold.withValues(alpha: 0.65),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    if (_customTip) ...[
+                      const SizedBox(height: 12),
+                      Center(
+                        child: SizedBox(
+                          width: 160,
+                          height: 52,
+                          child: TextField(
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            textAlign: TextAlign.center,
+                            decoration: InputDecoration(
+                              prefixText: '\$ ',
+                              prefixStyle: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              hintText: '0',
+                              hintStyle: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.3),
+                              ),
+                              filled: true,
+                              fillColor: Colors.white.withValues(alpha: 0.06),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: const BorderSide(color: _gold),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: const BorderSide(color: _gold),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide:
+                                    const BorderSide(color: _gold, width: 2),
+                              ),
+                              contentPadding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onChanged: (v) {
+                              final parsed = double.tryParse(v);
+                              setState(() => _tipAmount = parsed ?? 0);
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 22),
+
+                    // ── Favorite driver ──
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        setState(() => _saveDriver = !_saveDriver);
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 16,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.04),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: _saveDriver
+                                    ? _gold.withValues(alpha: 0.6)
+                                    : Colors.white.withValues(alpha: 0.08),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  width: 26,
+                                  height: 26,
+                                  decoration: BoxDecoration(
+                                    color:
+                                        _saveDriver ? _gold : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(7),
+                                    border: Border.all(
+                                      color: _saveDriver
+                                          ? _gold
+                                          : Colors.white.withValues(alpha: 0.25),
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: _saveDriver
+                                      ? const Icon(Icons.check_rounded,
+                                          size: 18, color: Colors.black)
+                                      : null,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        s.favoriteThisDriver,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        s.favoriteDriverNote,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color:
+                                              Colors.white.withValues(alpha: 0.45),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -405,192 +608,49 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                           ),
                         ),
                       ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 12),
+                    ),
+                    const SizedBox(height: 28),
 
-                // Custom tip link
-                Center(
-                  child: GestureDetector(
-                    onTap: () => setState(() {
-                      _customTip = !_customTip;
-                      if (!_customTip) _tipAmount = 0;
-                    }),
-                    child: Text(
-                      _customTip ? s.cancelCustomTip : s.enterCustomAmount,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: _gold.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ),
-                ),
-
-                if (_customTip) ...[
-                  const SizedBox(height: 12),
-                  Center(
-                    child: SizedBox(
-                      width: 160,
-                      height: 52,
-                      child: TextField(
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
+                    // ── Send button ──
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _submitting ? null : _submit,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _gold,
+                          foregroundColor: Colors.black,
+                          disabledBackgroundColor:
+                              _gold.withValues(alpha: 0.5),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(28),
+                          ),
                         ),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        textAlign: TextAlign.center,
-                        decoration: InputDecoration(
-                          prefixText: '\$ ',
-                          prefixStyle: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          hintText: '0',
-                          hintStyle: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.3),
-                          ),
-                          filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.08),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(color: _gold),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(color: _gold),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide:
-                                const BorderSide(color: _gold, width: 2),
-                          ),
-                          contentPadding:
-                              const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onChanged: (v) {
-                          final parsed = double.tryParse(v);
-                          setState(() => _tipAmount = parsed ?? 0);
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 24),
-
-                // ── Favorite driver ──
-                GestureDetector(
-                  onTap: () => setState(() => _saveDriver = !_saveDriver),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: _saveDriver
-                            ? _gold
-                            : Colors.white.withValues(alpha: 0.1),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color:
-                                _saveDriver ? _gold : Colors.transparent,
-                            borderRadius: BorderRadius.circular(7),
-                            border: Border.all(
-                              color: _saveDriver
-                                  ? _gold
-                                  : Colors.white.withValues(alpha: 0.3),
-                              width: 2,
-                            ),
-                          ),
-                          child: _saveDriver
-                              ? const Icon(Icons.check_rounded,
-                                  size: 18, color: Colors.white)
-                              : null,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                s.favoriteThisDriver,
+                        child: _submitting
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: Colors.black54,
+                                ),
+                              )
+                            : Text(
+                                s.send,
                                 style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                s.favoriteDriverNote,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color:
-                                      Colors.white.withValues(alpha: 0.5),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 28),
-
-                // ── Send button ──
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _submitting ? null : _submit,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _gold,
-                      foregroundColor: Colors.black,
-                      disabledBackgroundColor:
-                          _gold.withValues(alpha: 0.5),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(28),
                       ),
                     ),
-                    child: _submitting
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Colors.black54,
-                            ),
-                          )
-                        : Text(
-                            s.send,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                  ),
+                    const SizedBox(height: 16),
+                  ],
                 ),
-                const SizedBox(height: 16),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

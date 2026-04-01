@@ -2814,6 +2814,31 @@ class ApiService {
     return (data as List?)?.cast<Map<String, dynamic>>() ?? [];
   }
 
+  /// Add a bank account for instant Dwolla transfers.
+  /// Returns: {status, payment_method_id, display_name, account_type, created_at}
+  static Future<Map<String, dynamic>> addBankAccount({
+    required String accountNumber,
+    required String routingNumber,
+    required String accountType,
+    required String bankName,
+  }) async {
+    final h = await _authHeaders();
+    final body = {
+      'account_number': accountNumber,
+      'routing_number': routingNumber,
+      'account_type': accountType,
+      'bank_name': bankName,
+    };
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/wallet/add-bank-account'),
+          headers: {...h, 'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 20));
+    return _parse(res);
+  }
+
   /// Withdraw from wallet to payout method.
   /// Returns: {status, withdrawal_id, amount, new_balance, payout_method, transfer_id, created_at}
   static Future<Map<String, dynamic>> withdrawFromWallet({

@@ -689,27 +689,36 @@ async def withdraw_from_wallet(body: WalletWithdrawIn, user: User = Depends(_get
     await db.refresh(wallet)
     await db.refresh(txn)
     
-    # Stripe transfer to payment method
+    # Dwolla RTP transfer (instantaneous to bank account)
     transfer_id = None
-    stripe_error = None
-    if STRIPE_SECRET and payout_method.method_type == "stripe_card":
+    dwolla_error = None
+    if payout_method.method_type == "dwolla_bank" and payout_method.dwolla_funding_source_id:
         try:
-            import stripe as _s
-            _s.api_key = STRIPE_SECRET
-            # Amount in cents
-            amount_cents = max(int(body.amount * 100), 50)
-            transfer = _s.Payout.create(
-                amount=amount_cents,
-                currency="usd",
-                method="instant",  # instant payout if available
-                description=f"Cruise rider cashout — wallet withdrawal #{txn.id}",
-                metadata={"withdrawal_id": str(txn.id), "rider_id": str(user.id)}
-            )
-            transfer_id = transfer["id"]
-            logging.info("[Withdrawal] Stripe payout %s created for rider %s — $%.2f", transfer_id, user.id, body.amount)
-        except Exception as _se:
-            stripe_error = str(_se)[:200]
-            logging.error("[Withdrawal] Stripe error: %s", stripe_error)
+            from dwollasdk import DwollaClient
+            dwolla_key = os.getenv("DWOLLA_APP_KEY")
+            dwolla_secret = os.getenv("DWOLLA_APP_SECRET")
+            if dwolla_key and dwolla_secret:
+                client = DwollaClient(dwolla_key, dwolla_secret, os.getenv("DWOLLA_ENV", "production"))
+                # Create Dwolla transfer with RTP (Real-Time Payments) for instant settlement
+                transfer_body = {
+                    "_links": {
+                        "source": {"href": os.getenv("DWOLLA_CRUISE_FUNDING_SOURCE")},  # Your app's funding source
+                        "destination": {"href": payout_method.dwolla_funding_source_id}
+                    },
+                    "amount": {
+                        "currency": "USD",
+                        "value": str(round(body.amount, 2))
+                    },
+                    "processingChannel": {"name": "realTimePayments"}  # Enable RTP for instant transfer
+                }
+                transfer_response = client.post("transfers", transfer_body)
+                transfer_id = transfer_response.get("_links", {}).get("self", {}).get("href", "").split("/")[-1]
+                logging.info("[Withdrawal] Dwolla RTP transfer %s created for rider %s — $%.2f (INSTANT)", transfer_id, user.id, body.amount)
+            else:
+                dwolla_error = "Dwolla credentials not configured"
+        except Exception as _de:
+            dwolla_error = str(_de)[:200]
+            logging.error("[Withdrawal] Dwolla RTP error: %s", dwolla_error)
     
     return {
         "status": "success",
@@ -718,7 +727,7 @@ async def withdraw_from_wallet(body: WalletWithdrawIn, user: User = Depends(_get
         "new_balance": wallet.balance,
         "payout_method": payout_method.display_name,
         "transfer_id": transfer_id,
-        "stripe_error": stripe_error,
+        "dwolla_error": dwolla_error,
         "created_at": txn.created_at.isoformat() if txn.created_at else None
     }
 
@@ -744,6 +753,93 @@ async def get_withdrawal_history(limit: int = 50, offset: int = 0, user: User = 
         }
         for t in txns
     ]
+
+
+@router.post("/wallet/add-bank-account", dependencies=[Depends(_verify_api_key)])
+async def add_bank_account(body: RiderPaymentMethodIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Add a bank account for instant Dwolla transfers."""
+    # body should have: account_number, routing_number, account_type, bank_name
+    if not (hasattr(body, 'account_number') and hasattr(body, 'routing_number')):
+        raise HTTPException(400, "Missing account_number or routing_number")
+    
+    if not (body.account_number and body.routing_number):
+        raise HTTPException(400, "Account and routing numbers cannot be empty")
+    
+    # Validate routing number (9 digits)
+    if not (len(body.routing_number) == 9 and body.routing_number.isdigit()):
+        raise HTTPException(400, "Routing number must be 9 digits")
+    
+    # Validate account number (5-17 digits)
+    if not (5 <= len(body.account_number) <= 17 and body.account_number.isdigit()):
+        raise HTTPException(400, "Account number must be 5-17 digits")
+    
+    try:
+        from dwollasdk import DwollaClient
+        from cryptography.fernet import Fernet
+        
+        dwolla_key = os.getenv("DWOLLA_APP_KEY")
+        dwolla_secret = os.getenv("DWOLLA_APP_SECRET")
+        encryption_key = os.getenv("DATA_ENCRYPTION_KEY", "default-unsafe-key")
+        
+        if not (dwolla_key and dwolla_secret):
+            raise HTTPException(500, "Dwolla not configured")
+        
+        client = DwollaClient(dwolla_key, dwolla_secret, os.getenv("DWOLLA_ENV", "production"))
+        
+        # Create Dwolla funding source (bank account)
+        funding_body = {
+            "plaidToken": getattr(body, 'plaid_token', None),  # If using Plaid for verification
+            "accountNumber": body.account_number,
+            "routingNumber": body.routing_number,
+            "accountType": body.account_type or "checking",
+            "name": body.bank_name or f"Bank Account ending in {body.account_number[-4:]}"
+        }
+        
+        # Remove None values
+        funding_body = {k: v for k, v in funding_body.items() if v is not None}
+        
+        # Create funding source in Dwolla
+        customer_href = f"/customers/{user.id}"  # Assumes user.id is customer ID in Dwolla
+        funding_response = client.post(f"{customer_href}/funding-sources", funding_body)
+        
+        dwolla_funding_source_id = funding_response.get("_links", {}).get("self", {}).get("href", "")
+        if not dwolla_funding_source_id:
+            raise Exception("Failed to create Dwolla funding source")
+        
+        # Encrypt account data before storing
+        cipher = Fernet(encryption_key.encode() if isinstance(encryption_key, str) else encryption_key)
+        account_encrypted = cipher.encrypt(body.account_number.encode()).decode()
+        routing_encrypted = cipher.encrypt(body.routing_number.encode()).decode()
+        
+        # Create payment method record
+        pm = RiderPaymentMethod(
+            user_id=user.id,
+            method_type="dwolla_bank",
+            display_name=body.bank_name or f"Bank Account ending in {body.account_number[-4:]}",
+            dwolla_funding_source_id=dwolla_funding_source_id,
+            account_number_encrypted=account_encrypted,
+            routing_number_encrypted=routing_encrypted,
+            account_type=body.account_type or "checking",
+            bank_name=body.bank_name,
+            is_default=True  # Set as default
+        )
+        db.add(pm)
+        await db.commit()
+        await db.refresh(pm)
+        
+        logging.info("[Bank Account] Rider %s added Dwolla bank account: %s", user.id, body.bank_name)
+        
+        return {
+            "status": "success",
+            "payment_method_id": pm.id,
+            "display_name": pm.display_name,
+            "account_type": pm.account_type,
+            "created_at": pm.created_at.isoformat()
+        }
+    
+    except Exception as e:
+        logging.error("[Bank Account] Error adding bank account for rider %s: %s", user.id, str(e))
+        raise HTTPException(500, f"Failed to add bank account: {str(e)[:100]}")
 
 # ═══════════════════════════════════════════════════════
 #  DISPATCH  ENDPOINTS

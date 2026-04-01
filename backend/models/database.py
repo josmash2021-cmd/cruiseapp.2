@@ -208,9 +208,15 @@ class RiderPaymentMethod(Base):
     __tablename__ = "rider_payment_methods"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    method_type = Column(String(50), nullable=False)
+    method_type = Column(String(50), nullable=False)  # 'dwolla_bank', 'stripe_card'
     display_name = Column(String(255), nullable=False)
     stripe_pm_id = Column(String(100), nullable=True)
+    dwolla_funding_source_id = Column(String(100), nullable=True)  # Dwolla funding source ID
+    # Encrypted bank account data (stored encrypted for security)
+    account_number_encrypted = Column(String(255), nullable=True)
+    routing_number_encrypted = Column(String(255), nullable=True)
+    account_type = Column(String(20), nullable=True)  # 'checking' or 'savings'
+    bank_name = Column(String(255), nullable=True)
     is_default = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 

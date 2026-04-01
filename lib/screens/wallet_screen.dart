@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/analytics_service.dart';
 import 'payment_accounts_screen.dart';
+import 'add_bank_account_sheet.dart';
 
 /// WalletScreen - Shows balance, transactions, and top-up functionality.
 class WalletScreen extends StatefulWidget {
@@ -119,6 +120,25 @@ class _WalletScreenState extends State<WalletScreen> {
           Navigator.pop(ctx);
           await _performCashOut(amount, payoutMethodId);
         },
+        onAddPaymentMethod: _showAddBankAccountDialog,
+      ),
+    );
+  }
+
+  void _showAddBankAccountDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => AddBankAccountSheet(
+        onAdded: () async {
+          Navigator.pop(ctx);
+          _showSnack('Bank account added successfully!');
+          // Optionally trigger cashout flow
+          Future.delayed(const Duration(milliseconds: 300), () {
+            _showCashOutDialog();
+          });
+        },
       ),
     );
   }
@@ -138,7 +158,7 @@ class _WalletScreenState extends State<WalletScreen> {
         return;
       }
 
-      _showSnack('Successfully withdrawn \$${amount.toStringAsFixed(2)}!');
+      _showSnack('✓ Cash out successful! Money will arrive in seconds.');
       AnalyticsService.instance.logEvent('wallet_cashout', parameters: {'amount': amount});
       // Refresh balance + transactions from backend
       await _loadWalletData();
@@ -742,10 +762,12 @@ class _TopUpSheetState extends State<_TopUpSheet> {
 class _CashOutSheet extends StatefulWidget {
   final double availableBalance;
   final Function(double, int) onCashOut;
+  final VoidCallback? onAddPaymentMethod;
 
   const _CashOutSheet({
     required this.availableBalance,
     required this.onCashOut,
+    this.onAddPaymentMethod,
   });
 
   @override
@@ -826,12 +848,15 @@ class _CashOutSheetState extends State<_CashOutSheet> {
                           width: double.infinity,
                           height: 52,
                           child: ElevatedButton(
-                            onPressed: () => Navigator.pop(context),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onAddPaymentMethod?.call();
+                            },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: c.border,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             ),
-                            child: const Text('Add Payment Method', style: TextStyle(color: Colors.white)),
+                            child: const Text('Add Bank Account', style: TextStyle(color: Colors.white)),
                           ),
                         ),
                       ],

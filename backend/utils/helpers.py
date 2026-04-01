@@ -10,20 +10,20 @@ from datetime import datetime, timedelta, timezone
 # ═══════════════════════════════════════════════════════
 
 def utc_now() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 def utc_today_start() -> datetime:
-    return datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    return datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
 def utc_days_ago(days: int) -> datetime:
-    return datetime.utcnow() - timedelta(days=days)
+    return datetime.now(timezone.utc) - timedelta(days=days)
 
 def utc_month_start() -> datetime:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 def utc_year_start() -> datetime:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     return now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
 
 

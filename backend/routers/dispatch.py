@@ -238,6 +238,27 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     drivers = result.scalars().all()
     drivers_sorted = sorted(drivers, key=lambda d: _haversine(trip.pickup_lat, trip.pickup_lng, d.lat or 0, d.lng or 0))
 
+    # ── Debug logging: always log dispatch result for Railway visibility ──
+    if drivers_sorted:
+        logging.info(
+            "[Dispatch] Trip %d: found %d eligible drivers. Assigning to driver %d (%.2f km away). cutoff=%s",
+            trip.id, len(drivers_sorted), drivers_sorted[0].id,
+            _haversine(trip.pickup_lat, trip.pickup_lng, drivers_sorted[0].lat or 0, drivers_sorted[0].lng or 0),
+            active_cutoff.isoformat(),
+        )
+    else:
+        # Log ALL online drivers to understand WHY zero matched
+        all_online = await db.execute(select(User).where(and_(User.role == "driver", User.is_online == True)))
+        all_online_drivers = all_online.scalars().all()
+        logging.warning(
+            "[Dispatch] Trip %d: 0 eligible drivers! online_drivers=%d, cutoff=%s. Details: %s",
+            trip.id, len(all_online_drivers), active_cutoff.isoformat(),
+            "; ".join(
+                f"id={d.id} lat={d.lat} lng={d.lng} last_active={d.last_active_at}"
+                for d in all_online_drivers[:5]
+            ) or "none online",
+        )
+
     # Create offer for closest driver
     if drivers_sorted:
         assigned = drivers_sorted[0]

@@ -883,7 +883,7 @@ class DispatchTimeoutAgent:
         except ImportError:
             return
 
-        cutoff = datetime.utcnow() - timedelta(seconds=self.TIMEOUT_SECS)
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.TIMEOUT_SECS)
         async with self._db_session_maker() as db:
             result = await db.execute(
                 select(DispatchOffer).where(
@@ -915,6 +915,176 @@ class DispatchTimeoutAgent:
         return {"timed_out": self._timed_out}
 
 
+class UnmatchedTripRetryAgent:
+    """Re-dispatch trips stuck in 'requested' status with NO pending offers.
+
+    When a rider requests a trip and no drivers are available at that instant,
+    the trip gets created but no offer is sent. This agent periodically finds
+    those orphaned trips and retries dispatch with any newly available drivers.
+    Runs every 15 seconds for fast matching. Gives up after 5 minutes."""
+
+    INTERVAL = 15     # retry every 15 seconds
+    MAX_AGE_SECS = 300  # give up after 5 minutes
+
+    def __init__(self):
+        self._db_session_maker = None
+        self._retries = 0
+        self._matched = 0
+
+    def set_db_session_maker(self, sm):
+        self._db_session_maker = sm
+
+    async def monitor(self):
+        await asyncio.sleep(30)  # let server warm up
+        while True:
+            try:
+                await self._retry_unmatched()
+            except Exception as e:
+                logger.error("[UnmatchedTripRetry] Error: %s", e)
+            await asyncio.sleep(self.INTERVAL)
+
+    async def _retry_unmatched(self):
+        if not self._db_session_maker:
+            return
+        from sqlalchemy import select, and_, func
+        from sqlalchemy.ext.asyncio import AsyncSession
+        try:
+            from models.database import Trip, DispatchOffer, User
+            from utils.helpers import utc_now, _haversine
+            from services.event_bus import event_bus
+            from services.fcm_service import _send_fcm_push
+            from config import _pending_cache, OFFER_TIMEOUT_SECONDS, firestore_sync, _HAS_FIRESTORE
+        except ImportError:
+            return
+
+        now = utc_now()
+        min_age = now - timedelta(seconds=self.MAX_AGE_SECS)
+        active_cutoff = now - timedelta(minutes=5)
+
+        async with self._db_session_maker() as db:
+            # Find trips in "requested" status that have NO pending/accepted offers
+            trips_result = await db.execute(
+                select(Trip).where(
+                    and_(
+                        Trip.status == "requested",
+                        Trip.driver_id.is_(None),
+                        Trip.created_at >= min_age,
+                    )
+                )
+            )
+            stuck_trips = trips_result.scalars().all()
+            if not stuck_trips:
+                return
+
+            for trip in stuck_trips:
+                # Check if there are any pending offers for this trip already
+                existing = await db.execute(
+                    select(func.count()).select_from(DispatchOffer).where(
+                        and_(
+                            DispatchOffer.trip_id == trip.id,
+                            DispatchOffer.status == "pending",
+                        )
+                    )
+                )
+                if existing.scalar() > 0:
+                    continue  # already has a pending offer, skip
+
+                # Get IDs of drivers who already rejected/expired
+                prev_result = await db.execute(
+                    select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == trip.id)
+                )
+                excluded_ids = {r[0] for r in prev_result.all()}
+
+                # Find eligible drivers
+                drivers_result = await db.execute(
+                    select(User).where(
+                        and_(
+                            User.role == "driver",
+                            User.is_online == True,
+                            User.lat.isnot(None),
+                            User.lng.isnot(None),
+                            User.last_active_at.isnot(None),
+                            User.last_active_at >= active_cutoff,
+                            ~User.id.in_(excluded_ids) if excluded_ids else True,
+                        )
+                    )
+                )
+                drivers = drivers_result.scalars().all()
+                if not drivers:
+                    self._retries += 1
+                    continue
+
+                drivers_sorted = sorted(
+                    drivers,
+                    key=lambda d: _haversine(trip.pickup_lat, trip.pickup_lng, d.lat or 0, d.lng or 0),
+                )
+                assigned = drivers_sorted[0]
+                offer = DispatchOffer(trip_id=trip.id, driver_id=assigned.id)
+                db.add(offer)
+                await db.commit()
+                await db.refresh(offer)
+                self._matched += 1
+
+                # Get rider info for push payload
+                rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+                rider = rider_result.scalar_one_or_none()
+                rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
+                rider_phone = rider.phone or "" if rider else ""
+                rider_photo = rider.photo_url or "" if rider else ""
+
+                # Calculate driver fare
+                try:
+                    from config import DRIVER_SHARE_RATE
+                except ImportError:
+                    DRIVER_SHARE_RATE = 0.75
+                estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+
+                # SSE push
+                _pending_cache.pop(assigned.id, None)
+                try:
+                    await event_bus.push_driver_offer(assigned.id, [{
+                        "offer_id": offer.id,
+                        "rider_name": rider_name,
+                        "rider_phone": rider_phone,
+                        "rider_photo_url": rider_photo,
+                        "created_at": offer.created_at.isoformat() if offer.created_at else None,
+                        "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
+                        "trip_id": trip.id,
+                        "pickup_address": trip.pickup_address,
+                        "dropoff_address": trip.dropoff_address,
+                        "pickup_lat": trip.pickup_lat,
+                        "pickup_lng": trip.pickup_lng,
+                        "dropoff_lat": trip.dropoff_lat,
+                        "dropoff_lng": trip.dropoff_lng,
+                        "vehicle_type": trip.vehicle_type,
+                        "fare": estimated_driver_fare,
+                        "driver_earnings": estimated_driver_fare,
+                    }])
+                except Exception:
+                    pass
+
+                # FCM push
+                if assigned.fcm_token:
+                    try:
+                        _send_fcm_push(
+                            assigned.fcm_token,
+                            title="\U0001F697 New Ride Offer",
+                            body=f"{rider_name} — {(trip.pickup_address or '')[:50]}",
+                            data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
+                        )
+                    except Exception:
+                        pass
+
+                logger.info(
+                    "[UnmatchedTripRetry] Trip %d re-dispatched to driver %d (attempt after %ds)",
+                    trip.id, assigned.id,
+                    int((now - (trip.created_at.replace(tzinfo=timezone.utc) if trip.created_at and trip.created_at.tzinfo is None else trip.created_at)).total_seconds()) if trip.created_at else 0,
+                )
+
+    def get_stats(self) -> dict:
+        return {"retries": self._retries, "matched": self._matched}
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 12. MASTER GUARDIAN — Orchestrates all guardians
 # ══════════════════════════════════════════════════════════════════════════════
@@ -935,6 +1105,7 @@ class MasterGuardian:
         self.driver_location_detector = DriverLocationStaleDetector()
         self.db_health_monitor = DBHealthMonitor()
         self.dispatch_timeout_agent = DispatchTimeoutAgent()
+        self.unmatched_retry_agent = UnmatchedTripRetryAgent()
 
         self._start_time = time.time()
         self._tasks: List[asyncio.Task] = []
@@ -953,6 +1124,7 @@ class MasterGuardian:
         self.driver_location_detector.set_db_session_maker(session_maker)
         self.db_health_monitor.set_db_session_maker(session_maker)
         self.dispatch_timeout_agent.set_db_session_maker(session_maker)
+        self.unmatched_retry_agent.set_db_session_maker(session_maker)
 
     def set_firestore_db(self, firestore_db):
         """Configure Firestore database for guardians"""
@@ -991,6 +1163,7 @@ class MasterGuardian:
             asyncio.create_task(self.driver_location_detector.detect(), name="driver_stale"),
             asyncio.create_task(self.db_health_monitor.monitor(), name="db_health"),
             asyncio.create_task(self.dispatch_timeout_agent.monitor(), name="dispatch_timeout"),
+            asyncio.create_task(self.unmatched_retry_agent.monitor(), name="unmatched_retry"),
         ]
 
         # If any guardian task crashes, log it but don't bring down the server
@@ -1134,6 +1307,7 @@ class MasterGuardian:
             "driver_location_detector": self.driver_location_detector.get_stats(),
             "db_health_monitor": self.db_health_monitor.get_stats(),
             "dispatch_timeout_agent": self.dispatch_timeout_agent.get_stats(),
+            "unmatched_retry_agent": self.unmatched_retry_agent.get_stats(),
         }
 
 

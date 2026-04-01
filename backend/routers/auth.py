@@ -798,9 +798,9 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
         if key in updates:
             setattr(db_user, key, updates[key])
     # Update last active timestamp
-    db_user.last_active_at = datetime.utcnow()
+    db_user.last_active_at = datetime.now(timezone.utc)
     if updates.get("is_verified") and not db_user.verified_at:
-        db_user.verified_at = datetime.utcnow()
+        db_user.verified_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(db_user)
 

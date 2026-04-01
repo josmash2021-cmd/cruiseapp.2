@@ -708,12 +708,12 @@ class TripAnomalyDetector:
             result = await db.execute(
                 select(Trip).where(
                     Trip.status == "in_progress",
-                    Trip.started_at < cutoff,
+                    Trip.created_at < cutoff,
                 )
             )
             stuck = result.scalars().all()
             for trip in stuck:
-                age_h = (datetime.utcnow() - trip.started_at).total_seconds() / 3600
+                age_h = (datetime.utcnow() - trip.created_at).total_seconds() / 3600
                 logger.warning(
                     "[TripAnomalyDetector] Trip %d stuck in_progress for %.1fh — flagging as anomaly",
                     trip.id, age_h

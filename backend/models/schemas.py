@@ -170,6 +170,11 @@ class RiderPaymentMethodIn(BaseModel):
     method_type: str
     display_name: str
     stripe_pm_id: Optional[str] = None
+    account_number: Optional[str] = None  # For Dwolla bank account
+    routing_number: Optional[str] = None  # For Dwolla bank account (9 digits)
+    account_type: Optional[str] = None  # 'checking' or 'savings'
+    bank_name: Optional[str] = None
+    plaid_token: Optional[str] = None  # Plaid verification token (optional)
     set_default: bool = False
 
 
@@ -180,6 +185,7 @@ class WalletTopUpIn(BaseModel):
 
 class WalletWithdrawIn(BaseModel):
     amount: float
+    payout_method_id: int
 
 
 class PaymentIntentIn(BaseModel):

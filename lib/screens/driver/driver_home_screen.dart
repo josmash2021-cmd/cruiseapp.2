@@ -1475,11 +1475,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           .where('status', whereIn: const [
             'accepted',
             'driver_arriving',
+            'driver_en_route',
+            'en_route_to_pickup',
             'arrived',
             'driver_arrived',
             'in_trip',
             'in_progress',
             'rider_onboard',
+            'on_trip',
           ])
           .limit(25)
           .get();
@@ -1487,8 +1490,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       Map<String, dynamic>? active;
       for (final doc in snap.docs) {
         final data = doc.data();
-        final rawDriverId = data['driverId'];
-        final matches = rawDriverId == driverId || rawDriverId?.toString() == driverId.toString();
+        final rawDriverId = data['driverId'] ?? data['driver_id'];
+        final rawDriverStr = (rawDriverId ?? '').toString().trim();
+        final driverIdStr = driverId.toString();
+        final matches = rawDriverStr == driverIdStr ||
+            rawDriverStr == 'sql_$driverIdStr' ||
+            rawDriverStr.replaceFirst(RegExp(r'^sql_'), '') == driverIdStr;
         if (matches) {
           active = {'_docId': doc.id, ...data};
           break;

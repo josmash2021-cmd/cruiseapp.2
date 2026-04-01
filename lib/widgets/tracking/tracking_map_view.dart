@@ -1320,6 +1320,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
             await _pointAnnotMgr!.delete(_dropoffAnnot!); 
           } catch (_) {}
           _dropoffAnnot = null;
+          _dropoffPinAdded = false;
         }
       }
     });

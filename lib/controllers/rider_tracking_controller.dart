@@ -6,68 +6,128 @@ part of '../screens/rider_tracking_screen.dart';
 
 extension _RiderTrackingController on _RiderTrackingScreenState {
 
-  /// Connect to Firestore for trip status and RTDB for live driver movement.
-  void _startRealTimeTracking() {
-    // Primary: watch the sql_{tripId} doc (written by backend + driver)
-    final tripId = widget.tripId;
-    if (tripId != null) {
-      final sqlDocId = 'sql_$tripId';
-      _tripStatusSub = TripFirestoreService.watchTrip(sqlDocId).listen(
-        (data) {
-          if (!mounted) return;
-          if (data == null) {
-            // Null data = doc not yet created or temporary disconnection
-            _pollFailCount++;
-            debugPrint('[RiderTracking] Trip data null ($_pollFailCount/$_maxPollFailsBeforeBanner)');
-            if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
-              _setState(() => _connectionLost = true);
-            }
-            return;
-          }
-          _pollFailCount = 0;
-          if (_connectionLost) _setState(() => _connectionLost = false);
-          _onTripStatusUpdate(data);
-        },
-        onError: (error) {
-          debugPrint('[RiderTracking] Trip status listener error: $error');
+  void _attachTripDocListener(
+    String docId, {
+    required bool isFallbackDoc,
+  }) {
+    final listener = TripFirestoreService.watchTrip(docId).listen(
+      (data) {
+        if (!mounted) return;
+        if (data == null) {
           _pollFailCount++;
-          if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
+          debugPrint('[RiderTracking] Trip data null for $docId ($_pollFailCount/$_maxPollFailsBeforeBanner)');
+          if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
             _setState(() => _connectionLost = true);
           }
+          return;
+        }
+        _pollFailCount = 0;
+        if (_connectionLost) _setState(() => _connectionLost = false);
+        _onTripStatusUpdate(data);
+      },
+      onError: (error) {
+        debugPrint('[RiderTracking] Trip status listener error for $docId: $error');
+        _pollFailCount++;
+        if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
+          _setState(() => _connectionLost = true);
+        }
+      },
+    );
+
+    if (isFallbackDoc) {
+      _fallbackTripStatusSub?.cancel();
+      _fallbackTripStatusSub = listener;
+    } else {
+      _tripStatusSub?.cancel();
+      _tripStatusSub = listener;
+    }
+  }
+
+  Future<void> _pollBackendTripStatus() async {
+    final tripId = widget.tripId;
+    if (!mounted || tripId == null || _phase == _TrackPhase.completed) return;
+    try {
+      final data = await ApiService.getDispatchStatus(tripId);
+      if (!mounted || data.isEmpty) return;
+      final status = (data['status']?.toString() ?? '').trim().toLowerCase();
+      if (status.isEmpty || status == 'error') return;
+
+      final tripData = data['trip'];
+      if (tripData is Map) {
+        final merged = Map<String, dynamic>.from(tripData.cast<String, dynamic>());
+        merged.putIfAbsent('status', () => data['status']);
+        if (status == 'completed' ||
+            status == 'cancelled' ||
+            status == 'canceled' ||
+            status == 'arrived' ||
+            status == 'driver_arrived' ||
+            status == 'in_trip' ||
+            status == 'in_progress') {
+          debugPrint('[RiderTracking] Backend poll found status=$status');
+          _onTripStatusUpdate(merged);
+        }
+        return;
+      }
+
+      if (status == 'completed' || status == 'cancelled' || status == 'canceled') {
+        debugPrint('[RiderTracking] Backend poll found terminal status=$status');
+        _onTripStatusUpdate({'status': status});
+      }
+    } catch (e) {
+      debugPrint('[RiderTracking] Backend poll error: $e');
+    }
+  }
+
+  /// Connect to Firestore for trip status and RTDB for live driver movement.
+  void _startRealTimeTracking() {
+    final tripId = widget.tripId;
+    final sqlDocId = tripId != null ? 'sql_$tripId' : null;
+    final fallbackDocId = widget.firestoreTripId;
+
+    if (tripId != null) {
+      _attachTripDocListener(sqlDocId!, isFallbackDoc: false);
+
+      _tripSseSub?.cancel();
+      _tripSseSub = ApiService.streamTripStatus(tripId).listen(
+        (event) {
+          if (!mounted || event.isEmpty) return;
+          final status = (event['status']?.toString() ?? '').trim().toLowerCase();
+          if (status.isEmpty) return;
+          debugPrint('[RiderTracking] SSE trip_update status=$status');
+          _onTripStatusUpdate(event);
+        },
+        onError: (error) {
+          debugPrint('[RiderTracking] SSE listener error: $error');
+        },
+        onDone: () {
+          debugPrint('[RiderTracking] SSE listener closed');
         },
       );
+
+      _statusPollTimer?.cancel();
+      _statusPollTimer = Timer.periodic(
+        const Duration(seconds: 8),
+        (_) => _pollBackendTripStatus(),
+      );
+      unawaited(_pollBackendTripStatus());
     } else {
-      // Fallback: use the original Firestore auto-generated doc
-      final fsId = widget.firestoreTripId;
-      if (fsId != null && fsId.isNotEmpty) {
-        _tripStatusSub = TripFirestoreService.watchTrip(fsId).listen(
-          (data) {
-            if (!mounted) return;
-            if (data == null) {
-              _pollFailCount++;
-              debugPrint('[RiderTracking] Trip data null ($_pollFailCount/$_maxPollFailsBeforeBanner)');
-              if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
-                _setState(() => _connectionLost = true);
-              }
-              return;
-            }
-            _pollFailCount = 0;
-            if (_connectionLost) _setState(() => _connectionLost = false);
-            _onTripStatusUpdate(data);
-          },
-          onError: (error) {
-            debugPrint('[RiderTracking] Trip status listener error: $error');
-            _pollFailCount++;
-            if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
-              _setState(() => _connectionLost = true);
-            }
-          },
-        );
-      }
+      _statusPollTimer?.cancel();
+      _tripSseSub?.cancel();
+    }
+
+    if (fallbackDocId != null &&
+        fallbackDocId.isNotEmpty &&
+        fallbackDocId != sqlDocId) {
+      _attachTripDocListener(fallbackDocId, isFallbackDoc: true);
+    } else {
+      _fallbackTripStatusSub?.cancel();
+      _fallbackTripStatusSub = null;
     }
 
     if (tripId != null) {
       debugPrint('[RiderTracking] Watching sql_$tripId for status updates');
+    } else if (fallbackDocId != null && fallbackDocId.isNotEmpty) {
+      _attachTripDocListener(fallbackDocId, isFallbackDoc: false);
     }
 
     // Start RTDB driver location listener immediately if driverId is known
@@ -467,27 +527,41 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (!mounted || _phase == _TrackPhase.completed || _completionCheckInFlight) return;
     _completionCheckInFlight = true;
     try {
+      final docIds = <String>[];
       final tripId = widget.tripId;
-      String? docId;
       if (tripId != null) {
-        docId = 'sql_$tripId';
-      } else if (widget.firestoreTripId != null && widget.firestoreTripId!.isNotEmpty) {
-        docId = widget.firestoreTripId;
+        docIds.add('sql_$tripId');
       }
-      if (docId == null) return;
-      final doc = await FirebaseFirestore.instance
-          .collection('trips')
-          .doc(docId)
-          .get();
-      if (!mounted || !doc.exists) return;
-      final data = doc.data();
-      if (data == null) return;
-      final status = data['status']?.toString() ?? '';
-      if (status == 'completed' || status == 'cancelled' || status == 'canceled' ||
-          status == 'in_trip' || status == 'in_progress' || status == 'arrived') {
-        debugPrint('[RiderTracking] Fallback found status=$status — processing');
-        _onTripStatusUpdate(data);
+      final fallbackDocId = widget.firestoreTripId;
+      if (fallbackDocId != null &&
+          fallbackDocId.isNotEmpty &&
+          !docIds.contains(fallbackDocId)) {
+        docIds.add(fallbackDocId);
       }
+
+      for (final docId in docIds) {
+        final doc = await FirebaseFirestore.instance
+            .collection('trips')
+            .doc(docId)
+            .get();
+        if (!mounted || !doc.exists) continue;
+        final data = doc.data();
+        if (data == null) continue;
+        final status = (data['status']?.toString() ?? '').trim().toLowerCase();
+        if (status == 'completed' ||
+            status == 'cancelled' ||
+            status == 'canceled' ||
+            status == 'in_trip' ||
+            status == 'in_progress' ||
+            status == 'arrived' ||
+            status == 'driver_arrived') {
+          debugPrint('[RiderTracking] Firestore fallback found status=$status on $docId');
+          _onTripStatusUpdate(data);
+          return;
+        }
+      }
+
+      await _pollBackendTripStatus();
     } catch (e) {
       debugPrint('[RiderTracking] Fallback status check error: $e');
     } finally {
@@ -728,6 +802,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (_startRideAnimationDone) return;
     _startRideAnimationDone = true;
     _startRidePhase = 1;
+
+    _routeFadeTimer?.cancel();
+    _routeOpacity = 1.0;
+
+    if (_dropoffAnnot == null) {
+      _dropoffPinAdded = false;
+      _addDropoffPin();
+    }
 
     // Remove the dimmed route — we'll draw a bright gloss one instead
     _removeDimmedRoute();

@@ -96,9 +96,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         : Colors.black.withValues(alpha: 0.15);
 
     final amounts = [
-      '\$${_weeklyEarnings.toStringAsFixed(2)}',
-      '\$${_earnings.toStringAsFixed(2)}',
-      '\$${_lastTripEarnings.toStringAsFixed(2)}',
+      _weeklyEarnings,
+      _earnings,
+      _lastTripEarnings,
     ];
     final labels = [
       S.of(context).thisWeek.toUpperCase(),
@@ -106,7 +106,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       S.of(context).lastTripLabel.toUpperCase(),
     ];
 
-    Widget pillPage(String amount, String label) {
+    Widget pillPage(double amount, String label, {required bool animateAmount}) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: BackdropFilter(
@@ -121,15 +121,30 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  amount,
-                  style: TextStyle(
-                    color: pillText,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
+                animateAmount
+                    ? TweenAnimationBuilder<double>(
+                        duration: const Duration(milliseconds: 700),
+                        curve: Curves.easeOutCubic,
+                        tween: Tween<double>(begin: 0, end: amount),
+                        builder: (_, val, __) => Text(
+                          '\$${val.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: pillText,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      )
+                    : Text(
+                        '\$${amount.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          color: pillText,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
                 const SizedBox(height: 1),
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -190,6 +205,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             child: pillPage(
               amounts[_earningsPage],
               labels[_earningsPage],
+              animateAmount: _earningsPage == 1,
             ),
           ),
         ),

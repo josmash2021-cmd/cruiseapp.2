@@ -308,15 +308,20 @@ workflows:
           if [ -z "${CERTIFICATE_PRIVATE_KEY:-}" ]; then
             echo "❌ CERTIFICATE_PRIVATE_KEY not set"; exit 1
           fi
+          echo "$CERTIFICATE_PRIVATE_KEY" | base64 --decode > /tmp/cert_key.pem
+          if ! grep -q 'BEGIN.*PRIVATE KEY' /tmp/cert_key.pem 2>/dev/null; then
+            echo "❌ Decoded key is not valid PEM"; exit 1
+          fi
+          echo "✅ Key decoded to /tmp/cert_key.pem"
           keychain initialize
           app-store-connect certificates delete \
             --type IOS_DISTRIBUTION \
-            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            --certificate-key=/tmp/cert_key.pem \
             2>/dev/null || true
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_ADHOC \
             --create \
-            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            --certificate-key=/tmp/cert_key.pem \
             --verbose
           keychain add-certificates
 
@@ -408,27 +413,32 @@ workflows:
       - *pod_install
       - name: Set up iOS code signing
         script: |
-          # ── Validate CERTIFICATE_PRIVATE_KEY ──────────────────────────────
+          # ── Validate & decode CERTIFICATE_PRIVATE_KEY (base64 → PEM file) ──
           if [ -z "${CERTIFICATE_PRIVATE_KEY:-}" ]; then
             echo "❌ CERTIFICATE_PRIVATE_KEY is not set!"
-            echo "   Add it as an encrypted variable in Codemagic UI → Default group"
-            echo "   This is the RSA private key used for Apple Distribution certificates"
+            echo "   Add it as a base64-encoded encrypted variable in Codemagic UI → Default group"
             exit 1
           fi
-          echo "✅ CERTIFICATE_PRIVATE_KEY is set ($(echo "$CERTIFICATE_PRIVATE_KEY" | wc -c | tr -d ' ') bytes)"
+          echo "$CERTIFICATE_PRIVATE_KEY" | base64 --decode > /tmp/cert_key.pem
+          if ! grep -q 'BEGIN.*PRIVATE KEY' /tmp/cert_key.pem 2>/dev/null; then
+            echo "❌ Decoded key is not valid PEM. Make sure you base64-encoded the .pem file."
+            head -2 /tmp/cert_key.pem
+            exit 1
+          fi
+          echo "✅ CERTIFICATE_PRIVATE_KEY decoded to /tmp/cert_key.pem ($(wc -c < /tmp/cert_key.pem | tr -d ' ') bytes)"
 
           keychain initialize
 
           # Delete stale certs that don't match our private key
           app-store-connect certificates delete \
             --type IOS_DISTRIBUTION \
-            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            --certificate-key=/tmp/cert_key.pem \
             2>/dev/null || true
 
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create \
-            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            --certificate-key=/tmp/cert_key.pem \
             --verbose
 
           keychain add-certificates

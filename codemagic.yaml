@@ -311,7 +311,6 @@ workflows:
             --create \
             --verbose
           keychain add-certificates
-          xcode-project use-profiles || true
 
           # ── Extract profile info ──
           PROFILE_PATH=$(find "$HOME/Library/MobileDevice/Provisioning Profiles" \
@@ -320,17 +319,24 @@ workflows:
             echo "❌ No provisioning profile downloaded"; exit 1
           fi
           PLIST=$(security cms -D -i "$PROFILE_PATH" 2>/dev/null)
+          PROFILE_UUID=$(echo "$PLIST" | grep -A1 '<key>UUID</key>' | tail -1 \
+            | sed 's/.*<string>//' | sed 's/<\/string>.*//' | tr -d '[:space:]')
           PROFILE_NAME=$(echo "$PLIST" | grep -A1 '<key>Name</key>' | tail -1 \
             | sed 's/.*<string>//' | sed 's/<\/string>.*//' | xargs)
-          echo "✅ Profile: $PROFILE_NAME"
+          echo "✅ Profile: '$PROFILE_NAME' ($PROFILE_UUID)"
 
-          # ── Inject PROVISIONING_PROFILE_SPECIFIER ──
+          # ── Patch pbxproj ──
           PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
-          if ! grep -q 'PROVISIONING_PROFILE_SPECIFIER' "$PBXPROJ"; then
-            perl -i -pe \
-              "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";}" \
-              "$PBXPROJ"
-          fi
+          perl -i -ne 'print unless /^\s*PROVISIONING_PROFILE/' "$PBXPROJ"
+          perl -i -pe 's/CODE_SIGN_IDENTITY = "[^"]*"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
+          perl -i -pe "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";\n\t\t\t\tPROVISIONING_PROFILE = \"${PROFILE_UUID}\";}" "$PBXPROJ"
+
+          # ── FLUTTER_XCODE env vars ──
+          echo "FLUTTER_XCODE_CODE_SIGN_STYLE=Manual" >> $CM_ENV
+          echo "FLUTTER_XCODE_DEVELOPMENT_TEAM=7QLC9UVB3Z" >> $CM_ENV
+          echo "FLUTTER_XCODE_CODE_SIGN_IDENTITY=Apple Distribution" >> $CM_ENV
+          echo "FLUTTER_XCODE_PROVISIONING_PROFILE_SPECIFIER=${PROFILE_NAME}" >> $CM_ENV
+          echo "FLUTTER_XCODE_PROVISIONING_PROFILE=${PROFILE_UUID}" >> $CM_ENV
 
           # ── Generate export_options.plist ──
           export PROFILE_NAME
@@ -402,7 +408,6 @@ workflows:
             --verbose
 
           keychain add-certificates
-          xcode-project use-profiles || true
 
           # ── Extract profile info ──────────────────────────────────────────
           PROFILE_PATH=$(find "$HOME/Library/MobileDevice/Provisioning Profiles" \
@@ -417,7 +422,6 @@ workflows:
           PLIST=$(security cms -D -i "$PROFILE_PATH" 2>/dev/null)
           if [ -z "$PLIST" ]; then
             echo "❌ security cms failed to decode the profile"
-            file "$PROFILE_PATH"
             exit 1
           fi
 
@@ -434,18 +438,32 @@ workflows:
           fi
           echo "✅ Profile: '$PROFILE_NAME' ($PROFILE_UUID)"
 
-          # ── Inject PROVISIONING_PROFILE_SPECIFIER into pbxproj ────────────
-          # NOTE: perl is used instead of sed because macOS BSD sed does NOT
-          #       interpret \n as a newline in the replacement string.
-          PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
-          if ! grep -q 'PROVISIONING_PROFILE_SPECIFIER' "$PBXPROJ"; then
-            perl -i -pe \
-              "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";}" \
-              "$PBXPROJ"
-          fi
-          echo "PROVISIONING_PROFILE_SPECIFIER count: $(grep -c 'PROVISIONING_PROFILE_SPECIFIER' "$PBXPROJ")"
+          # ── Detect signing identity from keychain ─────────────────────────
+          IDENTITY=$(security find-identity -v -p codesigning \
+            | grep -o '"[^"]*"' | head -1 | tr -d '"')
+          echo "✅ Identity: '$IDENTITY'"
 
-          # ── Generate export_options.plist via python3 (always reliable) ───
+          # ── Patch pbxproj: clean + reinject all signing fields ────────────
+          PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
+
+          # 1) Strip any stale PROVISIONING_PROFILE* lines
+          perl -i -ne 'print unless /^\s*PROVISIONING_PROFILE/' "$PBXPROJ"
+
+          # 2) Ensure CODE_SIGN_IDENTITY matches the actual certificate
+          perl -i -pe 's/CODE_SIGN_IDENTITY = "[^"]*"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
+
+          # 3) Inject fresh PROVISIONING_PROFILE_SPECIFIER + PROVISIONING_PROFILE
+          #    after every CODE_SIGN_STYLE = Manual; (covers Debug, Profile, Release)
+          perl -i -pe "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";\n\t\t\t\tPROVISIONING_PROFILE = \"${PROFILE_UUID}\";}" "$PBXPROJ"
+
+          # ── Set FLUTTER_XCODE_* env vars (override at xcodebuild level) ───
+          echo "FLUTTER_XCODE_CODE_SIGN_STYLE=Manual" >> $CM_ENV
+          echo "FLUTTER_XCODE_DEVELOPMENT_TEAM=7QLC9UVB3Z" >> $CM_ENV
+          echo "FLUTTER_XCODE_CODE_SIGN_IDENTITY=Apple Distribution" >> $CM_ENV
+          echo "FLUTTER_XCODE_PROVISIONING_PROFILE_SPECIFIER=${PROFILE_NAME}" >> $CM_ENV
+          echo "FLUTTER_XCODE_PROVISIONING_PROFILE=${PROFILE_UUID}" >> $CM_ENV
+
+          # ── Generate export_options.plist ──────────────────────────────────
           export PROFILE_NAME
           python3 - << 'PYEOF'
           import plistlib, os, pathlib
@@ -464,7 +482,6 @@ workflows:
               plistlib.dump(pl, f)
           print(f"Created {out}")
           PYEOF
-          echo "export_options.plist:"
           cat "$HOME/export_options.plist"
 
           # ── Diagnostics ───────────────────────────────────────────────────
@@ -473,7 +490,9 @@ workflows:
           echo "── Profiles ──"
           ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/"
           echo "── pbxproj signing fields ──"
-          grep -E 'PROVISIONING_PROFILE|CODE_SIGN_STYLE|DEVELOPMENT_TEAM|CODE_SIGN_IDENTITY' "$PBXPROJ" | head -20
+          grep -E 'PROVISIONING_PROFILE|CODE_SIGN_STYLE|DEVELOPMENT_TEAM|CODE_SIGN_IDENTITY' "$PBXPROJ" | head -24
+          echo "── FLUTTER_XCODE env vars ──"
+          cat $CM_ENV 2>/dev/null | grep FLUTTER_XCODE || true
           echo "✅ Signing ready"
       - name: Build IPA (App Store)
         script: |

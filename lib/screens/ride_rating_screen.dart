@@ -68,7 +68,8 @@ class _RideRatingScreenState extends State<RideRatingScreen>
   }
 
   void _submit() async {
-    final stars = _stars == 0 ? 5 : _stars;
+    if (_stars == 0) return;
+    final stars = _stars;
     final tip = _selectedTipIndex >= 0 ? _tipAmounts[_selectedTipIndex] : 0.0;
     final rating = RideRating(
       stars: stars,
@@ -251,7 +252,7 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                       ),
                       elevation: 0,
                     ),
-                    onPressed: _submit,
+                    onPressed: _stars > 0 ? _submit : null,
                     child: Text(
                       _selectedTipIndex >= 0
                           ? S

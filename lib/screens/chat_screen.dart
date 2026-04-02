@@ -233,19 +233,26 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     } else if (widget.isSupport) {
+      if (widget.tripId == null) {
+        // No active trip — message cannot reach support backend
+        if (mounted) {
+          ErrorService.show(
+            context,
+            S.of(context).connectionIssueRetrying,
+          );
+        }
+        return;
+      }
       setState(() {
         _supportMessages.add(
           _SupportMessage(text: text, isMe: true, time: DateTime.now()),
         );
       });
       _scrollToBottom();
-      // Support: also try API if tripId available
-      if (widget.tripId != null) {
-        try {
-          await ApiService.sendChatMessage(tripId: widget.tripId!, message: text);
-        } catch (_) {
-          if (mounted) ErrorService.show(context, 'Message failed to send. Check your connection.');
-        }
+      try {
+        await ApiService.sendChatMessage(tripId: widget.tripId!, message: text);
+      } catch (_) {
+        if (mounted) ErrorService.show(context, 'Message failed to send. Check your connection.');
       }
     }
   }

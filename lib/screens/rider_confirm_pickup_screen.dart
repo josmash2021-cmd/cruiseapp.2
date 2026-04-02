@@ -47,7 +47,7 @@ class RiderConfirmPickupScreen extends StatefulWidget {
 
 class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     with TickerProviderStateMixin {
-  static const _gold = Color(0xFFD4AF37);
+  static const _gold = Color(0xFFE8C547);
   static const _bg = Color(0xFF0d0d1a);
 
   late final AnimationController _pulseCtrl;
@@ -414,7 +414,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                                           const SizedBox(height: 10),
                                                           Text(
                                                             _driverStarted
-                                                                ? 'Tu viaje\nconfirmado'
+                                                                ? 'En camino'
                                                                 : 'Tu viaje\nconfirmado',
                                                             textAlign: TextAlign.center,
                                                             style: const TextStyle(
@@ -567,20 +567,34 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                       Row(
                                         children: [
                                           Icon(
-                                            Icons.star_rounded,
-                                            size: 14,
-                                            color: _gold,
+                                            Icons.directions_car_rounded,
+                                            size: 13,
+                                            color: Colors.white.withValues(alpha: 0.35),
                                           ),
                                           const SizedBox(width: 3),
-                                          Text(
-                                            widget.vehicleDesc,
-                                            style: TextStyle(
-                                              color: Colors.white.withValues(alpha: 0.45),
-                                              fontSize: 13,
+                                          Expanded(
+                                            child: Text(
+                                              widget.vehicleDesc,
+                                              style: TextStyle(
+                                                color: Colors.white.withValues(alpha: 0.45),
+                                                fontSize: 13,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
                                           ),
+                                          if (widget.driverRating != null) ...[
+                                            const SizedBox(width: 8),
+                                            Icon(Icons.star_rounded, size: 13, color: _gold),
+                                            const SizedBox(width: 2),
+                                            Text(
+                                              widget.driverRating!.toStringAsFixed(1),
+                                              style: TextStyle(
+                                                color: Colors.white.withValues(alpha: 0.55),
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
                                         ],
                                       ),
                                     ],
@@ -595,7 +609,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                         if (!isConfirmed) ...[
                           const SizedBox(height: 14),
                           Text(
-                            'El viaje comenzará automáticamente\nsi no confirmas',
+                            'Confirma que ya estás\nen el vehículo',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: _gold.withValues(alpha: 0.55),
@@ -634,11 +648,11 @@ class _GoldenRingPainter extends CustomPainter {
       startAngle: rotation,
       endAngle: rotation + 2 * math.pi,
       colors: const [
-        Color(0xFFD4AF37),
+        Color(0xFFE8C547),
         Color(0xFFFBE47A),
-        Color(0xFFD4AF37),
-        Color(0xFF8B6914),
-        Color(0xFFD4AF37),
+        Color(0xFFE8C547),
+        Color(0xFFB08C35),
+        Color(0xFFE8C547),
       ],
       stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
     );

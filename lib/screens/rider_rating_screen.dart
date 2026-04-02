@@ -40,7 +40,7 @@ class RiderRatingScreen extends StatefulWidget {
 
 class _RiderRatingScreenState extends State<RiderRatingScreen>
     with SingleTickerProviderStateMixin {
-  static const _gold = Color(0xFFD4AF37);
+  static const _gold = Color(0xFFE8C547);
   static const _bg = Color(0xFF0d0d1a);
 
   int _ratingStars = 5;
@@ -271,7 +271,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4),
                             child: AnimatedScale(
-                              scale: filled ? 1.0 : 0.85,
+                              scale: filled ? 1.15 : 1.0,
                               duration: const Duration(milliseconds: 200),
                               child: Icon(
                                 filled ? Icons.star_rounded : Icons.star_outline_rounded,

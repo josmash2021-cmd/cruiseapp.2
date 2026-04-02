@@ -36,8 +36,8 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     with TickerProviderStateMixin {
   // ── constants ──
   static const _bg   = Color(0xFF0A0D14);
-  static const _gold = Color(0xFFF5C518);
-  static const _goldEnd = Color(0xFFFFD700);
+  static const _gold = Color(0xFFE8C547);
+  static const _goldEnd = Color(0xFFF5D990);
 
   // ── controllers ──
   late final AnimationController _radarCtrl;    // 2400 ms – radar pulse rings
